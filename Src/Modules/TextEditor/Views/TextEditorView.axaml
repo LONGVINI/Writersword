@@ -1,0 +1,55 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels"
+             x:Class="Writersword.Modules.TextEditor.Views.TextEditorView"
+             Background="#252526">
+
+	<Border Background="#252526" Padding="40">
+
+		<!-- Листок документа -->
+		<Border Background="White"
+                MinWidth="850"
+				MaxWidth="850"
+                MinHeight="1100"
+                CornerRadius="2"
+                BoxShadow="0 2 10 0 #40000000"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top">
+
+			<!-- TextBox -->
+			<TextBox Text="{Binding PlainText}"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     Background="White"
+                     Foreground="#000000"
+                     CaretBrush="#000000"
+                     FontFamily="Times New Roman"
+                     FontSize="14"
+                     BorderThickness="0"
+                     Padding="60,40"
+                     MinHeight="1000"
+                     VerticalAlignment="Stretch"
+                     Focusable="True">
+
+				<!-- Убираем hover эффект и фокус рамку -->
+				<TextBox.Styles>
+					<Style Selector="TextBox">
+						<Setter Property="Background" Value="White" />
+					</Style>
+					<Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
+						<Setter Property="Background" Value="White" />
+						<Setter Property="BorderBrush" Value="Transparent" />
+					</Style>
+					<Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+						<Setter Property="Background" Value="White" />
+						<Setter Property="BorderBrush" Value="Transparent" />
+					</Style>
+				</TextBox.Styles>
+
+			</TextBox>
+
+		</Border>
+
+	</Border>
+
+</UserControl>

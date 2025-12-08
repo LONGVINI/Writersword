@@ -1,0 +1,27 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Writersword.App"
+             RequestedThemeVariant="Dark">
+    
+    <!-- Application Resources -->
+    <Application.DataTemplates>
+        <!-- Здесь будут DataTemplates для Dock панелей -->
+    </Application.DataTemplates>
+    
+    <!-- Application Styles -->
+    <Application.Styles>
+        
+        <!-- Fluent Theme (основная тема Avalonia) -->
+        <FluentTheme />
+        
+        <!-- Базовые стили --><!--
+        <StyleInclude Source="/Styles/Base/Colors.axaml"/>
+        <StyleInclude Source="/Styles/Base/Typography.axaml"/>
+        <StyleInclude Source="/Styles/Base/Spacing.axaml"/>
+        
+        --><!-- Тема по умолчанию (тёмная) --><!--
+        <StyleInclude Source="/Styles/Themes/DarkTheme.axaml"/>-->
+        
+    </Application.Styles>
+    
+</Application>

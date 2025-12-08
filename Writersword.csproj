@@ -1,0 +1,89 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<!-- ========================================
+       Настройки проекта
+       ======================================== -->
+
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net8.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+		<!--<ApplicationIcon>Resources\Icons\app-icon.ico</ApplicationIcon>-->
+		<!--<ApplicationManifest>app.manifest</ApplicationManifest>-->
+		<AssemblyName>Writersword</AssemblyName>
+		<RootNamespace>Writersword</RootNamespace>
+		<Version>1.0.0</Version>
+		<Product>Writersword</Product>
+		<Company>Writersword Team</Company>
+		<Copyright>Copyright © 2025</Copyright>
+		<Description>Multi-modal writing application for writers, poets, screenwriters, and game developers</Description>
+	</PropertyGroup>
+
+	<!-- ========================================
+       Avalonia UI + Docking
+       ======================================== -->
+
+	<ItemGroup>
+		<PackageReference Include="Avalonia" Version="11.3.8" />
+		<PackageReference Include="Avalonia.Desktop" Version="11.3.8" />
+		<PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.8" />
+		<PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.8" />
+		<PackageReference Include="Dock.Avalonia" Version="11.3.8" />
+		<PackageReference Include="Dock.Model.Avalonia" Version="11.3.8" />
+	</ItemGroup>
+
+	<!-- ========================================
+       MVVM + DI
+       ======================================== -->
+
+	<ItemGroup>
+		<PackageReference Include="ReactiveUI" Version="20.1.1" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
+	</ItemGroup>
+
+	<!-- ========================================
+       Локализация + JSON
+       ======================================== -->
+
+	<ItemGroup>
+		<PackageReference Include="System.Resources.Extensions" Version="8.0.0" />
+		<PackageReference Include="System.Text.Json" Version="10.0.0" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+	</ItemGroup>
+
+	<!-- ========================================
+       Ресурсы
+       ======================================== -->
+
+	<ItemGroup>
+		<AvaloniaResource Include="Resources\**" />
+		<AvaloniaResource Include="Styles\**" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <AvaloniaXaml Remove="Src\Modules\Timer\Models\**" />
+	  <AvaloniaXaml Remove="Src\Modules\Timer\Services\**" />
+	  <AvaloniaXaml Remove="Src\Modules\Timer\ViewModels\**" />
+	  <AvaloniaXaml Remove="Src\Modules\Timer\Views\**" />
+	  <Compile Remove="Src\Modules\Timer\Models\**" />
+	  <Compile Remove="Src\Modules\Timer\Services\**" />
+	  <Compile Remove="Src\Modules\Timer\ViewModels\**" />
+	  <Compile Remove="Src\Modules\Timer\Views\**" />
+	  <EmbeddedResource Remove="Src\Modules\Timer\Models\**" />
+	  <EmbeddedResource Remove="Src\Modules\Timer\Services\**" />
+	  <EmbeddedResource Remove="Src\Modules\Timer\ViewModels\**" />
+	  <EmbeddedResource Remove="Src\Modules\Timer\Views\**" />
+	  <None Remove="Src\Modules\Timer\Models\**" />
+	  <None Remove="Src\Modules\Timer\Services\**" />
+	  <None Remove="Src\Modules\Timer\ViewModels\**" />
+	  <None Remove="Src\Modules\Timer\Views\**" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="Resources\Images\" />
+	  <Folder Include="Src\Modules\Timer\" />
+	</ItemGroup>
+
+</Project>
