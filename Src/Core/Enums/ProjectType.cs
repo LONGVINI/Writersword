@@ -1,8 +1,13 @@
-namespace Writersword
+namespace Writersword.Core.Enums
 {
-    public class ProjectType
+    /// <summary>
+    /// Типы проектов в Writersword
+    /// </summary>
+    public enum ProjectType
     {
-        // TODO: Implement
+        Novel,          // Роман / книга
+        Screenplay,     // Сценарий
+        Poetry,         // Поэзия
+        GameDesign      // Гейм-дизайн документ
     }
 }
-

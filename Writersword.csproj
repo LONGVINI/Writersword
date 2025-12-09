@@ -27,6 +27,7 @@
 	<ItemGroup>
 		<PackageReference Include="Avalonia" Version="11.3.8" />
 		<PackageReference Include="Avalonia.Desktop" Version="11.3.8" />
+		<PackageReference Include="Avalonia.ReactiveUI" Version="11.3.8" />
 		<PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.8" />
 		<PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.8" />
 		<PackageReference Include="Dock.Avalonia" Version="11.3.8" />
@@ -82,8 +83,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <Folder Include="Models\" />
 	  <Folder Include="Resources\Images\" />
 	  <Folder Include="Src\Modules\Timer\" />
+	  <Folder Include="Projects\" />
 	</ItemGroup>
 
 </Project>

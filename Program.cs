@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.ReactiveUI;
 using System;
 
 namespace Writersword;
@@ -21,6 +22,7 @@ class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()           // Автоматическое определение платформы (Windows/Linux/macOS)
-            .WithInterFont()               // Использование шрифта Inter
+            .WithInterFont()
+            .UseReactiveUI()               // Использование шрифта Inter
             .LogToTrace();                 // Логирование в Debug консоль
 }

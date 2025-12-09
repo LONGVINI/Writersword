@@ -1,0 +1,163 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Writersword.ViewModels"
+        x:Class="Writersword.Views.WelcomeView"
+        x:DataType="vm:WelcomeViewModel"
+        Title="Welcome to Writersword"
+        Width="760"
+        Height="680"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        SystemDecorations="None"
+        TransparencyLevelHint="AcrylicBlur"
+        Background="Transparent">
+
+	<!-- Затемнённый фон -->
+	<Border Background="#DD000000"
+            CornerRadius="12">
+
+		<!-- Контент окна -->
+		<Border Background="#1E1E1E"
+                CornerRadius="12"
+                Margin="4"
+                Padding="40">
+
+			<Grid>
+				<Grid.RowDefinitions>
+					<RowDefinition Height="Auto" />
+					<RowDefinition Height="*" />
+				</Grid.RowDefinitions>
+
+				<!-- Заголовок -->
+				<StackPanel Grid.Row="0" Margin="0,0,0,30">
+					<TextBlock Text="Writersword"
+                               FontSize="36"
+                               FontWeight="Bold"
+                               Foreground="White"
+                               HorizontalAlignment="Center" />
+					<TextBlock Text="Choose how to start"
+                               FontSize="14"
+                               Foreground="#999"
+                               HorizontalAlignment="Center"
+                               Margin="0,5,0,0" />
+				</StackPanel>
+
+				<!-- Основной контент -->
+				<Grid Grid.Row="1">
+					<Grid.ColumnDefinitions>
+						<ColumnDefinition Width="*" />
+						<ColumnDefinition Width="20" />
+						<ColumnDefinition Width="*" />
+					</Grid.ColumnDefinitions>
+
+					<!-- Левая колонка: Новый проект -->
+					<Border Grid.Column="0"
+                            Background="#252526"
+                            CornerRadius="8"
+                            Padding="20">
+						<StackPanel>
+							<TextBlock Text="📝 New Project"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="White"
+                                       Margin="0,0,0,15" />
+
+							<!-- Выбор типа проекта -->
+							<StackPanel Spacing="10">
+								<RadioButton Content="📖 Novel / Book"
+                                             GroupName="ProjectType"
+                                             IsChecked="True"
+                                             Foreground="#CCC"
+                                             FontSize="14" />
+
+								<RadioButton Content="🎬 Screenplay"
+                                             GroupName="ProjectType"
+                                             Foreground="#CCC"
+                                             FontSize="14" />
+
+								<RadioButton Content="✍️ Poetry Collection"
+                                             GroupName="ProjectType"
+                                             Foreground="#CCC"
+                                             FontSize="14" />
+
+								<RadioButton Content="🎮 Game Design Document"
+                                             GroupName="ProjectType"
+                                             Foreground="#CCC"
+                                             FontSize="14" />
+							</StackPanel>
+
+							<!-- Кнопка создать -->
+							<Button Content="Create Project"
+                                    Command="{Binding NewProjectCommand}"
+                                    Background="#007ACC"
+                                    Foreground="White"
+                                    Padding="20,12"
+                                    Margin="0,20,0,0"
+                                    HorizontalAlignment="Stretch"
+                                    FontSize="14"
+                                    Cursor="Hand" />
+						</StackPanel>
+					</Border>
+
+					<!-- Правая колонка: Открыть проект -->
+					<Border Grid.Column="2"
+                            Background="#252526"
+                            CornerRadius="8"
+                            Padding="20">
+						<StackPanel>
+							<TextBlock Text="📂 Open Project"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="White"
+                                       Margin="0,0,0,15" />
+
+							<TextBlock Text="Recent Projects:"
+                                       FontSize="12"
+                                       Foreground="#999"
+                                       Margin="0,0,0,10" />
+
+							<ListBox ItemsSource="{Binding RecentProjects}"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Margin="0,0,0,15"
+                                     MinHeight="200">
+								<ListBox.ItemTemplate>
+									<DataTemplate>
+										<Border Background="#2D2D30"
+                                                CornerRadius="4"
+                                                Padding="10"
+                                                Margin="0,0,0,5"
+                                                Cursor="Hand">
+											<StackPanel>
+												<TextBlock Text="{Binding Name}"
+                                                           Foreground="White"
+                                                           FontSize="13" />
+												<TextBlock Text="{Binding Path}"
+                                                           Foreground="#666"
+                                                           FontSize="10"
+                                                           Margin="0,3,0,0" />
+											</StackPanel>
+										</Border>
+									</DataTemplate>
+								</ListBox.ItemTemplate>
+							</ListBox>
+
+							<!-- Кнопка открыть -->
+							<Button Content="Browse for Project..."
+                                    Command="{Binding OpenProjectCommand}"
+                                    Background="#3E3E42"
+                                    Foreground="White"
+                                    Padding="20,12"
+                                    HorizontalAlignment="Stretch"
+                                    FontSize="14"
+                                    Cursor="Hand" />
+						</StackPanel>
+					</Border>
+
+				</Grid>
+			</Grid>
+
+		</Border>
+	</Border>
+
+</Window>

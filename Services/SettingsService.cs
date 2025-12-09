@@ -6,45 +6,26 @@ using Writersword.Services.Interfaces;
 namespace Writersword.Services
 {
     /// <summary>
-    /// Cервис настроек
-    /// Портативный: если settings.json рядом с .exe
-    /// Стандартный: если нет - использует %AppData%
+    /// Сервис для работы с настройками приложения
+    /// Хранит настройки рядом с .exe файлом (портативный режим)
     /// </summary>
     public class SettingsService : ISettingsService
     {
         private const string SettingsFileName = "settings.json";
         private readonly string _settingsPath;
-        private readonly bool _isPortable;
+        private readonly string _applicationDirectory;
         private AppSettings _settings;
 
         public SettingsService()
         {
-            // Проверяем портативный режим
-            var exeDirectory = AppContext.BaseDirectory;
-            var portablePath = Path.Combine(exeDirectory, SettingsFileName);
-
-            if (File.Exists(portablePath))
-            {
-                // Портативный режим - файл рядом с .exe
-                _isPortable = true;
-                _settingsPath = portablePath;
-            }
-            else
-            {
-                // Стандартный режим - AppData
-                _isPortable = false;
-                var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                var appFolder = Path.Combine(appDataPath, "Writersword");
-
-                // Создаём папку если её нет
-                Directory.CreateDirectory(appFolder);
-
-                _settingsPath = Path.Combine(appFolder, SettingsFileName);
-            }
+            // Папка с .exe файлом
+            _applicationDirectory = AppContext.BaseDirectory;
+            _settingsPath = Path.Combine(_applicationDirectory, SettingsFileName);
 
             _settings = new AppSettings();
         }
 
+        /// <summary>Загрузить настройки из файла</summary>
         public void Load()
         {
             if (File.Exists(_settingsPath))
@@ -62,66 +43,99 @@ namespace Writersword.Services
             }
             else
             {
-                // Настройки по умолчанию
+                // Настройки по умолчанию (первый запуск)
                 _settings = new AppSettings
                 {
                     Theme = "Dark",
-                    Language = "en"
+                    Language = "en",
+                    DefaultProjectsFolder = Path.Combine(_applicationDirectory, "Projects")
                 };
+
+                // Создаём папку для проектов
+                Directory.CreateDirectory(_settings.DefaultProjectsFolder);
+
+                // Сохраняем настройки при первом запуске
+                Save();
             }
         }
 
+        /// <summary>Сохранить настройки в файл</summary>
         public void Save()
         {
             try
             {
-                var json = JsonConvert.SerializeObject(_settings, Formatting.Indented);
-
+                var json = JsonConvert.SerializeObject(_settings, Newtonsoft.Json.Formatting.Indented);
                 File.WriteAllText(_settingsPath, json);
             }
             catch (Exception ex)
             {
-                // TODO: Логирование ошибки
                 Console.WriteLine($"Failed to save settings: {ex.Message}");
             }
         }
 
+        /// <summary>Тема приложения (Dark, Light, Sepia)</summary>
         public string Theme
         {
             get => _settings.Theme;
             set
             {
                 _settings.Theme = value;
-                Save(); // Автосохранение при изменении
+                Save();
             }
         }
 
+        /// <summary>Язык интерфейса (ru, uk, en)</summary>
         public string Language
         {
             get => _settings.Language;
             set
             {
                 _settings.Language = value;
-                Save(); // Автосохранение
+                Save();
             }
         }
 
+        /// <summary>Последний открытый проект (полный путь к .writersword файлу)</summary>
         public string? LastOpenedProject
         {
             get => _settings.LastOpenedProject;
             set
             {
                 _settings.LastOpenedProject = value;
-                Save(); // Автосохранение
+                Save();
             }
         }
 
-        /// <summary>Класс для JSON сериализации</summary>
+        /// <summary>Папка для проектов по умолчанию</summary>
+        public string DefaultProjectsFolder
+        {
+            get => _settings.DefaultProjectsFolder;
+            set
+            {
+                _settings.DefaultProjectsFolder = value;
+                Save();
+            }
+        }
+
+        /// <summary>Последний использованный путь (для диалогов Open/Save)</summary>
+        public string? LastUsedPath
+        {
+            get => _settings.LastUsedPath;
+            set
+            {
+                _settings.LastUsedPath = value;
+                Save();
+            }
+        }
+
+        /// <summary>Класс для JSON сериализации настроек</summary>
         private class AppSettings
         {
             public string Theme { get; set; } = "Dark";
             public string Language { get; set; } = "en";
             public string? LastOpenedProject { get; set; }
+            public string DefaultProjectsFolder { get; set; } = string.Empty;
+            public string? LastUsedPath { get; set; }
         }
     }
 }

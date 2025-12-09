@@ -11,7 +11,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
     public class TextEditorViewModel : ReactiveObject
     {
         private EditorDocument _document;
-        private string _plainText = string.Empty; // Для простого TextBox (пока без форматирования)
+        private string _plainText = string.Empty;
 
         /// <summary>Простой текст для отображения в TextBox</summary>
         public string PlainText
@@ -20,7 +20,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             set
             {
                 this.RaiseAndSetIfChanged(ref _plainText, value);
-                _document.IsModified = true; // Отмечаем что документ изменён
+                _document.IsModified = true;
             }
         }
 
@@ -38,18 +38,20 @@ namespace Writersword.Modules.TextEditor.ViewModels
             };
         }
 
-        /// <summary>
-        /// Создать новый документ
-        /// </summary>
+        /// <summary>Создать новый документ</summary>
         public void NewDocument()
         {
             _document = new EditorDocument();
             PlainText = string.Empty;
         }
 
-        /// <summary>
-        /// Получить модель документа для сохранения
-        /// </summary>
+        /// <summary>Загрузить содержимое документа</summary>
+        public void LoadDocument(string content)
+        {
+            PlainText = content;
+        }
+
+        /// <summary>Получить модель документа для сохранения</summary>
         public EditorDocument GetDocument()
         {
             // Пока храним как простой текст в одном параграфе
@@ -61,7 +63,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     new TextFragment { Text = PlainText }
                 }
             });
-
             return _document;
         }
     }

@@ -6,36 +6,42 @@
         Title="{Binding Title}"
         Width="1400"
         Height="900"
-        Background="#1E1E1E">
+        WindowState="Maximized"
+        Background="#1E1E1E"
+        RequestedThemeVariant="Dark">
 
-    <DockPanel>
-        
-        <!-- Меню -->
+	<DockPanel>
+
+		<!-- Меню -->
 		<Menu DockPanel.Dock="Top"
-	           Background="#2D2D30"
-	           Padding="5,3">
+              Background="#2D2D30"
+              Padding="5,3">
 
 			<MenuItem Header="_File" Foreground="#F0F0F0" FontSize="13">
 				<MenuItem Header="New Project"
-						  InputGesture="Ctrl+N"
-						  Command="{Binding NewProjectCommand}" />
+                          InputGesture="Ctrl+N"
+                          Command="{Binding NewProjectCommand}" />
 
 				<MenuItem Header="Open..."
-						  InputGesture="Ctrl+O"
-						  Command="{Binding OpenProjectCommand}" />
+                          InputGesture="Ctrl+O"
+                          Command="{Binding OpenProjectCommand}" />
 
 				<Separator />
 
 				<MenuItem Header="Close" InputGesture="Ctrl+W" />
 
 				<MenuItem Header="Save"
-						  InputGesture="Ctrl+S"
-						  Command="{Binding SaveProjectCommand}" />
+                          InputGesture="Ctrl+S"
+                          Command="{Binding SaveProjectCommand}" />
+
+				<MenuItem Header="Save As..."
+                          InputGesture="Ctrl+Shift+S"
+                          Command="{Binding SaveAsProjectCommand}" />
 
 				<Separator />
 
 				<MenuItem Header="Exit"
-						  Command="{Binding ExitCommand}" />
+                          Command="{Binding ExitCommand}" />
 			</MenuItem>
 
 			<MenuItem Header="_Edit" Foreground="#F0F0F0" FontSize="13">
@@ -49,70 +55,72 @@
 			</MenuItem>
 		</Menu>
 
-        <!-- Document tabs -->
-        <Border DockPanel.Dock="Top" 
+		<!-- Панель с вкладками документов -->
+		<Border DockPanel.Dock="Top"
                 Background="#2D2D30"
-                BorderBrush="#3E3E42"
+                BorderBrush="#3F3F46"
                 BorderThickness="0,0,0,1"
-                Padding="5,3">
-            <StackPanel Orientation="Horizontal" Spacing="0">
-                
-                <!-- Активная вкладка -->
-                <Border Background="#1E1E1E"
-                        BorderBrush="#007ACC"
-                        BorderThickness="0,2,0,0"
-                        Padding="12,6">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock Text="Book1.writersword" 
-                                   Foreground="White"
-                                   FontSize="13"
-                                   VerticalAlignment="Center" />
-                        <Button Content="×" 
-                                Padding="3,0"
-                                Background="Transparent"
-                                Foreground="#999"
-                                FontSize="14"
-                                Cursor="Hand" />
-                    </StackPanel>
-                </Border>
-                
-                <!-- Неактивная вкладка -->
-                <Border Background="#2D2D30"
-                        Padding="12,6"
-                        Cursor="Hand">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock Text="Screenplay.writersword" 
-                                   Foreground="#999"
-                                   FontSize="13"
-                                   VerticalAlignment="Center" />
-                        <Button Content="×" 
-                                Padding="3,0"
-                                Background="Transparent"
-                                Foreground="#666"
-                                FontSize="14" />
-                    </StackPanel>
-                </Border>
-                
-                <!-- Кнопка добавить документ -->
-                <Button Content="+" 
-                        Padding="10,6"
-                        Background="Transparent"
-                        Foreground="#999"
-                        FontSize="16"
-                        Cursor="Hand" />
-                
-            </StackPanel>
-        </Border>
+                Padding="10,5">
 
-        <!-- Модули (маленькие кнопки) -->
-        <Border DockPanel.Dock="Top" 
-                Background="#252526"
-                BorderBrush="#3E3E42"
+			<ScrollViewer HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Disabled">
+
+				<ItemsControl ItemsSource="{Binding OpenTabs}">
+					<ItemsControl.ItemsPanel>
+						<ItemsPanelTemplate>
+							<StackPanel Orientation="Horizontal" Spacing="5" />
+						</ItemsPanelTemplate>
+					</ItemsControl.ItemsPanel>
+
+					<ItemsControl.ItemTemplate>
+						<DataTemplate>
+							<!-- Вкладка -->
+							<Border Background="#3E3E42"
+                                    CornerRadius="4,4,0,0"
+                                    Padding="12,6"
+                                    Cursor="Hand"
+                                    MinWidth="120">
+
+								<StackPanel Orientation="Horizontal" Spacing="8">
+									<!-- Название вкладки -->
+									<TextBlock Text="{Binding Title}"
+                                               Foreground="White"
+                                               FontSize="13"
+                                               VerticalAlignment="Center" />
+
+									<!-- Кнопка закрытия -->
+									<Button Content="×"
+                                            Command="{Binding CloseCommand}"
+                                            Background="Transparent"
+                                            Foreground="#999"
+                                            FontSize="16"
+                                            Padding="4,0"
+                                            VerticalAlignment="Center"
+                                            Cursor="Hand">
+										<Button.Styles>
+											<Style Selector="Button:pointerover">
+												<Setter Property="Foreground" Value="White" />
+												<Setter Property="Background" Value="#555" />
+											</Style>
+										</Button.Styles>
+									</Button>
+								</StackPanel>
+							</Border>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+
+			</ScrollViewer>
+		</Border>
+
+		<!-- Панель с кнопками модулей -->
+		<Border DockPanel.Dock="Top"
+                Background="#2D2D30"
+                BorderBrush="#3F3F46"
                 BorderThickness="0,0,0,1"
-                Padding="8,4">
-            <StackPanel Orientation="Horizontal" Spacing="3">
-                
-                <!-- Writer модуль (Активный модуль) -->
+                Padding="10,5">
+
+			<StackPanel Orientation="Horizontal" Spacing="5">
 				<ToggleButton Content="Writer"
                               IsChecked="True"
                               Padding="10,4"
@@ -120,68 +128,37 @@
                               Foreground="White"
                               FontSize="12"
                               Cursor="Hand" />
-                <!-- Неактивные модули -->
-                <ToggleButton Content="Timeline" 
-                              Padding="10,4"
-                              Background="#3E3E42"
-                              Foreground="#CCC"
-                              FontSize="12"
-                              Cursor="Hand" />
-                
-                <ToggleButton Content="Characters" 
-                              Padding="10,4"
-                              Background="#3E3E42"
-                              Foreground="#CCC"
-                              FontSize="12"
-                              Cursor="Hand" />
-                
-                <ToggleButton Content="Statistics" 
-                              Padding="10,4"
-                              Background="#3E3E42"
-                              Foreground="#CCC"
-                              FontSize="12"
-                              Cursor="Hand" />
-                
-                <ToggleButton Content="Synonyms" 
-                              Padding="10,4"
-                              Background="#3E3E42"
-                              Foreground="#CCC"
-                              FontSize="12"
-                              Cursor="Hand" />
-                
-                <ToggleButton Content="Notes" 
-                              Padding="10,4"
-                              Background="#3E3E42"
-                              Foreground="#CCC"
-                              FontSize="12"
-                              Cursor="Hand" />
-                
-            </StackPanel>
-        </Border>
 
-        <!-- Status Bar -->
-        <Border DockPanel.Dock="Bottom" 
-                Background="#007ACC" 
-                Padding="8,3">
-            <Grid>
-                <TextBlock Text="Ready" 
-                           Foreground="White"
-                           FontSize="12" />
-                <StackPanel HorizontalAlignment="Right" 
-                            Orientation="Horizontal" 
-                            Spacing="15">
-                    <TextBlock Text="Words: 0" Foreground="White" FontSize="12" />
-                    <TextBlock Text="Lines: 1" Foreground="White" FontSize="12" />
-                </StackPanel>
-            </Grid>
-        </Border>
+				<ToggleButton Content="Timeline"
+                              Padding="10,4"
+                              Background="#3E3E42"
+                              Foreground="#CCC"
+                              FontSize="12"
+                              Cursor="Hand" />
 
-        <!-- Центральная область -->
+				<ToggleButton Content="Characters"
+                              Padding="10,4"
+                              Background="#3E3E42"
+                              Foreground="#CCC"
+                              FontSize="12"
+                              Cursor="Hand" />
+			</StackPanel>
+		</Border>
 
-		<!-- Центральная область -->
+		<!-- Статус бар -->
+		<Border DockPanel.Dock="Bottom"
+                Background="#007ACC"
+                Padding="10,4">
+			<StackPanel Orientation="Horizontal" Spacing="20">
+				<TextBlock Text="Words: 1,234" Foreground="White" FontSize="12" />
+				<TextBlock Text="Lines: 56" Foreground="White" FontSize="12" />
+			</StackPanel>
+		</Border>
+
+		<!-- Центральная область контента -->
 		<ContentControl Content="{Binding CurrentModule}"
-						Background="#252526" />
-        
-    </DockPanel>
+                        Background="#252526" />
+
+	</DockPanel>
 
 </Window>

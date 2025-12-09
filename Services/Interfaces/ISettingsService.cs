@@ -25,5 +25,11 @@ namespace Writersword.Services.Interfaces
 
         /// <summary>Последний открытый проект</summary>
         string? LastOpenedProject { get; set; }
+
+        /// <summary>Папка для проектов по умолчанию</summary>
+        string DefaultProjectsFolder { get; set; }
+
+        /// <summary>Последний использованный путь (для диалога Save/Open)</summary>
+        string? LastUsedPath { get; set; }
     }
 }

@@ -1,0 +1,22 @@
+{
+  "Title": "My Test Book",
+  "Type": 0,
+  "FormatVersion": "1.0",
+  "CreatedAt": "2025-12-08T10:00:00",
+  "LastModified": "2025-12-08T10:00:00",
+  "Documents": [
+    {
+      "Id": "doc-001",
+      "Title": "Chapter 1",
+      "Content": "It was a dark and stormy night when our hero began the journey...",
+      "IsActive": true
+    },
+    {
+      "Id": "doc-002",
+      "Title": "Chapter 2",
+      "Content": "The next morning, everything had changed.",
+      "IsActive": false
+    }
+  ],
+  "ModulesData": {}
+}

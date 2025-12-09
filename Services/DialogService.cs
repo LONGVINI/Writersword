@@ -1,9 +1,10 @@
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Avalonia.Threading;
 using Writersword.Services.Interfaces;
 
 namespace Writersword.Services
@@ -49,17 +50,22 @@ namespace Writersword.Services
         {
             if (_mainWindow == null) return null;
 
+            // Получаем путь по умолчанию
+            var settingsService = App.Services.GetRequiredService<ISettingsService>();
+            var defaultFolder = settingsService.DefaultProjectsFolder;
+            
             var file = await _mainWindow.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = "Save Writersword Project",
                 DefaultExtension = "writersword",
-                SuggestedFileName = "Untitled", // Имя по умолчанию
+                SuggestedFileName = "Untitled",
+                SuggestedStartLocation = await _mainWindow.StorageProvider.TryGetFolderFromPathAsync(defaultFolder),
                 FileTypeChoices = new List<FilePickerFileType>
-                {
-                    new("Writersword Project") { Patterns = new[] { "*.writersword" } }
-                }
+        {
+            new("Writersword Project") { Patterns = new[] { "*.writersword" } }
+        }
             });
-
+            
             return file?.Path.LocalPath;
         }
 

@@ -1,6 +1,4 @@
 ﻿using Avalonia.Controls;
-using Avalonia.Interactivity;
-using Writersword.ViewModels;
 
 namespace Writersword.Views
 {
