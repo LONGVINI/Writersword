@@ -30,12 +30,8 @@ namespace Writersword.Services
                 FormatVersion = "1.0"
             };
 
-            // Добавляем первый документ
-            project.Documents.Add(new DocumentTab
-            {
-                Title = "Document 1",
-                IsActive = true
-            });
+            // НЕ ДОБАВЛЯЕМ НИКАКИХ ДОКУМЕНТОВ!
+            // Пользователь сам создаст вкладки через Welcome окно или кнопку "+"
 
             _currentProject = project;
             _currentFilePath = null; // Ещё не сохранён

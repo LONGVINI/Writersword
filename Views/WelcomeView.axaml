@@ -28,6 +28,29 @@
 					<RowDefinition Height="*" />
 				</Grid.RowDefinitions>
 
+				<!-- Кнопка закрытия (показывается только если есть открытый проект) -->
+				<Button Grid.Row="0"
+                        Content="✕"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        Width="32"
+                        Height="32"
+                        Margin="0,-20,-20,0"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Foreground="#858585"
+                        FontSize="18"
+                        Cursor="Hand"
+                        Click="CloseButton_Click"
+                        IsVisible="{Binding CanClose}">
+					<Button.Styles>
+						<Style Selector="Button:pointerover">
+							<Setter Property="Foreground" Value="White" />
+							<Setter Property="Background" Value="#3A3A3C" />
+						</Style>
+					</Button.Styles>
+				</Button>
+
 				<!-- Заголовок -->
 				<StackPanel Grid.Row="0" Margin="0,0,0,30">
 					<TextBlock Text="Writersword"
@@ -42,7 +65,7 @@
                                Margin="0,5,0,0" />
 				</StackPanel>
 
-				<!-- Основной контент -->
+				<!-- Основной контент (остаётся прежним) -->
 				<Grid Grid.Row="1">
 					<Grid.ColumnDefinitions>
 						<ColumnDefinition Width="*" />

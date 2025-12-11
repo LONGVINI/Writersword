@@ -19,5 +19,8 @@ namespace Writersword.Core.Models.Project
 
         /// <summary>Активная вкладка (выбрана сейчас)</summary>
         public bool IsActive { get; set; } = false;
+
+        /// <summary>Путь к файлу документа</summary>
+        public string? FilePath { get; set; }
     }
 }

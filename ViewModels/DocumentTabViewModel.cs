@@ -12,6 +12,7 @@ namespace Writersword.ViewModels
     {
         private readonly DocumentTab _model;
         private readonly Action<DocumentTabViewModel>? _onClose;
+        private bool _isActive;
 
         /// <summary>ID документа</summary>
         public string Id => _model.Id;
@@ -38,6 +39,18 @@ namespace Writersword.ViewModels
             }
         }
 
+        /// <summary>Активна ли вкладка</summary>
+        public bool IsActive
+        {
+            get => _isActive;
+            set
+            {
+                _isActive = value;
+                _model.IsActive = value;
+                this.RaisePropertyChanged();
+            }
+        }
+
         /// <summary>Команда закрытия вкладки</summary>
         public ReactiveCommand<Unit, Unit> CloseCommand { get; }
 
@@ -45,6 +58,7 @@ namespace Writersword.ViewModels
         {
             _model = model;
             _onClose = onClose;
+            _isActive = model.IsActive;
 
             // Команда закрытия
             CloseCommand = ReactiveCommand.Create(() => _onClose?.Invoke(this));

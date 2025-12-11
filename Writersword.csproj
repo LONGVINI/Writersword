@@ -6,7 +6,7 @@
 
 	<PropertyGroup>
 		<OutputType>WinExe</OutputType>
-		<TargetFramework>net8.0</TargetFramework>
+		<TargetFramework>net10.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<BuiltInComInteropSupport>true</BuiltInComInteropSupport>
 		<!--<ApplicationIcon>Resources\Icons\app-icon.ico</ApplicationIcon>-->
@@ -18,6 +18,7 @@
 		<Company>Writersword Team</Company>
 		<Copyright>Copyright © 2025</Copyright>
 		<Description>Multi-modal writing application for writers, poets, screenwriters, and game developers</Description>
+		<CoreCompileDependsOn>PrepareResources;$(CompileDependsOn)</CoreCompileDependsOn>
 	</PropertyGroup>
 
 	<!-- ========================================
@@ -25,11 +26,11 @@
        ======================================== -->
 
 	<ItemGroup>
-		<PackageReference Include="Avalonia" Version="11.3.8" />
-		<PackageReference Include="Avalonia.Desktop" Version="11.3.8" />
+		<PackageReference Include="Avalonia" Version="11.3.9" />
+		<PackageReference Include="Avalonia.Desktop" Version="11.3.9" />
 		<PackageReference Include="Avalonia.ReactiveUI" Version="11.3.8" />
-		<PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.8" />
-		<PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.8" />
+		<PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.9" />
+		<PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.9" />
 		<PackageReference Include="Dock.Avalonia" Version="11.3.8" />
 		<PackageReference Include="Dock.Model.Avalonia" Version="11.3.8" />
 	</ItemGroup>
@@ -59,7 +60,7 @@
        ======================================== -->
 
 	<ItemGroup>
-		<AvaloniaResource Include="Resources\**" />
+		<AvaloniaResource Include="Resources\**" Exclude="Resources\Localization\**" />
 		<AvaloniaResource Include="Styles\**" />
 	</ItemGroup>
 
@@ -83,10 +84,52 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <AvaloniaResource Remove="Resources\Localization\Strings.resx" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <EmbeddedResource Remove="Resources\Localization\Strings.resx" />
+	  <EmbeddedResource Remove="Resources\Localization\Strings.ru.resx" />
+	</ItemGroup>
+
+	<ItemGroup>
 	  <Folder Include="Models\" />
 	  <Folder Include="Resources\Images\" />
 	  <Folder Include="Src\Modules\Timer\" />
 	  <Folder Include="Projects\" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <AvaloniaResource Update="Resources\Localization\Strings.Designer.cs">
+	    <DesignTime>True</DesignTime>
+	    <AutoGen>True</AutoGen>
+	    <DependentUpon>Strings.resx</DependentUpon>
+	  </AvaloniaResource>
+	</ItemGroup>
+
+    <!-- ============
+	  	 Localization
+		 ============ -->
+
+	<ItemGroup>
+		<AvaloniaResource Include="Resources\**" Exclude="Resources\Localization\**" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<EmbeddedResource Include="Resources\Localization\Strings.resx">
+			<Generator>PublicResXFileCodeGenerator</Generator>
+			<LastGenOutput>Strings.Designer.cs</LastGenOutput>
+		</EmbeddedResource>
+		<EmbeddedResource Include="Resources\Localization\Strings.ru.resx">
+			<DependentUpon>Strings.resx</DependentUpon>
+		</EmbeddedResource>
+	</ItemGroup>
+
+	<ItemGroup>
+		<Compile Update="Resources\Localization\Strings.Designer.cs">
+			<DesignTime>True</DesignTime>
+			<AutoGen>True</AutoGen>
+			<DependentUpon>Strings.resx</DependentUpon>
+		</Compile>
+	</ItemGroup>
 </Project>

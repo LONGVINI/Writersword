@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Writersword.ViewModels"
+        xmlns:loc="using:Writersword.Resources.Localization"
         x:Class="Writersword.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding Title}"
@@ -17,102 +18,160 @@
               Background="#2D2D30"
               Padding="5,3">
 
-			<MenuItem Header="_File" Foreground="#F0F0F0" FontSize="13">
-				<MenuItem Header="New Project"
+			<MenuItem Header="{x:Static loc:Strings.Menu_File}" Foreground="#F0F0F0" FontSize="13">
+				<MenuItem Header="{x:Static loc:Strings.Menu_NewProject}"
                           InputGesture="Ctrl+N"
                           Command="{Binding NewProjectCommand}" />
 
-				<MenuItem Header="Open..."
+				<MenuItem Header="{x:Static loc:Strings.Menu_Open}"
                           InputGesture="Ctrl+O"
                           Command="{Binding OpenProjectCommand}" />
 
 				<Separator />
 
-				<MenuItem Header="Close" InputGesture="Ctrl+W" />
+				<MenuItem Header="{x:Static loc:Strings.Menu_Close}" InputGesture="Ctrl+W" />
 
-				<MenuItem Header="Save"
+				<MenuItem Header="{x:Static loc:Strings.Menu_Save}"
                           InputGesture="Ctrl+S"
                           Command="{Binding SaveProjectCommand}" />
 
-				<MenuItem Header="Save As..."
+				<MenuItem Header="{x:Static loc:Strings.Menu_SaveAs}"
                           InputGesture="Ctrl+Shift+S"
                           Command="{Binding SaveAsProjectCommand}" />
 
 				<Separator />
 
-				<MenuItem Header="Exit"
+				<MenuItem Header="{x:Static loc:Strings.Menu_Exit}"
                           Command="{Binding ExitCommand}" />
 			</MenuItem>
 
-			<MenuItem Header="_Edit" Foreground="#F0F0F0" FontSize="13">
-				<MenuItem Header="Undo" InputGesture="Ctrl+Z" />
-				<MenuItem Header="Redo" InputGesture="Ctrl+Y" />
+			<MenuItem Header="{x:Static loc:Strings.Menu_Edit}" Foreground="#F0F0F0" FontSize="13">
+				<MenuItem Header="{x:Static loc:Strings.Menu_Undo}" InputGesture="Ctrl+Z" />
+				<MenuItem Header="{x:Static loc:Strings.Menu_Redo}" InputGesture="Ctrl+Y" />
 			</MenuItem>
 
-			<MenuItem Header="_View" Foreground="#F0F0F0" FontSize="13">
-				<MenuItem Header="Modules" />
-				<MenuItem Header="Settings" />
+			<MenuItem Header="{x:Static loc:Strings.Menu_View}" Foreground="#F0F0F0" FontSize="13">
+				<MenuItem Header="{x:Static loc:Strings.Menu_Modules}" />
+				<MenuItem Header="{x:Static loc:Strings.Menu_Settings}" />
 			</MenuItem>
 		</Menu>
 
 		<!-- Панель с вкладками документов -->
 		<Border DockPanel.Dock="Top"
-                Background="#2D2D30"
-                BorderBrush="#3F3F46"
-                BorderThickness="0,0,0,1"
-                Padding="10,5">
+				Background="#2D2D30"
+				BorderBrush="#3F3F46"
+				BorderThickness="0,0,0,1"
+				Padding="5,0,5,0">
 
 			<ScrollViewer HorizontalScrollBarVisibility="Auto"
-                          VerticalScrollBarVisibility="Disabled">
+						  VerticalScrollBarVisibility="Disabled">
 
-				<ItemsControl ItemsSource="{Binding OpenTabs}">
-					<ItemsControl.ItemsPanel>
-						<ItemsPanelTemplate>
-							<StackPanel Orientation="Horizontal" Spacing="5" />
-						</ItemsPanelTemplate>
-					</ItemsControl.ItemsPanel>
+				<StackPanel Orientation="Horizontal" Spacing="2">
+					<!-- Список вкладок -->
+					<ItemsControl ItemsSource="{Binding OpenTabs}">
+						<ItemsControl.ItemsPanel>
+							<ItemsPanelTemplate>
+								<StackPanel Orientation="Horizontal" Spacing="-8" />
+							</ItemsPanelTemplate>
+						</ItemsControl.ItemsPanel>
 
-					<ItemsControl.ItemTemplate>
-						<DataTemplate>
-							<!-- Вкладка -->
-							<Border Background="#3E3E42"
-                                    CornerRadius="4,4,0,0"
-                                    Padding="12,6"
-                                    Cursor="Hand"
-                                    MinWidth="120">
+						<ItemsControl.ItemTemplate>
+							<DataTemplate>
+								<!-- Вкладка с закруглением в стиле Chrome -->
+								<Border Background="{Binding IsActive, Converter={StaticResource TabBackgroundConverter}}"
+										CornerRadius="8,8,0,0"
+										Padding="12,6,8,6"
+										Cursor="Hand"
+										Width="160"
+										Height="32"
+										Margin="0,4,0,0"
+										PointerPressed="Tab_PointerPressed">
 
-								<StackPanel Orientation="Horizontal" Spacing="8">
-									<!-- Название вкладки -->
-									<TextBlock Text="{Binding Title}"
-                                               Foreground="White"
-                                               FontSize="13"
-                                               VerticalAlignment="Center" />
+									<Border.Styles>
+										<!-- Hover эффект -->
+										<Style Selector="Border:pointerover">
+											<Setter Property="Background" Value="#2A2D2E" />
+										</Style>
+									</Border.Styles>
 
-									<!-- Кнопка закрытия -->
-									<Button Content="×"
-                                            Command="{Binding CloseCommand}"
-                                            Background="Transparent"
-                                            Foreground="#999"
-                                            FontSize="16"
-                                            Padding="4,0"
-                                            VerticalAlignment="Center"
-                                            Cursor="Hand">
-										<Button.Styles>
-											<Style Selector="Button:pointerover">
-												<Setter Property="Foreground" Value="White" />
-												<Setter Property="Background" Value="#555" />
-											</Style>
-										</Button.Styles>
-									</Button>
-								</StackPanel>
-							</Border>
-						</DataTemplate>
-					</ItemsControl.ItemTemplate>
-				</ItemsControl>
+									<Grid ColumnDefinitions="*,Auto">
+										<!-- Название документа с градиентом исчезновения -->
+										<Border Grid.Column="0" ClipToBounds="True">
+											<Border.OpacityMask>
+												<LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+													<GradientStop Color="White" Offset="0"/>
+													<GradientStop Color="White" Offset="0.8"/>
+													<GradientStop Color="Transparent" Offset="1"/>
+												</LinearGradientBrush>
+											</Border.OpacityMask>
+											<TextBlock Text="{Binding Title}"
+													   Foreground="{Binding IsActive, Converter={StaticResource TabForegroundConverter}}"
+													   FontSize="12"
+													   VerticalAlignment="Center"
+													   Margin="0,0,8,0" />
+										</Border>
+
+										<!-- Кнопка закрытия (крестик) -->
+										<Button Grid.Column="1"
+												Command="{Binding CloseCommand}"
+												Background="Transparent"
+												BorderThickness="0"
+												Width="16"
+												Height="16"
+												Padding="2"
+												CornerRadius="3"
+												VerticalAlignment="Center"
+												HorizontalAlignment="Center"
+												Cursor="Hand">
+											<Viewbox Width="10" Height="10">
+												<TextBlock Text="✕"
+														   Foreground="#858585"
+														   FontSize="16"
+														   HorizontalAlignment="Center"
+														   VerticalAlignment="Center"/>
+											</Viewbox>
+											<Button.Styles>
+												<Style Selector="Button:pointerover /template/ TextBlock">
+													<Setter Property="Foreground" Value="White" />
+												</Style>
+												<Style Selector="Button:pointerover">
+													<Setter Property="Background" Value="#4A4A4A" />
+												</Style>
+											</Button.Styles>
+										</Button>
+									</Grid>
+								</Border>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+
+					<!-- Кнопка создания новой вкладки -->
+					<Button Content="+"
+							Command="{Binding CreateNewTabCommand}"
+							Background="Transparent"
+							Foreground="#858585"
+							FontSize="16"
+							Width="30"
+							Height="28"
+							Padding="0"
+							BorderThickness="0"
+							CornerRadius="4"
+							HorizontalContentAlignment="Center"
+							VerticalContentAlignment="Center"
+							Cursor="Hand"
+							Margin="8,4,0,0">
+						<Button.Styles>
+							<Style Selector="Button:pointerover">
+								<Setter Property="Background" Value="#3A3A3C" />
+								<Setter Property="Foreground" Value="White" />
+							</Style>
+						</Button.Styles>
+					</Button>
+				</StackPanel>
 
 			</ScrollViewer>
 		</Border>
-
+		
 		<!-- Панель с кнопками модулей -->
 		<Border DockPanel.Dock="Top"
                 Background="#2D2D30"
@@ -121,7 +180,7 @@
                 Padding="10,5">
 
 			<StackPanel Orientation="Horizontal" Spacing="5">
-				<ToggleButton Content="Writer"
+				<ToggleButton Content="{x:Static loc:Strings.Module_Writer}"
                               IsChecked="True"
                               Padding="10,4"
                               Background="#007ACC"
@@ -129,14 +188,14 @@
                               FontSize="12"
                               Cursor="Hand" />
 
-				<ToggleButton Content="Timeline"
+				<ToggleButton Content="{x:Static loc:Strings.Module_Timeline}"
                               Padding="10,4"
                               Background="#3E3E42"
                               Foreground="#CCC"
                               FontSize="12"
                               Cursor="Hand" />
 
-				<ToggleButton Content="Characters"
+				<ToggleButton Content="{x:Static loc:Strings.Module_Characters}"
                               Padding="10,4"
                               Background="#3E3E42"
                               Foreground="#CCC"
@@ -150,8 +209,14 @@
                 Background="#007ACC"
                 Padding="10,4">
 			<StackPanel Orientation="Horizontal" Spacing="20">
-				<TextBlock Text="Words: 1,234" Foreground="White" FontSize="12" />
-				<TextBlock Text="Lines: 56" Foreground="White" FontSize="12" />
+				<TextBlock Foreground="White" FontSize="12">
+					<Run Text="{x:Static loc:Strings.Status_Words}" />
+					<Run Text=" 1,234" />
+				</TextBlock>
+				<TextBlock Foreground="White" FontSize="12">
+					<Run Text="{x:Static loc:Strings.Status_Lines}" />
+					<Run Text=" 56" />
+				</TextBlock>
 			</StackPanel>
 		</Border>
 

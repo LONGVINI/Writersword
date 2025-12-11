@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  
+  <!-- ============================================ -->
+  <!-- WELCOME SCREEN                              -->
+  <!-- ============================================ -->
+  
+  <data name="Welcome_Title" xml:space="preserve">
+    <value>Writersword</value>
+  </data>
+  <data name="Welcome_Subtitle" xml:space="preserve">
+    <value>Выберите, как начать</value>
+  </data>
+  <data name="Welcome_NewProject" xml:space="preserve">
+    <value>📝 Новый Проект</value>
+  </data>
+  <data name="Welcome_OpenProject" xml:space="preserve">
+    <value>📂 Открыть Проект</value>
+  </data>
+  <data name="Welcome_CreateButton" xml:space="preserve">
+    <value>Создать Проект</value>
+  </data>
+  <data name="Welcome_BrowseButton" xml:space="preserve">
+    <value>Обзор...</value>
+  </data>
+  <data name="Welcome_RecentProjects" xml:space="preserve">
+    <value>Недавние Проекты:</value>
+  </data>
+  
+  <!-- ============================================ -->
+  <!-- PROJECT TYPES                               -->
+  <!-- ============================================ -->
+  
+  <data name="ProjectType_Novel" xml:space="preserve">
+    <value>📖 Роман / Книга</value>
+  </data>
+  <data name="ProjectType_Screenplay" xml:space="preserve">
+    <value>🎬 Сценарий</value>
+  </data>
+  <data name="ProjectType_Poetry" xml:space="preserve">
+    <value>✍️ Поэтический Сборник</value>
+  </data>
+  <data name="ProjectType_GameDesign" xml:space="preserve">
+    <value>🎮 Гейм-Дизайн Документ</value>
+  </data>
+  
+  <!-- ============================================ -->
+  <!-- MAIN MENU                                   -->
+  <!-- ============================================ -->
+  
+  <data name="Menu_File" xml:space="preserve">
+    <value>_Файл</value>
+  </data>
+  <data name="Menu_Edit" xml:space="preserve">
+    <value>_Правка</value>
+  </data>
+  <data name="Menu_View" xml:space="preserve">
+    <value>_Вид</value>
+  </data>
+  <data name="Menu_Tools" xml:space="preserve">
+    <value>_Инструменты</value>
+  </data>
+  <data name="Menu_Help" xml:space="preserve">
+    <value>_Справка</value>
+  </data>
+  
+  <!-- ============================================ -->
+  <!-- FILE MENU                                   -->
+  <!-- ============================================ -->
+  
+  <data name="Menu_NewProject" xml:space="preserve">
+    <value>Новый Проект</value>
+  </data>
+  <data name="Menu_Open" xml:space="preserve">
+    <value>Открыть...</value>
+  </data>
+  <data name="Menu_Close" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="Menu_Save" xml:space="preserve">
+    <value>Сохранить</value>
+  </data>
+  <data name="Menu_SaveAs" xml:space="preserve">
+    <value>Сохранить как...</value>
+  </data>
+  <data name="Menu_Exit" xml:space="preserve">
+    <value>Выход</value>
+  </data>
+  
+  <!-- ============================================ -->
+  <!-- EDIT MENU                                   -->
+  <!-- ============================================ -->
+  
+  <data name="Menu_Undo" xml:space="preserve">
+    <value>Отменить</value>
+  </data>
+  <data name="Menu_Redo" xml:space="preserve">
+    <value>Повторить</value>
+  </data>
+  
+  <!-- ============================================ -->
+  <!-- VIEW MENU                                   -->
+  <!-- ============================================ -->
+  
+  <data name="Menu_Modules" xml:space="preserve">
+    <value>Модули</value>
+  </data>
+  <data name="Menu_Settings" xml:space="preserve">
+    <value>Настройки</value>
+  </data>
+  
+  <!-- ============================================ -->
+  <!-- MODULES                                     -->
+  <!-- ============================================ -->
+  
+  <data name="Module_Writer" xml:space="preserve">
+    <value>Редактор</value>
+  </data>
+  <data name="Module_Timeline" xml:space="preserve">
+    <value>Таймлайн</value>
+  </data>
+  <data name="Module_Characters" xml:space="preserve">
+    <value>Персонажи</value>
+  </data>
+  <data name="Module_Statistics" xml:space="preserve">
+    <value>Статистика</value>
+  </data>
+  <data name="Module_Synonyms" xml:space="preserve">
+    <value>Синонимы</value>
+  </data>
+  <data name="Module_Notes" xml:space="preserve">
+    <value>Заметки</value>
+  </data>
+  
+  <!-- ============================================ -->
+  <!-- STATUS BAR                                  -->
+  <!-- ============================================ -->
+  
+  <data name="Status_Words" xml:space="preserve">
+    <value>Слов:</value>
+  </data>
+  <data name="Status_Lines" xml:space="preserve">
+    <value>Строк:</value>
+  </data>
+  
+  <!-- ============================================ -->
+  <!-- COMMON BUTTONS                              -->
+  <!-- ============================================ -->
+  
+  <data name="Common_OK" xml:space="preserve">
+    <value>ОК</value>
+  </data>
+  <data name="Common_Cancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="Common_Apply" xml:space="preserve">
+    <value>Применить</value>
+  </data>
+  <data name="Common_Close" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  
+  <!-- ============================================ -->
+  <!-- SETTINGS                                    -->
+  <!-- ============================================ -->
+  
+  <data name="Settings_Title" xml:space="preserve">
+    <value>Настройки</value>
+  </data>
+  <data name="Settings_Language" xml:space="preserve">
+    <value>Язык:</value>
+  </data>
+  <data name="Settings_Theme" xml:space="preserve">
+    <value>Тема:</value>
+  </data>
+</root>

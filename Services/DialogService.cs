@@ -50,23 +50,52 @@ namespace Writersword.Services
         {
             if (_mainWindow == null) return null;
 
-            // Получаем путь по умолчанию
-            var settingsService = App.Services.GetRequiredService<ISettingsService>();
-            var defaultFolder = settingsService.DefaultProjectsFolder;
-            
-            var file = await _mainWindow.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            try
             {
-                Title = "Save Writersword Project",
-                DefaultExtension = "writersword",
-                SuggestedFileName = "Untitled",
-                SuggestedStartLocation = await _mainWindow.StorageProvider.TryGetFolderFromPathAsync(defaultFolder),
-                FileTypeChoices = new List<FilePickerFileType>
-        {
-            new("Writersword Project") { Patterns = new[] { "*.writersword" } }
-        }
-            });
-            
-            return file?.Path.LocalPath;
+                // Получаем путь по умолчанию
+                var settingsService = App.Services.GetRequiredService<ISettingsService>();
+                var defaultFolder = settingsService.DefaultProjectsFolder;
+
+                IStorageFolder? suggestedFolder = null;
+
+                // Пытаемся получить папку, если путь корректен
+                if (!string.IsNullOrEmpty(defaultFolder) && System.IO.Directory.Exists(defaultFolder))
+                {
+                    suggestedFolder = await _mainWindow.StorageProvider.TryGetFolderFromPathAsync(defaultFolder);
+                }
+
+                var file = await _mainWindow.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+                {
+                    Title = "Save Writersword Project",
+                    DefaultExtension = "writersword",
+                    SuggestedFileName = "Untitled",
+                    SuggestedStartLocation = suggestedFolder,
+                    FileTypeChoices = new List<FilePickerFileType>
+                    {
+                        new("Writersword Project") { Patterns = new[] { "*.writersword" } }
+                    }
+                });
+
+                return file?.Path.LocalPath;
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine($"SaveFileAsync error: {ex.Message}");
+
+                // Если ошибка - показываем диалог без suggested folder
+                var file = await _mainWindow.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+                {
+                    Title = "Save Writersword Project",
+                    DefaultExtension = "writersword",
+                    SuggestedFileName = "Untitled",
+                    FileTypeChoices = new List<FilePickerFileType>
+                    {
+                        new("Writersword Project") { Patterns = new[] { "*.writersword" } }
+                    }
+                });
+
+                return file?.Path.LocalPath;
+            }
         }
 
         /// <summary>Показать простое окно с сообщением</summary>
@@ -76,7 +105,6 @@ namespace Writersword.Services
 
             await Dispatcher.UIThread.InvokeAsync(async () =>
             {
-
                 // Создаём простое модальное окно
                 var dialog = new Window
                 {
@@ -89,22 +117,22 @@ namespace Writersword.Services
                     {
                         Margin = new Avalonia.Thickness(20),
                         Children =
-                    {
-                        new TextBlock
                         {
-                            Text = message,
-                            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                            Margin = new Avalonia.Thickness(0, 0, 0, 20)
-                        },
-                        new Button
-                        {
-                            Content = "OK",
-                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                            Padding = new Avalonia.Thickness(30, 10)
+                            new TextBlock
+                            {
+                                Text = message,
+                                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                                Margin = new Avalonia.Thickness(0, 0, 0, 20)
+                            },
+                            new Button
+                            {
+                                Content = "OK",
+                                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                                Padding = new Avalonia.Thickness(30, 10)
+                            }
                         }
                     }
-                }
-            };
+                };
 
                 // Привязываем закрытие окна к кнопке OK
                 if (dialog.Content is StackPanel panel && panel.Children[1] is Button okButton)

@@ -1,4 +1,5 @@
 ﻿using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Writersword.ViewModels;
 
 namespace Writersword.Views
@@ -20,6 +21,12 @@ namespace Writersword.Views
                 // Когда проект выбран - закрываем окно
                 viewModel.ProjectSelected += () => Close();
             }
+        }
+
+        /// <summary>Обработчик кнопки закрытия окна</summary>
+        private void CloseButton_Click(object? sender, RoutedEventArgs e)
+        {
+            Close();
         }
     }
 }

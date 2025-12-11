@@ -6,6 +6,7 @@ using Writersword.Core.Enums;
 using Writersword.Core.Models.Project;
 using Writersword.Services;
 using Writersword.Services.Interfaces;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Writersword.ViewModels
 {
@@ -20,12 +21,20 @@ namespace Writersword.ViewModels
         private readonly IProjectService _projectService;
 
         private ProjectType _selectedProjectType = ProjectType.Novel;
+        private bool _canClose;
 
         /// <summary>Выбранный тип проекта</summary>
         public ProjectType SelectedProjectType
         {
             get => _selectedProjectType;
             set => this.RaiseAndSetIfChanged(ref _selectedProjectType, value);
+        }
+
+        /// <summary>Можно ли закрыть окно (есть ли открытый проект с вкладками)</summary>
+        public bool CanClose
+        {
+            get => _canClose;
+            set => this.RaiseAndSetIfChanged(ref _canClose, value);
         }
 
         /// <summary>Список недавних проектов</summary>
@@ -54,7 +63,11 @@ namespace Writersword.ViewModels
 
             _settingsService.Load();
 
-            // Создаём команды с MainThreadScheduler
+            // CanClose = true только если есть проект И есть хотя бы одна вкладка
+            _canClose = _projectService.CurrentProject != null &&
+                        _projectService.CurrentProject.Documents.Count > 0;
+
+            // Создаём команды
             NewProjectCommand = ReactiveCommand.CreateFromTask(
                 CreateNewProject,
                 outputScheduler: RxApp.MainThreadScheduler
@@ -79,6 +92,7 @@ namespace Writersword.ViewModels
         {
             // Спрашиваем где сохранить
             var savePath = await _dialogService.SaveFileAsync();
+
             if (string.IsNullOrEmpty(savePath))
             {
                 return; // Отменено
@@ -87,18 +101,29 @@ namespace Writersword.ViewModels
             // Имя проекта = имя файла
             var projectName = System.IO.Path.GetFileNameWithoutExtension(savePath);
 
-            // Создаём проект
-            var project = _projectService.CreateNew(projectName, SelectedProjectType);
-
-            // Сохраняем
-            var success = await _projectService.SaveAsync(project, savePath);
-            if (success)
+            // Если это ПЕРВЫЙ проект (нет текущего проекта)
+            if (_projectService.CurrentProject == null)
             {
-                _settingsService.LastOpenedProject = savePath;
+                // Создаём новый проект
+                var project = _projectService.CreateNew(projectName, SelectedProjectType);
 
-                // Закрываем окно
-                ProjectSelected?.Invoke();
+                // Сохраняем
+                var success = await _projectService.SaveAsync(project, savePath);
+
+                if (success)
+                {
+                    _settingsService.LastOpenedProject = savePath;
+                }
             }
+            else
+            {
+                // Проект уже существует - добавляем новую вкладку через MainWindowViewModel
+                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+                mainViewModel?.AddNewTab(projectName, "", savePath);
+            }
+
+            // Закрываем окно
+            ProjectSelected?.Invoke();
         }
 
         /// <summary>Открыть существующий проект</summary>
@@ -107,28 +132,60 @@ namespace Writersword.ViewModels
             var path = await _dialogService.OpenFileAsync();
             if (!string.IsNullOrEmpty(path))
             {
-                var project = await _projectService.LoadAsync(path);
-                if (project != null)
-                {
-                    _settingsService.LastOpenedProject = path;
+                var fileName = System.IO.Path.GetFileNameWithoutExtension(path);
 
-                    // Закрываем окно
-                    ProjectSelected?.Invoke();
+                // Если это ПЕРВЫЙ проект (нет текущего проекта)
+                if (_projectService.CurrentProject == null)
+                {
+                    var project = await _projectService.LoadAsync(path);
+                    if (project != null)
+                    {
+                        _settingsService.LastOpenedProject = path;
+                    }
                 }
+                else
+                {
+                    // Проект уже существует - добавляем новую вкладку с содержимым файла
+                    var fileContent = System.IO.File.Exists(path)
+                        ? await System.IO.File.ReadAllTextAsync(path)
+                        : "";
+
+                    var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+                    mainViewModel?.AddNewTab(fileName, fileContent, path);
+                }
+
+                // Закрываем окно
+                ProjectSelected?.Invoke();
             }
         }
 
         /// <summary>Открыть недавний проект</summary>
         private async void OpenRecentProject(RecentProject recent)
         {
-            var project = await _projectService.LoadAsync(recent.Path);
-            if (project != null)
-            {
-                _settingsService.LastOpenedProject = recent.Path;
+            var fileName = System.IO.Path.GetFileNameWithoutExtension(recent.Path);
 
-                // Закрываем окно
-                ProjectSelected?.Invoke();
+            // Если это ПЕРВЫЙ проект (нет текущего проекта)
+            if (_projectService.CurrentProject == null)
+            {
+                var project = await _projectService.LoadAsync(recent.Path);
+                if (project != null)
+                {
+                    _settingsService.LastOpenedProject = recent.Path;
+                }
             }
+            else
+            {
+                // Проект уже существует - добавляем новую вкладку
+                var fileContent = System.IO.File.Exists(recent.Path)
+                    ? await System.IO.File.ReadAllTextAsync(recent.Path)
+                    : "";
+
+                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+                mainViewModel?.AddNewTab(fileName, fileContent, recent.Path);
+            }
+
+            // Закрываем окно
+            ProjectSelected?.Invoke();
         }
 
         /// <summary>Загрузить список недавних проектов</summary>

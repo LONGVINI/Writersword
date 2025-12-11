@@ -32,6 +32,7 @@ namespace Writersword
             services.AddSingleton<ISettingsService, SettingsService>();
             services.AddSingleton<IDialogService, DialogService>();
             services.AddSingleton<IProjectService, ProjectService>();
+            services.AddSingleton<ILocalizationService, LocalizationService>();
 
             // Регистрация ViewModels
             services.AddSingleton<MainWindowViewModel>();
@@ -74,7 +75,7 @@ namespace Writersword
                     }
                     else
                     {
-                        // Нет проекта - показываем Welcome
+                        // Нет проекта - показываем Welcome (БЕЗ ShowTextEditor!)
                         await ShowWelcomeScreen(mainWindow);
                     }
                 };
@@ -92,11 +93,18 @@ namespace Writersword
                 DataContext = welcomeViewModel
             };
 
+            // Показываем модально
             await welcomeWindow.ShowDialog(owner);
 
-            // После закрытия Welcome - обновляем MainWindow
+            // После закрытия - обновляем MainWindow с загруженным проектом
             var mainViewModel = Services.GetRequiredService<MainWindowViewModel>();
-            mainViewModel.RefreshAfterProjectLoad();
+            var projectService = Services.GetRequiredService<IProjectService>();
+
+            // Если проект загружен - обновляем UI
+            if (projectService.CurrentProject != null)
+            {
+                mainViewModel.RefreshAfterProjectLoad();
+            }
         }
     }
 }
