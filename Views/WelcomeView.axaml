@@ -28,7 +28,7 @@
 					<RowDefinition Height="*" />
 				</Grid.RowDefinitions>
 
-				<!-- Кнопка закрытия (показывается только если есть открытый проект) -->
+				<!-- Кнопка закрытия (в верхнем правом углу) -->
 				<Button Grid.Row="0"
                         Content="✕"
                         HorizontalAlignment="Right"
@@ -65,7 +65,7 @@
                                Margin="0,5,0,0" />
 				</StackPanel>
 
-				<!-- Основной контент (остаётся прежним) -->
+				<!-- Основной контент -->
 				<Grid Grid.Row="1">
 					<Grid.ColumnDefinitions>
 						<ColumnDefinition Width="*" />
@@ -119,6 +119,43 @@
                                     HorizontalAlignment="Stretch"
                                     FontSize="14"
                                     Cursor="Hand" />
+
+							<!-- OR разделитель -->
+							<Grid Margin="0,15,0,15">
+								<Grid.ColumnDefinitions>
+									<ColumnDefinition Width="*" />
+									<ColumnDefinition Width="Auto" />
+									<ColumnDefinition Width="*" />
+								</Grid.ColumnDefinitions>
+
+								<Border Grid.Column="0"
+								        Height="1"
+								        Background="#3E3E42"
+								        VerticalAlignment="Center"
+								        Margin="0,0,10,0" />
+
+								<TextBlock Grid.Column="1"
+								           Text="or"
+								           Foreground="#999"
+								           FontSize="12"
+								           VerticalAlignment="Center" />
+
+								<Border Grid.Column="2"
+								        Height="1"
+								        Background="#3E3E42"
+								        VerticalAlignment="Center"
+								        Margin="10,0,0,0" />
+							</Grid>
+
+							<!-- Кнопка открыть -->
+							<Button Content="Browse for Project..."
+                                    Command="{Binding OpenProjectCommand}"
+                                    Background="#007ACC"
+                                    Foreground="White"
+                                    Padding="20,12"
+                                    HorizontalAlignment="Stretch"
+                                    FontSize="14"
+                                    Cursor="Hand" />
 						</StackPanel>
 					</Border>
 
@@ -139,41 +176,38 @@
                                        Foreground="#999"
                                        Margin="0,0,0,10" />
 
-							<ListBox ItemsSource="{Binding RecentProjects}"
-                                     Background="Transparent"
-                                     BorderThickness="0"
-                                     Margin="0,0,0,15"
-                                     MinHeight="200">
-								<ListBox.ItemTemplate>
+							<ItemsControl ItemsSource="{Binding RecentProjects}">
+								<ItemsControl.ItemTemplate>
 									<DataTemplate>
 										<Border Background="#2D2D30"
                                                 CornerRadius="4"
-                                                Padding="10"
+                                                Padding="8,5"
+                                                Cursor="Hand"
+                                                BorderThickness="1"
+                                                BorderBrush="Transparent"
                                                 Margin="0,0,0,5"
-                                                Cursor="Hand">
+                                                PointerPressed="RecentProject_Click">
+											<Border.Styles>
+												<Style Selector="Border:pointerover">
+													<Setter Property="Background" Value="#3A3A3C" />
+													<Setter Property="BorderBrush" Value="#4A4A4C" />
+												</Style>
+											</Border.Styles>
 											<StackPanel>
 												<TextBlock Text="{Binding Name}"
                                                            Foreground="White"
-                                                           FontSize="13" />
+                                                           FontSize="11"
+                                                           TextTrimming="CharacterEllipsis" />
 												<TextBlock Text="{Binding Path}"
                                                            Foreground="#666"
-                                                           FontSize="10"
-                                                           Margin="0,3,0,0" />
+                                                           FontSize="9"
+                                                           Margin="0,2,0,0"
+                                                           TextTrimming="CharacterEllipsis" />
 											</StackPanel>
 										</Border>
 									</DataTemplate>
-								</ListBox.ItemTemplate>
-							</ListBox>
-
-							<!-- Кнопка открыть -->
-							<Button Content="Browse for Project..."
-                                    Command="{Binding OpenProjectCommand}"
-                                    Background="#3E3E42"
-                                    Foreground="White"
-                                    Padding="20,12"
-                                    HorizontalAlignment="Stretch"
-                                    FontSize="14"
-                                    Cursor="Hand" />
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
 						</StackPanel>
 					</Border>
 

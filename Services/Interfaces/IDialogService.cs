@@ -1,4 +1,5 @@
 ﻿using System.Threading.Tasks;
+using Writersword.Views;
 
 namespace Writersword.Services.Interfaces
 {
@@ -15,5 +16,7 @@ namespace Writersword.Services.Interfaces
 
         /// <summary>Показать сообщение</summary>
         Task ShowMessageAsync(string title, string message);
+        /// <summary> Показать сообщение с типом и кнопками </summary>
+        Task<MessageBoxResult> ShowMessageAsync(string title, string message, MessageBoxType type, MessageBoxButtons buttons);
     }
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Writersword.Core.Models.Project;
 
 namespace Writersword.Services.Interfaces
 {
@@ -31,5 +32,14 @@ namespace Writersword.Services.Interfaces
 
         /// <summary>Последний использованный путь (для диалога Save/Open)</summary>
         string? LastUsedPath { get; set; }
+
+        /// <summary> Получает или задает список недавно использованных проектов </summary>
+        List<RecentProject> RecentProjects { get; }
+
+        /// <summary> Добавляет проект в список недавно использованных </summary>
+        void AddRecentProject(string filePath);
+
+        List<string> OpenProjectPaths { get; set; }
+        void SaveOpenProjects(List<string> projectPaths);
     }
 }

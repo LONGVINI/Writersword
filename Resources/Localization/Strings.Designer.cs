@@ -97,6 +97,42 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Could not load the project file. The file may be corrupted.
+        /// </summary>
+        public static string Error_ProjectLoadFailed_Message {
+            get {
+                return ResourceManager.GetString("Error_ProjectLoadFailed_Message", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Failed to Load Project.
+        /// </summary>
+        public static string Error_ProjectLoadFailed_Title {
+            get {
+                return ResourceManager.GetString("Error_ProjectLoadFailed_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на The project file may have been moved or deleted.
+        /// </summary>
+        public static string Error_ProjectNotFound_Message {
+            get {
+                return ResourceManager.GetString("Error_ProjectNotFound_Message", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Project Not Found.
+        /// </summary>
+        public static string Error_ProjectNotFound_Title {
+            get {
+                return ResourceManager.GetString("Error_ProjectNotFound_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Close.
         /// </summary>
         public static string Menu_Close {
@@ -228,6 +264,42 @@ namespace Writersword.Resources.Localization {
         public static string Menu_View {
             get {
                 return ResourceManager.GetString("Menu_View", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Cancel.
+        /// </summary>
+        public static string MessageBox_Cancel {
+            get {
+                return ResourceManager.GetString("MessageBox_Cancel", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на No.
+        /// </summary>
+        public static string MessageBox_No {
+            get {
+                return ResourceManager.GetString("MessageBox_No", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на OK.
+        /// </summary>
+        public static string MessageBox_OK {
+            get {
+                return ResourceManager.GetString("MessageBox_OK", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на YES.
+        /// </summary>
+        public static string MessageBox_Yes {
+            get {
+                return ResourceManager.GetString("MessageBox_Yes", resourceCulture);
             }
         }
         

@@ -1,14 +1,24 @@
-﻿using System.Threading.Tasks;
+﻿using System.Collections.Generic;
+using System.Threading.Tasks;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Enums;
 
 namespace Writersword.Services
 {
     /// <summary>
-    /// Сервис для работы с проектами (.writersword файлами)
+    /// Интерфейс сервиса работы с проектами
     /// </summary>
     public interface IProjectService
     {
+        /// <summary>Получить все открытые проекты</summary>
+        IReadOnlyList<ProjectFile> OpenProjects { get; }
+
+        /// <summary>Найти проект по пути к файлу</summary>
+        ProjectFile? GetProjectByPath(string filePath);
+
+        /// <summary>Получить путь к файлу проекта</summary>
+        string? GetProjectPath(ProjectFile project);
+
         /// <summary>Создать новый проект</summary>
         ProjectFile CreateNew(string title, ProjectType type);
 
@@ -18,10 +28,7 @@ namespace Writersword.Services
         /// <summary>Сохранить проект в файл</summary>
         Task<bool> SaveAsync(ProjectFile project, string filePath);
 
-        /// <summary>Текущий открытый проект</summary>
-        ProjectFile? CurrentProject { get; }
-
-        /// <summary>Путь к текущему файлу проекта</summary>
-        string? CurrentFilePath { get; }
+        /// <summary>Закрыть проект</summary>
+        void CloseProject(ProjectFile project);
     }
 }

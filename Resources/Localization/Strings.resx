@@ -281,4 +281,28 @@
     <value>Theme:</value>
     <comment>Theme selection label in settings</comment>
   </data>
+  <data name="MessageBox_OK" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="MessageBox_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="MessageBox_Yes" xml:space="preserve">
+    <value>YES</value>
+  </data>
+  <data name="MessageBox_No" xml:space="preserve">
+    <value>No</value>
+  </data>
+  <data name="Error_ProjectNotFound_Title" xml:space="preserve">
+    <value>Project Not Found</value>
+  </data>
+  <data name="Error_ProjectNotFound_Message" xml:space="preserve">
+    <value>The project file may have been moved or deleted</value>
+  </data>
+  <data name="Error_ProjectLoadFailed_Title" xml:space="preserve">
+    <value>Failed to Load Project</value>
+  </data>
+  <data name="Error_ProjectLoadFailed_Message" xml:space="preserve">
+    <value>Could not load the project file. The file may be corrupted</value>
+  </data>
 </root>

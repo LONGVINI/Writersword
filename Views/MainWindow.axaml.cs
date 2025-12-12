@@ -2,6 +2,9 @@
 using Avalonia.Input;
 using Writersword.ViewModels;
 using System.ComponentModel;
+using System.Linq;
+using Microsoft.Extensions.DependencyInjection;
+using Writersword.Services.Interfaces;
 
 namespace Writersword.Views
 {
@@ -32,9 +35,26 @@ namespace Writersword.Views
         {
             if (DataContext is MainWindowViewModel vm)
             {
+                System.Console.WriteLine($"[MainWindow.OnClosing] Tabs count: {vm.OpenTabs.Count}");
+
+                // НОВОЕ: Сохраняем список открытых проектов перед закрытием
+                if (vm.OpenTabs.Count > 0)
+                {
+                    var settingsService = App.Services.GetRequiredService<ISettingsService>();
+                    var openPaths = vm.OpenTabs
+                        .Select(t => t.GetModel().FilePath)
+                        .Where(p => !string.IsNullOrEmpty(p))
+                        .Distinct()
+                        .ToList();
+
+                    settingsService.SaveOpenProjects(openPaths!);
+                    System.Console.WriteLine($"[MainWindow.OnClosing] Saved {openPaths.Count} open projects");
+                }
+
                 // Если нет открытых вкладок - отменяем закрытие и показываем Welcome
                 if (vm.OpenTabs.Count == 0)
                 {
+                    System.Console.WriteLine("[MainWindow.OnClosing] No tabs, cancelling close and showing welcome");
                     e.Cancel = true;
                     await Writersword.App.ShowWelcomeScreen(this);
                 }

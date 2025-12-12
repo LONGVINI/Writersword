@@ -5,7 +5,7 @@
        ======================================== -->
 
 	<PropertyGroup>
-		<OutputType>WinExe</OutputType>
+		<OutputType>Exe</OutputType>
 		<TargetFramework>net10.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<BuiltInComInteropSupport>true</BuiltInComInteropSupport>
@@ -33,6 +33,7 @@
 		<PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.9" />
 		<PackageReference Include="Dock.Avalonia" Version="11.3.8" />
 		<PackageReference Include="Dock.Model.Avalonia" Version="11.3.8" />
+		<PackageReference Include="Avalonia.Diagnostics" Version="11.*" /> <!-- DevTools-->
 	</ItemGroup>
 
 	<!-- ========================================
@@ -65,49 +66,49 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <AvaloniaXaml Remove="Src\Modules\Timer\Models\**" />
-	  <AvaloniaXaml Remove="Src\Modules\Timer\Services\**" />
-	  <AvaloniaXaml Remove="Src\Modules\Timer\ViewModels\**" />
-	  <AvaloniaXaml Remove="Src\Modules\Timer\Views\**" />
-	  <Compile Remove="Src\Modules\Timer\Models\**" />
-	  <Compile Remove="Src\Modules\Timer\Services\**" />
-	  <Compile Remove="Src\Modules\Timer\ViewModels\**" />
-	  <Compile Remove="Src\Modules\Timer\Views\**" />
-	  <EmbeddedResource Remove="Src\Modules\Timer\Models\**" />
-	  <EmbeddedResource Remove="Src\Modules\Timer\Services\**" />
-	  <EmbeddedResource Remove="Src\Modules\Timer\ViewModels\**" />
-	  <EmbeddedResource Remove="Src\Modules\Timer\Views\**" />
-	  <None Remove="Src\Modules\Timer\Models\**" />
-	  <None Remove="Src\Modules\Timer\Services\**" />
-	  <None Remove="Src\Modules\Timer\ViewModels\**" />
-	  <None Remove="Src\Modules\Timer\Views\**" />
+		<AvaloniaXaml Remove="Src\Modules\Timer\Models\**" />
+		<AvaloniaXaml Remove="Src\Modules\Timer\Services\**" />
+		<AvaloniaXaml Remove="Src\Modules\Timer\ViewModels\**" />
+		<AvaloniaXaml Remove="Src\Modules\Timer\Views\**" />
+		<Compile Remove="Src\Modules\Timer\Models\**" />
+		<Compile Remove="Src\Modules\Timer\Services\**" />
+		<Compile Remove="Src\Modules\Timer\ViewModels\**" />
+		<Compile Remove="Src\Modules\Timer\Views\**" />
+		<EmbeddedResource Remove="Src\Modules\Timer\Models\**" />
+		<EmbeddedResource Remove="Src\Modules\Timer\Services\**" />
+		<EmbeddedResource Remove="Src\Modules\Timer\ViewModels\**" />
+		<EmbeddedResource Remove="Src\Modules\Timer\Views\**" />
+		<None Remove="Src\Modules\Timer\Models\**" />
+		<None Remove="Src\Modules\Timer\Services\**" />
+		<None Remove="Src\Modules\Timer\ViewModels\**" />
+		<None Remove="Src\Modules\Timer\Views\**" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <AvaloniaResource Remove="Resources\Localization\Strings.resx" />
+		<AvaloniaResource Remove="Resources\Localization\Strings.resx" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <EmbeddedResource Remove="Resources\Localization\Strings.resx" />
-	  <EmbeddedResource Remove="Resources\Localization\Strings.ru.resx" />
+		<EmbeddedResource Remove="Resources\Localization\Strings.resx" />
+		<EmbeddedResource Remove="Resources\Localization\Strings.ru.resx" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Folder Include="Models\" />
-	  <Folder Include="Resources\Images\" />
-	  <Folder Include="Src\Modules\Timer\" />
-	  <Folder Include="Projects\" />
+		<Folder Include="Models\" />
+		<Folder Include="Resources\Images\" />
+		<Folder Include="Src\Modules\Timer\" />
+		<Folder Include="Projects\" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <AvaloniaResource Update="Resources\Localization\Strings.Designer.cs">
-	    <DesignTime>True</DesignTime>
-	    <AutoGen>True</AutoGen>
-	    <DependentUpon>Strings.resx</DependentUpon>
-	  </AvaloniaResource>
+		<AvaloniaResource Update="Resources\Localization\Strings.Designer.cs">
+			<DesignTime>True</DesignTime>
+			<AutoGen>True</AutoGen>
+			<DependentUpon>Strings.resx</DependentUpon>
+		</AvaloniaResource>
 	</ItemGroup>
 
-    <!-- ============
+	<!-- ============
 	  	 Localization
 		 ============ -->
 
@@ -130,6 +131,9 @@
 			<DesignTime>True</DesignTime>
 			<AutoGen>True</AutoGen>
 			<DependentUpon>Strings.resx</DependentUpon>
+		</Compile>
+		<Compile Update="Views\MessageBoxView.axaml.cs">
+		  <DependentUpon>MessageBoxView.axaml</DependentUpon>
 		</Compile>
 	</ItemGroup>
 </Project>

@@ -1,16 +1,17 @@
 ﻿using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using ReactiveUI;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
 using System.Reactive;
+using System.Reactive.Linq;
 using Writersword.Core.Enums;
+using Writersword.Core.Models.Project;
 using Writersword.Modules.TextEditor.ViewModels;
 using Writersword.Services;
 using Writersword.Services.Interfaces;
-using System.Collections.ObjectModel;
-using System.Linq;
-using System;
-using System.Reactive.Linq;
-using Writersword.Core.Models.Project;
 
 namespace Writersword.ViewModels
 {
@@ -85,18 +86,37 @@ namespace Writersword.ViewModels
         /// <summary>Показать модуль текстового редактора</summary>
         public void ShowTextEditor()
         {
-            if (ActiveTab == null) return;
+            if (ActiveTab == null)
+            {
+                Console.WriteLine("ShowTextEditor: ActiveTab is null!");
+                return;
+            }
+
+            Console.WriteLine($"ShowTextEditor called for tab: {ActiveTab.Title}");
 
             var viewModel = new TextEditorViewModel();
             viewModel.LoadDocument(ActiveTab.Content);
 
             // Подписываемся на изменения текста
             viewModel.WhenAnyValue(x => x.PlainText)
-                .Subscribe(text =>
+                .Throttle(TimeSpan.FromSeconds(2))
+                .ObserveOn(RxApp.MainThreadScheduler)
+                .Subscribe(async text =>
                 {
                     if (ActiveTab != null)
                     {
                         ActiveTab.Content = text;
+
+                        // Автосохранение проекта активной вкладки
+                        var project = GetProjectForTab(ActiveTab);
+                        if (project != null)
+                        {
+                            var filePath = _projectService.GetProjectPath(project);
+                            if (filePath != null)
+                            {
+                                await _projectService.SaveAsync(project, filePath);
+                            }
+                        }
                     }
                 });
 
@@ -104,7 +124,29 @@ namespace Writersword.ViewModels
             {
                 DataContext = viewModel
             };
+
             CurrentModule = view;
+            Console.WriteLine($"CurrentModule set to TextEditorView");
+        }
+
+        /// <summary>Получить проект для вкладки</summary>
+        private ProjectFile? GetProjectForTab(DocumentTabViewModel tab)
+        {
+            var filePath = tab.GetModel().FilePath;
+            if (string.IsNullOrEmpty(filePath)) return null;
+
+            var project = _projectService.GetProjectByPath(filePath);
+
+            if (project != null)
+            {
+                Console.WriteLine($"[GetProjectForTab] Found project: {project.Title}, Documents: {project.Documents.Count}");
+            }
+            else
+            {
+                Console.WriteLine($"[GetProjectForTab] Project NOT found for path: {filePath}");
+            }
+
+            return project;
         }
 
         /// <summary>Создать новый проект (показывает Welcome окно)</summary>
@@ -125,60 +167,69 @@ namespace Writersword.ViewModels
             }
         }
 
-        /// <summary>Сохранить проект (если не сохранён - вызывает Save As)</summary>
+        /// <summary>Сохранить активный проект</summary>
         private async System.Threading.Tasks.Task SaveProject()
         {
-            if (_projectService.CurrentProject == null) return;
+            if (ActiveTab == null) return;
 
-            // Синхронизируем вкладки с проектом перед сохранением
-            SyncTabsToProject();
+            var project = GetProjectForTab(ActiveTab);
+            if (project == null) return;
 
-            // Если проект новый и ещё не сохранён
-            if (string.IsNullOrEmpty(_projectService.CurrentFilePath))
+            // Синхронизируем содержимое вкладки с проектом
+            SyncTabToProject(ActiveTab, project);
+
+            var filePath = _projectService.GetProjectPath(project);
+            if (string.IsNullOrEmpty(filePath))
             {
+                // Проект ещё не сохранён - вызываем Save As
                 await SaveAsProject();
                 return;
             }
 
             // Сохраняем в существующий файл
-            await _projectService.SaveAsync(
-                _projectService.CurrentProject,
-                _projectService.CurrentFilePath!
-            );
+            await _projectService.SaveAsync(project, filePath);
         }
 
-        /// <summary>Сохранить проект как... (выбор нового пути)</summary>
+        /// <summary>Сохранить активный проект как...</summary>
         private async System.Threading.Tasks.Task SaveAsProject()
         {
-            if (_projectService.CurrentProject == null) return;
+            if (ActiveTab == null) return;
 
-            // Синхронизируем вкладки с проектом перед сохранением
-            SyncTabsToProject();
+            var project = GetProjectForTab(ActiveTab);
+            if (project == null) return;
+
+            // Синхронизируем содержимое вкладки с проектом
+            SyncTabToProject(ActiveTab, project);
 
             var path = await _dialogService.SaveFileAsync();
             if (path != null)
             {
-                var success = await _projectService.SaveAsync(_projectService.CurrentProject, path);
+                var success = await _projectService.SaveAsync(project, path);
                 if (success)
                 {
-                    Title = $"Writersword - {_projectService.CurrentProject.Title}";
-                    _settingsService.LastOpenedProject = path;
+                    Title = $"Writersword - {project.Title}";
+
+                    // Обновляем FilePath вкладки
+                    ActiveTab.GetModel().FilePath = path;
                 }
             }
         }
 
-        /// <summary>Синхронизировать вкладки с проектом перед сохранением</summary>
-        private void SyncTabsToProject()
+        /// <summary>Синхронизировать содержимое вкладки с проектом</summary>
+        private void SyncTabToProject(DocumentTabViewModel tab, ProjectFile project)
         {
-            if (_projectService.CurrentProject == null) return;
-
-            // Очищаем старые документы
-            _projectService.CurrentProject.Documents.Clear();
-
-            // Добавляем текущие вкладки
-            foreach (var tab in OpenTabs)
+            // Находим документ в проекте
+            var doc = project.Documents.FirstOrDefault(d => d.Id == tab.Id);
+            if (doc != null)
             {
-                _projectService.CurrentProject.Documents.Add(tab.GetModel());
+                doc.Content = tab.Content;
+                doc.Title = tab.Title;
+                doc.IsActive = tab.IsActive;
+            }
+            else
+            {
+                // Документа нет - добавляем
+                project.Documents.Add(tab.GetModel());
             }
         }
 
@@ -191,58 +242,109 @@ namespace Writersword.ViewModels
         /// <summary>Загрузить проект при старте приложения</summary>
         public async void LoadProject(string filePath)
         {
+            Console.WriteLine($"[LoadProject] START Loading: {filePath}");
+
             var project = await _projectService.LoadAsync(filePath);
-            if (project != null)
+
+            if (project == null)
             {
-                Title = $"Writersword - {project.Title}";
-                RefreshAfterProjectLoad();
+                Console.WriteLine("[LoadProject] Project is null!");
+                return;
             }
-        }
 
-        /// <summary>Обновить UI после загрузки проекта</summary>
-        public void RefreshAfterProjectLoad()
-        {
-            if (_projectService.CurrentProject == null) return;
+            Console.WriteLine($"[LoadProject] Loaded project: {project.Title}, Documents: {project.Documents.Count}");
 
-            // Обновляем заголовок окна
-            Title = $"Writersword - {_projectService.CurrentProject.Title}";
-
-            // Загружаем вкладки документов
-            LoadDocumentsFromProject();
-
-            // Показываем текстовый редактор если есть активная вкладка
-            if (ActiveTab != null)
+            if (project.Documents.Count > 0)
             {
-                ShowTextEditor();
-            }
-        }
+                // Проверяем не открыты ли уже вкладки из этого проекта
+                var hasOpenTabs = OpenTabs.Any(t => t.GetModel().FilePath == filePath);
 
-        /// <summary>Загрузить вкладки из проекта</summary>
-        private void LoadDocumentsFromProject()
-        {
-            if (_projectService.CurrentProject == null) return;
-
-            OpenTabs.Clear();
-            ActiveTab = null;
-
-            foreach (var doc in _projectService.CurrentProject.Documents)
-            {
-                var tabVM = new DocumentTabViewModel(doc, CloseTab);
-                OpenTabs.Add(tabVM);
-
-                if (doc.IsActive)
+                if (hasOpenTabs)
                 {
-                    ActiveTab = tabVM;
+                    Console.WriteLine($"[LoadProject] Tabs already open for this project, skipping duplicate load");
+
+                    // Если вкладки уже открыты - просто активируем первую
+                    var firstTab = OpenTabs.First(t => t.GetModel().FilePath == filePath);
+                    ActivateTab(firstTab);
+                    return;
+                }
+
+                Console.WriteLine($"[LoadProject] Adding {project.Documents.Count} tabs");
+
+                var docs = project.Documents.ToList();
+
+                foreach (var doc in docs)
+                {
+                    doc.FilePath = filePath;
+                    var tabVM = new DocumentTabViewModel(doc, CloseTab);
+                    OpenTabs.Add(tabVM);
+                    Console.WriteLine($"[LoadProject] Added tab: {doc.Title}");
+
+                    if (doc.IsActive && ActiveTab == null)
+                    {
+                        ActiveTab = tabVM;
+                    }
+                }
+
+                // Если нет активной вкладки - делаем первую активной
+                if (ActiveTab == null && OpenTabs.Count > 0)
+                {
+                    Console.WriteLine($"[LoadProject] No active tab, setting first as active");
+                    ActiveTab = OpenTabs[0];
+                    ActiveTab.IsActive = true;
+                }
+
+                Title = $"Writersword - {project.Title}";
+
+                if (ActiveTab != null)
+                {
+                    Console.WriteLine($"[LoadProject] Showing text editor for active tab: {ActiveTab.Title}");
+                    ShowTextEditor();
                 }
             }
-
-            // Если есть вкладки но нет активной - активируем первую
-            if (OpenTabs.Count > 0 && ActiveTab == null)
+            else
             {
-                ActiveTab = OpenTabs[0];
-                ActiveTab.IsActive = true;
+                Console.WriteLine("[LoadProject] No documents in project");
             }
+
+            // Добавляем в недавние
+            _settingsService.AddRecentProject(filePath);
+
+            Console.WriteLine($"[LoadProject] FINISHED. Total tabs: {OpenTabs.Count}");
         }
+
+        ///// <summary>Обновить UI после загрузки проекта</summary>
+        //public void RefreshAfterProjectLoad()
+        //{
+        //    var stackTrace = new System.Diagnostics.StackTrace(true);
+        //    Console.WriteLine($"[RefreshAfterProjectLoad] CALLED FROM:\n{stackTrace}");
+        //    Console.WriteLine($"[RefreshAfterProjectLoad] OpenTabs count: {OpenTabs.Count}");
+
+        //    // ИСПРАВЛЕНИЕ: Показываем Welcome ТОЛЬКО если совсем нет вкладок
+        //    if (OpenTabs.Count == 0)
+        //    {
+        //        Console.WriteLine("[RefreshAfterProjectLoad] No tabs, showing welcome screen");
+        //        ShowWelcomeIfNoTabs();
+        //    }
+        //    else
+        //    {
+        //        // Есть вкладки - показываем редактор
+        //        if (ActiveTab != null)
+        //        {
+        //            Console.WriteLine($"[RefreshAfterProjectLoad] Active tab exists: {ActiveTab.Title}, showing editor");
+        //            ShowTextEditor();
+        //        }
+        //        else
+        //        {
+        //            // Нет активной вкладки - активируем первую
+        //            Console.WriteLine("[RefreshAfterProjectLoad] No ActiveTab, activating first tab");
+        //            if (OpenTabs.Count > 0)
+        //            {
+        //                ActivateTab(OpenTabs[0]);
+        //            }
+        //        }
+        //    }
+        //}
 
         /// <summary>Создать новую вкладку - открывает Welcome окно</summary>
         public async void CreateNewTab()
@@ -254,15 +356,13 @@ namespace Writersword.ViewModels
             }
         }
 
-        /// <summary>Добавить новую вкладку в проект</summary>
+        /// <summary>Добавить новую вкладку в приложение</summary>
         public void AddNewTab(string title, string content, string? filePath)
         {
-            if (_projectService.CurrentProject == null) return;
-
             // ПРОВЕРКА: Если вкладка с таким FilePath уже существует - активируем её
             if (!string.IsNullOrEmpty(filePath))
             {
-                var existingTab = OpenTabs.FirstOrDefault(t => t.GetModel().FilePath == filePath);
+                var existingTab = OpenTabs.FirstOrDefault(t => t.GetModel().FilePath == filePath && t.Title == title);
                 if (existingTab != null)
                 {
                     ActivateTab(existingTab);
@@ -276,6 +376,9 @@ namespace Writersword.ViewModels
                 tab.IsActive = false;
             }
 
+            // Получаем проект по FilePath
+            var project = !string.IsNullOrEmpty(filePath) ? _projectService.GetProjectByPath(filePath) : null;
+
             // Создаём новый документ
             var newDoc = new DocumentTab
             {
@@ -285,7 +388,22 @@ namespace Writersword.ViewModels
                 FilePath = filePath
             };
 
-            _projectService.CurrentProject.Documents.Add(newDoc);
+            // Добавляем документ в проект ТОЛЬКО если его там ещё нет
+            if (project != null)
+            {
+                var existingDoc = project.Documents.FirstOrDefault(d => d.Title == title && d.FilePath == filePath);
+                if (existingDoc == null)
+                {
+                    project.Documents.Add(newDoc);
+                    // Сохраняем проект с новым документом
+                    _ = _projectService.SaveAsync(project, filePath!);
+                }
+                else
+                {
+                    // Используем существующий документ вместо создания нового
+                    newDoc = existingDoc;
+                }
+            }
 
             var tabVM = new DocumentTabViewModel(newDoc, CloseTab);
             OpenTabs.Add(tabVM);
@@ -312,18 +430,32 @@ namespace Writersword.ViewModels
         /// <summary>Закрыть вкладку</summary>
         public void CloseTab(DocumentTabViewModel tab)
         {
-            if (_projectService.CurrentProject == null) return;
+            Console.WriteLine($"[CloseTab] Closing tab: {tab.Title}");
+
+            // Получаем проект для вкладки
+            var project = GetProjectForTab(tab);
+
+            if (project != null)
+            {
+                // Синхронизируем содержимое вкладки с документом в проекте
+                var doc = project.Documents.FirstOrDefault(d => d.Id == tab.Id);
+                if (doc != null)
+                {
+                    doc.Content = tab.Content;
+                    doc.Title = tab.Title;
+                    doc.IsActive = false;
+                }
+
+                // Сохраняем проект
+                var filePath = _projectService.GetProjectPath(project);
+                if (filePath != null)
+                {
+                    _ = _projectService.SaveAsync(project, filePath);
+                }
+            }
 
             // Удаляем из коллекции UI
             OpenTabs.Remove(tab);
-
-            // Удаляем из проекта
-            var docToRemove = _projectService.CurrentProject.Documents
-                .FirstOrDefault(d => d.Id == tab.Id);
-            if (docToRemove != null)
-            {
-                _projectService.CurrentProject.Documents.Remove(docToRemove);
-            }
 
             // Если были другие вкладки - активируем первую
             if (OpenTabs.Count > 0)
@@ -332,13 +464,15 @@ namespace Writersword.ViewModels
             }
             else
             {
-                // Последняя вкладка закрыта - очищаем редактор и показываем Welcome
+                // ИСПРАВЛЕНИЕ: Очищаем список открытых проектов когда закрыли последнюю вкладку
+                Console.WriteLine("[CloseTab] Last tab closed, clearing open projects list");
+                _settingsService.SaveOpenProjects(new List<string>());
+
                 ActiveTab = null;
                 CurrentModule = null;
                 ShowWelcomeIfNoTabs();
             }
         }
-
         /// <summary>Показать Welcome если нет вкладок</summary>
         private async void ShowWelcomeIfNoTabs()
         {
