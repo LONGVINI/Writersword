@@ -1,9 +1,11 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Newtonsoft.Json;
+using Writersword.Core.Enums;
 using Writersword.Core.Models.Project;
+using Writersword.Core.Models.Settings;
 using Writersword.Services.Interfaces;
 
 namespace Writersword.Services
@@ -201,6 +203,48 @@ namespace Writersword.Services
             Save();
         }
 
+        /// <summary>Получить глобальную конфигурацию</summary>
+        public WorkspaceConfig? GetWorkspaceConfig(ProjectType projectType)
+        {
+            var key = projectType.ToString();
+            return _settings.WorkspaceConfigs.TryGetValue(key, out var config) ? config : null;
+        }
+
+        /// <summary>Сохранить глобальную конфигурацию</summary>
+        public void SaveWorkspaceConfig(ProjectType projectType, WorkspaceConfig config)
+        {
+            var key = projectType.ToString();
+            config.LastModified = DateTime.Now;
+            _settings.WorkspaceConfigs[key] = config;
+            Save();
+            Console.WriteLine($"[SettingsService] Saved WorkspaceConfig for {projectType}");
+        }
+
+        /// <summary>Удалить глобальную конфигурацию</summary>
+        public void DeleteWorkspaceConfig(ProjectType projectType)
+        {
+            var key = projectType.ToString();
+            if (_settings.WorkspaceConfigs.Remove(key))
+            {
+                Save();
+                Console.WriteLine($"[SettingsService] Deleted WorkspaceConfig for {projectType}");
+            }
+        }
+
+        /// <summary>Получить все конфигурации</summary>
+        public Dictionary<ProjectType, WorkspaceConfig> GetAllWorkspaceConfigs()
+        {
+            var result = new Dictionary<ProjectType, WorkspaceConfig>();
+            foreach (var kvp in _settings.WorkspaceConfigs)
+            {
+                if (Enum.TryParse<ProjectType>(kvp.Key, out var projectType))
+                {
+                    result[projectType] = kvp.Value;
+                }
+            }
+            return result;
+        }
+
         /// <summary>Класс для JSON сериализации настроек</summary>
         private class AppSettings
         {
@@ -213,6 +257,8 @@ namespace Writersword.Services
 
             // Список открытых вкладок из последней сессии
             public List<string> OpenProjectPaths { get; set; } = new List<string>();
+
+            public Dictionary<string, WorkspaceConfig> WorkspaceConfigs { get; set; } = new();
         }
     }
 }

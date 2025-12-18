@@ -5,10 +5,13 @@ using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.IO;
+using Writersword.Core.Services.Interfaces;
+using Writersword.Modules.Common;
 using Writersword.Services;
 using Writersword.Services.Interfaces;
 using Writersword.ViewModels;
 using Writersword.Views;
+using Writersword.Core.Services.WorkModes;
 
 namespace Writersword
 {
@@ -34,6 +37,14 @@ namespace Writersword
             services.AddSingleton<IDialogService, DialogService>();
             services.AddSingleton<IProjectService, ProjectService>();
             services.AddSingleton<ILocalizationService, LocalizationService>();
+            services.AddSingleton<IHotKeyService, HotKeyService>();
+
+            services.AddSingleton<IWorkModeConfigurationService, WorkModeConfigurationService>();
+            services.AddSingleton<IWorkModeService, WorkModeService>();
+
+            // Фабрика и реестр модулей
+            services.AddSingleton<ModuleFactory>();
+            services.AddSingleton<ModuleRegistry>();
 
             // Регистрация ViewModels
             services.AddSingleton<MainWindowViewModel>();

@@ -133,6 +133,60 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Close Tab.
+        /// </summary>
+        public static string HotKey_File_CloseTab {
+            get {
+                return ResourceManager.GetString("HotKey_File_CloseTab", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на New Project.
+        /// </summary>
+        public static string HotKey_File_New {
+            get {
+                return ResourceManager.GetString("HotKey_File_New", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на New Tab.
+        /// </summary>
+        public static string HotKey_File_NewTab {
+            get {
+                return ResourceManager.GetString("HotKey_File_NewTab", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Open Project.
+        /// </summary>
+        public static string HotKey_File_Open {
+            get {
+                return ResourceManager.GetString("HotKey_File_Open", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save Project.
+        /// </summary>
+        public static string HotKey_File_Save {
+            get {
+                return ResourceManager.GetString("HotKey_File_Save", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save Project As.
+        /// </summary>
+        public static string HotKey_File_SaveAs {
+            get {
+                return ResourceManager.GetString("HotKey_File_SaveAs", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Close.
         /// </summary>
         public static string Menu_Close {

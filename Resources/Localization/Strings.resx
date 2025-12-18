@@ -305,4 +305,28 @@
   <data name="Error_ProjectLoadFailed_Message" xml:space="preserve">
     <value>Could not load the project file. The file may be corrupted</value>
   </data>
+  <data name="HotKey_File_New" xml:space="preserve">
+    <value>New Project</value>
+    <comment>Creates a new project file</comment>
+  </data>
+  <data name="HotKey_File_Open" xml:space="preserve">
+    <value>Open Project</value>
+    <comment>Opens an existing project from disk</comment>
+  </data>
+  <data name="HotKey_File_Save" xml:space="preserve">
+    <value>Save Project</value>
+    <comment>Saves current project to file</comment>
+  </data>
+  <data name="HotKey_File_SaveAs" xml:space="preserve">
+    <value>Save Project As</value>
+    <comment>Saves project with a new name/location</comment>
+  </data>
+  <data name="HotKey_File_CloseTab" xml:space="preserve">
+    <value>Close Tab</value>
+    <comment>Closes currently active tab</comment>
+  </data>
+  <data name="HotKey_File_NewTab" xml:space="preserve">
+    <value>New Tab</value>
+    <comment>Opens welcome screen to create/open tab</comment>
+  </data>
 </root>

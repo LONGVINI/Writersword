@@ -264,4 +264,22 @@
   <data name="Error_ProjectLoadFailed_Message" xml:space="preserve">
     <value>Не удалось загрузить файл проекта. Файл может быть повреждён</value>
   </data>
+  <data name="HotKey_File_New" xml:space="preserve">
+    <value>Новый проект</value>
+  </data>
+  <data name="HotKey_File_Open" xml:space="preserve">
+    <value>Открыть проект</value>
+  </data>
+  <data name="HotKey_File_Save" xml:space="preserve">
+    <value>Сохранить проект</value>
+  </data>
+  <data name="HotKey_File_SaveAs" xml:space="preserve">
+    <value>Сохранить проект как</value>
+  </data>
+  <data name="HotKey_File_CloseTab" xml:space="preserve">
+    <value>Закрыть вкладку</value>
+  </data>
+  <data name="HotKey_File_NewTab" xml:space="preserve">
+    <value>Новая вкладка</value>
+  </data>
 </root>

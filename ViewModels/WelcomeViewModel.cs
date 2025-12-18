@@ -24,7 +24,6 @@ namespace Writersword.ViewModels
         private readonly IProjectService _projectService;
 
         private ProjectType _selectedProjectType = ProjectType.Novel;
-        private bool _canClose;
         private bool _isProcessing = false; // 
 
         /// <summary>Выбранный тип проекта</summary>
@@ -32,13 +31,6 @@ namespace Writersword.ViewModels
         {
             get => _selectedProjectType;
             set => this.RaiseAndSetIfChanged(ref _selectedProjectType, value);
-        }
-
-        /// <summary>Можно ли закрыть окно (есть ли открытые вкладки)</summary>
-        public bool CanClose
-        {
-            get => _canClose;
-            set => this.RaiseAndSetIfChanged(ref _canClose, value);
         }
 
         /// <summary>Список недавних проектов</summary>
@@ -67,9 +59,6 @@ namespace Writersword.ViewModels
 
             _settingsService.Load();
 
-            // ИСПРАВЛЕНИЕ: Проверяем CanClose правильно
-            UpdateCanClose();
-
             // Создаём команды
             NewProjectCommand = ReactiveCommand.CreateFromTask(
                 CreateNewProject,
@@ -88,22 +77,6 @@ namespace Writersword.ViewModels
 
             RecentProjects = new ObservableCollection<RecentProject>();
             LoadRecentProjects();
-        }
-
-        /// <summary>Обновить состояние CanClose</summary>
-        private void UpdateCanClose()
-        {
-            try
-            {
-                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
-                CanClose = mainViewModel.OpenTabs.Count > 0;
-                Console.WriteLine($"[WelcomeViewModel] CanClose updated: {CanClose}, OpenTabs: {mainViewModel.OpenTabs.Count}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[WelcomeViewModel] Error updating CanClose: {ex.Message}");
-                CanClose = false;
-            }
         }
 
         /// <summary>Создать новый проект</summary>

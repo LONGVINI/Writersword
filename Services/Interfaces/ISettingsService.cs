@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Writersword.Core.Enums;
 using Writersword.Core.Models.Project;
+using Writersword.Core.Models.Settings;
 
 namespace Writersword.Services.Interfaces
 {
@@ -41,5 +43,17 @@ namespace Writersword.Services.Interfaces
 
         List<string> OpenProjectPaths { get; set; }
         void SaveOpenProjects(List<string> projectPaths);
+
+        /// <summary>Получить глобальную конфигурацию рабочего пространства для типа проекта</summary>
+        WorkspaceConfig? GetWorkspaceConfig(ProjectType projectType);
+
+        /// <summary>Сохранить глобальную конфигурацию рабочего пространства</summary>
+        void SaveWorkspaceConfig(ProjectType projectType, WorkspaceConfig config);
+
+        /// <summary>Удалить глобальную конфигурацию рабочего пространства</summary>
+        void DeleteWorkspaceConfig(ProjectType projectType);
+
+        /// <summary>Получить все сохранённые конфигурации</summary>
+        Dictionary<ProjectType, WorkspaceConfig> GetAllWorkspaceConfigs();
     }
 }

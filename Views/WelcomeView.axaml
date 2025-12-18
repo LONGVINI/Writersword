@@ -1,6 +1,7 @@
 ﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Writersword.ViewModels"
+        xmlns:converters="using:Writersword.Converters"
         x:Class="Writersword.Views.WelcomeView"
         x:DataType="vm:WelcomeViewModel"
         Title="Welcome to Writersword"
@@ -11,6 +12,10 @@
         SystemDecorations="None"
         TransparencyLevelHint="AcrylicBlur"
         Background="Transparent">
+
+	<Window.Resources>
+		<converters:EnumToBooleanConverter x:Key="EnumToBooleanConverter"/>
+	</Window.Resources>
 
 	<!-- Затемнённый фон -->
 	<Border Background="#DD000000"
@@ -41,8 +46,7 @@
                         Foreground="#858585"
                         FontSize="18"
                         Cursor="Hand"
-                        Click="CloseButton_Click"
-                        IsVisible="{Binding CanClose}">
+                        Click="CloseButton_Click">
 					<Button.Styles>
 						<Style Selector="Button:pointerover">
 							<Setter Property="Foreground" Value="White" />
@@ -88,25 +92,34 @@
 							<!-- Выбор типа проекта -->
 							<StackPanel Spacing="10">
 								<RadioButton Content="📖 Novel / Book"
-                                             GroupName="ProjectType"
-                                             IsChecked="True"
-                                             Foreground="#CCC"
-                                             FontSize="14" />
+											 GroupName="ProjectType"
+											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=Novel}"
+											 Foreground="#CCC"
+											 FontSize="14" />
 
 								<RadioButton Content="🎬 Screenplay"
-                                             GroupName="ProjectType"
-                                             Foreground="#CCC"
-                                             FontSize="14" />
+											 GroupName="ProjectType"
+											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=Screenplay}"
+											 Foreground="#CCC"
+											 FontSize="14" />
 
 								<RadioButton Content="✍️ Poetry Collection"
-                                             GroupName="ProjectType"
-                                             Foreground="#CCC"
-                                             FontSize="14" />
+											 GroupName="ProjectType"
+											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=Poetry}"
+											 Foreground="#CCC"
+											 FontSize="14" />
 
 								<RadioButton Content="🎮 Game Design Document"
-                                             GroupName="ProjectType"
-                                             Foreground="#CCC"
-                                             FontSize="14" />
+											 GroupName="ProjectType"
+											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=GameDesign}"
+											 Foreground="#CCC"
+											 FontSize="14" />
+
+								<RadioButton Content="🌐 Translation"
+											 GroupName="ProjectType"
+											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=Translation}"
+											 Foreground="#CCC"
+											 FontSize="14" />
 							</StackPanel>
 
 							<!-- Кнопка создать -->

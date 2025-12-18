@@ -1,5 +1,6 @@
 ﻿using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
 using ReactiveUI;
 using System;
 using System.Collections.Generic;
@@ -9,6 +10,9 @@ using System.Reactive;
 using System.Reactive.Linq;
 using Writersword.Core.Enums;
 using Writersword.Core.Models.Project;
+using Writersword.Core.Models.Settings;
+using Writersword.Core.Models.WorkModes;
+using Writersword.Core.Services.Interfaces;
 using Writersword.Modules.TextEditor.ViewModels;
 using Writersword.Services;
 using Writersword.Services.Interfaces;
@@ -24,7 +28,11 @@ namespace Writersword.ViewModels
         private readonly IDialogService _dialogService;
         private readonly ISettingsService _settingsService;
         private readonly IProjectService _projectService;
+        private readonly IHotKeyService _hotKeyService;
+        private readonly IWorkModeConfigurationService _workModeConfigService;
+        private readonly IWorkModeService _workModeService;
 
+        private WorkMode? _activeWorkMode;
         private string _title = "Writersword";
         private object? _currentModule;
         private DocumentTabViewModel? _activeTab;
@@ -53,6 +61,15 @@ namespace Writersword.ViewModels
             set => this.RaiseAndSetIfChanged(ref _activeTab, value);
         }
 
+        /// <summary>Активный режим работы</summary>
+        public WorkMode? ActiveWorkMode
+        {
+            get => _activeWorkMode;
+            set => this.RaiseAndSetIfChanged(ref _activeWorkMode, value);
+        }
+
+        /// <summary>Доступные режимы работы для текущей вкладки</summary>
+        public ObservableCollection<WorkMode> AvailableWorkModes { get; } = new();
         // Команды для меню
         public ReactiveCommand<Unit, Unit> NewProjectCommand { get; }
         public ReactiveCommand<Unit, Unit> OpenProjectCommand { get; }
@@ -60,15 +77,25 @@ namespace Writersword.ViewModels
         public ReactiveCommand<Unit, Unit> SaveAsProjectCommand { get; }
         public ReactiveCommand<Unit, Unit> ExitCommand { get; }
         public ReactiveCommand<Unit, Unit> CreateNewTabCommand { get; }
+        public ReactiveCommand<WorkMode, Unit> SwitchWorkModeCommand { get; }
+        public ReactiveCommand<Unit, Unit> SaveWorkspaceForProjectCommand { get; }
+        public ReactiveCommand<Unit, Unit> SaveWorkspaceGloballyCommand { get; }
+        public ReactiveCommand<Unit, Unit> LoadDefaultWorkspaceCommand { get; }
 
         public MainWindowViewModel(
             IDialogService dialogService,
             ISettingsService settingsService,
-            IProjectService projectService)
+            IProjectService projectService,
+            IHotKeyService hotKeyService,
+            IWorkModeConfigurationService workModeConfigService,
+            IWorkModeService workModeService)
         {
             _dialogService = dialogService;
             _settingsService = settingsService;
             _projectService = projectService;
+            _hotKeyService = hotKeyService;
+            _workModeConfigService = workModeConfigService; 
+            _workModeService = workModeService;              
 
             OpenTabs = new ObservableCollection<DocumentTabViewModel>();
 
@@ -79,8 +106,15 @@ namespace Writersword.ViewModels
             SaveAsProjectCommand = ReactiveCommand.CreateFromTask(SaveAsProject);
             ExitCommand = ReactiveCommand.Create(Exit);
             CreateNewTabCommand = ReactiveCommand.Create(CreateNewTab);
+            // Команды для работы WorkMode
+            SwitchWorkModeCommand = ReactiveCommand.Create<WorkMode>(SwitchWorkMode);
+            SaveWorkspaceForProjectCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceForProject);
+            SaveWorkspaceGloballyCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceGlobally);
+            LoadDefaultWorkspaceCommand = ReactiveCommand.CreateFromTask(LoadDefaultWorkspace);
 
             _settingsService.Load();
+
+             RegisterHotKeys();
         }
 
         /// <summary>Показать модуль текстового редактора</summary>
@@ -313,39 +347,6 @@ namespace Writersword.ViewModels
             Console.WriteLine($"[LoadProject] FINISHED. Total tabs: {OpenTabs.Count}");
         }
 
-        ///// <summary>Обновить UI после загрузки проекта</summary>
-        //public void RefreshAfterProjectLoad()
-        //{
-        //    var stackTrace = new System.Diagnostics.StackTrace(true);
-        //    Console.WriteLine($"[RefreshAfterProjectLoad] CALLED FROM:\n{stackTrace}");
-        //    Console.WriteLine($"[RefreshAfterProjectLoad] OpenTabs count: {OpenTabs.Count}");
-
-        //    // ИСПРАВЛЕНИЕ: Показываем Welcome ТОЛЬКО если совсем нет вкладок
-        //    if (OpenTabs.Count == 0)
-        //    {
-        //        Console.WriteLine("[RefreshAfterProjectLoad] No tabs, showing welcome screen");
-        //        ShowWelcomeIfNoTabs();
-        //    }
-        //    else
-        //    {
-        //        // Есть вкладки - показываем редактор
-        //        if (ActiveTab != null)
-        //        {
-        //            Console.WriteLine($"[RefreshAfterProjectLoad] Active tab exists: {ActiveTab.Title}, showing editor");
-        //            ShowTextEditor();
-        //        }
-        //        else
-        //        {
-        //            // Нет активной вкладки - активируем первую
-        //            Console.WriteLine("[RefreshAfterProjectLoad] No ActiveTab, activating first tab");
-        //            if (OpenTabs.Count > 0)
-        //            {
-        //                ActivateTab(OpenTabs[0]);
-        //            }
-        //        }
-        //    }
-        //}
-
         /// <summary>Создать новую вкладку - открывает Welcome окно</summary>
         public async void CreateNewTab()
         {
@@ -409,6 +410,8 @@ namespace Writersword.ViewModels
             OpenTabs.Add(tabVM);
             ActiveTab = tabVM;
 
+            InitializeWorkModesForTab(tabVM);
+
             ShowTextEditor();
         }
 
@@ -424,6 +427,9 @@ namespace Writersword.ViewModels
             // Активируем выбранную
             tab.IsActive = true;
             ActiveTab = tab;
+
+            InitializeWorkModesForTab(tab);
+
             ShowTextEditor();
         }
 
@@ -481,6 +487,251 @@ namespace Writersword.ViewModels
             {
                 await App.ShowWelcomeScreen(desktop.MainWindow);
             }
+        }
+
+        private void RegisterHotKeys()
+        {
+            // Ctrl+N - Новый проект
+            _hotKeyService.Register(
+                "file.new",
+                new HotKey
+                {
+                    DisplayNameKey = "HotKey_File_New",  // ← Ключ для локализации
+                    DefaultGesture = new KeyGesture(Key.N, KeyModifiers.Control)
+                },
+                NewProjectCommand
+            );
+
+            // Ctrl+O - Открыть проект
+            _hotKeyService.Register(
+                "file.open",
+                new HotKey
+                {
+                    DisplayNameKey = "HotKey_File_Open",
+                    DefaultGesture = new KeyGesture(Key.O, KeyModifiers.Control)
+                },
+                OpenProjectCommand
+            );
+
+            // Ctrl+S - Сохранить
+            _hotKeyService.Register(
+                "file.save",
+                new HotKey
+                {
+                    DisplayNameKey = "HotKey_File_Save",
+                    DefaultGesture = new KeyGesture(Key.S, KeyModifiers.Control)
+                },
+                SaveProjectCommand
+            );
+
+            // Ctrl+Shift+S - Сохранить как
+            _hotKeyService.Register(
+                "file.saveas",
+                new HotKey
+                {
+                    DisplayNameKey = "HotKey_File_SaveAs",
+                    DefaultGesture = new KeyGesture(Key.S, KeyModifiers.Control | KeyModifiers.Shift)
+                },
+                SaveAsProjectCommand
+            );
+
+            // Ctrl+W - Закрыть вкладку
+            _hotKeyService.Register(
+                "file.closetab",
+                new HotKey
+                {
+                    DisplayNameKey = "HotKey_File_CloseTab",
+                    DefaultGesture = new KeyGesture(Key.W, KeyModifiers.Control)
+                },
+                ReactiveCommand.Create(() => {
+                    if (ActiveTab != null)
+                        CloseTab(ActiveTab);
+                })
+            );
+
+            // Ctrl+T - Новая вкладка
+            _hotKeyService.Register(
+                "file.newtab",
+                new HotKey
+                {
+                    DisplayNameKey = "HotKey_File_NewTab",
+                    DefaultGesture = new KeyGesture(Key.T, KeyModifiers.Control)
+                },
+                CreateNewTabCommand
+            );
+        }
+
+        /// <summary>Переключить режим работы</summary>
+        private void SwitchWorkMode(WorkMode workMode)
+        {
+            if (ActiveTab == null) return;
+
+            var docModel = ActiveTab.GetModel();
+            docModel.SetActiveWorkMode(workMode);
+
+            _workModeService.SetActiveWorkMode(workMode);
+            ActiveWorkMode = workMode;
+
+            // Обновляем IsActive для всех WorkModes
+            foreach (var wm in AvailableWorkModes)
+            {
+                wm.IsActive = (wm.Id == workMode.Id);
+            }
+
+            Console.WriteLine($"[MainWindowViewModel] Switched to WorkMode: {workMode.Title}");
+            Console.WriteLine($"[MainWindowViewModel] Modules in this mode: {workMode.ModuleSlots.Count}");
+
+            //ShowPlaceholderForWorkMode(workMode); // ЗАГЛУШКА!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+           ShowModulesForWorkMode(workMode);
+        }
+
+        /// <summary>Показать заглушку для WorkMode</summary>
+        private void ShowPlaceholderForWorkMode(WorkMode workMode)
+        {
+            // Создаём простой TextBlock как заглушку
+            var placeholder = new Avalonia.Controls.TextBlock
+            {
+                Text = $"WorkMode: {workMode.Title}\n\nМодулей: {workMode.ModuleSlots.Count}\n\n" +
+                       string.Join("\n", workMode.ModuleSlots.Select(ms => $"- {ms.ModuleType}")),
+                FontSize = 16,
+                Foreground = Avalonia.Media.Brushes.White,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+            };
+
+            CurrentModule = placeholder;
+        }
+
+        /// <summary>Показать модули для WorkMode</summary>
+        private void ShowModulesForWorkMode(WorkMode workMode)
+        {
+            Console.WriteLine($"[ShowModulesForWorkMode] Showing modules for: {workMode.Title}");
+
+            // Пока просто показываем текстовый редактор
+            // TODO: В будущем здесь будет Grid с модулями
+            ShowTextEditor();
+        }
+
+        /// <summary>Сохранить настройки для этого проекта</summary>
+        private async System.Threading.Tasks.Task SaveWorkspaceForProject()
+        {
+            if (ActiveTab == null) return;
+
+            var result = await _dialogService.ShowMessageAsync(
+                "Сохранить настройки проекта?",
+                "ВНИМАНИЕ! Если для этого проекта уже были сохранены настройки окон - они будут УДАЛЕНЫ и заменены текущими.\n\nВы уверены?",
+                Views.MessageBoxType.Warning,
+                Views.MessageBoxButtons.YesNo
+            );
+
+            if (result == Views.MessageBoxResult.Yes)
+            {
+                var docModel = ActiveTab.GetModel();
+                docModel.WorkModes = _workModeService.GetAllWorkModes();
+
+                // Сохраняем проект
+                var project = GetProjectForTab(ActiveTab);
+                if (project != null)
+                {
+                    var filePath = _projectService.GetProjectPath(project);
+                    if (filePath != null)
+                    {
+                        await _projectService.SaveAsync(project, filePath);
+                        Console.WriteLine("[MainWindowViewModel] Workspace saved to PROJECT");
+                    }
+                }
+            }
+        }
+
+        /// <summary>Сохранить настройки для всех проектов этого типа</summary>
+        private async System.Threading.Tasks.Task SaveWorkspaceGlobally()
+        {
+            if (ActiveTab == null) return;
+
+            var project = GetProjectForTab(ActiveTab);
+            if (project == null) return;
+
+            var result = await _dialogService.ShowMessageAsync(
+                "Сохранить глобальные настройки?",
+                $"Эти настройки будут применяться для всех НОВЫХ проектов типа '{project.Type}'.\n\nВы всегда сможете вернуться к дефолтным настройкам или настроить каждый проект отдельно.\n\nСохранить?",
+                Views.MessageBoxType.Question,
+                Views.MessageBoxButtons.YesNo
+            );
+
+            if (result == Views.MessageBoxResult.Yes)
+            {
+                var workModes = _workModeService.GetAllWorkModes();
+                _workModeConfigService.SaveGlobalConfiguration(project.Type, workModes);
+
+                await _dialogService.ShowMessageAsync(
+                    "Успешно",
+                    "Глобальные настройки сохранены!",
+                    Views.MessageBoxType.Info,
+                    Views.MessageBoxButtons.OK
+                );
+
+                Console.WriteLine("[MainWindowViewModel] Workspace saved GLOBALLY");
+            }
+        }
+
+        /// <summary>Загрузить дефолтные настройки</summary>
+        private async System.Threading.Tasks.Task LoadDefaultWorkspace()
+        {
+            if (ActiveTab == null) return;
+
+            var project = GetProjectForTab(ActiveTab);
+            if (project == null) return;
+
+            var result = await _dialogService.ShowMessageAsync(
+                "Загрузить дефолтные настройки?",
+                "Текущая раскладка окон будет заменена на дефолтную конфигурацию.\n\nВНИМАНИЕ: Это НЕ удалит ваши сохранённые настройки! Чтобы сохранить дефолтную раскладку, используйте кнопку 'Сохранить настройки для этого проекта' после загрузки.\n\nЗагрузить дефолтные настройки?",
+                Views.MessageBoxType.Question,
+                Views.MessageBoxButtons.YesNo
+            );
+
+            if (result == Views.MessageBoxResult.Yes)
+            {
+                var defaultWorkModes = _workModeConfigService.LoadDefaultConfiguration(project.Type);
+                var workModes = _workModeService.InitializeWorkModes(project.Type, defaultWorkModes);
+
+                AvailableWorkModes.Clear();
+                foreach (var wm in workModes)
+                {
+                    AvailableWorkModes.Add(wm);
+                }
+
+                if (workModes.Count > 0)
+                {
+                    SwitchWorkMode(workModes[0]);
+                }
+
+                Console.WriteLine("[MainWindowViewModel] Loaded DEFAULT workspace");
+            }
+        }
+
+        /// <summary>Инициализировать WorkModes для вкладки</summary>
+        private void InitializeWorkModesForTab(DocumentTabViewModel tab)
+        {
+            var project = GetProjectForTab(tab);
+            if (project == null) return;
+
+            var docModel = tab.GetModel();
+            var workModes = _workModeService.InitializeWorkModes(project.Type, docModel.WorkModes);
+
+            AvailableWorkModes.Clear();
+            foreach (var wm in workModes)
+            {
+                AvailableWorkModes.Add(wm);
+            }
+
+            // Устанавливаем активный режим
+            var activeWM = workModes.FirstOrDefault(wm => wm.IsActive) ?? workModes.FirstOrDefault();
+            if (activeWM != null)
+            {
+                ActiveWorkMode = activeWM;
+            }
+
+            Console.WriteLine($"[MainWindowViewModel] Initialized {workModes.Count} WorkModes for tab");
         }
     }
 }

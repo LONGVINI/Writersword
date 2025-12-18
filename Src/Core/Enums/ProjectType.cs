@@ -8,6 +8,7 @@ namespace Writersword.Core.Enums
         Novel,          // Роман / книга
         Screenplay,     // Сценарий
         Poetry,         // Поэзия
-        GameDesign      // Гейм-дизайн документ
+        GameDesign,     // Гейм-дизайн документ
+        Translation,    // Перевод текста
     }
 }

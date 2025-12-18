@@ -79,14 +79,14 @@
 							<DataTemplate>
 								<!-- Вкладка с закруглением в стиле Chrome -->
 								<Border Background="{Binding IsActive, Converter={StaticResource TabBackgroundConverter}}"
-        CornerRadius="8,8,0,0"
-        Padding="12,6,8,6"
-        Cursor="Hand"
-        Width="180"
-        Height="32"
-        Margin="0,4,0,0"
-        Focusable="False"
-        PointerPressed="Tab_PointerPressed">
+										CornerRadius="8,8,0,0"
+										Padding="12,6,8,6"
+										Cursor="Hand"
+										Width="180"
+										Height="32"
+										Margin="0,4,0,0"
+										Focusable="False"
+										PointerPressed="Tab_PointerPressed">
 
 									<Border.Styles>
 										<Style Selector="Border:pointerover">
@@ -177,37 +177,40 @@
 
 			</ScrollViewer>
 		</Border>
-		
-		<!-- Панель с кнопками модулей -->
+
+		<!-- Панель с кнопками WorkModes (режимов работы) -->
 		<Border DockPanel.Dock="Top"
-                Background="#2D2D30"
-                BorderBrush="#3F3F46"
-                BorderThickness="0,0,0,1"
-                Padding="10,5">
+				Background="#2D2D30"
+				BorderBrush="#3F3F46"
+				BorderThickness="0,0,0,1"
+				Padding="10,5">
+			<ItemsControl ItemsSource="{Binding AvailableWorkModes}"
+						  Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+				<ItemsControl.ItemsPanel>
+					<ItemsPanelTemplate>
+						<StackPanel Orientation="Horizontal" Spacing="5" />
+					</ItemsPanelTemplate>
+				</ItemsControl.ItemsPanel>
 
-			<StackPanel Orientation="Horizontal" Spacing="5">
-				<ToggleButton Content="{x:Static loc:Strings.Module_Writer}"
-                              IsChecked="True"
-                              Padding="10,4"
-                              Background="#007ACC"
-                              Foreground="White"
-                              FontSize="12"
-                              Cursor="Hand" />
-
-				<ToggleButton Content="{x:Static loc:Strings.Module_Timeline}"
-                              Padding="10,4"
-                              Background="#3E3E42"
-                              Foreground="#CCC"
-                              FontSize="12"
-                              Cursor="Hand" />
-
-				<ToggleButton Content="{x:Static loc:Strings.Module_Characters}"
-                              Padding="10,4"
-                              Background="#3E3E42"
-                              Foreground="#CCC"
-                              FontSize="12"
-                              Cursor="Hand" />
-			</StackPanel>
+				<ItemsControl.ItemTemplate>
+					<DataTemplate>
+						<Button Content="{Binding Title}"
+								Command="{Binding $parent[ItemsControl].Tag.SwitchWorkModeCommand}"
+								CommandParameter="{Binding}"
+								Background="#3E3E42"
+								Foreground="White"
+								Padding="10,4"
+								FontSize="12"
+								Cursor="Hand">
+							<Button.Styles>
+								<Style Selector="Button:pointerover">
+									<Setter Property="Background" Value="#4A4A4C" />
+								</Style>
+							</Button.Styles>
+						</Button>
+					</DataTemplate>
+				</ItemsControl.ItemTemplate>
+			</ItemsControl>
 		</Border>
 
 		<!-- Статус бар -->
