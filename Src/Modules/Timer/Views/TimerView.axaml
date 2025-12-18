@@ -1,0 +1,63 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.Timer.ViewModels"
+             x:Class="Writersword.Modules.Timer.Views.TimerView"
+             x:DataType="vm:TimerViewModel"
+             Background="#2D2D30">
+    
+    <Border Padding="10">
+        <StackPanel Spacing="10" HorizontalAlignment="Center">
+            
+            <!-- Заголовок модуля -->
+            <TextBlock Text="⏱️ Таймер работы" 
+                       FontSize="12" 
+                       FontWeight="Bold" 
+                       Foreground="White"
+                       HorizontalAlignment="Center" />
+            
+            <!-- Отображение времени (большими цифрами) -->
+            <TextBlock Text="{Binding DisplayTime}" 
+                       FontSize="24" 
+                       FontWeight="Bold" 
+                       Foreground="#007ACC"
+                       HorizontalAlignment="Center" />
+            
+            <!-- Кнопки управления таймером -->
+            <StackPanel Orientation="Horizontal" Spacing="5" HorizontalAlignment="Center">
+                
+                <!-- Кнопка СТАРТ (зелёная) -->
+                <Button Content="▶" 
+                        Command="{Binding StartCommand}"
+                        Background="#28A745"
+                        Foreground="White"
+                        Width="40"
+                        Height="30"
+                        FontSize="14"
+                        ToolTip.Tip="Запустить таймер" />
+                
+                <!-- Кнопка ПАУЗА (жёлтая) -->
+                <Button Content="⏸" 
+                        Command="{Binding StopCommand}"
+                        Background="#FFC107"
+                        Foreground="White"
+                        Width="40"
+                        Height="30"
+                        FontSize="14"
+                        ToolTip.Tip="Остановить таймер" />
+                
+                <!-- Кнопка СБРОС (красная) -->
+                <Button Content="⏹" 
+                        Command="{Binding ResetCommand}"
+                        Background="#DC3545"
+                        Foreground="White"
+                        Width="40"
+                        Height="30"
+                        FontSize="14"
+                        ToolTip.Tip="Сбросить таймер" />
+                        
+            </StackPanel>
+            
+        </StackPanel>
+    </Border>
+    
+</UserControl>

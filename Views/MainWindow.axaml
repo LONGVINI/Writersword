@@ -2,6 +2,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Writersword.ViewModels"
         xmlns:loc="using:Writersword.Resources.Localization"
+        xmlns:converters="using:Writersword.Converters"
+        xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
         x:Class="Writersword.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding Title}"
@@ -11,6 +13,16 @@
         Background="#1E1E1E"
         RequestedThemeVariant="Dark">
 
+	<Window.Resources>
+		<converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
+	</Window.Resources>
+	
+	<!--<Window.DataTemplates>
+		--><!-- Для вложенного содержимого в Dock --><!--
+		<DataTemplate DataType="Control">
+			<ContentControl Content="{Binding}" />
+		</DataTemplate>
+	</Window.DataTemplates>-->
 	<DockPanel>
 
 		<!-- Меню -->
@@ -183,9 +195,9 @@
 				Background="#2D2D30"
 				BorderBrush="#3F3F46"
 				BorderThickness="0,0,0,1"
-				Padding="10,5">
-			<ItemsControl ItemsSource="{Binding AvailableWorkModes}"
-						  Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+				Padding="10,5"
+				x:Name="WorkModesPanel">
+			<ItemsControl ItemsSource="{Binding AvailableWorkModes}">
 				<ItemsControl.ItemsPanel>
 					<ItemsPanelTemplate>
 						<StackPanel Orientation="Horizontal" Spacing="5" />
@@ -195,18 +207,28 @@
 				<ItemsControl.ItemTemplate>
 					<DataTemplate>
 						<Button Content="{Binding Title}"
-								Command="{Binding $parent[ItemsControl].Tag.SwitchWorkModeCommand}"
-								CommandParameter="{Binding}"
-								Background="#3E3E42"
-								Foreground="White"
+								Click="WorkModeButton_Click"
+								Tag="{Binding}"
 								Padding="10,4"
 								FontSize="12"
 								Cursor="Hand">
+
+							<!-- Стили -->
 							<Button.Styles>
+								<Style Selector="Button">
+									<Setter Property="Background" Value="#3E3E42" />
+									<Setter Property="Foreground" Value="White" />
+								</Style>
 								<Style Selector="Button:pointerover">
 									<Setter Property="Background" Value="#4A4A4C" />
 								</Style>
 							</Button.Styles>
+
+							<!-- Динамический цвет по IsActive -->
+							<Button.Background>
+								<SolidColorBrush Color="{Binding IsActive, Converter={StaticResource BoolToColorConverter}}" />
+							</Button.Background>
+
 						</Button>
 					</DataTemplate>
 				</ItemsControl.ItemTemplate>
@@ -229,10 +251,9 @@
 			</StackPanel>
 		</Border>
 
-		<!-- Центральная область контента -->
-		<ContentControl Content="{Binding CurrentModule}"
-                        Background="#252526" />
-
+		<!-- ВРЕМЕННО: Простое отображение модулей БЕЗ Dock -->
+		<dock:DockControl Layout="{Binding DockLayout}"
+                  Background="#252526" />
 	</DockPanel>
 
 </Window>

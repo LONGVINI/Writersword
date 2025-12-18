@@ -1,0 +1,14 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
+        x:Class="Writersword.Views.FloatingWindow"
+        Title="Module"
+        Width="800"
+        Height="600"
+        MinWidth="300"
+        MinHeight="200"
+        Background="#1E1E1E"
+        RequestedThemeVariant="Dark"
+        ShowInTaskbar="True">
+	<dock:DockControl x:Name="DockControlHost" />
+</Window>

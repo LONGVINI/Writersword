@@ -26,5 +26,8 @@ namespace Writersword.Core.Models.WorkModes
 
         /// <summary>Видим ли модуль по умолчанию</summary>
         public bool IsVisible { get; set; } = true;
+
+        /// <summary>Можно ли закрыть модуль (главные модули режима нельзя закрывать)</summary>
+        public bool IsCloseable { get; set; } = true;
     }
 }

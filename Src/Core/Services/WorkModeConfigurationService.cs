@@ -113,6 +113,7 @@ namespace Writersword.Core.Services.WorkModes
                     MinHeight = ms.MinHeight,
                     IsResizable = ms.IsResizable,
                     IsVisible = ms.IsVisible,
+                    IsCloseable = ms.IsCloseable,
                     ModuleState = new Dictionary<string, object>(ms.ModuleState)
                 }).ToList(),
                 Settings = new WorkModeSettings
@@ -148,7 +149,8 @@ namespace Writersword.Core.Services.WorkModes
                     MinWidth = slotTemplate.MinWidth,
                     MinHeight = slotTemplate.MinHeight,
                     IsVisible = slotTemplate.IsVisible,
-                    IsResizable = true
+                    IsResizable = true,
+                    IsCloseable = slotTemplate.IsCloseable
                 }).ToList()
             }).ToList();
         }

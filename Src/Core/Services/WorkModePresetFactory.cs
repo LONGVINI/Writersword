@@ -5,8 +5,9 @@ using Writersword.Core.Models.WorkModes;
 namespace Writersword.Core.Services.WorkModes
 {
     /// <summary>
-    /// Фабрика для создания дефолтных пресетов WorkModes по типу проекта
-    /// Содержит hardcoded конфигурации для каждого типа проекта
+    /// Фабрика для создания дефолтных пресетов WorkModes по типу проекта.
+    /// Содержит hardcoded конфигурации для каждого типа проекта.
+    /// Определяет какие модули можно закрывать, а какие являются обязательными.
     /// </summary>
     public static class WorkModePresetFactory
     {
@@ -20,7 +21,7 @@ namespace Writersword.Core.Services.WorkModes
                 ProjectType.Poetry => CreatePoetryPreset(),
                 ProjectType.GameDesign => CreateGameDesignPreset(),
                 ProjectType.Translation => CreateTranslationPreset(),
-                _ => CreateNovelPreset() // По умолчанию - писательский
+                _ => CreateNovelPreset()
             };
         }
 
@@ -39,44 +40,48 @@ namespace Writersword.Core.Services.WorkModes
                         Title = "Редактор",
                         Icon = "📝",
                         Order = 0,
-                        IsCloseable = false, // Нельзя закрыть
+                        IsCloseable = false,
                         ModuleSlots = new List<ModuleSlotTemplate>
                         {
-                            // TextEditor занимает большую часть экрана
+                            // TextEditor - ГЛАВНЫЙ модуль, нельзя закрыть!
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.TextEditor,
                                 Position = new WorkModeGridPosition { Row = 0, Column = 0 },
                                 Size = new WorkModeGridSize(2, 3),
                                 MinWidth = 400,
-                                MinHeight = 300
+                                MinHeight = 300,
+                                IsCloseable = false
                             },
-                            // Synonyms справа сверху
+                            // Synonyms - можно закрыть
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.Synonyms,
                                 Position = new WorkModeGridPosition { Row = 0, Column = 3 },
                                 Size = new WorkModeGridSize(1, 1),
                                 MinWidth = 200,
-                                MinHeight = 150
+                                MinHeight = 150,
+                                IsCloseable = true
                             },
-                            // Timer справа снизу
+                            // Timer - можно закрыть
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.Timer,
                                 Position = new WorkModeGridPosition { Row = 1, Column = 3 },
                                 Size = new WorkModeGridSize(1, 1),
                                 MinWidth = 200,
-                                MinHeight = 150
+                                MinHeight = 150,
+                                IsCloseable = true
                             },
-                            // Notes внизу на всю ширину
+                            // Notes - можно закрыть
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.Notes,
                                 Position = new WorkModeGridPosition { Row = 2, Column = 0 },
                                 Size = new WorkModeGridSize(1, 4),
                                 MinWidth = 600,
-                                MinHeight = 100
+                                MinHeight = 100,
+                                IsCloseable = true
                             }
                         }
                     },
@@ -91,23 +96,25 @@ namespace Writersword.Core.Services.WorkModes
                         IsCloseable = true,
                         ModuleSlots = new List<ModuleSlotTemplate>
                         {
-                            // Timeline занимает основную часть
+                            // Timeline - ГЛАВНЫЙ модуль этого режима
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.Timeline,
                                 Position = new WorkModeGridPosition { Row = 0, Column = 0 },
                                 Size = new WorkModeGridSize(2, 3),
                                 MinWidth = 500,
-                                MinHeight = 400
+                                MinHeight = 400,
+                                IsCloseable = false
                             },
-                            // Characters справа (мини-версия)
+                            // Characters - можно закрыть
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.Characters,
                                 Position = new WorkModeGridPosition { Row = 0, Column = 3 },
                                 Size = new WorkModeGridSize(2, 1),
                                 MinWidth = 200,
-                                MinHeight = 400
+                                MinHeight = 400,
+                                IsCloseable = true
                             }
                         }
                     },
@@ -122,23 +129,25 @@ namespace Writersword.Core.Services.WorkModes
                         IsCloseable = true,
                         ModuleSlots = new List<ModuleSlotTemplate>
                         {
-                            // Characters слева
+                            // Characters - ГЛАВНЫЙ модуль
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.Characters,
                                 Position = new WorkModeGridPosition { Row = 0, Column = 0 },
                                 Size = new WorkModeGridSize(2, 2),
                                 MinWidth = 300,
-                                MinHeight = 400
+                                MinHeight = 400,
+                                IsCloseable = false
                             },
-                            // Relationships справа
+                            // Relationships - можно закрыть
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.Relationships,
                                 Position = new WorkModeGridPosition { Row = 0, Column = 2 },
                                 Size = new WorkModeGridSize(2, 2),
                                 MinWidth = 300,
-                                MinHeight = 400
+                                MinHeight = 400,
+                                IsCloseable = true
                             }
                         }
                     }
@@ -163,17 +172,25 @@ namespace Writersword.Core.Services.WorkModes
                         IsCloseable = false,
                         ModuleSlots = new List<ModuleSlotTemplate>
                         {
+                            // TextEditor - главный модуль
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.TextEditor,
                                 Position = new WorkModeGridPosition { Row = 0, Column = 0 },
-                                Size = new WorkModeGridSize(2, 3)
+                                Size = new WorkModeGridSize(2, 3),
+                                MinWidth = 400,
+                                MinHeight = 300,
+                                IsCloseable = false
                             },
+                            // Dialogues - можно закрыть
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.Dialogues,
                                 Position = new WorkModeGridPosition { Row = 0, Column = 3 },
-                                Size = new WorkModeGridSize(2, 1)
+                                Size = new WorkModeGridSize(2, 1),
+                                MinWidth = 200,
+                                MinHeight = 300,
+                                IsCloseable = true
                             }
                         }
                     }
@@ -198,17 +215,25 @@ namespace Writersword.Core.Services.WorkModes
                         IsCloseable = false,
                         ModuleSlots = new List<ModuleSlotTemplate>
                         {
+                            // Poetry - главный модуль
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.Poetry,
                                 Position = new WorkModeGridPosition { Row = 0, Column = 0 },
-                                Size = new WorkModeGridSize(2, 3)
+                                Size = new WorkModeGridSize(2, 3),
+                                MinWidth = 400,
+                                MinHeight = 300,
+                                IsCloseable = false
                             },
+                            // RhymeHelper - можно закрыть
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.RhymeHelper,
                                 Position = new WorkModeGridPosition { Row = 0, Column = 3 },
-                                Size = new WorkModeGridSize(2, 1)
+                                Size = new WorkModeGridSize(2, 1),
+                                MinWidth = 200,
+                                MinHeight = 300,
+                                IsCloseable = true
                             }
                         }
                     }
@@ -224,6 +249,7 @@ namespace Writersword.Core.Services.WorkModes
                 ProjectType = ProjectType.GameDesign,
                 WorkModes = new List<WorkModeTemplate>
                 {
+                    // Режим "Документация"
                     new WorkModeTemplate
                     {
                         Type = WorkModeType.Editor,
@@ -233,15 +259,20 @@ namespace Writersword.Core.Services.WorkModes
                         IsCloseable = false,
                         ModuleSlots = new List<ModuleSlotTemplate>
                         {
+                            // TextEditor - главный модуль
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.TextEditor,
                                 Position = new WorkModeGridPosition { Row = 0, Column = 0 },
-                                Size = new WorkModeGridSize(2, 4)
+                                Size = new WorkModeGridSize(2, 4),
+                                MinWidth = 600,
+                                MinHeight = 400,
+                                IsCloseable = false
                             }
                         }
                     },
 
+                    // Режим "Карты"
                     new WorkModeTemplate
                     {
                         Type = WorkModeType.Maps,
@@ -251,11 +282,15 @@ namespace Writersword.Core.Services.WorkModes
                         IsCloseable = true,
                         ModuleSlots = new List<ModuleSlotTemplate>
                         {
+                            // Maps - главный модуль режима
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.Maps,
                                 Position = new WorkModeGridPosition { Row = 0, Column = 0 },
-                                Size = new WorkModeGridSize(2, 4)
+                                Size = new WorkModeGridSize(2, 4),
+                                MinWidth = 600,
+                                MinHeight = 400,
+                                IsCloseable = false
                             }
                         }
                     }
@@ -280,11 +315,15 @@ namespace Writersword.Core.Services.WorkModes
                         IsCloseable = false,
                         ModuleSlots = new List<ModuleSlotTemplate>
                         {
+                            // TextEditor - главный модуль
                             new ModuleSlotTemplate
                             {
                                 ModuleType = ModuleType.TextEditor,
                                 Position = new WorkModeGridPosition { Row = 0, Column = 0 },
-                                Size = new WorkModeGridSize(2, 4)
+                                Size = new WorkModeGridSize(2, 4),
+                                MinWidth = 600,
+                                MinHeight = 400,
+                                IsCloseable = false
                             }
                         }
                     }

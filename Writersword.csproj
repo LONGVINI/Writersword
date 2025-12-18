@@ -1,16 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
 	<!-- ========================================
-       Настройки проекта
+       🔧 НАСТРОЙКИ ПРОЕКТА
        ======================================== -->
-
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
 		<TargetFramework>net10.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-		<!--<ApplicationIcon>Resources\Icons\app-icon.ico</ApplicationIcon>-->
-		<!--<ApplicationManifest>app.manifest</ApplicationManifest>-->
 		<AssemblyName>Writersword</AssemblyName>
 		<RootNamespace>Writersword</RootNamespace>
 		<Version>1.0.0</Version>
@@ -18,28 +15,34 @@
 		<Company>Writersword Team</Company>
 		<Copyright>Copyright © 2025</Copyright>
 		<Description>Multi-modal writing application for writers, poets, screenwriters, and game developers</Description>
-		<CoreCompileDependsOn>PrepareResources;$(CompileDependsOn)</CoreCompileDependsOn>
+		
+		<!-- Отключаем автоматическое включение .resx (будем управлять вручную) -->
+		<EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
 	</PropertyGroup>
 
 	<!-- ========================================
-       Avalonia UI + Docking
-       ======================================== -->
-
+   📦 AVALONIA UI + DOCK СИСТЕМА
+   ======================================== -->
 	<ItemGroup>
-		<PackageReference Include="Avalonia" Version="11.3.9" />
-		<PackageReference Include="Avalonia.Desktop" Version="11.3.9" />
+		<!-- Основные пакеты Avalonia (версия 11.3.10) -->
+		<PackageReference Include="Avalonia" Version="11.3.10" />
+		<PackageReference Include="Avalonia.Desktop" Version="11.3.10" />
+		<PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.10" />
+		<PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.10" />
+		<PackageReference Include="Avalonia.Diagnostics" Version="11.3.10" />
 		<PackageReference Include="Avalonia.ReactiveUI" Version="11.3.8" />
-		<PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.9" />
-		<PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.9" />
+
+		<!-- Dock система (11.3.8 совместима с Avalonia 11.3.10) -->
 		<PackageReference Include="Dock.Avalonia" Version="11.3.8" />
+		<PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="11.3.8" />
+		<PackageReference Include="Dock.Model" Version="11.3.8" />
 		<PackageReference Include="Dock.Model.Avalonia" Version="11.3.8" />
-		<PackageReference Include="Avalonia.Diagnostics" Version="11.*" /> <!-- DevTools-->
+		<PackageReference Include="Dock.Settings" Version="11.3.8" />
 	</ItemGroup>
 
 	<!-- ========================================
-       MVVM + DI
+       🏗️ MVVM + DEPENDENCY INJECTION
        ======================================== -->
-
 	<ItemGroup>
 		<PackageReference Include="ReactiveUI" Version="20.1.1" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
@@ -47,9 +50,8 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       Локализация + JSON
+       🌍 ЛОКАЛИЗАЦИЯ + JSON
        ======================================== -->
-
 	<ItemGroup>
 		<PackageReference Include="System.Resources.Extensions" Version="8.0.0" />
 		<PackageReference Include="System.Text.Json" Version="10.0.0" />
@@ -57,83 +59,66 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       Ресурсы
+       📁 РЕСУРСЫ (картинки, стили)
        ======================================== -->
-
 	<ItemGroup>
+		<!-- Включаем все ресурсы КРОМЕ локализации -->
 		<AvaloniaResource Include="Resources\**" Exclude="Resources\Localization\**" />
+		
+		<!-- Включаем все стили -->
 		<AvaloniaResource Include="Styles\**" />
 	</ItemGroup>
 
+	<!-- ========================================
+       🌐 ЛОКАЛИЗАЦИЯ (resx файлы)
+       ВАЖНО: Включаем вручную, т.к. отключили автоматическое
+       ======================================== -->
 	<ItemGroup>
-		<AvaloniaXaml Remove="Src\Modules\Timer\Models\**" />
-		<AvaloniaXaml Remove="Src\Modules\Timer\Services\**" />
-		<AvaloniaXaml Remove="Src\Modules\Timer\ViewModels\**" />
-		<AvaloniaXaml Remove="Src\Modules\Timer\Views\**" />
-		<Compile Remove="Src\Modules\Timer\Models\**" />
-		<Compile Remove="Src\Modules\Timer\Services\**" />
-		<Compile Remove="Src\Modules\Timer\ViewModels\**" />
-		<Compile Remove="Src\Modules\Timer\Views\**" />
-		<EmbeddedResource Remove="Src\Modules\Timer\Models\**" />
-		<EmbeddedResource Remove="Src\Modules\Timer\Services\**" />
-		<EmbeddedResource Remove="Src\Modules\Timer\ViewModels\**" />
-		<EmbeddedResource Remove="Src\Modules\Timer\Views\**" />
-		<None Remove="Src\Modules\Timer\Models\**" />
-		<None Remove="Src\Modules\Timer\Services\**" />
-		<None Remove="Src\Modules\Timer\ViewModels\**" />
-		<None Remove="Src\Modules\Timer\Views\**" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<AvaloniaResource Remove="Resources\Localization\Strings.resx" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<EmbeddedResource Remove="Resources\Localization\Strings.resx" />
-		<EmbeddedResource Remove="Resources\Localization\Strings.ru.resx" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<Folder Include="Models\" />
-		<Folder Include="Resources\Images\" />
-		<Folder Include="Src\Modules\Timer\" />
-		<Folder Include="Projects\" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<AvaloniaResource Update="Resources\Localization\Strings.Designer.cs">
-			<DesignTime>True</DesignTime>
-			<AutoGen>True</AutoGen>
-			<DependentUpon>Strings.resx</DependentUpon>
-		</AvaloniaResource>
-	</ItemGroup>
-
-	<!-- ============
-	  	 Localization
-		 ============ -->
-
-	<ItemGroup>
-		<AvaloniaResource Include="Resources\**" Exclude="Resources\Localization\**" />
-	</ItemGroup>
-
-	<ItemGroup>
+		<!-- Основной файл локализации (генерирует .Designer.cs) -->
 		<EmbeddedResource Include="Resources\Localization\Strings.resx">
 			<Generator>PublicResXFileCodeGenerator</Generator>
 			<LastGenOutput>Strings.Designer.cs</LastGenOutput>
 		</EmbeddedResource>
+		
+		<!-- Русская локализация (зависит от основного файла) -->
 		<EmbeddedResource Include="Resources\Localization\Strings.ru.resx">
 			<DependentUpon>Strings.resx</DependentUpon>
 		</EmbeddedResource>
-	</ItemGroup>
-
-	<ItemGroup>
+		
+		<!-- Авто-генерируемый код для локализации -->
 		<Compile Update="Resources\Localization\Strings.Designer.cs">
 			<DesignTime>True</DesignTime>
 			<AutoGen>True</AutoGen>
 			<DependentUpon>Strings.resx</DependentUpon>
 		</Compile>
+	</ItemGroup>
+
+	<!-- ========================================
+       📂 ПУСТЫЕ ПАПКИ (для структуры проекта)
+       ======================================== -->
+	<ItemGroup>
+		<Folder Include="Models\" />
+		<Folder Include="Resources\Images\" />
+		<Folder Include="Projects\" />
+	</ItemGroup>
+
+	<!-- ========================================
+       🎨 КАСТОМНЫЕ СТИЛИ
+       ======================================== -->
+	<ItemGroup>
+		<AvaloniaResource Update="Styles\DockStyles.axaml">
+			<SubType>Designer</SubType>
+		</AvaloniaResource>
+	</ItemGroup>
+
+	<!-- ========================================
+       🔧 ПРОЧЕЕ
+       ======================================== -->
+	<ItemGroup>
+		<!-- MessageBox view (зависимость для code-behind) -->
 		<Compile Update="Views\MessageBoxView.axaml.cs">
-		  <DependentUpon>MessageBoxView.axaml</DependentUpon>
+			<DependentUpon>MessageBoxView.axaml</DependentUpon>
 		</Compile>
 	</ItemGroup>
+
 </Project>

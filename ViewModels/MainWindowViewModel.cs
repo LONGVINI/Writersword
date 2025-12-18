@@ -1,6 +1,10 @@
 ﻿using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
+using Dock.Model.Avalonia.Controls;
+using Dock.Model.Controls;
+using Dock.Model.Core;
+using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using System;
 using System.Collections.Generic;
@@ -13,9 +17,11 @@ using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Settings;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Core.Services.Interfaces;
+using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.ViewModels;
 using Writersword.Services;
 using Writersword.Services.Interfaces;
+
 
 namespace Writersword.ViewModels
 {
@@ -31,11 +37,14 @@ namespace Writersword.ViewModels
         private readonly IHotKeyService _hotKeyService;
         private readonly IWorkModeConfigurationService _workModeConfigService;
         private readonly IWorkModeService _workModeService;
+        private readonly Services.DockFactory _dockFactory;
+        private readonly Dictionary<string, IRootDock> _tabLayouts = new();
 
         private WorkMode? _activeWorkMode;
         private string _title = "Writersword";
         private object? _currentModule;
         private DocumentTabViewModel? _activeTab;
+        private IRootDock? _dockLayout;
 
         /// <summary>Заголовок окна</summary>
         public string Title
@@ -49,6 +58,13 @@ namespace Writersword.ViewModels
         {
             get => _currentModule;
             set => this.RaiseAndSetIfChanged(ref _currentModule, value);
+        }
+
+        /// <summary>Layout для Dock системы</summary>
+        public IRootDock? DockLayout
+        {
+            get => _dockLayout;
+            set => this.RaiseAndSetIfChanged(ref _dockLayout, value);
         }
 
         /// <summary>Открытые вкладки документов</summary>
@@ -70,6 +86,7 @@ namespace Writersword.ViewModels
 
         /// <summary>Доступные режимы работы для текущей вкладки</summary>
         public ObservableCollection<WorkMode> AvailableWorkModes { get; } = new();
+
         // Команды для меню
         public ReactiveCommand<Unit, Unit> NewProjectCommand { get; }
         public ReactiveCommand<Unit, Unit> OpenProjectCommand { get; }
@@ -88,14 +105,16 @@ namespace Writersword.ViewModels
             IProjectService projectService,
             IHotKeyService hotKeyService,
             IWorkModeConfigurationService workModeConfigService,
-            IWorkModeService workModeService)
+            IWorkModeService workModeService,
+            Services.DockFactory dockFactory)
         {
             _dialogService = dialogService;
             _settingsService = settingsService;
             _projectService = projectService;
             _hotKeyService = hotKeyService;
-            _workModeConfigService = workModeConfigService; 
-            _workModeService = workModeService;              
+            _workModeConfigService = workModeConfigService;
+            _workModeService = workModeService;
+            _dockFactory = dockFactory;
 
             OpenTabs = new ObservableCollection<DocumentTabViewModel>();
 
@@ -114,7 +133,8 @@ namespace Writersword.ViewModels
 
             _settingsService.Load();
 
-             RegisterHotKeys();
+            RegisterHotKeys();
+            InitializeDockFactory();
         }
 
         /// <summary>Показать модуль текстового редактора</summary>
@@ -415,22 +435,41 @@ namespace Writersword.ViewModels
             ShowTextEditor();
         }
 
-        /// <summary>Активировать вкладку</summary>
+        // Измени метод ActivateTab:
         public void ActivateTab(DocumentTabViewModel tab)
         {
-            // Деактивируем все вкладки
             foreach (var t in OpenTabs)
             {
                 t.IsActive = false;
             }
 
-            // Активируем выбранную
             tab.IsActive = true;
             ActiveTab = tab;
 
-            InitializeWorkModesForTab(tab);
+            // Не инициализируем WorkModes заново, используем существующие
+            var project = GetProjectForTab(tab);
+            if (project != null)
+            {
+                string tabKey = tab.GetModel().FilePath ?? tab.Id.ToString();
 
-            ShowTextEditor();
+                // Если layout уже создан для этой вкладки - переиспользуем его
+                if (_tabLayouts.ContainsKey(tabKey))
+                {
+                    Console.WriteLine($"[ActivateTab] Reusing existing layout for tab: {tab.Title}");
+                    DockLayout = _tabLayouts[tabKey];
+                }
+                else
+                {
+                    Console.WriteLine($"[ActivateTab] Creating new layout for tab: {tab.Title}");
+                    InitializeWorkModesForTab(tab);
+
+                    // Сохраняем созданный layout
+                    if (DockLayout != null)
+                    {
+                        _tabLayouts[tabKey] = DockLayout;
+                    }
+                }
+            }
         }
 
         /// <summary>Закрыть вкладку</summary>
@@ -479,6 +518,7 @@ namespace Writersword.ViewModels
                 ShowWelcomeIfNoTabs();
             }
         }
+
         /// <summary>Показать Welcome если нет вкладок</summary>
         private async void ShowWelcomeIfNoTabs()
         {
@@ -581,35 +621,58 @@ namespace Writersword.ViewModels
             Console.WriteLine($"[MainWindowViewModel] Switched to WorkMode: {workMode.Title}");
             Console.WriteLine($"[MainWindowViewModel] Modules in this mode: {workMode.ModuleSlots.Count}");
 
-            //ShowPlaceholderForWorkMode(workMode); // ЗАГЛУШКА!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-           ShowModulesForWorkMode(workMode);
+            ShowModulesForWorkMode(workMode);
         }
 
-        /// <summary>Показать заглушку для WorkMode</summary>
-        private void ShowPlaceholderForWorkMode(WorkMode workMode)
-        {
-            // Создаём простой TextBlock как заглушку
-            var placeholder = new Avalonia.Controls.TextBlock
-            {
-                Text = $"WorkMode: {workMode.Title}\n\nМодулей: {workMode.ModuleSlots.Count}\n\n" +
-                       string.Join("\n", workMode.ModuleSlots.Select(ms => $"- {ms.ModuleType}")),
-                FontSize = 16,
-                Foreground = Avalonia.Media.Brushes.White,
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
-            };
-
-            CurrentModule = placeholder;
-        }
-
-        /// <summary>Показать модули для WorkMode</summary>
+        /// <summary>Показать модули через Dock систему</summary>
         private void ShowModulesForWorkMode(WorkMode workMode)
         {
-            Console.WriteLine($"[ShowModulesForWorkMode] Showing modules for: {workMode.Title}");
+            Console.WriteLine($"[ShowModulesForWorkMode] Creating Dock layout for: {workMode.Title}");
 
-            // Пока просто показываем текстовый редактор
-            // TODO: В будущем здесь будет Grid с модулями
-            ShowTextEditor();
+            try
+            {
+                var layout = _dockFactory.CreateLayout(workMode);
+                DockLayout = layout;
+                Console.WriteLine($"[ShowModulesForWorkMode] Dock layout set successfully");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ShowModulesForWorkMode] ERROR: {ex.Message}");
+                Console.WriteLine($"[ShowModulesForWorkMode] Stack: {ex.StackTrace}");
+            }
+        }
+
+        /// <summary>Найти DocumentDock в структуре</summary>
+        private DocumentDock? FindDocumentDock(IDockable? root)
+        {
+            if (root is DocumentDock docDock)
+                return docDock;
+
+            if (root is IDock dock && dock.VisibleDockables != null)
+            {
+                foreach (var child in dock.VisibleDockables)
+                {
+                    var found = FindDocumentDock(child);
+                    if (found != null) return found;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>Создать View для модуля</summary>
+        private Avalonia.Controls.Control? CreateModuleView(ModuleType moduleType, object? viewModel)
+        {
+            if (viewModel == null) return null;
+
+            return moduleType switch
+            {
+                ModuleType.TextEditor => new Modules.TextEditor.Views.TextEditorView { DataContext = viewModel },
+                ModuleType.Synonyms => new Modules.Synonyms.Views.SynonymsView { DataContext = viewModel },
+                ModuleType.Notes => new Modules.Notes.Views.NotesView { DataContext = viewModel },
+                ModuleType.Timer => new Modules.Timer.Views.TimerView { DataContext = viewModel },
+                _ => null
+            };
         }
 
         /// <summary>Сохранить настройки для этого проекта</summary>
@@ -729,9 +792,21 @@ namespace Writersword.ViewModels
             if (activeWM != null)
             {
                 ActiveWorkMode = activeWM;
+
+                // ВАЖНО: Показываем модули для активного WorkMode
+                Console.WriteLine($"[InitializeWorkModesForTab] Showing modules for active WorkMode: {activeWM.Title}");
+                ShowModulesForWorkMode(activeWM);
             }
 
-            Console.WriteLine($"[MainWindowViewModel] Initialized {workModes.Count} WorkModes for tab");
+            Console.WriteLine($"[InitializeWorkModesForTab] Initialized {workModes.Count} WorkModes for tab");
+        }
+
+        /// <summary>Инициализировать Dock фабрику один раз</summary>
+        private void InitializeDockFactory()
+        {
+            _dockFactory.Initialize();
+
+            Console.WriteLine("[MainWindowViewModel] Dock factory initialized");
         }
     }
 }

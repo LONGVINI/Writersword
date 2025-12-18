@@ -31,6 +31,9 @@ namespace Writersword.Core.Models.WorkModes
         /// <summary>Можно ли изменять размер модуля</summary>
         public bool IsResizable { get; set; } = true;
 
+        /// <summary>Можно ли закрыть модуль в этом WorkMode</summary>
+        public bool IsCloseable { get; set; } = true;
+
         /// <summary>Состояние модуля (для восстановления при загрузке)</summary>
         public Dictionary<string, object> ModuleState { get; set; } = new();
 

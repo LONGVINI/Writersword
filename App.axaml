@@ -5,34 +5,19 @@
              RequestedThemeVariant="Dark">
 
 	<Application.Resources>
-		<!-- Конвертеры для вкладок -->
 		<converters:TabBackgroundConverter x:Key="TabBackgroundConverter"/>
 		<converters:TabForegroundConverter x:Key="TabForegroundConverter"/>
 		<converters:BoolToActiveTagConverter x:Key="BoolToActiveTagConverter"/>
 	</Application.Resources>
 
-	<!-- Application DataTemplates -->
-	<Application.DataTemplates>
-		<!-- Здесь будут DataTemplates для Dock панелей -->
-	</Application.DataTemplates>
-
-	<!-- Application Styles -->
 	<Application.Styles>
-
-		<!-- Fluent Theme (основная тема Avalonia) -->
 		<FluentTheme />
 
-		<!-- Базовые стили -->
-		<!--
-        <StyleInclude Source="/Styles/Base/Colors.axaml"/>
-        <StyleInclude Source="/Styles/Base/Typography.axaml"/>
-        <StyleInclude Source="/Styles/Base/Spacing.axaml"/>
-        
-        -->
-		<!-- Тема по умолчанию (тёмная) -->
-		<!--
-        <StyleInclude Source="/Styles/Themes/DarkTheme.axaml"/>-->
+		<!-- КРИТИЧНО: Fluent тема для Dock -->
+		<StyleInclude Source="avares://Dock.Avalonia.Themes.Fluent/DockFluentTheme.axaml"/>
 
+		<!-- Твои кастомные стили -->
+		<StyleInclude Source="/Styles/DockStyles.axaml"/>
 	</Application.Styles>
 
 </Application>

@@ -1,0 +1,30 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.Notes.ViewModels"
+             x:Class="Writersword.Modules.Notes.Views.NotesView"
+             x:DataType="vm:NotesViewModel"
+             Background="#2D2D30">
+    
+    <Border Padding="10">
+        <StackPanel Spacing="5">
+            
+            <!-- Заголовок модуля -->
+            <TextBlock Text="📝 Быстрые заметки" 
+                       FontSize="12" 
+                       FontWeight="Bold" 
+                       Foreground="White" />
+            
+            <!-- Поле для ввода заметок (многострочное) -->
+            <TextBox Text="{Binding NoteText}" 
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     Height="80"
+                     Background="#3E3E42"
+                     Foreground="White"
+                     BorderBrush="#007ACC"
+                     BorderThickness="1" />
+                     
+        </StackPanel>
+    </Border>
+    
+</UserControl>

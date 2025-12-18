@@ -1,0 +1,55 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.Synonyms.ViewModels"
+             x:Class="Writersword.Modules.Synonyms.Views.SynonymsView"
+             x:DataType="vm:SynonymsViewModel"
+             Background="#2D2D30">
+    
+    <Border Padding="10">
+        <StackPanel Spacing="10">
+            
+            <!-- Заголовок модуля -->
+            <TextBlock Text="📚 Синонимы" 
+                       FontSize="14" 
+                       FontWeight="Bold" 
+                       Foreground="White" />
+            
+            <!-- Поле поиска -->
+            <TextBox Text="{Binding SearchText}" 
+                     Watermark="Введите слово..."
+                     Background="#3E3E42"
+                     Foreground="White"
+                     BorderBrush="#007ACC"
+                     BorderThickness="1" />
+            
+            <!-- Список синонимов (прокручиваемый) -->
+            <ScrollViewer Height="200" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Synonyms}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <!-- Каждый синоним в отдельной плашке -->
+                            <Border Background="#3E3E42" 
+                                    Padding="8,4" 
+                                    Margin="0,2"
+                                    CornerRadius="3"
+                                    Cursor="Hand">
+                                <TextBlock Text="{Binding}" 
+                                           Foreground="#CCC" 
+                                           FontSize="12" />
+                                
+                                <!-- Эффект при наведении -->
+                                <Border.Styles>
+                                    <Style Selector="Border:pointerover">
+                                        <Setter Property="Background" Value="#4A4A4C" />
+                                    </Style>
+                                </Border.Styles>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+            
+        </StackPanel>
+    </Border>
+    
+</UserControl>

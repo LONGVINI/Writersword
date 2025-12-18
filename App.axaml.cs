@@ -5,64 +5,136 @@ using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.IO;
+using Writersword.Core.Enums;
 using Writersword.Core.Services.Interfaces;
+using Writersword.Core.Services.WorkModes;
 using Writersword.Modules.Common;
+using Writersword.Modules.TextEditor;
+using Writersword.Modules.Synonyms;
+using Writersword.Modules.Notes;
+using Writersword.Modules.Timer;
 using Writersword.Services;
 using Writersword.Services.Interfaces;
 using Writersword.ViewModels;
 using Writersword.Views;
-using Writersword.Core.Services.WorkModes;
 
 namespace Writersword
 {
+    /// <summary>
+    /// Главный класс приложения
+    /// Отвечает за инициализацию DI контейнера, регистрацию сервисов и модулей
+    /// </summary>
     public partial class App : Application
     {
-        // Глобальный DI контейнер
+        /// <summary>
+        /// Глобальный DI контейнер
+        /// Доступен из любого места приложения через App.Services
+        /// </summary>
         public static IServiceProvider Services { get; private set; } = null!;
 
+        /// <summary>
+        /// Инициализация Avalonia - загрузка XAML ресурсов
+        /// Вызывается автоматически при запуске приложения
+        /// </summary>
         public override void Initialize()
         {
             AvaloniaXamlLoader.Load(this);
         }
 
+        /// <summary>
+        /// Основная инициализация приложения
+        /// Здесь настраивается DI, создаётся главное окно, регистрируются модули
+        /// </summary>
         public override void OnFrameworkInitializationCompleted()
         {
             // ========================================
-            // Настройка DI контейнера
+            // НАСТРОЙКА DI КОНТЕЙНЕРА
+            // Dependency Injection - все сервисы регистрируются здесь
             // ========================================
             var services = new ServiceCollection();
 
-            // Регистрация сервисов
+            // --- ОСНОВНЫЕ СЕРВИСЫ ---
+            // Сервис настроек (сохранение/загрузка settings.json)
             services.AddSingleton<ISettingsService, SettingsService>();
+
+            // Сервис диалоговых окон (сохранение файлов, MessageBox)
             services.AddSingleton<IDialogService, DialogService>();
+
+            // Сервис работы с проектами (.writersword файлы)
             services.AddSingleton<IProjectService, ProjectService>();
+
+            // Сервис локализации (переключение языков)
             services.AddSingleton<ILocalizationService, LocalizationService>();
+
+            // Сервис горячих клавиш
             services.AddSingleton<IHotKeyService, HotKeyService>();
 
+            // --- СЕРВИСЫ WORKMODES ---
+            // Сервис конфигурации WorkModes (загрузка из файлов)
             services.AddSingleton<IWorkModeConfigurationService, WorkModeConfigurationService>();
+
+            // Сервис управления WorkModes (переключение режимов)
             services.AddSingleton<IWorkModeService, WorkModeService>();
 
-            // Фабрика и реестр модулей
+            // --- МОДУЛЬНАЯ СИСТЕМА ---
             services.AddSingleton<ModuleFactory>();
             services.AddSingleton<ModuleRegistry>();
+            services.AddSingleton<MainWindowViewModel>();
+            services.AddSingleton<Services.DockFactory>();
 
-            // Регистрация ViewModels
+
             services.AddSingleton<MainWindowViewModel>();
             services.AddTransient<WelcomeViewModel>();
 
-            // Создаём контейнер
+            // ========================================
+            // СОЗДАНИЕ КОНТЕЙНЕРА
+            // После этого можно получать сервисы через App.Services
+            // ========================================
             Services = services.BuildServiceProvider();
 
             // ========================================
-            // Создание главного окна
+            // РЕГИСТРАЦИЯ МОДУЛЕЙ В ФАБРИКЕ
+            // Говорим ModuleFactory как создавать каждый тип модуля
+            // ========================================
+            var moduleFactory = Services.GetRequiredService<ModuleFactory>();
+
+            // TextEditor - основной модуль редактирования текста
+            moduleFactory.Register(
+                ModuleType.TextEditor,
+                () => new TextEditorModule()
+            );
+
+            // Synonyms - помощник поиска синонимов
+            moduleFactory.Register(
+                ModuleType.Synonyms,
+                () => new SynonymsModule()
+            );
+
+            // Notes - быстрые заметки
+            moduleFactory.Register(
+                ModuleType.Notes,
+                () => new NotesModule()
+            );
+
+            // Timer - таймер работы
+            moduleFactory.Register(
+                ModuleType.Timer,
+                () => new TimerModule()
+            );
+
+            Console.WriteLine("[App] All modules registered successfully!");
+
+            // ========================================
+            // СОЗДАНИЕ ГЛАВНОГО ОКНА
             // ========================================
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
-                // Загружаем настройки
+                // --- ЗАГРУЗКА НАСТРОЕК ---
                 var settingsService = Services.GetRequiredService<ISettingsService>();
                 settingsService.Load();
+                Console.WriteLine("[App] Settings loaded");
 
-                // Создаём главное окно
+                // --- СОЗДАНИЕ ГЛАВНОГО ОКНА ---
                 var mainViewModel = Services.GetRequiredService<MainWindowViewModel>();
                 var mainWindow = new MainWindow
                 {
@@ -70,73 +142,82 @@ namespace Writersword
                 };
 
 #if DEBUG
-                // Добавляем DevTools - нажмите F12 для открытия инспектора
+                // В режиме отладки добавляем DevTools (F12 для открытия)
                 mainWindow.AttachDevTools();
+                Console.WriteLine("[App] DevTools attached (press F12)");
 #endif
 
-                // Регистрируем в DialogService
+                // --- РЕГИСТРАЦИЯ ОКНА В DIALOGSERVICE ---
+                // Нужно для показа диалогов (Save, Open и т.д.)
                 var dialogService = Services.GetRequiredService<IDialogService>() as DialogService;
                 dialogService?.SetMainWindow(mainWindow);
 
+                // Устанавливаем главное окно приложения
                 desktop.MainWindow = mainWindow;
 
-                // Проверяем есть ли открытые проекты из последней сессии
+                // ========================================
+                // ВОССТАНОВЛЕНИЕ ПРОЕКТОВ ИЗ ПРОШЛОЙ СЕССИИ
+                // Срабатывает когда главное окно открылось
+                // ========================================
                 mainWindow.Opened += async (s, e) =>
                 {
+                    // Получаем список открытых проектов из прошлой сессии
                     var openProjects = settingsService.OpenProjectPaths;
-                    Console.WriteLine($"MainWindow opened. Open projects from last session: {openProjects.Count}");
+                    Console.WriteLine($"[App] Open projects from last session: {openProjects.Count}");
 
+                    // --- ЕСТЬ ОТКРЫТЫЕ ПРОЕКТЫ? ---
                     if (openProjects.Count > 0)
                     {
-                        // Получаем ProjectService
                         var projectService = Services.GetRequiredService<IProjectService>();
+                        Console.WriteLine($"[App] Restoring {openProjects.Count} projects...");
 
-                        // Загружаем все открытые проекты из последней сессии
-                        Console.WriteLine($"Restoring {openProjects.Count} projects from last session");
-
+                        // Загружаем каждый проект
                         foreach (var projectPath in openProjects)
                         {
+                            // Проверяем существует ли файл
                             if (File.Exists(projectPath))
                             {
-                                Console.WriteLine($"Loading project: {projectPath}");
+                                Console.WriteLine($"[App] Loading project: {projectPath}");
 
+                                // Загружаем проект
                                 var project = await projectService.LoadAsync(projectPath);
 
+                                // Если загрузился успешно - создаём вкладки
                                 if (project != null && project.Documents.Count > 0)
                                 {
-                                    // Добавляем вкладки
+                                    // Для каждого документа в проекте создаём вкладку
                                     foreach (var doc in project.Documents)
                                     {
                                         doc.FilePath = projectPath;
                                         var tabVM = new DocumentTabViewModel(doc, mainViewModel.CloseTab);
                                         mainViewModel.OpenTabs.Add(tabVM);
-                                        Console.WriteLine($"Added tab: {doc.Title}");
+                                        Console.WriteLine($"[App] Added tab: {doc.Title}");
                                     }
                                 }
                             }
                             else
                             {
-                                Console.WriteLine($"Project file not found: {projectPath}");
+                                Console.WriteLine($"[App] WARNING: Project file not found: {projectPath}");
                             }
                         }
 
-                        // Активируем первую вкладку после загрузки всех проектов
+                        // Активируем первую вкладку
                         if (mainViewModel.OpenTabs.Count > 0)
                         {
-                            Console.WriteLine($"All projects loaded. Total tabs: {mainViewModel.OpenTabs.Count}");
+                            Console.WriteLine($"[App] All projects loaded. Total tabs: {mainViewModel.OpenTabs.Count}");
                             mainViewModel.ActivateTab(mainViewModel.OpenTabs[0]);
                         }
                         else
                         {
-                            // Если ни один проект не загрузился - показываем Welcome
-                            Console.WriteLine("No projects loaded, showing welcome");
+                            // Ни один проект не загрузился - показываем Welcome
+                            Console.WriteLine("[App] No projects loaded, showing welcome");
                             await ShowWelcomeScreen(mainWindow);
                         }
                     }
                     else
                     {
-                        // НЕТ ПРОЕКТОВ - ПОКАЗЫВАЕМ WELCOME
-                        Console.WriteLine("No projects from last session, showing welcome");
+                        // --- НЕТ ОТКРЫТЫХ ПРОЕКТОВ - ПОКАЗЫВАЕМ WELCOME ---
+                        Console.WriteLine("[App] No projects from last session, showing welcome");
                         await ShowWelcomeScreen(mainWindow);
                     }
                 };
@@ -145,16 +226,23 @@ namespace Writersword
             base.OnFrameworkInitializationCompleted();
         }
 
-        /// <summary>Показать экран приветствия (доступен из любого места)</summary>
+        /// <summary>
+        /// Показать экран приветствия (Welcome screen)
+        /// Можно вызвать из любого места приложения
+        /// </summary>
+        /// <param name="owner">Родительское окно (для модального отображения)</param>
         public static async System.Threading.Tasks.Task ShowWelcomeScreen(Window owner)
         {
+            Console.WriteLine("[App] Showing welcome screen");
+
+            // Создаём ViewModel и View
             var welcomeViewModel = Services.GetRequiredService<WelcomeViewModel>();
             var welcomeWindow = new WelcomeView
             {
                 DataContext = welcomeViewModel
             };
 
-            // Показываем модально
+            // Показываем модально (блокирует главное окно)
             await welcomeWindow.ShowDialog(owner);
         }
     }
