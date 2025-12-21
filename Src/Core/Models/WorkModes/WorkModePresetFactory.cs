@@ -2,7 +2,7 @@
 using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
 
-namespace Writersword.Core.Services.WorkModes
+namespace Writersword.Src.Core.Models.WorkModes
 {
     /// <summary>
     /// Фабрика для создания дефолтных пресетов WorkModes по типу проекта.

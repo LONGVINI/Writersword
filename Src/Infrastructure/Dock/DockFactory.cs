@@ -1,15 +1,14 @@
-﻿using Avalonia.Controls;
-using Dock.Model.Avalonia;
+﻿using Dock.Model.Avalonia;
 using Dock.Model.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
+using ReactiveUI;
 using System;
 using System.Collections.Generic;
-using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
 
-namespace Writersword.Services
+namespace Writersword.Src.Infrastructure.Dock
 {
     /// <summary>
     /// Фабрика для создания Dock элементов
@@ -54,14 +53,11 @@ namespace Writersword.Services
             DockDiagnostics.InspectFactoryMethods();
         }
 
-        /// <summary>
-        /// Создать layout из WorkMode
-        /// </summary>
+        /// <summary>Создать layout из WorkMode</summary>
         public IRootDock CreateLayout(WorkMode workMode)
         {
             Console.WriteLine($"[DockFactory] Creating layout for: {workMode.Title}");
 
-            // Создаём документы
             var documents = new List<IDockable>();
 
             foreach (var slot in workMode.ModuleSlots)
@@ -77,7 +73,6 @@ namespace Writersword.Services
 
             Console.WriteLine($"[DockFactory] Created {documents.Count} documents");
 
-            // DocumentDock
             var documentDock = new DocumentDock
             {
                 Id = "Documents",
@@ -95,7 +90,6 @@ namespace Writersword.Services
                 documentDock.VisibleDockables.Add(doc);
             }
 
-            // ProportionalDock
             var proportionalDock = new ProportionalDock
             {
                 Id = "MainLayout",
@@ -110,15 +104,12 @@ namespace Writersword.Services
 
             proportionalDock.VisibleDockables.Add(documentDock);
 
-            // RootDock
             var rootDock = new RootDock
             {
                 Id = "Root",
                 Title = "Root",
                 ActiveDockable = proportionalDock,
                 DefaultDockable = proportionalDock,
-
-                // КРИТИЧНО: Привязываем Factory к RootDock
                 Factory = this
             };
 
@@ -127,12 +118,10 @@ namespace Writersword.Services
 
             rootDock.VisibleDockables.Add(proportionalDock);
 
-            // КРИТИЧНО: Инициализируем layout через фабрику
             InitLayout(rootDock);
 
             Console.WriteLine($"[DockFactory] Layout created and initialized with Factory reference");
 
-            // ДИАГНОСТИКА
             DockDiagnostics.InspectRootDock(rootDock);
             if (documents.Count > 0)
             {
@@ -142,7 +131,7 @@ namespace Writersword.Services
             return rootDock;
         }
 
-        private IDockable? CreateModuleDocument(ModuleSlot slot)
+        public IDockable? CreateModuleDocument(ModuleSlot slot)
         {
             Console.WriteLine($"[DockFactory] Creating document for: {slot.ModuleType}");
 
@@ -153,41 +142,46 @@ namespace Writersword.Services
                 return null;
             }
 
-            var view = CreateModuleView(slot.ModuleType, module.ViewModel);
+            var view = module.CreateView();
             if (view == null)
             {
                 Console.WriteLine($"[DockFactory] No View: {slot.ModuleType}");
                 return null;
             }
 
-            // ИЗМЕНЕНИЕ: Используем стабильный ID на основе типа модуля
-            // Вместо нового Guid каждый раз
             string stableId = $"Module_{slot.ModuleType}";
 
             var document = new Document
             {
-                Id = stableId,  // <-- Стабильный ID!
+                Id = stableId,
                 Title = module.Title,
                 Content = view,
                 CanClose = slot.IsCloseable,
                 CanFloat = true
             };
 
-            Console.WriteLine($"[DockFactory] Created document: {document.Title} (ID: {document.Id})");
+            bool wasAddedToDock = false;
+            IDisposable? subscription = null;
+
+            subscription = document.WhenAnyValue(x => x.Owner)
+                .Subscribe(owner =>
+                {
+                    if (owner != null && !wasAddedToDock)
+                    {
+                        wasAddedToDock = true;
+                        Console.WriteLine($"[DockFactory] Document added: {slot.ModuleType}");
+                    }
+                    else if (owner == null && wasAddedToDock && slot.IsCloseable)
+                    {
+                        Console.WriteLine($"[DockFactory] Document closed: {slot.ModuleType}");
+                        slot.IsVisible = false;
+                        subscription?.Dispose();
+                    }
+                });
+
+            Console.WriteLine($"[DockFactory] Created document: {document.Title} (ID: {document.Id}, CanClose={document.CanClose})");
 
             return document;
-        }
-
-        private Control? CreateModuleView(ModuleType moduleType, object viewModel)
-        {
-            return moduleType switch
-            {
-                ModuleType.TextEditor => new Modules.TextEditor.Views.TextEditorView { DataContext = viewModel },
-                ModuleType.Synonyms => new Modules.Synonyms.Views.SynonymsView { DataContext = viewModel },
-                ModuleType.Notes => new Modules.Notes.Views.NotesView { DataContext = viewModel },
-                ModuleType.Timer => new Modules.Timer.Views.TimerView { DataContext = viewModel },
-                _ => null
-            };
         }
     }
 }

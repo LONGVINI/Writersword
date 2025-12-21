@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.Modules;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.ViewModels;
+using Writersword.Src.Modules.TextEditor.Resources;
 
 namespace Writersword.Modules.TextEditor
 {
@@ -28,6 +30,9 @@ namespace Writersword.Modules.TextEditor
 
         /// <summary>Редактор нельзя закрыть - это основной модуль</summary>
         public override bool IsCloseable => false;
+
+        /// <summary>Метаданные модуля для UI</summary>
+        public override IModuleMetadata Metadata => new TextEditorMetadata();
 
         /// <summary>
         /// Инициализация модуля - создаём ViewModel
@@ -67,5 +72,38 @@ namespace Writersword.Modules.TextEditor
                 Console.WriteLine($"[TextEditorModule] Restored {state.CustomData.Length} characters");
             }
         }
+
+        /// <summary>Создать View текстового редактора</summary>
+        public override Avalonia.Controls.Control? CreateView()
+        {
+            return new Views.TextEditorView
+            {
+                DataContext = ViewModel
+            };
+        }
+
+    }
+
+    /// <summary>Метаданные модуля TextEditor</summary>
+    internal class TextEditorMetadata : IModuleMetadata
+    {
+        public ModuleType ModuleType => ModuleType.TextEditor;
+
+        /// <summary>Название из локализации (.resx)</summary>
+        public string DisplayName => TextEditorStrings.DisplayName;
+
+        /// <summary>Описание из локализации (.resx)</summary>
+        public string Description => TextEditorStrings.Description;
+
+        /// <summary>Иконка (hardcoded, не переводится)</summary>
+        public string Icon => "📝";
+
+        public bool IsUniversal => false;
+
+        /// <summary>Доступен только в режиме Редактора</summary>
+        public List<WorkModeType> AvailableInWorkModes => new()
+        {
+            WorkModeType.Editor
+        };
     }
 }

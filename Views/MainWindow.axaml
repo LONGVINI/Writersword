@@ -16,13 +16,16 @@
 	<Window.Resources>
 		<converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
 	</Window.Resources>
-	
+
 	<!--<Window.DataTemplates>
-		--><!-- Для вложенного содержимого в Dock --><!--
+		-->
+	<!-- Для вложенного содержимого в Dock -->
+	<!--
 		<DataTemplate DataType="Control">
 			<ContentControl Content="{Binding}" />
 		</DataTemplate>
 	</Window.DataTemplates>-->
+
 	<DockPanel>
 
 		<!-- Меню -->
@@ -30,6 +33,7 @@
               Background="#2D2D30"
               Padding="5,3">
 
+			<!-- Файл -->
 			<MenuItem Header="{x:Static loc:Strings.Menu_File}" Foreground="#F0F0F0" FontSize="13">
 				<MenuItem Header="{x:Static loc:Strings.Menu_NewProject}"
                           InputGesture="Ctrl+N"
@@ -57,13 +61,64 @@
                           Command="{Binding ExitCommand}" />
 			</MenuItem>
 
+			<!-- Правка -->
 			<MenuItem Header="{x:Static loc:Strings.Menu_Edit}" Foreground="#F0F0F0" FontSize="13">
 				<MenuItem Header="{x:Static loc:Strings.Menu_Undo}" InputGesture="Ctrl+Z" />
 				<MenuItem Header="{x:Static loc:Strings.Menu_Redo}" InputGesture="Ctrl+Y" />
 			</MenuItem>
 
+			<!-- Вид -->
 			<MenuItem Header="{x:Static loc:Strings.Menu_View}" Foreground="#F0F0F0" FontSize="13">
-				<MenuItem Header="{x:Static loc:Strings.Menu_Modules}" />
+
+				<!-- Режимы работы -->
+				<MenuItem Header="{x:Static loc:Strings.Menu_WorkModes}" ItemsSource="{Binding AllWorkModes}">
+					<MenuItem.ItemTemplate>
+						<DataTemplate>
+							<MenuItem Command="{Binding $parent[Window].DataContext.ToggleWorkModeCommand}"
+									  CommandParameter="{Binding Type}">
+								<MenuItem.Header>
+									<StackPanel Orientation="Horizontal" Spacing="5">
+										<TextBlock Text="✓"
+												   IsVisible="{Binding IsChecked}"
+												   FontWeight="Bold"
+												   Width="15" />
+										<TextBlock Text="{Binding Icon}" />
+										<TextBlock Text="{Binding Name}" />
+									</StackPanel>
+								</MenuItem.Header>
+							</MenuItem>
+						</DataTemplate>
+					</MenuItem.ItemTemplate>
+				</MenuItem>
+
+				<Separator />
+
+				<!-- Модули -->
+				<MenuItem Header="{x:Static loc:Strings.Menu_Modules}"
+						  ItemsSource="{Binding AllModules}"
+						  x:Name="ModulesMenu">
+					<MenuItem.ItemTemplate>
+						<DataTemplate>
+							<MenuItem Command="{Binding #ModulesMenu.DataContext.ToggleModuleCommand}"
+									  CommandParameter="{Binding Type}"
+									  IsEnabled="{Binding IsEnabled}">
+								<MenuItem.Header>
+									<StackPanel Orientation="Horizontal" Spacing="5">
+										<TextBlock Text="✓"
+												   IsVisible="{Binding IsChecked}"
+												   FontWeight="Bold"
+												   Width="15" />
+										<TextBlock Text="{Binding Icon}" />
+										<TextBlock Text="{Binding Name}" />
+									</StackPanel>
+								</MenuItem.Header>
+							</MenuItem>
+						</DataTemplate>
+					</MenuItem.ItemTemplate>
+				</MenuItem>
+
+				<Separator />
+
 				<MenuItem Header="{x:Static loc:Strings.Menu_Settings}" />
 			</MenuItem>
 		</Menu>
@@ -195,8 +250,7 @@
 				Background="#2D2D30"
 				BorderBrush="#3F3F46"
 				BorderThickness="0,0,0,1"
-				Padding="10,5"
-				x:Name="WorkModesPanel">
+				Padding="10,5">
 			<ItemsControl ItemsSource="{Binding AvailableWorkModes}">
 				<ItemsControl.ItemsPanel>
 					<ItemsPanelTemplate>
@@ -251,7 +305,6 @@
 			</StackPanel>
 		</Border>
 
-		<!-- ВРЕМЕННО: Простое отображение модулей БЕЗ Dock -->
 		<dock:DockControl Layout="{Binding DockLayout}"
                   Background="#252526" />
 	</DockPanel>

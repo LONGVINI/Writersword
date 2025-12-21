@@ -3,11 +3,12 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Dock.Model.Controls;
 using Dock.Model.Core;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Writersword.Views;
 
-namespace Writersword.Services
+namespace Writersword.Src.Infrastructure.Dock
 {
     /// <summary>
     /// Управление плавающими окнами (Float) для Dock системы.
@@ -48,8 +49,8 @@ namespace Writersword.Services
         /// </summary>
         public void Present(bool isDialog)
         {
-            System.Console.WriteLine($"[HostWindow] Present() START");
-            System.Console.WriteLine($"  - _documentId: {_documentId ?? "null"}");
+            Console.WriteLine($"[HostWindow] Present() START");
+            Console.WriteLine($"  - _documentId: {_documentId ?? "null"}");
 
             if (!string.IsNullOrEmpty(_documentId) && _activeWindows.ContainsKey(_documentId))
             {
@@ -67,14 +68,14 @@ namespace Writersword.Services
                 return;
             }
 
-            System.Console.WriteLine($"[HostWindow] Creating NEW FloatingWindow");
+            Console.WriteLine($"[HostWindow] Creating NEW FloatingWindow");
             _window = new FloatingWindow();
 
             // ИСПОЛЬЗУЕМ позицию из SetPosition если она есть
             if (_pendingPosition.HasValue)
             {
                 _window.Position = _pendingPosition.Value;
-                System.Console.WriteLine($"[HostWindow] Using position from SetPosition: ({_pendingPosition.Value.X}, {_pendingPosition.Value.Y})");
+                Console.WriteLine($"[HostWindow] Using position from SetPosition: ({_pendingPosition.Value.X}, {_pendingPosition.Value.Y})");
             }
             else
             {
@@ -90,7 +91,7 @@ namespace Writersword.Services
                         mainPos.Y + (int)(mainSize.Height / 2) - 300
                     );
                 }
-                System.Console.WriteLine($"[HostWindow] Using fallback center position");
+                Console.WriteLine($"[HostWindow] Using fallback center position");
             }
 
             if (_pendingLayout != null)
@@ -101,11 +102,11 @@ namespace Writersword.Services
                 if (!string.IsNullOrEmpty(_documentId))
                 {
                     _activeWindows[_documentId] = _window;
-
+                    Console.WriteLine($"[HostWindow] Saved window with key: {_documentId}");  // ← ДОБАВЬ!
                     string docId = _documentId;
                     _window.Closed += (s, e) =>
                     {
-                        System.Console.WriteLine($"[HostWindow] User closed window: {docId}");
+                        Console.WriteLine($"[HostWindow] User closed window: {docId}");
                         _activeWindows.Remove(docId);
                     };
                 }
@@ -115,7 +116,7 @@ namespace Writersword.Services
             _isWindowShown = true;
             _pendingPosition = null; // Сбрасываем после использования
 
-            System.Console.WriteLine($"[HostWindow] Present() END");
+            Console.WriteLine($"[HostWindow] Present() END");
         }
 
         /// <summary>
@@ -124,7 +125,18 @@ namespace Writersword.Services
         /// </summary>
         public void Exit()
         {
-            System.Console.WriteLine($"[HostWindow] Exit() called - IGNORING (window stays open)");
+            Console.WriteLine($"[HostWindow] Exit() called");
+
+            // Проверяем: если документ вернулся в основной Dock → закрываем Float окно
+            if (!string.IsNullOrEmpty(_documentId) && _activeWindows.ContainsKey(_documentId))
+            {
+                Console.WriteLine($"[HostWindow] Document returned to main Dock, closing Float: {_documentId}");
+                CloseWindow(_documentId);
+            }
+            else
+            {
+                Console.WriteLine($"[HostWindow] IGNORING Exit (window stays open)");
+            }
         }
 
         /// <summary>
@@ -201,11 +213,11 @@ namespace Writersword.Services
 
         public void SetLayout(IDock layout)
         {
-            System.Console.WriteLine($"[HostWindow] SetLayout() called");
+            Console.WriteLine($"[HostWindow] SetLayout() called");
 
             // Извлекаем ID документа
             _documentId = ExtractDocumentId(layout);
-            System.Console.WriteLine($"  - Document ID: '{_documentId ?? "null"}'");
+            Console.WriteLine($"  - Document ID: '{_documentId ?? "null"}'");
 
             // Сохраняем layout
             _pendingLayout = layout;
@@ -233,7 +245,7 @@ namespace Writersword.Services
         /// </summary>
         public static void CloseAllWindows()
         {
-            System.Console.WriteLine($"[HostWindow] Closing all {_activeWindows.Count} Float windows");
+            Console.WriteLine($"[HostWindow] Closing all {_activeWindows.Count} Float windows");
 
             var windows = _activeWindows.Values.ToList();
 
@@ -241,17 +253,17 @@ namespace Writersword.Services
             {
                 try
                 {
-                    System.Console.WriteLine($"[HostWindow] Closing window: {window.Title}");
+                    Console.WriteLine($"[HostWindow] Closing window: {window.Title}");
                     window.Close();
                 }
-                catch (System.Exception ex)
+                catch (Exception ex)
                 {
-                    System.Console.WriteLine($"[HostWindow] Error closing window: {ex.Message}");
+                    Console.WriteLine($"[HostWindow] Error closing window: {ex.Message}");
                 }
             }
 
             _activeWindows.Clear();
-            System.Console.WriteLine($"[HostWindow] All Float windows closed");
+            Console.WriteLine($"[HostWindow] All Float windows closed");
         }
 
         /// <summary>
@@ -301,6 +313,45 @@ namespace Writersword.Services
                 return desktop.MainWindow;
             }
             return null;
+        }
+
+        /// <summary>Активировать Float окно по ID документа</summary>
+        public static void ActivateWindow(string documentId)  // ← STATIC!
+        {
+            Console.WriteLine($"[HostWindow] ActivateWindow called for: {documentId}");
+
+            if (_activeWindows.TryGetValue(documentId, out var window))  // ← _activeWindows!
+            {
+                window.Activate();
+                Console.WriteLine($"[HostWindow] Activated window: {documentId}");
+            }
+            else
+            {
+                Console.WriteLine($"[HostWindow] Window not found: {documentId}");
+            }
+        }
+
+        /// <summary>Проверить открыто ли Float окно для документа</summary>
+        public static bool IsWindowOpen(string documentId)
+        {
+            return _activeWindows.ContainsKey(documentId);
+        }
+
+        /// <summary>Закрыть конкретное Float окно по ID документа</summary>
+        public static void CloseWindow(string documentId)
+        {
+            Console.WriteLine($"[HostWindow] CloseWindow called for: {documentId}");
+
+            if (_activeWindows.TryGetValue(documentId, out var window))
+            {
+                _activeWindows.Remove(documentId);
+                window.Close();
+                Console.WriteLine($"[HostWindow] Closed window: {documentId}");
+            }
+            else
+            {
+                Console.WriteLine($"[HostWindow] Window not found: {documentId}");
+            }
         }
     }
 }

@@ -322,6 +322,15 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Work Modes.
+        /// </summary>
+        public static string Menu_WorkModes {
+            get {
+                return ResourceManager.GetString("Menu_WorkModes", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Cancel.
         /// </summary>
         public static string MessageBox_Cancel {
@@ -349,7 +358,7 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на YES.
+        ///   Ищет локализованную строку, похожую на Yes.
         /// </summary>
         public static string MessageBox_Yes {
             get {

@@ -27,10 +27,8 @@ namespace Writersword.Modules.Common
             {
                 _activeModules[module.InstanceId] = module;
                 module.Initialize();
-
                 module.RequestClose += OnModuleRequestClose;
                 module.RequestDetach += OnModuleRequestDetach;
-
                 Console.WriteLine($"[ModuleRegistry] Module created: {type}");
             }
             return module;
@@ -51,7 +49,6 @@ namespace Writersword.Modules.Common
                 module.RequestDetach -= OnModuleRequestDetach;
                 module.Dispose();
                 _activeModules.Remove(instanceId);
-
                 Console.WriteLine($"[ModuleRegistry] Module removed: {instanceId}");
             }
         }
@@ -81,6 +78,33 @@ namespace Writersword.Modules.Common
         {
             Console.WriteLine($"[ModuleRegistry] Module detach requested: {module.InstanceId}");
             // TODO: Открепление в отдельное окно
+        }
+
+
+        /// <summary>
+        /// Получить метаданные ВСЕХ зарегистрированных модулей
+        /// Создаёт временный экземпляр каждого типа для чтения метаданных
+        /// </summary>
+        public List<IModuleMetadata> GetAllModuleMetadata()
+        {
+            var metadataList = new List<IModuleMetadata>();
+
+            // Получаем все зарегистрированные типы из фабрики
+            foreach (var moduleType in _factory.GetRegisteredTypes())
+            {
+                // Создаём временный экземпляр для чтения метаданных
+                var tempModule = _factory.Create(moduleType);
+                if (tempModule?.Metadata != null)
+                {
+                    metadataList.Add(tempModule.Metadata);
+
+                    // Сразу удаляем временный экземпляр
+                    tempModule.Dispose();
+                }
+            }
+
+            Console.WriteLine($"[ModuleRegistry] Loaded metadata for {metadataList.Count} module types");
+            return metadataList;
         }
     }
 }

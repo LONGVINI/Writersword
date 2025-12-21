@@ -3,8 +3,9 @@ using System.Linq;
 using Writersword.Core.Enums;
 using Writersword.Core.Models.Settings;
 using Writersword.Core.Models.WorkModes;
-using Writersword.Core.Services.Interfaces;
 using Writersword.Services.Interfaces;
+using Writersword.Src.Core.Interfaces.WorkModes;
+using Writersword.Src.Core.Models.WorkModes;
 
 namespace Writersword.Core.Services.WorkModes
 {

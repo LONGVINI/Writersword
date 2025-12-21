@@ -283,15 +283,19 @@
   </data>
   <data name="MessageBox_OK" xml:space="preserve">
     <value>OK</value>
+    <comment>Button Ok</comment>
   </data>
   <data name="MessageBox_Cancel" xml:space="preserve">
     <value>Cancel</value>
+    <comment>Button Cancel</comment>
   </data>
   <data name="MessageBox_Yes" xml:space="preserve">
-    <value>YES</value>
+    <value>Yes</value>
+    <comment>Button Yes</comment>
   </data>
   <data name="MessageBox_No" xml:space="preserve">
     <value>No</value>
+    <comment>Button No</comment>
   </data>
   <data name="Error_ProjectNotFound_Title" xml:space="preserve">
     <value>Project Not Found</value>
@@ -328,5 +332,9 @@
   <data name="HotKey_File_NewTab" xml:space="preserve">
     <value>New Tab</value>
     <comment>Opens welcome screen to create/open tab</comment>
+  </data>
+  <data name="Menu_WorkModes" xml:space="preserve">
+    <value>Work Modes</value>
+    <comment>View menu: Switch between work modes</comment>
   </data>
 </root>

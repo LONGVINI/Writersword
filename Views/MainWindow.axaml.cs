@@ -6,6 +6,7 @@ using System.ComponentModel;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Writersword.Services.Interfaces;
+using Writersword.Src.Infrastructure.Dock;
 
 namespace Writersword.Views
 {
@@ -86,7 +87,7 @@ namespace Writersword.Views
             if (!e.Cancel)
             {
                 System.Console.WriteLine("[MainWindow] Closing all Float windows");
-                Services.HostWindow.CloseAllWindows();
+                HostWindow.CloseAllWindows();
             }
 
             System.Console.WriteLine("[MainWindow] OnClosing finished");

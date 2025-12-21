@@ -2,7 +2,7 @@
 using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
 
-namespace Writersword.Core.Services.Interfaces
+namespace Writersword.Src.Core.Interfaces.WorkModes
 {
     /// <summary>
     /// Главный сервис для работы с WorkModes

@@ -84,6 +84,26 @@
 		<EmbeddedResource Include="Resources\Localization\Strings.ru.resx">
 			<DependentUpon>Strings.resx</DependentUpon>
 		</EmbeddedResource>
+		<EmbeddedResource Include="Src\Modules\Notes\Resources\NotesStrings.resx">
+		  <Generator>ResXFileCodeGenerator</Generator>
+		  <LastGenOutput>NotesStrings.Designer.cs</LastGenOutput>
+		</EmbeddedResource>
+		<EmbeddedResource Include="Src\Modules\Notes\Resources\NotesStrings.ru.resx" />
+		<EmbeddedResource Include="Src\Modules\Synonyms\Resources\SynonymsStrings.resx">
+		  <Generator>ResXFileCodeGenerator</Generator>
+		  <LastGenOutput>SynonymsStrings.Designer.cs</LastGenOutput>
+		</EmbeddedResource>
+		<EmbeddedResource Include="Src\Modules\Synonyms\Resources\SynonymsStrings.ru.resx" />
+		<EmbeddedResource Include="Src\Modules\TextEditor\Resources\TextEditorStrings.resx">
+		  <Generator>ResXFileCodeGenerator</Generator>
+		  <LastGenOutput>TextEditorStrings.Designer.cs</LastGenOutput>
+		</EmbeddedResource>
+		<EmbeddedResource Include="Src\Modules\TextEditor\Resources\TextEditorStrings.ru.resx" />
+		<EmbeddedResource Include="Src\Modules\Timer\Resources\TimerStrings.resx">
+		  <Generator>ResXFileCodeGenerator</Generator>
+		  <LastGenOutput>TimerStrings.Designer.cs</LastGenOutput>
+		</EmbeddedResource>
+		<EmbeddedResource Include="Src\Modules\Timer\Resources\TimerStrings.ru.resx" />
 		
 		<!-- Авто-генерируемый код для локализации -->
 		<Compile Update="Resources\Localization\Strings.Designer.cs">
@@ -116,6 +136,26 @@
        ======================================== -->
 	<ItemGroup>
 		<!-- MessageBox view (зависимость для code-behind) -->
+		<Compile Update="Src\Modules\Notes\Resources\NotesStrings.Designer.cs">
+		  <DesignTime>True</DesignTime>
+		  <AutoGen>True</AutoGen>
+		  <DependentUpon>NotesStrings.resx</DependentUpon>
+		</Compile>
+		<Compile Update="Src\Modules\Synonyms\Resources\SynonymsStrings.Designer.cs">
+		  <DesignTime>True</DesignTime>
+		  <AutoGen>True</AutoGen>
+		  <DependentUpon>SynonymsStrings.resx</DependentUpon>
+		</Compile>
+		<Compile Update="Src\Modules\TextEditor\Resources\TextEditorStrings.Designer.cs">
+		  <DesignTime>True</DesignTime>
+		  <AutoGen>True</AutoGen>
+		  <DependentUpon>TextEditorStrings.resx</DependentUpon>
+		</Compile>
+		<Compile Update="Src\Modules\Timer\Resources\TimerStrings.Designer.cs">
+		  <DesignTime>True</DesignTime>
+		  <AutoGen>True</AutoGen>
+		  <DependentUpon>TimerStrings.resx</DependentUpon>
+		</Compile>
 		<Compile Update="Views\MessageBoxView.axaml.cs">
 			<DependentUpon>MessageBoxView.axaml</DependentUpon>
 		</Compile>

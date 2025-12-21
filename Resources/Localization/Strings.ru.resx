@@ -282,4 +282,7 @@
   <data name="HotKey_File_NewTab" xml:space="preserve">
     <value>Новая вкладка</value>
   </data>
+  <data name="Menu_WorkModes" xml:space="preserve">
+    <value>Режимы работы</value>
+  </data>
 </root>

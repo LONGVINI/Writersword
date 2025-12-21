@@ -1,8 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using Writersword.Core.Enums;
+using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.Modules;
 using Writersword.Modules.Common;
 using Writersword.Modules.Notes.ViewModels;
+using Writersword.Src.Modules.Notes.Resources;
 
 namespace Writersword.Modules.Notes
 {
@@ -10,6 +13,7 @@ namespace Writersword.Modules.Notes
     /// Модуль быстрых заметок
     /// Позволяет делать пометки и напоминания во время работы
     /// Заметки сохраняются вместе с проектом
+    /// Универсальный модуль - доступен везде
     /// </summary>
     public class NotesModule : BaseModule
     {
@@ -25,9 +29,10 @@ namespace Writersword.Modules.Notes
         /// <summary>ViewModel для привязки к View</summary>
         public override object? ViewModel => _viewModel;
 
-        /// <summary>
-        /// Инициализация модуля - создаём ViewModel
-        /// </summary>
+        /// <summary>Метаданные модуля для UI</summary>
+        public override IModuleMetadata Metadata => new NotesMetadata();
+
+        /// <summary>Инициализация модуля - создаём ViewModel</summary>
         public override void Initialize()
         {
             _viewModel = new NotesViewModel();
@@ -38,7 +43,6 @@ namespace Writersword.Modules.Notes
         /// Сохранить состояние модуля
         /// Сохраняем текст заметок
         /// </summary>
-        /// <returns>Состояние с текстом заметок</returns>
         public override ModuleState SaveState()
         {
             return new ModuleState
@@ -62,5 +66,35 @@ namespace Writersword.Modules.Notes
                 Console.WriteLine($"[NotesModule] Restored {state.CustomData.Length} characters");
             }
         }
+
+        /// <summary>Создать View заметок</summary>
+        public override Avalonia.Controls.Control? CreateView()
+        {
+            return new Views.NotesView
+            {
+                DataContext = ViewModel
+            };
+        }
+    }
+
+    /// <summary>Метаданные модуля Notes</summary>
+    internal class NotesMetadata : IModuleMetadata
+    {
+        public ModuleType ModuleType => ModuleType.Notes;
+
+        /// <summary>Название из локализации (.resx)</summary>
+        public string DisplayName => NotesStrings.DisplayName;
+
+        /// <summary>Описание из локализации (.resx)</summary>
+        public string Description => NotesStrings.Description;
+
+        /// <summary>Иконка (hardcoded, не переводится)</summary>
+        public string Icon => "📝";
+
+        /// <summary>Универсальный модуль - доступен везде</summary>
+        public bool IsUniversal => true;
+
+        /// <summary>Пустой список = доступен во всех WorkMode</summary>
+        public List<WorkModeType> AvailableInWorkModes => new();
     }
 }

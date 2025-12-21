@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.IO;
 using Writersword.Core.Enums;
-using Writersword.Core.Services.Interfaces;
 using Writersword.Core.Services.WorkModes;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor;
@@ -17,6 +16,7 @@ using Writersword.Services;
 using Writersword.Services.Interfaces;
 using Writersword.ViewModels;
 using Writersword.Views;
+using Writersword.Src.Core.Interfaces.WorkModes;
 
 namespace Writersword
 {
@@ -80,7 +80,7 @@ namespace Writersword
             services.AddSingleton<ModuleFactory>();
             services.AddSingleton<ModuleRegistry>();
             services.AddSingleton<MainWindowViewModel>();
-            services.AddSingleton<Services.DockFactory>();
+            services.AddSingleton<Src.Infrastructure.Dock.DockFactory>();
 
 
             services.AddSingleton<MainWindowViewModel>();

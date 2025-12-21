@@ -1,6 +1,7 @@
 ﻿using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
+using Dock.Avalonia.Controls;
 using Dock.Model.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
@@ -13,14 +14,16 @@ using System.Linq;
 using System.Reactive;
 using System.Reactive.Linq;
 using Writersword.Core.Enums;
+using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Settings;
 using Writersword.Core.Models.WorkModes;
-using Writersword.Core.Services.Interfaces;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.ViewModels;
 using Writersword.Services;
 using Writersword.Services.Interfaces;
+using Writersword.Src.Core.Interfaces.WorkModes;
+using Writersword.Src.Infrastructure.Dock;
 
 
 namespace Writersword.ViewModels
@@ -37,7 +40,7 @@ namespace Writersword.ViewModels
         private readonly IHotKeyService _hotKeyService;
         private readonly IWorkModeConfigurationService _workModeConfigService;
         private readonly IWorkModeService _workModeService;
-        private readonly Services.DockFactory _dockFactory;
+        private readonly Src.Infrastructure.Dock.DockFactory _dockFactory;
         private readonly Dictionary<string, IRootDock> _tabLayouts = new();
 
         private WorkMode? _activeWorkMode;
@@ -45,6 +48,11 @@ namespace Writersword.ViewModels
         private object? _currentModule;
         private DocumentTabViewModel? _activeTab;
         private IRootDock? _dockLayout;
+
+        private readonly ModuleRegistry _moduleRegistry; // Реестр модулей
+        private List<IModuleMetadata>? _cachedModuleMetadata; // Кэш всех метаданных модулей
+        private readonly List<IDisposable> _slotSubscriptions = new(); // Подписки на изменения слотов
+        private readonly Dictionary<ModuleType, IDockable> _floatingDocuments = new(); // Отслеживание Float окон
 
         /// <summary>Заголовок окна</summary>
         public string Title
@@ -69,6 +77,12 @@ namespace Writersword.ViewModels
 
         /// <summary>Открытые вкладки документов</summary>
         public ObservableCollection<DocumentTabViewModel> OpenTabs { get; }
+
+        /// <summary>Список всех доступных типов модулей с их метаданными</summary>
+        public ObservableCollection<ModuleMenuItem> AllModules { get; } = new();
+
+        /// <summary>Список всех доступных WorkMode типов с их метаданными</summary>
+        public ObservableCollection<WorkModeMenuItem> AllWorkModes { get; } = new();
 
         /// <summary>Активная вкладка</summary>
         public DocumentTabViewModel? ActiveTab
@@ -98,6 +112,8 @@ namespace Writersword.ViewModels
         public ReactiveCommand<Unit, Unit> SaveWorkspaceForProjectCommand { get; }
         public ReactiveCommand<Unit, Unit> SaveWorkspaceGloballyCommand { get; }
         public ReactiveCommand<Unit, Unit> LoadDefaultWorkspaceCommand { get; }
+        public ReactiveCommand<WorkModeType, Unit> ToggleWorkModeCommand { get; }
+        public ReactiveCommand<ModuleType, Unit> ToggleModuleCommand { get; }
 
         public MainWindowViewModel(
             IDialogService dialogService,
@@ -106,7 +122,7 @@ namespace Writersword.ViewModels
             IHotKeyService hotKeyService,
             IWorkModeConfigurationService workModeConfigService,
             IWorkModeService workModeService,
-            Services.DockFactory dockFactory)
+            Src.Infrastructure.Dock.DockFactory dockFactory)
         {
             _dialogService = dialogService;
             _settingsService = settingsService;
@@ -115,6 +131,8 @@ namespace Writersword.ViewModels
             _workModeConfigService = workModeConfigService;
             _workModeService = workModeService;
             _dockFactory = dockFactory;
+            _moduleRegistry = App.Services.GetRequiredService<ModuleRegistry>();
+            _cachedModuleMetadata = _moduleRegistry.GetAllModuleMetadata().ToList();
 
             OpenTabs = new ObservableCollection<DocumentTabViewModel>();
 
@@ -130,11 +148,17 @@ namespace Writersword.ViewModels
             SaveWorkspaceForProjectCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceForProject);
             SaveWorkspaceGloballyCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceGlobally);
             LoadDefaultWorkspaceCommand = ReactiveCommand.CreateFromTask(LoadDefaultWorkspace);
+            // Команды для переключения модулей и режимов
+            ToggleWorkModeCommand = ReactiveCommand.Create<WorkModeType>(ToggleWorkMode);
+            ToggleModuleCommand = ReactiveCommand.Create<ModuleType>(ToggleModule);
 
             _settingsService.Load();
 
-            RegisterHotKeys();
-            InitializeDockFactory();
+            RegisterHotKeys(); // Регистрация горячих клавиш
+            InitializeDockFactory(); // Инициализация Dock фабрики
+            InitializeMenuItems(); // Инициализация AllModules и AllWorkModes
+            UpdateWorkModeMenuItems();
+            UpdateModuleMenuItems();
         }
 
         /// <summary>Показать модуль текстового редактора</summary>
@@ -583,7 +607,8 @@ namespace Writersword.ViewModels
                     DisplayNameKey = "HotKey_File_CloseTab",
                     DefaultGesture = new KeyGesture(Key.W, KeyModifiers.Control)
                 },
-                ReactiveCommand.Create(() => {
+                ReactiveCommand.Create(() =>
+                {
                     if (ActiveTab != null)
                         CloseTab(ActiveTab);
                 })
@@ -622,24 +647,49 @@ namespace Writersword.ViewModels
             Console.WriteLine($"[MainWindowViewModel] Modules in this mode: {workMode.ModuleSlots.Count}");
 
             ShowModulesForWorkMode(workMode);
+
+            UpdateWorkModeMenuItems();
+            UpdateModuleMenuItems();
         }
 
-        /// <summary>Показать модули через Dock систему</summary>
+        /// <summary>Показать модули для выбранного WorkMode</summary>
         private void ShowModulesForWorkMode(WorkMode workMode)
         {
-            Console.WriteLine($"[ShowModulesForWorkMode] Creating Dock layout for: {workMode.Title}");
+            Console.WriteLine($"[ShowModulesForWorkMode] ===== LOADING MODULES FOR: {workMode.Title} =====");
+            Console.WriteLine($"[ShowModulesForWorkMode] Total slots: {workMode.ModuleSlots.Count}");
 
-            try
+            foreach (var slot in workMode.ModuleSlots)
             {
-                var layout = _dockFactory.CreateLayout(workMode);
-                DockLayout = layout;
-                Console.WriteLine($"[ShowModulesForWorkMode] Dock layout set successfully");
+                Console.WriteLine($"  Slot: {slot.ModuleType}, IsVisible={slot.IsVisible}");
             }
-            catch (Exception ex)
+
+            var layout = _dockFactory.CreateLayout(workMode);
+            DockLayout = layout;
+
+            Console.WriteLine($"[ShowModulesForWorkMode] DockLayout created");
+
+            // ОТПИСЫВАЕМСЯ ОТ СТАРЫХ ПОДПИСОК!
+            foreach (var subscription in _slotSubscriptions)
             {
-                Console.WriteLine($"[ShowModulesForWorkMode] ERROR: {ex.Message}");
-                Console.WriteLine($"[ShowModulesForWorkMode] Stack: {ex.StackTrace}");
+                subscription.Dispose();
             }
+            _slotSubscriptions.Clear();
+            Console.WriteLine($"[ShowModulesForWorkMode] Cleared {_slotSubscriptions.Count} old subscriptions");
+
+            // Создаём НОВЫЕ подписки
+            foreach (var slot in workMode.ModuleSlots)
+            {
+                var subscription = slot.WhenAnyValue(x => x.IsVisible)
+                    .Subscribe(_ =>
+                    {
+                        Console.WriteLine($"[ShowModulesForWorkMode] Slot.IsVisible changed: {slot.ModuleType} = {slot.IsVisible}");
+                        UpdateModuleMenuItems();
+                    });
+
+                _slotSubscriptions.Add(subscription); // ← СОХРАНЯЕМ!
+            }
+
+            Console.WriteLine($"[ShowModulesForWorkMode] Subscribed to {workMode.ModuleSlots.Count} slot changes");
         }
 
         /// <summary>Найти DocumentDock в структуре</summary>
@@ -799,6 +849,9 @@ namespace Writersword.ViewModels
             }
 
             Console.WriteLine($"[InitializeWorkModesForTab] Initialized {workModes.Count} WorkModes for tab");
+
+            UpdateWorkModeMenuItems();
+            UpdateModuleMenuItems();
         }
 
         /// <summary>Инициализировать Dock фабрику один раз</summary>
@@ -807,6 +860,393 @@ namespace Writersword.ViewModels
             _dockFactory.Initialize();
 
             Console.WriteLine("[MainWindowViewModel] Dock factory initialized");
+        }
+
+        /// <summary>Элемент меню для модуля</summary>
+        public class ModuleMenuItem : ReactiveObject
+        {
+            private bool _isEnabled;
+            private bool _isChecked;
+
+            public ModuleType Type { get; set; }
+            public string Name { get; set; } = "";
+            public string Icon { get; set; } = "";
+            public bool IsUniversal { get; set; }
+
+            /// <summary>Доступен ли модуль для текущего WorkMode</summary>
+            public bool IsEnabled
+            {
+                get => _isEnabled;
+                set => this.RaiseAndSetIfChanged(ref _isEnabled, value);
+            }
+
+            /// <summary>Включен ли модуль в текущем WorkMode</summary>
+            public bool IsChecked
+            {
+                get => _isChecked;
+                set => this.RaiseAndSetIfChanged(ref _isChecked, value);
+            }
+        }
+
+
+        /// <summary>Элемент меню для WorkMode</summary>
+        public class WorkModeMenuItem : ReactiveObject
+        {
+            private bool _isChecked;
+
+            public WorkModeType Type { get; set; }
+            public string Name { get; set; } = "";
+            public string Icon { get; set; } = "";
+
+            /// <summary>Открыт ли WorkMode</summary>
+            public bool IsChecked
+            {
+                get => _isChecked;
+                set => this.RaiseAndSetIfChanged(ref _isChecked, value);
+            }
+        }
+
+        /// <summary>
+        /// Инициализировать элементы меню для модулей и WorkMode
+        /// ПОЛНОСТЬЮ автоматическая загрузка из метаданных
+        /// </summary>
+        private void InitializeMenuItems()
+        {
+            var moduleRegistry = App.Services.GetRequiredService<ModuleRegistry>();
+
+            // ===== АВТОМАТИЧЕСКАЯ ЗАГРУЗКА МОДУЛЕЙ =====
+            var allModuleMetadata = moduleRegistry.GetAllModuleMetadata();
+
+            foreach (var metadata in allModuleMetadata)
+            {
+                AllModules.Add(new ModuleMenuItem
+                {
+                    Type = metadata.ModuleType,
+                    Name = metadata.DisplayName,
+                    Icon = metadata.Icon,
+                    IsUniversal = metadata.IsUniversal,
+                    IsEnabled = false,  // Обновится позже при переключении WorkMode
+                    IsChecked = false   // Обновится позже
+                });
+            }
+
+            Console.WriteLine($"[InitializeMenuItems] Loaded {AllModules.Count} modules from metadata");
+
+            // ===== АВТОМАТИЧЕСКАЯ ЗАГРУЗКА WORKMODES =====
+            var allWorkModeMetadata = WorkModeMetadataRegistry.GetAll();
+
+            foreach (var metadata in allWorkModeMetadata)
+            {
+                AllWorkModes.Add(new WorkModeMenuItem
+                {
+                    Type = metadata.Type,
+                    Name = metadata.DisplayName,
+                    Icon = metadata.Icon,
+                    IsChecked = false  // Обновится позже
+                });
+            }
+
+            Console.WriteLine($"[InitializeMenuItems] Loaded {AllWorkModes.Count} WorkModes from metadata");
+        }
+
+        /// <summary>Открыть/переключить WorkMode</summary>
+        private void ToggleWorkMode(WorkModeType workModeType)
+        {
+            Console.WriteLine($"[ToggleWorkMode] Toggling: {workModeType}");
+
+            // Ищем WorkMode по типу
+            var existingWorkMode = AvailableWorkModes.FirstOrDefault(wm => wm.Type == workModeType);
+
+            if (existingWorkMode != null)
+            {
+                // WorkMode уже открыт - просто переключаемся на него
+                Console.WriteLine($"[ToggleWorkMode] WorkMode exists, switching to it");
+                SwitchWorkMode(existingWorkMode);
+            }
+            else
+            {
+                // WorkMode не открыт - создаём новый
+                Console.WriteLine($"[ToggleWorkMode] WorkMode not found, creating new");
+
+                var project = ActiveTab != null ? GetProjectForTab(ActiveTab) : null;
+                if (project == null)
+                {
+                    Console.WriteLine("[ToggleWorkMode] No active project");
+                    return;
+                }
+
+                // Получаем метаданные
+                var metadata = WorkModeMetadataRegistry.Get(workModeType);
+                if (metadata == null)
+                {
+                    Console.WriteLine($"[ToggleWorkMode] Metadata not found for {workModeType}");
+                    return;
+                }
+
+                // Создаём WorkMode
+                var newWorkMode = _workModeService.AddWorkMode(
+                    workModeType,
+                    metadata.DisplayName,
+                    metadata.Icon
+                );
+
+                newWorkMode.IsCloseable = metadata.IsCloseable;
+                newWorkMode.Order = metadata.Order;
+
+                AvailableWorkModes.Add(newWorkMode);
+                SwitchWorkMode(newWorkMode);
+
+                Console.WriteLine($"[ToggleWorkMode] Created and switched to: {newWorkMode.Title}");
+            }
+
+            // Обновляем галочки в меню
+            UpdateWorkModeMenuItems();
+        }
+
+        /// <summary>Открыть модуль или переключиться на него</summary>
+        private void ToggleModule(ModuleType moduleType)
+        {
+            Console.WriteLine($"[ToggleModule] ===== CALLED! Module: {moduleType} =====");
+
+            if (ActiveWorkMode == null)
+            {
+                Console.WriteLine("[ToggleModule] No active WorkMode");
+                return;
+            }
+
+            if (DockLayout == null)
+            {
+                Console.WriteLine("[ToggleModule] No DockLayout");
+                return;
+            }
+
+            var documentDock = FindDocumentDock(DockLayout);
+            if (documentDock == null)
+            {
+                Console.WriteLine("[ToggleModule] DocumentDock not found!");
+                return;
+            }
+
+            var docId = $"Module_{moduleType}";
+
+            // Проверяем в основном Dock
+            var existingDoc = documentDock.VisibleDockables?.FirstOrDefault(d => d.Id == docId);
+
+            if (existingDoc != null)
+            {
+                documentDock.ActiveDockable = existingDoc;
+                Console.WriteLine($"[ToggleModule] Focused on existing document: {moduleType}");
+                return;
+            }
+
+            // ДИАГНОСТИКА: Смотрим что в RootDock  // ← ЭТИ СТРОКИ ДОЛЖНЫ БЫТЬ!
+            Console.WriteLine($"[ToggleModule] DockLayout.Windows count: {DockLayout.Windows?.Count ?? 0}");
+            if (DockLayout.Windows != null)
+            {
+                foreach (var window in DockLayout.Windows)
+                {
+                    Console.WriteLine($"  Window: {window.Id}, Layout: {window.Layout?.Id}");
+                    if (window.Layout?.VisibleDockables != null)
+                    {
+                        foreach (var d in window.Layout.VisibleDockables)
+                        {
+                            Console.WriteLine($"    Dockable: {d.Id}");
+                        }
+                    }
+                }
+            }
+
+            // Проверяем в Float окнах через RootDock
+            var floatingDoc = FindFloatingDocument(DockLayout, docId);
+            if (floatingDoc != null)
+            {
+                Console.WriteLine($"[ToggleModule] Module is floating, focusing window: {moduleType}");
+
+                // Вызываем статический метод напрямую
+                Src.Infrastructure.Dock.HostWindow.ActivateWindow(docId);
+                Console.WriteLine($"[ToggleModule] Activated Float window for: {moduleType}");
+
+                return;
+            }
+
+            // Модуль закрыт → открываем
+            var existingSlot = ActiveWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleType);
+
+            if (existingSlot != null)
+            {
+                existingSlot.IsVisible = true;
+
+                // Если Float окно открыто → закрываем его ПЕРЕД добавлением в Dock
+                if (Src.Infrastructure.Dock.HostWindow.IsWindowOpen(docId))
+                {
+                    Console.WriteLine($"[ToggleModule] Closing Float window before adding to Dock: {moduleType}");
+                    Src.Infrastructure.Dock.HostWindow.CloseWindow(docId);
+                }
+
+                var doc = _dockFactory.CreateModuleDocument(existingSlot);
+                if (doc != null && documentDock.VisibleDockables != null)
+                {
+                    documentDock.VisibleDockables.Add(doc);
+                    documentDock.ActiveDockable = doc;
+                    Console.WriteLine($"[ToggleModule] Added document: {moduleType}");
+                }
+            }
+            else
+            {
+                var position = FindFreePositionForModule();
+
+                var newSlot = new ModuleSlot
+                {
+                    ModuleType = moduleType,
+                    Position = position,
+                    Size = new WorkModeGridSize(1, 1),
+                    IsVisible = true,
+                    IsCloseable = !WorkModeRules.GetRequiredModules(ActiveWorkMode.Type).Contains(moduleType),
+                    MinWidth = 200,
+                    MinHeight = 150
+                };
+
+                ActiveWorkMode.ModuleSlots.Add(newSlot);
+                Console.WriteLine($"[ToggleModule] Added slot: {moduleType}");
+
+                var doc = _dockFactory.CreateModuleDocument(newSlot);
+                if (doc != null && documentDock.VisibleDockables != null)
+                {
+                    documentDock.VisibleDockables.Add(doc);
+                    documentDock.ActiveDockable = doc;
+                    Console.WriteLine($"[ToggleModule] Added new document: {moduleType}");
+                }
+            }
+        }
+
+        /// <summary>Найти Float документ по ID (рекурсивный поиск)</summary>
+        private IDockable? FindFloatingDocument(IRootDock rootDock, string docId)
+        {
+            if (rootDock.Windows == null) return null;
+
+            foreach (var window in rootDock.Windows)
+            {
+                Console.WriteLine($"[FindFloatingDocument] Searching in window: {window.Id}");
+
+                if (window.Layout != null)
+                {
+                    var result = FindInDockable(window.Layout, docId);
+                    if (result != null) return result;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>Рекурсивный поиск документа в Dockable</summary>
+        private IDockable? FindInDockable(IDockable dockable, string docId)
+        {
+            Console.WriteLine($"[FindInDockable] Checking: {dockable.Id} (Type: {dockable.GetType().Name})");
+
+            // Если это наш документ - возвращаем
+            if (dockable.Id == docId)
+            {
+                Console.WriteLine($"[FindInDockable] FOUND: {docId}");
+                return dockable;
+            }
+
+            // Если это контейнер - ищем в детях
+            if (dockable is IDock dock && dock.VisibleDockables != null)
+            {
+                foreach (var child in dock.VisibleDockables)
+                {
+                    var result = FindInDockable(child, docId);
+                    if (result != null) return result;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>Найти свободную позицию для нового модуля (справа от последнего)</summary>
+        private WorkModeGridPosition FindFreePositionForModule()
+        {
+            if (ActiveWorkMode == null || ActiveWorkMode.ModuleSlots.Count == 0)
+            {
+                return new WorkModeGridPosition { Row = 0, Column = 0 };
+            }
+
+            // Находим максимальный Column среди видимых модулей
+            var maxColumn = ActiveWorkMode.ModuleSlots
+                .Where(s => s.IsVisible)
+                .Max(s => s.Position.Column + s.Size.ColumnSpan - 1);
+
+            // Новый модуль справа от последнего
+            return new WorkModeGridPosition
+            {
+                Row = 0,
+                Column = maxColumn + 1
+            };
+        }
+
+        /// <summary>Обновить состояние элементов меню WorkMode</summary>
+        private void UpdateWorkModeMenuItems()
+        {
+            foreach (var menuItem in AllWorkModes)
+            {
+                menuItem.IsChecked = AvailableWorkModes.Any(wm => wm.Type == menuItem.Type);
+            }
+        }
+
+        /// <summary>Обновить состояние элементов меню модулей</summary>
+        private void UpdateModuleMenuItems()
+        {
+            if (ActiveWorkMode == null)
+            {
+                Console.WriteLine("[UpdateModuleMenuItems] No active WorkMode - all disabled");
+                foreach (var menuItem in AllModules)
+                {
+                    menuItem.IsEnabled = false;
+                    menuItem.IsChecked = false;
+                }
+                return;
+            }
+
+            Console.WriteLine($"[UpdateModuleMenuItems] Updating for WorkMode: {ActiveWorkMode.Title}");
+
+            var documentDock = DockLayout != null ? FindDocumentDock(DockLayout) : null;
+
+            foreach (var menuItem in AllModules)
+            {
+                // Проверяем открыт ли модуль В DOCK (не в slot.IsVisible!)
+                if (documentDock?.VisibleDockables != null)
+                {
+                    var docId = $"Module_{menuItem.Type}";
+                    menuItem.IsChecked = documentDock.VisibleDockables.Any(d => d.Id == docId);
+                }
+                else
+                {
+                    menuItem.IsChecked = false;
+                }
+
+                // Модуль доступен если универсальный или разрешён для текущего WorkMode
+                if (menuItem.IsUniversal)
+                {
+                    menuItem.IsEnabled = true;
+                }
+                else
+                {
+                    var moduleMetadata = _cachedModuleMetadata?
+                        .FirstOrDefault(m => m.ModuleType == menuItem.Type);
+
+                    menuItem.IsEnabled = moduleMetadata?.AvailableInWorkModes
+                        .Contains(ActiveWorkMode.Type) ?? false;
+                }
+
+                Console.WriteLine($"  {menuItem.Icon} {menuItem.Name}: Enabled={menuItem.IsEnabled}, Checked={menuItem.IsChecked}");
+            }
+        }
+
+        /// <summary>Получить отображаемое имя модуля</summary>
+        private string GetModuleDisplayName(ModuleType type)
+        {
+            var menuItem = AllModules.FirstOrDefault(m => m.Type == type);
+            return menuItem?.Name ?? type.ToString();
         }
     }
 }

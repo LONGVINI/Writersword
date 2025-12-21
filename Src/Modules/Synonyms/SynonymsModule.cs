@@ -1,15 +1,17 @@
 ﻿using System;
+using System.Collections.Generic;
 using Writersword.Core.Enums;
+using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.Modules;
 using Writersword.Modules.Common;
 using Writersword.Modules.Synonyms.ViewModels;
+using Writersword.Src.Modules.Synonyms.Resources;
 
 namespace Writersword.Modules.Synonyms
 {
     /// <summary>
-    /// Модуль поиска синонимов
-    /// Помогает писателю находить альтернативные слова
-    /// Пока это заглушка с примерами, позже добавим реальный API
+    /// Модуль подбора синонимов
+    /// Доступен только в режиме Редактора и Поэзии
     /// </summary>
     public class SynonymsModule : BaseModule
     {
@@ -20,47 +22,68 @@ namespace Writersword.Modules.Synonyms
         public override ModuleType ModuleType => ModuleType.Synonyms;
 
         /// <summary>Заголовок модуля</summary>
-        public override string Title { get; set; } = "Синонимы";
+        public override string Title { get; set; } = "Synonyms";
 
         /// <summary>ViewModel для привязки к View</summary>
         public override object? ViewModel => _viewModel;
 
-        /// <summary>
-        /// Инициализация модуля - создаём ViewModel
-        /// </summary>
+        /// <summary>Метаданные модуля для UI</summary>
+        public override IModuleMetadata Metadata => new SynonymsMetadata();
+
+        /// <summary>Инициализация модуля - создаём ViewModel</summary>
         public override void Initialize()
         {
             _viewModel = new SynonymsViewModel();
             Console.WriteLine($"[SynonymsModule] Initialized (ID: {InstanceId})");
         }
 
-        /// <summary>
-        /// Сохранить состояние модуля
-        /// Сохраняем последний поисковый запрос
-        /// </summary>
-        /// <returns>Состояние с поисковым запросом</returns>
+        /// <summary>Сохранить состояние модуля</summary>
         public override ModuleState SaveState()
         {
             return new ModuleState
             {
                 ScrollPosition = 0,
-                CustomData = _viewModel?.SearchText // Сохраняем что искал пользователь
+                CustomData = null
             };
         }
 
-        /// <summary>
-        /// Восстановить состояние модуля
-        /// Восстанавливаем последний поисковый запрос
-        /// </summary>
-        /// <param name="state">Сохранённое состояние</param>
+        /// <summary>Восстановить состояние модуля</summary>
         public override void RestoreState(ModuleState state)
         {
-            // Восстанавливаем поисковый запрос
-            if (_viewModel != null && !string.IsNullOrEmpty(state.CustomData))
-            {
-                _viewModel.SearchText = state.CustomData;
-                Console.WriteLine($"[SynonymsModule] Restored search: {state.CustomData}");
-            }
+            // Восстановление не требуется
         }
+
+        /// <summary>Создать View синонимов</summary>
+        public override Avalonia.Controls.Control? CreateView()
+        {
+            return new Views.SynonymsView
+            {
+                DataContext = ViewModel
+            };
+        }
+    }
+
+    /// <summary>Метаданные модуля Synonyms</summary>
+    internal class SynonymsMetadata : IModuleMetadata
+    {
+        public ModuleType ModuleType => ModuleType.Synonyms;
+
+        /// <summary>Название из локализации (.resx)</summary>
+        public string DisplayName => SynonymsStrings.DisplayName;
+
+        /// <summary>Описание из локализации (.resx)</summary>
+        public string Description => SynonymsStrings.Description;
+
+        /// <summary>Иконка (hardcoded, не переводится)</summary>
+        public string Icon => "📚";
+
+        public bool IsUniversal => false;
+
+        /// <summary>Доступен в режимах Редактора и Поэзии</summary>
+        public List<WorkModeType> AvailableInWorkModes => new()
+        {
+            WorkModeType.Editor,
+            WorkModeType.Poetry
+        };
     }
 }

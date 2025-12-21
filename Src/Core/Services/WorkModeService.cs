@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
-using Writersword.Core.Services.Interfaces;
+using Writersword.Src.Core.Interfaces.WorkModes;
 
 namespace Writersword.Core.Services.WorkModes
 {

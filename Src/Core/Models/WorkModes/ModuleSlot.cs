@@ -1,4 +1,5 @@
-﻿using System;
+﻿using ReactiveUI;
+using System;
 using System.Collections.Generic;
 using Writersword.Core.Enums;
 
@@ -8,8 +9,8 @@ namespace Writersword.Core.Models.WorkModes
     /// Слот для размещения модуля внутри WorkMode
     /// Определяет какой модуль находится в режиме, где он расположен и какого размера
     /// </summary>
-    public class ModuleSlot
-    {
+    public class ModuleSlot : ReactiveObject
+    { 
         /// <summary>Уникальный ID слота</summary>
         public string Id { get; set; } = Guid.NewGuid().ToString();
 
@@ -38,6 +39,15 @@ namespace Writersword.Core.Models.WorkModes
         public Dictionary<string, object> ModuleState { get; set; } = new();
 
         /// <summary>Видим ли модуль (можно скрыть, но не удалять)</summary>
-        public bool IsVisible { get; set; } = true;
+        private bool _isVisible = true;
+        /// <summary>
+        /// Видим ли модуль (можно скрыть, но не удалять)
+        /// ИСПРАВЛЕНО: Использует ReactiveUI для уведомления UI об изменениях
+        /// </summary>
+        public bool IsVisible
+        {
+            get => _isVisible;
+            set => this.RaiseAndSetIfChanged(ref _isVisible, value);
+        }
     }
 }

@@ -4,7 +4,7 @@ using Dock.Model.Core;
 using System;
 using System.Reflection;
 
-namespace Writersword.Services
+namespace Writersword.Src.Infrastructure.Dock
 {
     /// <summary>
     /// Диагностика Dock системы для отладки Float проблемы
