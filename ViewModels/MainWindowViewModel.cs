@@ -1020,75 +1020,55 @@ namespace Writersword.ViewModels
                 return;
             }
 
-            var documentDock = FindDocumentDock(DockLayout);
-            if (documentDock == null)
-            {
-                Console.WriteLine("[ToggleModule] DocumentDock not found!");
-                return;
-            }
-
             var docId = $"Module_{moduleType}";
 
-            // Проверяем в основном Dock
-            var existingDoc = documentDock.VisibleDockables?.FirstOrDefault(d => d.Id == docId);
+            // ===== ШАГ 1: Ищем документ ВО ВСЕЙ dock-структуре =====
+            var existingDoc = FindDocumentInEntireLayout(DockLayout, docId);
 
             if (existingDoc != null)
             {
-                documentDock.ActiveDockable = existingDoc;
-                Console.WriteLine($"[ToggleModule] Focused on existing document: {moduleType}");
+                Console.WriteLine($"[ToggleModule] Found existing document, focusing: {moduleType}");
+
+                // Фокусируемся на найденном документе
+                if (existingDoc.Owner is IDock dock)
+                {
+                    dock.ActiveDockable = existingDoc;
+                }
+
                 return;
             }
 
-            // ДИАГНОСТИКА: Смотрим что в RootDock  // ← ЭТИ СТРОКИ ДОЛЖНЫ БЫТЬ!
-            Console.WriteLine($"[ToggleModule] DockLayout.Windows count: {DockLayout.Windows?.Count ?? 0}");
-            if (DockLayout.Windows != null)
-            {
-                foreach (var window in DockLayout.Windows)
-                {
-                    Console.WriteLine($"  Window: {window.Id}, Layout: {window.Layout?.Id}");
-                    if (window.Layout?.VisibleDockables != null)
-                    {
-                        foreach (var d in window.Layout.VisibleDockables)
-                        {
-                            Console.WriteLine($"    Dockable: {d.Id}");
-                        }
-                    }
-                }
-            }
-
-            // Проверяем в Float окнах через RootDock
+            // ===== ШАГ 2: Ищем в Float окнах =====
             var floatingDoc = FindFloatingDocument(DockLayout, docId);
             if (floatingDoc != null)
             {
                 Console.WriteLine($"[ToggleModule] Module is floating, focusing window: {moduleType}");
-
-                // Вызываем статический метод напрямую
                 Src.Infrastructure.Dock.HostWindow.ActivateWindow(docId);
-                Console.WriteLine($"[ToggleModule] Activated Float window for: {moduleType}");
-
                 return;
             }
 
-            // Модуль закрыт → открываем
+            // ===== ШАГ 3: Документ не найден - создаём =====
+            Console.WriteLine($"[ToggleModule] Document not found, creating new: {moduleType}");
+
+            var documentDock = FindDocumentDock(DockLayout);
+            if (documentDock == null)
+            {
+                Console.WriteLine("[ToggleModule] ERROR: DocumentDock not found!");
+                return;
+            }
+
             var existingSlot = ActiveWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleType);
 
             if (existingSlot != null)
             {
                 existingSlot.IsVisible = true;
 
-                // Если Float окно открыто → закрываем его ПЕРЕД добавлением в Dock
-                if (Src.Infrastructure.Dock.HostWindow.IsWindowOpen(docId))
-                {
-                    Console.WriteLine($"[ToggleModule] Closing Float window before adding to Dock: {moduleType}");
-                    Src.Infrastructure.Dock.HostWindow.CloseWindow(docId);
-                }
-
                 var doc = _dockFactory.CreateModuleDocument(existingSlot);
                 if (doc != null && documentDock.VisibleDockables != null)
                 {
                     documentDock.VisibleDockables.Add(doc);
                     documentDock.ActiveDockable = doc;
-                    Console.WriteLine($"[ToggleModule] Added document: {moduleType}");
+                    Console.WriteLine($"[ToggleModule] Created document from existing slot: {moduleType}");
                 }
             }
             else
@@ -1107,16 +1087,60 @@ namespace Writersword.ViewModels
                 };
 
                 ActiveWorkMode.ModuleSlots.Add(newSlot);
-                Console.WriteLine($"[ToggleModule] Added slot: {moduleType}");
+                Console.WriteLine($"[ToggleModule] Created NEW slot: {moduleType}");
 
                 var doc = _dockFactory.CreateModuleDocument(newSlot);
                 if (doc != null && documentDock.VisibleDockables != null)
                 {
                     documentDock.VisibleDockables.Add(doc);
                     documentDock.ActiveDockable = doc;
-                    Console.WriteLine($"[ToggleModule] Added new document: {moduleType}");
+                    Console.WriteLine($"[ToggleModule] Created NEW document: {moduleType}");
                 }
             }
+        }
+
+        /// <summary>Найти документ во ВСЕЙ dock-структуре (включая split panels)</summary>
+        private IDockable? FindDocumentInEntireLayout(IDock rootDock, string docId)
+        {
+            Console.WriteLine($"[FindDocumentInEntireLayout] Searching for: {docId}");
+
+            // Рекурсивный поиск везде
+            var result = SearchInDockable(rootDock, docId);
+
+            if (result != null)
+            {
+                Console.WriteLine($"[FindDocumentInEntireLayout] FOUND: {docId}");
+            }
+            else
+            {
+                Console.WriteLine($"[FindDocumentInEntireLayout] NOT FOUND: {docId}");
+            }
+
+            return result;
+        }
+
+        /// <summary>Рекурсивный поиск в dockable</summary>
+        private IDockable? SearchInDockable(IDockable? dockable, string docId)
+        {
+            if (dockable == null) return null;
+
+            // Проверяем сам элемент
+            if (dockable.Id == docId)
+            {
+                return dockable;
+            }
+
+            // Если это контейнер - ищем в детях
+            if (dockable is IDock dock && dock.VisibleDockables != null)
+            {
+                foreach (var child in dock.VisibleDockables)
+                {
+                    var found = SearchInDockable(child, docId);
+                    if (found != null) return found;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>Найти Float документ по ID (рекурсивный поиск)</summary>
