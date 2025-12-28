@@ -5,7 +5,7 @@ using Writersword.Core.Models.Settings;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Services.Interfaces;
 using Writersword.Src.Core.Interfaces.WorkModes;
-using Writersword.Src.Core.Models.WorkModes;
+using Writersword.Src.WorkModes.Common;
 
 namespace Writersword.Core.Services.WorkModes
 {
@@ -16,10 +16,14 @@ namespace Writersword.Core.Services.WorkModes
     public class WorkModeConfigurationService : IWorkModeConfigurationService
     {
         private readonly ISettingsService _settingsService;
+        private readonly WorkModeRegistry _workModeRegistry;
 
-        public WorkModeConfigurationService(ISettingsService settingsService)
+        public WorkModeConfigurationService(
+            ISettingsService settingsService,
+            WorkModeRegistry workModeRegistry)
         {
             _settingsService = settingsService;
+            _workModeRegistry = workModeRegistry;
         }
 
         /// <summary>
@@ -51,8 +55,48 @@ namespace Writersword.Core.Services.WorkModes
         /// <summary>Загрузить дефолтную конфигурацию</summary>
         public List<WorkMode> LoadDefaultConfiguration(ProjectType projectType)
         {
-            var preset = WorkModePresetFactory.GetPreset(projectType);
-            return CreateWorkModesFromPreset(preset);
+            var workModes = new List<WorkMode>();
+
+            // Получаем все зарегистрированные WorkModes
+            var allWorkModes = _workModeRegistry.GetAll();
+
+            foreach (var workModeInstance in allWorkModes)
+            {
+                // Получаем DEFAULT конфигурацию из каждого WorkMode
+                var defaultConfig = workModeInstance.GetDefaultConfig();
+
+                // Создаём экземпляр WorkMode
+                var workMode = new WorkMode
+                {
+                    WorkModeId = workModeInstance.Id,
+                    Title = workModeInstance.DisplayName,
+                    Icon = workModeInstance.Icon,
+                    Order = defaultConfig.Order,
+                    IsCloseable = workModeInstance.IsCloseable,
+                    IsActive = false,
+                    ModuleSlots = defaultConfig.ModuleSlots.Select(slotConfig => new ModuleSlot
+                    {
+                        ModuleType = slotConfig.ModuleType,
+                        MinWidth = slotConfig.MinWidth,
+                        MinHeight = slotConfig.MinHeight,
+                        IsVisible = slotConfig.IsVisible,
+                        IsResizable = true,
+                        IsCloseable = slotConfig.Category != ModuleCategory.Required,
+                        PreferredPosition = slotConfig.PreferredPosition
+                    }).ToList(),
+                    Settings = new WorkModeSettings
+                    {
+                        CustomSettings = new Dictionary<string, object>
+                        {
+                            ["DockLayout"] = defaultConfig.DockLayout // ← СОХРАНЯЕМ DockLayout!
+                        }
+                    }
+                };
+
+                workModes.Add(workMode);
+            }
+
+            return workModes.OrderBy(wm => wm.Order).ToList();
         }
 
         /// <summary>Сохранить конфигурацию глобально</summary>
@@ -77,15 +121,28 @@ namespace Writersword.Core.Services.WorkModes
         }
 
         /// <summary>Проверить можно ли удалить модуль</summary>
-        public bool CanRemoveModule(WorkModeType workModeType, ModuleType moduleType)
+        public bool CanRemoveModule(string workModeId, ModuleType moduleType)
         {
-            return WorkModeRules.CanRemoveModule(workModeType, moduleType);
+            var workMode = _workModeRegistry.GetWorkMode(workModeId);
+            if (workMode == null) return true;
+
+            var defaultConfig = workMode.GetDefaultConfig();
+            var moduleConfig = defaultConfig.ModuleSlots.FirstOrDefault(m => m.ModuleType == moduleType);
+
+            return moduleConfig == null || moduleConfig.Category != ModuleCategory.Required;
         }
 
         /// <summary>Получить обязательные модули</summary>
-        public List<ModuleType> GetRequiredModules(WorkModeType workModeType)
+        public List<ModuleType> GetRequiredModules(string workModeId)
         {
-            return WorkModeRules.GetRequiredModules(workModeType);
+            var workMode = _workModeRegistry.GetWorkMode(workModeId);
+            if (workMode == null) return new List<ModuleType>();
+
+            var defaultConfig = workMode.GetDefaultConfig();
+            return defaultConfig.ModuleSlots
+                .Where(m => m.Category == ModuleCategory.Required)
+                .Select(m => m.ModuleType)
+                .ToList();
         }
 
         /// <summary>Клонировать WorkModes (глубокое копирование)</summary>
@@ -93,8 +150,8 @@ namespace Writersword.Core.Services.WorkModes
         {
             return source.Select(wm => new WorkMode
             {
-                Id = System.Guid.NewGuid().ToString(), // Новый ID для копии
-                Type = wm.Type,
+                Id = System.Guid.NewGuid().ToString(),
+                WorkModeId = wm.WorkModeId,
                 Title = wm.Title,
                 Icon = wm.Icon,
                 Order = wm.Order,
@@ -102,58 +159,21 @@ namespace Writersword.Core.Services.WorkModes
                 IsActive = wm.IsActive,
                 ModuleSlots = wm.ModuleSlots.Select(ms => new ModuleSlot
                 {
-                    Id = System.Guid.NewGuid().ToString(), // Новый ID
+                    Id = System.Guid.NewGuid().ToString(),
                     ModuleType = ms.ModuleType,
-                    Position = new WorkModeGridPosition
-                    {
-                        Row = ms.Position.Row,
-                        Column = ms.Position.Column
-                    },
-                    Size = new WorkModeGridSize(ms.Size.RowSpan, ms.Size.ColumnSpan),
                     MinWidth = ms.MinWidth,
                     MinHeight = ms.MinHeight,
                     IsResizable = ms.IsResizable,
                     IsVisible = ms.IsVisible,
                     IsCloseable = ms.IsCloseable,
+                    PreferredPosition = ms.PreferredPosition,
                     ModuleState = new Dictionary<string, object>(ms.ModuleState)
                 }).ToList(),
                 Settings = new WorkModeSettings
                 {
-                    LayoutType = wm.Settings.LayoutType,
-                    GridColumns = wm.Settings.GridColumns,
-                    GridRows = wm.Settings.GridRows,
                     CustomSettings = new Dictionary<string, object>(wm.Settings.CustomSettings)
                 }
-            }).ToList();
-        }
-
-        /// <summary>Создать WorkModes из пресета (шаблона)</summary>
-        private List<WorkMode> CreateWorkModesFromPreset(WorkModePreset preset)
-        {
-            return preset.WorkModes.Select(template => new WorkMode
-            {
-                Type = template.Type,
-                Title = template.Title,
-                Icon = template.Icon,
-                Order = template.Order,
-                IsCloseable = template.IsCloseable,
-                IsActive = false,
-                ModuleSlots = template.ModuleSlots.Select(slotTemplate => new ModuleSlot
-                {
-                    ModuleType = slotTemplate.ModuleType,
-                    Position = new WorkModeGridPosition
-                    {
-                        Row = slotTemplate.Position.Row,
-                        Column = slotTemplate.Position.Column
-                    },
-                    Size = new WorkModeGridSize(slotTemplate.Size.RowSpan, slotTemplate.Size.ColumnSpan),
-                    MinWidth = slotTemplate.MinWidth,
-                    MinHeight = slotTemplate.MinHeight,
-                    IsVisible = slotTemplate.IsVisible,
-                    IsResizable = true,
-                    IsCloseable = slotTemplate.IsCloseable
-                }).ToList()
-            }).ToList();
+            }).ToList();    
         }
     }
 }

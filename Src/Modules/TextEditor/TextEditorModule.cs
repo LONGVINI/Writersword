@@ -95,15 +95,9 @@ namespace Writersword.Modules.TextEditor
         /// <summary>Описание из локализации (.resx)</summary>
         public string Description => TextEditorStrings.Description;
 
-        /// <summary>Иконка (hardcoded, не переводится)</summary>
+        /// <summary>Иконка (hardcoded, не переводится)</summary>ф
         public string Icon => "📝";
 
         public bool IsUniversal => false;
-
-        /// <summary>Доступен только в режиме Редактора</summary>
-        public List<WorkModeType> AvailableInWorkModes => new()
-        {
-            WorkModeType.Editor
-        };
     }
 }

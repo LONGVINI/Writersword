@@ -10,18 +10,12 @@ namespace Writersword.Core.Models.WorkModes
     /// Определяет какой модуль находится в режиме, где он расположен и какого размера
     /// </summary>
     public class ModuleSlot : ReactiveObject
-    { 
+    {
         /// <summary>Уникальный ID слота</summary>
         public string Id { get; set; } = Guid.NewGuid().ToString();
 
         /// <summary>Тип модуля в этом слоте</summary>
         public ModuleType ModuleType { get; set; }
-
-        /// <summary>Позиция в сетке (строка, столбец)</summary>
-        public WorkModeGridPosition Position { get; set; } = new();
-
-        /// <summary>Размер в сетке (сколько строк и столбцов занимает)</summary>
-        public WorkModeGridSize Size { get; set; } = new(1, 1);
 
         /// <summary>Минимальная ширина модуля (px)</summary>
         public double MinWidth { get; set; } = 200;
@@ -49,5 +43,8 @@ namespace Writersword.Core.Models.WorkModes
             get => _isVisible;
             set => this.RaiseAndSetIfChanged(ref _isVisible, value);
         }
+
+        /// <summary>Предпочтительное расположение модуля при докировании</summary>
+        public PreferredDockPosition PreferredPosition { get; set; } = PreferredDockPosition.RightAsTab;
     }
 }

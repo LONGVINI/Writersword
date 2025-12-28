@@ -37,28 +37,27 @@ namespace Writersword.Core.Services.WorkModes
         }
 
         /// <summary>Добавить новый режим работы</summary>
-        public WorkMode AddWorkMode(WorkModeType type, string title, string icon)
+        public WorkMode AddWorkMode(string workModeId, string title, string icon)
         {
             var workMode = new WorkMode
             {
-                Type = type,
+                WorkModeId = workModeId,
                 Title = title,
                 Icon = icon,
                 Order = _workModes.Count,
-                IsCloseable = type != WorkModeType.Editor, // Editor нельзя закрыть
+                IsCloseable = workModeId != "editor", // Editor нельзя закрыть
                 IsActive = false
             };
 
             // Добавляем обязательные модули для этого режима
-            var requiredModules = _configService.GetRequiredModules(type);
+            var requiredModules = _configService.GetRequiredModules(workModeId);
             foreach (var moduleType in requiredModules)
             {
                 workMode.ModuleSlots.Add(new ModuleSlot
                 {
                     ModuleType = moduleType,
-                    Position = new WorkModeGridPosition { Row = 0, Column = 0 },
-                    Size = new WorkModeGridSize(2, 4),
-                    IsVisible = true
+                    IsVisible = true,
+                    PreferredPosition = PreferredDockPosition.RightAsTab
                 });
             }
 
@@ -99,9 +98,8 @@ namespace Writersword.Core.Services.WorkModes
             var slot = new ModuleSlot
             {
                 ModuleType = moduleType,
-                Position = new WorkModeGridPosition { Row = 0, Column = 0 },
-                Size = new WorkModeGridSize(1, 1),
-                IsVisible = true
+                IsVisible = true,
+                PreferredPosition = PreferredDockPosition.RightAsTab
             };
 
             workMode.ModuleSlots.Add(slot);
@@ -114,7 +112,7 @@ namespace Writersword.Core.Services.WorkModes
         public bool RemoveModuleFromWorkMode(WorkMode workMode, ModuleSlot moduleSlot)
         {
             // Проверяем можно ли удалить этот модуль
-            if (!_configService.CanRemoveModule(workMode.Type, moduleSlot.ModuleType))
+            if (!_configService.CanRemoveModule(workMode.WorkModeId, moduleSlot.ModuleType))
             {
                 Console.WriteLine($"[WorkModeService] Cannot remove module {moduleSlot.ModuleType} (required)");
                 return false;
@@ -128,27 +126,7 @@ namespace Writersword.Core.Services.WorkModes
 
             return removed;
         }
-
-        /// <summary>Переместить модуль в другую позицию</summary>
-        public void MoveModule(ModuleSlot moduleSlot, WorkModeGridPosition newPosition)
-        {
-            moduleSlot.Position = newPosition;
-            Console.WriteLine($"[WorkModeService] Moved module to Row={newPosition.Row}, Col={newPosition.Column}");
-        }
-
-        /// <summary>Изменить размер модуля</summary>
-        public void ResizeModule(ModuleSlot moduleSlot, WorkModeGridSize newSize)
-        {
-            if (!moduleSlot.IsResizable)
-            {
-                Console.WriteLine($"[WorkModeService] Cannot resize module (not resizable)");
-                return;
-            }
-
-            moduleSlot.Size = newSize;
-            Console.WriteLine($"[WorkModeService] Resized module to {newSize.RowSpan}x{newSize.ColumnSpan}");
-        }
-
+      
         /// <summary>Показать/скрыть модуль</summary>
         public void ToggleModuleVisibility(ModuleSlot moduleSlot)
         {

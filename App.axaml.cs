@@ -8,15 +8,19 @@ using System.IO;
 using Writersword.Core.Enums;
 using Writersword.Core.Services.WorkModes;
 using Writersword.Modules.Common;
-using Writersword.Modules.TextEditor;
-using Writersword.Modules.Synonyms;
 using Writersword.Modules.Notes;
+using Writersword.Modules.Synonyms;
+using Writersword.Modules.TextEditor;
 using Writersword.Modules.Timer;
 using Writersword.Services;
 using Writersword.Services.Interfaces;
+using Writersword.Src.Core.Interfaces.WorkModes;
+using Writersword.Src.WorkModes.Characters;
+using Writersword.Src.WorkModes.Common;
+using Writersword.Src.WorkModes.Editor;
+using Writersword.Src.WorkModes.Timeline;
 using Writersword.ViewModels;
 using Writersword.Views;
-using Writersword.Src.Core.Interfaces.WorkModes;
 
 namespace Writersword
 {
@@ -79,11 +83,13 @@ namespace Writersword
             // --- МОДУЛЬНАЯ СИСТЕМА ---
             services.AddSingleton<ModuleFactory>();
             services.AddSingleton<ModuleRegistry>();
+
+            // --- WORKMODE СИСТЕМА ---
+            services.AddSingleton<WorkModeFactory>();
+            services.AddSingleton<WorkModeRegistry>();
+
             services.AddSingleton<MainWindowViewModel>();
             services.AddSingleton<Src.Infrastructure.Dock.DockFactory>();
-
-
-            services.AddSingleton<MainWindowViewModel>();
             services.AddTransient<WelcomeViewModel>();
 
             // ========================================
@@ -123,6 +129,24 @@ namespace Writersword
             );
 
             Console.WriteLine("[App] All modules registered successfully!");
+
+            // ========================================
+            // РЕГИСТРАЦИЯ WORKMODES
+            // Регистрируем встроенные режимы работы
+            // ========================================
+            var workModeFactory = Services.GetRequiredService<WorkModeFactory>();
+            var workModeRegistry = Services.GetRequiredService<WorkModeRegistry>();
+
+            // Editor - основной режим редактирования
+            RegisterWorkMode(workModeFactory, workModeRegistry, new EditorWorkMode());
+
+            // Timeline - работа с временной шкалой событий
+            RegisterWorkMode(workModeFactory, workModeRegistry, new TimelineWorkMode());
+
+            // Characters - управление персонажами
+            RegisterWorkMode(workModeFactory, workModeRegistry, new CharactersWorkMode());
+
+            Console.WriteLine("[App] All WorkModes registered successfully!");
 
             // ========================================
             // СОЗДАНИЕ ГЛАВНОГО ОКНА
@@ -224,6 +248,15 @@ namespace Writersword
             }
 
             base.OnFrameworkInitializationCompleted();
+        }
+
+        /// <summary>
+        /// Регистрирует WorkMode в фабрике и реестре
+        /// </summary>
+        private void RegisterWorkMode(WorkModeFactory factory, WorkModeRegistry registry, IWorkMode workMode)
+        {
+            factory.Register(workMode.Id, () => workMode);
+            registry.Register(workMode);
         }
 
         /// <summary>

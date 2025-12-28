@@ -94,7 +94,5 @@ namespace Writersword.Modules.Notes
         /// <summary>Универсальный модуль - доступен везде</summary>
         public bool IsUniversal => true;
 
-        /// <summary>Пустой список = доступен во всех WorkMode</summary>
-        public List<WorkModeType> AvailableInWorkModes => new();
     }
 }

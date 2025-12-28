@@ -78,12 +78,5 @@ namespace Writersword.Modules.Synonyms
         public string Icon => "📚";
 
         public bool IsUniversal => false;
-
-        /// <summary>Доступен в режимах Редактора и Поэзии</summary>
-        public List<WorkModeType> AvailableInWorkModes => new()
-        {
-            WorkModeType.Editor,
-            WorkModeType.Poetry
-        };
     }
 }

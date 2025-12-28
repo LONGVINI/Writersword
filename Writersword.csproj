@@ -120,6 +120,13 @@
 		<Folder Include="Models\" />
 		<Folder Include="Resources\Images\" />
 		<Folder Include="Projects\" />
+		<Folder Include="Src\WorkModes\Branching\" />
+		<Folder Include="Src\WorkModes\Dialogues\" />
+		<Folder Include="Src\WorkModes\GameEconomy\" />
+		<Folder Include="Src\WorkModes\Locations\" />
+		<Folder Include="Src\WorkModes\Maps\" />
+		<Folder Include="Src\WorkModes\PlotPoints\" />
+		<Folder Include="Src\WorkModes\Poetry\" />
 	</ItemGroup>
 
 	<!-- ========================================

@@ -28,10 +28,10 @@ namespace Writersword.Src.Core.Interfaces.WorkModes
         List<WorkMode> LoadDefaultConfiguration(ProjectType projectType);
 
         /// <summary>Проверить можно ли удалить модуль из режима</summary>
-        bool CanRemoveModule(WorkModeType workModeType, ModuleType moduleType);
+        bool CanRemoveModule(string workModeId, ModuleType moduleType);
 
         /// <summary>Получить обязательные модули для режима</summary>
-        List<ModuleType> GetRequiredModules(WorkModeType workModeType);
+        List<ModuleType> GetRequiredModules(string workModeId);
 
         /// <summary>Клонировать WorkModes (глубокое копирование)</summary>
         List<WorkMode> CloneWorkModes(List<WorkMode> source);

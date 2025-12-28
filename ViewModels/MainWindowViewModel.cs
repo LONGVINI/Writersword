@@ -40,7 +40,7 @@ namespace Writersword.ViewModels
         private readonly IHotKeyService _hotKeyService;
         private readonly IWorkModeConfigurationService _workModeConfigService;
         private readonly IWorkModeService _workModeService;
-        private readonly Src.Infrastructure.Dock.DockFactory _dockFactory;
+        private readonly DockFactory _dockFactory;
         private readonly Dictionary<string, IRootDock> _tabLayouts = new();
 
         private WorkMode? _activeWorkMode;
@@ -52,7 +52,6 @@ namespace Writersword.ViewModels
         private readonly ModuleRegistry _moduleRegistry; // Реестр модулей
         private List<IModuleMetadata>? _cachedModuleMetadata; // Кэш всех метаданных модулей
         private readonly List<IDisposable> _slotSubscriptions = new(); // Подписки на изменения слотов
-        private readonly Dictionary<ModuleType, IDockable> _floatingDocuments = new(); // Отслеживание Float окон
 
         /// <summary>Заголовок окна</summary>
         public string Title
@@ -112,7 +111,7 @@ namespace Writersword.ViewModels
         public ReactiveCommand<Unit, Unit> SaveWorkspaceForProjectCommand { get; }
         public ReactiveCommand<Unit, Unit> SaveWorkspaceGloballyCommand { get; }
         public ReactiveCommand<Unit, Unit> LoadDefaultWorkspaceCommand { get; }
-        public ReactiveCommand<WorkModeType, Unit> ToggleWorkModeCommand { get; }
+        public ReactiveCommand<string, Unit> ToggleWorkModeCommand { get; }
         public ReactiveCommand<ModuleType, Unit> ToggleModuleCommand { get; }
 
         public MainWindowViewModel(
@@ -122,7 +121,7 @@ namespace Writersword.ViewModels
             IHotKeyService hotKeyService,
             IWorkModeConfigurationService workModeConfigService,
             IWorkModeService workModeService,
-            Src.Infrastructure.Dock.DockFactory dockFactory)
+            DockFactory dockFactory)
         {
             _dialogService = dialogService;
             _settingsService = settingsService;
@@ -149,7 +148,7 @@ namespace Writersword.ViewModels
             SaveWorkspaceGloballyCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceGlobally);
             LoadDefaultWorkspaceCommand = ReactiveCommand.CreateFromTask(LoadDefaultWorkspace);
             // Команды для переключения модулей и режимов
-            ToggleWorkModeCommand = ReactiveCommand.Create<WorkModeType>(ToggleWorkMode);
+            ToggleWorkModeCommand = ReactiveCommand.Create<string>(ToggleWorkMode);
             ToggleModuleCommand = ReactiveCommand.Create<ModuleType>(ToggleModule);
 
             _settingsService.Load();
@@ -710,21 +709,6 @@ namespace Writersword.ViewModels
             return null;
         }
 
-        /// <summary>Создать View для модуля</summary>
-        private Avalonia.Controls.Control? CreateModuleView(ModuleType moduleType, object? viewModel)
-        {
-            if (viewModel == null) return null;
-
-            return moduleType switch
-            {
-                ModuleType.TextEditor => new Modules.TextEditor.Views.TextEditorView { DataContext = viewModel },
-                ModuleType.Synonyms => new Modules.Synonyms.Views.SynonymsView { DataContext = viewModel },
-                ModuleType.Notes => new Modules.Notes.Views.NotesView { DataContext = viewModel },
-                ModuleType.Timer => new Modules.Timer.Views.TimerView { DataContext = viewModel },
-                _ => null
-            };
-        }
-
         /// <summary>Сохранить настройки для этого проекта</summary>
         private async System.Threading.Tasks.Task SaveWorkspaceForProject()
         {
@@ -894,11 +878,10 @@ namespace Writersword.ViewModels
         {
             private bool _isChecked;
 
-            public WorkModeType Type { get; set; }
+            public string WorkModeId { get; set; } = "";
             public string Name { get; set; } = "";
             public string Icon { get; set; } = "";
 
-            /// <summary>Открыт ли WorkMode</summary>
             public bool IsChecked
             {
                 get => _isChecked;
@@ -913,6 +896,7 @@ namespace Writersword.ViewModels
         private void InitializeMenuItems()
         {
             var moduleRegistry = App.Services.GetRequiredService<ModuleRegistry>();
+            var workModeRegistry = App.Services.GetRequiredService<Writersword.Src.WorkModes.Common.WorkModeRegistry>();
 
             // ===== АВТОМАТИЧЕСКАЯ ЗАГРУЗКА МОДУЛЕЙ =====
             var allModuleMetadata = moduleRegistry.GetAllModuleMetadata();
@@ -925,37 +909,37 @@ namespace Writersword.ViewModels
                     Name = metadata.DisplayName,
                     Icon = metadata.Icon,
                     IsUniversal = metadata.IsUniversal,
-                    IsEnabled = false,  // Обновится позже при переключении WorkMode
-                    IsChecked = false   // Обновится позже
+                    IsEnabled = false,
+                    IsChecked = false
                 });
             }
 
             Console.WriteLine($"[InitializeMenuItems] Loaded {AllModules.Count} modules from metadata");
 
             // ===== АВТОМАТИЧЕСКАЯ ЗАГРУЗКА WORKMODES =====
-            var allWorkModeMetadata = WorkModeMetadataRegistry.GetAll();
+            var allWorkModes = workModeRegistry.GetAll();
 
-            foreach (var metadata in allWorkModeMetadata)
+            foreach (var workMode in allWorkModes)
             {
                 AllWorkModes.Add(new WorkModeMenuItem
                 {
-                    Type = metadata.Type,
-                    Name = metadata.DisplayName,
-                    Icon = metadata.Icon,
-                    IsChecked = false  // Обновится позже
+                    WorkModeId = workMode.Id,
+                    Name = workMode.DisplayName,
+                    Icon = workMode.Icon,
+                    IsChecked = false
                 });
             }
 
-            Console.WriteLine($"[InitializeMenuItems] Loaded {AllWorkModes.Count} WorkModes from metadata");
+            Console.WriteLine($"[InitializeMenuItems] Loaded {AllWorkModes.Count} WorkModes from registry");
         }
 
         /// <summary>Открыть/переключить WorkMode</summary>
-        private void ToggleWorkMode(WorkModeType workModeType)
+        private void ToggleWorkMode(string workModeId)
         {
-            Console.WriteLine($"[ToggleWorkMode] Toggling: {workModeType}");
+            Console.WriteLine($"[ToggleWorkMode] Toggling: {workModeId}");
 
-            // Ищем WorkMode по типу
-            var existingWorkMode = AvailableWorkModes.FirstOrDefault(wm => wm.Type == workModeType);
+            // Ищем WorkMode по ID
+            var existingWorkMode = AvailableWorkModes.FirstOrDefault(wm => wm.WorkModeId == workModeId);
 
             if (existingWorkMode != null)
             {
@@ -975,23 +959,25 @@ namespace Writersword.ViewModels
                     return;
                 }
 
-                // Получаем метаданные
-                var metadata = WorkModeMetadataRegistry.Get(workModeType);
-                if (metadata == null)
+                // Получаем WorkMode из реестра
+                var workModeRegistry = App.Services.GetRequiredService<Writersword.Src.WorkModes.Common.WorkModeRegistry>();
+                var workModeInstance = workModeRegistry.GetWorkMode(workModeId);
+
+                if (workModeInstance == null)
                 {
-                    Console.WriteLine($"[ToggleWorkMode] Metadata not found for {workModeType}");
+                    Console.WriteLine($"[ToggleWorkMode] WorkMode not found in registry: {workModeId}");
                     return;
                 }
 
                 // Создаём WorkMode
                 var newWorkMode = _workModeService.AddWorkMode(
-                    workModeType,
-                    metadata.DisplayName,
-                    metadata.Icon
+                    workModeId,
+                    workModeInstance.DisplayName,
+                    workModeInstance.Icon
                 );
 
-                newWorkMode.IsCloseable = metadata.IsCloseable;
-                newWorkMode.Order = metadata.Order;
+                newWorkMode.IsCloseable = workModeInstance.IsCloseable;
+                newWorkMode.Order = workModeInstance.Order;
 
                 AvailableWorkModes.Add(newWorkMode);
                 SwitchWorkMode(newWorkMode);
@@ -1073,17 +1059,14 @@ namespace Writersword.ViewModels
             }
             else
             {
-                var position = FindFreePositionForModule();
-
                 var newSlot = new ModuleSlot
                 {
                     ModuleType = moduleType,
-                    Position = position,
-                    Size = new WorkModeGridSize(1, 1),
                     IsVisible = true,
-                    IsCloseable = !WorkModeRules.GetRequiredModules(ActiveWorkMode.Type).Contains(moduleType),
+                    IsCloseable = _workModeConfigService.CanRemoveModule(ActiveWorkMode.WorkModeId, moduleType),
                     MinWidth = 200,
-                    MinHeight = 150
+                    MinHeight = 150,
+                    PreferredPosition = PreferredDockPosition.RightAsTab
                 };
 
                 ActiveWorkMode.ModuleSlots.Add(newSlot);
@@ -1187,33 +1170,12 @@ namespace Writersword.ViewModels
             return null;
         }
 
-        /// <summary>Найти свободную позицию для нового модуля (справа от последнего)</summary>
-        private WorkModeGridPosition FindFreePositionForModule()
-        {
-            if (ActiveWorkMode == null || ActiveWorkMode.ModuleSlots.Count == 0)
-            {
-                return new WorkModeGridPosition { Row = 0, Column = 0 };
-            }
-
-            // Находим максимальный Column среди видимых модулей
-            var maxColumn = ActiveWorkMode.ModuleSlots
-                .Where(s => s.IsVisible)
-                .Max(s => s.Position.Column + s.Size.ColumnSpan - 1);
-
-            // Новый модуль справа от последнего
-            return new WorkModeGridPosition
-            {
-                Row = 0,
-                Column = maxColumn + 1
-            };
-        }
-
         /// <summary>Обновить состояние элементов меню WorkMode</summary>
         private void UpdateWorkModeMenuItems()
         {
             foreach (var menuItem in AllWorkModes)
             {
-                menuItem.IsChecked = AvailableWorkModes.Any(wm => wm.Type == menuItem.Type);
+                menuItem.IsChecked = AvailableWorkModes.Any(wm => wm.WorkModeId == menuItem.WorkModeId);
             }
         }
 
@@ -1237,7 +1199,7 @@ namespace Writersword.ViewModels
 
             foreach (var menuItem in AllModules)
             {
-                // Проверяем открыт ли модуль В DOCK (не в slot.IsVisible!)
+                // Проверяем открыт ли модуль В DOCK
                 if (documentDock?.VisibleDockables != null)
                 {
                     var docId = $"Module_{menuItem.Type}";
@@ -1248,29 +1210,22 @@ namespace Writersword.ViewModels
                     menuItem.IsChecked = false;
                 }
 
-                // Модуль доступен если универсальный или разрешён для текущего WorkMode
+                // Модуль доступен если:
+                // 1. Универсальный (доступен везде)
+                // 2. ИЛИ НЕ запрещён в текущем WorkMode (проверяем через ConfigService)
                 if (menuItem.IsUniversal)
                 {
                     menuItem.IsEnabled = true;
                 }
                 else
                 {
-                    var moduleMetadata = _cachedModuleMetadata?
-                        .FirstOrDefault(m => m.ModuleType == menuItem.Type);
-
-                    menuItem.IsEnabled = moduleMetadata?.AvailableInWorkModes
-                        .Contains(ActiveWorkMode.Type) ?? false;
+                    // Проверяем через WorkModeConfigurationService
+                    var canAdd = _workModeConfigService.CanRemoveModule(ActiveWorkMode.WorkModeId, menuItem.Type);
+                    menuItem.IsEnabled = true; // Пока разрешаем все, логику Forbidden добавим позже
                 }
 
                 Console.WriteLine($"  {menuItem.Icon} {menuItem.Name}: Enabled={menuItem.IsEnabled}, Checked={menuItem.IsChecked}");
             }
-        }
-
-        /// <summary>Получить отображаемое имя модуля</summary>
-        private string GetModuleDisplayName(ModuleType type)
-        {
-            var menuItem = AllModules.FirstOrDefault(m => m.Type == type);
-            return menuItem?.Name ?? type.ToString();
         }
     }
 }

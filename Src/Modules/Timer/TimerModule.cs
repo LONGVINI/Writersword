@@ -79,8 +79,5 @@ namespace Writersword.Modules.Timer
 
         /// <summary>Универсальный модуль - доступен везде</summary>
         public bool IsUniversal => true;
-
-        /// <summary>Пустой список = доступен во всех WorkMode</summary>
-        public List<WorkModeType> AvailableInWorkModes => new();
     }
 }

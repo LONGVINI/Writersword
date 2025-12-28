@@ -14,7 +14,7 @@ namespace Writersword.Src.Core.Interfaces.WorkModes
         List<WorkMode> InitializeWorkModes(ProjectType projectType, List<WorkMode>? existingWorkModes);
 
         /// <summary>Добавить новый режим работы</summary>
-        WorkMode AddWorkMode(WorkModeType type, string title, string icon);
+        WorkMode AddWorkMode(string workModeId, string title, string icon);
 
         /// <summary>Удалить режим работы</summary>
         bool RemoveWorkMode(WorkMode workMode);
@@ -24,12 +24,6 @@ namespace Writersword.Src.Core.Interfaces.WorkModes
 
         /// <summary>Удалить модуль из режима</summary>
         bool RemoveModuleFromWorkMode(WorkMode workMode, ModuleSlot moduleSlot);
-
-        /// <summary>Переместить модуль в другую позицию</summary>
-        void MoveModule(ModuleSlot moduleSlot, WorkModeGridPosition newPosition);
-
-        /// <summary>Изменить размер модуля</summary>
-        void ResizeModule(ModuleSlot moduleSlot, WorkModeGridSize newSize);
 
         /// <summary>Показать/скрыть модуль</summary>
         void ToggleModuleVisibility(ModuleSlot moduleSlot);

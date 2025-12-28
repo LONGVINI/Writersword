@@ -1,29 +1,28 @@
-﻿using System.Collections.Generic;
-using Writersword.Core.Enums;
+﻿using Writersword.Core.Enums;
 
 namespace Writersword.Core.Interfaces.Modules
 {
     /// <summary>
-    /// Метаданные модуля - описание для UI
+    /// Метаданные модуля - описание для UI и конфигурации
     /// </summary>
     public interface IModuleMetadata
     {
-        /// <summary>Тип модуля</summary>
+        /// <summary>Тип модуля (из enum)</summary>
         ModuleType ModuleType { get; }
 
-        /// <summary>Отображаемое имя</summary>
+        /// <summary>Отображаемое имя модуля</summary>
         string DisplayName { get; }
 
-        /// <summary>Иконка (Unicode emoji или путь)</summary>
+        /// <summary>Иконка модуля (Unicode emoji)</summary>
         string Icon { get; }
 
-        /// <summary>Краткое описание</summary>
+        /// <summary>Краткое описание модуля</summary>
         string Description { get; }
 
-        /// <summary>Универсальный модуль (доступен во всех WorkMode)</summary>
+        /// <summary>
+        /// Универсальный модуль (доступен во всех WorkMode по умолчанию)
+        /// Например: Notes, Timer - полезны везде
+        /// </summary>
         bool IsUniversal { get; }
-
-        /// <summary>В каких WorkMode доступен (если не универсальный)</summary>
-        List<WorkModeType> AvailableInWorkModes { get; }
     }
 }

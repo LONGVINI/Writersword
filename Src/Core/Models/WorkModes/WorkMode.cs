@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using Writersword.Core.Enums;
 
 namespace Writersword.Core.Models.WorkModes
 {
@@ -12,11 +11,11 @@ namespace Writersword.Core.Models.WorkModes
     /// </summary>
     public class WorkMode
     {
-        /// <summary>Уникальный ID экземпляра режима</summary>
+        /// <summary>Внутренний ID экземпляра (для UI)</summary>
         public string Id { get; set; } = Guid.NewGuid().ToString();
 
-        /// <summary>Тип режима работы</summary>
-        public WorkModeType Type { get; set; }
+        /// <summary>Уникальный ID типа WorkMode (например: "editor", "timeline", "myplugin.custommode")</summary>
+        public string WorkModeId { get; set; } = "editor";
 
         /// <summary>Название режима (отображается в UI)</summary>
         public string Title { get; set; } = "Work Mode";
