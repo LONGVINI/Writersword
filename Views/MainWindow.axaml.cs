@@ -21,6 +21,8 @@ namespace Writersword.Views
 
             // Один обработчик для всей логики закрытия
             Closing += OnClosing;
+
+            KeyDown += OnKeyDown;
         }
 
         /// <summary>Обработчик клика по вкладке</summary>
@@ -91,6 +93,17 @@ namespace Writersword.Views
             }
 
             System.Console.WriteLine("[MainWindow] OnClosing finished");
+        }
+
+        private void OnKeyDown(object? sender, KeyEventArgs e)
+        {
+            var hotKeyService = App.Services.GetRequiredService<IHotKeyService>();
+            var gesture = new KeyGesture(e.Key, e.KeyModifiers);
+
+            if (hotKeyService.HandleKeyPress(gesture))
+            {
+                e.Handled = true;
+            }
         }
     }
 }

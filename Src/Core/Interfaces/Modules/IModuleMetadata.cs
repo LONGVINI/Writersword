@@ -24,5 +24,8 @@ namespace Writersword.Core.Interfaces.Modules
         /// Например: Notes, Timer - полезны везде
         /// </summary>
         bool IsUniversal { get; }
+
+        /// <summary>Позиция по умолчанию (если WorkMode не переопределил)</summary>
+        PreferredDockPosition DefaultPosition { get; }
     }
 }

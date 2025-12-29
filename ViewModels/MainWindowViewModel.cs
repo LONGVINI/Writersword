@@ -13,6 +13,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Linq;
+using System.Threading.Tasks;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.Project;
@@ -24,6 +25,7 @@ using Writersword.Services;
 using Writersword.Services.Interfaces;
 using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.Infrastructure.Dock;
+using Writersword.Resources.Localization;
 
 
 namespace Writersword.ViewModels
@@ -42,12 +44,16 @@ namespace Writersword.ViewModels
         private readonly IWorkModeService _workModeService;
         private readonly DockFactory _dockFactory;
         private readonly Dictionary<string, IRootDock> _tabLayouts = new();
+        private readonly ICacheService _cacheService;
+        private readonly IAutoSaveService _autoSaveService;
+        private RecoveryBannerViewModel? _recoveryBanner;
 
         private WorkMode? _activeWorkMode;
         private string _title = "Writersword";
         private object? _currentModule;
         private DocumentTabViewModel? _activeTab;
         private IRootDock? _dockLayout;
+        private bool _isViewingCache = false;
 
         private readonly ModuleRegistry _moduleRegistry; // Реестр модулей
         private List<IModuleMetadata>? _cachedModuleMetadata; // Кэш всех метаданных модулей
@@ -72,6 +78,20 @@ namespace Writersword.ViewModels
         {
             get => _dockLayout;
             set => this.RaiseAndSetIfChanged(ref _dockLayout, value);
+        }
+
+        /// <summary>ViewModel баннера восстановления (null если баннер скрыт)</summary>
+        public RecoveryBannerViewModel? RecoveryBanner
+        {
+            get => _recoveryBanner;
+            set => this.RaiseAndSetIfChanged(ref _recoveryBanner, value);
+        }
+
+        /// <summary>Просматривается ли версия из кеша</summary>
+        public bool IsViewingCache
+        {
+            get => _isViewingCache;
+            set => this.RaiseAndSetIfChanged(ref _isViewingCache, value);
         }
 
         /// <summary>Открытые вкладки документов</summary>
@@ -121,6 +141,8 @@ namespace Writersword.ViewModels
             IHotKeyService hotKeyService,
             IWorkModeConfigurationService workModeConfigService,
             IWorkModeService workModeService,
+            ICacheService cacheService,
+            IAutoSaveService autoSaveService,
             DockFactory dockFactory)
         {
             _dialogService = dialogService;
@@ -129,6 +151,8 @@ namespace Writersword.ViewModels
             _hotKeyService = hotKeyService;
             _workModeConfigService = workModeConfigService;
             _workModeService = workModeService;
+            _cacheService = cacheService;
+            _autoSaveService = autoSaveService;
             _dockFactory = dockFactory;
             _moduleRegistry = App.Services.GetRequiredService<ModuleRegistry>();
             _cachedModuleMetadata = _moduleRegistry.GetAllModuleMetadata().ToList();
@@ -236,7 +260,7 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>Открыть существующий проект</summary>
-        private async System.Threading.Tasks.Task OpenProject()
+        private async Task OpenProject()
         {
             if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
@@ -245,12 +269,20 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>Сохранить активный проект</summary>
-        private async System.Threading.Tasks.Task SaveProject()
+        private async Task SaveProject()
         {
-            if (ActiveTab == null) return;
+            if (ActiveTab == null)
+            {
+                Console.WriteLine("[SaveProject] No active tab");
+                return;
+            }
 
             var project = GetProjectForTab(ActiveTab);
-            if (project == null) return;
+            if (project == null)
+            {
+                Console.WriteLine("[SaveProject] No project for tab");
+                return;
+            }
 
             // Синхронизируем содержимое вкладки с проектом
             SyncTabToProject(ActiveTab, project);
@@ -258,17 +290,29 @@ namespace Writersword.ViewModels
             var filePath = _projectService.GetProjectPath(project);
             if (string.IsNullOrEmpty(filePath))
             {
-                // Проект ещё не сохранён - вызываем Save As
+                Console.WriteLine("[SaveProject] No file path, calling SaveAs");
                 await SaveAsProject();
                 return;
             }
 
-            // Сохраняем в существующий файл
-            await _projectService.SaveAsync(project, filePath);
+            Console.WriteLine($"[SaveProject] Saving to: {filePath}");
+            var success = await _projectService.SaveAsync(project, filePath);
+
+            if (success)
+            {
+                Console.WriteLine("[SaveProject] ✓ Saved successfully");
+                // Удаляем кеш после успешного сохранения
+                _cacheService.DeleteCache(filePath);
+                HideRecoveryBanner();
+            }
+            else
+            {
+                Console.WriteLine("[SaveProject] ✗ Save failed");
+            }
         }
 
         /// <summary>Сохранить активный проект как...</summary>
-        private async System.Threading.Tasks.Task SaveAsProject()
+        private async Task SaveAsProject()
         {
             if (ActiveTab == null) return;
 
@@ -293,7 +337,7 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>Синхронизировать содержимое вкладки с проектом</summary>
-        private void SyncTabToProject(DocumentTabViewModel tab, ProjectFile project)
+        static private void SyncTabToProject(DocumentTabViewModel tab, ProjectFile project)
         {
             // Находим документ в проекте
             var doc = project.Documents.FirstOrDefault(d => d.Id == tab.Id);
@@ -391,7 +435,7 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>Создать новую вкладку - открывает Welcome окно</summary>
-        public async void CreateNewTab()
+        static public async void CreateNewTab()
         {
             if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
                 && desktop.MainWindow != null)
@@ -476,17 +520,16 @@ namespace Writersword.ViewModels
                 string tabKey = tab.GetModel().FilePath ?? tab.Id.ToString();
 
                 // Если layout уже создан для этой вкладки - переиспользуем его
-                if (_tabLayouts.ContainsKey(tabKey))
+                if (_tabLayouts.TryGetValue(tabKey, out var existingLayout))
                 {
                     Console.WriteLine($"[ActivateTab] Reusing existing layout for tab: {tab.Title}");
-                    DockLayout = _tabLayouts[tabKey];
+                    DockLayout = existingLayout;  // ← ИСПОЛЬЗУЙ ПЕРЕМЕННУЮ!
                 }
                 else
                 {
                     Console.WriteLine($"[ActivateTab] Creating new layout for tab: {tab.Title}");
                     InitializeWorkModesForTab(tab);
 
-                    // Сохраняем созданный layout
                     if (DockLayout != null)
                     {
                         _tabLayouts[tabKey] = DockLayout;
@@ -543,7 +586,7 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>Показать Welcome если нет вкладок</summary>
-        private async void ShowWelcomeIfNoTabs()
+        static private async void ShowWelcomeIfNoTabs()
         {
             if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
                 && desktop.MainWindow != null)
@@ -692,7 +735,7 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>Найти DocumentDock в структуре</summary>
-        private DocumentDock? FindDocumentDock(IDockable? root)
+        static private DocumentDock? FindDocumentDock(IDockable? root)
         {
             if (root is DocumentDock docDock)
                 return docDock;
@@ -807,7 +850,7 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>Инициализировать WorkModes для вкладки</summary>
-        private void InitializeWorkModesForTab(DocumentTabViewModel tab)
+        public void InitializeWorkModesForTab(DocumentTabViewModel tab)
         {
             var project = GetProjectForTab(tab);
             if (project == null) return;
@@ -1083,7 +1126,7 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>Найти документ во ВСЕЙ dock-структуре (включая split panels)</summary>
-        private IDockable? FindDocumentInEntireLayout(IDock rootDock, string docId)
+        static private IDockable? FindDocumentInEntireLayout(IDock rootDock, string docId)
         {
             Console.WriteLine($"[FindDocumentInEntireLayout] Searching for: {docId}");
 
@@ -1103,7 +1146,7 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>Рекурсивный поиск в dockable</summary>
-        private IDockable? SearchInDockable(IDockable? dockable, string docId)
+        static private IDockable? SearchInDockable(IDockable? dockable, string docId)
         {
             if (dockable == null) return null;
 
@@ -1225,6 +1268,166 @@ namespace Writersword.ViewModels
                 }
 
                 Console.WriteLine($"  {menuItem.Icon} {menuItem.Name}: Enabled={menuItem.IsEnabled}, Checked={menuItem.IsChecked}");
+            }
+        }
+
+
+        /// <summary>
+        /// Проверить наличие кеша и показать диалог восстановления
+        /// Вызывается перед загрузкой проекта
+        /// </summary>
+        private async Task<ProjectFile?> CheckCacheAndLoad(string filePath)
+        {
+            // Проверяем есть ли кеш
+            if (_cacheService.HasCache(filePath))
+            {
+                var cacheDate = _cacheService.GetCacheDate(filePath);
+                var saveDate = _cacheService.GetSaveDate(filePath);
+
+                // Показываем диалог восстановления
+                var result = await ShowRecoveryDialog(filePath, cacheDate, saveDate);
+
+                if (result == RecoveryResult.OpenCache)
+                {
+                    // Загружаем из кеша
+                    var project = await _cacheService.LoadFromCacheAsync(filePath);
+                    if (project != null)
+                    {
+                        IsViewingCache = true;
+                        ShowRecoveryBanner(cacheDate.Value, saveDate.Value, true);
+                        return project;
+                    }
+                }
+                else if (result == RecoveryResult.OpenSaved)
+                {
+                    // Загружаем основной файл
+                    var project = await _projectService.LoadAsync(filePath);
+                    if (project != null)
+                    {
+                        IsViewingCache = false;
+                        ShowRecoveryBanner(cacheDate.Value, saveDate.Value, false);
+                        return project;
+                    }
+                }
+                else // Cancel
+                {
+                    return null;
+                }
+            }
+
+            // Кеша нет - обычная загрузка
+            return await _projectService.LoadAsync(filePath);
+        }
+
+        /// <summary>Результат диалога восстановления</summary>
+        private enum RecoveryResult
+        {
+            OpenCache,
+            OpenSaved,
+            Cancel
+        }
+
+        /// <summary>Показать диалог восстановления версий</summary>
+        private async Task<RecoveryResult> ShowRecoveryDialog(string filePath, DateTime? cacheDate, DateTime? saveDate)
+        {
+            var message = $"{Strings.Dialog_Recovery_SavedVersion} {saveDate:dd.MM.yyyy HH:mm:ss}\n" +
+                          $"{Strings.Dialog_Recovery_AutoSaveVersion} {cacheDate:dd.MM.yyyy HH:mm:ss}\n\n" +
+                          $"{Strings.Dialog_Recovery_WhichVersion}";
+
+            var result = await _dialogService.ShowMessageAsync(
+                Strings.Dialog_Recovery_Title,
+                message,
+                Views.MessageBoxType.Question,
+                Views.MessageBoxButtons.YesNoCancel
+            );
+
+            if (result == Views.MessageBoxResult.Yes)
+                return RecoveryResult.OpenCache;
+            else if (result == Views.MessageBoxResult.No)
+                return RecoveryResult.OpenSaved;
+            else
+                return RecoveryResult.Cancel;
+        }
+
+        /// <summary>Показать баннер восстановления</summary>
+        private void ShowRecoveryBanner(DateTime cacheDate, DateTime saveDate, bool viewingCache)
+        {
+            RecoveryBanner = new RecoveryBannerViewModel
+            {
+                IsViewingCache = viewingCache,
+                CacheDate = cacheDate,
+                SaveDate = saveDate
+            };
+
+            // Подписываемся на команды баннера
+            RecoveryBanner.SwitchVersionCommand = ReactiveCommand.CreateFromTask(SwitchVersion);
+            RecoveryBanner.SaveCommand = ReactiveCommand.CreateFromTask(SaveCacheAsMain);
+            RecoveryBanner.DiscardCommand = ReactiveCommand.CreateFromTask(DiscardCache);
+        }
+
+        /// <summary>Скрыть баннер восстановления</summary>
+        private void HideRecoveryBanner()
+        {
+            RecoveryBanner = null;
+            IsViewingCache = false;
+        }
+
+        /// <summary>Переключить версию (кеш ↔ сохранённая)</summary>
+        private async Task SwitchVersion()
+        {
+            if (ActiveTab == null) return;
+
+            var filePath = _projectService.GetProjectPath(GetProjectForTab(ActiveTab));
+            if (string.IsNullOrEmpty(filePath)) return;
+
+            // Переключаемся
+            if (IsViewingCache)
+            {
+                // Загружаем сохранённую версию
+                var project = await _projectService.LoadAsync(filePath);
+                // TODO: обновить UI с проектом
+                IsViewingCache = false;
+                if (RecoveryBanner != null)
+                    RecoveryBanner.IsViewingCache = false;
+            }
+            else
+            {
+                // Загружаем кеш
+                var project = await _cacheService.LoadFromCacheAsync(filePath);
+                // TODO: обновить UI с проектом  
+                IsViewingCache = true;
+                if (RecoveryBanner != null)
+                    RecoveryBanner.IsViewingCache = true;
+            }
+        }
+
+        /// <summary>Сохранить кеш как основной файл</summary>
+        private async Task SaveCacheAsMain()
+        {
+            await SaveProject();
+            _cacheService.DeleteCache(_projectService.GetProjectPath(GetProjectForTab(ActiveTab))!);
+            HideRecoveryBanner();
+        }
+
+        /// <summary>Удалить кеш</summary>
+        private async Task DiscardCache()
+        {
+            if (ActiveTab == null) return;
+
+            var filePath = _projectService.GetProjectPath(GetProjectForTab(ActiveTab));
+            if (string.IsNullOrEmpty(filePath)) return;
+
+            var result = await _dialogService.ShowMessageAsync(
+                Strings.Dialog_ConfirmDiscard_Title,
+                $"{Strings.Dialog_ConfirmDeleteCache_Message_Line1}\n{Strings.Dialog_ConfirmDeleteCache_Message_Line2}",
+                Views.MessageBoxType.Warning,
+                Views.MessageBoxButtons.YesNo
+            );
+
+            if (result == Views.MessageBoxResult.Yes)
+            {
+                _cacheService.DeleteCache(filePath);
+                HideRecoveryBanner();
             }
         }
     }

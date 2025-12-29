@@ -6,40 +6,34 @@ using Writersword.Core.Models.WorkModes;
 using Writersword.Services.Interfaces;
 using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.WorkModes.Common;
+using Writersword.Modules.Common;
 
 namespace Writersword.Core.Services.WorkModes
 {
-    /// <summary>
-    /// Сервис управления конфигурациями WorkModes
-    /// Определяет приоритет: Проект → Глобальная → Дефолтная
-    /// </summary>
     public class WorkModeConfigurationService : IWorkModeConfigurationService
     {
         private readonly ISettingsService _settingsService;
         private readonly WorkModeRegistry _workModeRegistry;
+        private readonly ModuleRegistry _moduleRegistry;
 
         public WorkModeConfigurationService(
             ISettingsService settingsService,
-            WorkModeRegistry workModeRegistry)
+            WorkModeRegistry workModeRegistry,
+            ModuleRegistry moduleRegistry)
         {
             _settingsService = settingsService;
             _workModeRegistry = workModeRegistry;
+            _moduleRegistry = moduleRegistry;
         }
 
-        /// <summary>
-        /// Загрузить конфигурацию для проекта
-        /// Приоритет: Проект → Глобальная → Дефолтная
-        /// </summary>
         public List<WorkMode> LoadConfiguration(ProjectType projectType, List<WorkMode>? projectWorkModes)
         {
-            // 1. Если в проекте уже есть настройки - используем их
             if (projectWorkModes != null && projectWorkModes.Count > 0)
             {
                 System.Console.WriteLine($"[WorkModeConfig] Loading from PROJECT for {projectType}");
                 return CloneWorkModes(projectWorkModes);
             }
 
-            // 2. Если есть глобальная конфигурация пользователя - используем её
             var globalConfig = _settingsService.GetWorkspaceConfig(projectType);
             if (globalConfig != null && globalConfig.WorkModes.Count > 0)
             {
@@ -47,25 +41,19 @@ namespace Writersword.Core.Services.WorkModes
                 return CloneWorkModes(globalConfig.WorkModes);
             }
 
-            // 3. Используем дефолтную конфигурацию
             System.Console.WriteLine($"[WorkModeConfig] Loading DEFAULT config for {projectType}");
             return LoadDefaultConfiguration(projectType);
         }
 
-        /// <summary>Загрузить дефолтную конфигурацию</summary>
         public List<WorkMode> LoadDefaultConfiguration(ProjectType projectType)
         {
             var workModes = new List<WorkMode>();
-
-            // Получаем все зарегистрированные WorkModes
             var allWorkModes = _workModeRegistry.GetAll();
 
             foreach (var workModeInstance in allWorkModes)
             {
-                // Получаем DEFAULT конфигурацию из каждого WorkMode
                 var defaultConfig = workModeInstance.GetDefaultConfig();
 
-                // Создаём экземпляр WorkMode
                 var workMode = new WorkMode
                 {
                     WorkModeId = workModeInstance.Id,
@@ -74,21 +62,27 @@ namespace Writersword.Core.Services.WorkModes
                     Order = defaultConfig.Order,
                     IsCloseable = workModeInstance.IsCloseable,
                     IsActive = false,
-                    ModuleSlots = defaultConfig.ModuleSlots.Select(slotConfig => new ModuleSlot
+                    ModuleSlots = defaultConfig.ModuleSlots.Select(slotConfig =>
                     {
-                        ModuleType = slotConfig.ModuleType,
-                        MinWidth = slotConfig.MinWidth,
-                        MinHeight = slotConfig.MinHeight,
-                        IsVisible = slotConfig.IsVisible,
-                        IsResizable = true,
-                        IsCloseable = slotConfig.Category != ModuleCategory.Required,
-                        PreferredPosition = slotConfig.PreferredPosition
+                        var moduleMetadata = _moduleRegistry.GetAllModuleMetadata()
+                            .FirstOrDefault(m => m.ModuleType == slotConfig.ModuleType);
+
+                        return new ModuleSlot
+                        {
+                            ModuleType = slotConfig.ModuleType,
+                            MinWidth = slotConfig.MinWidth,
+                            MinHeight = slotConfig.MinHeight,
+                            IsVisible = slotConfig.IsVisible,
+                            IsResizable = true,
+                            IsCloseable = slotConfig.Category != ModuleCategory.Required,
+                            PreferredPosition = slotConfig.PreferredPosition ?? moduleMetadata?.DefaultPosition ?? PreferredDockPosition.RightAsTab
+                        };
                     }).ToList(),
                     Settings = new WorkModeSettings
                     {
                         CustomSettings = new Dictionary<string, object>
                         {
-                            ["DockLayout"] = defaultConfig.DockLayout // ← СОХРАНЯЕМ DockLayout!
+                            ["DockLayout"] = defaultConfig.DockLayout
                         }
                     }
                 };
@@ -99,7 +93,6 @@ namespace Writersword.Core.Services.WorkModes
             return workModes.OrderBy(wm => wm.Order).ToList();
         }
 
-        /// <summary>Сохранить конфигурацию глобально</summary>
         public void SaveGlobalConfiguration(ProjectType projectType, List<WorkMode> workModes)
         {
             var config = new WorkspaceConfig
@@ -113,14 +106,12 @@ namespace Writersword.Core.Services.WorkModes
             System.Console.WriteLine($"[WorkModeConfig] Saved GLOBAL config for {projectType}");
         }
 
-        /// <summary>Удалить глобальную конфигурацию</summary>
         public void DeleteGlobalConfiguration(ProjectType projectType)
         {
             _settingsService.DeleteWorkspaceConfig(projectType);
             System.Console.WriteLine($"[WorkModeConfig] Deleted GLOBAL config for {projectType}");
         }
 
-        /// <summary>Проверить можно ли удалить модуль</summary>
         public bool CanRemoveModule(string workModeId, ModuleType moduleType)
         {
             var workMode = _workModeRegistry.GetWorkMode(workModeId);
@@ -132,11 +123,10 @@ namespace Writersword.Core.Services.WorkModes
             return moduleConfig == null || moduleConfig.Category != ModuleCategory.Required;
         }
 
-        /// <summary>Получить обязательные модули</summary>
         public List<ModuleType> GetRequiredModules(string workModeId)
         {
             var workMode = _workModeRegistry.GetWorkMode(workModeId);
-            if (workMode == null) return new List<ModuleType>();
+            if (workMode == null) return [];
 
             var defaultConfig = workMode.GetDefaultConfig();
             return defaultConfig.ModuleSlots
@@ -145,7 +135,6 @@ namespace Writersword.Core.Services.WorkModes
                 .ToList();
         }
 
-        /// <summary>Клонировать WorkModes (глубокое копирование)</summary>
         public List<WorkMode> CloneWorkModes(List<WorkMode> source)
         {
             return source.Select(wm => new WorkMode
@@ -173,7 +162,7 @@ namespace Writersword.Core.Services.WorkModes
                 {
                     CustomSettings = new Dictionary<string, object>(wm.Settings.CustomSettings)
                 }
-            }).ToList();    
+            }).ToList();
         }
     }
 }

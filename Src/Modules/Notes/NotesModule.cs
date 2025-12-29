@@ -94,5 +94,6 @@ namespace Writersword.Modules.Notes
         /// <summary>Универсальный модуль - доступен везде</summary>
         public bool IsUniversal => true;
 
+        public PreferredDockPosition DefaultPosition => PreferredDockPosition.BottomRight;
     }
 }

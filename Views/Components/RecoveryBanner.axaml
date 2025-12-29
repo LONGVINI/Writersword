@@ -1,0 +1,58 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.ViewModels"
+             xmlns:res="using:Writersword.Resources.Localization"
+             x:Class="Writersword.Views.Components.RecoveryBanner"
+             x:DataType="vm:RecoveryBannerViewModel">
+
+    <Border Background="#FFF3CD" 
+            BorderBrush="#FFE69C" 
+            BorderThickness="0,1"
+            Padding="10">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+            
+            <!-- Иконка предупреждения -->
+            <TextBlock Text="⚠️" 
+                       FontSize="16" 
+                       VerticalAlignment="Center"/>
+            
+            <!-- Текст версии -->
+            <TextBlock Text="{Binding VersionText}" 
+                       FontWeight="Bold"
+                       VerticalAlignment="Center"/>
+            
+            <!-- Кнопка переключения версий -->
+            <Button Content="{Binding SwitchButtonText}"
+                    Command="{Binding SwitchVersionCommand}"
+                    Background="#FFC107"
+                    Foreground="Black"
+                    Padding="15,5"
+                    Margin="10,0,0,0"/>
+            
+            <!-- Кнопка сохранения (только при просмотре кеша) -->
+            <Button Content="{x:Static res:Strings.AutoSave_Button_SaveAndContinue}"
+                    Command="{Binding SaveCommand}"
+                    Background="#28A745"
+                    Foreground="White"
+                    Padding="15,5"
+                    IsVisible="{Binding IsViewingCache}"/>
+            
+            <!-- Кнопка удаления -->
+            <Button Content="{x:Static res:Strings.AutoSave_Button_DiscardChanges}"
+                    Command="{Binding DiscardCommand}"
+                    Background="#DC3545"
+                    Foreground="White"
+                    Padding="15,5"
+                    IsVisible="{Binding IsViewingCache}"/>
+            
+            <!-- Кнопка удаления автосохранения (при просмотре сохранённой версии) -->
+            <Button Content="{x:Static res:Strings.AutoSave_Button_DeleteAutoSave}"
+                    Command="{Binding DiscardCommand}"
+                    Background="#DC3545"
+                    Foreground="White"
+                    Padding="15,5"
+                    IsVisible="{Binding !IsViewingCache}"/>
+            
+        </StackPanel>
+    </Border>
+</UserControl>

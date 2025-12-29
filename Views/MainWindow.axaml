@@ -4,6 +4,7 @@
         xmlns:loc="using:Writersword.Resources.Localization"
         xmlns:converters="using:Writersword.Converters"
         xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
+        xmlns:views="using:Writersword.Views.Components"
         x:Class="Writersword.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding Title}"
@@ -17,18 +18,9 @@
 		<converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
 	</Window.Resources>
 
-	<!--<Window.DataTemplates>
-		-->
-	<!-- Для вложенного содержимого в Dock -->
-	<!--
-		<DataTemplate DataType="Control">
-			<ContentControl Content="{Binding}" />
-		</DataTemplate>
-	</Window.DataTemplates>-->
-
 	<DockPanel>
 
-		<!-- Меню -->
+		<!-- ===== МЕНЮ ===== -->
 		<Menu DockPanel.Dock="Top"
               Background="#2D2D30"
               Padding="5,3">
@@ -123,7 +115,7 @@
 			</MenuItem>
 		</Menu>
 
-		<!-- Панель с вкладками документов -->
+		<!-- ===== ПАНЕЛЬ С ВКЛАДКАМИ ДОКУМЕНТОВ ===== -->
 		<Border DockPanel.Dock="Top"
 				Background="#2D2D30"
 				BorderBrush="#3F3F46"
@@ -245,7 +237,7 @@
 			</ScrollViewer>
 		</Border>
 
-		<!-- Панель с кнопками WorkModes (режимов работы) -->
+		<!-- ===== ПАНЕЛЬ С КНОПКАМИ WORKMODES (РЕЖИМОВ РАБОТЫ) ===== -->
 		<Border DockPanel.Dock="Top"
 				Background="#2D2D30"
 				BorderBrush="#3F3F46"
@@ -289,7 +281,18 @@
 			</ItemsControl>
 		</Border>
 
-		<!-- Статус бар -->
+		<!-- ===== БАННЕР ВОССТАНОВЛЕНИЯ (показывается только если есть кеш) ===== -->
+		<ContentControl DockPanel.Dock="Top"
+		                Content="{Binding RecoveryBanner}"
+		                IsVisible="{Binding RecoveryBanner, Converter={x:Static ObjectConverters.IsNotNull}}">
+			<ContentControl.ContentTemplate>
+				<DataTemplate>
+					<views:RecoveryBanner />
+				</DataTemplate>
+			</ContentControl.ContentTemplate>
+		</ContentControl>
+
+		<!-- ===== СТАТУС БАР ===== -->
 		<Border DockPanel.Dock="Bottom"
                 Background="#007ACC"
                 Padding="10,4">
@@ -305,6 +308,7 @@
 			</StackPanel>
 		</Border>
 
+		<!-- ===== DOCK КОНТРОЛ (ГЛАВНАЯ ОБЛАСТЬ С МОДУЛЯМИ) ===== -->
 		<dock:DockControl Layout="{Binding DockLayout}"
                   Background="#252526" />
 	</DockPanel>

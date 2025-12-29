@@ -5,20 +5,14 @@ using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.IO;
-using Writersword.Core.Enums;
+using System.Linq;
+using System.Reflection;
 using Writersword.Core.Services.WorkModes;
 using Writersword.Modules.Common;
-using Writersword.Modules.Notes;
-using Writersword.Modules.Synonyms;
-using Writersword.Modules.TextEditor;
-using Writersword.Modules.Timer;
 using Writersword.Services;
 using Writersword.Services.Interfaces;
 using Writersword.Src.Core.Interfaces.WorkModes;
-using Writersword.Src.WorkModes.Characters;
 using Writersword.Src.WorkModes.Common;
-using Writersword.Src.WorkModes.Editor;
-using Writersword.Src.WorkModes.Timeline;
 using Writersword.ViewModels;
 using Writersword.Views;
 
@@ -80,6 +74,12 @@ namespace Writersword
             // Сервис управления WorkModes (переключение режимов)
             services.AddSingleton<IWorkModeService, WorkModeService>();
 
+            // Сервис кеширования данных
+            services.AddSingleton<ICacheService, CacheService>();
+
+            // Сервис автосохранения проектов
+            services.AddSingleton<IAutoSaveService, AutoSaveService>();
+
             // --- МОДУЛЬНАЯ СИСТЕМА ---
             services.AddSingleton<ModuleFactory>();
             services.AddSingleton<ModuleRegistry>();
@@ -99,54 +99,61 @@ namespace Writersword
             Services = services.BuildServiceProvider();
 
             // ========================================
-            // РЕГИСТРАЦИЯ МОДУЛЕЙ В ФАБРИКЕ
-            // Говорим ModuleFactory как создавать каждый тип модуля
+            // АВТОМАТИЧЕСКАЯ РЕГИСТРАЦИЯ МОДУЛЕЙ
+            // Все классы наследующие BaseModule регистрируются автоматически
             // ========================================
             var moduleFactory = Services.GetRequiredService<ModuleFactory>();
+            var assembly = Assembly.GetExecutingAssembly();
 
-            // TextEditor - основной модуль редактирования текста
-            moduleFactory.Register(
-                ModuleType.TextEditor,
-                () => new TextEditorModule()
-            );
+            // Находим все классы которые наследуют BaseModule и не являются абстрактными
+            var moduleTypes = assembly.GetTypes()
+                .Where(t => typeof(BaseModule).IsAssignableFrom(t) && !t.IsAbstract);
 
-            // Synonyms - помощник поиска синонимов
-            moduleFactory.Register(
-                ModuleType.Synonyms,
-                () => new SynonymsModule()
-            );
+            Console.WriteLine("[App] Starting automatic module registration...");
 
-            // Notes - быстрые заметки
-            moduleFactory.Register(
-                ModuleType.Notes,
-                () => new NotesModule()
-            );
+            foreach (var moduleType in moduleTypes)
+            {
+                // Создаём экземпляр модуля для получения его метаданных
+                var instance = Activator.CreateInstance(moduleType) as BaseModule;
+                if (instance != null)
+                {
+                    // Регистрируем фабричный метод создания модуля
+                    moduleFactory.Register(instance.ModuleType, () =>
+                        Activator.CreateInstance(moduleType) as BaseModule 
+                        ?? throw new InvalidOperationException($"Failed to create module {moduleType.Name}"));
 
-            // Timer - таймер работы
-            moduleFactory.Register(
-                ModuleType.Timer,
-                () => new TimerModule()
-            );
+                    Console.WriteLine($"[App] ✓ Auto-registered module: {instance.Metadata.DisplayName} ({instance.Metadata.Icon})");
+                }
+            }
 
-            Console.WriteLine("[App] All modules registered successfully!");
+            Console.WriteLine($"[App] All modules registered successfully! Total: {moduleTypes.Count()}");
 
             // ========================================
-            // РЕГИСТРАЦИЯ WORKMODES
-            // Регистрируем встроенные режимы работы
+            // АВТОМАТИЧЕСКАЯ РЕГИСТРАЦИЯ WORKMODES
+            // Все классы реализующие IWorkMode регистрируются автоматически
             // ========================================
             var workModeFactory = Services.GetRequiredService<WorkModeFactory>();
             var workModeRegistry = Services.GetRequiredService<WorkModeRegistry>();
 
-            // Editor - основной режим редактирования
-            RegisterWorkMode(workModeFactory, workModeRegistry, new EditorWorkMode());
+            // Находим все классы которые реализуют IWorkMode (но не сам интерфейс)
+            var workModeTypes = assembly.GetTypes()
+                .Where(t => typeof(IWorkMode).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
 
-            // Timeline - работа с временной шкалой событий
-            RegisterWorkMode(workModeFactory, workModeRegistry, new TimelineWorkMode());
+            Console.WriteLine("[App] Starting automatic WorkMode registration...");
 
-            // Characters - управление персонажами
-            RegisterWorkMode(workModeFactory, workModeRegistry, new CharactersWorkMode());
+            foreach (var workModeType in workModeTypes)
+            {
+                // Создаём экземпляр WorkMode
+                var instance = Activator.CreateInstance(workModeType) as IWorkMode;
+                if (instance != null)
+                {
+                    // Регистрируем в фабрике и реестре
+                    RegisterWorkMode(workModeFactory, workModeRegistry, instance);
+                    Console.WriteLine($"[App] ✓ Auto-registered WorkMode: {instance.DisplayName} ({instance.Icon})");
+                }
+            }
 
-            Console.WriteLine("[App] All WorkModes registered successfully!");
+            Console.WriteLine($"[App] All WorkModes registered successfully! Total: {workModeTypes.Count()}");
 
             // ========================================
             // СОЗДАНИЕ ГЛАВНОГО ОКНА
@@ -216,6 +223,21 @@ namespace Writersword
                                         var tabVM = new DocumentTabViewModel(doc, mainViewModel.CloseTab);
                                         mainViewModel.OpenTabs.Add(tabVM);
                                         Console.WriteLine($"[App] Added tab: {doc.Title}");
+
+                                        // Устанавливаем активную вкладку
+                                        if (doc.IsActive)
+                                        {
+                                            mainViewModel.ActiveTab = tabVM;
+                                        }
+                                    }
+
+                                    if (mainViewModel.OpenTabs.Count > 0)
+                                    {
+                                        Console.WriteLine($"[App] All projects loaded. Total tabs: {mainViewModel.OpenTabs.Count}");
+                                        mainViewModel.ActivateTab(mainViewModel.OpenTabs[0]);
+
+                                        // КРИТИЧНО: Показываем редактор!
+                                        mainViewModel.ShowTextEditor();
                                     }
                                 }
                             }
@@ -252,6 +274,7 @@ namespace Writersword
 
         /// <summary>
         /// Регистрирует WorkMode в фабрике и реестре
+        /// Вызывается автоматически для всех найденных WorkMode классов
         /// </summary>
         private void RegisterWorkMode(WorkModeFactory factory, WorkModeRegistry registry, IWorkMode workMode)
         {

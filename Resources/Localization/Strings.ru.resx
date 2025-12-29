@@ -285,4 +285,88 @@
   <data name="Menu_WorkModes" xml:space="preserve">
     <value>Режимы работы</value>
   </data>
+  <data name="AutoSave_Banner_ViewingCache" xml:space="preserve">
+    <value>Открыто: Автосохранение</value>
+  </data>
+  <data name="AutoSave_Banner_ViewingSaved" xml:space="preserve">
+    <value>Открыто: Сохранённая версия</value>
+  </data>
+  <data name="AutoSave_Banner_CacheFound" xml:space="preserve">
+    <value>Найдена несохранённая версия (автосохранение)</value>
+  </data>
+  <data name="AutoSave_Time_Saved" xml:space="preserve">
+    <value>Сохранено:</value>
+  </data>
+  <data name="AutoSave_Time_AutoSave" xml:space="preserve">
+    <value>Автосохранение:</value>
+  </data>
+  <data name="AutoSave_Button_SwitchToCache" xml:space="preserve">
+    <value>Переключить на автосохранение</value>
+  </data>
+  <data name="AutoSave_Button_SwitchToSaved" xml:space="preserve">
+    <value>Переключить на сохранённую версию</value>
+  </data>
+  <data name="AutoSave_Button_SaveAndContinue" xml:space="preserve">
+    <value>Сохранить и продолжить</value>
+  </data>
+  <data name="AutoSave_Button_DiscardChanges" xml:space="preserve">
+    <value>Отменить изменения</value>
+  </data>
+  <data name="AutoSave_Button_DeleteAutoSave" xml:space="preserve">
+    <value>Удалить автосохранение</value>
+  </data>
+  <data name="AutoSave_Button_OpenAutoSave" xml:space="preserve">
+    <value>Открыть автосохранение</value>
+  </data>
+  <data name="Dialog_UnsavedChanges_Title" xml:space="preserve">
+    <value>Несохранённые изменения</value>
+  </data>
+  <data name="Dialog_UnsavedChanges_Message" xml:space="preserve">
+    <value>Сохранить изменения перед закрытием?</value>
+  </data>
+  <data name="Dialog_UnsavedChanges_Button_Save" xml:space="preserve">
+    <value>Сохранить</value>
+  </data>
+  <data name="Dialog_UnsavedChanges_Button_DontSave" xml:space="preserve">
+    <value>Не сохранять</value>
+  </data>
+  <data name="Dialog_ConfirmDiscard_Title" xml:space="preserve">
+    <value>Подтверждение</value>
+  </data>
+  <data name="Dialog_ConfirmDiscard_Message_Line1" xml:space="preserve">
+    <value>Изменения будут потеряны!</value>
+  </data>
+  <data name="Dialog_ConfirmDiscard_Message_Line2" xml:space="preserve">
+    <value>Автосохранение будет удалено.</value>
+  </data>
+  <data name="Dialog_ConfirmDiscard_Message_Line3" xml:space="preserve">
+    <value>Вы уверены?</value>
+  </data>
+  <data name="Dialog_ConfirmDiscard_Button_Yes" xml:space="preserve">
+    <value>Да, закрыть без сохранения</value>
+  </data>
+  <data name="Dialog_Recovery_Title" xml:space="preserve">
+    <value>Обнаружена несохранённая версия</value>
+  </data>
+  <data name="Dialog_Recovery_SavedVersion" xml:space="preserve">
+    <value>Сохранённая версия:</value>
+  </data>
+  <data name="Dialog_Recovery_AutoSaveVersion" xml:space="preserve">
+    <value>Автосохранение:</value>
+  </data>
+  <data name="Dialog_Recovery_WhichVersion" xml:space="preserve">
+    <value>Какую версию открыть?</value>
+  </data>
+  <data name="Dialog_Recovery_Button_OpenCache" xml:space="preserve">
+    <value>Автосохранение</value>
+  </data>
+  <data name="Dialog_Recovery_Button_OpenSaved" xml:space="preserve">
+    <value>Сохранённую</value>
+  </data>
+  <data name="Dialog_ConfirmDeleteCache_Message_Line1" xml:space="preserve">
+    <value>Удалить автосохранение?</value>
+  </data>
+  <data name="Dialog_ConfirmDeleteCache_Message_Line2" xml:space="preserve">
+    <value>Изменения будут потеряны.</value>
+  </data>
 </root>

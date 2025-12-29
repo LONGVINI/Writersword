@@ -1,11 +1,12 @@
-﻿using System;
-using System.IO;
-using System.Threading.Tasks;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using Newtonsoft.Json;
-using Writersword.Core.Models.Project;
+using System.Threading.Tasks;
 using Writersword.Core.Enums;
+using Writersword.Core.Models.Project;
+using Writersword.Modules.Common;
 
 namespace Writersword.Services
 {
@@ -20,6 +21,14 @@ namespace Writersword.Services
 
         // Соответствие: ID проекта -> путь к файлу
         private readonly Dictionary<string, string> _projectPaths = new Dictionary<string, string>();
+
+
+        private readonly ModuleRegistry _moduleRegistry;
+
+        public ProjectService(ModuleRegistry moduleRegistry)
+        {
+            _moduleRegistry = moduleRegistry;
+        }
 
         /// <summary>Получить все открытые проекты</summary>
         public IReadOnlyList<ProjectFile> OpenProjects => _openProjects.AsReadOnly();
@@ -112,12 +121,9 @@ namespace Writersword.Services
             try
             {
                 Console.WriteLine($"[SAVE] Saving project: {project.Title}");
-                Console.WriteLine($"[SAVE] Documents count BEFORE serialize: {project.Documents.Count}");
 
-                if (project.Documents.Count > 0)
-                {
-                    Console.WriteLine($"[SAVE] First document: ID={project.Documents[0].Id}, Title={project.Documents[0].Title}");
-                }
+                // НОВОЕ: Собираем состояния всех активных модулей
+                CollectModuleStates(project);
 
                 // Обновляем дату модификации
                 project.LastModified = DateTime.Now;
@@ -139,7 +145,7 @@ namespace Writersword.Services
 
                 Console.WriteLine($"[SAVE] File written to: {filePath}");
 
-                // СНАЧАЛА удаляем старый проект с таким же путём
+                // Удаляем старый проект с таким же путём
                 var existingProject = GetProjectByPath(filePath);
                 if (existingProject != null && existingProject != project)
                 {
@@ -172,6 +178,42 @@ namespace Writersword.Services
         {
             _openProjects.Remove(project);
             _projectPaths.Remove(project.Title);
+        }
+
+        /// <summary>
+        /// Собрать состояния всех активных модулей
+        /// Сохраняет данные модулей в проект перед записью
+        /// </summary>
+        private void CollectModuleStates(ProjectFile project)
+        {
+            // Получаем все активные модули
+            var activeModules = _moduleRegistry.GetAllModules();
+
+            Console.WriteLine($"[ProjectService] Collecting state from {activeModules.Count()} active modules");
+
+            // Группируем по типу модуля, берём ТОЛЬКО ОДИН экземпляр каждого типа
+            var modulesByType = activeModules
+                .GroupBy(m => m.ModuleType)
+                .Select(g => g.First()); // Берём первый модуль каждого типа
+
+            foreach (var module in modulesByType)
+            {
+                try
+                {
+                    var state = module.SaveState();
+                    var key = module.ModuleType.ToString();
+
+                    if (state.CustomData != null)
+                    {
+                        project.ModulesData[key] = state.CustomData;
+                        Console.WriteLine($"[ProjectService] Saved state for: {module.ModuleType}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ProjectService] ERROR: Failed to save state for {module.ModuleType}: {ex.Message}");
+                }
+            }
         }
     }
 }

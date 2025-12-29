@@ -78,5 +78,9 @@ namespace Writersword.Modules.Synonyms
         public string Icon => "📚";
 
         public bool IsUniversal => false;
+        /// <summary>
+        /// Позиция по умолчанию (если WorkMode не переопределил)
+        /// </summary>
+        public PreferredDockPosition DefaultPosition => PreferredDockPosition.RightAsTab;
     }
 }

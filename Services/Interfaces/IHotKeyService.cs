@@ -17,6 +17,12 @@ namespace Writersword.Services.Interfaces
         /// Зарегистрировать команду с горячей клавишей
         /// </summary>
         void Register(string id, HotKey hotKey, ICommand command);
+        /// <summary>
+        /// Обработать нажатие горячей клавиши
+        /// </summary>
+        /// <param name="gesture"></param>
+        /// <returns></returns>
+        bool HandleKeyPress(KeyGesture gesture);
 
         /// <summary>
         /// Получить все зарегистрированные горячие клавиши

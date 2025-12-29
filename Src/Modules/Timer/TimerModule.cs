@@ -79,5 +79,7 @@ namespace Writersword.Modules.Timer
 
         /// <summary>Универсальный модуль - доступен везде</summary>
         public bool IsUniversal => true;
+
+        public PreferredDockPosition DefaultPosition => PreferredDockPosition.RightAsTab;
     }
 }

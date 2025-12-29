@@ -337,4 +337,116 @@
     <value>Work Modes</value>
     <comment>View menu: Switch between work modes</comment>
   </data>
+  <data name="AutoSave_Banner_ViewingCache" xml:space="preserve">
+    <value>Viewing: Auto-save</value>
+    <comment>Banner showing that auto-save version is open</comment>
+  </data>
+  <data name="AutoSave_Banner_ViewingSaved" xml:space="preserve">
+    <value>Viewing: Saved version</value>
+    <comment>Banner showing that saved version is open</comment>
+  </data>
+  <data name="AutoSave_Banner_CacheFound" xml:space="preserve">
+    <value>Unsaved version found (auto-save)</value>
+    <comment>Banner when auto-save file is detected</comment>
+  </data>
+  <data name="AutoSave_Time_Saved" xml:space="preserve">
+    <value>Saved:</value>
+    <comment>Prefix for saved file timestamp</comment>
+  </data>
+  <data name="AutoSave_Time_AutoSave" xml:space="preserve">
+    <value>Auto-save:</value>
+    <comment>Prefix for auto-save file timestamp</comment>
+  </data>
+  <data name="AutoSave_Button_SwitchToCache" xml:space="preserve">
+    <value>Switch to Auto-save</value>
+    <comment>Button to switch to auto-save version</comment>
+  </data>
+  <data name="AutoSave_Button_SwitchToSaved" xml:space="preserve">
+    <value>Switch to Saved version</value>
+    <comment>Button to switch to saved version</comment>
+  </data>
+  <data name="AutoSave_Button_SaveAndContinue" xml:space="preserve">
+    <value>Save and Continue</value>
+    <comment>Button to save auto-save as main file</comment>
+  </data>
+  <data name="AutoSave_Button_DiscardChanges" xml:space="preserve">
+    <value>Discard Changes</value>
+    <comment>Button to discard changes from auto-save</comment>
+  </data>
+  <data name="AutoSave_Button_DeleteAutoSave" xml:space="preserve">
+    <value>Delete Auto-save</value>
+    <comment>Button to delete auto-save file</comment>
+  </data>
+  <data name="AutoSave_Button_OpenAutoSave" xml:space="preserve">
+    <value>Open Auto-save</value>
+    <comment>Button to open auto-save version</comment>
+  </data>
+  <data name="Dialog_UnsavedChanges_Title" xml:space="preserve">
+    <value>Unsaved Changes</value>
+    <comment>Dialog title when closing with unsaved changes</comment>
+  </data>
+  <data name="Dialog_UnsavedChanges_Message" xml:space="preserve">
+    <value>Save changes before closing?</value>
+    <comment>Message in close dialog</comment>
+  </data>
+  <data name="Dialog_UnsavedChanges_Button_Save" xml:space="preserve">
+    <value>Save</value>
+    <comment>Save button in close dialog</comment>
+  </data>
+  <data name="Dialog_UnsavedChanges_Button_DontSave" xml:space="preserve">
+    <value>Don't Save</value>
+    <comment>Don't save button in close dialog</comment>
+  </data>
+  <data name="Dialog_ConfirmDiscard_Title" xml:space="preserve">
+    <value>Confirmation</value>
+    <comment>Title for discard confirmation dialog</comment>
+  </data>
+  <data name="Dialog_ConfirmDiscard_Message_Line1" xml:space="preserve">
+    <value>Changes will be lost!</value>
+    <comment>First line of discard warning</comment>
+  </data>
+  <data name="Dialog_ConfirmDiscard_Message_Line2" xml:space="preserve">
+    <value>Auto-save will be deleted.</value>
+    <comment>Second line of discard warning</comment>
+  </data>
+  <data name="Dialog_ConfirmDiscard_Message_Line3" xml:space="preserve">
+    <value>Are you sure?</value>
+    <comment>Third line - confirmation question</comment>
+  </data>
+  <data name="Dialog_ConfirmDiscard_Button_Yes" xml:space="preserve">
+    <value>Yes, Close Without Saving</value>
+    <comment>Button to confirm closing without saving</comment>
+  </data>
+  <data name="Dialog_Recovery_Title" xml:space="preserve">
+    <value>Unsaved Version Found</value>
+    <comment>Title for recovery dialog when opening project</comment>
+  </data>
+  <data name="Dialog_Recovery_SavedVersion" xml:space="preserve">
+    <value>Saved version:</value>
+    <comment>Prefix for saved version date</comment>
+  </data>
+  <data name="Dialog_Recovery_AutoSaveVersion" xml:space="preserve">
+    <value>Auto-save:</value>
+    <comment>Prefix for auto-save date</comment>
+  </data>
+  <data name="Dialog_Recovery_WhichVersion" xml:space="preserve">
+    <value>Which version to open?</value>
+    <comment>Question in recovery dialog</comment>
+  </data>
+  <data name="Dialog_Recovery_Button_OpenCache" xml:space="preserve">
+    <value>Auto-save</value>
+    <comment>Button to open from auto-save</comment>
+  </data>
+  <data name="Dialog_Recovery_Button_OpenSaved" xml:space="preserve">
+    <value>Saved</value>
+    <comment>Button to open saved version</comment>
+  </data>
+  <data name="Dialog_ConfirmDeleteCache_Message_Line1" xml:space="preserve">
+    <value>Delete auto-save?</value>
+    <comment>First line of delete confirmation</comment>
+  </data>
+  <data name="Dialog_ConfirmDeleteCache_Message_Line2" xml:space="preserve">
+    <value>Changes will be lost.</value>
+    <comment>Second line of delete warning</comment>
+  </data>
 </root>

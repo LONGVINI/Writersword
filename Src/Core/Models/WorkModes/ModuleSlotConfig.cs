@@ -23,6 +23,6 @@ namespace Writersword.Core.Models.WorkModes
         public ModuleCategory Category { get; set; } = ModuleCategory.Optional;
 
         /// <summary>Предпочтительное расположение модуля при докировании</summary>
-        public PreferredDockPosition PreferredPosition { get; set; } = PreferredDockPosition.RightAsTab;
+        public PreferredDockPosition? PreferredPosition { get; set; } = null;
     }
 }

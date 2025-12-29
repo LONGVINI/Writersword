@@ -61,9 +61,8 @@ namespace Writersword.Src.Infrastructure.Dock
             Console.WriteLine($"[DockFactory] Creating layout for: {workMode.Title}");
 
             // Получаем конфигурацию Dock из WorkMode
-            var dockConfig = workMode.Settings.CustomSettings.ContainsKey("DockLayout")
-                ? workMode.Settings.CustomSettings["DockLayout"] as DockLayoutConfig
-                : null;
+            workMode.Settings.CustomSettings.TryGetValue("DockLayout", out var value);
+            var dockConfig = value as DockLayoutConfig;
 
             // Если нет сохранённой конфигурации - нужно получить DEFAULT
             // Пока создаём простую структуру
@@ -312,7 +311,7 @@ namespace Writersword.Src.Infrastructure.Dock
         }
 
         /// <summary>Получить базовую позицию без AsTab</summary>
-        private PreferredDockPosition GetBasePosition(PreferredDockPosition position)
+        static private PreferredDockPosition GetBasePosition(PreferredDockPosition position)
         {
             return position switch
             {
@@ -461,7 +460,7 @@ namespace Writersword.Src.Infrastructure.Dock
         }
 
         /// <summary>Найти все панели в направлении</summary>
-        private List<IDock> FindPanelsInDirection(ProportionalDock mainDock, string direction)
+        static private List<IDock> FindPanelsInDirection(ProportionalDock mainDock, string direction)
         {
             var panels = new List<IDock>();
             if (mainDock.VisibleDockables == null) return panels;
@@ -505,7 +504,7 @@ namespace Writersword.Src.Infrastructure.Dock
         }
 
         /// <summary>Рекурсивно собрать все Dock из структуры</summary>
-        private void CollectDocksRecursive(IDockable element, List<IDock> result)
+        static private void CollectDocksRecursive(IDockable element, List<IDock> result)
         {
             if (element is ProportionalDock propDock && propDock.VisibleDockables != null)
             {
@@ -556,7 +555,7 @@ namespace Writersword.Src.Infrastructure.Dock
         }
 
         /// <summary>Вставить панель справа</summary>
-        private void InsertRightPanel(ProportionalDock mainDock, IDock newPanel, PreferredDockPosition position)
+        static private void InsertRightPanel(ProportionalDock mainDock, IDock newPanel, PreferredDockPosition position)
         {
             // Если mainDock уже Horizontal и есть правая часть
             if (mainDock.Orientation == Orientation.Horizontal && mainDock.VisibleDockables!.Count > 1)
@@ -625,7 +624,7 @@ namespace Writersword.Src.Infrastructure.Dock
         }
 
         /// <summary>Вставить панель слева</summary>
-        private void InsertLeftPanel(ProportionalDock mainDock, IDock newPanel, PreferredDockPosition position)
+        static private void InsertLeftPanel(ProportionalDock mainDock, IDock newPanel, PreferredDockPosition position)
         {
             if (mainDock.Orientation == Orientation.Horizontal && mainDock.VisibleDockables!.Count > 0)
             {
@@ -691,8 +690,11 @@ namespace Writersword.Src.Infrastructure.Dock
         /// <summary>Вставить панель снизу</summary>
         private void InsertBottomPanel(ProportionalDock mainDock, IDock newPanel)
         {
-            // Нужно обернуть текущий mainDock в вертикальный split
-            var currentContent = mainDock.VisibleDockables!.ToList();
+
+            if (mainDock.VisibleDockables == null)
+                mainDock.VisibleDockables = new List<IDockable>();
+
+            var currentContent = mainDock.VisibleDockables.ToList();
             mainDock.VisibleDockables.Clear();
 
             var contentDock = new ProportionalDock
@@ -718,9 +720,12 @@ namespace Writersword.Src.Infrastructure.Dock
         }
 
         /// <summary>Вставить панель сверху</summary>
-        private void InsertTopPanel(ProportionalDock mainDock, IDock newPanel)
+        static private void InsertTopPanel(ProportionalDock mainDock, IDock newPanel)
         {
-            var currentContent = mainDock.VisibleDockables!.ToList();
+            if (mainDock.VisibleDockables == null)
+                mainDock.VisibleDockables = new List<IDockable>();
+
+            var currentContent = mainDock.VisibleDockables.ToList();
             mainDock.VisibleDockables.Clear();
 
             var contentDock = new ProportionalDock

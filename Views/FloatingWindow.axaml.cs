@@ -83,6 +83,13 @@ namespace Writersword.Views
             set => Position = new Avalonia.PixelPoint(Position.X, (int)value);
         }
 
+        public new string Title
+        {
+            get => base.Title ?? string.Empty;
+            set => base.Title = value;
+        }
+
+
         public new IDockable? Owner { get; set; }
         public IFactory? Factory { get; set; }
 

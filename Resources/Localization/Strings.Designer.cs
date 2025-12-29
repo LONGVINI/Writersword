@@ -61,6 +61,105 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Unsaved version found (auto-save).
+        /// </summary>
+        public static string AutoSave_Banner_CacheFound {
+            get {
+                return ResourceManager.GetString("AutoSave_Banner_CacheFound", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Viewing: Auto-save.
+        /// </summary>
+        public static string AutoSave_Banner_ViewingCache {
+            get {
+                return ResourceManager.GetString("AutoSave_Banner_ViewingCache", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Viewing: Saved version.
+        /// </summary>
+        public static string AutoSave_Banner_ViewingSaved {
+            get {
+                return ResourceManager.GetString("AutoSave_Banner_ViewingSaved", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Delete Auto-save.
+        /// </summary>
+        public static string AutoSave_Button_DeleteAutoSave {
+            get {
+                return ResourceManager.GetString("AutoSave_Button_DeleteAutoSave", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Discard Changes.
+        /// </summary>
+        public static string AutoSave_Button_DiscardChanges {
+            get {
+                return ResourceManager.GetString("AutoSave_Button_DiscardChanges", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Open Auto-save.
+        /// </summary>
+        public static string AutoSave_Button_OpenAutoSave {
+            get {
+                return ResourceManager.GetString("AutoSave_Button_OpenAutoSave", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save and Continue.
+        /// </summary>
+        public static string AutoSave_Button_SaveAndContinue {
+            get {
+                return ResourceManager.GetString("AutoSave_Button_SaveAndContinue", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Switch to Auto-save.
+        /// </summary>
+        public static string AutoSave_Button_SwitchToCache {
+            get {
+                return ResourceManager.GetString("AutoSave_Button_SwitchToCache", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Switch to Saved version.
+        /// </summary>
+        public static string AutoSave_Button_SwitchToSaved {
+            get {
+                return ResourceManager.GetString("AutoSave_Button_SwitchToSaved", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Auto-save:.
+        /// </summary>
+        public static string AutoSave_Time_AutoSave {
+            get {
+                return ResourceManager.GetString("AutoSave_Time_AutoSave", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Saved:.
+        /// </summary>
+        public static string AutoSave_Time_Saved {
+            get {
+                return ResourceManager.GetString("AutoSave_Time_Saved", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Apply.
         /// </summary>
         public static string Common_Apply {
@@ -93,6 +192,159 @@ namespace Writersword.Resources.Localization {
         public static string Common_OK {
             get {
                 return ResourceManager.GetString("Common_OK", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Delete auto-save?.
+        /// </summary>
+        public static string Dialog_ConfirmDeleteCache_Message_Line1 {
+            get {
+                return ResourceManager.GetString("Dialog_ConfirmDeleteCache_Message_Line1", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Changes will be lost..
+        /// </summary>
+        public static string Dialog_ConfirmDeleteCache_Message_Line2 {
+            get {
+                return ResourceManager.GetString("Dialog_ConfirmDeleteCache_Message_Line2", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Yes, Close Without Saving.
+        /// </summary>
+        public static string Dialog_ConfirmDiscard_Button_Yes {
+            get {
+                return ResourceManager.GetString("Dialog_ConfirmDiscard_Button_Yes", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Changes will be lost!.
+        /// </summary>
+        public static string Dialog_ConfirmDiscard_Message_Line1 {
+            get {
+                return ResourceManager.GetString("Dialog_ConfirmDiscard_Message_Line1", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Auto-save will be deleted..
+        /// </summary>
+        public static string Dialog_ConfirmDiscard_Message_Line2 {
+            get {
+                return ResourceManager.GetString("Dialog_ConfirmDiscard_Message_Line2", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Are you sure?.
+        /// </summary>
+        public static string Dialog_ConfirmDiscard_Message_Line3 {
+            get {
+                return ResourceManager.GetString("Dialog_ConfirmDiscard_Message_Line3", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Confirmation.
+        /// </summary>
+        public static string Dialog_ConfirmDiscard_Title {
+            get {
+                return ResourceManager.GetString("Dialog_ConfirmDiscard_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Auto-save:.
+        /// </summary>
+        public static string Dialog_Recovery_AutoSaveVersion {
+            get {
+                return ResourceManager.GetString("Dialog_Recovery_AutoSaveVersion", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Auto-save.
+        /// </summary>
+        public static string Dialog_Recovery_Button_OpenCache {
+            get {
+                return ResourceManager.GetString("Dialog_Recovery_Button_OpenCache", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Saved.
+        /// </summary>
+        public static string Dialog_Recovery_Button_OpenSaved {
+            get {
+                return ResourceManager.GetString("Dialog_Recovery_Button_OpenSaved", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Saved version:.
+        /// </summary>
+        public static string Dialog_Recovery_SavedVersion {
+            get {
+                return ResourceManager.GetString("Dialog_Recovery_SavedVersion", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Unsaved Version Found.
+        /// </summary>
+        public static string Dialog_Recovery_Title {
+            get {
+                return ResourceManager.GetString("Dialog_Recovery_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Which version to open?.
+        /// </summary>
+        public static string Dialog_Recovery_WhichVersion {
+            get {
+                return ResourceManager.GetString("Dialog_Recovery_WhichVersion", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Don&apos;t Save.
+        /// </summary>
+        public static string Dialog_UnsavedChanges_Button_DontSave {
+            get {
+                return ResourceManager.GetString("Dialog_UnsavedChanges_Button_DontSave", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save.
+        /// </summary>
+        public static string Dialog_UnsavedChanges_Button_Save {
+            get {
+                return ResourceManager.GetString("Dialog_UnsavedChanges_Button_Save", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save changes before closing?.
+        /// </summary>
+        public static string Dialog_UnsavedChanges_Message {
+            get {
+                return ResourceManager.GetString("Dialog_UnsavedChanges_Message", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Unsaved Changes.
+        /// </summary>
+        public static string Dialog_UnsavedChanges_Title {
+            get {
+                return ResourceManager.GetString("Dialog_UnsavedChanges_Title", resourceCulture);
             }
         }
         

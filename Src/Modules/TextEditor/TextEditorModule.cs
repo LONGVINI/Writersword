@@ -95,9 +95,12 @@ namespace Writersword.Modules.TextEditor
         /// <summary>Описание из локализации (.resx)</summary>
         public string Description => TextEditorStrings.Description;
 
-        /// <summary>Иконка (hardcoded, не переводится)</summary>ф
+        /// <summary>Иконка (hardcoded, не переводится)</summary>
         public string Icon => "📝";
-
+        /// <summary> Универсальный модуль - нет, доступен только в режиме написания</summary>
         public bool IsUniversal => false;
+
+        /// <summary>Позиция по умолчанию - слева</summary>
+        public PreferredDockPosition DefaultPosition => PreferredDockPosition.Left;
     }
 }

@@ -142,6 +142,8 @@ namespace Writersword.ViewModels
             mainViewModel.ActiveTab = tabVM;
             mainViewModel.ShowTextEditor();
 
+            mainViewModel.InitializeWorkModesForTab(tabVM);
+
             ProjectSelected?.Invoke();
         }
 
