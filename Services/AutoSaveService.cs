@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Writersword.Services.Interfaces;
@@ -16,6 +17,7 @@ namespace Writersword.Services
         private IDisposable? _autoSaveSubscription;
         private TimeSpan _interval = TimeSpan.FromSeconds(10);
         private string? _currentProjectPath;
+        private Func<string>? _getContent;
 
         /// <summary>Событие завершения автосохранения</summary>
         public event EventHandler? AutoSaveCompleted;
@@ -29,17 +31,16 @@ namespace Writersword.Services
         /// <summary>
         /// Запустить автосохранение для проекта
         /// </summary>
-        public void Start(string projectPath)
+        public void Start(string projectPath, Func<string> getContent)
         {
             Stop();
 
             _currentProjectPath = projectPath;
+            _getContent = getContent;
 
             _autoSaveSubscription = Observable
                 .Interval(_interval)
                 .Subscribe(async _ => await PerformAutoSave());
-
-            Console.WriteLine($"[AutoSaveService] Started for: {projectPath}");
         }
 
         /// <summary>
@@ -76,7 +77,7 @@ namespace Writersword.Services
         /// </summary>
         private async Task PerformAutoSave()
         {
-            if (string.IsNullOrEmpty(_currentProjectPath))
+            if (string.IsNullOrEmpty(_currentProjectPath) || _getContent == null)
                 return;
 
             try
@@ -85,8 +86,12 @@ namespace Writersword.Services
                 if (project == null)
                     return;
 
-                await _cacheService.SaveToCacheAsync(project, _currentProjectPath);
+                // Обновляем контент ПЕРЕД сохранением
+                var currentContent = _getContent();
+                project.ModulesData["TextEditor"] = currentContent;
+                project.LastModified = DateTime.Now;
 
+                await _cacheService.SaveToCacheAsync(project, _currentProjectPath);
                 AutoSaveCompleted?.Invoke(this, EventArgs.Empty);
                 Console.WriteLine("[AutoSaveService] Auto-save completed");
             }

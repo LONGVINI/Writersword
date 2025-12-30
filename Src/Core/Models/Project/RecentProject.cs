@@ -1,6 +1,4 @@
-﻿using Writersword.Core.Enums;
-
-namespace Writersword.Core.Models.Project
+﻿namespace Writersword.Core.Models.Project
 {
     /// <summary>
     /// Информация о недавно открытом проекте
@@ -14,7 +12,7 @@ namespace Writersword.Core.Models.Project
         public string Path { get; set; } = string.Empty;
 
         /// <summary>Тип проекта</summary>
-        public ProjectType Type { get; set; }
+        public string Type { get; set; } = "";
 
         /// <summary>Дата последнего открытия</summary>
         public System.DateTime LastOpened { get; set; }

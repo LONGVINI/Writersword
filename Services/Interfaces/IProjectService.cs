@@ -20,7 +20,7 @@ namespace Writersword.Services
         string? GetProjectPath(ProjectFile project);
 
         /// <summary>Создать новый проект</summary>
-        ProjectFile CreateNew(string title, ProjectType type);
+        ProjectFile CreateNew(string title, string type);
 
         /// <summary>Загрузить проект из файла</summary>
         Task<ProjectFile?> LoadAsync(string filePath);

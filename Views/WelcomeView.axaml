@@ -14,7 +14,7 @@
         Background="Transparent">
 
 	<Window.Resources>
-		<converters:EnumToBooleanConverter x:Key="EnumToBooleanConverter"/>
+		<converters:StringToBooleanConverter x:Key="StringToBooleanConverter"/>
 	</Window.Resources>
 
 	<!-- Затемнённый фон -->
@@ -93,31 +93,31 @@
 							<StackPanel Spacing="10">
 								<RadioButton Content="📖 Novel / Book"
 											 GroupName="ProjectType"
-											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=Novel}"
+											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource StringToBooleanConverter}, ConverterParameter=Novel}"
 											 Foreground="#CCC"
 											 FontSize="14" />
 
 								<RadioButton Content="🎬 Screenplay"
 											 GroupName="ProjectType"
-											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=Screenplay}"
+											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource StringToBooleanConverter}, ConverterParameter=Screenplay}"
 											 Foreground="#CCC"
 											 FontSize="14" />
 
 								<RadioButton Content="✍️ Poetry Collection"
 											 GroupName="ProjectType"
-											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=Poetry}"
+											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource StringToBooleanConverter}, ConverterParameter=Poetry}"
 											 Foreground="#CCC"
 											 FontSize="14" />
 
 								<RadioButton Content="🎮 Game Design Document"
 											 GroupName="ProjectType"
-											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=GameDesign}"
+											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource StringToBooleanConverter}, ConverterParameter=GameDesign}"
 											 Foreground="#CCC"
 											 FontSize="14" />
 
 								<RadioButton Content="🌐 Translation"
 											 GroupName="ProjectType"
-											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource EnumToBooleanConverter}, ConverterParameter=Translation}"
+											 IsChecked="{Binding SelectedProjectType, Converter={StaticResource StringToBooleanConverter}, ConverterParameter=Translation}"
 											 Foreground="#CCC"
 											 FontSize="14" />
 							</StackPanel>

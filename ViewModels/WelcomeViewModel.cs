@@ -4,12 +4,11 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
-using Writersword.Core.Enums;
 using Writersword.Core.Models.Project;
+using Writersword.Resources.Localization;
 using Writersword.Services;
 using Writersword.Services.Interfaces;
 using Writersword.Views;
-using Writersword.Resources.Localization;
 
 namespace Writersword.ViewModels
 {
@@ -22,12 +21,13 @@ namespace Writersword.ViewModels
         private readonly IDialogService _dialogService;
         private readonly ISettingsService _settingsService;
         private readonly IProjectService _projectService;
+        private readonly IProjectWorkflow _projectWorkflow;
 
-        private ProjectType _selectedProjectType = ProjectType.Novel;
-        private bool _isProcessing = false; // 
+        private string _selectedProjectType = "Novel";
+        private bool _isProcessing = false;
 
         /// <summary>Выбранный тип проекта</summary>
-        public ProjectType SelectedProjectType
+        public string SelectedProjectType
         {
             get => _selectedProjectType;
             set => this.RaiseAndSetIfChanged(ref _selectedProjectType, value);
@@ -51,15 +51,16 @@ namespace Writersword.ViewModels
         public WelcomeViewModel(
             IDialogService dialogService,
             ISettingsService settingsService,
-            IProjectService projectService)
+            IProjectService projectService,
+            IProjectWorkflow projectWorkflow)
         {
             _dialogService = dialogService;
             _settingsService = settingsService;
             _projectService = projectService;
+            _projectWorkflow = projectWorkflow;
 
             _settingsService.Load();
 
-            // Создаём команды
             NewProjectCommand = ReactiveCommand.CreateFromTask(
                 CreateNewProject,
                 outputScheduler: RxApp.MainThreadScheduler
@@ -83,66 +84,40 @@ namespace Writersword.ViewModels
         private async System.Threading.Tasks.Task CreateNewProject()
         {
             var savePath = await _dialogService.SaveFileAsync();
-
             if (string.IsNullOrEmpty(savePath))
-            {
                 return;
-            }
 
             var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+            var tabCollection = App.Services.GetRequiredService<ITabCollection>();
 
-            // ИСПРАВЛЕНИЕ: Проверяем не открыт ли уже проект с таким путём
-            var existingTab = mainViewModel.OpenTabs.FirstOrDefault(t => t.GetModel().FilePath == savePath);
+            // Проверяем не открыт ли уже проект с таким путём
+            var existingTab = tabCollection.FindByPath(savePath);
             if (existingTab != null)
             {
-                Console.WriteLine($"[CreateNewProject] Project already open: {savePath}, activating existing tab");
-
-                // Деактивируем все вкладки
-                foreach (var tab in mainViewModel.OpenTabs)
-                {
-                    tab.IsActive = false;
-                }
-
-                // Активируем существующую вкладку
-                mainViewModel.ActivateTab(existingTab);
+                Console.WriteLine($"[CreateNewProject] Project already open: {savePath}");
+                tabCollection.ActiveTab = existingTab;
                 ProjectSelected?.Invoke();
                 return;
             }
 
+            // Создаём новый проект
             var projectName = System.IO.Path.GetFileNameWithoutExtension(savePath);
             var project = _projectService.CreateNew(projectName, SelectedProjectType);
 
-            var firstDoc = new Writersword.Core.Models.Project.DocumentTab
-            {
-                Title = projectName,
-                Content = "",
-                IsActive = true,
-                FilePath = savePath
-            };
-
-            project.Documents.Add(firstDoc);
+            // Сохраняем проект
             await _projectService.SaveAsync(project, savePath);
+
+            // Создаём вкладку
+            var tabVM = new DocumentTabViewModel(project, savePath);
+            tabCollection.Add(tabVM);
+            tabCollection.ActiveTab = tabVM;
+
+            // Инициализируем WorkModes
+            mainViewModel.InitializeWorkModesForTab(tabVM);
+            mainViewModel.ShowTextEditor();
 
             // Добавляем в недавние
             _settingsService.AddRecentProject(savePath);
-
-            if (_projectService.OpenProjects.Count == 1)
-            {
-                _settingsService.LastOpenedProject = savePath;
-            }
-
-            // Деактивируем ВСЕ существующие вкладки
-            foreach (var tab in mainViewModel.OpenTabs)
-            {
-                tab.IsActive = false;
-            }
-
-            var tabVM = new DocumentTabViewModel(firstDoc, mainViewModel.CloseTab);
-            mainViewModel.OpenTabs.Add(tabVM);
-            mainViewModel.ActiveTab = tabVM;
-            mainViewModel.ShowTextEditor();
-
-            mainViewModel.InitializeWorkModesForTab(tabVM);
 
             ProjectSelected?.Invoke();
         }
@@ -151,54 +126,31 @@ namespace Writersword.ViewModels
         private async System.Threading.Tasks.Task OpenExistingProject()
         {
             var path = await _dialogService.OpenFileAsync();
-
             if (string.IsNullOrEmpty(path))
+                return;
+
+            var tabCollection = App.Services.GetRequiredService<ITabCollection>();
+            var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+
+            // Проверяем не открыт ли уже
+            var existingTab = tabCollection.FindByPath(path);
+            if (existingTab != null)
             {
+                Console.WriteLine($"[OpenExistingProject] Already open: {path}");
+                tabCollection.ActiveTab = existingTab;
+                ProjectSelected?.Invoke();
                 return;
             }
 
-            var project = await _projectService.LoadAsync(path);
-
-            if (project == null) return;
-
-            var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
-
-            if (project.Documents.Count > 0)
+            // Открываем через ProjectWorkflow
+            var tab = await _projectWorkflow.OpenDocumentAsync(path);
+            if (tab != null)
             {
-                var hasOpenTabs = mainViewModel.OpenTabs.Any(t => t.GetModel().FilePath == path);
-
-                if (!hasOpenTabs)
-                {
-                    // ИСПРАВЛЕНИЕ: Деактивируем ВСЕ существующие вкладки
-                    foreach (var tab in mainViewModel.OpenTabs)
-                    {
-                        tab.IsActive = false;
-                    }
-
-                    foreach (var doc in project.Documents)
-                    {
-                        doc.FilePath = path;
-                        var tabVM = new DocumentTabViewModel(doc, mainViewModel.CloseTab);
-                        mainViewModel.OpenTabs.Add(tabVM);
-                    }
-                }
-                else
-                {
-                    // ИСПРАВЛЕНИЕ: Деактивируем ВСЕ вкладки перед активацией нужной
-                    foreach (var tab in mainViewModel.OpenTabs)
-                    {
-                        tab.IsActive = false;
-                    }
-                }
-
-                var firstTab = mainViewModel.OpenTabs.First(t => t.GetModel().FilePath == path);
-                mainViewModel.ActivateTab(firstTab);
+                tabCollection.Add(tab);
+                tabCollection.ActiveTab = tab;
                 mainViewModel.ShowTextEditor();
+                _settingsService.AddRecentProject(path);
             }
-
-            // Добавляем в недавние
-            _settingsService.AddRecentProject(path);
-            _settingsService.LastOpenedProject = path;
 
             ProjectSelected?.Invoke();
         }
@@ -206,61 +158,81 @@ namespace Writersword.ViewModels
         /// <summary>Открыть недавний проект</summary>
         private async void OpenRecentProject(RecentProject recent)
         {
-            Console.WriteLine($"[OpenRecentProject] Opening: {recent.Name} at {recent.Path}");
+            await OpenRecentProjectDirect(recent);
+        }
 
-            var project = await _projectService.LoadAsync(recent.Path);
-
-            if (project == null)
+        /// <summary>Открыть недавний проект напрямую</summary>
+        public async System.Threading.Tasks.Task OpenRecentProjectDirect(RecentProject recent)
+        {
+            if (_isProcessing)
             {
-                Console.WriteLine($"[OpenRecentProject] Failed to load project");
+                Console.WriteLine($"[OpenRecentProjectDirect] Already processing");
                 return;
             }
 
-            Console.WriteLine($"[OpenRecentProject] Project loaded: {project.Title}, Documents: {project.Documents.Count}");
+            _isProcessing = true;
 
-            var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
-
-            if (project.Documents.Count > 0)
+            try
             {
-                var hasOpenTabs = mainViewModel.OpenTabs.Any(t => t.GetModel().FilePath == recent.Path);
+                Console.WriteLine($"[OpenRecentProjectDirect] Opening: {recent.Name}");
 
-                if (hasOpenTabs)
+                // Проверяем существует ли файл
+                if (!System.IO.File.Exists(recent.Path))
                 {
-                    Console.WriteLine($"[OpenRecentProject] Tabs already open, activating first");
-                    var firstTab = mainViewModel.OpenTabs.First(t => t.GetModel().FilePath == recent.Path);
-                    mainViewModel.ActivateTab(firstTab);
+                    Console.WriteLine($"[OpenRecentProjectDirect] File not found: {recent.Path}");
+
+                    await _dialogService.ShowMessageAsync(
+                        Strings.Error_ProjectNotFound_Title,
+                        $"{Strings.Error_ProjectNotFound_Message}\n\n{recent.Path}",
+                        MessageBoxType.Error,
+                        MessageBoxButtons.OK
+                    );
+
+                    _settingsService.RecentProjects.Remove(recent);
+                    RecentProjects.Remove(recent);
+                    _settingsService.Save();
+                    return;
                 }
-                else
-                {
-                    Console.WriteLine($"[OpenRecentProject] Adding {project.Documents.Count} new tabs");
-                    foreach (var doc in project.Documents)
-                    {
-                        doc.FilePath = recent.Path;
-                        var tabVM = new DocumentTabViewModel(doc, mainViewModel.CloseTab);
-                        mainViewModel.OpenTabs.Add(tabVM);
-                        Console.WriteLine($"[OpenRecentProject] Added tab: {doc.Title}");
-                    }
 
-                    if (mainViewModel.OpenTabs.Count > 0)
-                    {
-                        var firstTab = mainViewModel.OpenTabs.First(t => t.GetModel().FilePath == recent.Path);
-                        mainViewModel.ActivateTab(firstTab);
-                        Console.WriteLine($"[OpenRecentProject] Activated tab: {firstTab.Title}");
-                    }
+                var tabCollection = App.Services.GetRequiredService<ITabCollection>();
+                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+
+                // Проверяем не открыт ли уже
+                var existingTab = tabCollection.FindByPath(recent.Path);
+                if (existingTab != null)
+                {
+                    Console.WriteLine($"[OpenRecentProjectDirect] Already open");
+                    tabCollection.ActiveTab = existingTab;
+                    ProjectSelected?.Invoke();
+                    return;
+                }
+
+                // Открываем через ProjectWorkflow
+                var tab = await _projectWorkflow.OpenDocumentAsync(recent.Path);
+                if (tab != null)
+                {
+                    tabCollection.Add(tab);
+                    tabCollection.ActiveTab = tab;
+                    mainViewModel.ShowTextEditor();
+                    _settingsService.AddRecentProject(recent.Path);
+                    ProjectSelected?.Invoke();
                 }
             }
-            else
+            catch (Exception ex)
             {
-                Console.WriteLine($"[OpenRecentProject] No documents, creating new tab");
-                var fileName = System.IO.Path.GetFileNameWithoutExtension(recent.Path);
-                mainViewModel.AddNewTab(fileName, "", recent.Path);
+                Console.WriteLine($"[OpenRecentProjectDirect] ERROR: {ex.Message}");
+
+                await _dialogService.ShowMessageAsync(
+                    Strings.Error_ProjectLoadFailed_Title,
+                    $"{Strings.Error_ProjectLoadFailed_Message}\n\n{recent.Path}",
+                    MessageBoxType.Error,
+                    MessageBoxButtons.OK
+                );
             }
-
-            // Добавляем в недавние (обновляет время)
-            _settingsService.AddRecentProject(recent.Path);
-            _settingsService.LastOpenedProject = recent.Path;
-
-            ProjectSelected?.Invoke();
+            finally
+            {
+                _isProcessing = false;
+            }
         }
 
         /// <summary>Загрузить список недавних проектов</summary>
@@ -274,130 +246,6 @@ namespace Writersword.ViewModels
             }
 
             Console.WriteLine($"Loaded {RecentProjects.Count} recent projects");
-        }
-
-        /// <summary>Открыть недавний проект</summary>
-        public async void OpenRecentProjectDirect(RecentProject recent)
-        {
-            // НОВОЕ: Проверяем не обрабатывается ли уже запрос
-            if (_isProcessing)
-            {
-                Console.WriteLine($"[OpenRecentProjectDirect] Already processing, ignoring click");
-                return;
-            }
-
-            _isProcessing = true; // Блокируем повторные клики
-
-            try
-            {
-                Console.WriteLine($"[OpenRecentProjectDirect] Opening: {recent.Name} at {recent.Path}");
-
-                // Проверяем существует ли файл
-                if (!System.IO.File.Exists(recent.Path))
-                {
-                    Console.WriteLine($"[OpenRecentProjectDirect] File not found: {recent.Path}");
-
-                    var message = $"{Strings.Error_ProjectNotFound_Message}\n\n{recent.Path}";
-
-                    await _dialogService.ShowMessageAsync(
-                        Strings.Error_ProjectNotFound_Title,
-                        message,
-                        MessageBoxType.Error,
-                        MessageBoxButtons.OK
-                    );
-
-                    _settingsService.RecentProjects.Remove(recent);
-                    RecentProjects.Remove(recent);
-                    _settingsService.Save();
-
-                    return;
-                }
-
-                var project = await _projectService.LoadAsync(recent.Path);
-
-                if (project == null)
-                {
-                    Console.WriteLine($"[OpenRecentProjectDirect] Failed to load project");
-
-                    var message = $"{Strings.Error_ProjectLoadFailed_Message}\n\n{recent.Path}";
-
-                    await _dialogService.ShowMessageAsync(
-                        Strings.Error_ProjectLoadFailed_Title,
-                        message,
-                        MessageBoxType.Error,
-                        MessageBoxButtons.OK
-                    );
-
-                    return;
-                }
-
-                Console.WriteLine($"[OpenRecentProjectDirect] Project loaded: {project.Title}, Documents: {project.Documents.Count}");
-
-                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
-
-                if (project.Documents.Count > 0)
-                {
-                    var hasOpenTabs = mainViewModel.OpenTabs.Any(t => t.GetModel().FilePath == recent.Path);
-
-                    if (hasOpenTabs)
-                    {
-                        Console.WriteLine($"[OpenRecentProjectDirect] Tabs already open, activating first");
-
-                        foreach (var tab in mainViewModel.OpenTabs)
-                        {
-                            tab.IsActive = false;
-                        }
-
-                        var firstTab = mainViewModel.OpenTabs.First(t => t.GetModel().FilePath == recent.Path);
-                        mainViewModel.ActivateTab(firstTab);
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[OpenRecentProjectDirect] Adding {project.Documents.Count} new tabs");
-
-                        DocumentTabViewModel? firstNewTab = null;
-
-                        foreach (var doc in project.Documents)
-                        {
-                            doc.FilePath = recent.Path;
-                            var tabVM = new DocumentTabViewModel(doc, mainViewModel.CloseTab);
-                            mainViewModel.OpenTabs.Add(tabVM);
-                            Console.WriteLine($"[OpenRecentProjectDirect] Added tab: {doc.Title}");
-
-                            if (firstNewTab == null)
-                            {
-                                firstNewTab = tabVM;
-                            }
-                        }
-
-                        if (firstNewTab != null)
-                        {
-                            foreach (var tab in mainViewModel.OpenTabs)
-                            {
-                                tab.IsActive = false;
-                            }
-
-                            mainViewModel.ActivateTab(firstNewTab);
-                            Console.WriteLine($"[OpenRecentProjectDirect] Activated tab: {firstNewTab.Title}");
-                        }
-                    }
-                }
-                else
-                {
-                    Console.WriteLine($"[OpenRecentProjectDirect] No documents, creating new tab");
-                    var fileName = System.IO.Path.GetFileNameWithoutExtension(recent.Path);
-                    mainViewModel.AddNewTab(fileName, "", recent.Path);
-                }
-
-                _settingsService.AddRecentProject(recent.Path);
-                _settingsService.LastOpenedProject = recent.Path;
-
-                ProjectSelected?.Invoke();
-            }
-            finally
-            {
-                _isProcessing = false;
-            }
         }
     }
 }

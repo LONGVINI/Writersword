@@ -66,7 +66,7 @@ namespace Writersword.Views
                 {
                     var settingsService = App.Services.GetRequiredService<ISettingsService>();
                     var openPaths = vm.OpenTabs
-                        .Select(t => t.GetModel().FilePath)
+                        .Select(t => t.FilePath)
                         .Where(p => !string.IsNullOrEmpty(p))
                         .Distinct()
                         .ToList();

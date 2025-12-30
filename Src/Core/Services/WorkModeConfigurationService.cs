@@ -26,7 +26,7 @@ namespace Writersword.Core.Services.WorkModes
             _moduleRegistry = moduleRegistry;
         }
 
-        public List<WorkMode> LoadConfiguration(ProjectType projectType, List<WorkMode>? projectWorkModes)
+        public List<WorkMode> LoadConfiguration(string projectType, List<WorkMode>? projectWorkModes)
         {
             if (projectWorkModes != null && projectWorkModes.Count > 0)
             {
@@ -45,7 +45,7 @@ namespace Writersword.Core.Services.WorkModes
             return LoadDefaultConfiguration(projectType);
         }
 
-        public List<WorkMode> LoadDefaultConfiguration(ProjectType projectType)
+        public List<WorkMode> LoadDefaultConfiguration(string projectType)
         {
             var workModes = new List<WorkMode>();
             var allWorkModes = _workModeRegistry.GetAll();
@@ -93,7 +93,7 @@ namespace Writersword.Core.Services.WorkModes
             return workModes.OrderBy(wm => wm.Order).ToList();
         }
 
-        public void SaveGlobalConfiguration(ProjectType projectType, List<WorkMode> workModes)
+        public void SaveGlobalConfiguration(string projectType, List<WorkMode> workModes)
         {
             var config = new WorkspaceConfig
             {
@@ -106,7 +106,7 @@ namespace Writersword.Core.Services.WorkModes
             System.Console.WriteLine($"[WorkModeConfig] Saved GLOBAL config for {projectType}");
         }
 
-        public void DeleteGlobalConfiguration(ProjectType projectType)
+        public void DeleteGlobalConfiguration(string projectType)
         {
             _settingsService.DeleteWorkspaceConfig(projectType);
             System.Console.WriteLine($"[WorkModeConfig] Deleted GLOBAL config for {projectType}");

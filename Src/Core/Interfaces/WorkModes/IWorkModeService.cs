@@ -11,7 +11,7 @@ namespace Writersword.Src.Core.Interfaces.WorkModes
     public interface IWorkModeService
     {
         /// <summary>Инициализировать WorkModes для проекта</summary>
-        List<WorkMode> InitializeWorkModes(ProjectType projectType, List<WorkMode>? existingWorkModes);
+        List<WorkMode> InitializeWorkModes(string projectType, List<WorkMode>? savedWorkModes = null);
 
         /// <summary>Добавить новый режим работы</summary>
         WorkMode AddWorkMode(string workModeId, string title, string icon);

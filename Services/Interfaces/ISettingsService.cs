@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Writersword.Core.Enums;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Settings;
 
@@ -35,25 +34,26 @@ namespace Writersword.Services.Interfaces
         /// <summary>Последний использованный путь (для диалога Save/Open)</summary>
         string? LastUsedPath { get; set; }
 
-        /// <summary> Получает или задает список недавно использованных проектов </summary>
+        /// <summary>Получает или задает список недавно использованных проектов</summary>
         List<RecentProject> RecentProjects { get; }
 
-        /// <summary> Добавляет проект в список недавно использованных </summary>
+        /// <summary>Добавляет проект в список недавно использованных</summary>
         void AddRecentProject(string filePath);
 
         List<string> OpenProjectPaths { get; set; }
+
         void SaveOpenProjects(List<string> projectPaths);
 
         /// <summary>Получить глобальную конфигурацию рабочего пространства для типа проекта</summary>
-        WorkspaceConfig? GetWorkspaceConfig(ProjectType projectType);
+        WorkspaceConfig? GetWorkspaceConfig(string projectType);
 
         /// <summary>Сохранить глобальную конфигурацию рабочего пространства</summary>
-        void SaveWorkspaceConfig(ProjectType projectType, WorkspaceConfig config);
+        void SaveWorkspaceConfig(string projectType, WorkspaceConfig config);
 
         /// <summary>Удалить глобальную конфигурацию рабочего пространства</summary>
-        void DeleteWorkspaceConfig(ProjectType projectType);
+        void DeleteWorkspaceConfig(string projectType);
 
         /// <summary>Получить все сохранённые конфигурации</summary>
-        Dictionary<ProjectType, WorkspaceConfig> GetAllWorkspaceConfigs();
+        Dictionary<string, WorkspaceConfig> GetAllWorkspaceConfigs();
     }
 }

@@ -8,7 +8,7 @@ namespace Writersword.Services.Interfaces
     public interface IAutoSaveService
     {
         /// <summary>Запустить автосохранение для проекта</summary>
-        void Start(string projectPath);
+        void Start(string projectPath, Func<string> getContent);
 
         /// <summary>Остановить автосохранение</summary>
         void Stop();

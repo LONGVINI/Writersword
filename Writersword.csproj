@@ -103,6 +103,31 @@
 		  <LastGenOutput>TimerStrings.Designer.cs</LastGenOutput>
 		</EmbeddedResource>
 		<EmbeddedResource Include="Src\Modules\Timer\Resources\TimerStrings.ru.resx" />
+		<EmbeddedResource Include="Src\ProjectTypes\GameDesign\Resources\Strings.resx">
+		  <LastGenOutput>Strings.Designer.cs</LastGenOutput>
+		  <Generator>ResXFileCodeGenerator</Generator>
+		</EmbeddedResource>
+		<EmbeddedResource Include="Src\ProjectTypes\GameDesign\Resources\Strings.ru.resx" />
+		<EmbeddedResource Include="Src\ProjectTypes\Translation\Resources\Strings.resx">
+		  <LastGenOutput>Strings.Designer.cs</LastGenOutput>
+		  <Generator>ResXFileCodeGenerator</Generator>
+		</EmbeddedResource>
+		<EmbeddedResource Include="Src\ProjectTypes\Translation\Resources\Strings.ru.resx" />
+		<EmbeddedResource Include="Src\ProjectTypes\Poetry\Resources\Strings.resx">
+		  <LastGenOutput>Strings.Designer.cs</LastGenOutput>
+		  <Generator>ResXFileCodeGenerator</Generator>
+		</EmbeddedResource>
+		<EmbeddedResource Include="Src\ProjectTypes\Poetry\Resources\Strings.ru.resx" />
+		<EmbeddedResource Include="Src\ProjectTypes\Screenplay\Resources\Strings.resx">
+		  <LastGenOutput>Strings.Designer.cs</LastGenOutput>
+		  <Generator>ResXFileCodeGenerator</Generator>
+		</EmbeddedResource>
+		<EmbeddedResource Include="Src\ProjectTypes\Screenplay\Resources\Strings.ru.resx" />
+		<EmbeddedResource Include="Src\ProjectTypes\Novel\Resources\Strings.resx">
+		  <Generator>ResXFileCodeGenerator</Generator>
+		  <LastGenOutput>Strings.Designer.cs</LastGenOutput>
+		</EmbeddedResource>
+		<EmbeddedResource Include="Src\ProjectTypes\Novel\Resources\Strings.ru.resx" />
 		
 		<!-- Авто-генерируемый код для локализации -->
 		<Compile Update="Resources\Localization\Strings.Designer.cs">
@@ -162,9 +187,35 @@
 		  <AutoGen>True</AutoGen>
 		  <DependentUpon>TimerStrings.resx</DependentUpon>
 		</Compile>
+		<Compile Update="Src\ProjectTypes\GameDesign\Resources\Strings.Designer.cs">
+		  <DesignTime>True</DesignTime>
+		  <AutoGen>True</AutoGen>
+		  <DependentUpon>Strings.resx</DependentUpon>
+		</Compile>
+		<Compile Update="Src\ProjectTypes\Poetry\Resources\Strings.Designer.cs">
+		  <DesignTime>True</DesignTime>
+		  <AutoGen>True</AutoGen>
+		  <DependentUpon>Strings.resx</DependentUpon>
+		</Compile>
+		<Compile Update="Src\ProjectTypes\Screenplay\Resources\Strings.Designer.cs">
+		  <DesignTime>True</DesignTime>
+		  <AutoGen>True</AutoGen>
+		  <DependentUpon>Strings.resx</DependentUpon>
+		</Compile>
+		<Compile Update="Src\ProjectTypes\Novel\Resources\Strings.Designer.cs">
+		  <DesignTime>True</DesignTime>
+		  <AutoGen>True</AutoGen>
+		  <DependentUpon>Strings.resx</DependentUpon>
+		</Compile>
+		<Compile Update="Src\ProjectTypes\Translation\Resources\Strings.Designer.cs">
+		  <DesignTime>True</DesignTime>
+		  <AutoGen>True</AutoGen>
+		  <DependentUpon>Strings.resx</DependentUpon>
+		</Compile>
 		<Compile Update="Views\MessageBoxView.axaml.cs">
 			<DependentUpon>MessageBoxView.axaml</DependentUpon>
 		</Compile>
 	</ItemGroup>
+	<ProjectExtensions><VisualStudio><UserProperties /></VisualStudio></ProjectExtensions>
 
 </Project>

@@ -15,6 +15,7 @@ using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.WorkModes.Common;
 using Writersword.ViewModels;
 using Writersword.Views;
+using Writersword.Src.ProjectTypes.Common;
 
 namespace Writersword
 {
@@ -74,23 +75,51 @@ namespace Writersword
             // Сервис управления WorkModes (переключение режимов)
             services.AddSingleton<IWorkModeService, WorkModeService>();
 
-            // Сервис кеширования данных
+            // Сервис кеширования данных (.wsasd файлы)
             services.AddSingleton<ICacheService, CacheService>();
 
             // Сервис автосохранения проектов
             services.AddSingleton<IAutoSaveService, AutoSaveService>();
 
             // --- МОДУЛЬНАЯ СИСТЕМА ---
+            // Фабрика для создания экземпляров модулей
             services.AddSingleton<ModuleFactory>();
+
+            // Реестр всех зарегистрированных модулей
             services.AddSingleton<ModuleRegistry>();
 
             // --- WORKMODE СИСТЕМА ---
+            // Фабрика для создания экземпляров WorkMode
             services.AddSingleton<WorkModeFactory>();
+
+            // Реестр всех зарегистрированных WorkMode
             services.AddSingleton<WorkModeRegistry>();
 
+            // --- СИСТЕМА ТИПОВ ПРОЕКТОВ ---
+            // Реестр всех типов проектов (Novel, Screenplay, etc)
+            services.AddSingleton<ProjectTypeRegistry>(sp =>
+            {
+                var workModeRegistry = sp.GetRequiredService<WorkModeRegistry>();
+                return new ProjectTypeRegistry(workModeRegistry);
+            });
+
+            // --- VIEWMODELS ---
+            // ViewModel главного окна
             services.AddSingleton<MainWindowViewModel>();
-            services.AddSingleton<Src.Infrastructure.Dock.DockFactory>();
+
+            // ViewModel экрана приветствия (создаётся каждый раз новый)
             services.AddTransient<WelcomeViewModel>();
+
+            // --- DOCK СИСТЕМА ---
+            // Фабрика для создания dock layout'ов
+            services.AddSingleton<Src.Infrastructure.Dock.DockFactory>();
+
+            // --- УПРАВЛЕНИЕ ВКЛАДКАМИ ---
+            // Сервис управления коллекцией вкладок
+            services.AddSingleton<ITabCollection, TabCollection>();
+
+            // Сервис управления жизненным циклом проектов
+            services.AddSingleton<IProjectWorkflow, ProjectWorkflow>();
 
             // ========================================
             // СОЗДАНИЕ КОНТЕЙНЕРА
@@ -119,7 +148,7 @@ namespace Writersword
                 {
                     // Регистрируем фабричный метод создания модуля
                     moduleFactory.Register(instance.ModuleType, () =>
-                        Activator.CreateInstance(moduleType) as BaseModule 
+                        Activator.CreateInstance(moduleType) as BaseModule
                         ?? throw new InvalidOperationException($"Failed to create module {moduleType.Name}"));
 
                     Console.WriteLine($"[App] ✓ Auto-registered module: {instance.Metadata.DisplayName} ({instance.Metadata.Icon})");
@@ -154,6 +183,14 @@ namespace Writersword
             }
 
             Console.WriteLine($"[App] All WorkModes registered successfully! Total: {workModeTypes.Count()}");
+
+            // ========================================
+            // АВТОМАТИЧЕСКАЯ РЕГИСТРАЦИЯ ТИПОВ ПРОЕКТОВ
+            // Все классы наследующие BaseProjectType регистрируются автоматически
+            // ========================================
+            var projectTypeRegistry = Services.GetRequiredService<ProjectTypeRegistry>();
+            projectTypeRegistry.LoadAll();
+            Console.WriteLine($"[App] All ProjectTypes registered successfully! Total: {projectTypeRegistry.GetAll().Count}");
 
             // ========================================
             // СОЗДАНИЕ ГЛАВНОГО ОКНА
@@ -199,46 +236,25 @@ namespace Writersword
                     // --- ЕСТЬ ОТКРЫТЫЕ ПРОЕКТЫ? ---
                     if (openProjects.Count > 0)
                     {
-                        var projectService = Services.GetRequiredService<IProjectService>();
+                        var projectWorkflow = Services.GetRequiredService<IProjectWorkflow>();
+                        var tabCollection = Services.GetRequiredService<ITabCollection>();
+
                         Console.WriteLine($"[App] Restoring {openProjects.Count} projects...");
 
-                        // Загружаем каждый проект
+                        // Загружаем каждый проект через ProjectWorkflow
                         foreach (var projectPath in openProjects)
                         {
-                            // Проверяем существует ли файл
                             if (File.Exists(projectPath))
                             {
                                 Console.WriteLine($"[App] Loading project: {projectPath}");
 
-                                // Загружаем проект
-                                var project = await projectService.LoadAsync(projectPath);
+                                // Открываем через ProjectWorkflow (запускает автосохранение!)
+                                var tab = await projectWorkflow.OpenDocumentAsync(projectPath);
 
-                                // Если загрузился успешно - создаём вкладки
-                                if (project != null && project.Documents.Count > 0)
+                                if (tab != null)
                                 {
-                                    // Для каждого документа в проекте создаём вкладку
-                                    foreach (var doc in project.Documents)
-                                    {
-                                        doc.FilePath = projectPath;
-                                        var tabVM = new DocumentTabViewModel(doc, mainViewModel.CloseTab);
-                                        mainViewModel.OpenTabs.Add(tabVM);
-                                        Console.WriteLine($"[App] Added tab: {doc.Title}");
-
-                                        // Устанавливаем активную вкладку
-                                        if (doc.IsActive)
-                                        {
-                                            mainViewModel.ActiveTab = tabVM;
-                                        }
-                                    }
-
-                                    if (mainViewModel.OpenTabs.Count > 0)
-                                    {
-                                        Console.WriteLine($"[App] All projects loaded. Total tabs: {mainViewModel.OpenTabs.Count}");
-                                        mainViewModel.ActivateTab(mainViewModel.OpenTabs[0]);
-
-                                        // КРИТИЧНО: Показываем редактор!
-                                        mainViewModel.ShowTextEditor();
-                                    }
+                                    tabCollection.Add(tab);
+                                    Console.WriteLine($"[App] Added tab: {tab.Title}");
                                 }
                             }
                             else
@@ -248,10 +264,10 @@ namespace Writersword
                         }
 
                         // Активируем первую вкладку
-                        if (mainViewModel.OpenTabs.Count > 0)
+                        if (tabCollection.Tabs.Count > 0)
                         {
-                            Console.WriteLine($"[App] All projects loaded. Total tabs: {mainViewModel.OpenTabs.Count}");
-                            mainViewModel.ActivateTab(mainViewModel.OpenTabs[0]);
+                            Console.WriteLine($"[App] All projects loaded. Total tabs: {tabCollection.Tabs.Count}");
+                            tabCollection.ActiveTab = tabCollection.Tabs[0];
                         }
                         else
                         {

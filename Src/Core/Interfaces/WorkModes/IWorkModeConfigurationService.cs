@@ -16,16 +16,16 @@ namespace Writersword.Src.Core.Interfaces.WorkModes
         /// Если нет → берём глобальную конфигурацию
         /// Если нет → берём дефолтную
         /// </summary>
-        List<WorkMode> LoadConfiguration(ProjectType projectType, List<WorkMode>? projectWorkModes);
+        List<WorkMode> LoadConfiguration(string projectType, List<WorkMode>? projectWorkModes);
 
         /// <summary>Сохранить конфигурацию глобально (для всех проектов данного типа)</summary>
-        void SaveGlobalConfiguration(ProjectType projectType, List<WorkMode> workModes);
+        void SaveGlobalConfiguration(string projectType, List<WorkMode> workModes);
 
         /// <summary>Удалить глобальную конфигурацию (вернуться к дефолтной)</summary>
-        void DeleteGlobalConfiguration(ProjectType projectType);
+        void DeleteGlobalConfiguration(string projectType);
 
         /// <summary>Загрузить дефолтную конфигурацию (без сохранения)</summary>
-        List<WorkMode> LoadDefaultConfiguration(ProjectType projectType);
+        List<WorkMode> LoadDefaultConfiguration(string projectType);
 
         /// <summary>Проверить можно ли удалить модуль из режима</summary>
         bool CanRemoveModule(string workModeId, ModuleType moduleType);

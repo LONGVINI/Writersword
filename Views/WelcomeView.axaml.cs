@@ -53,14 +53,14 @@ namespace Writersword.Views
         }
 
         /// <summary>Обработчик клика по недавнему проекту</summary>
-        private void RecentProject_Click(object? sender, PointerPressedEventArgs e)
+        private async void RecentProject_Click(object? sender, PointerPressedEventArgs e)
         {
             if (sender is Border border && border.DataContext is RecentProject recentProject)
             {
                 if (DataContext is WelcomeViewModel viewModel)
                 {
                     Console.WriteLine($"[RecentProject_Click] Clicked on: {recentProject.Name}");
-                    viewModel.OpenRecentProjectDirect(recentProject);
+                    await viewModel.OpenRecentProjectDirect(recentProject);  
                 }
             }
         }

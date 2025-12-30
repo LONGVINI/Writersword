@@ -1,40 +1,64 @@
 ﻿using ReactiveUI;
 using System;
 using System.Reactive;
+using System.Threading.Tasks;
 using Writersword.Core.Models.Project;
 
 namespace Writersword.ViewModels
 {
     /// <summary>
     /// ViewModel для одной вкладки документа
+    /// Теперь работает напрямую с ProjectFile
     /// </summary>
     public class DocumentTabViewModel : ViewModelBase
     {
-        private readonly DocumentTab _model;
-        private readonly Action<DocumentTabViewModel>? _onClose;
+        private readonly ProjectFile _project;
+        private readonly Func<DocumentTabViewModel, Task>? _onClose;
         private bool _isActive;
+        private string _filePath = "";
 
-        /// <summary>ID документа</summary>
-        public string Id => _model.Id;
+        /// <summary>ID вкладки (для UI)</summary>
+        public string Id { get; }
 
         /// <summary>Заголовок вкладки</summary>
         public string Title
         {
-            get => _model.Title;
+            get => _project.Title;
             set
             {
-                _model.Title = value;
+                _project.Title = value;
                 this.RaisePropertyChanged();
             }
         }
 
-        /// <summary>Содержимое документа (текст)</summary>
+        /// <summary>Содержимое документа (текст из TextEditor модуля)</summary>
         public string Content
         {
-            get => _model.Content;
+            get
+            {
+                // Читаем из ModulesData
+                if (_project.ModulesData.TryGetValue("TextEditor", out var data))
+                {
+                    if (data is string text)
+                        return text;
+                }
+                return "";
+            }
             set
             {
-                _model.Content = value;
+                // Сохраняем в ModulesData
+                _project.ModulesData["TextEditor"] = value;
+                this.RaisePropertyChanged();
+            }
+        }
+
+        /// <summary>Путь к файлу проекта</summary>
+        public string FilePath
+        {
+            get => _filePath;
+            set
+            {
+                _filePath = value;
                 this.RaisePropertyChanged();
             }
         }
@@ -46,7 +70,6 @@ namespace Writersword.ViewModels
             set
             {
                 _isActive = value;
-                _model.IsActive = value;
                 this.RaisePropertyChanged();
             }
         }
@@ -54,17 +77,30 @@ namespace Writersword.ViewModels
         /// <summary>Команда закрытия вкладки</summary>
         public ReactiveCommand<Unit, Unit> CloseCommand { get; }
 
-        public DocumentTabViewModel(DocumentTab model, Action<DocumentTabViewModel>? onClose = null)
+        public DocumentTabViewModel(ProjectFile project, string filePath = "", Func<DocumentTabViewModel, Task>? onClose = null)
         {
-            _model = model;
+            _project = project;
+            _filePath = filePath;
             _onClose = onClose;
-            _isActive = model.IsActive;
+            Id = Guid.NewGuid().ToString();
 
-            // Команда закрытия
-            CloseCommand = ReactiveCommand.Create(() => _onClose?.Invoke(this));
+            CloseCommand = ReactiveCommand.CreateFromTask(async () =>
+            {
+                Console.WriteLine("[DocumentTabViewModel] CloseCommand EXECUTED!");
+                if (_onClose != null)
+                {
+                    Console.WriteLine("[DocumentTabViewModel] Calling _onClose!");
+                    await _onClose(this);  // ← БЕЗ КАСТА!
+                    Console.WriteLine("[DocumentTabViewModel] _onClose completed!");
+                }
+                else
+                {
+                    Console.WriteLine("[DocumentTabViewModel] ERROR: _onClose is NULL!");
+                }
+            });
         }
 
-        /// <summary>Получить модель для сохранения</summary>
-        public DocumentTab GetModel() => _model;
+        /// <summary>Получить проект</summary>
+        public ProjectFile GetProject() => _project;
     }
 }

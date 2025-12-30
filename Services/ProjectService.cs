@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Writersword.Core.Enums;
 using Writersword.Core.Models.Project;
 using Writersword.Modules.Common;
 
@@ -49,7 +48,7 @@ namespace Writersword.Services
         }
 
         /// <summary>Создать новый проект</summary>
-        public ProjectFile CreateNew(string title, ProjectType type)
+        public ProjectFile CreateNew(string title, string type)
         {
             var project = new ProjectFile
             {
@@ -94,7 +93,7 @@ namespace Writersword.Services
 
                 if (project != null)
                 {
-                    Console.WriteLine($"Project deserialized: {project.Title}, Documents: {project.Documents.Count}");
+                    Console.WriteLine($"Project deserialized: {project.Title}");
 
                     // Добавляем в список открытых проектов
                     _openProjects.Add(project);

@@ -22,9 +22,9 @@ namespace Writersword.Core.Services.WorkModes
         }
 
         /// <summary>Инициализировать WorkModes для проекта</summary>
-        public List<WorkMode> InitializeWorkModes(ProjectType projectType, List<WorkMode>? existingWorkModes)
+        public List<WorkMode> InitializeWorkModes(string projectType, List<WorkMode>? savedWorkModes = null)
         {
-            _workModes = _configService.LoadConfiguration(projectType, existingWorkModes);
+            _workModes = _configService.LoadConfiguration(projectType, savedWorkModes);
 
             // Активируем первый режим по умолчанию
             if (_workModes.Count > 0 && !_workModes.Any(wm => wm.IsActive))

@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Writersword.Core.Enums;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Settings;
 using Writersword.Services.Interfaces;
@@ -204,16 +203,16 @@ namespace Writersword.Services
         }
 
         /// <summary>Получить глобальную конфигурацию</summary>
-        public WorkspaceConfig? GetWorkspaceConfig(ProjectType projectType)
+        public WorkspaceConfig? GetWorkspaceConfig(string projectType)
         {
-            var key = projectType.ToString();
+            var key = projectType;
             return _settings.WorkspaceConfigs.TryGetValue(key, out var config) ? config : null;
         }
 
         /// <summary>Сохранить глобальную конфигурацию</summary>
-        public void SaveWorkspaceConfig(ProjectType projectType, WorkspaceConfig config)
+        public void SaveWorkspaceConfig(string projectType, WorkspaceConfig config)
         {
-            var key = projectType.ToString();
+            var key = projectType;
             config.LastModified = DateTime.Now;
             _settings.WorkspaceConfigs[key] = config;
             Save();
@@ -221,9 +220,9 @@ namespace Writersword.Services
         }
 
         /// <summary>Удалить глобальную конфигурацию</summary>
-        public void DeleteWorkspaceConfig(ProjectType projectType)
+        public void DeleteWorkspaceConfig(string projectType)
         {
-            var key = projectType.ToString();
+            var key = projectType;
             if (_settings.WorkspaceConfigs.Remove(key))
             {
                 Save();
@@ -232,17 +231,9 @@ namespace Writersword.Services
         }
 
         /// <summary>Получить все конфигурации</summary>
-        public Dictionary<ProjectType, WorkspaceConfig> GetAllWorkspaceConfigs()
+        public Dictionary<string, WorkspaceConfig> GetAllWorkspaceConfigs()
         {
-            var result = new Dictionary<ProjectType, WorkspaceConfig>();
-            foreach (var kvp in _settings.WorkspaceConfigs)
-            {
-                if (Enum.TryParse<ProjectType>(kvp.Key, out var projectType))
-                {
-                    result[projectType] = kvp.Value;
-                }
-            }
-            return result;
+            return _settings.WorkspaceConfigs;
         }
 
         /// <summary>Класс для JSON сериализации настроек</summary>

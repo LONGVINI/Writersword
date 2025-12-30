@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
 
 namespace Writersword.Core.Models.Settings
@@ -13,7 +12,7 @@ namespace Writersword.Core.Models.Settings
     public class WorkspaceConfig
     {
         /// <summary>Тип проекта для которого эта конфигурация</summary>
-        public ProjectType ProjectType { get; set; }
+        public string ProjectType { get; set; } = "";
 
         /// <summary>Название конфигурации (может быть изменено пользователем)</summary>
         public string Name { get; set; } = "My Configuration";
