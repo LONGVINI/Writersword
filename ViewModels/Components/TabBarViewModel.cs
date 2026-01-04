@@ -5,6 +5,9 @@ using System.Reactive;
 using System.Threading.Tasks;
 using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.ViewModels;
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Writersword.ViewModels.Components
 {
@@ -26,6 +29,9 @@ namespace Writersword.ViewModels.Components
             get => _tabCollection.ActiveTab;
             set => _tabCollection.ActiveTab = value;
         }
+
+        /// <summary>Есть ли RecoveryBanner у активной вкладки</summary>
+        public bool HasRecoveryBanner => ActiveTab?.HasRecoveryBanner ?? false;
 
         /// <summary>Команда создания новой вкладки (показывает Welcome screen)</summary>
         public ReactiveCommand<Unit, Unit> CreateNewTabCommand { get; }
@@ -57,6 +63,12 @@ namespace Writersword.ViewModels.Components
 
             // Подписываемся на изменения активной вкладки
             _tabCollection.ActiveTabChanged += OnActiveTabChanged;
+
+            // НОВОЕ: Обновляем HasRecoveryBanner при изменении вкладки
+            _tabCollection.ActiveTabChanged += _ =>
+            {
+                this.RaisePropertyChanged(nameof(HasRecoveryBanner));
+            };
 
             Console.WriteLine("[TabBarViewModel] Initialized");
         }
@@ -93,23 +105,39 @@ namespace Writersword.ViewModels.Components
             ActiveTab = tab;
         }
 
-        /// <summary>Закрыть вкладку</summary>
         private async Task CloseTabAsync(DocumentTabViewModel tab)
         {
             Console.WriteLine($"[TabBarViewModel] Closing tab: {tab.Title}");
 
-            // Закрываем через ProjectWorkflow (проверит несохранённые изменения)
             bool closed = await _projectWorkflow.CloseDocumentAsync(tab);
 
             if (!closed)
             {
                 Console.WriteLine($"[TabBarViewModel] Close cancelled by user");
-                return; // Пользователь отменил - НЕ УДАЛЯЕМ вкladку!
+                return;
             }
 
-            // Удаляем вкладку из коллекции
+            // КРИТИЧЕСКИ ВАЖНО: Очищаем RecoveryBanner ПЕРЕД удалением вкладки!
+            tab.RecoveryBanner = null;
+            Console.WriteLine($"[TabBarViewModel] RecoveryBanner cleared before removal");
+
             _tabCollection.Remove(tab);
             Console.WriteLine($"[TabBarViewModel] Tab removed from collection");
+
+            if (_tabCollection.Tabs.Count == 0)
+            {
+                Console.WriteLine("[TabBarViewModel] No tabs left - clearing UI and showing Welcome");
+
+                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+                mainViewModel.ClearUIWhenNoTabs();
+
+                if (Avalonia.Application.Current?.ApplicationLifetime
+                    is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                    && desktop.MainWindow != null)
+                {
+                    await App.ShowWelcomeScreen(desktop.MainWindow);
+                }
+            }
         }
 
         /// <summary>

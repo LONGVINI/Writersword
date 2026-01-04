@@ -348,14 +348,27 @@ namespace Writersword.ViewModels
             // Удаляем layout вкладки
             string tabKey = tab.FilePath ?? tab.Id;
             _tabLayouts.Remove(tabKey);
+        }
 
-            // Если закрыли последнюю вкладку - показываем Welcome
-            if (_tabCollection.Tabs.Count == 0)
-            {
-                ActiveWorkMode = null;
-                DockLayout = null;
-                ShowWelcomeIfNoTabs();
-            }
+        /// <summary>
+        /// Очистить UI когда не осталось вкладок
+        /// Вызывается из TabBarViewModel после удаления последней вкладки
+        /// </summary>
+        public void ClearUIWhenNoTabs()
+        {
+            Console.WriteLine("[MainWindowViewModel] ClearUIWhenNoTabs called");
+
+            // ПОЛНАЯ ОЧИСТКА UI!
+            ActiveWorkMode = null;
+            DockLayout = null;
+
+            // Очищаем WorkModeBar
+            WorkModeBar.LoadWorkModes(new System.Collections.Generic.List<Core.Models.WorkModes.WorkMode>());
+
+            // Очищаем ModulePanel
+            ModulePanel.Clear();
+
+            Console.WriteLine("[MainWindowViewModel] UI completely cleared - EMPTY!");
         }
 
         // ========================================

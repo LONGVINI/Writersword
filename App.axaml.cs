@@ -151,7 +151,11 @@ namespace Writersword
 
             // --- УПРАВЛЕНИЕ ВКЛАДКАМИ ---
             // Сервис управления коллекцией вкладок
-            services.AddSingleton<ITabCollection, TabCollection>();
+            services.AddSingleton<ITabCollection>(sp =>
+            {
+                var settingsService = sp.GetRequiredService<ISettingsService>();
+                return new TabCollection(settingsService);
+            });
 
             // Сервис управления жизненным циклом проектов
             services.AddSingleton<IProjectWorkflow, ProjectWorkflow>();

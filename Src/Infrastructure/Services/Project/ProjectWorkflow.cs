@@ -155,16 +155,21 @@ namespace Writersword.Src.Infrastructure.Services.Project
                             onDiscard: async () => await DiscardCacheAsync(tabVM, filePath)
                         )
                         {
-                            IsViewingCache = true, // Начинаем с просмотра кеша
+                            IsViewingCache = true,
                             CacheDate = cacheDate.Value,
                             SaveDate = saveDate
                         };
 
-                        // Устанавливаем режим сравнения в контексте
                         tabVM.Context.IsInCompareMode = true;
-
                         Console.WriteLine("[ProjectWorkflow] RecoveryBanner created (Compare mode)");
                     }
+                }
+                else
+                {
+                    // Если НЕ Compare - убеждаемся что баннера нет
+                    tabVM.RecoveryBanner = null;
+                    tabVM.Context.IsInCompareMode = false;
+                    Console.WriteLine("[ProjectWorkflow] No RecoveryBanner (not in Compare mode)");
                 }
 
                 // 6. Запускаем автосохранение
@@ -389,8 +394,11 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                 if (success)
                 {
+                    // Убираем RecoveryBanner перед закрытием
+                    tab.RecoveryBanner = null;
+                    Console.WriteLine("[ProjectWorkflow] RecoveryBanner cleared");
+
                     // Перезапускаем автосохранение для нового пути
-                    tab.StopAutoSave();
                     tab.StartAutoSave();
 
                     // Добавляем в недавние
@@ -446,6 +454,10 @@ namespace Writersword.Src.Infrastructure.Services.Project
                             return false;
                     }
                 }
+
+                // НОВОЕ: Убираем RecoveryBanner перед закрытием
+                tab.RecoveryBanner = null;
+                Console.WriteLine("[ProjectWorkflow] RecoveryBanner cleared");
 
                 // Останавливаем автосохранение
                 tab.StopAutoSave();

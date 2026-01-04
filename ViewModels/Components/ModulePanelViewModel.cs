@@ -97,6 +97,16 @@ namespace Writersword.ViewModels.Components
             Console.WriteLine($"[ModulePanelViewModel] Loaded {AvailableModules.Count} modules for WorkMode: {workMode.Title}");
         }
 
+        /// <summary>
+        /// Очистить панель модулей (когда нет активного WorkMode)
+        /// </summary>
+        public void Clear()
+        {
+            _currentWorkMode = null;
+            AvailableModules = new List<ModuleItemViewModel>();
+            Console.WriteLine("[ModulePanelViewModel] Cleared all modules");
+        }
+
         /// <summary>Переключить видимость модуля</summary>
         private void ToggleModule(ModuleItemViewModel module)
         {
