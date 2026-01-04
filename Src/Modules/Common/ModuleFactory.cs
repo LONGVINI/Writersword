@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 
 namespace Writersword.Modules.Common
@@ -10,37 +9,37 @@ namespace Writersword.Modules.Common
     /// </summary>
     public class ModuleFactory
     {
-        private readonly Dictionary<ModuleType, Func<IModule>> _moduleCreators = new();
+        private readonly Dictionary<string, Func<IModule>> _moduleCreators = new();
 
         /// <summary>Зарегистрировать создатель модуля</summary>
-        public void Register(ModuleType type, Func<IModule> creator)
+        public void Register(string moduleId, Func<IModule> creator)
         {
-            _moduleCreators[type] = creator;
-            Console.WriteLine($"[ModuleFactory] Registered: {type}");
+            _moduleCreators[moduleId] = creator;
+            Console.WriteLine($"[ModuleFactory] Registered: {moduleId}");
         }
 
         /// <summary>Создать экземпляр модуля</summary>
-        public IModule? Create(ModuleType type)
+        public IModule? Create(string moduleId)
         {
-            if (_moduleCreators.TryGetValue(type, out var creator))
+            if (_moduleCreators.TryGetValue(moduleId, out var creator))
             {
                 var module = creator();
-                Console.WriteLine($"[ModuleFactory] Created: {type} (ID: {module.InstanceId})");
+                Console.WriteLine($"[ModuleFactory] Created: {moduleId} (ID: {module.InstanceId})");
                 return module;
             }
 
-            Console.WriteLine($"[ModuleFactory] ERROR: Module not registered: {type}");
+            Console.WriteLine($"[ModuleFactory] ERROR: Module not registered: {moduleId}");
             return null;
         }
 
         /// <summary>Проверить зарегистрирован ли модуль</summary>
-        public bool IsRegistered(ModuleType type)
+        public bool IsRegistered(string moduleId)
         {
-            return _moduleCreators.ContainsKey(type);
+            return _moduleCreators.ContainsKey(moduleId);
         }
 
         /// <summary>Получить все зарегистрированные типы</summary>
-        public IEnumerable<ModuleType> GetRegisteredTypes()
+        public IEnumerable<string> GetRegisteredTypes()
         {
             return _moduleCreators.Keys;
         }

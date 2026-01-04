@@ -297,16 +297,13 @@
     <value>No</value>
     <comment>Button No</comment>
   </data>
-  <data name="Error_ProjectNotFound_Title" xml:space="preserve">
+  <data name="MessageBox_Error_ProjectNotFound_Title" xml:space="preserve">
     <value>Project Not Found</value>
   </data>
-  <data name="Error_ProjectNotFound_Message" xml:space="preserve">
-    <value>The project file may have been moved or deleted</value>
-  </data>
-  <data name="Error_ProjectLoadFailed_Title" xml:space="preserve">
+  <data name="MessageBox_Error_ProjectLoadFailed_Title" xml:space="preserve">
     <value>Failed to Load Project</value>
   </data>
-  <data name="Error_ProjectLoadFailed_Message" xml:space="preserve">
+  <data name="MessageBox_Error_ProjectLoadFailed_Message" xml:space="preserve">
     <value>Could not load the project file. The file may be corrupted</value>
   </data>
   <data name="HotKey_File_New" xml:space="preserve">
@@ -448,5 +445,76 @@
   <data name="Dialog_ConfirmDeleteCache_Message_Line2" xml:space="preserve">
     <value>Changes will be lost.</value>
     <comment>Second line of delete warning</comment>
+  </data>
+  <data name="MessageBox_Recovery_Title" xml:space="preserve">
+    <value>Autosave Found</value>
+    <comment>Title for recovery dialog</comment>
+  </data>
+  <data name="MessageBox_Recovery_Message" xml:space="preserve">
+    <value>An unsaved version of the project was found.</value>
+    <comment>Message for recovery dialog</comment>
+  </data>
+  <data name="MessageBox_Recovery_CacheDate" xml:space="preserve">
+    <value>Autosave:</value>
+    <comment>Label for autosave timestamp</comment>
+  </data>
+  <data name="MessageBox_Recovery_SaveDate" xml:space="preserve">
+    <value>Last saved:</value>
+    <comment>Label for last save timestamp</comment>
+  </data>
+  <data name="MessageBox_Restore" xml:space="preserve">
+    <value>Restore</value>
+    <comment>Button to restore from autosave</comment>
+  </data>
+  <data name="MessageBox_OpenSaved" xml:space="preserve">
+    <value>Open Saved</value>
+    <comment>Button to open saved version</comment>
+  </data>
+  <data name="MessageBox_Compare" xml:space="preserve">
+    <value>Compare Versions</value>
+    <comment>Button to compare versions</comment>
+  </data>
+  <data name="MessageBox_Error_ProjectNotFound_Message" xml:space="preserve">
+    <value>The project file may have been moved or deleted</value>
+  </data>
+  <data name="Notification_ProjectSaved" xml:space="preserve">
+    <value>Project saved</value>
+    <comment>Toast notification when project is saved</comment>
+  </data>
+  <data name="Notification_ProjectOpened" xml:space="preserve">
+    <value>Project opened</value>
+    <comment>Toast notification when project is opened</comment>
+  </data>
+  <data name="Notification_ProjectClosed" xml:space="preserve">
+    <value>Project closed</value>
+    <comment>Toast notification when project is closed</comment>
+  </data>
+  <data name="Notification_ModuleOpened" xml:space="preserve">
+    <value>Module opened</value>
+    <comment>Toast notification when module is opened</comment>
+  </data>
+  <data name="Notification_ModuleClosed" xml:space="preserve">
+    <value>Module closed</value>
+    <comment>Toast notification when module is closed</comment>
+  </data>
+  <data name="Notification_AutoSaving" xml:space="preserve">
+    <value>Auto-saving...</value>
+    <comment>Toast notification during auto-save</comment>
+  </data>
+  <data name="Notification_AutoSaved" xml:space="preserve">
+    <value>Auto-saved</value>
+    <comment>Toast notification after auto-save</comment>
+  </data>
+  <data name="Notification_Error" xml:space="preserve">
+    <value>Error</value>
+    <comment>Toast notification for errors</comment>
+  </data>
+  <data name="Notification_SavingError" xml:space="preserve">
+    <value>Failed to save project</value>
+    <comment>Toast notification when save fails</comment>
+  </data>
+  <data name="Notification_WorkModeSwitched" xml:space="preserve">
+    <value>WorkMode switched</value>
+    <comment>Toast notification when WorkMode changed</comment>
   </data>
 </root>

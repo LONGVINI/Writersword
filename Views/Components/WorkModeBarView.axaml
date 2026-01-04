@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.ViewModels.Components"
+             xmlns:converters="using:Writersword.Converters"
+             x:Class="Writersword.Views.Components.WorkModeBarView"
+             x:DataType="vm:WorkModeBarViewModel"
+             x:Name="WorkModeBarViewRoot">
+
+	<UserControl.Resources>
+		<converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
+	</UserControl.Resources>
+
+	<!-- ТОЧНО КАК В СТАРОМ ДИЗАЙНЕ - ГОРИЗОНТАЛЬНО -->
+	<Border Background="#2D2D30"
+            BorderBrush="#3F3F46"
+            BorderThickness="0,0,0,1"
+            Padding="10,5">
+
+		<ItemsControl ItemsSource="{Binding WorkModes}">
+			<ItemsControl.ItemsPanel>
+				<ItemsPanelTemplate>
+					<StackPanel Orientation="Horizontal" Spacing="5"/>
+				</ItemsPanelTemplate>
+			</ItemsControl.ItemsPanel>
+
+			<ItemsControl.ItemTemplate>
+				<DataTemplate>
+					<Button Content="{Binding Title}"
+                            Command="{Binding #WorkModeBarViewRoot.DataContext.SwitchWorkModeCommand}"
+                            CommandParameter="{Binding}"
+                            Padding="10,4"
+                            FontSize="12">
+
+						<!-- Стили -->
+						<Button.Styles>
+							<Style Selector="Button">
+								<Setter Property="Background" Value="#3E3E42"/>
+								<Setter Property="Foreground" Value="White"/>
+							</Style>
+							<Style Selector="Button:pointerover">
+								<Setter Property="Background" Value="#4A4A4C"/>
+							</Style>
+						</Button.Styles>
+
+						<!-- Динамический цвет по IsActive -->
+						<Button.Background>
+							<SolidColorBrush Color="{Binding IsActive, Converter={StaticResource BoolToColorConverter}}"/>
+						</Button.Background>
+
+					</Button>
+				</DataTemplate>
+			</ItemsControl.ItemTemplate>
+		</ItemsControl>
+
+	</Border>
+
+</UserControl>

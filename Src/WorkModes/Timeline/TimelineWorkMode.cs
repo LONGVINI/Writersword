@@ -36,7 +36,7 @@ namespace Writersword.Src.WorkModes.Timeline
                     // ОБЯЗАТЕЛЬНЫЙ: Timeline - визуализация временной шкалы
                     new ModuleSlotConfig
                     {
-                        ModuleType = ModuleType.Timeline,
+                        ModuleId = "Timeline",
                         MinWidth = 500,
                         MinHeight = 400,
                         IsVisible = true,
@@ -47,7 +47,7 @@ namespace Writersword.Src.WorkModes.Timeline
                     // НЕОБЯЗАТЕЛЬНЫЙ: Characters - список персонажей
                     new ModuleSlotConfig
                     {
-                        ModuleType = ModuleType.Characters,
+                        ModuleId = "Characters",
                         MinWidth = 250,
                         MinHeight = 300,
                         IsVisible = true,
@@ -58,7 +58,7 @@ namespace Writersword.Src.WorkModes.Timeline
                     // НЕОБЯЗАТЕЛЬНЫЙ: Notes - заметки к событиям
                     new ModuleSlotConfig
                     {
-                        ModuleType = ModuleType.Notes,
+                        ModuleId = "Notes",
                         MinWidth = 250,
                         MinHeight = 200,
                         IsVisible = false,

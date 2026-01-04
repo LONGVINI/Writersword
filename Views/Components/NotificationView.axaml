@@ -1,0 +1,75 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.ViewModels.Components"
+             x:Class="Writersword.Views.Components.NotificationView"
+             x:DataType="vm:NotificationViewModel">
+
+    <!-- Контейнер для уведомления (в правом нижнем углу) -->
+    <Panel HorizontalAlignment="Right"
+           VerticalAlignment="Bottom"
+           Margin="20"
+           IsVisible="{Binding IsVisible}">
+
+        <!-- Само уведомление -->
+        <Border Background="{Binding BackgroundColor}"
+                CornerRadius="8"
+                Padding="16,12"
+                MinWidth="250"
+                MaxWidth="400"
+                BoxShadow="0 4 12 0 #40000000">
+
+            <Grid ColumnDefinitions="Auto,*,Auto">
+
+                <!-- Иконка -->
+                <TextBlock Grid.Column="0"
+                           Text="{Binding Icon}"
+                           FontSize="24"
+                           Foreground="{Binding IconColor}"
+                           VerticalAlignment="Center"
+                           Margin="0,0,12,0"/>
+
+                <!-- Текст сообщения -->
+                <TextBlock Grid.Column="1"
+                           Text="{Binding Message}"
+                           FontSize="14"
+                           Foreground="#FFFFFF"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center"/>
+
+                <!-- Кнопка закрытия -->
+                <Button Grid.Column="2"
+                        Content="?"
+                        FontSize="20"
+                        Width="24"
+                        Height="24"
+                        Padding="0"
+                        Background="Transparent"
+                        Foreground="#CCCCCC"
+                        BorderThickness="0"
+                        VerticalAlignment="Center"
+                        Margin="12,0,0,0"
+                        Cursor="Hand"
+                        Command="{Binding CloseCommand}">
+                    
+                    <!-- Hover эффект для кнопки закрытия -->
+                    <Button.Styles>
+                        <Style Selector="Button:pointerover">
+                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                        </Style>
+                    </Button.Styles>
+                </Button>
+
+            </Grid>
+
+        </Border>
+
+        <!-- Анимация появления/исчезновения -->
+        <Panel.Transitions>
+            <Transitions>
+                <DoubleTransition Property="Opacity" Duration="0:0:0.3"/>
+            </Transitions>
+        </Panel.Transitions>
+
+    </Panel>
+
+</UserControl>

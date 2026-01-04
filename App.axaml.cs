@@ -7,15 +7,28 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using Writersword.Core.Services.WorkModes;
+using Writersword.Core.Interfaces.Modules;
+using Writersword.Core.Interfaces.Services;
+using Writersword.Infrastructure.Services.Modules;
 using Writersword.Modules.Common;
 using Writersword.Services;
-using Writersword.Services.Interfaces;
+using Writersword.Src.Core.Interfaces.Services.Input;
+using Writersword.Src.Core.Interfaces.Services.Storage;
+using Writersword.Src.Core.Interfaces.Services.UI;
+using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Src.Core.Interfaces.WorkModes;
+using Writersword.Src.Infrastructure.Services.Input;
+using Writersword.Src.Infrastructure.Services.Modules;
+using Writersword.Src.Infrastructure.Services.Project;
+using Writersword.Src.Infrastructure.Services.Storage;
+using Writersword.Src.Infrastructure.Services.Tabs;
+using Writersword.Src.Infrastructure.Services.UI;
+using Writersword.Src.Infrastructure.Services.WorkModes;
+using Writersword.Src.ProjectTypes.Common;
 using Writersword.Src.WorkModes.Common;
 using Writersword.ViewModels;
+using Writersword.ViewModels.Components;
 using Writersword.Views;
-using Writersword.Src.ProjectTypes.Common;
 
 namespace Writersword
 {
@@ -59,6 +72,9 @@ namespace Writersword
             // Сервис диалоговых окон (сохранение файлов, MessageBox)
             services.AddSingleton<IDialogService, DialogService>();
 
+            // Сервис всплывающих уведомлений (toast notifications)
+            services.AddSingleton<INotificationService, NotificationService>();
+
             // Сервис работы с проектами (.writersword файлы)
             services.AddSingleton<IProjectService, ProjectService>();
 
@@ -78,8 +94,8 @@ namespace Writersword
             // Сервис кеширования данных (.wsasd файлы)
             services.AddSingleton<ICacheService, CacheService>();
 
-            // Сервис автосохранения проектов
-            services.AddSingleton<IAutoSaveService, AutoSaveService>();
+            // Сервис автосохранения проектов (каждая вкладка получает свой экземпляр)
+            services.AddTransient<IAutoSaveService, AutoSaveService>();
 
             // --- МОДУЛЬНАЯ СИСТЕМА ---
             // Фабрика для создания экземпляров модулей
@@ -87,6 +103,12 @@ namespace Writersword
 
             // Реестр всех зарегистрированных модулей
             services.AddSingleton<ModuleRegistry>();
+
+            // Сервис для сбора состояний модулей (используется при автосохранении)
+            services.AddSingleton<IModuleStateCollectorService, ModuleStateCollectorService>();
+
+            // Сервис управления жизненным циклом модулей (открытие/закрытие с сохранением)
+            services.AddSingleton<IModuleLifecycleService, ModuleLifecycleService>();
 
             // --- WORKMODE СИСТЕМА ---
             // Фабрика для создания экземпляров WorkMode
@@ -106,6 +128,19 @@ namespace Writersword
             // --- VIEWMODELS ---
             // ViewModel главного окна
             services.AddSingleton<MainWindowViewModel>();
+
+            // --- КОМПОНЕНТЫ ГЛАВНОГО ОКНА ---
+            // ViewModel компонента главного меню
+            services.AddSingleton<MenuBarViewModel>();
+
+            // ViewModel панели вкладок
+            services.AddSingleton<TabBarViewModel>();
+
+            // ViewModel панели режимов работы
+            services.AddSingleton<WorkModeBarViewModel>();
+
+            // ViewModel панели модулей
+            services.AddSingleton<ModulePanelViewModel>();
 
             // ViewModel экрана приветствия (создаётся каждый раз новый)
             services.AddTransient<WelcomeViewModel>();
@@ -147,7 +182,7 @@ namespace Writersword
                 if (instance != null)
                 {
                     // Регистрируем фабричный метод создания модуля
-                    moduleFactory.Register(instance.ModuleType, () =>
+                    moduleFactory.Register(instance.ModuleId, () =>
                         Activator.CreateInstance(moduleType) as BaseModule
                         ?? throw new InvalidOperationException($"Failed to create module {moduleType.Name}"));
 
@@ -224,6 +259,47 @@ namespace Writersword
                 desktop.MainWindow = mainWindow;
 
                 // ========================================
+                // ОБРАБОТКА ЗАКРЫТИЯ ОКНА
+                // Спрашиваем про несохранённые изменения
+                // ========================================
+                mainWindow.Closing += async (s, e) =>
+                {
+                    Console.WriteLine("[App] MainWindow closing...");
+
+                    var tabCollection = Services.GetRequiredService<ITabCollection>();
+                    var projectWorkflow = Services.GetRequiredService<IProjectWorkflow>();
+
+                    // Проверяем каждую вкладку на несохранённые изменения
+                    foreach (var tab in tabCollection.Tabs.ToList())
+                    {
+                        if (projectWorkflow.HasUnsavedChanges(tab))
+                        {
+                            // Отменяем закрытие
+                            e.Cancel = true;
+
+                            Console.WriteLine($"[App] Tab {tab.Title} has unsaved changes");
+
+                            // Пытаемся закрыть вкладку (спросит про сохранение)
+                            var closed = await projectWorkflow.CloseDocumentAsync(tab);
+
+                            if (!closed)
+                            {
+                                // Пользователь отменил - не закрываем приложение
+                                Console.WriteLine("[App] User cancelled closing");
+                                return;
+                            }
+                        }
+                    }
+
+                    // Если дошли сюда - все вкладки закрыты, можно выходить
+                    if (!e.Cancel)
+                    {
+                        Console.WriteLine("[App] All tabs closed, exiting");
+                    }
+                };
+
+
+                // ========================================
                 // ВОССТАНОВЛЕНИЕ ПРОЕКТОВ ИЗ ПРОШЛОЙ СЕССИИ
                 // Срабатывает когда главное окно открылось
                 // ========================================
@@ -248,11 +324,12 @@ namespace Writersword
                             {
                                 Console.WriteLine($"[App] Loading project: {projectPath}");
 
-                                // Открываем через ProjectWorkflow (запускает автосохранение!)
+                                // Открываем через ProjectWorkflow
                                 var tab = await projectWorkflow.OpenDocumentAsync(projectPath);
 
                                 if (tab != null)
                                 {
+                                    // Добавляем БЕЗ автоматической активации
                                     tabCollection.Add(tab);
                                     Console.WriteLine($"[App] Added tab: {tab.Title}");
                                 }
@@ -263,7 +340,7 @@ namespace Writersword
                             }
                         }
 
-                        // Активируем первую вкладку
+                        // Активируем первую вкладку (это вызовет ActivateTab ОДИН РАЗ)
                         if (tabCollection.Tabs.Count > 0)
                         {
                             Console.WriteLine($"[App] All projects loaded. Total tabs: {tabCollection.Tabs.Count}");

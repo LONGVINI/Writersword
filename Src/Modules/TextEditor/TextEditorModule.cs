@@ -1,106 +1,168 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using Avalonia.Controls;
+using ReactiveUI;
+using System;
+using System.Reactive.Linq;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
+using Writersword.Core.Models;
 using Writersword.Core.Models.Modules;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.ViewModels;
+using Writersword.Resources.Localization;
 using Writersword.Src.Modules.TextEditor.Resources;
+using Writersword.ViewModels;
 
 namespace Writersword.Modules.TextEditor
 {
     /// <summary>
     /// Модуль текстового редактора
-    /// Обёртка над TextEditorViewModel для интеграции с модульной системой
-    /// Этот модуль нельзя закрыть (IsCloseable = false)
+    /// Основной модуль для работы с текстом
     /// </summary>
     public class TextEditorModule : BaseModule
     {
-        /// <summary>ViewModel текстового редактора</summary>
         private TextEditorViewModel? _viewModel;
+        private IDisposable? _textSubscription;
 
-        /// <summary>Тип модуля - TextEditor</summary>
-        public override ModuleType ModuleType => ModuleType.TextEditor;
+        /// <summary>Идентификатор модуля</summary>
+        public override string ModuleId => "TextEditor";
 
-        /// <summary>Заголовок модуля (отображается в UI)</summary>
+        /// <summary>Заголовок модуля</summary>
         public override string Title { get; set; } = "Text Editor";
 
-        /// <summary>ViewModel для привязки к View</summary>
+        /// <summary>ViewModel модуля</summary>
         public override object? ViewModel => _viewModel;
 
-        /// <summary>Редактор нельзя закрыть - это основной модуль</summary>
-        public override bool IsCloseable => false;
-
-        /// <summary>Метаданные модуля для UI</summary>
+        /// <summary>Метаданные модуля</summary>
         public override IModuleMetadata Metadata => new TextEditorMetadata();
 
         /// <summary>
-        /// Инициализация модуля - создаём ViewModel
-        /// Вызывается при первом создании модуля
+        /// Инициализация модуля
+        /// Создаёт ViewModel и подписывается на изменения текста
         /// </summary>
         public override void Initialize()
         {
+            Console.WriteLine($"[TextEditorModule] Initialize START (ID: {InstanceId})");
+
             _viewModel = new TextEditorViewModel();
+
+            // Подписка на изменения текста с задержкой (debounce)
+            _textSubscription = _viewModel.WhenAnyValue(x => x.PlainText)
+                .Throttle(TimeSpan.FromSeconds(0.5))
+                .Subscribe(text =>
+                {
+                    // Помечаем модуль как изменённый
+                    MarkAsDirty();
+
+                    // Сохраняем в проект
+                    if (Context?.Project != null)
+                    {
+                        Context.Project.ModulesData[ModuleId] = text;
+                    }
+
+                    Console.WriteLine($"[TextEditorModule {InstanceId}] Text updated: {text?.Length ?? 0} chars");
+                });
+
             Console.WriteLine($"[TextEditorModule] Initialized (ID: {InstanceId})");
         }
 
         /// <summary>
-        /// Сохранить состояние модуля для записи в файл проекта
-        /// Сохраняем текущий текст документа
+        /// Вызывается при изменении контекста
+        /// Устанавливает режим ReadOnly в зависимости от IsInCompareMode
         /// </summary>
-        /// <returns>Состояние модуля с текстом документа</returns>
+        protected override void OnContextChanged(DocumentContext? context)
+        {
+            if (context != null && _viewModel != null)
+            {
+                _viewModel.IsReadOnly = context.IsInCompareMode;
+                Console.WriteLine($"[TextEditorModule] Context changed - IsReadOnly: {_viewModel.IsReadOnly}");
+            }
+        }
+
+        /// <summary>
+        /// Сохранить состояние модуля
+        /// Возвращает текст редактора в CustomData
+        /// </summary>
         public override ModuleState SaveState()
         {
+            var text = _viewModel?.PlainText ?? "";
+
+            Console.WriteLine($"[TextEditorModule] SaveState called:");
+            Console.WriteLine($"  - InstanceId: {InstanceId}");
+            Console.WriteLine($"  - ViewModel exists: {_viewModel != null}");
+            Console.WriteLine($"  - PlainText length: {text.Length}");
+
             return new ModuleState
             {
-                ScrollPosition = 0, // TODO: Позже добавим сохранение позиции скролла
-                CustomData = _viewModel?.PlainText // Сохраняем текст
+                CustomData = text,
+                SessionData = new
+                {
+                    lastEditTime = DateTime.Now
+                },
+                ScrollPosition = 0
             };
         }
 
         /// <summary>
-        /// Восстановить состояние модуля при загрузке проекта
-        /// Загружаем сохранённый текст в редактор
+        /// Восстановить состояние модуля
+        /// Загружает текст из CustomData в редактор
         /// </summary>
-        /// <param name="state">Сохранённое состояние модуля</param>
         public override void RestoreState(ModuleState state)
         {
-            // Если есть сохранённый текст - загружаем его
-            if (_viewModel != null && !string.IsNullOrEmpty(state.CustomData))
+            // Вызываем базовый метод (сбрасывает IsDirty)
+            base.RestoreState(state);
+
+            if (_viewModel != null && state.CustomData is string text)
             {
-                _viewModel.LoadDocument(state.CustomData);
-                Console.WriteLine($"[TextEditorModule] Restored {state.CustomData.Length} characters");
+                _viewModel.LoadDocument(text);
+                Console.WriteLine($"[TextEditorModule] Restored {text.Length} chars");
             }
         }
 
-        /// <summary>Создать View текстового редактора</summary>
-        public override Avalonia.Controls.Control? CreateView()
+        /// <summary>
+        /// Очистка ресурсов
+        /// Отписывается от событий
+        /// </summary>
+        public override void Dispose()
+        {
+            _textSubscription?.Dispose();
+            Console.WriteLine($"[TextEditorModule] Disposed (ID: {InstanceId})");
+        }
+
+        /// <summary>
+        /// Создать View для модуля
+        /// Возвращает TextEditorView с привязкой к ViewModel
+        /// </summary>
+        public override Control? CreateView()
         {
             return new Views.TextEditorView
             {
                 DataContext = ViewModel
             };
         }
-
     }
 
-    /// <summary>Метаданные модуля TextEditor</summary>
+    /// <summary>
+    /// Метаданные модуля текстового редактора
+    /// Содержит информацию для отображения в UI
+    /// </summary>
     internal class TextEditorMetadata : IModuleMetadata
     {
-        public ModuleType ModuleType => ModuleType.TextEditor;
+        /// <summary>Идентификатор модуля</summary>
+        public string ModuleId => "TextEditor";
 
-        /// <summary>Название из локализации (.resx)</summary>
+        /// <summary>Отображаемое имя (из локализации)</summary>
         public string DisplayName => TextEditorStrings.DisplayName;
 
-        /// <summary>Описание из локализации (.resx)</summary>
+        /// <summary>Описание модуля (из локализации)</summary>
         public string Description => TextEditorStrings.Description;
 
-        /// <summary>Иконка (hardcoded, не переводится)</summary>
+        /// <summary>Иконка модуля (emoji)</summary>
         public string Icon => "📝";
-        /// <summary> Универсальный модуль - нет, доступен только в режиме написания</summary>
+
+        /// <summary>Универсальный модуль (доступен везде)</summary>
         public bool IsUniversal => false;
 
-        /// <summary>Позиция по умолчанию - слева</summary>
+        /// <summary>Позиция по умолчанию (слева)</summary>
         public PreferredDockPosition DefaultPosition => PreferredDockPosition.Left;
     }
 }

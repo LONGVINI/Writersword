@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using Writersword.Core.Enums;
 
 namespace Writersword.Core.Models.WorkModes
 {
@@ -15,7 +14,7 @@ namespace Writersword.Core.Models.WorkModes
         public double Proportion { get; set; } = 0.5;
 
         /// <summary>Список модулей в этой панели</summary>
-        public List<ModuleType> Modules { get; set; } = new();
+        public List<string> Modules { get; set; } = new();
 
         /// <summary>Если панель сама содержит split - указываем вложенную конфигурацию</summary>
         public DockLayoutConfig? NestedLayout { get; set; }

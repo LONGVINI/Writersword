@@ -1,0 +1,119 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.ViewModels.Components"
+             xmlns:loc="using:Writersword.Resources.Localization"
+             x:Class="Writersword.Views.Components.MenuBarView"
+             x:DataType="vm:MenuBarViewModel"
+             x:Name="MenuBarViewRoot">
+
+	<!-- Главное меню -->
+	<Menu Background="#2D2D30" Padding="5,3">
+
+		<!-- Файл -->
+		<MenuItem Header="{x:Static loc:Strings.Menu_File}"
+                  Foreground="#F0F0F0"
+                  FontSize="13">
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_NewProject}"
+                      InputGesture="Ctrl+N"
+                      Command="{Binding NewProjectCommand}"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Open}"
+                      InputGesture="Ctrl+O"
+                      Command="{Binding OpenProjectCommand}"/>
+
+			<Separator/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Close}"
+                      InputGesture="Ctrl+W"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Save}"
+                      InputGesture="Ctrl+S"
+                      Command="{Binding SaveProjectCommand}"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_SaveAs}"
+                      InputGesture="Ctrl+Shift+S"
+                      Command="{Binding SaveAsProjectCommand}"/>
+
+			<Separator/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Exit}"
+                      Command="{Binding ExitCommand}"/>
+		</MenuItem>
+
+		<!-- Правка -->
+		<MenuItem Header="{x:Static loc:Strings.Menu_Edit}"
+                  Foreground="#F0F0F0"
+                  FontSize="13">
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Undo}"
+                      InputGesture="Ctrl+Z"
+                      IsEnabled="False"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Redo}"
+                      InputGesture="Ctrl+Y"
+                      IsEnabled="False"/>
+		</MenuItem>
+
+		<!-- Вид -->
+		<MenuItem Header="{x:Static loc:Strings.Menu_View}"
+                  Foreground="#F0F0F0"
+                  FontSize="13">
+
+			<!-- Режимы работы -->
+			<MenuItem Header="{x:Static loc:Strings.Menu_WorkModes}"
+                      ItemsSource="{Binding $parent[Window].DataContext.AllWorkModes}">
+				<MenuItem.ItemTemplate>
+					<DataTemplate>
+						<MenuItem Command="{Binding $parent[Window].DataContext.ToggleWorkModeCommand}"
+                                  CommandParameter="{Binding WorkModeId}">
+							<MenuItem.Header>
+								<StackPanel Orientation="Horizontal" Spacing="5">
+									<TextBlock Text="✓"
+                                               IsVisible="{Binding IsChecked}"
+                                               FontWeight="Bold"
+                                               Width="15"/>
+									<TextBlock Text="{Binding Icon}"/>
+									<TextBlock Text="{Binding Name}"/>
+								</StackPanel>
+							</MenuItem.Header>
+						</MenuItem>
+					</DataTemplate>
+				</MenuItem.ItemTemplate>
+			</MenuItem>
+
+			<Separator/>
+
+			<!-- Модули -->
+			<MenuItem Header="{x:Static loc:Strings.Menu_Modules}"
+                      ItemsSource="{Binding $parent[Window].DataContext.AllModules}"
+                      x:Name="ModulesMenu">
+				<MenuItem.ItemTemplate>
+					<DataTemplate>
+						<MenuItem Command="{Binding $parent[Window].DataContext.ToggleModuleCommand}"
+                                  CommandParameter="{Binding Type}"
+                                  IsEnabled="{Binding IsEnabled}">
+							<MenuItem.Header>
+								<StackPanel Orientation="Horizontal" Spacing="5">
+									<TextBlock Text="✓"
+                                               IsVisible="{Binding IsChecked}"
+                                               FontWeight="Bold"
+                                               Width="15"/>
+									<TextBlock Text="{Binding Icon}"/>
+									<TextBlock Text="{Binding Name}"/>
+								</StackPanel>
+							</MenuItem.Header>
+						</MenuItem>
+					</DataTemplate>
+				</MenuItem.ItemTemplate>
+			</MenuItem>
+
+			<Separator/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Settings}"
+                      IsEnabled="False"/>
+		</MenuItem>
+
+	</Menu>
+
+</UserControl>

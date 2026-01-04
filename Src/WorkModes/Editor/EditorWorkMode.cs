@@ -37,7 +37,7 @@ namespace Writersword.Src.WorkModes.Editor
                     // ОБЯЗАТЕЛЬНЫЙ: TextEditor
                     new ModuleSlotConfig
                     {
-                        ModuleType = ModuleType.TextEditor,
+                        ModuleId = "TextEditor",
                         IsVisible = true,
                         Category = ModuleCategory.Required,
                         MinWidth = 400,
@@ -48,7 +48,7 @@ namespace Writersword.Src.WorkModes.Editor
                     // НЕОБЯЗАТЕЛЬНЫЙ: Synonyms
                     new ModuleSlotConfig
                     {
-                        ModuleType = ModuleType.Synonyms,
+                        ModuleId = "Synonyms",
                         IsVisible = true,
                         Category = ModuleCategory.Optional,
                         MinWidth = 250,
@@ -59,7 +59,7 @@ namespace Writersword.Src.WorkModes.Editor
                     // НЕОБЯЗАТЕЛЬНЫЙ: Timer
                     new ModuleSlotConfig
                     {
-                        ModuleType = ModuleType.Timer,
+                        ModuleId = "Timer",
                         IsVisible = true,
                         Category = ModuleCategory.Optional,
                         MinWidth = 200,
@@ -70,7 +70,7 @@ namespace Writersword.Src.WorkModes.Editor
                     // НЕОБЯЗАТЕЛЬНЫЙ: Notes (скрыт)
                     new ModuleSlotConfig
                     {
-                        ModuleType = ModuleType.Notes,
+                        ModuleId = "Notes",
                         IsVisible = false,
                         Category = ModuleCategory.Optional,
                         MinWidth = 200,
@@ -90,7 +90,7 @@ namespace Writersword.Src.WorkModes.Editor
                         {
                             Id = "LeftPanel",
                             Proportion = 0.7,
-                            Modules = new List<ModuleType> { ModuleType.TextEditor }
+                            Modules = new List<string> { "TextEditor" }
                         },
 
                         // Правая панель - Synonyms и Timer столбиком (30% ширины)
@@ -98,7 +98,7 @@ namespace Writersword.Src.WorkModes.Editor
                         {
                             Id = "RightPanel",
                             Proportion = 0.3,
-                            Modules = new List<ModuleType>(), // Пустой список - будет nested
+                            Modules = new List<string>(), // Пустой список - будет nested
                             NestedLayout = new DockLayoutConfig
                             {
                                 MainOrientation = DockOrientation.Vertical,
@@ -108,13 +108,13 @@ namespace Writersword.Src.WorkModes.Editor
                                     {
                                         Id = "RightTop",
                                         Proportion = 0.5,
-                                        Modules = new List<ModuleType> { ModuleType.Synonyms }
+                                        Modules = new List<string> { "Synonyms" }
                                     },
                                     new DockPanelConfig
                                     {
                                         Id = "RightBottom",
                                         Proportion = 0.5,
-                                        Modules = new List<ModuleType> { ModuleType.Timer }
+                                        Modules = new List<string> { "Timer" }
                                     }
                                 }
                             }

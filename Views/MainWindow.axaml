@@ -4,7 +4,7 @@
         xmlns:loc="using:Writersword.Resources.Localization"
         xmlns:converters="using:Writersword.Converters"
         xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
-        xmlns:views="using:Writersword.Views.Components"
+        xmlns:components="using:Writersword.Views.Components"
         x:Class="Writersword.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding Title}"
@@ -16,278 +16,31 @@
 
 	<Window.Resources>
 		<converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
+		<converters:TabBackgroundConverter x:Key="TabBackgroundConverter"/>
+		<converters:TabForegroundConverter x:Key="TabForegroundConverter"/>
 	</Window.Resources>
 
 	<DockPanel>
 
-		<!-- ===== МЕНЮ ===== -->
-		<Menu DockPanel.Dock="Top"
-              Background="#2D2D30"
-              Padding="5,3">
+		<!-- ===== МЕНЮ (КОМПОНЕНТ) ===== -->
+		<components:MenuBarView DockPanel.Dock="Top"
+                                DataContext="{Binding MenuBar}"/>
 
-			<!-- Файл -->
-			<MenuItem Header="{x:Static loc:Strings.Menu_File}" Foreground="#F0F0F0" FontSize="13">
-				<MenuItem Header="{x:Static loc:Strings.Menu_NewProject}"
-                          InputGesture="Ctrl+N"
-                          Command="{Binding NewProjectCommand}" />
+		<!-- ===== ПАНЕЛЬ ВКЛАДОК (КОМПОНЕНТ) ===== -->
+		<components:TabBarView DockPanel.Dock="Top"
+                               DataContext="{Binding TabBar}"/>
 
-				<MenuItem Header="{x:Static loc:Strings.Menu_Open}"
-                          InputGesture="Ctrl+O"
-                          Command="{Binding OpenProjectCommand}" />
+		<!-- ===== ПАНЕЛЬ WORKMODES (КОМПОНЕНТ) ===== -->
+		<components:WorkModeBarView DockPanel.Dock="Top"
+                                    DataContext="{Binding WorkModeBar}"/>
 
-				<Separator />
-
-				<MenuItem Header="{x:Static loc:Strings.Menu_Close}" InputGesture="Ctrl+W" />
-
-				<MenuItem Header="{x:Static loc:Strings.Menu_Save}"
-                          InputGesture="Ctrl+S"
-                          Command="{Binding SaveProjectCommand}" />
-
-				<MenuItem Header="{x:Static loc:Strings.Menu_SaveAs}"
-                          InputGesture="Ctrl+Shift+S"
-                          Command="{Binding SaveAsProjectCommand}" />
-
-				<Separator />
-
-				<MenuItem Header="{x:Static loc:Strings.Menu_Exit}"
-                          Command="{Binding ExitCommand}" />
-			</MenuItem>
-
-			<!-- Правка -->
-			<MenuItem Header="{x:Static loc:Strings.Menu_Edit}" Foreground="#F0F0F0" FontSize="13">
-				<MenuItem Header="{x:Static loc:Strings.Menu_Undo}" InputGesture="Ctrl+Z" />
-				<MenuItem Header="{x:Static loc:Strings.Menu_Redo}" InputGesture="Ctrl+Y" />
-			</MenuItem>
-
-			<!-- Вид -->
-			<MenuItem Header="{x:Static loc:Strings.Menu_View}" Foreground="#F0F0F0" FontSize="13">
-
-				<!-- Режимы работы -->
-				<MenuItem Header="{x:Static loc:Strings.Menu_WorkModes}" ItemsSource="{Binding AllWorkModes}">
-					<MenuItem.ItemTemplate>
-						<DataTemplate>
-							<MenuItem Command="{Binding $parent[Window].DataContext.ToggleWorkModeCommand}"
-									  CommandParameter="{Binding Type}">
-								<MenuItem.Header>
-									<StackPanel Orientation="Horizontal" Spacing="5">
-										<TextBlock Text="✓"
-												   IsVisible="{Binding IsChecked}"
-												   FontWeight="Bold"
-												   Width="15" />
-										<TextBlock Text="{Binding Icon}" />
-										<TextBlock Text="{Binding Name}" />
-									</StackPanel>
-								</MenuItem.Header>
-							</MenuItem>
-						</DataTemplate>
-					</MenuItem.ItemTemplate>
-				</MenuItem>
-
-				<Separator />
-
-				<!-- Модули -->
-				<MenuItem Header="{x:Static loc:Strings.Menu_Modules}"
-						  ItemsSource="{Binding AllModules}"
-						  x:Name="ModulesMenu">
-					<MenuItem.ItemTemplate>
-						<DataTemplate>
-							<MenuItem Command="{Binding #ModulesMenu.DataContext.ToggleModuleCommand}"
-									  CommandParameter="{Binding Type}"
-									  IsEnabled="{Binding IsEnabled}">
-								<MenuItem.Header>
-									<StackPanel Orientation="Horizontal" Spacing="5">
-										<TextBlock Text="✓"
-												   IsVisible="{Binding IsChecked}"
-												   FontWeight="Bold"
-												   Width="15" />
-										<TextBlock Text="{Binding Icon}" />
-										<TextBlock Text="{Binding Name}" />
-									</StackPanel>
-								</MenuItem.Header>
-							</MenuItem>
-						</DataTemplate>
-					</MenuItem.ItemTemplate>
-				</MenuItem>
-
-				<Separator />
-
-				<MenuItem Header="{x:Static loc:Strings.Menu_Settings}" />
-			</MenuItem>
-		</Menu>
-
-		<!-- ===== ПАНЕЛЬ С ВКЛАДКАМИ ДОКУМЕНТОВ ===== -->
-		<Border DockPanel.Dock="Top"
-				Background="#2D2D30"
-				BorderBrush="#3F3F46"
-				BorderThickness="0,0,0,1"
-				Padding="5,0,5,0">
-
-			<ScrollViewer HorizontalScrollBarVisibility="Auto"
-						  VerticalScrollBarVisibility="Disabled">
-
-				<StackPanel Orientation="Horizontal" Spacing="2">
-					<!-- Список вкладок -->
-					<ItemsControl ItemsSource="{Binding OpenTabs}">
-						<ItemsControl.ItemsPanel>
-							<ItemsPanelTemplate>
-								<StackPanel Orientation="Horizontal" Spacing="4" />
-							</ItemsPanelTemplate>
-						</ItemsControl.ItemsPanel>
-
-						<ItemsControl.ItemTemplate>
-							<DataTemplate>
-								<!-- Вкладка с закруглением в стиле Chrome -->
-								<Border Background="{Binding IsActive, Converter={StaticResource TabBackgroundConverter}}"
-										CornerRadius="8,8,0,0"
-										Padding="12,6,8,6"
-										Cursor="Hand"
-										Width="180"
-										Height="32"
-										Margin="0,4,0,0"
-										Focusable="False"
-										PointerPressed="Tab_PointerPressed">
-
-									<Border.Styles>
-										<Style Selector="Border:pointerover">
-											<Setter Property="Background" Value="#2A2D2E" />
-										</Style>
-									</Border.Styles>
-
-									<Grid ColumnDefinitions="*,Auto">
-										<!-- Название документа с градиентом исчезновения -->
-										<Border Grid.Column="0" ClipToBounds="True" Focusable="False" Background="Transparent">
-											<Border.OpacityMask>
-												<LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
-													<GradientStop Color="White" Offset="0"/>
-													<GradientStop Color="White" Offset="0.85"/>
-													<GradientStop Color="Transparent" Offset="1"/>
-												</LinearGradientBrush>
-											</Border.OpacityMask>
-											<TextBlock Text="{Binding Title}"
-													   Foreground="{Binding IsActive, Converter={StaticResource TabForegroundConverter}}"
-													   FontSize="12"
-													   VerticalAlignment="Center"
-													   Focusable="False"
-													   IsHitTestVisible="False"
-													   Margin="0,0,0,0" />
-										</Border>
-
-										<!-- Кнопка закрытия (крестик) -->
-										<Button Grid.Column="1"
-												Command="{Binding CloseCommand}"
-												Background="Transparent"
-												BorderThickness="0"
-												Width="18"
-												Height="18"
-												Padding="0"
-												CornerRadius="3"
-												VerticalAlignment="Center"
-												HorizontalAlignment="Center"
-												Focusable="False"
-												Margin="4,0,0,0"
-												Cursor="Hand">
-											<Viewbox Width="10" Height="10">
-												<TextBlock Text="✕"
-														   Foreground="#858585"
-														   FontSize="16"
-														   HorizontalAlignment="Center"
-														   VerticalAlignment="Center"
-														   Focusable="False"
-														   IsHitTestVisible="False"/>
-											</Viewbox>
-											<Button.Styles>
-												<Style Selector="Button:pointerover /template/ TextBlock">
-													<Setter Property="Foreground" Value="White" />
-												</Style>
-												<Style Selector="Button:pointerover">
-													<Setter Property="Background" Value="#4A4A4A" />
-												</Style>
-											</Button.Styles>
-										</Button>
-									</Grid>
-								</Border>
-							</DataTemplate>
-						</ItemsControl.ItemTemplate>
-					</ItemsControl>
-
-					<!-- Кнопка создания новой вкладки -->
-					<Button Content="+"
-							Command="{Binding CreateNewTabCommand}"
-							Background="Transparent"
-							Foreground="#858585"
-							FontSize="16"
-							Width="30"
-							Height="28"
-							Padding="0"
-							BorderThickness="0"
-							CornerRadius="4"
-							HorizontalContentAlignment="Center"
-							VerticalContentAlignment="Center"
-							Cursor="Hand"
-							Margin="8,4,0,0">
-						<Button.Styles>
-							<Style Selector="Button:pointerover">
-								<Setter Property="Background" Value="#3A3A3C" />
-								<Setter Property="Foreground" Value="White" />
-							</Style>
-						</Button.Styles>
-					</Button>
-				</StackPanel>
-
-			</ScrollViewer>
-		</Border>
-
-		<!-- ===== ПАНЕЛЬ С КНОПКАМИ WORKMODES (РЕЖИМОВ РАБОТЫ) ===== -->
-		<Border DockPanel.Dock="Top"
-				Background="#2D2D30"
-				BorderBrush="#3F3F46"
-				BorderThickness="0,0,0,1"
-				Padding="10,5">
-			<ItemsControl ItemsSource="{Binding AvailableWorkModes}">
-				<ItemsControl.ItemsPanel>
-					<ItemsPanelTemplate>
-						<StackPanel Orientation="Horizontal" Spacing="5" />
-					</ItemsPanelTemplate>
-				</ItemsControl.ItemsPanel>
-
-				<ItemsControl.ItemTemplate>
-					<DataTemplate>
-						<Button Content="{Binding Title}"
-								Click="WorkModeButton_Click"
-								Tag="{Binding}"
-								Padding="10,4"
-								FontSize="12"
-								Cursor="Hand">
-
-							<!-- Стили -->
-							<Button.Styles>
-								<Style Selector="Button">
-									<Setter Property="Background" Value="#3E3E42" />
-									<Setter Property="Foreground" Value="White" />
-								</Style>
-								<Style Selector="Button:pointerover">
-									<Setter Property="Background" Value="#4A4A4C" />
-								</Style>
-							</Button.Styles>
-
-							<!-- Динамический цвет по IsActive -->
-							<Button.Background>
-								<SolidColorBrush Color="{Binding IsActive, Converter={StaticResource BoolToColorConverter}}" />
-							</Button.Background>
-
-						</Button>
-					</DataTemplate>
-				</ItemsControl.ItemTemplate>
-			</ItemsControl>
-		</Border>
-
-		<!-- ===== БАННЕР ВОССТАНОВЛЕНИЯ (показывается только если есть кеш) ===== -->
+		<!-- ===== БАННЕР ВОССТАНОВЛЕНИЯ ===== -->
 		<ContentControl DockPanel.Dock="Top"
-		                Content="{Binding RecoveryBanner}"
-		                IsVisible="{Binding RecoveryBanner, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        Content="{Binding TabBar.ActiveTab.RecoveryBanner}"
+                        IsVisible="{Binding TabBar.ActiveTab.HasRecoveryBanner}">
 			<ContentControl.ContentTemplate>
 				<DataTemplate>
-					<views:RecoveryBanner />
+					<components:RecoveryBanner/>
 				</DataTemplate>
 			</ContentControl.ContentTemplate>
 		</ContentControl>
@@ -298,19 +51,27 @@
                 Padding="10,4">
 			<StackPanel Orientation="Horizontal" Spacing="20">
 				<TextBlock Foreground="White" FontSize="12">
-					<Run Text="{x:Static loc:Strings.Status_Words}" />
-					<Run Text=" 1,234" />
+					<Run Text="{x:Static loc:Strings.Status_Words}"/>
+					<Run Text=" 1,234"/>
 				</TextBlock>
 				<TextBlock Foreground="White" FontSize="12">
-					<Run Text="{x:Static loc:Strings.Status_Lines}" />
-					<Run Text=" 56" />
+					<Run Text="{x:Static loc:Strings.Status_Lines}"/>
+					<Run Text=" 56"/>
 				</TextBlock>
 			</StackPanel>
 		</Border>
 
 		<!-- ===== DOCK КОНТРОЛ (ГЛАВНАЯ ОБЛАСТЬ С МОДУЛЯМИ) ===== -->
 		<dock:DockControl Layout="{Binding DockLayout}"
-                  Background="#252526" />
+                          Background="#252526"/>
+
+		<!-- Контейнер для уведомлений -->
+		<Panel Name="NotificationContainer"
+               ZIndex="1000"
+               HorizontalAlignment="Stretch"
+               VerticalAlignment="Stretch"
+               IsHitTestVisible="False"/>
+
 	</DockPanel>
 
 </Window>

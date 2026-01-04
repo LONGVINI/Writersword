@@ -3,9 +3,7 @@
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels"
              x:Class="Writersword.Modules.TextEditor.Views.TextEditorView"
              Background="#252526">
-
 	<Border Background="#252526" Padding="40">
-
 		<!-- Листок документа -->
 		<Border Background="White"
                 MinWidth="850"
@@ -15,9 +13,9 @@
                 BoxShadow="0 2 10 0 #40000000"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Top">
-
 			<!-- TextBox -->
-			<TextBox Text="{Binding PlainText}"
+			<TextBox Text="{Binding PlainText, Mode=TwoWay}"
+                     IsReadOnly="{Binding IsReadOnly}"
                      AcceptsReturn="True"
                      TextWrapping="Wrap"
                      Background="White"
@@ -30,7 +28,6 @@
                      MinHeight="1000"
                      VerticalAlignment="Stretch"
                      Focusable="True">
-
 				<!-- Убираем hover эффект и фокус рамку -->
 				<TextBox.Styles>
 					<Style Selector="TextBox">
@@ -45,11 +42,7 @@
 						<Setter Property="BorderBrush" Value="Transparent" />
 					</Style>
 				</TextBox.Styles>
-
 			</TextBox>
-
 		</Border>
-
 	</Border>
-
 </UserControl>

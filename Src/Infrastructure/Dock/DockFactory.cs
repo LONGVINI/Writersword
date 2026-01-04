@@ -2,6 +2,7 @@
 using Dock.Model.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
+using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using System;
 using System.Collections.Generic;
@@ -9,6 +10,7 @@ using System.Linq;
 using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
+using Writersword.ViewModels;
 
 namespace Writersword.Src.Infrastructure.Dock
 {
@@ -145,7 +147,7 @@ namespace Writersword.Src.Infrastructure.Dock
 
             foreach (var moduleType in panelConfig.Modules)
             {
-                var slot = workMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleType);
+                var slot = workMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleType);
                 if (slot != null && slot.IsVisible)
                 {
                     var doc = CreateModuleDocument(slot);
@@ -221,23 +223,43 @@ namespace Writersword.Src.Infrastructure.Dock
 
         public IDockable? CreateModuleDocument(ModuleSlot slot)
         {
-            Console.WriteLine($"[DockFactory] Creating document for: {slot.ModuleType}");
+            Console.WriteLine($"[DockFactory] Creating document for: {slot.ModuleId}");
 
-            var module = _moduleRegistry.CreateModule(slot.ModuleType);
+            var module = _moduleRegistry.CreateModule(slot.ModuleId);
             if (module?.ViewModel == null)
             {
-                Console.WriteLine($"[DockFactory] Module not created: {slot.ModuleType}");
+                Console.WriteLine($"[DockFactory] Module not created: {slot.ModuleId}");
                 return null;
+            }
+
+            // ВАЖНО: Получаем Context от активной вкладки и передаём модулю
+            var tabCollection = App.Services.GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>();
+            if (tabCollection.ActiveTab != null)
+            {
+                module.Context = tabCollection.ActiveTab.Context;
+                Console.WriteLine($"[DockFactory] Context assigned to module: {slot.ModuleId}");
+
+                // ВОССТАНАВЛИВАЕМ состояние модуля из проекта
+                var project = tabCollection.ActiveTab.GetProject();
+                if (project.ModulesData.TryGetValue(slot.ModuleId.ToString(), out var data))
+                {
+                    var state = new Writersword.Core.Models.Modules.ModuleState
+                    {
+                        CustomData = data
+                    };
+                    module.RestoreState(state);
+                    Console.WriteLine($"[DockFactory] Restored state for: {slot.ModuleId}");
+                }
             }
 
             var view = module.CreateView();
             if (view == null)
             {
-                Console.WriteLine($"[DockFactory] No View: {slot.ModuleType}");
+                Console.WriteLine($"[DockFactory] No View: {slot.ModuleId}");
                 return null;
             }
 
-            string stableId = $"Module_{slot.ModuleType}";
+            string stableId = $"Module_{slot.ModuleId}";
 
             var document = new Document
             {
@@ -257,11 +279,11 @@ namespace Writersword.Src.Infrastructure.Dock
                     if (owner != null && !wasAddedToDock)
                     {
                         wasAddedToDock = true;
-                        Console.WriteLine($"[DockFactory] Document added: {slot.ModuleType}");
+                        Console.WriteLine($"[DockFactory] Document added: {slot.ModuleId}");
                     }
                     else if (owner == null && wasAddedToDock && slot.IsCloseable)
                     {
-                        Console.WriteLine($"[DockFactory] Document closed: {slot.ModuleType}");
+                        Console.WriteLine($"[DockFactory] Document closed: {slot.ModuleId}");
                         slot.IsVisible = false;
                         subscription?.Dispose();
                     }
@@ -278,12 +300,12 @@ namespace Writersword.Src.Infrastructure.Dock
         /// </summary>
         public void InsertModuleByPreference(IRootDock rootDock, ModuleSlot slot)
         {
-            Console.WriteLine($"[DockFactory] Inserting module {slot.ModuleType} with position {slot.PreferredPosition}");
+            Console.WriteLine($"[DockFactory] Inserting module {slot.ModuleId} with position {slot.PreferredPosition}");
 
             var document = CreateModuleDocument(slot);
             if (document == null)
             {
-                Console.WriteLine($"[DockFactory] Failed to create document for {slot.ModuleType}");
+                Console.WriteLine($"[DockFactory] Failed to create document for {slot.ModuleId}");
                 return;
             }
 
@@ -302,7 +324,7 @@ namespace Writersword.Src.Infrastructure.Dock
                 targetDock.VisibleDockables.Add(document);
                 targetDock.ActiveDockable = document;
 
-                Console.WriteLine($"[DockFactory] Module {slot.ModuleType} inserted successfully");
+                Console.WriteLine($"[DockFactory] Module {slot.ModuleId} inserted successfully");
             }
             else
             {

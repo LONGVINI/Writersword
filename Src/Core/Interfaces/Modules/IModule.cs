@@ -1,58 +1,78 @@
-﻿using System;
-using Writersword.Core.Enums;
+﻿using Avalonia.Controls;
+using System;
+using Writersword.Core.Models;
 using Writersword.Core.Models.Modules;
+using Writersword.ViewModels;
 
 namespace Writersword.Core.Interfaces.Modules
 {
     /// <summary>
-    /// Базовый интерфейс для всех модулей
-    /// Модуль = независимый UI компонент с собственной логикой
+    /// Базовый интерфейс модуля
+    /// Определяет жизненный цикл и основные свойства модуля
     /// </summary>
     public interface IModule : IDisposable
     {
-        /// <summary>Уникальный ID экземпляра модуля</summary>
+        /// <summary>Уникальный ID экземпляра модуля (GUID)</summary>
         string InstanceId { get; }
 
-        /// <summary>Тип модуля</summary>
-        ModuleType ModuleType { get; }
+        /// <summary>
+        /// Идентификатор типа модуля (строка)
+        /// Примеры: "TextEditor", "Timer", "Synonyms"
+        /// </summary>
+        string ModuleId { get; }
 
         /// <summary>Заголовок модуля (отображается в UI)</summary>
         string Title { get; set; }
 
-        /// <summary>ViewModel для привязки к View</summary>
+        /// <summary>ViewModel модуля для привязки к View</summary>
         object? ViewModel { get; }
 
-        /// <summary>Можно ли перемещать модуль</summary>
-        bool IsMovable { get; }
-
-        /// <summary>Можно ли закрыть модуль</summary>
-        bool IsCloseable { get; }
-
-        /// <summary>Можно ли вынести модуль в отдельное окно</summary>
-        bool CanDetach { get; }
-
-        /// <summary>Метаданные модуля для отображения в меню и UI</summary>
+        /// <summary>Метаданные модуля (название, иконка, описание)</summary>
         IModuleMetadata Metadata { get; }
 
-        /// <summary>Событие запроса закрытия модуля</summary>
+        /// <summary>Контекст документа (проект, настройки)</summary>
+        DocumentContext? Context { get; set; }
+
+        /// <summary>
+        /// Флаг изменений модуля
+        /// True если модуль изменился с последнего сохранения
+        /// </summary>
+        bool IsDirty { get; }
+
+        /// <summary>
+        /// Событие запроса на закрытие модуля
+        /// Вызывается когда модуль хочет закрыться (например, по кнопке Close)
+        /// </summary>
         event Action<IModule>? RequestClose;
 
-        /// <summary>Событие запроса выноса модуля в отдельное окно</summary>
+        /// <summary>
+        /// Событие запроса на открепление модуля в отдельное окно
+        /// Вызывается когда модуль хочет открепиться от главного окна
+        /// </summary>
         event Action<IModule>? RequestDetach;
+
+        /// <summary>
+        /// Пометить модуль как сохранённый (сбросить флаг изменений)
+        /// Вызывается после успешного сохранения состояния
+        /// </summary>
+        void MarkAsClean();
 
         /// <summary>Инициализация модуля</summary>
         void Initialize();
 
-        /// <summary>Сохранить состояние модуля</summary>
+        /// <summary>
+        /// Сохранить состояние модуля
+        /// Возвращает CustomData и SessionData для записи
+        /// </summary>
         ModuleState SaveState();
 
-        /// <summary>Восстановить состояние модуля</summary>
+        /// <summary>
+        /// Восстановить состояние модуля
+        /// Вызывается при открытии проекта или переключении WorkMode
+        /// </summary>
         void RestoreState(ModuleState state);
 
-        /// <summary>
-        /// Создать View для этого модуля
-        /// Модуль САМ знает какой View ему нужен!
-        /// </summary>
-        Avalonia.Controls.Control? CreateView();
+        /// <summary>Создать View для отображения модуля</summary>
+        Control? CreateView();
     }
 }

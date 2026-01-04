@@ -12,6 +12,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
     {
         private EditorDocument _document;
         private string _plainText = string.Empty;
+        private bool _isReadOnly = false;
 
         /// <summary>Простой текст для отображения в TextBox</summary>
         public string PlainText
@@ -22,6 +23,16 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 this.RaiseAndSetIfChanged(ref _plainText, value);
                 _document.IsModified = true;
             }
+        }
+
+        /// <summary>
+        /// Режим только для чтения (блокирует редактирование)
+        /// Используется при просмотре версий из кеша
+        /// </summary>
+        public bool IsReadOnly
+        {
+            get => _isReadOnly;
+            set => this.RaiseAndSetIfChanged(ref _isReadOnly, value);
         }
 
         /// <summary>Название документа</summary>
@@ -63,6 +74,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     new TextFragment { Text = PlainText }
                 }
             });
+
             return _document;
         }
     }

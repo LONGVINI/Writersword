@@ -36,7 +36,7 @@ namespace Writersword.Core.Models.Project
         /// Значение = JSON данные модуля
         /// </summary>
         [JsonProperty("ModulesData")]
-        public Dictionary<string, object> ModulesData { get; set; } = new();
+        public Dictionary<string, object?> ModulesData { get; set; } = new();
 
         /// <summary>Конфигурация пользователя (WorkModes, размеры окон)</summary>
         [JsonProperty("UserConfig")]

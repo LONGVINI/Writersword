@@ -1,31 +1,24 @@
-﻿using Writersword.Core.Enums;
-
-namespace Writersword.Core.Interfaces.Modules
+﻿namespace Writersword.Core.Interfaces.Modules
 {
     /// <summary>
-    /// Метаданные модуля - описание для UI и конфигурации
+    /// Метаданные модуля (название, иконка, описание)
+    /// Используется для отображения в UI и регистрации в системе
     /// </summary>
     public interface IModuleMetadata
     {
-        /// <summary>Тип модуля (из enum)</summary>
-        ModuleType ModuleType { get; }
+        /// <summary>Уникальный идентификатор модуля (например: "TextEditor", "Timer")</summary>
+        string ModuleId { get; }
 
-        /// <summary>Отображаемое имя модуля</summary>
+        /// <summary>Отображаемое название модуля</summary>
         string DisplayName { get; }
 
-        /// <summary>Иконка модуля (Unicode emoji)</summary>
+        /// <summary>Иконка модуля (emoji или символ)</summary>
         string Icon { get; }
 
-        /// <summary>Краткое описание модуля</summary>
+        /// <summary>Описание модуля</summary>
         string Description { get; }
 
-        /// <summary>
-        /// Универсальный модуль (доступен во всех WorkMode по умолчанию)
-        /// Например: Notes, Timer - полезны везде
-        /// </summary>
+        /// <summary>Универсальный ли модуль (доступен во всех WorkModes)</summary>
         bool IsUniversal { get; }
-
-        /// <summary>Позиция по умолчанию (если WorkMode не переопределил)</summary>
-        PreferredDockPosition DefaultPosition { get; }
     }
 }

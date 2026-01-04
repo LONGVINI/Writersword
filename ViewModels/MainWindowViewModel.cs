@@ -11,39 +11,59 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
-using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
+using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Settings;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
-using Writersword.Modules.TextEditor.ViewModels;
-using Writersword.Services;
-using Writersword.Services.Interfaces;
+using Writersword.Src.Core.Interfaces.Services.Input;
+using Writersword.Src.Core.Interfaces.Services.Storage;
+using Writersword.Src.Core.Interfaces.Services.UI;
+using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.Infrastructure.Dock;
-using Writersword.Resources.Localization;
+using Writersword.ViewModels.Components;
 
 namespace Writersword.ViewModels
 {
     /// <summary>
     /// ViewModel главного окна приложения
-    /// Координирует UI, WorkMode и модули
-    /// Работа с файлами делегируется в IProjectWorkflow
-    /// Управление вкладками делегируется в ITabCollection
+    /// Координирует компоненты UI и управляет Dock системой
+    /// 
+    /// АРХИТЕКТУРА:
+    /// - MenuBar: управление файлами (New, Open, Save)
+    /// - TabBar: управление вкладками документов
+    /// - WorkModeBar: переключение режимов работы
+    /// - ModulePanel: добавление/удаление модулей
+    /// - NotificationService: всплывающие уведомления
     /// </summary>
     public class MainWindowViewModel : ViewModelBase
     {
-        // === НОВЫЕ СЕРВИСЫ ===
-        /// <summary>Сервис управления жизненным циклом проектов</summary>
+        // ========================================
+        // КОМПОНЕНТЫ UI
+        // ========================================
+
+        /// <summary>Компонент главного меню</summary>
+        public MenuBarViewModel MenuBar { get; }
+
+        /// <summary>Компонент панели вкладок</summary>
+        public TabBarViewModel TabBar { get; }
+
+        /// <summary>Компонент панели режимов работы</summary>
+        public WorkModeBarViewModel WorkModeBar { get; }
+
+        /// <summary>Компонент панели модулей</summary>
+        public ModulePanelViewModel ModulePanel { get; }
+
+        // ========================================
+        // СЕРВИСЫ
+        // ========================================
+
         private readonly IProjectWorkflow _projectWorkflow;
-
-        /// <summary>Сервис управления коллекцией вкладок</summary>
         private readonly ITabCollection _tabCollection;
-
-        // === СУЩЕСТВУЮЩИЕ СЕРВИСЫ ===
         private readonly IDialogService _dialogService;
         private readonly ISettingsService _settingsService;
         private readonly IProjectService _projectService;
@@ -51,33 +71,28 @@ namespace Writersword.ViewModels
         private readonly IWorkModeConfigurationService _workModeConfigService;
         private readonly IWorkModeService _workModeService;
         private readonly DockFactory _dockFactory;
+        private readonly ModuleRegistry _moduleRegistry;
+        private readonly ICacheService _cacheService;
 
-        // === СОСТОЯНИЕ ===
+        // ========================================
+        // СОСТОЯНИЕ
+        // ========================================
+
         private readonly Dictionary<string, IRootDock> _tabLayouts = new();
-        private readonly ModuleRegistry _moduleRegistry; // Реестр модулей
-        private List<IModuleMetadata>? _cachedModuleMetadata; // Кэш всех метаданных модулей
-        private readonly List<IDisposable> _slotSubscriptions = new(); // Подписки на изменения слотов
+        /// <summary>Список всех доступных типов модулей с их метаданными</summary>
+        public ObservableCollection<ModuleMenuItem> AllModules { get; } = new();
 
+        /// <summary>Список всех доступных WorkMode типов с их метаданными</summary>
+        public ObservableCollection<WorkModeMenuItem> AllWorkModes { get; } = new();
         private WorkMode? _activeWorkMode;
         private string _title = "Writersword";
-        private object? _currentModule;
         private IRootDock? _dockLayout;
-
-        private RecoveryBannerViewModel? _recoveryBanner;
-        private readonly ICacheService _cacheService;
 
         /// <summary>Заголовок окна</summary>
         public string Title
         {
             get => _title;
             set => this.RaiseAndSetIfChanged(ref _title, value);
-        }
-
-        /// <summary>Текущий активный модуль (View)</summary>
-        public object? CurrentModule
-        {
-            get => _currentModule;
-            set => this.RaiseAndSetIfChanged(ref _currentModule, value);
         }
 
         /// <summary>Layout для Dock системы</summary>
@@ -87,37 +102,6 @@ namespace Writersword.ViewModels
             set => this.RaiseAndSetIfChanged(ref _dockLayout, value);
         }
 
-        /// <summary>
-        /// Открытые вкладки документов
-        /// Делегируем управление в TabCollection
-        /// </summary>
-        public ObservableCollection<DocumentTabViewModel> OpenTabs
-            => _tabCollection.Tabs;
-
-        /// <summary>
-        /// Активная вкладка
-        /// Делегируем управление в TabCollection
-        /// </summary>
-        public DocumentTabViewModel? ActiveTab
-        {
-            get => _tabCollection.ActiveTab;
-            set => _tabCollection.ActiveTab = value;
-        }
-
-        
-/// <summary>ViewModel баннера восстановления (null если баннер скрыт)</summary>
-public RecoveryBannerViewModel? RecoveryBanner
-{
-    get => _recoveryBanner;
-    set => this.RaiseAndSetIfChanged(ref _recoveryBanner, value);
-}
-
-        /// <summary>Список всех доступных типов модулей с их метаданными</summary>
-        public ObservableCollection<ModuleMenuItem> AllModules { get; } = new();
-
-        /// <summary>Список всех доступных WorkMode типов с их метаданными</summary>
-        public ObservableCollection<WorkModeMenuItem> AllWorkModes { get; } = new();
-
         /// <summary>Активный режим работы</summary>
         public WorkMode? ActiveWorkMode
         {
@@ -125,24 +109,28 @@ public RecoveryBannerViewModel? RecoveryBanner
             set => this.RaiseAndSetIfChanged(ref _activeWorkMode, value);
         }
 
-        /// <summary>Доступные режимы работы для текущей вкладки</summary>
-        public ObservableCollection<WorkMode> AvailableWorkModes { get; } = new();
+        // ========================================
+        // КОМАНДЫ (для горячих клавиш)
+        // ========================================
 
-        // === КОМАНДЫ ===
         public ReactiveCommand<Unit, Unit> NewProjectCommand { get; }
         public ReactiveCommand<Unit, Unit> OpenProjectCommand { get; }
         public ReactiveCommand<Unit, Unit> SaveProjectCommand { get; }
         public ReactiveCommand<Unit, Unit> SaveAsProjectCommand { get; }
         public ReactiveCommand<Unit, Unit> ExitCommand { get; }
         public ReactiveCommand<Unit, Unit> CreateNewTabCommand { get; }
-        public ReactiveCommand<WorkMode, Unit> SwitchWorkModeCommand { get; }
-        public ReactiveCommand<Unit, Unit> SaveWorkspaceForProjectCommand { get; }
-        public ReactiveCommand<Unit, Unit> SaveWorkspaceGloballyCommand { get; }
-        public ReactiveCommand<Unit, Unit> LoadDefaultWorkspaceCommand { get; }
         public ReactiveCommand<string, Unit> ToggleWorkModeCommand { get; }
-        public ReactiveCommand<ModuleType, Unit> ToggleModuleCommand { get; }
+        public ReactiveCommand<string, Unit> ToggleModuleCommand { get; }
+
+        // ========================================
+        // КОНСТРУКТОР
+        // ========================================
 
         public MainWindowViewModel(
+            MenuBarViewModel menuBar,
+            TabBarViewModel tabBar,
+            WorkModeBarViewModel workModeBar,
+            ModulePanelViewModel modulePanel,
             IProjectWorkflow projectWorkflow,
             ITabCollection tabCollection,
             IDialogService dialogService,
@@ -150,10 +138,17 @@ public RecoveryBannerViewModel? RecoveryBanner
             IProjectService projectService,
             IHotKeyService hotKeyService,
             IWorkModeConfigurationService workModeConfigService,
-            IWorkModeService workModeService, 
+            IWorkModeService workModeService,
             ICacheService cacheService,
             DockFactory dockFactory)
         {
+            // Инициализация компонентов
+            MenuBar = menuBar;
+            TabBar = tabBar;
+            WorkModeBar = workModeBar;
+            ModulePanel = modulePanel;
+
+            // Инициализация сервисов
             _projectWorkflow = projectWorkflow;
             _tabCollection = tabCollection;
             _dialogService = dialogService;
@@ -165,39 +160,168 @@ public RecoveryBannerViewModel? RecoveryBanner
             _dockFactory = dockFactory;
             _cacheService = cacheService;
             _moduleRegistry = App.Services.GetRequiredService<ModuleRegistry>();
-            _cachedModuleMetadata = _moduleRegistry.GetAllModuleMetadata().ToList();
 
-            // Создаём команды
-            NewProjectCommand = ReactiveCommand.Create(NewProject);
-            OpenProjectCommand = ReactiveCommand.CreateFromTask(OpenProject);
-            SaveProjectCommand = ReactiveCommand.CreateFromTask(SaveProject);
-            SaveAsProjectCommand = ReactiveCommand.CreateFromTask(SaveAsProject);
-            ExitCommand = ReactiveCommand.Create(Exit);
-            CreateNewTabCommand = ReactiveCommand.Create(CreateNewTab);
+            // Связываем компоненты с MainWindow
+            MenuBar.SetMainViewModelProvider(() => this);
+            TabBar.SetTabActivatedHandler(OnTabActivated);
+            WorkModeBar.SetWorkModeSwitchedHandler(OnWorkModeSwitched);
+            ModulePanel.SetModuleHandlers(OnModuleAdded, OnModuleRemoved);
 
-            // Команды для работы WorkMode
-            SwitchWorkModeCommand = ReactiveCommand.Create<WorkMode>(SwitchWorkMode);
-            SaveWorkspaceForProjectCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceForProject);
-            SaveWorkspaceGloballyCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceGlobally);
-            LoadDefaultWorkspaceCommand = ReactiveCommand.CreateFromTask(LoadDefaultWorkspace);
+            // Перенаправляем команды на компоненты (для горячих клавиш)
+            NewProjectCommand = MenuBar.NewProjectCommand;
+            OpenProjectCommand = MenuBar.OpenProjectCommand;
+            SaveProjectCommand = MenuBar.SaveProjectCommand;
+            SaveAsProjectCommand = MenuBar.SaveAsProjectCommand;
+            ExitCommand = MenuBar.ExitCommand;
+            CreateNewTabCommand = TabBar.CreateNewTabCommand;
 
-            // Команды для переключения модулей и режимов
+            // Команды для меню
             ToggleWorkModeCommand = ReactiveCommand.Create<string>(ToggleWorkMode);
-            ToggleModuleCommand = ReactiveCommand.Create<ModuleType>(ToggleModule);
+            ToggleModuleCommand = ReactiveCommand.Create<string>(ToggleModule);
 
             // Подписываемся на события сервисов
             _projectWorkflow.ProjectOpened += OnProjectOpened;
             _projectWorkflow.ProjectSaved += OnProjectSaved;
             _projectWorkflow.ProjectClosed += OnProjectClosed;
-            _tabCollection.ActiveTabChanged += OnActiveTabChanged;
 
+            // Инициализация
             _settingsService.Load();
+            RegisterHotKeys();
+            InitializeDockFactory();
+            InitializeMenuItems();
+            Console.WriteLine("[MainWindowViewModel] Initialized with components");
+        }
 
-            RegisterHotKeys(); // Регистрация горячих клавиш
-            InitializeDockFactory(); // Инициализация Dock фабрики
-            InitializeMenuItems(); // Инициализация AllModules и AllWorkModes
-            UpdateWorkModeMenuItems();
-            UpdateModuleMenuItems();
+        // ========================================
+        // ОБРАБОТЧИКИ СОБЫТИЙ КОМПОНЕНТОВ
+        // ========================================
+
+        /// <summary>
+        /// Обработчик активации вкладки (из TabBar)
+        /// Восстанавливает WorkModes и Dock layout для вкладки
+        /// </summary>
+        private void OnTabActivated(DocumentTabViewModel tab)
+        {
+            Console.WriteLine($"[MainWindowViewModel] Tab activated: {tab.Title}");
+
+            var project = GetProjectForTab(tab);
+            if (project == null) return;
+
+            string tabKey = tab.FilePath ?? tab.Id;
+
+            // Проверяем есть ли уже созданный layout для этой вкладки
+            if (_tabLayouts.TryGetValue(tabKey, out var existingLayout))
+            {
+                Console.WriteLine($"[MainWindowViewModel] Reusing existing layout for tab: {tab.Title}");
+                DockLayout = existingLayout;
+
+                // Загружаем WorkModes в компонент
+                var workModes = _workModeService.GetAllWorkModes();
+                WorkModeBar.LoadWorkModes(workModes);
+
+                // Обновляем панель модулей
+                if (ActiveWorkMode != null)
+                {
+                    ModulePanel.LoadModulesForWorkMode(ActiveWorkMode);
+                }
+
+                return;
+            }
+
+            // Создаём новый layout для вкладки
+            Console.WriteLine($"[MainWindowViewModel] Creating new layout for tab: {tab.Title}");
+            InitializeWorkModesForTab(tab);
+
+            if (DockLayout != null)
+            {
+                _tabLayouts[tabKey] = DockLayout;
+            }
+        }
+
+        /// <summary>
+        /// Обработчик переключения WorkMode (из WorkModeBar)
+        /// Показывает модули нового режима
+        /// </summary>
+        private async Task OnWorkModeSwitched(WorkMode newWorkMode)
+        {
+            Console.WriteLine($"[MainWindowViewModel] WorkMode switched: {newWorkMode.Title}");
+
+            ActiveWorkMode = newWorkMode;
+
+            // Показываем модули нового WorkMode
+            var layout = _dockFactory.CreateLayout(newWorkMode);
+            DockLayout = layout;
+
+            // Обновляем панель модулей
+            ModulePanel.LoadModulesForWorkMode(newWorkMode);
+
+            Console.WriteLine($"[MainWindowViewModel] Loaded {newWorkMode.ModuleSlots.Count} modules for WorkMode");
+        }
+
+        /// <summary>
+        /// Обработчик добавления модуля (из ModulePanel)
+        /// Создаёт новый модуль в Dock layout
+        /// </summary>
+        private void OnModuleAdded(string moduleId)
+        {
+            Console.WriteLine($"[MainWindowViewModel] Module added: {moduleId}");
+
+            if (ActiveWorkMode == null || DockLayout == null) return;
+
+            // Ищем существующий слот
+            var existingSlot = ActiveWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
+
+            if (existingSlot != null)
+            {
+                // Показываем скрытый модуль
+                existingSlot.IsVisible = true;
+            }
+            else
+            {
+                // Создаём новый слот
+                var newSlot = new ModuleSlot
+                {
+                    ModuleId = moduleId,
+                    IsVisible = true,
+                    IsCloseable = _workModeConfigService.CanRemoveModule(ActiveWorkMode.WorkModeId, moduleId),
+                    MinWidth = 200,
+                    MinHeight = 150,
+                    PreferredPosition = PreferredDockPosition.RightAsTab
+                };
+
+                ActiveWorkMode.ModuleSlots.Add(newSlot);
+            }
+
+            // Пересоздаём layout
+            var layout = _dockFactory.CreateLayout(ActiveWorkMode);
+            DockLayout = layout;
+
+            // Обновляем панель модулей
+            ModulePanel.LoadModulesForWorkMode(ActiveWorkMode);
+        }
+
+        /// <summary>
+        /// Обработчик удаления модуля (из ModulePanel)
+        /// Скрывает модуль в Dock layout
+        /// </summary>
+        private void OnModuleRemoved(string moduleId)
+        {
+            Console.WriteLine($"[MainWindowViewModel] Module removed: {moduleId}");
+
+            if (ActiveWorkMode == null) return;
+
+            var slot = ActiveWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
+            if (slot != null)
+            {
+                slot.IsVisible = false;
+
+                // Пересоздаём layout
+                var layout = _dockFactory.CreateLayout(ActiveWorkMode);
+                DockLayout = layout;
+
+                // Обновляем панель модулей
+                ModulePanel.LoadModulesForWorkMode(ActiveWorkMode);
+            }
         }
 
         // ========================================
@@ -208,76 +332,6 @@ public RecoveryBannerViewModel? RecoveryBanner
         private void OnProjectOpened(DocumentTabViewModel tab)
         {
             Console.WriteLine($"[MainWindowViewModel] Project opened: {tab.Title}");
-
-            // Проверяем нужен ли баннер
-            var filePath = tab.FilePath;
-            if (!string.IsNullOrEmpty(filePath) && _cacheService.HasCache(filePath))
-            {
-                var cacheDate = _cacheService.GetCacheDate(filePath);
-                var saveDate = _cacheService.GetSaveDate(filePath);
-
-                if (cacheDate.HasValue && saveDate.HasValue)
-                {
-                    ShowRecoveryBanner(cacheDate.Value, saveDate.Value);
-                }
-            }
-
-            InitializeWorkModesForTab(tab);
-            ShowTextEditor();
-        }
-
-        private void ShowRecoveryBanner(DateTime cacheDate, DateTime saveDate)
-        {
-            RecoveryBanner = new RecoveryBannerViewModel
-            {
-                IsViewingCache = false,
-                CacheDate = cacheDate,
-                SaveDate = saveDate
-            };
-
-            RecoveryBanner.SwitchVersionCommand = ReactiveCommand.CreateFromTask(SwitchRecoveryVersion);
-            RecoveryBanner.SaveCommand = ReactiveCommand.CreateFromTask(SaveCacheAsMain);
-            RecoveryBanner.DiscardCommand = ReactiveCommand.CreateFromTask(DiscardCache);
-        }
-
-        private void HideRecoveryBanner()
-        {
-            RecoveryBanner = null;
-        }
-
-        private async Task SwitchRecoveryVersion()
-        {
-            // TODO: Реализовать переключение
-        }
-
-        private async Task SaveCacheAsMain()
-        {
-            if (ActiveTab != null)
-            {
-                await _projectWorkflow.SaveDocumentAsync(ActiveTab);
-                HideRecoveryBanner();
-            }
-        }
-
-        private async Task DiscardCache()
-        {
-            if (ActiveTab == null) return;
-
-            var filePath = ActiveTab.FilePath;
-            if (string.IsNullOrEmpty(filePath)) return;
-
-            var result = await _dialogService.ShowMessageAsync(
-                "Удалить автосохранение?",
-                "Автосохранённая версия будет удалена. Продолжить?",
-                Views.MessageBoxType.Warning,
-                Views.MessageBoxButtons.YesNo
-            );
-
-            if (result == Views.MessageBoxResult.Yes)
-            {
-                _cacheService.DeleteCache(filePath);
-                HideRecoveryBanner();
-            }
         }
 
         /// <summary>Обработчик сохранения проекта</summary>
@@ -291,212 +345,104 @@ public RecoveryBannerViewModel? RecoveryBanner
         {
             Console.WriteLine($"[MainWindowViewModel] Project closed: {tab.Title}");
 
+            // Удаляем layout вкладки
+            string tabKey = tab.FilePath ?? tab.Id;
+            _tabLayouts.Remove(tabKey);
+
             // Если закрыли последнюю вкладку - показываем Welcome
-            if (OpenTabs.Count == 0)
+            if (_tabCollection.Tabs.Count == 0)
             {
                 ActiveWorkMode = null;
-                CurrentModule = null;
+                DockLayout = null;
                 ShowWelcomeIfNoTabs();
             }
         }
 
-        /// <summary>Обработчик изменения активной вкладки</summary>
-        private void OnActiveTabChanged(DocumentTabViewModel? tab)
-        {
-            Console.WriteLine($"[MainWindowViewModel] Active tab changed: {tab?.Title ?? "none"}");
-            if (tab != null)
-            {
-                // Уведомляем UI об изменении
-                this.RaisePropertyChanged(nameof(ActiveTab));
-                ActivateTab(tab);
-            }
-            else
-            {
-                // Если нет активных вкладок → показываем Welcome
-                Console.WriteLine("[MainWindowViewModel] No active tabs, showing welcome");
-                var mainWindow = (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
-                if (mainWindow != null)
-                {
-                    _ = App.ShowWelcomeScreen(mainWindow);
-                }
-            }
-        }
-
         // ========================================
-        // КОМАНДЫ РАБОТЫ С ПРОЕКТАМИ
-        // (делегируют работу в ProjectWorkflow)
-        // ========================================
-
-        /// <summary>Создать новый проект (показывает Welcome окно)</summary>
-        private async void NewProject()
-        {
-            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            {
-                await App.ShowWelcomeScreen(desktop.MainWindow!);
-            }
-        }
-
-        /// <summary>Открыть существующий проект</summary>
-        private async Task OpenProject()
-        {
-            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            {
-                await App.ShowWelcomeScreen(desktop.MainWindow!);
-            }
-        }
-
-        /// <summary>Сохранить активный проект</summary>
-        private async Task SaveProject()
-        {
-            if (ActiveTab == null)
-            {
-                Console.WriteLine("[SaveProject] No active tab");
-                return;
-            }
-
-            await _projectWorkflow.SaveDocumentAsync(ActiveTab);
-        }
-
-        /// <summary>Сохранить активный проект как...</summary>
-        private async Task SaveAsProject()
-        {
-            if (ActiveTab == null)
-            {
-                Console.WriteLine("[SaveAsProject] No active tab");
-                return;
-            }
-
-            await _projectWorkflow.SaveAsDocumentAsync(ActiveTab);
-        }
-
-        /// <summary>Выход из приложения</summary>
-        private void Exit()
-        {
-            System.Environment.Exit(0);
-        }
-
-        /// <summary>Создать новую вкладку - открывает Welcome окно</summary>
-        private async void CreateNewTab()
-        {
-            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
-                && desktop.MainWindow != null)
-            {
-                await App.ShowWelcomeScreen(desktop.MainWindow);
-            }
-        }
-
-        // ========================================
-        // УПРАВЛЕНИЕ ВКЛАДКАМИ
+        // ИНИЦИАЛИЗАЦИЯ WORKMODES
         // ========================================
 
         /// <summary>
-        /// Загрузить проект при старте приложения
-        /// Вызывается из App.axaml.cs при восстановлении сессии
+        /// Инициализировать WorkModes для вкладки
+        /// Вызывается при первом открытии вкладки
         /// </summary>
-        public async void LoadProject(string filePath)
+        public void InitializeWorkModesForTab(DocumentTabViewModel tab)
         {
-            Console.WriteLine($"[LoadProject] Loading: {filePath}");
-
-            // Проверяем не открыт ли уже этот проект
-            var existingTab = _tabCollection.FindByPath(filePath);
-            if (existingTab != null)
-            {
-                Console.WriteLine($"[LoadProject] Project already open, activating tab");
-                _tabCollection.ActiveTab = existingTab;
-                return;
-            }
-
-            // Открываем через workflow
-            var tab = await _projectWorkflow.OpenDocumentAsync(filePath);
-            if (tab != null)
-            {
-                _tabCollection.Add(tab);
-                _tabCollection.ActiveTab = tab;
-                _settingsService.AddRecentProject(filePath);
-            }
-        }
-
-        /// <summary>Добавить новую вкладку в приложение</summary>
-        public void AddNewTab(string title, string content, string? filePath)
-        {
-            // ПРОВЕРКА: Если вкладка с таким FilePath уже существует - активируем её
-            if (!string.IsNullOrEmpty(filePath))
-            {
-                var existingTab = _tabCollection.FindByPath(filePath);
-                if (existingTab != null)
-                {
-                    _tabCollection.ActiveTab = existingTab;
-                    return;
-                }
-            }
-
-            // Деактивируем все вкладки
-            foreach (var tab in OpenTabs)
-            {
-                tab.IsActive = false;
-            }
-
-            // Создаём новый документ
-            var newProject = _projectService.CreateNew(title, "Novel");
-            var tabVM = new DocumentTabViewModel(newProject, filePath ?? "", CloseTabAsync);
-            tabVM.Content = content;
-
-            _tabCollection.Add(tabVM);
-            _tabCollection.ActiveTab = tabVM;
-
-            InitializeWorkModesForTab(tabVM);
-            ShowTextEditor();
-        }
-
-        /// <summary>Активировать вкладку</summary>
-        public void ActivateTab(DocumentTabViewModel tab)
-        {
-            // Деактивируем все вкладки
-            foreach (var t in OpenTabs)
-            {
-                t.IsActive = false;
-            }
-            tab.IsActive = true;
-            _tabCollection.ActiveTab = tab;
-
-            // Восстанавливаем layout для вкладки
             var project = GetProjectForTab(tab);
-            if (project != null)
+            if (project == null) return;
+
+            Console.WriteLine($"[InitializeWorkModesForTab] Initializing for: {tab.Title}");
+
+            // Загружаем WorkModes из проекта или глобальных настроек
+            List<WorkMode>? savedWorkModes = null; // TODO: Загрузка из UserConfig
+            var workModes = _workModeService.InitializeWorkModes(project.Type, savedWorkModes);
+
+            // Загружаем в компонент WorkModeBar
+            WorkModeBar.LoadWorkModes(workModes);
+
+            // Устанавливаем провайдер модулей для переключения WorkMode
+            WorkModeBar.SetActiveModulesProvider(() => GetActiveModules(), tab.FilePath);
+
+            // Активируем первый WorkMode
+            var activeWM = workModes.FirstOrDefault(wm => wm.IsActive) ?? workModes.FirstOrDefault();
+            if (activeWM != null)
             {
-                string tabKey = tab.FilePath ?? tab.Id;
+                ActiveWorkMode = activeWM;
 
-                // Если layout уже создан для этой вкладки - переиспользуем его
-                if (_tabLayouts.TryGetValue(tabKey, out var existingLayout))
-                {
-                    Console.WriteLine($"[ActivateTab] Reusing existing layout for tab: {tab.Title}");
-                    DockLayout = existingLayout;
-                    return;  // ← ДОБАВЬ RETURN! НЕ СОЗДАВАЙ WORKMODES СНОВА!
-                }
+                // Создаём Dock layout
+                var layout = _dockFactory.CreateLayout(activeWM);
+                DockLayout = layout;
 
-                Console.WriteLine($"[ActivateTab] Creating new layout for tab: {tab.Title}");
-                InitializeWorkModesForTab(tab);
-                if (DockLayout != null)
-                {
-                    _tabLayouts[tabKey] = DockLayout;
-                }
+                // Загружаем модули в панель
+                ModulePanel.LoadModulesForWorkMode(activeWM);
+
+                Console.WriteLine($"[InitializeWorkModesForTab] Activated WorkMode: {activeWM.Title}");
             }
         }
 
+        // ========================================
+        // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+        // ========================================
+
         /// <summary>
-        /// Закрыть вкладку
-        /// Вызывается из CloseCommand вкладки
+        /// Получить список активных модулей из текущего DockLayout
+        /// Используется при переключении WorkMode
         /// </summary>
-        public async Task CloseTabAsync(DocumentTabViewModel tab)
+        public List<IModule> GetActiveModules()
         {
-            Console.WriteLine($"[CloseTab] Closing tab: {tab.Title}");
+            var modules = new List<IModule>();
 
-            if (await _projectWorkflow.CloseDocumentAsync(tab))
+            if (DockLayout == null)
             {
-                // Удаляем layout
-                string tabKey = tab.FilePath ?? tab.Id;
-                _tabLayouts.Remove(tabKey);  
+                Console.WriteLine("[GetActiveModules] No DockLayout");
+                return modules;
+            }
 
-                _tabCollection.Remove(tab);
+            CollectModulesFromDockable(DockLayout, modules);
+
+            Console.WriteLine($"[GetActiveModules] Found {modules.Count} active modules");
+            return modules;
+        }
+
+        /// <summary>Рекурсивно собрать модули из Dockable структуры</summary>
+        private void CollectModulesFromDockable(IDockable dockable, List<IModule> modules)
+        {
+            if (dockable is Document document && document.Id?.StartsWith("Module_") == true)
+            {
+                var moduleId = document.Id.Substring("Module_".Length);
+                var module = _moduleRegistry.GetActiveModule(moduleId);
+                if (module != null)
+                {
+                    modules.Add(module);
+                }
+            }
+
+            if (dockable is IDock dock && dock.VisibleDockables != null)
+            {
+                foreach (var child in dock.VisibleDockables)
+                {
+                    CollectModulesFromDockable(child, modules);
+                }
             }
         }
 
@@ -506,18 +452,7 @@ public RecoveryBannerViewModel? RecoveryBanner
             var filePath = tab.FilePath;
             if (string.IsNullOrEmpty(filePath)) return null;
 
-            var project = _projectService.GetProjectByPath(filePath);
-
-            if (project != null)
-            {
-                Console.WriteLine($"[GetProjectForTab] Found project: {project.Title}");
-            }
-            else
-            {
-                Console.WriteLine($"[GetProjectForTab] Project NOT found for path: {filePath}");
-            }
-
-            return project;
+            return _projectService.GetProjectByPath(filePath);
         }
 
         /// <summary>Показать Welcome если нет вкладок</summary>
@@ -530,54 +465,11 @@ public RecoveryBannerViewModel? RecoveryBanner
             }
         }
 
-        // ========================================
-        // ТЕКСТОВЫЙ РЕДАКТОР
-        // ========================================
-
-        /// <summary>Показать модуль текстового редактора</summary>
-        public void ShowTextEditor()
+        /// <summary>Инициализировать Dock фабрику</summary>
+        private void InitializeDockFactory()
         {
-            if (ActiveTab == null)
-            {
-                Console.WriteLine("ShowTextEditor: ActiveTab is null!");
-                return;
-            }
-
-            Console.WriteLine($"ShowTextEditor called for tab: {ActiveTab.Title}");
-
-            var viewModel = new TextEditorViewModel();
-            viewModel.LoadDocument(ActiveTab.Content);
-
-            // Подписываемся на изменения текста
-            viewModel.WhenAnyValue(x => x.PlainText)
-                .Throttle(TimeSpan.FromSeconds(2))
-                .ObserveOn(RxApp.MainThreadScheduler)
-                .Subscribe(async text =>
-                {
-                    if (ActiveTab != null)
-                    {
-                        ActiveTab.Content = text;
-
-                        // Автосохранение проекта активной вкладки
-                        var project = GetProjectForTab(ActiveTab);
-                        if (project != null)
-                        {
-                            var filePath = _projectService.GetProjectPath(project);
-                            if (filePath != null)
-                            {
-                                await _projectService.SaveAsync(project, filePath);
-                            }
-                        }
-                    }
-                });
-
-            var view = new Modules.TextEditor.Views.TextEditorView
-            {
-                DataContext = viewModel
-            };
-
-            CurrentModule = view;
-            Console.WriteLine($"CurrentModule set to TextEditorView");
+            _dockFactory.Initialize();
+            Console.WriteLine("[MainWindowViewModel] Dock factory initialized");
         }
 
         // ========================================
@@ -587,327 +479,77 @@ public RecoveryBannerViewModel? RecoveryBanner
         /// <summary>Регистрация горячих клавиш</summary>
         private void RegisterHotKeys()
         {
-            // Ctrl+N - Новый проект
-            _hotKeyService.Register(
-                "file.new",
-                new HotKey
-                {
-                    DisplayNameKey = "HotKey_File_New",
-                    DefaultGesture = new KeyGesture(Key.N, KeyModifiers.Control)
-                },
-                NewProjectCommand
-            );
+            _hotKeyService.Register("file.new", new HotKey
+            {
+                DisplayNameKey = "HotKey_File_New",
+                DefaultGesture = new KeyGesture(Key.N, KeyModifiers.Control)
+            }, NewProjectCommand);
 
-            // Ctrl+O - Открыть проект
-            _hotKeyService.Register(
-                "file.open",
-                new HotKey
-                {
-                    DisplayNameKey = "HotKey_File_Open",
-                    DefaultGesture = new KeyGesture(Key.O, KeyModifiers.Control)
-                },
-                OpenProjectCommand
-            );
+            _hotKeyService.Register("file.open", new HotKey
+            {
+                DisplayNameKey = "HotKey_File_Open",
+                DefaultGesture = new KeyGesture(Key.O, KeyModifiers.Control)
+            }, OpenProjectCommand);
 
-            // Ctrl+S - Сохранить
-            _hotKeyService.Register(
-                "file.save",
-                new HotKey
-                {
-                    DisplayNameKey = "HotKey_File_Save",
-                    DefaultGesture = new KeyGesture(Key.S, KeyModifiers.Control)
-                },
-                SaveProjectCommand
-            );
+            _hotKeyService.Register("file.save", new HotKey
+            {
+                DisplayNameKey = "HotKey_File_Save",
+                DefaultGesture = new KeyGesture(Key.S, KeyModifiers.Control)
+            }, SaveProjectCommand);
 
-            // Ctrl+Shift+S - Сохранить как
-            _hotKeyService.Register(
-                "file.saveas",
-                new HotKey
-                {
-                    DisplayNameKey = "HotKey_File_SaveAs",
-                    DefaultGesture = new KeyGesture(Key.S, KeyModifiers.Control | KeyModifiers.Shift)
-                },
-                SaveAsProjectCommand
-            );
+            _hotKeyService.Register("file.saveas", new HotKey
+            {
+                DisplayNameKey = "HotKey_File_SaveAs",
+                DefaultGesture = new KeyGesture(Key.S, KeyModifiers.Control | KeyModifiers.Shift)
+            }, SaveAsProjectCommand);
 
-            // Ctrl+W - Закрыть вкладку
-            _hotKeyService.Register(
-                "file.closetab",
-                new HotKey
-                {
-                    DisplayNameKey = "HotKey_File_CloseTab",
-                    DefaultGesture = new KeyGesture(Key.W, KeyModifiers.Control)
-                },
-                ReactiveCommand.CreateFromTask(async () =>
-                {
-                    if (ActiveTab != null)
-                        await CloseTabAsync(ActiveTab);
-                })
-            );
+            _hotKeyService.Register("file.closetab", new HotKey
+            {
+                DisplayNameKey = "HotKey_File_CloseTab",
+                DefaultGesture = new KeyGesture(Key.W, KeyModifiers.Control)
+            }, ReactiveCommand.CreateFromTask(async () =>
+            {
+                if (TabBar.ActiveTab != null)
+                    await _projectWorkflow.CloseDocumentAsync(TabBar.ActiveTab);
+            }));
 
-            // Ctrl+T - Новая вкладка
-            _hotKeyService.Register(
-                "file.newtab",
-                new HotKey
-                {
-                    DisplayNameKey = "HotKey_File_NewTab",
-                    DefaultGesture = new KeyGesture(Key.T, KeyModifiers.Control)
-                },
-                CreateNewTabCommand
-            );
+            _hotKeyService.Register("file.newtab", new HotKey
+            {
+                DisplayNameKey = "HotKey_File_NewTab",
+                DefaultGesture = new KeyGesture(Key.T, KeyModifiers.Control)
+            }, CreateNewTabCommand);
+
+            Console.WriteLine("[MainWindowViewModel] Hot keys registered");
         }
 
         // ========================================
-        // WORKMODE УПРАВЛЕНИЕ
+        // ПУБЛИЧНЫЕ МЕТОДЫ (для App.axaml.cs)
         // ========================================
 
-        /// <summary>Переключить режим работы</summary>
-        private void SwitchWorkMode(WorkMode workMode)
+        /// <summary>
+        /// Загрузить проект при старте приложения
+        /// Вызывается из App.axaml.cs при восстановлении сессии
+        /// </summary>
+        public async void LoadProject(string filePath)
         {
-            if (ActiveTab == null) return;
+            Console.WriteLine($"[LoadProject] Loading: {filePath}");
 
-            _workModeService.SetActiveWorkMode(workMode);
-            ActiveWorkMode = workMode;
-
-            // Обновляем IsActive для всех WorkModes
-            foreach (var wm in AvailableWorkModes)
+            var existingTab = _tabCollection.FindByPath(filePath);
+            if (existingTab != null)
             {
-                wm.IsActive = (wm.Id == workMode.Id);
+                Console.WriteLine($"[LoadProject] Project already open");
+                _tabCollection.ActiveTab = existingTab;
+                return;
             }
 
-            Console.WriteLine($"[MainWindowViewModel] Switched to WorkMode: {workMode.Title}");
-            Console.WriteLine($"[MainWindowViewModel] Modules in this mode: {workMode.ModuleSlots.Count}");
-
-            ShowModulesForWorkMode(workMode);
-
-            UpdateWorkModeMenuItems();
-            UpdateModuleMenuItems();
-        }
-
-        /// <summary>Показать модули для выбранного WorkMode</summary>
-        private void ShowModulesForWorkMode(WorkMode workMode)
-        {
-            Console.WriteLine($"[ShowModulesForWorkMode] ===== LOADING MODULES FOR: {workMode.Title} =====");
-            Console.WriteLine($"[ShowModulesForWorkMode] Total slots: {workMode.ModuleSlots.Count}");
-
-            foreach (var slot in workMode.ModuleSlots)
+            var tab = await _projectWorkflow.OpenDocumentAsync(filePath);
+            if (tab != null)
             {
-                Console.WriteLine($"  Slot: {slot.ModuleType}, IsVisible={slot.IsVisible}");
-            }
-
-            var layout = _dockFactory.CreateLayout(workMode);
-            DockLayout = layout;
-
-            Console.WriteLine($"[ShowModulesForWorkMode] DockLayout created");
-
-            // ОТПИСЫВАЕМСЯ ОТ СТАРЫХ ПОДПИСОК!
-            foreach (var subscription in _slotSubscriptions)
-            {
-                subscription.Dispose();
-            }
-            _slotSubscriptions.Clear();
-            Console.WriteLine($"[ShowModulesForWorkMode] Cleared {_slotSubscriptions.Count} old subscriptions");
-
-            // Создаём НОВЫЕ подписки
-            foreach (var slot in workMode.ModuleSlots)
-            {
-                var subscription = slot.WhenAnyValue(x => x.IsVisible)
-                    .Subscribe(_ =>
-                    {
-                        Console.WriteLine($"[ShowModulesForWorkMode] Slot.IsVisible changed: {slot.ModuleType} = {slot.IsVisible}");
-                        UpdateModuleMenuItems();
-                    });
-
-                _slotSubscriptions.Add(subscription);
-            }
-
-            Console.WriteLine($"[ShowModulesForWorkMode] Subscribed to {workMode.ModuleSlots.Count} slot changes");
-        }
-
-        /// <summary>Найти DocumentDock в структуре</summary>
-        private static DocumentDock? FindDocumentDock(IDockable? root)
-        {
-            if (root is DocumentDock docDock)
-                return docDock;
-
-            if (root is IDock dock && dock.VisibleDockables != null)
-            {
-                foreach (var child in dock.VisibleDockables)
-                {
-                    var found = FindDocumentDock(child);
-                    if (found != null) return found;
-                }
-            }
-
-            return null;
-        }
-
-        /// <summary>Сохранить настройки для этого проекта</summary>
-        private async Task SaveWorkspaceForProject()
-        {
-            if (ActiveTab == null) return;
-
-            var result = await _dialogService.ShowMessageAsync(
-                "Сохранить настройки проекта?",
-                "ВНИМАНИЕ! Если для этого проекта уже были сохранены настройки окон - они будут УДАЛЕНЫ и заменены текущими.\n\nВы уверены?",
-                Views.MessageBoxType.Warning,
-                Views.MessageBoxButtons.YesNo
-            );
-
-            if (result == Views.MessageBoxResult.Yes)
-            {
-                // Получаем проект
-                var project = GetProjectForTab(ActiveTab);
-                if (project != null)
-                {
-                    // Сохраняем WorkModes в UserConfig проекта
-                    if (project.UserConfig == null)
-                    {
-                        project.UserConfig = new UserConfiguration();
-                    }
-
-                    project.UserConfig.WorkModes = _workModeService.GetAllWorkModes()
-                        .Select(wm => new UserWorkModeConfig
-                        {
-                            Id = wm.WorkModeId,
-                            Title = wm.Title,
-                            IsActive = wm.IsActive,
-                            ModuleSlots = wm.ModuleSlots.Select(ms => new UserModuleSlotConfig
-                            {
-                                ModuleType = ms.ModuleType.ToString(),
-                                IsVisible = ms.IsVisible,
-                                Position = ms.PreferredPosition.ToString()
-                            }).ToList()
-                        }).ToList();
-
-                    // Сохраняем проект
-                    var filePath = _projectService.GetProjectPath(project);
-                    if (filePath != null)
-                    {
-                        await _projectService.SaveAsync(project, filePath);
-                        Console.WriteLine("[MainWindowViewModel] Workspace saved to PROJECT");
-                    }
-                }
+                _tabCollection.Add(tab);
+                _tabCollection.ActiveTab = tab;
+                _settingsService.AddRecentProject(filePath);
             }
         }
-
-        /// <summary>Сохранить настройки для всех проектов этого типа</summary>
-        private async Task SaveWorkspaceGlobally()
-        {
-            if (ActiveTab == null) return;
-
-            var project = GetProjectForTab(ActiveTab);
-            if (project == null) return;
-
-            var result = await _dialogService.ShowMessageAsync(
-                "Сохранить глобальные настройки?",
-                $"Эти настройки будут применяться для всех НОВЫХ проектов типа '{project.Type}'.\n\nВы всегда сможете вернуться к дефолтным настройкам или настроить каждый проект отдельно.\n\nСохранить?",
-                Views.MessageBoxType.Question,
-                Views.MessageBoxButtons.YesNo
-            );
-
-            if (result == Views.MessageBoxResult.Yes)
-            {
-                var workModes = _workModeService.GetAllWorkModes();
-                _workModeConfigService.SaveGlobalConfiguration(project.Type, workModes);
-
-                await _dialogService.ShowMessageAsync(
-                    "Успешно",
-                    "Глобальные настройки сохранены!",
-                    Views.MessageBoxType.Info,
-                    Views.MessageBoxButtons.OK
-                );
-
-                Console.WriteLine("[MainWindowViewModel] Workspace saved GLOBALLY");
-            }
-        }
-
-        /// <summary>Загрузить дефолтные настройки</summary>
-        private async Task LoadDefaultWorkspace()
-        {
-            if (ActiveTab == null) return;
-
-            var project = GetProjectForTab(ActiveTab);
-            if (project == null) return;
-
-            var result = await _dialogService.ShowMessageAsync(
-                "Загрузить дефолтные настройки?",
-                "Текущая раскладка окон будет заменена на дефолтную конфигурацию.\n\nВНИМАНИЕ: Это НЕ удалит ваши сохранённые настройки! Чтобы сохранить дефолтную раскладку, используйте кнопку 'Сохранить настройки для этого проекта' после загрузки.\n\nЗагрузить дефолтные настройки?",
-                Views.MessageBoxType.Question,
-                Views.MessageBoxButtons.YesNo
-            );
-
-            if (result == Views.MessageBoxResult.Yes)
-            {
-                var defaultWorkModes = _workModeConfigService.LoadDefaultConfiguration(project.Type);
-                var workModes = _workModeService.InitializeWorkModes(project.Type, defaultWorkModes);
-
-                AvailableWorkModes.Clear();
-                foreach (var wm in workModes)
-                {
-                    AvailableWorkModes.Add(wm);
-                }
-
-                if (workModes.Count > 0)
-                {
-                    SwitchWorkMode(workModes[0]);
-                }
-
-                Console.WriteLine("[MainWindowViewModel] Loaded DEFAULT workspace");
-            }
-        }
-
-        /// <summary>Инициализировать WorkModes для вкладки</summary>
-        public void InitializeWorkModesForTab(DocumentTabViewModel tab)
-        {
-            var project = GetProjectForTab(tab);
-            if (project == null) return;
-
-            // Получаем сохранённые WorkModes из UserConfig проекта
-            List<WorkMode>? savedWorkModes = null;
-            if (project.UserConfig != null && project.UserConfig.WorkModes.Count > 0)
-            {
-                // TODO: Конвертировать WorkModeConfig → WorkMode
-                // Пока загружаем дефолтные
-                savedWorkModes = null;
-            }
-
-            var workModes = _workModeService.InitializeWorkModes(project.Type, savedWorkModes);
-
-            AvailableWorkModes.Clear();
-            foreach (var wm in workModes)
-            {
-                AvailableWorkModes.Add(wm);
-            }
-
-            // Устанавливаем активный режим
-            var activeWM = workModes.FirstOrDefault(wm => wm.IsActive) ?? workModes.FirstOrDefault();
-            if (activeWM != null)
-            {
-                ActiveWorkMode = activeWM;
-
-                // ВАЖНО: Показываем модули для активного WorkMode
-                Console.WriteLine($"[InitializeWorkModesForTab] Showing modules for active WorkMode: {activeWM.Title}");
-                ShowModulesForWorkMode(activeWM);
-            }
-
-            Console.WriteLine($"[InitializeWorkModesForTab] Initialized {workModes.Count} WorkModes for tab");
-
-            UpdateWorkModeMenuItems();
-            UpdateModuleMenuItems();
-        }
-
-        /// <summary>Инициализировать Dock фабрику один раз</summary>
-        private void InitializeDockFactory()
-        {
-            _dockFactory.Initialize();
-            Console.WriteLine("[MainWindowViewModel] Dock factory initialized");
-        }
-
-        // ========================================
-        // МЕНЮ МОДУЛЕЙ И WORKMODES
-        // ========================================
 
         /// <summary>Элемент меню для модуля</summary>
         public class ModuleMenuItem : ReactiveObject
@@ -915,7 +557,7 @@ public RecoveryBannerViewModel? RecoveryBanner
             private bool _isEnabled;
             private bool _isChecked;
 
-            public ModuleType Type { get; set; }
+            public string ModuleId { get; set; } = "";
             public string Name { get; set; } = "";
             public string Icon { get; set; } = "";
             public bool IsUniversal { get; set; }
@@ -967,7 +609,7 @@ public RecoveryBannerViewModel? RecoveryBanner
             {
                 AllModules.Add(new ModuleMenuItem
                 {
-                    Type = metadata.ModuleType,
+                    ModuleId = metadata.ModuleId,
                     Name = metadata.DisplayName,
                     Icon = metadata.Icon,
                     IsUniversal = metadata.IsUniversal,
@@ -1000,28 +642,30 @@ public RecoveryBannerViewModel? RecoveryBanner
         {
             Console.WriteLine($"[ToggleWorkMode] Toggling: {workModeId}");
 
-            // Ищем WorkMode по ID
-            var existingWorkMode = AvailableWorkModes.FirstOrDefault(wm => wm.WorkModeId == workModeId);
+            if (ActiveWorkMode == null) return;
+
+            // Ищем WorkMode в доступных
+            var workModeBar = WorkModeBar;
+            var existingWorkMode = workModeBar.WorkModes.FirstOrDefault(wm => wm.WorkModeId == workModeId);
 
             if (existingWorkMode != null)
             {
-                // WorkMode уже открыт - просто переключаемся на него
+                // WorkMode уже открыт - переключаемся на него
                 Console.WriteLine($"[ToggleWorkMode] WorkMode exists, switching to it");
-                SwitchWorkMode(existingWorkMode);
+                workModeBar.SwitchWorkModeCommand.Execute(existingWorkMode).Subscribe();
             }
             else
             {
                 // WorkMode не открыт - создаём новый
                 Console.WriteLine($"[ToggleWorkMode] WorkMode not found, creating new");
 
-                var project = ActiveTab != null ? GetProjectForTab(ActiveTab) : null;
+                var project = TabBar.ActiveTab != null ? GetProjectForTab(TabBar.ActiveTab) : null;
                 if (project == null)
                 {
                     Console.WriteLine("[ToggleWorkMode] No active project");
                     return;
                 }
 
-                // Получаем WorkMode из реестра
                 var workModeRegistry = App.Services.GetRequiredService<Writersword.Src.WorkModes.Common.WorkModeRegistry>();
                 var workModeInstance = workModeRegistry.GetWorkMode(workModeId);
 
@@ -1031,7 +675,6 @@ public RecoveryBannerViewModel? RecoveryBanner
                     return;
                 }
 
-                // Создаём WorkMode
                 var newWorkMode = _workModeService.AddWorkMode(
                     workModeId,
                     workModeInstance.DisplayName,
@@ -1041,203 +684,40 @@ public RecoveryBannerViewModel? RecoveryBanner
                 newWorkMode.IsCloseable = workModeInstance.IsCloseable;
                 newWorkMode.Order = workModeInstance.Order;
 
-                AvailableWorkModes.Add(newWorkMode);
-                SwitchWorkMode(newWorkMode);
+                WorkModeBar.LoadWorkModes(_workModeService.GetAllWorkModes());
+                workModeBar.SwitchWorkModeCommand.Execute(newWorkMode).Subscribe();
 
                 Console.WriteLine($"[ToggleWorkMode] Created and switched to: {newWorkMode.Title}");
             }
 
-            // Обновляем галочки в меню
             UpdateWorkModeMenuItems();
         }
 
         /// <summary>Открыть модуль или переключиться на него</summary>
-        private void ToggleModule(ModuleType moduleType)
+        private void ToggleModule(string moduleId)
         {
-            Console.WriteLine($"[ToggleModule] ===== CALLED! Module: {moduleType} =====");
+            Console.WriteLine($"[ToggleModule] Toggling: {moduleId}");
 
-            if (ActiveWorkMode == null)
+            if (ActiveWorkMode == null) return;
+
+            // Используем ModulePanel для переключения
+            var moduleItem = ModulePanel.AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
+            if (moduleItem != null)
             {
-                Console.WriteLine("[ToggleModule] No active WorkMode");
-                return;
+                ModulePanel.ToggleModuleCommand.Execute(moduleItem).Subscribe();
             }
 
-            if (DockLayout == null)
-            {
-                Console.WriteLine("[ToggleModule] No DockLayout");
-                return;
-            }
-
-            var docId = $"Module_{moduleType}";
-
-            // ===== ШАГ 1: Ищем документ ВО ВСЕЙ dock-структуре =====
-            var existingDoc = FindDocumentInEntireLayout(DockLayout, docId);
-
-            if (existingDoc != null)
-            {
-                Console.WriteLine($"[ToggleModule] Found existing document, focusing: {moduleType}");
-
-                // Фокусируемся на найденном документе
-                if (existingDoc.Owner is IDock dock)
-                {
-                    dock.ActiveDockable = existingDoc;
-                }
-
-                return;
-            }
-
-            // ===== ШАГ 2: Ищем в Float окнах =====
-            var floatingDoc = FindFloatingDocument(DockLayout, docId);
-            if (floatingDoc != null)
-            {
-                Console.WriteLine($"[ToggleModule] Module is floating, focusing window: {moduleType}");
-                Src.Infrastructure.Dock.HostWindow.ActivateWindow(docId);
-                return;
-            }
-
-            // ===== ШАГ 3: Документ не найден - создаём =====
-            Console.WriteLine($"[ToggleModule] Document not found, creating new: {moduleType}");
-
-            var documentDock = FindDocumentDock(DockLayout);
-            if (documentDock == null)
-            {
-                Console.WriteLine("[ToggleModule] ERROR: DocumentDock not found!");
-                return;
-            }
-
-            var existingSlot = ActiveWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleType);
-
-            if (existingSlot != null)
-            {
-                existingSlot.IsVisible = true;
-
-                var doc = _dockFactory.CreateModuleDocument(existingSlot);
-                if (doc != null && documentDock.VisibleDockables != null)
-                {
-                    documentDock.VisibleDockables.Add(doc);
-                    documentDock.ActiveDockable = doc;
-                    Console.WriteLine($"[ToggleModule] Created document from existing slot: {moduleType}");
-                }
-            }
-            else
-            {
-                var newSlot = new ModuleSlot
-                {
-                    ModuleType = moduleType,
-                    IsVisible = true,
-                    IsCloseable = _workModeConfigService.CanRemoveModule(ActiveWorkMode.WorkModeId, moduleType),
-                    MinWidth = 200,
-                    MinHeight = 150,
-                    PreferredPosition = PreferredDockPosition.RightAsTab
-                };
-
-                ActiveWorkMode.ModuleSlots.Add(newSlot);
-                Console.WriteLine($"[ToggleModule] Created NEW slot: {moduleType}");
-
-                var doc = _dockFactory.CreateModuleDocument(newSlot);
-                if (doc != null && documentDock.VisibleDockables != null)
-                {
-                    documentDock.VisibleDockables.Add(doc);
-                    documentDock.ActiveDockable = doc;
-                    Console.WriteLine($"[ToggleModule] Created NEW document: {moduleType}");
-                }
-            }
-        }
-
-        /// <summary>Найти документ во ВСЕЙ dock-структуре (включая split panels)</summary>
-        private static IDockable? FindDocumentInEntireLayout(IDock rootDock, string docId)
-        {
-            Console.WriteLine($"[FindDocumentInEntireLayout] Searching for: {docId}");
-
-            // Рекурсивный поиск везде
-            var result = SearchInDockable(rootDock, docId);
-
-            if (result != null)
-            {
-                Console.WriteLine($"[FindDocumentInEntireLayout] FOUND: {docId}");
-            }
-            else
-            {
-                Console.WriteLine($"[FindDocumentInEntireLayout] NOT FOUND: {docId}");
-            }
-
-            return result;
-        }
-
-        /// <summary>Рекурсивный поиск в dockable</summary>
-        private static IDockable? SearchInDockable(IDockable? dockable, string docId)
-        {
-            if (dockable == null) return null;
-
-            // Проверяем сам элемент
-            if (dockable.Id == docId)
-            {
-                return dockable;
-            }
-
-            // Если это контейнер - ищем в детях
-            if (dockable is IDock dock && dock.VisibleDockables != null)
-            {
-                foreach (var child in dock.VisibleDockables)
-                {
-                    var found = SearchInDockable(child, docId);
-                    if (found != null) return found;
-                }
-            }
-
-            return null;
-        }
-
-        /// <summary>Найти Float документ по ID (рекурсивный поиск)</summary>
-        private IDockable? FindFloatingDocument(IRootDock rootDock, string docId)
-        {
-            if (rootDock.Windows == null) return null;
-
-            foreach (var window in rootDock.Windows)
-            {
-                Console.WriteLine($"[FindFloatingDocument] Searching in window: {window.Id}");
-
-                if (window.Layout != null)
-                {
-                    var result = FindInDockable(window.Layout, docId);
-                    if (result != null) return result;
-                }
-            }
-
-            return null;
-        }
-
-        /// <summary>Рекурсивный поиск документа в Dockable</summary>
-        private IDockable? FindInDockable(IDockable dockable, string docId)
-        {
-            Console.WriteLine($"[FindInDockable] Checking: {dockable.Id} (Type: {dockable.GetType().Name})");
-
-            // Если это наш документ - возвращаем
-            if (dockable.Id == docId)
-            {
-                Console.WriteLine($"[FindInDockable] FOUND: {docId}");
-                return dockable;
-            }
-
-            // Если это контейнер - ищем в детях
-            if (dockable is IDock dock && dock.VisibleDockables != null)
-            {
-                foreach (var child in dock.VisibleDockables)
-                {
-                    var result = FindInDockable(child, docId);
-                    if (result != null) return result;
-                }
-            }
-
-            return null;
+            UpdateModuleMenuItems();
         }
 
         /// <summary>Обновить состояние элементов меню WorkMode</summary>
         private void UpdateWorkModeMenuItems()
         {
+            var workModes = WorkModeBar.WorkModes;
+
             foreach (var menuItem in AllWorkModes)
             {
-                menuItem.IsChecked = AvailableWorkModes.Any(wm => wm.WorkModeId == menuItem.WorkModeId);
+                menuItem.IsChecked = workModes.Any(wm => wm.WorkModeId == menuItem.WorkModeId);
             }
         }
 
@@ -1257,33 +737,19 @@ public RecoveryBannerViewModel? RecoveryBanner
 
             Console.WriteLine($"[UpdateModuleMenuItems] Updating for WorkMode: {ActiveWorkMode.Title}");
 
-            var documentDock = DockLayout != null ? FindDocumentDock(DockLayout) : null;
-
             foreach (var menuItem in AllModules)
             {
-                // Проверяем открыт ли модуль В DOCK
-                if (documentDock?.VisibleDockables != null)
-                {
-                    var docId = $"Module_{menuItem.Type}";
-                    menuItem.IsChecked = documentDock.VisibleDockables.Any(d => d.Id == docId);
-                }
-                else
-                {
-                    menuItem.IsChecked = false;
-                }
+                var moduleInPanel = ModulePanel.AvailableModules.FirstOrDefault(m => m.ModuleId == menuItem.ModuleId);
 
-                // Модуль доступен если:
-                // 1. Универсальный (доступен везде)
-                // 2. ИЛИ НЕ запрещён в текущем WorkMode (проверяем через ConfigService)
-                if (menuItem.IsUniversal)
+                if (moduleInPanel != null)
                 {
                     menuItem.IsEnabled = true;
+                    menuItem.IsChecked = moduleInPanel.IsActive;
                 }
                 else
                 {
-                    // Проверяем через WorkModeConfigurationService
-                    var canAdd = _workModeConfigService.CanRemoveModule(ActiveWorkMode.WorkModeId, menuItem.Type);
-                    menuItem.IsEnabled = true; // Пока разрешаем все, логику Forbidden добавим позже
+                    menuItem.IsEnabled = false;
+                    menuItem.IsChecked = false;
                 }
 
                 Console.WriteLine($"  {menuItem.Icon} {menuItem.Name}: Enabled={menuItem.IsEnabled}, Checked={menuItem.IsChecked}");

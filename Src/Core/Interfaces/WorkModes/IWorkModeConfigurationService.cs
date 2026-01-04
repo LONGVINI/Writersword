@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
 
 namespace Writersword.Src.Core.Interfaces.WorkModes
@@ -28,10 +27,10 @@ namespace Writersword.Src.Core.Interfaces.WorkModes
         List<WorkMode> LoadDefaultConfiguration(string projectType);
 
         /// <summary>Проверить можно ли удалить модуль из режима</summary>
-        bool CanRemoveModule(string workModeId, ModuleType moduleType);
+        bool CanRemoveModule(string workModeId, string moduleId);
 
         /// <summary>Получить обязательные модули для режима</summary>
-        List<ModuleType> GetRequiredModules(string workModeId);
+        List<string> GetRequiredModules(string workModeId);
 
         /// <summary>Клонировать WorkModes (глубокое копирование)</summary>
         List<WorkMode> CloneWorkModes(List<WorkMode> source);

@@ -349,42 +349,6 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на Could not load the project file. The file may be corrupted.
-        /// </summary>
-        public static string Error_ProjectLoadFailed_Message {
-            get {
-                return ResourceManager.GetString("Error_ProjectLoadFailed_Message", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Ищет локализованную строку, похожую на Failed to Load Project.
-        /// </summary>
-        public static string Error_ProjectLoadFailed_Title {
-            get {
-                return ResourceManager.GetString("Error_ProjectLoadFailed_Title", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Ищет локализованную строку, похожую на The project file may have been moved or deleted.
-        /// </summary>
-        public static string Error_ProjectNotFound_Message {
-            get {
-                return ResourceManager.GetString("Error_ProjectNotFound_Message", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Ищет локализованную строку, похожую на Project Not Found.
-        /// </summary>
-        public static string Error_ProjectNotFound_Title {
-            get {
-                return ResourceManager.GetString("Error_ProjectNotFound_Title", resourceCulture);
-            }
-        }
-        
-        /// <summary>
         ///   Ищет локализованную строку, похожую на Close Tab.
         /// </summary>
         public static string HotKey_File_CloseTab {
@@ -592,6 +556,51 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Compare Versions.
+        /// </summary>
+        public static string MessageBox_Compare {
+            get {
+                return ResourceManager.GetString("MessageBox_Compare", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Could not load the project file. The file may be corrupted.
+        /// </summary>
+        public static string MessageBox_Error_ProjectLoadFailed_Message {
+            get {
+                return ResourceManager.GetString("MessageBox_Error_ProjectLoadFailed_Message", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Failed to Load Project.
+        /// </summary>
+        public static string MessageBox_Error_ProjectLoadFailed_Title {
+            get {
+                return ResourceManager.GetString("MessageBox_Error_ProjectLoadFailed_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на The project file may have been moved or deleted.
+        /// </summary>
+        public static string MessageBox_Error_ProjectNotFound_Message {
+            get {
+                return ResourceManager.GetString("MessageBox_Error_ProjectNotFound_Message", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Project Not Found.
+        /// </summary>
+        public static string MessageBox_Error_ProjectNotFound_Title {
+            get {
+                return ResourceManager.GetString("MessageBox_Error_ProjectNotFound_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на No.
         /// </summary>
         public static string MessageBox_No {
@@ -606,6 +615,60 @@ namespace Writersword.Resources.Localization {
         public static string MessageBox_OK {
             get {
                 return ResourceManager.GetString("MessageBox_OK", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Open Saved.
+        /// </summary>
+        public static string MessageBox_OpenSaved {
+            get {
+                return ResourceManager.GetString("MessageBox_OpenSaved", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Autosave:.
+        /// </summary>
+        public static string MessageBox_Recovery_CacheDate {
+            get {
+                return ResourceManager.GetString("MessageBox_Recovery_CacheDate", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на An unsaved version of the project was found..
+        /// </summary>
+        public static string MessageBox_Recovery_Message {
+            get {
+                return ResourceManager.GetString("MessageBox_Recovery_Message", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Last saved:.
+        /// </summary>
+        public static string MessageBox_Recovery_SaveDate {
+            get {
+                return ResourceManager.GetString("MessageBox_Recovery_SaveDate", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Autosave Found.
+        /// </summary>
+        public static string MessageBox_Recovery_Title {
+            get {
+                return ResourceManager.GetString("MessageBox_Recovery_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Restore.
+        /// </summary>
+        public static string MessageBox_Restore {
+            get {
+                return ResourceManager.GetString("MessageBox_Restore", resourceCulture);
             }
         }
         
@@ -669,6 +732,96 @@ namespace Writersword.Resources.Localization {
         public static string Module_Writer {
             get {
                 return ResourceManager.GetString("Module_Writer", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Auto-saved.
+        /// </summary>
+        public static string Notification_AutoSaved {
+            get {
+                return ResourceManager.GetString("Notification_AutoSaved", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Auto-saving....
+        /// </summary>
+        public static string Notification_AutoSaving {
+            get {
+                return ResourceManager.GetString("Notification_AutoSaving", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Error.
+        /// </summary>
+        public static string Notification_Error {
+            get {
+                return ResourceManager.GetString("Notification_Error", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Module closed.
+        /// </summary>
+        public static string Notification_ModuleClosed {
+            get {
+                return ResourceManager.GetString("Notification_ModuleClosed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Module opened.
+        /// </summary>
+        public static string Notification_ModuleOpened {
+            get {
+                return ResourceManager.GetString("Notification_ModuleOpened", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Project closed.
+        /// </summary>
+        public static string Notification_ProjectClosed {
+            get {
+                return ResourceManager.GetString("Notification_ProjectClosed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Project opened.
+        /// </summary>
+        public static string Notification_ProjectOpened {
+            get {
+                return ResourceManager.GetString("Notification_ProjectOpened", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Project saved.
+        /// </summary>
+        public static string Notification_ProjectSaved {
+            get {
+                return ResourceManager.GetString("Notification_ProjectSaved", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Failed to save project.
+        /// </summary>
+        public static string Notification_SavingError {
+            get {
+                return ResourceManager.GetString("Notification_SavingError", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на WorkMode switched.
+        /// </summary>
+        public static string Notification_WorkModeSwitched {
+            get {
+                return ResourceManager.GetString("Notification_WorkModeSwitched", resourceCulture);
             }
         }
         

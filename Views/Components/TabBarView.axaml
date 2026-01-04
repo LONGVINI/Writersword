@@ -1,0 +1,137 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.ViewModels.Components"
+             xmlns:converters="using:Writersword.Converters"
+             x:Class="Writersword.Views.Components.TabBarView"
+             x:DataType="vm:TabBarViewModel"
+             x:Name="TabBarViewRoot">
+
+	<UserControl.Resources>
+		<converters:TabBackgroundConverter x:Key="TabBackgroundConverter"/>
+		<converters:TabForegroundConverter x:Key="TabForegroundConverter"/>
+	</UserControl.Resources>
+
+	<!-- ТОЧНО КАК В СТАРОМ ДИЗАЙНЕ -->
+	<Border Background="#2D2D30"
+            BorderBrush="#3F3F46"
+            BorderThickness="0,0,0,1"
+            Padding="5,0,5,0">
+
+		<ScrollViewer HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Disabled">
+
+			<StackPanel Orientation="Horizontal" Spacing="2">
+
+				<!-- Список вкладок -->
+				<ItemsControl ItemsSource="{Binding Tabs}">
+					<ItemsControl.ItemsPanel>
+						<ItemsPanelTemplate>
+							<StackPanel Orientation="Horizontal" Spacing="4"/>
+						</ItemsPanelTemplate>
+					</ItemsControl.ItemsPanel>
+
+					<ItemsControl.ItemTemplate>
+						<DataTemplate>
+							<!-- Вкладка с закруглением в стиле Chrome -->
+							<Button Background="{Binding IsActive, Converter={StaticResource TabBackgroundConverter}}"
+                                    CornerRadius="8,8,0,0"
+                                    Padding="12,6,8,6"
+                                    Width="180"
+                                    Height="32"
+                                    Margin="0,4,0,0"
+                                    BorderThickness="0"
+                                    HorizontalContentAlignment="Stretch"
+                                    VerticalContentAlignment="Center"
+                                    Command="{Binding #TabBarViewRoot.DataContext.ActivateTabCommand}"
+                                    CommandParameter="{Binding}">
+
+								<Button.Styles>
+									<Style Selector="Button:pointerover">
+										<Setter Property="Background" Value="#2A2D2E"/>
+									</Style>
+								</Button.Styles>
+
+								<Grid ColumnDefinitions="*,Auto">
+									<!-- Название документа с градиентом исчезновения -->
+									<Border Grid.Column="0" ClipToBounds="True" Background="Transparent">
+										<Border.OpacityMask>
+											<LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+												<GradientStop Color="White" Offset="0"/>
+												<GradientStop Color="White" Offset="0.85"/>
+												<GradientStop Color="Transparent" Offset="1"/>
+											</LinearGradientBrush>
+										</Border.OpacityMask>
+										<TextBlock Text="{Binding Title}"
+                                                   Foreground="{Binding IsActive, Converter={StaticResource TabForegroundConverter}}"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   IsHitTestVisible="False"
+                                                   Margin="0,0,0,0"/>
+									</Border>
+
+									<!-- Кнопка закрытия (крестик) -->
+									<Button Grid.Column="1"
+                                            Command="{Binding #TabBarViewRoot.DataContext.CloseTabCommand}"
+                                            CommandParameter="{Binding}"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Width="18"
+                                            Height="18"
+                                            Padding="0"
+                                            CornerRadius="3"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Center"
+                                            Margin="4,0,0,0">
+										<Viewbox Width="10" Height="10">
+											<TextBlock Text="✕"
+                                                       Foreground="#858585"
+                                                       FontSize="16"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       IsHitTestVisible="False"/>
+										</Viewbox>
+										<Button.Styles>
+											<Style Selector="Button:pointerover /template/ TextBlock">
+												<Setter Property="Foreground" Value="White"/>
+											</Style>
+											<Style Selector="Button:pointerover">
+												<Setter Property="Background" Value="#4A4A4A"/>
+											</Style>
+										</Button.Styles>
+									</Button>
+								</Grid>
+
+							</Button>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+
+				<!-- Кнопка создания новой вкладки -->
+				<Button Content="+"
+                        Command="{Binding CreateNewTabCommand}"
+                        Background="Transparent"
+                        Foreground="#858585"
+                        FontSize="16"
+                        Width="30"
+                        Height="28"
+                        Padding="0"
+                        BorderThickness="0"
+                        CornerRadius="4"
+                        HorizontalContentAlignment="Center"
+                        VerticalContentAlignment="Center"
+                        Margin="8,4,0,0">
+					<Button.Styles>
+						<Style Selector="Button:pointerover">
+							<Setter Property="Background" Value="#3A3A3C"/>
+							<Setter Property="Foreground" Value="White"/>
+						</Style>
+					</Button.Styles>
+				</Button>
+
+			</StackPanel>
+
+		</ScrollViewer>
+
+	</Border>
+
+</UserControl>

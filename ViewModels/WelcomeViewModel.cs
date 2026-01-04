@@ -6,8 +6,9 @@ using System.Linq;
 using System.Reactive;
 using Writersword.Core.Models.Project;
 using Writersword.Resources.Localization;
-using Writersword.Services;
-using Writersword.Services.Interfaces;
+using Writersword.Src.Core.Interfaces.Services.Storage;
+using Writersword.Src.Core.Interfaces.Services.UI;
+using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Views;
 
 namespace Writersword.ViewModels
@@ -114,7 +115,6 @@ namespace Writersword.ViewModels
 
             // Инициализируем WorkModes
             mainViewModel.InitializeWorkModesForTab(tabVM);
-            mainViewModel.ShowTextEditor();
 
             // Добавляем в недавние
             _settingsService.AddRecentProject(savePath);
@@ -148,7 +148,6 @@ namespace Writersword.ViewModels
             {
                 tabCollection.Add(tab);
                 tabCollection.ActiveTab = tab;
-                mainViewModel.ShowTextEditor();
                 _settingsService.AddRecentProject(path);
             }
 
@@ -182,8 +181,8 @@ namespace Writersword.ViewModels
                     Console.WriteLine($"[OpenRecentProjectDirect] File not found: {recent.Path}");
 
                     await _dialogService.ShowMessageAsync(
-                        Strings.Error_ProjectNotFound_Title,
-                        $"{Strings.Error_ProjectNotFound_Message}\n\n{recent.Path}",
+                        Strings.MessageBox_Error_ProjectNotFound_Title,
+                        $"{Strings.MessageBox_Error_ProjectNotFound_Message}\n\n{recent.Path}",
                         MessageBoxType.Error,
                         MessageBoxButtons.OK
                     );
@@ -213,7 +212,6 @@ namespace Writersword.ViewModels
                 {
                     tabCollection.Add(tab);
                     tabCollection.ActiveTab = tab;
-                    mainViewModel.ShowTextEditor();
                     _settingsService.AddRecentProject(recent.Path);
                     ProjectSelected?.Invoke();
                 }
@@ -223,8 +221,8 @@ namespace Writersword.ViewModels
                 Console.WriteLine($"[OpenRecentProjectDirect] ERROR: {ex.Message}");
 
                 await _dialogService.ShowMessageAsync(
-                    Strings.Error_ProjectLoadFailed_Title,
-                    $"{Strings.Error_ProjectLoadFailed_Message}\n\n{recent.Path}",
+                    Strings.MessageBox_Error_ProjectLoadFailed_Title,
+                    $"{Strings.MessageBox_Error_ProjectLoadFailed_Message}\n\n{recent.Path}",
                     MessageBoxType.Error,
                     MessageBoxButtons.OK
                 );

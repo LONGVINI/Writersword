@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 
 namespace Writersword.Modules.Common
@@ -19,22 +18,22 @@ namespace Writersword.Modules.Common
             _factory = factory;
         }
 
-        /// <summary>Создать и зарегистрировать модуль</summary>
-        public IModule? CreateModule(ModuleType type)
+        /// <summary>Создать и зарегистрировать модуль по строковому ID</summary>
+        public IModule? CreateModule(string moduleId)
         {
-            var module = _factory.Create(type);
+            var module = _factory.Create(moduleId);
             if (module != null)
             {
                 _activeModules[module.InstanceId] = module;
                 module.Initialize();
                 module.RequestClose += OnModuleRequestClose;
                 module.RequestDetach += OnModuleRequestDetach;
-                Console.WriteLine($"[ModuleRegistry] Module created: {type}");
+                Console.WriteLine($"[ModuleRegistry] Module created: {moduleId}");
             }
             return module;
         }
 
-        /// <summary>Получить модуль по ID</summary>
+        /// <summary>Получить модуль по ID экземпляра</summary>
         public IModule? GetModule(string instanceId)
         {
             return _activeModules.TryGetValue(instanceId, out var module) ? module : null;
@@ -80,7 +79,6 @@ namespace Writersword.Modules.Common
             // TODO: Открепление в отдельное окно
         }
 
-
         /// <summary>
         /// Получить метаданные ВСЕХ зарегистрированных модулей
         /// Создаёт временный экземпляр каждого типа для чтения метаданных
@@ -90,10 +88,10 @@ namespace Writersword.Modules.Common
             var metadataList = new List<IModuleMetadata>();
 
             // Получаем все зарегистрированные типы из фабрики
-            foreach (var moduleType in _factory.GetRegisteredTypes())
+            foreach (var moduleId in _factory.GetRegisteredTypes())
             {
                 // Создаём временный экземпляр для чтения метаданных
-                var tempModule = _factory.Create(moduleType);
+                var tempModule = _factory.Create(moduleId);
                 if (tempModule?.Metadata != null)
                 {
                     metadataList.Add(tempModule.Metadata);
@@ -105,6 +103,22 @@ namespace Writersword.Modules.Common
 
             Console.WriteLine($"[ModuleRegistry] Loaded metadata for {metadataList.Count} module types");
             return metadataList;
+        }
+
+        /// <summary>
+        /// Получить активный модуль по ID типа модуля
+        /// ВНИМАНИЕ: Если открыто несколько экземпляров одного типа - вернёт первый найденный!
+        /// </summary>
+        public IModule? GetActiveModule(string moduleId)
+        {
+            foreach (var module in _activeModules.Values)
+            {
+                if (module.ModuleId == moduleId)
+                {
+                    return module;
+                }
+            }
+            return null;
         }
     }
 }

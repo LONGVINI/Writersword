@@ -1,21 +1,22 @@
-﻿using ReactiveUI;
-using System;
-using System.Collections.Generic;
+﻿using System;
 using Writersword.Core.Enums;
 
 namespace Writersword.Core.Models.WorkModes
 {
     /// <summary>
-    /// Слот для размещения модуля внутри WorkMode
-    /// Определяет какой модуль находится в режиме, где он расположен и какого размера
+    /// Слот модуля в WorkMode
+    /// Описывает один модуль и его параметры отображения
     /// </summary>
-    public class ModuleSlot : ReactiveObject
+    public class ModuleSlot
     {
-        /// <summary>Уникальный ID слота</summary>
-        public string Id { get; set; } = Guid.NewGuid().ToString();
+        /// <summary>Идентификатор модуля (строка)</summary>
+        public string ModuleId { get; set; } = "";
 
-        /// <summary>Тип модуля в этом слоте</summary>
-        public ModuleType ModuleType { get; set; }
+        /// <summary>Видим ли модуль (показан/скрыт)</summary>
+        public bool IsVisible { get; set; } = true;
+
+        /// <summary>Можно ли закрыть модуль</summary>
+        public bool IsCloseable { get; set; } = true;
 
         /// <summary>Минимальная ширина модуля (px)</summary>
         public double MinWidth { get; set; } = 200;
@@ -23,28 +24,10 @@ namespace Writersword.Core.Models.WorkModes
         /// <summary>Минимальная высота модуля (px)</summary>
         public double MinHeight { get; set; } = 150;
 
-        /// <summary>Можно ли изменять размер модуля</summary>
-        public bool IsResizable { get; set; } = true;
-
-        /// <summary>Можно ли закрыть модуль в этом WorkMode</summary>
-        public bool IsCloseable { get; set; } = true;
-
-        /// <summary>Состояние модуля (для восстановления при загрузке)</summary>
-        public Dictionary<string, object> ModuleState { get; set; } = new();
-
-        /// <summary>Видим ли модуль (можно скрыть, но не удалять)</summary>
-        private bool _isVisible = true;
-        /// <summary>
-        /// Видим ли модуль (можно скрыть, но не удалять)
-        /// ИСПРАВЛЕНО: Использует ReactiveUI для уведомления UI об изменениях
-        /// </summary>
-        public bool IsVisible
-        {
-            get => _isVisible;
-            set => this.RaiseAndSetIfChanged(ref _isVisible, value);
-        }
-
-        /// <summary>Предпочтительное расположение модуля при докировании</summary>
+        /// <summary>Предпочитаемая позиция при первом добавлении</summary>
         public PreferredDockPosition PreferredPosition { get; set; } = PreferredDockPosition.RightAsTab;
+
+        /// <summary>Дата последнего доступа к модулю</summary>
+        public DateTime LastAccessedAt { get; set; } = DateTime.Now;
     }
 }

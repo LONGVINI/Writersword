@@ -2,14 +2,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Writersword.Views.MessageBoxView"
         Title="Message"
-        Width="450"
-        Height="220"
+        SizeToContent="WidthAndHeight"
         WindowStartupLocation="CenterScreen"
         CanResize="False"
         SystemDecorations="None"
         TransparencyLevelHint="Transparent"
         Background="Transparent">
-
 	<Panel>
 		<!-- Основной контент -->
 		<Border Background="#1E1E1E"
@@ -22,6 +20,7 @@
 				<Grid.RowDefinitions>
 					<RowDefinition Height="Auto" />
 					<RowDefinition Height="*" />
+					<RowDefinition Height="Auto" />
 					<RowDefinition Height="Auto" />
 				</Grid.RowDefinitions>
 
@@ -50,10 +49,29 @@
 				           HorizontalAlignment="Center"
 				           VerticalAlignment="Center"
 				           TextAlignment="Center"
+				           MaxWidth="500"
 				           Margin="0,0,0,20" />
 
-				<!-- Панель кнопок -->
+				<!-- Панель с датами (видна только для Recovery диалога) -->
 				<StackPanel Grid.Row="2"
+				            x:Name="DatesPanel"
+				            Orientation="Vertical"
+				            HorizontalAlignment="Center"
+				            Spacing="8"
+				            Margin="0,0,0,20"
+				            IsVisible="False">
+					<TextBlock x:Name="CacheDateText"
+					           FontSize="13"
+					           Foreground="#FFA500"
+					           HorizontalAlignment="Center" />
+					<TextBlock x:Name="SaveDateText"
+					           FontSize="13"
+					           Foreground="#4CAF50"
+					           HorizontalAlignment="Center" />
+				</StackPanel>
+
+				<!-- Панель кнопок -->
+				<StackPanel Grid.Row="3"
 				            x:Name="ButtonsPanel"
 				            Orientation="Horizontal"
 				            HorizontalAlignment="Center"

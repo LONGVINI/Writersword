@@ -252,16 +252,13 @@
   <data name="MessageBox_No" xml:space="preserve">
     <value>Нет</value>
   </data>
-  <data name="Error_ProjectNotFound_Title" xml:space="preserve">
+  <data name="MessageBox_Error_ProjectNotFound_Title" xml:space="preserve">
     <value>Проект не найден</value>
   </data>
-  <data name="Error_ProjectNotFound_Message" xml:space="preserve">
-    <value>Файл проекта был перемещён или удалён</value>
-  </data>
-  <data name="Error_ProjectLoadFailed_Title" xml:space="preserve">
+  <data name="MessageBox_Error_ProjectLoadFailed_Title" xml:space="preserve">
     <value>Не удалось загрузить проект</value>
   </data>
-  <data name="Error_ProjectLoadFailed_Message" xml:space="preserve">
+  <data name="MessageBox_Error_ProjectLoadFailed_Message" xml:space="preserve">
     <value>Не удалось загрузить файл проекта. Файл может быть повреждён</value>
   </data>
   <data name="HotKey_File_New" xml:space="preserve">
@@ -368,5 +365,59 @@
   </data>
   <data name="Dialog_ConfirmDeleteCache_Message_Line2" xml:space="preserve">
     <value>Изменения будут потеряны.</value>
+  </data>
+  <data name="MessageBox_Recovery_Title" xml:space="preserve">
+    <value>Найдено автосохранение</value>
+  </data>
+  <data name="MessageBox_Recovery_Message" xml:space="preserve">
+    <value>Обнаружена несохранённая версия проекта.</value>
+  </data>
+  <data name="MessageBox_Recovery_CacheDate" xml:space="preserve">
+    <value>Автосохранение:</value>
+  </data>
+  <data name="MessageBox_Recovery_SaveDate" xml:space="preserve">
+    <value>Последнее сохранение:</value>
+  </data>
+  <data name="MessageBox_Restore" xml:space="preserve">
+    <value>Восстановить</value>
+  </data>
+  <data name="MessageBox_OpenSaved" xml:space="preserve">
+    <value>Открыть сохранённое</value>
+  </data>
+  <data name="MessageBox_Compare" xml:space="preserve">
+    <value>Просмотреть файлы</value>
+  </data>
+  <data name="MessageBox_Error_ProjectNotFound_Message" xml:space="preserve">
+    <value>Файл проекта был перемещён или удалён</value>
+  </data>
+  <data name="Notification_ProjectSaved" xml:space="preserve">
+    <value>Проект сохранён</value>
+  </data>
+  <data name="Notification_ProjectOpened" xml:space="preserve">
+    <value>Проект открыт</value>
+  </data>
+  <data name="Notification_ProjectClosed" xml:space="preserve">
+    <value>Проект закрыт</value>
+  </data>
+  <data name="Notification_ModuleOpened" xml:space="preserve">
+    <value>Модуль открыт</value>
+  </data>
+  <data name="Notification_ModuleClosed" xml:space="preserve">
+    <value>Модуль закрыт</value>
+  </data>
+  <data name="Notification_AutoSaving" xml:space="preserve">
+    <value>Автосохранение...</value>
+  </data>
+  <data name="Notification_AutoSaved" xml:space="preserve">
+    <value>Автосохранено</value>
+  </data>
+  <data name="Notification_Error" xml:space="preserve">
+    <value>Ошибка</value>
+  </data>
+  <data name="Notification_SavingError" xml:space="preserve">
+    <value>Не удалось сохранить проект</value>
+  </data>
+  <data name="Notification_WorkModeSwitched" xml:space="preserve">
+    <value>Режим работы изменён</value>
   </data>
 </root>

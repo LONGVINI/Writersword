@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System;
 using Writersword.Core.Models.Project;
 using Writersword.ViewModels;
+using Writersword.Src.Core.Interfaces.WorkFlows;
 
 namespace Writersword.Views
 {
@@ -13,7 +14,6 @@ namespace Writersword.Views
         public WelcomeView()
         {
             InitializeComponent();
-
             // Подписываемся на событие выбора проекта
             DataContextChanged += OnDataContextChanged;
         }
@@ -30,10 +30,10 @@ namespace Writersword.Views
         /// <summary>Обработчик кнопки закрытия окна</summary>
         private void CloseButton_Click(object? sender, RoutedEventArgs e)
         {
-            // Получаем MainWindowViewModel для проверки количества открытых вкладок
-            var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+            // Получаем ITabCollection для проверки количества открытых вкладок
+            var tabCollection = App.Services.GetRequiredService<ITabCollection>();
 
-            if (mainViewModel.OpenTabs.Count > 0)
+            if (tabCollection.Tabs.Count > 0)
             {
                 // Есть открытые вкладки - просто закрываем Welcome окно
                 Console.WriteLine("[CloseButton_Click] Has open tabs, closing welcome window");
@@ -60,7 +60,7 @@ namespace Writersword.Views
                 if (DataContext is WelcomeViewModel viewModel)
                 {
                     Console.WriteLine($"[RecentProject_Click] Clicked on: {recentProject.Name}");
-                    await viewModel.OpenRecentProjectDirect(recentProject);  
+                    await viewModel.OpenRecentProjectDirect(recentProject);
                 }
             }
         }

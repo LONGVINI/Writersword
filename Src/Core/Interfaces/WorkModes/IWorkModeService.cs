@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
-using Writersword.Core.Enums;
+using System.Threading.Tasks;
+using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.WorkModes;
 
 namespace Writersword.Src.Core.Interfaces.WorkModes
@@ -20,7 +21,7 @@ namespace Writersword.Src.Core.Interfaces.WorkModes
         bool RemoveWorkMode(WorkMode workMode);
 
         /// <summary>Добавить модуль в режим</summary>
-        ModuleSlot AddModuleToWorkMode(WorkMode workMode, ModuleType moduleType);
+        ModuleSlot AddModuleToWorkMode(WorkMode workMode, string moduleId);
 
         /// <summary>Удалить модуль из режима</summary>
         bool RemoveModuleFromWorkMode(WorkMode workMode, ModuleSlot moduleSlot);
@@ -36,5 +37,14 @@ namespace Writersword.Src.Core.Interfaces.WorkModes
 
         /// <summary>Установить активный WorkMode</summary>
         void SetActiveWorkMode(WorkMode workMode);
+
+        /// <summary>
+        /// Переключиться на другой WorkMode
+        /// Закрывает модули старого WorkMode и открывает новые
+        /// </summary>
+        /// <param name="newWorkMode">WorkMode на который переключаемся</param>
+        /// <param name="activeModules">Список АКТИВНЫХ модулей текущего WorkMode</param>
+        /// <param name="projectPath">Путь к проекту (для сохранения в кеш)</param>
+        Task SwitchWorkModeAsync(WorkMode newWorkMode, IEnumerable<IModule> activeModules, string projectPath);
     }
 }

@@ -1,90 +1,140 @@
-﻿using System;
-using Writersword.Core.Enums;
+﻿using Avalonia.Controls;
+using System;
 using Writersword.Core.Interfaces.Modules;
+using Writersword.Core.Models;
 using Writersword.Core.Models.Modules;
+using Writersword.ViewModels;
 
 namespace Writersword.Modules.Common
 {
     /// <summary>
-    /// Базовый класс для всех UI модулей
-    /// Все модули из Src/Modules/ наследуются от него
+    /// Базовый класс для всех модулей
+    /// Реализует общую функциональность IModule
     /// </summary>
     public abstract class BaseModule : IModule
     {
+        private bool _isDirty = false;
+        private DocumentContext? _context;
+
         /// <summary>Уникальный ID экземпляра модуля</summary>
         public string InstanceId { get; } = Guid.NewGuid().ToString();
 
-        /// <summary>Тип модуля (из enum ModuleType)</summary>
-        public abstract ModuleType ModuleType { get; }
+        /// <summary>
+        /// Идентификатор типа модуля (строка)
+        /// Должен быть уникальным для каждого типа модуля
+        /// </summary>
+        public abstract string ModuleId { get; }
 
-        /// <summary>Заголовок модуля (отображается в UI)</summary>
+        /// <summary>Заголовок модуля</summary>
         public virtual string Title { get; set; } = "Module";
 
-        /// <summary>Можно ли перемещать модуль</summary>
-        public virtual bool IsMovable { get; } = true;
-
-        /// <summary>Можно ли закрыть модуль</summary>
-        public virtual bool IsCloseable { get; } = true;
-
-        /// <summary>Можно ли вынести модуль в отдельное окно</summary>
-        public virtual bool CanDetach { get; } = true;
-
-        /// <summary>ViewModel для привязки к View</summary>
+        /// <summary>ViewModel модуля</summary>
         public abstract object? ViewModel { get; }
 
-        /// <summary>Метаданные модуля для отображения в меню и UI</summary>
+        /// <summary>Метаданные модуля</summary>
         public abstract IModuleMetadata Metadata { get; }
 
-        /// <summary>Событие запроса закрытия модуля</summary>
+        /// <summary>
+        /// Контекст документа
+        /// При изменении автоматически вызывается OnContextChanged()
+        /// </summary>
+        public DocumentContext? Context
+        {
+            get => _context;
+            set
+            {
+                if (_context != value)
+                {
+                    _context = value;
+                    OnContextChanged(value);
+                }
+            }
+        }
+
+        /// <summary>Флаг изменений модуля</summary>
+        public bool IsDirty => _isDirty;
+
+        /// <summary>
+        /// Событие запроса на закрытие модуля
+        /// Вызывается когда модуль хочет закрыться
+        /// </summary>
         public event Action<IModule>? RequestClose;
 
-        /// <summary>Событие запроса выноса модуля в отдельное окно</summary>
+        /// <summary>
+        /// Событие запроса на открепление модуля в отдельное окно
+        /// Вызывается когда модуль хочет открепиться
+        /// </summary>
         public event Action<IModule>? RequestDetach;
 
-        /// <summary>Инициализация модуля (вызывается при первом создании)</summary>
-        public virtual void Initialize()
-        {
-            // Переопределите если нужна инициализация
-        }
-
-        /// <summary>Сохранить состояние модуля для записи в файл проекта</summary>
-        public virtual ModuleState SaveState()
-        {
-            return new ModuleState
-            {
-                ScrollPosition = 0,
-                CustomData = null
-            };
-        }
-
-        /// <summary>Восстановить состояние модуля при загрузке проекта</summary>
-        public virtual void RestoreState(ModuleState state)
-        {
-            // Переопределите для восстановления состояния
-        }
-
-        /// <summary>Освободить ресурсы модуля</summary>
-        public virtual void Dispose()
-        {
-            // Переопределите для освобождения ресурсов
-        }
-
-        /// <summary>Инициировать закрытие модуля</summary>
-        protected void OnRequestClose()
+        /// <summary>
+        /// Вызвать событие RequestClose
+        /// Используйте в наследниках для запроса закрытия модуля
+        /// </summary>
+        protected void RaiseRequestClose()
         {
             RequestClose?.Invoke(this);
         }
 
-        /// <summary>Инициировать вынос модуля в отдельное окно</summary>
-        protected void OnRequestDetach()
+        /// <summary>
+        /// Вызвать событие RequestDetach
+        /// Используйте в наследниках для запроса открепления модуля
+        /// </summary>
+        protected void RaiseRequestDetach()
         {
             RequestDetach?.Invoke(this);
         }
 
         /// <summary>
-        /// Создать View для этого модуля
-        /// Каждый модуль переопределяет этот метод и возвращает свой View
+        /// Вызывается при изменении контекста
+        /// Переопределите в наследниках для реакции на смену контекста/проекта
         /// </summary>
-        public abstract Avalonia.Controls.Control? CreateView();
+        /// <param name="context">Новый контекст или null</param>
+        protected virtual void OnContextChanged(DocumentContext? context)
+        {
+            // Базовая реализация - ничего не делает
+            // Наследники могут переопределить для своей логики
+        }
+
+        /// <summary>
+        /// Пометить модуль как изменённый
+        /// Вызывается когда пользователь изменяет данные в модуле
+        /// </summary>
+        protected void MarkAsDirty()
+        {
+            _isDirty = true;
+        }
+
+        /// <summary>
+        /// Пометить модуль как сохранённый
+        /// Вызывается после успешного сохранения состояния
+        /// </summary>
+        public void MarkAsClean()
+        {
+            _isDirty = false;
+        }
+
+        /// <summary>Инициализация модуля</summary>
+        public virtual void Initialize() { }
+
+        /// <summary>Сохранить состояние модуля</summary>
+        public virtual ModuleState SaveState()
+        {
+            return new ModuleState();
+        }
+
+        /// <summary>
+        /// Восстановить состояние модуля
+        /// После восстановления модуль считается чистым (не изменённым)
+        /// </summary>
+        public virtual void RestoreState(ModuleState state)
+        {
+            _isDirty = false;
+        }
+
+        /// <summary>Очистка ресурсов</summary>
+        public virtual void Dispose() { }
+
+        /// <summary>Создать View для модуля</summary>
+        public abstract Control? CreateView();
     }
 }

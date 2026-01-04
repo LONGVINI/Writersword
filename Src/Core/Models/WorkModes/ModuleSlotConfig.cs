@@ -7,8 +7,8 @@ namespace Writersword.Core.Models.WorkModes
     /// </summary>
     public class ModuleSlotConfig
     {
-        /// <summary>Тип модуля</summary>
-        public ModuleType ModuleType { get; set; }
+        /// <summary>Идентификатор модуля</summary>
+        public string ModuleId { get; set; } = "";
 
         /// <summary>Минимальная ширина модуля (px)</summary>
         public double MinWidth { get; set; } = 200;

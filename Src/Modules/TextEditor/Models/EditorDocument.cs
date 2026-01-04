@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Writersword.Modules.TextEditor.Models;
 
 namespace Writersword.Modules.TextEditor.Models
 {

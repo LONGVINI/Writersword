@@ -36,7 +36,7 @@ namespace Writersword.Src.WorkModes.Characters
                     // ОБЯЗАТЕЛЬНЫЙ: Characters - список персонажей
                     new ModuleSlotConfig
                     {
-                        ModuleType = ModuleType.Characters,
+                        ModuleId = "Characters",
                         MinWidth = 400,
                         MinHeight = 400,
                         IsVisible = true,
@@ -47,7 +47,7 @@ namespace Writersword.Src.WorkModes.Characters
                     // НЕОБЯЗАТЕЛЬНЫЙ: Relationships - граф связей персонажей
                     new ModuleSlotConfig
                     {
-                        ModuleType = ModuleType.Relationships,
+                        ModuleId = "Relationships",
                         MinWidth = 400,
                         MinHeight = 400,
                         IsVisible = true,
@@ -58,7 +58,7 @@ namespace Writersword.Src.WorkModes.Characters
                     // НЕОБЯЗАТЕЛЬНЫЙ: Notes - заметки о персонажах
                     new ModuleSlotConfig
                     {
-                        ModuleType = ModuleType.Notes,
+                        ModuleId = "Notes",
                         MinWidth = 300,
                         MinHeight = 200,
                         IsVisible = false,
