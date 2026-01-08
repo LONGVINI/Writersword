@@ -166,14 +166,21 @@ namespace Writersword.Src.Infrastructure.Services.Project
                 }
                 else
                 {
-                    // Если НЕ Compare - убеждаемся что баннера нет
                     tabVM.RecoveryBanner = null;
                     tabVM.Context.IsInCompareMode = false;
                     Console.WriteLine("[ProjectWorkflow] No RecoveryBanner (not in Compare mode)");
                 }
 
-                // 6. Запускаем автосохранение
-                tabVM.StartAutoSave();
+                // 6. Запускаем автосохранение ТОЛЬКО если НЕ в Compare mode
+                if (recoveryChoice != RecoveryDialogResult.Compare)
+                {
+                    tabVM.StartAutoSave();
+                    Console.WriteLine("[ProjectWorkflow] AutoSave started");
+                }
+                else
+                {
+                    Console.WriteLine("[ProjectWorkflow] AutoSave NOT started (Compare mode)");
+                }
 
                 // 7. Добавляем в недавние проекты
                 _settingsService.AddRecentProject(filePath);
@@ -223,13 +230,24 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                 if (project != null)
                 {
-                    // Обновляем содержимое вкладки
-                    tab.Content = project.ModulesData.TryGetValue("TextEditor", out var text) && text is string str
-                        ? str
-                        : "";
+                    // Перезагружаем ВЕСЬ layout модулей
+                    var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+
+                    // Останавливаем автосохранение
+                    tab.StopAutoSave();
+
+                    // Обновляем данные проекта
+                    tab.UpdateProject(project);
+
+                    // Перезагружаем WorkModes с новыми данными
+                    mainViewModel.InitializeWorkModesForTab(tab);
+
+                    // НЕ запускаем автосохранение (мы в Compare mode!)
 
                     // Переключаем флаг
                     tab.RecoveryBanner.IsViewingCache = !isViewingCache;
+
+                    Console.WriteLine($"[ProjectWorkflow] Switched version, now viewing: {(tab.RecoveryBanner.IsViewingCache ? "cache" : "saved")}");
                 }
             }
             catch (Exception ex)

@@ -1,105 +1,84 @@
-﻿using System;
+﻿using ReactiveUI;
+using System;
 using System.Reactive;
 using System.Threading.Tasks;
-using ReactiveUI;
 using Writersword.Resources.Localization;
 
 namespace Writersword.ViewModels
 {
     /// <summary>
     /// ViewModel для баннера восстановления версий
-    /// Управляет отображением и переключением между сохранённой версией и автосохранением
-    /// Команды вызывают callback-функции, переданные при создании
+    /// Позволяет переключаться между кешем и сохранённой версией
     /// </summary>
     public class RecoveryBannerViewModel : ViewModelBase
     {
         private bool _isViewingCache;
-        private DateTime _cacheDate;
-        private DateTime _saveDate;
 
-        /// <summary>Просматривается ли версия из кеша</summary>
+        /// <summary>Дата создания кеша (автосохранение)</summary>
+        public DateTime CacheDate { get; set; }
+
+        /// <summary>Дата последнего сохранения файла</summary>
+        public DateTime SaveDate { get; set; }
+
+        /// <summary>Просматриваем ли кеш (true) или сохранённую версию (false)</summary>
         public bool IsViewingCache
         {
             get => _isViewingCache;
-            set => this.RaiseAndSetIfChanged(ref _isViewingCache, value);
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _isViewingCache, value);
+
+                // Обновляем все зависимые свойства для UI
+                this.RaisePropertyChanged(nameof(CurrentVersionText));
+                this.RaisePropertyChanged(nameof(CurrentVersionColor));
+                this.RaisePropertyChanged(nameof(CacheFontWeight));
+                this.RaisePropertyChanged(nameof(SavedFontWeight));
+                this.RaisePropertyChanged(nameof(IsViewingSaved));
+            }
         }
 
-        /// <summary>Дата автосохранения</summary>
-        public DateTime CacheDate
-        {
-            get => _cacheDate;
-            set => this.RaiseAndSetIfChanged(ref _cacheDate, value);
-        }
+        /// <summary>Показывать ли стрелку у сохранённой версии</summary>
+        public bool IsViewingSaved => !IsViewingCache;
 
-        /// <summary>Дата сохранения основного файла</summary>
-        public DateTime SaveDate
-        {
-            get => _saveDate;
-            set => this.RaiseAndSetIfChanged(ref _saveDate, value);
-        }
+        /// <summary>Текст текущей версии (локализованный)</summary>
+        public string CurrentVersionText => IsViewingCache
+            ? Strings.Recovery_Banner_ViewingCache
+            : Strings.Recovery_Banner_ViewingSaved;
 
-        /// <summary>Текст версии для отображения</summary>
-        public string VersionText => IsViewingCache
-            ? $"{Strings.AutoSave_Banner_ViewingCache} ({CacheDate:HH:mm:ss})"
-            : $"{Strings.AutoSave_Banner_ViewingSaved} ({SaveDate:HH:mm:ss})";
+        /// <summary>Цвет текста текущей версии</summary>
+        public string CurrentVersionColor => IsViewingCache
+            ? "#FFA500"  // Оранжевый для кеша
+            : "#00C853"; // Зелёный для сохранённой версии
 
-        /// <summary>Текст кнопки переключения</summary>
-        public string SwitchButtonText => IsViewingCache
-            ? Strings.AutoSave_Button_SwitchToSaved
-            : Strings.AutoSave_Button_SwitchToCache;
+        /// <summary>Жирность шрифта для строки с кешем</summary>
+        public string CacheFontWeight => IsViewingCache ? "Bold" : "Normal";
 
-        /// <summary>Команда переключения версий</summary>
+        /// <summary>Жирность шрифта для строки с сохранённой версией</summary>
+        public string SavedFontWeight => IsViewingCache ? "Normal" : "Bold";
+
+        /// <summary>Команда переключения между версиями</summary>
         public ReactiveCommand<Unit, Unit> SwitchVersionCommand { get; }
 
-        /// <summary>Команда сохранения</summary>
+        /// <summary>Команда сохранения текущей версии</summary>
         public ReactiveCommand<Unit, Unit> SaveCommand { get; }
 
-        /// <summary>Команда удаления автосохранения</summary>
+        /// <summary>Команда удаления кеша</summary>
         public ReactiveCommand<Unit, Unit> DiscardCommand { get; }
 
         /// <summary>
-        /// Конструктор с callback-функциями
+        /// Конструктор
         /// </summary>
-        /// <param name="onSwitchVersion">Вызывается при переключении версий</param>
-        /// <param name="onSave">Вызывается при сохранении</param>
-        /// <param name="onDiscard">Вызывается при удалении кеша</param>
+        /// <param name="onSwitchVersion">Callback переключения версии</param>
+        /// <param name="onSave">Callback сохранения</param>
+        /// <param name="onDiscard">Callback удаления кеша</param>
         public RecoveryBannerViewModel(
-            Func<Task>? onSwitchVersion = null,
-            Func<Task>? onSave = null,
-            Func<Task>? onDiscard = null)
+            Func<Task> onSwitchVersion,
+            Func<Task> onSave,
+            Func<Task> onDiscard)
         {
-            // Создаём команды с переданными callback'ами
-            SwitchVersionCommand = ReactiveCommand.CreateFromTask(async () =>
-            {
-                if (onSwitchVersion != null)
-                {
-                    await onSwitchVersion();
-                }
-            });
-
-            SaveCommand = ReactiveCommand.CreateFromTask(async () =>
-            {
-                if (onSave != null)
-                {
-                    await onSave();
-                }
-            });
-
-            DiscardCommand = ReactiveCommand.CreateFromTask(async () =>
-            {
-                if (onDiscard != null)
-                {
-                    await onDiscard();
-                }
-            });
-
-            // Обновляем текст при изменении IsViewingCache
-            this.WhenAnyValue(x => x.IsViewingCache)
-                .Subscribe(_ =>
-                {
-                    this.RaisePropertyChanged(nameof(VersionText));
-                    this.RaisePropertyChanged(nameof(SwitchButtonText));
-                });
+            SwitchVersionCommand = ReactiveCommand.CreateFromTask(onSwitchVersion);
+            SaveCommand = ReactiveCommand.CreateFromTask(onSave);
+            DiscardCommand = ReactiveCommand.CreateFromTask(onDiscard);
         }
     }
 }

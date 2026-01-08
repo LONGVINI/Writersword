@@ -45,17 +45,6 @@
 			</ContentControl.ContentTemplate>
 		</ContentControl>
 
-		<!-- ===== БАННЕР ВОССТАНОВЛЕНИЯ ===== -->
-		<ContentControl DockPanel.Dock="Top"
-						Content="{Binding TabBar.ActiveTab.RecoveryBanner}"
-						IsVisible="{Binding TabBar.HasRecoveryBanner}">
-			<ContentControl.ContentTemplate>
-				<DataTemplate>
-					<components:RecoveryBanner/>
-				</DataTemplate>
-			</ContentControl.ContentTemplate>
-		</ContentControl>
-
 		<!-- ===== DOCK КОНТРОЛ (ГЛАВНАЯ ОБЛАСТЬ С МОДУЛЯМИ) ===== -->
 		<dock:DockControl Layout="{Binding DockLayout}"
                           Background="#252526"/>

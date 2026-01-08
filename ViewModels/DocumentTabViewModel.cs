@@ -171,6 +171,25 @@ namespace Writersword.ViewModels
             Console.WriteLine($"[DocumentTabViewModel] AutoSave stopped for: {Title}");
         }
 
+        /// <summary>Обновить данные проекта (используется при переключении версий)</summary>
+        public void UpdateProject(ProjectFile newProject)
+        {
+            // Обновляем ModulesData (словарь изменяется по ссылке)
+            _project.ModulesData.Clear();
+            foreach (var kvp in newProject.ModulesData)
+            {
+                _project.ModulesData[kvp.Key] = kvp.Value;
+            }
+
+            // Обновляем дату
+            _project.LastModified = newProject.LastModified;
+
+            // Уведомляем UI об изменении Content
+            this.RaisePropertyChanged(nameof(Content));
+
+            Console.WriteLine($"[DocumentTabViewModel] Project data updated, ModulesData count: {_project.ModulesData.Count}");
+        }
+
         /// <summary>Получить проект</summary>
         public ProjectFile GetProject() => _project;
     }

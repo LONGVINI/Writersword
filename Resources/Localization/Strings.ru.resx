@@ -420,4 +420,19 @@
   <data name="Notification_WorkModeSwitched" xml:space="preserve">
     <value>Режим работы изменён</value>
   </data>
+  <data name="Recovery_Banner_ViewingCache" xml:space="preserve">
+    <value>⚠️ ПРОСМОТР: АВТОСОХРАНЕНИЕ</value>
+  </data>
+  <data name="Recovery_Banner_ViewingSaved" xml:space="preserve">
+    <value>✅ ПРОСМОТР: СОХРАНЁННАЯ ВЕРСИЯ</value>
+  </data>
+  <data name="Recovery_Button_Switch" xml:space="preserve">
+    <value>Переключить версию</value>
+  </data>
+  <data name="Recovery_Button_Save" xml:space="preserve">
+    <value>Сохранить</value>
+  </data>
+  <data name="Recovery_Button_DeleteCache" xml:space="preserve">
+    <value>Удалить кеш</value>
+  </data>
 </root>

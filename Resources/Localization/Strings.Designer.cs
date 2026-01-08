@@ -863,6 +863,51 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на ⚠️ VIEWING: AUTO-SAVE.
+        /// </summary>
+        public static string Recovery_Banner_ViewingCache {
+            get {
+                return ResourceManager.GetString("Recovery_Banner_ViewingCache", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на ✅ VIEWING: SAVED VERSION.
+        /// </summary>
+        public static string Recovery_Banner_ViewingSaved {
+            get {
+                return ResourceManager.GetString("Recovery_Banner_ViewingSaved", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Delete Cache.
+        /// </summary>
+        public static string Recovery_Button_DeleteCache {
+            get {
+                return ResourceManager.GetString("Recovery_Button_DeleteCache", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save.
+        /// </summary>
+        public static string Recovery_Button_Save {
+            get {
+                return ResourceManager.GetString("Recovery_Button_Save", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Switch Version.
+        /// </summary>
+        public static string Recovery_Button_Switch {
+            get {
+                return ResourceManager.GetString("Recovery_Button_Switch", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Language:.
         /// </summary>
         public static string Settings_Language {

@@ -518,4 +518,24 @@
     <value>WorkMode switched</value>
     <comment>Toast notification when WorkMode changed</comment>
   </data>
+  <data name="Recovery_Banner_ViewingCache" xml:space="preserve">
+    <value>⚠️ VIEWING: AUTO-SAVE</value>
+    <comment>Banner text when viewing cache version</comment>
+  </data>
+  <data name="Recovery_Banner_ViewingSaved" xml:space="preserve">
+    <value>✅ VIEWING: SAVED VERSION</value>
+    <comment>Banner text when viewing saved version</comment>
+  </data>
+  <data name="Recovery_Button_Switch" xml:space="preserve">
+    <value>Switch Version</value>
+    <comment>Button to switch between versions</comment>
+  </data>
+  <data name="Recovery_Button_Save" xml:space="preserve">
+    <value>Save</value>
+    <comment>Button to save current version</comment>
+  </data>
+  <data name="Recovery_Button_DeleteCache" xml:space="preserve">
+    <value>Delete Cache</value>
+    <comment>Button to delete auto-save cache</comment>
+  </data>
 </root>
