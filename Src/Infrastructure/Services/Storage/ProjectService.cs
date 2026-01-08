@@ -122,9 +122,6 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             {
                 Console.WriteLine($"[SAVE] Saving project: {project.Title}");
 
-                // НОВОЕ: Собираем состояния всех активных модулей
-                CollectModuleStates(project);
-
                 // Обновляем дату модификации
                 project.LastModified = DateTime.Now;
 
@@ -178,42 +175,6 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         {
             _openProjects.Remove(project);
             _projectPaths.Remove(project.Title);
-        }
-
-        /// <summary>
-        /// Собрать состояния всех активных модулей
-        /// Сохраняет данные модулей в проект перед записью
-        /// </summary>
-        private void CollectModuleStates(ProjectFile project)
-        {
-            // Получаем все активные модули
-            var activeModules = _moduleRegistry.GetAllModules();
-
-            Console.WriteLine($"[ProjectService] Collecting state from {activeModules.Count()} active modules");
-
-            // Группируем по типу модуля, берём ТОЛЬКО ОДИН экземпляр каждого типа
-            var modulesByType = activeModules
-                .GroupBy(m => m.ModuleId)
-                .Select(g => g.First()); // Берём первый модуль каждого типа
-
-            foreach (var module in modulesByType)
-            {
-                try
-                {
-                    var state = module.SaveState();
-                    var key = module.ModuleId.ToString();
-
-                    if (state.CustomData != null)
-                    {
-                        project.ModulesData[key] = state.CustomData;
-                        Console.WriteLine($"[ProjectService] Saved state for: {module.ModuleId}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[ProjectService] ERROR: Failed to save state for {module.ModuleId}: {ex.Message}");
-                }
-            }
         }
     }
 }

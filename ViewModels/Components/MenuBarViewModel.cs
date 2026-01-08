@@ -159,7 +159,15 @@ namespace Writersword.ViewModels.Components
         private void Exit()
         {
             Console.WriteLine("[MenuBarViewModel] Exit clicked");
-            Environment.Exit(0);
+
+            // Просто закрываем главное окно - это триггернёт OnClosing
+            // OnClosing сам проверит несохранённые изменения в каждой вкладке
+            if (Application.Current?.ApplicationLifetime
+                is IClassicDesktopStyleApplicationLifetime desktop
+                && desktop.MainWindow != null)
+            {
+                desktop.MainWindow.Close();
+            }
         }
 
         /// <summary>

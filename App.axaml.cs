@@ -263,47 +263,6 @@ namespace Writersword
                 desktop.MainWindow = mainWindow;
 
                 // ========================================
-                // ОБРАБОТКА ЗАКРЫТИЯ ОКНА
-                // Спрашиваем про несохранённые изменения
-                // ========================================
-                mainWindow.Closing += async (s, e) =>
-                {
-                    Console.WriteLine("[App] MainWindow closing...");
-
-                    var tabCollection = Services.GetRequiredService<ITabCollection>();
-                    var projectWorkflow = Services.GetRequiredService<IProjectWorkflow>();
-
-                    // Проверяем каждую вкладку на несохранённые изменения
-                    foreach (var tab in tabCollection.Tabs.ToList())
-                    {
-                        if (projectWorkflow.HasUnsavedChanges(tab))
-                        {
-                            // Отменяем закрытие
-                            e.Cancel = true;
-
-                            Console.WriteLine($"[App] Tab {tab.Title} has unsaved changes");
-
-                            // Пытаемся закрыть вкладку (спросит про сохранение)
-                            var closed = await projectWorkflow.CloseDocumentAsync(tab);
-
-                            if (!closed)
-                            {
-                                // Пользователь отменил - не закрываем приложение
-                                Console.WriteLine("[App] User cancelled closing");
-                                return;
-                            }
-                        }
-                    }
-
-                    // Если дошли сюда - все вкладки закрыты, можно выходить
-                    if (!e.Cancel)
-                    {
-                        Console.WriteLine("[App] All tabs closed, exiting");
-                    }
-                };
-
-
-                // ========================================
                 // ВОССТАНОВЛЕНИЕ ПРОЕКТОВ ИЗ ПРОШЛОЙ СЕССИИ
                 // Срабатывает когда главное окно открылось
                 // ========================================

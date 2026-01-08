@@ -16,7 +16,7 @@ using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
-using Writersword.Core.Models.Settings;
+using Writersword.Core.Models;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
 using Writersword.Src.Core.Interfaces.Services.Input;
@@ -26,6 +26,7 @@ using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.Infrastructure.Dock;
 using Writersword.ViewModels.Components;
+using Writersword.Core.Models.Settings;
 
 namespace Writersword.ViewModels
 {
@@ -163,6 +164,7 @@ namespace Writersword.ViewModels
 
             // Связываем компоненты с MainWindow
             MenuBar.SetMainViewModelProvider(() => this);
+            MenuBar.SetActiveTabProvider(() => TabBar.ActiveTab);
             TabBar.SetTabActivatedHandler(OnTabActivated);
             WorkModeBar.SetWorkModeSwitchedHandler(OnWorkModeSwitched);
             ModulePanel.SetModuleHandlers(OnModuleAdded, OnModuleRemoved);
@@ -183,6 +185,8 @@ namespace Writersword.ViewModels
             _projectWorkflow.ProjectOpened += OnProjectOpened;
             _projectWorkflow.ProjectSaved += OnProjectSaved;
             _projectWorkflow.ProjectClosed += OnProjectClosed;
+
+
 
             // Инициализация
             _settingsService.Load();
@@ -437,9 +441,35 @@ namespace Writersword.ViewModels
             return modules;
         }
 
-        /// <summary>Рекурсивно собрать модули из Dockable структуры</summary>
+        /// <summary>
+        /// Рекурсивно собрать модули из Dockable структуры
+        /// С ЗАЩИТОЙ ОТ ЦИКЛИЧЕСКИХ ССЫЛОК
+        /// </summary>
         private void CollectModulesFromDockable(IDockable dockable, List<IModule> modules)
         {
+            // Создаём HashSet для отслеживания посещённых элементов (защита от циклов)
+            var visited = new HashSet<IDockable>();
+            CollectModulesFromDockableInternal(dockable, modules, visited);
+        }
+
+        /// <summary>Внутренний метод с отслеживанием посещённых элементов</summary>
+        private void CollectModulesFromDockableInternal(IDockable dockable, List<IModule> modules, HashSet<IDockable> visited)
+        {
+            // ЗАЩИТА ОТ ЦИКЛОВ: если уже посещали этот элемент - СТОП!
+            if (!visited.Add(dockable))
+            {
+                Console.WriteLine($"[CollectModules] CYCLE DETECTED: {dockable.Id} already visited!");
+                return;
+            }
+
+            // Проверяем максимальную глубину (дополнительная защита)
+            if (visited.Count > 100)
+            {
+                Console.WriteLine($"[CollectModules] MAX DEPTH REACHED: stopping at 100 elements");
+                return;
+            }
+
+            // Если это Document с модулем - добавляем модуль
             if (dockable is Document document && document.Id?.StartsWith("Module_") == true)
             {
                 var moduleId = document.Id.Substring("Module_".Length);
@@ -447,14 +477,16 @@ namespace Writersword.ViewModels
                 if (module != null)
                 {
                     modules.Add(module);
+                    Console.WriteLine($"[CollectModules] Added module: {moduleId}");
                 }
             }
 
+            // Рекурсивно обходим дочерние элементы
             if (dockable is IDock dock && dock.VisibleDockables != null)
             {
                 foreach (var child in dock.VisibleDockables)
                 {
-                    CollectModulesFromDockable(child, modules);
+                    CollectModulesFromDockableInternal(child, modules, visited);
                 }
             }
         }

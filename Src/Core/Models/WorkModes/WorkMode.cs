@@ -7,7 +7,8 @@ namespace Writersword.Core.Models.WorkModes
     /// Режим работы (WorkMode) - большая кнопка под вкладкой документа
     /// Например: "Редактор", "Таймлайн", "Персонажи"
     /// Содержит список модулей, которые отображаются в этом режиме
-    /// Сохраняется в файле проекта (.writersword) или в settings.json
+    /// Сохраняется в файле проекта (.writersword) или в 
+    /// .json
     /// </summary>
     public class WorkMode
     {

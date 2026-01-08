@@ -56,21 +56,10 @@ namespace Writersword.Infrastructure.Services.Modules
 
             foreach (var module in modules)
             {
-                // Проверяем изменился ли модуль с последнего сохранения
-                if (!module.IsDirty)
-                {
-                    Console.WriteLine($"[ModuleStateCollector] Skipping {module.ModuleId} (not dirty)");
-                    continue;
-                }
-
                 var state = CollectModuleState(module);
                 if (state?.CustomData != null)
                 {
                     customData[module.ModuleId] = state.CustomData;
-
-                    // Помечаем модуль как сохранённый
-                    module.MarkAsClean();
-
                     Console.WriteLine($"[ModuleStateCollector] Collected CustomData: {module.ModuleId}");
                 }
             }

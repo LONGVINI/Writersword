@@ -106,11 +106,20 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
         /// </summary>
         private void SaveOpenProjectsToSettings()
         {
+            Console.WriteLine($"[TabCollection] SaveOpenProjectsToSettings: Tabs.Count = {Tabs.Count}");
+
+            foreach (var tab in Tabs)
+            {
+                Console.WriteLine($"[TabCollection] Tab FilePath: '{tab.FilePath}'");
+            }
+
             var openPaths = Tabs
                 .Select(t => t.FilePath)
                 .Where(p => !string.IsNullOrEmpty(p))
                 .Distinct()
                 .ToList();
+
+            Console.WriteLine($"[TabCollection] After filtering: openPaths.Count = {openPaths.Count}");
 
             _settingsService.SaveOpenProjects(openPaths!);
         }

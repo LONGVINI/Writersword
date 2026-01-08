@@ -70,17 +70,69 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             }
         }
 
-        /// <summary>Сохранить настройки в файл</summary>
+        /// <summary>
+        /// Сохранить настройки в файл (ЛЁГКАЯ ВЕРСИЯ)
+        /// Сохраняет ТОЛЬКО: Theme, Language, RecentProjects, OpenProjectPaths
+        /// НЕ сохраняет WorkspaceConfigs (они сохраняются отдельно через SaveWorkspaceConfig)
+        /// </summary>
         public void Save()
         {
             try
             {
-                var json = JsonConvert.SerializeObject(_settings, Formatting.Indented);
+                Console.WriteLine("[SettingsService] Saving settings (lightweight)");
+
+                // Создаём облегчённую версию настроек БЕЗ WorkspaceConfigs
+                var lightSettings = new
+                {
+                    Theme = _settings.Theme,
+                    Language = _settings.Language,
+                    LastOpenedProject = _settings.LastOpenedProject,
+                    DefaultProjectsFolder = _settings.DefaultProjectsFolder,
+                    LastUsedPath = _settings.LastUsedPath,
+                    RecentProjects = _settings.RecentProjects,
+                    OpenProjectPaths = _settings.OpenProjectPaths
+                    // WorkspaceConfigs НЕ ВКЛЮЧЕНЫ!
+                };
+
+                // ЯВНАЯ НАСТРОЙКА: игнорировать циклы
+                var jsonSettings = new JsonSerializerSettings
+                {
+                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+                    MaxDepth = 64,
+                    Formatting = Formatting.Indented
+                };
+
+                var json = JsonConvert.SerializeObject(lightSettings, jsonSettings);
                 File.WriteAllText(_settingsPath, json);
+
+                Console.WriteLine("[SettingsService] Settings saved successfully");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to save settings: {ex.Message}");
+                Console.WriteLine($"[SettingsService] Failed to save settings: {ex.Message}");
+                Console.WriteLine($"[SettingsService] Stack trace: {ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// Сохранить ВСЕ настройки включая WorkspaceConfigs
+        /// Вызывается ТОЛЬКО когда пользователь явно сохраняет глобальную конфигурацию
+        /// </summary>
+        private void SaveFull()
+        {
+            try
+            {
+                Console.WriteLine("[SettingsService] Saving FULL settings (including WorkspaceConfigs)");
+
+                // Сохраняем ВСЁ
+                var json = JsonConvert.SerializeObject(_settings, Formatting.Indented);
+                File.WriteAllText(_settingsPath, json);
+
+                Console.WriteLine($"[SettingsService] Full settings saved: {_settings.WorkspaceConfigs.Count} workspace configs");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SettingsService] Failed to save full settings: {ex.Message}");
             }
         }
 
@@ -117,12 +169,12 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     _settings.RecentProjects = _settings.RecentProjects.Take(MaxRecentProjects).ToList();
                 }
 
-                Console.WriteLine($"Added recent project: {project.Title}, total: {_settings.RecentProjects.Count}");
-                Save();
+                Console.WriteLine($"[SettingsService] Added recent project: {project.Title}, total: {_settings.RecentProjects.Count}");
+                Save(); // Лёгкое сохранение
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to add recent project: {ex.Message}");
+                Console.WriteLine($"[SettingsService] Failed to add recent project: {ex.Message}");
             }
         }
 
@@ -135,8 +187,9 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             get => _settings.Theme;
             set
             {
+                Console.WriteLine($"[SettingsService] Theme changed: {_settings.Theme} → {value}");
                 _settings.Theme = value;
-                Save();
+                Save(); // Лёгкое сохранение
             }
         }
 
@@ -146,8 +199,9 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             get => _settings.Language;
             set
             {
+                Console.WriteLine($"[SettingsService] Language changed: {_settings.Language} → {value}");
                 _settings.Language = value;
-                Save();
+                Save(); // Лёгкое сохранение
             }
         }
 
@@ -158,7 +212,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             set
             {
                 _settings.LastOpenedProject = value;
-                Save();
+                Save(); // Лёгкое сохранение
             }
         }
 
@@ -168,8 +222,9 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             get => _settings.DefaultProjectsFolder;
             set
             {
+                Console.WriteLine($"[SettingsService] DefaultProjectsFolder changed: {value}");
                 _settings.DefaultProjectsFolder = value;
-                Save();
+                Save(); // Лёгкое сохранение
             }
         }
 
@@ -180,7 +235,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             set
             {
                 _settings.LastUsedPath = value;
-                Save();
+                Save(); // Лёгкое сохранение
             }
         }
 
@@ -191,49 +246,81 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             set
             {
                 _settings.OpenProjectPaths = value;
-                Save();
+                Save(); // Лёгкое сохранение
             }
         }
 
-        /// <summary>Сохранить список открытых проектов</summary>
-        public void SaveOpenProjects(List<string> projectPaths)
+        /// <summary>
+        /// Сохранить список открытых проектов
+        /// Вызывается при изменении вкладок (добавление/удаление/перестановка)
+        /// </summary>
+        public void SaveOpenProjects(List<string> paths)
         {
-            _settings.OpenProjectPaths = projectPaths.Where(p => !string.IsNullOrEmpty(p) && File.Exists(p)).ToList();
+            Console.WriteLine($"[SettingsService] SaveOpenProjects called with {paths.Count} paths");
+            foreach (var path in paths)
+            {
+                Console.WriteLine($"[SettingsService]   Path: '{path}'");
+            }
+
+            _settings.OpenProjectPaths = paths;
+            Save(); // Лёгкое сохранение (БЕЗ WorkspaceConfigs!)
+
             Console.WriteLine($"[SettingsService] Saved {_settings.OpenProjectPaths.Count} open projects");
-            Save();
         }
 
-        /// <summary>Получить глобальную конфигурацию</summary>
+        /// <summary>
+        /// Получить глобальную конфигурацию для типа проекта
+        /// Возвращает null если конфигурация не сохранена
+        /// </summary>
         public WorkspaceConfig? GetWorkspaceConfig(string projectType)
         {
             var key = projectType;
-            return _settings.WorkspaceConfigs.TryGetValue(key, out var config) ? config : null;
+            var found = _settings.WorkspaceConfigs.TryGetValue(key, out var config);
+
+            Console.WriteLine($"[SettingsService] GetWorkspaceConfig({projectType}): {(found ? "FOUND" : "NOT FOUND")}");
+
+            return found ? config : null;
         }
 
-        /// <summary>Сохранить глобальную конфигурацию</summary>
+        /// <summary>
+        /// Сохранить глобальную конфигурацию для типа проекта
+        /// Вызывается ТОЛЬКО когда пользователь явно нажимает "Сохранить как глобальную конфигурацию"
+        /// </summary>
         public void SaveWorkspaceConfig(string projectType, WorkspaceConfig config)
         {
             var key = projectType;
             config.LastModified = DateTime.Now;
             _settings.WorkspaceConfigs[key] = config;
-            Save();
-            Console.WriteLine($"[SettingsService] Saved WorkspaceConfig for {projectType}");
+
+            Console.WriteLine($"[SettingsService] SaveWorkspaceConfig({projectType})");
+            Console.WriteLine($"[SettingsService]   WorkModes count: {config.WorkModes.Count}");
+
+            SaveFull(); // ПОЛНОЕ сохранение (включая WorkspaceConfigs!)
+
+            Console.WriteLine($"[SettingsService] WorkspaceConfig saved for {projectType}");
         }
 
-        /// <summary>Удалить глобальную конфигурацию</summary>
+        /// <summary>
+        /// Удалить глобальную конфигурацию для типа проекта
+        /// Вызывается когда пользователь нажимает "Удалить глобальную конфигурацию"
+        /// </summary>
         public void DeleteWorkspaceConfig(string projectType)
         {
             var key = projectType;
             if (_settings.WorkspaceConfigs.Remove(key))
             {
-                Save();
-                Console.WriteLine($"[SettingsService] Deleted WorkspaceConfig for {projectType}");
+                Console.WriteLine($"[SettingsService] DeleteWorkspaceConfig({projectType})");
+
+                SaveFull(); // ПОЛНОЕ сохранение
+
+                Console.WriteLine($"[SettingsService] WorkspaceConfig deleted for {projectType}");
             }
         }
 
-        /// <summary>Получить все конфигурации</summary>
+        /// <summary>Получить все глобальные конфигурации</summary>
         public Dictionary<string, WorkspaceConfig> GetAllWorkspaceConfigs()
         {
+            Console.WriteLine($"[SettingsService] GetAllWorkspaceConfigs: {_settings.WorkspaceConfigs.Count} configs");
             return _settings.WorkspaceConfigs;
         }
     }

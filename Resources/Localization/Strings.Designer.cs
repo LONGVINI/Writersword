@@ -502,7 +502,8 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на Settings.
+        ///   Ищет локализованную строку, похожую на 
+        ///	.
         /// </summary>
         public static string Menu_Settings {
             get {

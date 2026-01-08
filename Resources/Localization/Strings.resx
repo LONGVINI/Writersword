@@ -218,7 +218,8 @@
     <comment>View menu: Show/hide modules panel</comment>
   </data>
   <data name="Menu_Settings" xml:space="preserve">
-    <value>Settings</value>
+    <value>
+	</value>
     <comment>View menu: Open settings window</comment>
   </data>
   <data name="Module_Writer" xml:space="preserve">

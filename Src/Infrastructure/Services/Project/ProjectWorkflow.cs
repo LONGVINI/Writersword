@@ -317,7 +317,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
                 // 2. Загружаем кеш (данные из закрытых модулей/WorkMode)
                 var cache = _cacheService.LoadCache(filePath);
 
-                // 3. ОБЪЕДИНЯЕМ: текущие данные + данные из кеша
+                // 3. ОБЪЕДИНЯЕМ: кеш + текущие данные (приоритет у текущих!)
                 var allData = new Dictionary<string, object?>();
 
                 // Сначала добавляем данные из кеша
@@ -332,7 +332,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     }
                 }
 
-                // Затем перезаписываем данными текущих модулей (приоритет выше)
+                // Затем перезаписываем данными текущих модулей (приоритет выше!)
                 foreach (var kvp in currentCustomData)
                 {
                     allData[kvp.Key] = kvp.Value;
@@ -349,10 +349,9 @@ namespace Writersword.Src.Infrastructure.Services.Project
                 {
                     // 6. УДАЛЯЕМ кеш (всё сохранено!)
                     _cacheService.DeleteCache(filePath);
-                    Console.WriteLine("[ProjectWorkflow] Project saved successfully");
+                    Console.WriteLine("[ProjectWorkflow] Project saved successfully, cache deleted");
 
                     _notificationService.ShowSuccess(Strings.Notification_ProjectSaved);
-
 
                     ProjectSaved?.Invoke(tab);
                     return true;
@@ -394,7 +393,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                 if (success)
                 {
-                    // Убираем RecoveryBanner перед закрытием
+                    // Убираем RecoveryBanner
                     tab.RecoveryBanner = null;
                     Console.WriteLine("[ProjectWorkflow] RecoveryBanner cleared");
 
@@ -432,7 +431,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
                 Console.WriteLine($"[ProjectWorkflow] Closing tab: {tab.Title}, force: {force}");
 
                 // Проверяем несохранённые изменения
-                if (!force && HasUnsavedChanges(tab))
+                if (!force && await HasUnsavedChanges(tab))
                 {
                     var result = await _dialogService.ShowMessageAsync(
                         "Несохранённые изменения",
@@ -455,7 +454,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     }
                 }
 
-                // НОВОЕ: Убираем RecoveryBanner перед закрытием
+                // Убираем RecoveryBanner перед закрытием
                 tab.RecoveryBanner = null;
                 Console.WriteLine("[ProjectWorkflow] RecoveryBanner cleared");
 
@@ -485,8 +484,11 @@ namespace Writersword.Src.Infrastructure.Services.Project
             }
         }
 
-        /// <summary>Проверить есть ли несохранённые изменения</summary>
-        public bool HasUnsavedChanges(DocumentTabViewModel tab)
+        /// <summary>
+        /// Проверить есть ли несохранённые изменения
+        /// Сравнивает ТЕКУЩИЕ данные (активные модули + кеш) с СОХРАНЁННЫМ файлом
+        /// </summary>
+        public async Task<bool> HasUnsavedChanges(DocumentTabViewModel tab)
         {
             var filePath = tab.FilePath;
 
@@ -506,18 +508,21 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
             try
             {
-                // 1. Собираем данные ТЕКУЩИХ модулей
+                // 1. Собираем данные ТЕКУЩИХ модулей (из UI!)
                 var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
                 var activeModules = mainViewModel.GetActiveModules();
                 var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
                 var currentData = stateCollector.CollectCustomData(activeModules);
 
+                Console.WriteLine($"[ProjectWorkflow] Collected {currentData.Count} modules from UI");
+
                 // 2. Загружаем кеш (данные закрытых модулей)
                 var cache = _cacheService.LoadCache(filePath);
 
-                // 3. ОБЪЕДИНЯЕМ: текущие + кеш
+                // 3. ОБЪЕДИНЯЕМ: кеш + текущие (приоритет у текущих!)
                 var allCurrentData = new Dictionary<string, object?>();
 
+                // Сначала данные из кеша
                 if (cache != null)
                 {
                     foreach (var kvp in cache)
@@ -527,20 +532,25 @@ namespace Writersword.Src.Infrastructure.Services.Project
                             allCurrentData[kvp.Key] = kvp.Value.CustomData;
                         }
                     }
+                    Console.WriteLine($"[ProjectWorkflow] Added {cache.Count} modules from cache");
                 }
 
+                // Затем текущие данные (перезаписывают кеш!)
                 foreach (var kvp in currentData)
                 {
                     allCurrentData[kvp.Key] = kvp.Value;
+                    Console.WriteLine($"[ProjectWorkflow] Current data: {kvp.Key}");
                 }
 
-                // 4. Загружаем сохранённый проект
-                var savedProject = _projectService.GetProjectByPath(filePath);
+                // 4. Загружаем сохранённый проект ИЗ ФАЙЛА (не из памяти!)
+                var savedProject = await _projectService.LoadAsync(filePath);
                 if (savedProject == null)
                 {
-                    Console.WriteLine($"[ProjectWorkflow] HasUnsavedChanges: saved project not found");
-                    return true; // Если нет сохранённого - считаем что есть изменения
+                    Console.WriteLine($"[ProjectWorkflow] HasUnsavedChanges: could not load saved project from file");
+                    return true; // Если не можем загрузить - считаем что есть изменения
                 }
+
+                Console.WriteLine($"[ProjectWorkflow] Loaded saved project from file: {savedProject.ModulesData.Count} modules");
 
                 // 5. Сравниваем данные
                 var hasChanges = !AreDataEqual(allCurrentData, savedProject.ModulesData);
@@ -560,19 +570,29 @@ namespace Writersword.Src.Infrastructure.Services.Project
         {
             // Если разное количество ключей - не равны
             if (data1.Count != data2.Count)
+            {
+                Console.WriteLine($"[ProjectWorkflow] AreDataEqual: different count ({data1.Count} vs {data2.Count})");
                 return false;
+            }
 
             // Проверяем каждый ключ
             foreach (var kvp in data1)
             {
                 if (!data2.TryGetValue(kvp.Key, out var value2))
+                {
+                    Console.WriteLine($"[ProjectWorkflow] AreDataEqual: key '{kvp.Key}' not found in data2");
                     return false; // Ключ отсутствует во втором словаре
+                }
 
                 // Простое сравнение (для object можно улучшить)
                 if (!Equals(kvp.Value, value2))
+                {
+                    Console.WriteLine($"[ProjectWorkflow] AreDataEqual: values differ for key '{kvp.Key}'");
                     return false;
+                }
             }
 
+            Console.WriteLine($"[ProjectWorkflow] AreDataEqual: data is equal");
             return true;
         }
 

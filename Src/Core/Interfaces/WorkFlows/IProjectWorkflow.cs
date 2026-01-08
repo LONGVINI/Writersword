@@ -24,8 +24,11 @@ namespace Writersword.Src.Core.Interfaces.WorkFlows
         /// <param name="force">Закрыть без сохранения</param>
         Task<bool> CloseDocumentAsync(DocumentTabViewModel tab, bool force = false);
 
-        /// <summary>Проверить есть ли несохранённые изменения</summary>
-        bool HasUnsavedChanges(DocumentTabViewModel tab);
+        /// <summary>
+        /// Проверить есть ли несохранённые изменения
+        /// Сравнивает текущие данные с сохранённым файлом
+        /// </summary>
+        Task<bool> HasUnsavedChanges(DocumentTabViewModel tab);
 
         /// <summary>Событие открытия проекта</summary>
         event Action<DocumentTabViewModel>? ProjectOpened;
