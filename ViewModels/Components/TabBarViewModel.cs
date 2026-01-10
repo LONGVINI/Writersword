@@ -5,7 +5,6 @@ using System.Reactive;
 using System.Threading.Tasks;
 using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.ViewModels;
-using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -42,9 +41,6 @@ namespace Writersword.ViewModels.Components
         /// <summary>Команда закрытия вкладки</summary>
         public ReactiveCommand<DocumentTabViewModel, Unit> CloseTabCommand { get; }
 
-        /// <summary>Функция активации вкладки (передаётся из MainWindowViewModel)</summary>
-        private Action<DocumentTabViewModel>? _onTabActivated;
-
         public TabBarViewModel(
             ITabCollection tabCollection,
             IProjectWorkflow projectWorkflow)
@@ -55,7 +51,7 @@ namespace Writersword.ViewModels.Components
             // Команда создания новой вкладки
             CreateNewTabCommand = ReactiveCommand.Create(CreateNewTab);
 
-            // Команда активации вкладки
+            // Команда активации вкладки (в UI потоке)
             ActivateTabCommand = ReactiveCommand.Create<DocumentTabViewModel>(ActivateTab);
 
             // Команда закрытия вкладки
@@ -64,7 +60,7 @@ namespace Writersword.ViewModels.Components
             // Подписываемся на изменения активной вкладки
             _tabCollection.ActiveTabChanged += OnActiveTabChanged;
 
-            // НОВОЕ: Обновляем HasRecoveryBanner при изменении вкладки
+            // Обновляем HasRecoveryBanner при изменении вкладки
             _tabCollection.ActiveTabChanged += _ =>
             {
                 this.RaisePropertyChanged(nameof(HasRecoveryBanner));
@@ -73,38 +69,58 @@ namespace Writersword.ViewModels.Components
             Console.WriteLine("[TabBarViewModel] Initialized");
         }
 
-        /// <summary>
-        /// Установить обработчик активации вкладки
-        /// Вызывается из MainWindowViewModel после создания
-        /// </summary>
-        public void SetTabActivatedHandler(Action<DocumentTabViewModel> handler)
-        {
-            _onTabActivated = handler;
-            Console.WriteLine("[TabBarViewModel] Tab activation handler set");
-        }
-
         /// <summary>Создать новую вкладку (показывает Welcome screen)</summary>
         private async void CreateNewTab()
         {
             Console.WriteLine("[TabBarViewModel] CreateNewTab clicked");
 
-            if (Avalonia.Application.Current?.ApplicationLifetime
-                is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+            if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
                 && desktop.MainWindow != null)
             {
                 await App.ShowWelcomeScreen(desktop.MainWindow);
             }
         }
 
-        /// <summary>Активировать вкладку</summary>
-        private void ActivateTab(DocumentTabViewModel tab)
+        //// <summary>
+        /// Активировать вкладку
+        /// Сохраняет старую вкладку в кеш и запускает кеширование для новой
+        /// </summary>
+        private async void ActivateTab(DocumentTabViewModel tab)
         {
             Console.WriteLine($"[TabBarViewModel] Activating tab: {tab.Title}");
 
-            // Устанавливаем активную вкладку (это вызовет событие ActiveTabChanged)
+            var oldTab = ActiveTab;
+
+            // Если есть старая вкладка - деактивируем её
+            if (oldTab != null && oldTab != tab)
+            {
+                Console.WriteLine($"[TabBarViewModel] Deactivating old tab: {oldTab.Title}");
+
+                // Сохраняем в кеш асинхронно
+                await oldTab.SaveToCacheAsync();
+
+                // Останавливаем фоновое кеширование
+                oldTab.StopCaching();
+
+                Console.WriteLine($"[TabBarViewModel] Old tab saved to cache and stopped");
+            }
+
+            // Устанавливаем активную вкладку
             ActiveTab = tab;
+
+            // Запускаем фоновое кеширование для новой вкладки
+            if (!tab.Context.IsInCompareMode)
+            {
+                tab.StartCaching();
+                Console.WriteLine($"[TabBarViewModel] Caching started for new tab: {tab.Title}");
+            }
+            else
+            {
+                Console.WriteLine($"[TabBarViewModel] Caching NOT started (Compare mode): {tab.Title}");
+            }
         }
 
+        /// <summary>Закрыть вкладку</summary>
         private async Task CloseTabAsync(DocumentTabViewModel tab)
         {
             Console.WriteLine($"[TabBarViewModel] Closing tab: {tab.Title}");
@@ -117,13 +133,14 @@ namespace Writersword.ViewModels.Components
                 return;
             }
 
-            // КРИТИЧЕСКИ ВАЖНО: Очищаем RecoveryBanner ПЕРЕД удалением вкладки!
+            // Очищаем RecoveryBanner перед удалением вкладки
             tab.RecoveryBanner = null;
             Console.WriteLine($"[TabBarViewModel] RecoveryBanner cleared before removal");
 
             _tabCollection.Remove(tab);
             Console.WriteLine($"[TabBarViewModel] Tab removed from collection");
 
+            // Если не осталось вкладок - очищаем UI и показываем Welcome
             if (_tabCollection.Tabs.Count == 0)
             {
                 Console.WriteLine("[TabBarViewModel] No tabs left - clearing UI and showing Welcome");
@@ -131,8 +148,7 @@ namespace Writersword.ViewModels.Components
                 var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
                 mainViewModel.ClearUIWhenNoTabs();
 
-                if (Avalonia.Application.Current?.ApplicationLifetime
-                    is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
                     && desktop.MainWindow != null)
                 {
                     await App.ShowWelcomeScreen(desktop.MainWindow);
@@ -149,10 +165,8 @@ namespace Writersword.ViewModels.Components
             // Уведомляем UI об изменении
             this.RaisePropertyChanged(nameof(ActiveTab));
 
-            // Вызываем обработчик из MainWindowViewModel
             if (tab != null)
             {
-                _onTabActivated?.Invoke(tab);
                 Console.WriteLine($"[TabBarViewModel] Active tab changed: {tab.Title}");
             }
         }

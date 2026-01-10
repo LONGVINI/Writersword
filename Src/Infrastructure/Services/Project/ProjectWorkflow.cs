@@ -135,8 +135,8 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                 // 4. Создаём вкладку с собственным AutoSaveService
                 var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
-                var autoSaveService = App.Services.GetRequiredService<IAutoSaveService>();
-                var tabVM = new DocumentTabViewModel(project, filePath, onClose: null, autoSaveService);
+                var cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
+                var tabVM = new DocumentTabViewModel(project, filePath, onClose: null, cacheUpdateService);
 
                 // Передаём функцию получения активных модулей
                 tabVM.SetActiveModulesProvider(() => mainViewModel.GetActiveModules());
@@ -173,8 +173,8 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                 // 6. Запускаем автосохранение ТОЛЬКО если НЕ в Compare mode
                 if (recoveryChoice != RecoveryDialogResult.Compare)
-                {
-                    tabVM.StartAutoSave();
+                { 
+                    tabVM.StartCaching();
                     Console.WriteLine("[ProjectWorkflow] AutoSave started");
                 }
                 else
@@ -230,19 +230,8 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                 if (project != null)
                 {
-                    // Перезагружаем ВЕСЬ layout модулей
-                    var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
-
-                    // Останавливаем автосохранение
-                    tab.StopAutoSave();
-
                     // Обновляем данные проекта
                     tab.UpdateProject(project);
-
-                    // Перезагружаем WorkModes с новыми данными
-                    mainViewModel.InitializeWorkModesForTab(tab);
-
-                    // НЕ запускаем автосохранение (мы в Compare mode!)
 
                     // Переключаем флаг
                     tab.RecoveryBanner.IsViewingCache = !isViewingCache;
@@ -262,13 +251,20 @@ namespace Writersword.Src.Infrastructure.Services.Project
             bool success = await SaveDocumentAsync(tab);
             if (success)
             {
+                // КРИТИЧЕСКИ ВАЖНО: Сначала выходим из Compare mode
+                tab.Context.IsInCompareMode = false;
+
                 // Скрываем баннер
                 tab.RecoveryBanner = null;
 
-                // Выходим из режима сравнения
-                tab.Context.IsInCompareMode = false;
+                // Перезагружаем WorkModes БЕЗ Compare mode
+                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+                mainViewModel.InitializeWorkModesForTab(tab);
 
-                Console.WriteLine("[ProjectWorkflow] Saved and hidden recovery banner");
+                // Запускаем автосохранение
+                tab.StartCaching();
+
+                Console.WriteLine("[ProjectWorkflow] Saved and hidden recovery banner, editing enabled");
             }
         }
 
@@ -284,31 +280,35 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
             if (result == MessageBoxResult.Yes)
             {
-                // Если просматриваем кеш - переключаемся на сохранённую версию
+                // Если просматриваем кеш - загружаем сохранённую версию
                 if (tab.RecoveryBanner?.IsViewingCache == true)
                 {
                     var project = await _projectService.LoadAsync(filePath);
                     if (project != null)
                     {
-                        tab.Content = project.ModulesData.TryGetValue("TextEditor", out var text) && text is string str
-                            ? str
-                            : "";
+                        tab.UpdateProject(project);
                     }
                 }
 
                 // Удаляем кеш
                 _cacheService.DeleteCache(filePath);
 
+                // КРИТИЧЕСКИ ВАЖНО: Сначала выходим из Compare mode
+                tab.Context.IsInCompareMode = false;
+
                 // Скрываем баннер
                 tab.RecoveryBanner = null;
 
-                // Выходим из режима сравнения
-                tab.Context.IsInCompareMode = false;
+                // Перезагружаем WorkModes БЕЗ Compare mode
+                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+                mainViewModel.InitializeWorkModesForTab(tab);
 
-                Console.WriteLine("[ProjectWorkflow] Cache discarded, banner hidden");
+                // Запускаем автосохранение
+                tab.StartCaching();
+
+                Console.WriteLine("[ProjectWorkflow] Cache discarded, banner hidden, editing enabled");
             }
         }
-
         /// <summary>Сохранить документ</summary>
         public async Task<bool> SaveDocumentAsync(DocumentTabViewModel tab)
         {
@@ -416,7 +416,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     Console.WriteLine("[ProjectWorkflow] RecoveryBanner cleared");
 
                     // Перезапускаем автосохранение для нового пути
-                    tab.StartAutoSave();
+                    tab.StartCaching();
 
                     // Добавляем в недавние
                     _settingsService.AddRecentProject(filePath);
@@ -477,7 +477,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
                 Console.WriteLine("[ProjectWorkflow] RecoveryBanner cleared");
 
                 // Останавливаем автосохранение
-                tab.StopAutoSave();
+                tab.StartCaching();
 
                 var filePath = tab.FilePath;
 

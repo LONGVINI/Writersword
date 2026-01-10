@@ -165,7 +165,7 @@ namespace Writersword.ViewModels
             // Связываем компоненты с MainWindow
             MenuBar.SetMainViewModelProvider(() => this);
             MenuBar.SetActiveTabProvider(() => TabBar.ActiveTab);
-            TabBar.SetTabActivatedHandler(OnTabActivated);
+            //TabBar.SetTabActivatedHandler(OnTabActivated);
             WorkModeBar.SetWorkModeSwitchedHandler(OnWorkModeSwitched);
             ModulePanel.SetModuleHandlers(OnModuleAdded, OnModuleRemoved);
 
@@ -186,7 +186,11 @@ namespace Writersword.ViewModels
             _projectWorkflow.ProjectSaved += OnProjectSaved;
             _projectWorkflow.ProjectClosed += OnProjectClosed;
 
-
+            _tabCollection.ActiveTabChanged += tab =>
+            {
+                if (tab != null)
+                    OnTabActivated(tab);
+            };
 
             // Инициализация
             _settingsService.Load();
@@ -455,29 +459,35 @@ namespace Writersword.ViewModels
         /// <summary>Внутренний метод с отслеживанием посещённых элементов</summary>
         private void CollectModulesFromDockableInternal(IDockable dockable, List<IModule> modules, HashSet<IDockable> visited)
         {
-            // ЗАЩИТА ОТ ЦИКЛОВ: если уже посещали этот элемент - СТОП!
             if (!visited.Add(dockable))
             {
                 Console.WriteLine($"[CollectModules] CYCLE DETECTED: {dockable.Id} already visited!");
                 return;
             }
 
-            // Проверяем максимальную глубину (дополнительная защита)
             if (visited.Count > 100)
             {
                 Console.WriteLine($"[CollectModules] MAX DEPTH REACHED: stopping at 100 elements");
                 return;
             }
 
-            // Если это Document с модулем - добавляем модуль
+            // Если это Document с модулем - получаем модуль через View
             if (dockable is Document document && document.Id?.StartsWith("Module_") == true)
             {
-                var moduleId = document.Id.Substring("Module_".Length);
-                var module = _moduleRegistry.GetActiveModule(moduleId);
-                if (module != null)
+                // Получаем View из Document.Content
+                if (document.Content is Avalonia.Controls.Control control &&
+                    control.DataContext is object viewModel)
                 {
-                    modules.Add(module);
-                    Console.WriteLine($"[CollectModules] Added module: {moduleId}");
+                    // Ищем модуль по ViewModel (более надёжно чем по ModuleId)
+                    foreach (var module in _moduleRegistry.GetAllModules())
+                    {
+                        if (module.ViewModel == viewModel)
+                        {
+                            modules.Add(module);
+                            Console.WriteLine($"[CollectModules] Added module: {module.ModuleId} (Instance: {module.InstanceId})");
+                            break;
+                        }
+                    }
                 }
             }
 

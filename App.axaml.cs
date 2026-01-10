@@ -94,8 +94,11 @@ namespace Writersword
             // Сервис кеширования данных (.wsasd файлы)
             services.AddSingleton<ICacheService, CacheService>();
 
-            // Сервис автосохранения проектов (каждая вкладка получает свой экземпляр)
-            services.AddTransient<IAutoSaveService, AutoSaveService>();
+            // Сервис фонового кеширования (каждые 10 секунд)
+            services.AddSingleton<ICacheUpdateService, CacheUpdateService>();
+
+            // Сервис автоматического сохранения активной вкладки (Ctrl+S каждые 2 минуты)
+            services.AddSingleton<IAutoSaveService, AutoSaveService>();
 
             // --- МОДУЛЬНАЯ СИСТЕМА ---
             // Фабрика для создания экземпляров модулей

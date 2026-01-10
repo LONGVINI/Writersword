@@ -3,7 +3,6 @@ using Moq;
 using NUnit.Framework;
 using System.Collections.Generic;
 using System.Linq;
-using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
 using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.Services.Storage;

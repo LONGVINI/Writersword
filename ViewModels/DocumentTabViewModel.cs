@@ -1,12 +1,14 @@
-﻿using ReactiveUI;
+﻿using Microsoft.Extensions.DependencyInjection;
+using ReactiveUI;
 using System;
 using System.Collections.Generic;
 using System.Reactive;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Modules;
+using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models;
 using Writersword.Core.Models.Project;
-using Writersword.Core.Interfaces.Services;
+using Writersword.Src.Core.Interfaces.Services.Storage;
 
 namespace Writersword.ViewModels
 {
@@ -19,7 +21,7 @@ namespace Writersword.ViewModels
     {
         private readonly ProjectFile _project;
         private readonly Func<DocumentTabViewModel, Task>? _onClose;
-        private readonly IAutoSaveService _autoSaveService;
+        private readonly ICacheUpdateService _cacheUpdateService;
         private Func<IEnumerable<IModule>>? _getActiveModules;
         private bool _isActive;
         private string _filePath = "";
@@ -63,7 +65,6 @@ namespace Writersword.ViewModels
         {
             get
             {
-                // Читаем из ModulesData
                 if (_project.ModulesData.TryGetValue("TextEditor", out var data))
                 {
                     if (data is string text)
@@ -73,7 +74,6 @@ namespace Writersword.ViewModels
             }
             set
             {
-                // Сохраняем в ModulesData
                 _project.ModulesData["TextEditor"] = value;
                 this.RaisePropertyChanged();
             }
@@ -105,18 +105,23 @@ namespace Writersword.ViewModels
         public ReactiveCommand<Unit, Unit> CloseCommand { get; }
 
         public DocumentTabViewModel(
-          ProjectFile project,
-          string filePath = "",
-          Func<DocumentTabViewModel, Task>? onClose = null,
-          IAutoSaveService? autoSaveService = null)
+                ProjectFile project,
+                string filePath = "",
+                Func<DocumentTabViewModel, Task>? onClose = null,
+                ICacheUpdateService? cacheUpdateService = null)
         {
             _project = project;
             _filePath = filePath;
             _onClose = onClose;
             Id = Guid.NewGuid().ToString();
 
-            // Создаём собственный AutoSaveService для этой вкладки
-            _autoSaveService = autoSaveService ?? Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<IAutoSaveService>(App.Services);
+            // Создаём НОВЫЙ экземпляр CacheUpdateService для ЭТОЙ вкладки
+            var cacheService = App.Services.GetRequiredService<ICacheService>();
+            var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
+            _cacheUpdateService = new Writersword.Src.Infrastructure.Services.Modules.CacheUpdateService(
+                cacheService,
+                stateCollector
+            );
 
             // Создаём контекст документа
             Context = new DocumentContext(project, filePath);
@@ -150,25 +155,62 @@ namespace Writersword.ViewModels
             _getActiveModules = getActiveModules;
         }
 
-        /// <summary>Запустить автосохранение для этой вкладки</summary>
-        public void StartAutoSave()
+        /// <summary>Запустить фоновое кеширование для этой вкладки</summary>
+        public void StartCaching()
         {
             if (!string.IsNullOrEmpty(FilePath) && _getActiveModules != null)
             {
-                _autoSaveService.Start(FilePath, _getActiveModules);
-                Console.WriteLine($"[DocumentTabViewModel] AutoSave started for: {Title}");
+                _cacheUpdateService.Start(FilePath, _getActiveModules);
+                Console.WriteLine($"[DocumentTabViewModel] Caching started for: {Title}");
             }
             else
             {
-                Console.WriteLine($"[DocumentTabViewModel] Cannot start AutoSave: FilePath={FilePath}, hasProvider={_getActiveModules != null}");
+                Console.WriteLine($"[DocumentTabViewModel] Cannot start caching: FilePath={FilePath}, hasProvider={_getActiveModules != null}");
             }
         }
 
-        /// <summary>Остановить автосохранение для этой вкладки</summary>
-        public void StopAutoSave()
+        /// <summary>Остановить фоновое кеширование для этой вкладки</summary>
+        public void StopCaching()
         {
-            _autoSaveService.Stop();
-            Console.WriteLine($"[DocumentTabViewModel] AutoSave stopped for: {Title}");
+            _cacheUpdateService.Stop();
+            Console.WriteLine($"[DocumentTabViewModel] Caching stopped for: {Title}");
+        }
+
+        /// <summary>
+        /// Сохранить в кеш асинхронно
+        /// Используется при переключении вкладок
+        /// CollectAllStates сам проверяет IsDirty внутри
+        /// </summary>
+        public async Task SaveToCacheAsync()
+        {
+            try
+            {
+                var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
+                var cacheService = App.Services.GetRequiredService<ICacheService>();
+                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+
+                var activeModules = mainViewModel.GetActiveModules();
+
+                if (activeModules.Count > 0)
+                {
+                    // Собираем состояния
+                    var moduleStates = stateCollector.CollectAllStates(activeModules);
+
+                    if (moduleStates.Count > 0)
+                    {
+                        await cacheService.SaveCacheAsync(FilePath, moduleStates);
+                        Console.WriteLine($"[DocumentTabViewModel] Cache saved: {moduleStates.Count} modules");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[DocumentTabViewModel] No dirty modules to cache");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[DocumentTabViewModel] Cache save error: {ex.Message}");
+            }
         }
 
         /// <summary>Обновить данные проекта (используется при переключении версий)</summary>

@@ -136,10 +136,10 @@ namespace Writersword.Views
                 // Если "Нет" - просто продолжаем дальше
             }
 
-            // 4. Останавливаем автосохранение для всех вкладок
+            // 4. Останавливаем кеширование для всех вкладок
             foreach (var tab in tabCollection.Tabs)
             {
-                tab.StopAutoSave();
+                tab.StopCaching();
             }
 
             // 5. Закрываем все Float окна
