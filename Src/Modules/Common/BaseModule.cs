@@ -13,7 +13,6 @@ namespace Writersword.Modules.Common
     /// </summary>
     public abstract class BaseModule : IModule
     {
-        private bool _isDirty = false;
         private DocumentContext? _context;
 
         /// <summary>Уникальный ID экземпляра модуля</summary>
@@ -50,9 +49,6 @@ namespace Writersword.Modules.Common
                 }
             }
         }
-
-        /// <summary>Флаг изменений модуля</summary>
-        public bool IsDirty => _isDirty;
 
         /// <summary>
         /// Событие запроса на закрытие модуля
@@ -95,24 +91,6 @@ namespace Writersword.Modules.Common
             // Наследники могут переопределить для своей логики
         }
 
-        /// <summary>
-        /// Пометить модуль как изменённый
-        /// Вызывается когда пользователь изменяет данные в модуле
-        /// </summary>
-        protected void MarkAsDirty()
-        {
-            _isDirty = true;
-        }
-
-        /// <summary>
-        /// Пометить модуль как сохранённый
-        /// Вызывается после успешного сохранения состояния
-        /// </summary>
-        public void MarkAsClean()
-        {
-            _isDirty = false;
-        }
-
         /// <summary>Инициализация модуля</summary>
         public virtual void Initialize() { }
 
@@ -122,13 +100,10 @@ namespace Writersword.Modules.Common
             return new ModuleState();
         }
 
-        /// <summary>
-        /// Восстановить состояние модуля
-        /// После восстановления модуль считается чистым (не изменённым)
-        /// </summary>
+        /// <summary>Восстановить состояние модуля</summary>
         public virtual void RestoreState(ModuleState state)
         {
-            _isDirty = false;
+            // Базовая реализация - ничего не делает
         }
 
         /// <summary>Очистка ресурсов</summary>

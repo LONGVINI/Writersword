@@ -20,11 +20,5 @@
         /// Эти данные НЕ попадают в .writersword при сохранении
         /// </summary>
         public object? SessionData { get; set; }
-
-        /// <summary>
-        /// Позиция скролла (0.0 - 1.0)
-        /// Универсальное свойство для всех модулей
-        /// </summary>
-        public double ScrollPosition { get; set; }
     }
 }

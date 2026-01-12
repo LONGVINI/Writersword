@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reactive.Linq;
+using System.Runtime.Intrinsics.Arm;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
@@ -23,16 +24,19 @@ namespace Writersword.Src.Infrastructure.Services.Modules
         private TimeSpan _interval = TimeSpan.FromSeconds(10);
         private string? _currentProjectPath;
         private Func<IEnumerable<IModule>>? _getActiveModules;
+        private readonly IDataComparisonService _comparisonService;
 
         /// <summary>Событие завершения кеширования</summary>
         public event EventHandler? CacheSaved;
 
         public CacheUpdateService(
             ICacheService cacheService,
-            IModuleStateCollectorService stateCollector)
+            IModuleStateCollectorService stateCollector,
+            IDataComparisonService comparisonService)
         {
             _cacheService = cacheService;
             _stateCollector = stateCollector;
+            _comparisonService = comparisonService;
         }
 
         /// <summary>
@@ -83,6 +87,7 @@ namespace Writersword.Src.Infrastructure.Services.Modules
         /// <summary>
         /// Выполнить обновление кеша
         /// Собирает состояния всех активных модулей и сохраняет в .wsasd
+        /// НЕ СОХРАНЯЕТ если данные не изменились!
         /// </summary>
         private async Task PerformCacheUpdateAsync()
         {
@@ -125,7 +130,16 @@ namespace Writersword.Src.Infrastructure.Services.Modules
                     return;
                 }
 
-                // Сохраняем в кеш
+                // СРАВНИВАЕМ со старым кешем
+                var oldCache = _cacheService.LoadCache(_currentProjectPath);
+
+                if (_comparisonService.AreStatesEqual(oldCache, moduleStates))
+                {
+                    Console.WriteLine($"[CacheUpdateService] No changes, skipping save");
+                    return;
+                }
+
+                // Сохраняем в кеш (ТОЛЬКО если есть изменения!)
                 await _cacheService.SaveCacheAsync(_currentProjectPath, moduleStates);
 
                 CacheSaved?.Invoke(this, EventArgs.Empty);

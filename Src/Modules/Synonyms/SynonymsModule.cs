@@ -58,7 +58,6 @@ namespace Writersword.Modules.Synonyms
         {
             return new ModuleState
             {
-                ScrollPosition = 0,
                 CustomData = null
             };
         }

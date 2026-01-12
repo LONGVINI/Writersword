@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.Modules;
 using Writersword.Core.Interfaces.Services;
@@ -9,13 +8,24 @@ namespace Writersword.Infrastructure.Services.Modules
 {
     /// <summary>
     /// Сервис для сбора состояний модулей
-    /// Используется при автосохранении, переключении WorkMode и сохранении проекта
+    /// Используется при кешировании, переключении WorkMode и сохранении проекта
+    /// 
+    /// ФУНКЦИИ:
+    /// - Собирает данные из активных модулей через module.SaveState()
+    /// - Фильтрует данные (CustomData, SessionData, или всё)
+    /// - Упаковывает в словари для передачи другим сервисам
+    /// 
+    /// НЕ ДЕЛАЕТ:
+    /// - Не сравнивает данные (для этого IDataComparisonService)
+    /// - Не сохраняет данные (для этого CacheService/ProjectService)
+    /// - Не принимает решения о сохранении
     /// </summary>
     public class ModuleStateCollectorService : IModuleStateCollectorService
     {
         /// <summary>
-        /// Собрать ПОЛНЫЕ состояния всех модулей (CustomData + SessionData)
-        /// Используется при переключении WorkMode
+        /// Собрать ПОЛНЫЕ состояния ВСЕХ модулей (CustomData + SessionData)
+        /// БЕЗ проверки IsDirty - собирает всегда
+        /// Используется при кешировании (.wsasd) и переключении вкладок
         /// </summary>
         public Dictionary<string, ModuleState> CollectAllStates(IEnumerable<IModule> modules)
         {
@@ -23,21 +33,10 @@ namespace Writersword.Infrastructure.Services.Modules
 
             foreach (var module in modules)
             {
-                // Проверяем изменился ли модуль с последнего сохранения
-                if (!module.IsDirty)
-                {
-                    Console.WriteLine($"[ModuleStateCollector] Skipping {module.ModuleId} (not dirty)");
-                    continue;
-                }
-
                 var state = CollectModuleState(module);
                 if (state != null)
                 {
                     states[module.ModuleId] = state;
-
-                    // Помечаем модуль как сохранённый
-                    module.MarkAsClean();
-
                     Console.WriteLine($"[ModuleStateCollector] Collected full state: {module.ModuleId}");
                 }
             }
@@ -48,7 +47,8 @@ namespace Writersword.Infrastructure.Services.Modules
 
         /// <summary>
         /// Собрать ТОЛЬКО CustomData всех модулей (для сохранения в .writersword)
-        /// Используется при Ctrl+S
+        /// Используется при Ctrl+S для сохранения основных данных проекта
+        /// SessionData не включается (это временные рабочие данные)
         /// </summary>
         public Dictionary<string, object?> CollectCustomData(IEnumerable<IModule> modules)
         {
@@ -69,8 +69,9 @@ namespace Writersword.Infrastructure.Services.Modules
         }
 
         /// <summary>
-        /// Собрать ТОЛЬКО SessionData всех модулей (для автосохранения в .wsasd)
-        /// Используется при автосохранении каждые 10 секунд
+        /// Собрать ТОЛЬКО SessionData всех модулей
+        /// Используется редко, в основном для отладки или специальных сценариев
+        /// SessionData = временные данные (курсор, скролл, время редактирования)
         /// </summary>
         public Dictionary<string, object?> CollectSessionData(IEnumerable<IModule> modules)
         {
@@ -92,20 +93,23 @@ namespace Writersword.Infrastructure.Services.Modules
 
         /// <summary>
         /// Собрать состояние одного модуля
-        /// Модуль сам решает что сохранять через SaveState()
+        /// Вызывает module.SaveState() - модуль сам решает что возвращать
+        /// Возвращает null если модуль пустой (нет ни CustomData, ни SessionData)
         /// </summary>
         public ModuleState? CollectModuleState(IModule module)
         {
             try
             {
+                // Модуль сам решает что сохранять
                 var state = module.SaveState();
 
                 // Проверяем есть ли хоть что-то для сохранения
-                if (state.CustomData != null || state.SessionData != null || state.ScrollPosition > 0)
+                if (state.CustomData != null || state.SessionData != null)
                 {
                     return state;
                 }
 
+                // Модуль пустой - не сохраняем
                 return null;
             }
             catch (Exception ex)

@@ -22,7 +22,6 @@ namespace Writersword.Modules.TextEditor
     {
         private TextEditorViewModel? _viewModel;
         private IDisposable? _textSubscription;
-        private string _lastSavedText = "";
 
         /// <summary>Идентификатор модуля</summary>
         public override string ModuleId => "TextEditor";
@@ -51,16 +50,6 @@ namespace Writersword.Modules.TextEditor
                 .Throttle(TimeSpan.FromSeconds(0.5))
                 .Subscribe(text =>
                 {
-                    // Проверяем реально ли изменился текст
-                    if (text == _lastSavedText)
-                    {
-                        Console.WriteLine($"[TextEditorModule {InstanceId}] Text unchanged, skipping");
-                        return;
-                    }
-
-                    // Помечаем модуль как изменённый
-                    MarkAsDirty();
-
                     // Сохраняем в проект
                     if (Context?.Project != null)
                     {
@@ -89,14 +78,10 @@ namespace Writersword.Modules.TextEditor
         /// <summary>
         /// Сохранить состояние модуля
         /// Возвращает текст редактора в CustomData
-        /// Обновляет _lastSavedText для отслеживания изменений
         /// </summary>
         public override ModuleState SaveState()
         {
             var text = _viewModel?.PlainText ?? "";
-
-            // Обновляем последний сохранённый текст
-            _lastSavedText = text;
 
             Console.WriteLine($"[TextEditorModule] SaveState called:");
             Console.WriteLine($"  - InstanceId: {InstanceId}");
@@ -108,27 +93,22 @@ namespace Writersword.Modules.TextEditor
                 CustomData = text,
                 SessionData = new
                 {
-                    lastEditTime = DateTime.Now
+                    lastEditTime = DateTime.Now,
+                    scrollPosition = 0
                 },
-                ScrollPosition = 0
             };
         }
 
         /// <summary>
         /// Восстановить состояние модуля
         /// Загружает текст из CustomData в редактор
-        /// Запоминает восстановленный текст чтобы не помечать модуль как изменённый
         /// </summary>
         public override void RestoreState(ModuleState state)
         {
-            // Вызываем базовый метод (сбрасывает IsDirty)
             base.RestoreState(state);
 
             if (_viewModel != null && state.CustomData is string text)
             {
-                // Запоминаем восстановленный текст как "последний сохранённый"
-                _lastSavedText = text;
-
                 _viewModel.LoadDocument(text);
                 Console.WriteLine($"[TextEditorModule] Restored {text.Length} chars");
             }

@@ -2,6 +2,7 @@
 using ReactiveUI;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Modules;
@@ -9,6 +10,7 @@ using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models;
 using Writersword.Core.Models.Project;
 using Writersword.Src.Core.Interfaces.Services.Storage;
+using Writersword.Src.Infrastructure.Services.Modules;
 
 namespace Writersword.ViewModels
 {
@@ -118,9 +120,11 @@ namespace Writersword.ViewModels
             // Создаём НОВЫЙ экземпляр CacheUpdateService для ЭТОЙ вкладки
             var cacheService = App.Services.GetRequiredService<ICacheService>();
             var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
-            _cacheUpdateService = new Writersword.Src.Infrastructure.Services.Modules.CacheUpdateService(
+            var comparisonService = App.Services.GetRequiredService<IDataComparisonService>();
+            _cacheUpdateService = new CacheUpdateService(
                 cacheService,
-                stateCollector
+                stateCollector,
+                comparisonService
             );
 
             // Создаём контекст документа
@@ -179,31 +183,73 @@ namespace Writersword.ViewModels
         /// <summary>
         /// Сохранить в кеш асинхронно
         /// Используется при переключении вкладок
-        /// CollectAllStates сам проверяет IsDirty внутри
+        /// СРАВНИВАЕТ с кешем И с файлом перед сохранением
         /// </summary>
         public async Task SaveToCacheAsync()
         {
             try
             {
+                if (_getActiveModules == null)
+                {
+                    Console.WriteLine($"[DocumentTabViewModel] No active modules provider, skipping cache save");
+                    return;
+                }
+
                 var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
                 var cacheService = App.Services.GetRequiredService<ICacheService>();
-                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+                var comparisonService = App.Services.GetRequiredService<IDataComparisonService>();
 
-                var activeModules = mainViewModel.GetActiveModules();
+                // ПОЛУЧАЕМ МОДУЛИ ЧЕРЕЗ СОХРАНЁННУЮ ФУНКЦИЮ (для ЭТОЙ вкладки)
+                var activeModules = _getActiveModules().ToList();
 
                 if (activeModules.Count > 0)
                 {
-                    // Собираем состояния
+                    // Собираем текущие состояния модулей
                     var moduleStates = stateCollector.CollectAllStates(activeModules);
 
                     if (moduleStates.Count > 0)
                     {
-                        await cacheService.SaveCacheAsync(FilePath, moduleStates);
-                        Console.WriteLine($"[DocumentTabViewModel] Cache saved: {moduleStates.Count} modules");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[DocumentTabViewModel] No dirty modules to cache");
+                        // Извлекаем ТОЛЬКО CustomData для сравнения
+                        var currentCustomData = new Dictionary<string, object?>();
+                        foreach (var kvp in moduleStates)
+                        {
+                            if (kvp.Value.CustomData != null)
+                            {
+                                currentCustomData[kvp.Key] = kvp.Value.CustomData;
+                            }
+                        }
+
+                        // СРАВНИВАЕМ с данными из ФАЙЛА .writersword
+                        var project = GetProject();
+                        bool dataMatchesFile = comparisonService.AreDataEqual(currentCustomData, project.ModulesData);
+
+                        if (dataMatchesFile)
+                        {
+                            Console.WriteLine($"[DocumentTabViewModel] Data matches saved file, skipping cache");
+
+                            // Если есть старый кеш - удаляем его (он больше не нужен)
+                            if (cacheService.HasCache(FilePath))
+                            {
+                                cacheService.DeleteCache(FilePath);
+                                Console.WriteLine($"[DocumentTabViewModel] Deleted outdated cache");
+                            }
+
+                            return;
+                        }
+
+                        // Данные отличаются от файла - проверяем кеш
+                        var oldCache = cacheService.LoadCache(FilePath);
+
+                        // Сравниваем с кешем (если есть)
+                        if (!comparisonService.AreStatesEqual(oldCache, moduleStates))
+                        {
+                            await cacheService.SaveCacheAsync(FilePath, moduleStates);
+                            Console.WriteLine($"[DocumentTabViewModel] Cache saved: {moduleStates.Count} modules");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[DocumentTabViewModel] No changes from cache, skipping save");
+                        }
                     }
                 }
             }

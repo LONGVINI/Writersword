@@ -34,12 +34,6 @@ namespace Writersword.Core.Interfaces.Modules
         DocumentContext? Context { get; set; }
 
         /// <summary>
-        /// Флаг изменений модуля
-        /// True если модуль изменился с последнего сохранения
-        /// </summary>
-        bool IsDirty { get; }
-
-        /// <summary>
         /// Событие запроса на закрытие модуля
         /// Вызывается когда модуль хочет закрыться (например, по кнопке Close)
         /// </summary>
@@ -50,12 +44,6 @@ namespace Writersword.Core.Interfaces.Modules
         /// Вызывается когда модуль хочет открепиться от главного окна
         /// </summary>
         event Action<IModule>? RequestDetach;
-
-        /// <summary>
-        /// Пометить модуль как сохранённый (сбросить флаг изменений)
-        /// Вызывается после успешного сохранения состояния
-        /// </summary>
-        void MarkAsClean();
 
         /// <summary>Инициализация модуля</summary>
         void Initialize();

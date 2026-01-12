@@ -47,9 +47,6 @@ namespace Writersword.Modules.Notes
                 .Throttle(TimeSpan.FromSeconds(0.5))
                 .Subscribe(text =>
                 {
-                    // Помечаем модуль как изменённый
-                    MarkAsDirty();
-
                     // Сохраняем в проект
                     if (Context?.Project != null)
                     {
@@ -79,8 +76,11 @@ namespace Writersword.Modules.Notes
         {
             return new ModuleState
             {
-                ScrollPosition = 0,
-                CustomData = _viewModel?.NoteText
+                CustomData = _viewModel?.NoteText,
+                SessionData = new
+                {
+                    scrollPosition = 0 
+                }
             };
         }
 
@@ -90,7 +90,6 @@ namespace Writersword.Modules.Notes
         /// </summary>
         public override void RestoreState(ModuleState state)
         {
-            // Вызываем базовый метод (сбрасывает IsDirty)
             base.RestoreState(state);
 
             if (_viewModel != null && state.CustomData is string notes && !string.IsNullOrEmpty(notes))

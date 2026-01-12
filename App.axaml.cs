@@ -17,6 +17,7 @@ using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.Services.UI;
 using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Src.Core.Interfaces.WorkModes;
+using Writersword.Src.Infrastructure.Services;
 using Writersword.Src.Infrastructure.Services.Input;
 using Writersword.Src.Infrastructure.Services.Modules;
 using Writersword.Src.Infrastructure.Services.Project;
@@ -99,6 +100,9 @@ namespace Writersword
 
             // Сервис автоматического сохранения активной вкладки (Ctrl+S каждые 2 минуты)
             services.AddSingleton<IAutoSaveService, AutoSaveService>();
+
+            // Сервис сравнения данных полученных из модулей
+            services.AddSingleton<IDataComparisonService, DataComparisonService>();
 
             // --- МОДУЛЬНАЯ СИСТЕМА ---
             // Фабрика для создания экземпляров модулей
