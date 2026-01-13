@@ -116,19 +116,75 @@ namespace Writersword.Src.Infrastructure.Dock
             if (proportionalDock.VisibleDockables == null)
                 proportionalDock.VisibleDockables = new List<IDockable>();
 
-            foreach (var panelConfig in config.Panels)
+            // КРИТИЧНО: Добавляем панели И сплиттеры между ними!
+            for (int i = 0; i < config.Panels.Count; i++)
             {
-                var panel = CreatePanelFromConfig(workMode, panelConfig);
+                var panel = CreatePanelFromConfig(workMode, config.Panels[i]);
                 if (panel != null)
                 {
                     proportionalDock.VisibleDockables.Add(panel);
+
+                    // Если это НЕ последняя панель - добавляем сплиттер ПОСЛЕ неё
+                    if (i < config.Panels.Count - 1)
+                    {
+                        var splitter = new ProportionalDockSplitter
+                        {
+                            Id = $"Splitter_{i}",
+                            Title = $"Splitter_{i}"
+                        };
+                        proportionalDock.VisibleDockables.Add(splitter);
+                        Console.WriteLine($"[DockFactory] Added splitter between panels {i} and {i + 1}");
+                    }
                 }
             }
 
             if (proportionalDock.VisibleDockables.Count > 0)
             {
-                proportionalDock.ActiveDockable = proportionalDock.VisibleDockables[0];
+                // Активируем первую ПАНЕЛЬ (не сплиттер!)
+                proportionalDock.ActiveDockable = proportionalDock.VisibleDockables
+                    .FirstOrDefault(d => d is not ProportionalDockSplitter);
             }
+
+            // === ДИАГНОСТИКА: ЧТО МЫ СОЗДАЛИ ===
+            Console.WriteLine($"[DockFactory] === DIAGNOSTIC for {proportionalDock.Id} ===");
+            Console.WriteLine($"  Orientation: {proportionalDock.Orientation}");
+            Console.WriteLine($"  Proportion: {proportionalDock.Proportion}");
+            Console.WriteLine($"  Children count: {proportionalDock.VisibleDockables?.Count ?? 0}");
+
+            if (proportionalDock.VisibleDockables != null)
+            {
+                for (int i = 0; i < proportionalDock.VisibleDockables.Count; i++)
+                {
+                    var child = proportionalDock.VisibleDockables[i];
+                    Console.WriteLine($"  Child[{i}]: Type={child.GetType().Name}, Id={child.Id}");
+
+                    if (child is IDock dock)
+                    {
+                        Console.WriteLine($"    Proportion: {dock.Proportion}");
+
+                        if (child is ProportionalDock propDock)
+                        {
+                            Console.WriteLine($"    Orientation: {propDock.Orientation}");
+                            Console.WriteLine($"    Nested children: {propDock.VisibleDockables?.Count ?? 0}");
+
+                            // Диагностика вложенных детей
+                            if (propDock.VisibleDockables != null)
+                            {
+                                for (int j = 0; j < propDock.VisibleDockables.Count; j++)
+                                {
+                                    var nestedChild = propDock.VisibleDockables[j];
+                                    Console.WriteLine($"      Nested[{j}]: Type={nestedChild.GetType().Name}, Id={nestedChild.Id}");
+                                    if (nestedChild is IDock nestedDock)
+                                    {
+                                        Console.WriteLine($"        Proportion: {nestedDock.Proportion}");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Console.WriteLine($"[DockFactory] === END DIAGNOSTIC ===");
 
             return proportionalDock;
         }
@@ -139,7 +195,16 @@ namespace Writersword.Src.Infrastructure.Dock
             if (panelConfig.NestedLayout != null)
             {
                 Console.WriteLine($"[DockFactory] Creating nested layout for panel: {panelConfig.Id}");
-                return CreateDockFromConfig(workMode, panelConfig.NestedLayout);
+                var nestedDock = CreateDockFromConfig(workMode, panelConfig.NestedLayout);
+
+                // КРИТИЧНО: Устанавливаем пропорцию из конфига!
+                if (nestedDock is IDock dock)
+                {
+                    dock.Proportion = panelConfig.Proportion > 0 ? panelConfig.Proportion : 0.3;
+                    Console.WriteLine($"[DockFactory] Set proportion {dock.Proportion} for nested layout {panelConfig.Id}");
+                }
+
+                return nestedDock;
             }
 
             // Иначе создаём DocumentDock с модулями из списка
@@ -168,7 +233,7 @@ namespace Writersword.Src.Infrastructure.Dock
             {
                 Id = panelConfig.Id,
                 Title = panelConfig.Id,
-                Proportion = panelConfig.Proportion,
+                Proportion = panelConfig.Proportion > 0 ? panelConfig.Proportion : 0.5,
                 ActiveDockable = documents[0],
                 CanCreateDocument = false
             };
@@ -181,7 +246,7 @@ namespace Writersword.Src.Infrastructure.Dock
                 documentDock.VisibleDockables.Add(doc);
             }
 
-            Console.WriteLine($"[DockFactory] Created panel {panelConfig.Id} with {documents.Count} documents");
+            Console.WriteLine($"[DockFactory] Created panel {panelConfig.Id} with {documents.Count} documents, Proportion={documentDock.Proportion}");
 
             return documentDock;
         }

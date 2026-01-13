@@ -1,9 +1,11 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Src.Core.Interfaces.WorkModes;
+using Writersword.Src.WorkModes.Common;
 
 namespace Writersword.Src.Infrastructure.Services.WorkModes
 {
@@ -40,13 +42,79 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         }
 
         /// <summary>
-        /// Загрузить дефолтную конфигурацию (hardcoded)
+        /// Загрузить дефолтную конфигурацию из реестра WorkMode
+        /// Использует GetDefaultConfig() каждого WorkMode
         /// </summary>
         public List<WorkMode> LoadDefaultConfiguration(string projectType)
         {
             var workModes = new List<WorkMode>();
 
-            // === EDITOR MODE (основной режим) ===
+            // Получаем реестр WorkMode
+            var workModeRegistry = App.Services.GetRequiredService<WorkModeRegistry>();
+
+            // Получаем все зарегистрированные WorkMode для этого типа проекта
+            var registeredWorkModes = workModeRegistry.GetWorkModesForProjectType(projectType);
+
+            if (registeredWorkModes == null || registeredWorkModes.Count == 0)
+            {
+                Console.WriteLine($"[WorkModeConfigService] No WorkModes registered for project type: {projectType}");
+
+                // FALLBACK: Хардкод для Editor (если реестр пуст)
+                return CreateFallbackEditorMode();
+            }
+
+            // Создаём WorkMode из каждого зарегистрированного
+            foreach (var registeredWM in registeredWorkModes)
+            {
+                // Получаем DEFAULT конфигурацию из WorkMode
+                var defaultConfig = registeredWM.GetDefaultConfig();
+
+                // Создаём экземпляр WorkMode
+                var workMode = new WorkMode
+                {
+                    WorkModeId = registeredWM.Id,
+                    Title = registeredWM.DisplayName,
+                    Icon = registeredWM.Icon,
+                    Order = defaultConfig.Order,
+                    IsActive = defaultConfig.Order == 0, // Первый активен
+                    IsCloseable = registeredWM.IsCloseable
+                };
+
+                // КОПИРУЕМ ModuleSlots из конфига
+                foreach (var slotConfig in defaultConfig.ModuleSlots)
+                {
+                    workMode.ModuleSlots.Add(new ModuleSlot
+                    {
+                        ModuleId = slotConfig.ModuleId,
+                        IsVisible = slotConfig.IsVisible,
+                        IsCloseable = slotConfig.Category != ModuleCategory.Required,
+                        MinWidth = slotConfig.MinWidth,
+                        MinHeight = slotConfig.MinHeight,
+                        PreferredPosition = slotConfig.PreferredPosition ?? PreferredDockPosition.RightAsTab
+                    });
+                }
+
+                // КРИТИЧЕСКИ ВАЖНО: Сохраняем DockLayout в CustomSettings!
+                if (defaultConfig.DockLayout != null)
+                {
+                    workMode.Settings.CustomSettings["DockLayout"] = defaultConfig.DockLayout;
+                    Console.WriteLine($"[WorkModeConfigService] DockLayout saved for: {workMode.Title}");
+                }
+
+                workModes.Add(workMode);
+            }
+
+            Console.WriteLine($"[WorkModeConfigService] Created DEFAULT configuration with {workModes.Count} modes");
+            return workModes;
+        }
+
+        /// <summary>
+        /// Fallback конфигурация если реестр пуст
+        /// </summary>
+        private List<WorkMode> CreateFallbackEditorMode()
+        {
+            var workModes = new List<WorkMode>();
+
             var editorMode = new WorkMode
             {
                 WorkModeId = "editor",
@@ -57,7 +125,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 IsCloseable = false
             };
 
-            // Обязательные модули для Editor
             editorMode.ModuleSlots.Add(new ModuleSlot
             {
                 ModuleId = "TextEditor",
@@ -70,7 +137,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
             workModes.Add(editorMode);
 
-            Console.WriteLine($"[WorkModeConfigService] Created DEFAULT configuration with {workModes.Count} modes");
+            Console.WriteLine($"[WorkModeConfigService] Created FALLBACK configuration");
             return workModes;
         }
 

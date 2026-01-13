@@ -26,6 +26,21 @@ namespace Writersword.Src.WorkModes.Common
             return _workModes.Values.OrderBy(m => m.Order).ToList();
         }
 
+        /// <summary>
+        /// Получить WorkMode для конкретного типа проекта
+        /// Возвращает все WorkMode, которые подходят для данного типа
+        /// </summary>
+        /// <param name="projectType">Тип проекта (Novel, Screenplay, Poetry, etc.)</param>
+        /// <returns>Список WorkMode для этого типа проекта</returns>
+        public List<IWorkMode> GetWorkModesForProjectType(string projectType)
+        {
+            // TODO: В будущем можно добавить фильтрацию по типу проекта
+            // Например, WorkMode может иметь свойство SupportedProjectTypes
+
+            // Пока возвращаем все WorkMode (универсальные для любого проекта)
+            return GetAll();
+        }
+
         /// <summary>Получить WorkMode по ID</summary>
         public IWorkMode? GetWorkMode(string id)
         {
