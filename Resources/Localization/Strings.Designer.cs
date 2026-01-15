@@ -403,15 +403,6 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на Close.
-        /// </summary>
-        public static string Menu_Close {
-            get {
-                return ResourceManager.GetString("Menu_Close", resourceCulture);
-            }
-        }
-        
-        /// <summary>
         ///   Ищет локализованную строку, похожую на _Edit.
         /// </summary>
         public static string Menu_Edit {
@@ -421,11 +412,74 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на Exit.
+        ///   Ищет локализованную строку, похожую на Copy.
         /// </summary>
-        public static string Menu_Exit {
+        public static string Menu_Edit_Copy {
             get {
-                return ResourceManager.GetString("Menu_Exit", resourceCulture);
+                return ResourceManager.GetString("Menu_Edit_Copy", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Cut.
+        /// </summary>
+        public static string Menu_Edit_Cut {
+            get {
+                return ResourceManager.GetString("Menu_Edit_Cut", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Find.
+        /// </summary>
+        public static string Menu_Edit_Find {
+            get {
+                return ResourceManager.GetString("Menu_Edit_Find", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Find and Replace.
+        /// </summary>
+        public static string Menu_Edit_FindReplace {
+            get {
+                return ResourceManager.GetString("Menu_Edit_FindReplace", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Paste.
+        /// </summary>
+        public static string Menu_Edit_Paste {
+            get {
+                return ResourceManager.GetString("Menu_Edit_Paste", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Redo.
+        /// </summary>
+        public static string Menu_Edit_Redo {
+            get {
+                return ResourceManager.GetString("Menu_Edit_Redo", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Select All.
+        /// </summary>
+        public static string Menu_Edit_SelectAll {
+            get {
+                return ResourceManager.GetString("Menu_Edit_SelectAll", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Undo.
+        /// </summary>
+        public static string Menu_Edit_Undo {
+            get {
+                return ResourceManager.GetString("Menu_Edit_Undo", resourceCulture);
             }
         }
         
@@ -439,6 +493,105 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Close All Tabs.
+        /// </summary>
+        public static string Menu_File_CloseAllTabs {
+            get {
+                return ResourceManager.GetString("Menu_File_CloseAllTabs", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Close Other Tabs.
+        /// </summary>
+        public static string Menu_File_CloseOtherTabs {
+            get {
+                return ResourceManager.GetString("Menu_File_CloseOtherTabs", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Close.
+        /// </summary>
+        public static string Menu_File_CloseTab {
+            get {
+                return ResourceManager.GetString("Menu_File_CloseTab", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Exit.
+        /// </summary>
+        public static string Menu_File_Exit {
+            get {
+                return ResourceManager.GetString("Menu_File_Exit", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на New Project.
+        /// </summary>
+        public static string Menu_File_NewProject {
+            get {
+                return ResourceManager.GetString("Menu_File_NewProject", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Open....
+        /// </summary>
+        public static string Menu_File_OpenProject {
+            get {
+                return ResourceManager.GetString("Menu_File_OpenProject", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Recent Projects.
+        /// </summary>
+        public static string Menu_File_RecentProjects {
+            get {
+                return ResourceManager.GetString("Menu_File_RecentProjects", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save.
+        /// </summary>
+        public static string Menu_File_Save {
+            get {
+                return ResourceManager.GetString("Menu_File_Save", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save All.
+        /// </summary>
+        public static string Menu_File_SaveAll {
+            get {
+                return ResourceManager.GetString("Menu_File_SaveAll", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save As....
+        /// </summary>
+        public static string Menu_File_SaveAs {
+            get {
+                return ResourceManager.GetString("Menu_File_SaveAs", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Settings.
+        /// </summary>
+        public static string Menu_File_Settings {
+            get {
+                return ResourceManager.GetString("Menu_File_Settings", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на _Help.
         /// </summary>
         public static string Menu_Help {
@@ -448,66 +601,29 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на Modules.
+        ///   Ищет локализованную строку, похожую на About.
         /// </summary>
-        public static string Menu_Modules {
+        public static string Menu_Help_About {
             get {
-                return ResourceManager.GetString("Menu_Modules", resourceCulture);
+                return ResourceManager.GetString("Menu_Help_About", resourceCulture);
             }
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на New Project.
+        ///   Ищет локализованную строку, похожую на Check for Updates.
         /// </summary>
-        public static string Menu_NewProject {
+        public static string Menu_Help_CheckUpdates {
             get {
-                return ResourceManager.GetString("Menu_NewProject", resourceCulture);
+                return ResourceManager.GetString("Menu_Help_CheckUpdates", resourceCulture);
             }
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на Open....
+        ///   Ищет локализованную строку, похожую на Documentation.
         /// </summary>
-        public static string Menu_Open {
+        public static string Menu_Help_Documentation {
             get {
-                return ResourceManager.GetString("Menu_Open", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Ищет локализованную строку, похожую на Redo.
-        /// </summary>
-        public static string Menu_Redo {
-            get {
-                return ResourceManager.GetString("Menu_Redo", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Ищет локализованную строку, похожую на Save.
-        /// </summary>
-        public static string Menu_Save {
-            get {
-                return ResourceManager.GetString("Menu_Save", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Ищет локализованную строку, похожую на Save As....
-        /// </summary>
-        public static string Menu_SaveAs {
-            get {
-                return ResourceManager.GetString("Menu_SaveAs", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Ищет локализованную строку, похожую на 
-        ///	.
-        /// </summary>
-        public static string Menu_Settings {
-            get {
-                return ResourceManager.GetString("Menu_Settings", resourceCulture);
+                return ResourceManager.GetString("Menu_Help_Documentation", resourceCulture);
             }
         }
         
@@ -521,11 +637,11 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на Undo.
+        ///   Ищет локализованную строку, похожую на Statistics.
         /// </summary>
-        public static string Menu_Undo {
+        public static string Menu_Tools_Statistics {
             get {
-                return ResourceManager.GetString("Menu_Undo", resourceCulture);
+                return ResourceManager.GetString("Menu_Tools_Statistics", resourceCulture);
             }
         }
         
@@ -539,11 +655,65 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Modules.
+        /// </summary>
+        public static string Menu_View_Modules {
+            get {
+                return ResourceManager.GetString("Menu_View_Modules", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Work Modes.
         /// </summary>
-        public static string Menu_WorkModes {
+        public static string Menu_View_WorkModes {
             get {
-                return ResourceManager.GetString("Menu_WorkModes", resourceCulture);
+                return ResourceManager.GetString("Menu_View_WorkModes", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Workspace.
+        /// </summary>
+        public static string Menu_Workspace {
+            get {
+                return ResourceManager.GetString("Menu_Workspace", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset to Default.
+        /// </summary>
+        public static string Menu_Workspace_ResetToDefault {
+            get {
+                return ResourceManager.GetString("Menu_Workspace_ResetToDefault", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save Configuration.
+        /// </summary>
+        public static string Menu_Workspace_SaveConfiguration {
+            get {
+                return ResourceManager.GetString("Menu_Workspace_SaveConfiguration", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на For This Project Only.
+        /// </summary>
+        public static string Menu_Workspace_SaveForProject {
+            get {
+                return ResourceManager.GetString("Menu_Workspace_SaveForProject", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на For All Projects of This Type.
+        /// </summary>
+        public static string Menu_Workspace_SaveForType {
+            get {
+                return ResourceManager.GetString("Menu_Workspace_SaveForType", resourceCulture);
             }
         }
         

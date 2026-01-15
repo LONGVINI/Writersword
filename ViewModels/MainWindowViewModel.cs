@@ -165,7 +165,6 @@ namespace Writersword.ViewModels
             // Связываем компоненты с MainWindow
             MenuBar.SetMainViewModelProvider(() => this);
             MenuBar.SetActiveTabProvider(() => TabBar.ActiveTab);
-            //TabBar.SetTabActivatedHandler(OnTabActivated);
             WorkModeBar.SetWorkModeSwitchedHandler(OnWorkModeSwitched);
             ModulePanel.SetModuleHandlers(OnModuleAdded, OnModuleRemoved);
 
@@ -227,11 +226,7 @@ namespace Writersword.ViewModels
                 var workModes = _workModeService.GetAllWorkModes();
                 WorkModeBar.LoadWorkModes(workModes);
 
-                // Обновляем панель модулей
-                if (ActiveWorkMode != null)
-                {
-                    ModulePanel.LoadModulesForWorkMode(ActiveWorkMode);
-                }
+                RefreshWorkModeUI();
 
                 return;
             }
@@ -264,11 +259,15 @@ namespace Writersword.ViewModels
             ModulePanel.LoadModulesForWorkMode(newWorkMode);
 
             Console.WriteLine($"[MainWindowViewModel] Loaded {newWorkMode.ModuleSlots.Count} modules for WorkMode");
+
+            // Обновляем состояние меню
+            UpdateWorkModeMenuItems();
+            UpdateModuleMenuItems();
         }
 
         /// <summary>
         /// Обработчик добавления модуля (из ModulePanel)
-        /// Создаёт новый модуль в Dock layout
+        /// Добавляет модуль динамически в существующий layout
         /// </summary>
         private void OnModuleAdded(string moduleId)
         {
@@ -276,17 +275,15 @@ namespace Writersword.ViewModels
 
             if (ActiveWorkMode == null || DockLayout == null) return;
 
-            // Ищем существующий слот
+            // 1. Ищем/создаём слот
             var existingSlot = ActiveWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
 
             if (existingSlot != null)
             {
-                // Показываем скрытый модуль
                 existingSlot.IsVisible = true;
             }
             else
             {
-                // Создаём новый слот
                 var newSlot = new ModuleSlot
                 {
                     ModuleId = moduleId,
@@ -298,38 +295,113 @@ namespace Writersword.ViewModels
                 };
 
                 ActiveWorkMode.ModuleSlots.Add(newSlot);
+                existingSlot = newSlot;
             }
 
-            // Пересоздаём layout
-            var layout = _dockFactory.CreateLayout(ActiveWorkMode);
-            DockLayout = layout;
+            // 2. ПРОВЕРЯЕМ: Есть ли хоть один видимый модуль?
+            var hasVisibleModules = ActiveWorkMode.ModuleSlots.Any(s => s.IsVisible && s.ModuleId != moduleId);
 
-            // Обновляем панель модулей
-            ModulePanel.LoadModulesForWorkMode(ActiveWorkMode);
+            if (!hasVisibleModules)
+            {
+                // НЕТ видимых модулей - ПЕРЕСОЗДАЁМ layout!
+                Console.WriteLine($"[OnModuleAdded] No visible modules - recreating layout");
+                var newLayout = _dockFactory.CreateLayout(ActiveWorkMode);
+                DockLayout = newLayout;
+            }
+            else
+            {
+                // Есть видимые - добавляем динамически
+                Console.WriteLine($"[OnModuleAdded] Adding module dynamically");
+                _dockFactory.InsertModuleByPreference(DockLayout, existingSlot);
+            }
+
+            // 3. Обновляем UI
+            var moduleItem = ModulePanel.AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
+            if (moduleItem != null)
+            {
+                moduleItem.IsActive = true;
+            }
+
+            UpdateModuleMenuItems();
+            FocusModule(moduleId);
         }
 
         /// <summary>
         /// Обработчик удаления модуля (из ModulePanel)
-        /// Скрывает модуль в Dock layout
+        /// ДИНАМИЧЕСКИ скрывает модуль БЕЗ пересоздания layout
         /// </summary>
         private void OnModuleRemoved(string moduleId)
         {
             Console.WriteLine($"[MainWindowViewModel] Module removed: {moduleId}");
 
-            if (ActiveWorkMode == null) return;
+            if (ActiveWorkMode == null || DockLayout == null) return;
 
             var slot = ActiveWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
             if (slot != null)
             {
                 slot.IsVisible = false;
 
-                // Пересоздаём layout
-                var layout = _dockFactory.CreateLayout(ActiveWorkMode);
-                DockLayout = layout;
+                // Находим Document и закрываем его
+                RemoveModuleFromLayout(DockLayout, moduleId);
 
-                // Обновляем панель модулей
-                ModulePanel.LoadModulesForWorkMode(ActiveWorkMode);
+                // КРИТИЧНО: Обновляем IsActive в ModulePanel ПЕРЕД обновлением меню!
+                var moduleItem = ModulePanel.AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
+                if (moduleItem != null)
+                {
+                    moduleItem.IsActive = false;
+                    Console.WriteLine($"[OnModuleRemoved] Set IsActive=false for {moduleId}");
+                }
+
+                // Обновляем меню (теперь увидит правильный IsActive)
+                UpdateModuleMenuItems();
             }
+        }
+
+        /// <summary>
+        /// Найти и удалить модуль из layout
+        /// </summary>
+        private void RemoveModuleFromLayout(IRootDock rootDock, string moduleId)
+        {
+            string documentId = $"Module_{moduleId}";
+            Console.WriteLine($"[RemoveModuleFromLayout] Searching for: {documentId}");
+
+            RemoveDocumentRecursive(rootDock, documentId);
+        }
+
+        /// <summary>
+        /// Рекурсивно найти и удалить Document
+        /// </summary>
+        private bool RemoveDocumentRecursive(IDockable dockable, string documentId)
+        {
+            if (dockable is IDock dock && dock.VisibleDockables != null)
+            {
+                // Ищем документ с нужным ID
+                var document = dock.VisibleDockables.FirstOrDefault(d => d.Id == documentId);
+                if (document != null)
+                {
+                    Console.WriteLine($"[RemoveDocumentRecursive] Found document, removing from {dock.Id}");
+                    dock.VisibleDockables.Remove(document);
+
+                    // Если это был активный документ - активируем другой
+                    if (dock.ActiveDockable == document)
+                    {
+                        dock.ActiveDockable = dock.VisibleDockables.FirstOrDefault();
+                    }
+
+                    return true;
+                }
+
+                // Рекурсивно ищем в дочерних элементах
+                foreach (var child in dock.VisibleDockables.ToList())
+                {
+                    if (RemoveDocumentRecursive(child, documentId))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         // ========================================
@@ -418,6 +490,10 @@ namespace Writersword.ViewModels
                 ModulePanel.LoadModulesForWorkMode(activeWM);
 
                 Console.WriteLine($"[InitializeWorkModesForTab] Activated WorkMode: {activeWM.Title}");
+
+                // Обновляем состояние меню
+                UpdateWorkModeMenuItems();
+                UpdateModuleMenuItems();
             }
         }
 
@@ -748,21 +824,71 @@ namespace Writersword.ViewModels
             UpdateWorkModeMenuItems();
         }
 
-        /// <summary>Открыть модуль или переключиться на него</summary>
+        /// <summary>
+        /// Открыть модуль через меню (делегирует в ModulePanel)
+        /// Повторный клик АКТИВИРУЕТ модуль, но НЕ закрывает
+        /// </summary>
         private void ToggleModule(string moduleId)
         {
-            Console.WriteLine($"[ToggleModule] Toggling: {moduleId}");
+            Console.WriteLine($"[ToggleModule] Menu clicked: {moduleId}");
 
-            if (ActiveWorkMode == null) return;
-
-            // Используем ModulePanel для переключения
-            var moduleItem = ModulePanel.AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
-            if (moduleItem != null)
+            if (ActiveWorkMode == null)
             {
-                ModulePanel.ToggleModuleCommand.Execute(moduleItem).Subscribe();
+                Console.WriteLine($"[ToggleModule] ERROR: No active WorkMode!");
+                return;
+            }
+
+            // Делегируем в ModulePanel
+            ModulePanel.OpenModule(moduleId);
+
+            // Если модуль уже открыт - фокусируем
+            var moduleItem = ModulePanel.AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
+            if (moduleItem?.IsActive == true)
+            {
+                FocusModule(moduleId);
             }
 
             UpdateModuleMenuItems();
+        }
+
+        /// <summary>
+        /// Найти и активировать вкладку модуля в UI
+        /// </summary>
+        private void FocusModule(string moduleId)
+        {
+            if (DockLayout == null) return;
+
+            string documentId = $"Module_{moduleId}";
+            FocusDocumentRecursive(DockLayout, documentId);
+        }
+
+        /// <summary>
+        /// Рекурсивно найти и активировать Document
+        /// </summary>
+        private bool FocusDocumentRecursive(IDockable dockable, string documentId)
+        {
+            if (dockable is IDock dock && dock.VisibleDockables != null)
+            {
+                // Ищем документ с нужным ID
+                var document = dock.VisibleDockables.FirstOrDefault(d => d.Id == documentId);
+                if (document != null)
+                {
+                    Console.WriteLine($"[FocusDocumentRecursive] Found and focusing: {documentId}");
+                    dock.ActiveDockable = document;
+                    return true;
+                }
+
+                // Рекурсивно ищем в дочерних элементах
+                foreach (var child in dock.VisibleDockables)
+                {
+                    if (FocusDocumentRecursive(child, documentId))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         /// <summary>Обновить состояние элементов меню WorkMode</summary>
@@ -809,6 +935,48 @@ namespace Writersword.ViewModels
 
                 Console.WriteLine($"  {menuItem.Icon} {menuItem.Name}: Enabled={menuItem.IsEnabled}, Checked={menuItem.IsChecked}");
             }
+        }
+
+        /// <summary>
+        /// Полностью перезагрузить UI для текущего WorkMode
+        /// ИСПОЛЬЗУЕТСЯ ТОЛЬКО при переключении WorkMode или создании вкладки!
+        /// НЕ использовать для обновления после добавления/удаления модулей!
+        /// </summary>
+        private void RefreshWorkModeUI()
+        {
+            if (ActiveWorkMode == null)
+            {
+                Console.WriteLine("[RefreshWorkModeUI] No active WorkMode");
+                return;
+            }
+
+            Console.WriteLine($"[RefreshWorkModeUI] FULL REFRESH for: {ActiveWorkMode.Title}");
+
+            // ПОЛНАЯ перезагрузка панели модулей (сбрасывает все IsActive!)
+            ModulePanel.LoadModulesForWorkMode(ActiveWorkMode);
+
+            // Обновляем состояние меню
+            UpdateWorkModeMenuItems();
+            UpdateModuleMenuItems();
+        }
+
+        /// <summary>
+        /// Обработчик закрытия модуля пользователем через крестик в Dock
+        /// ВАЖНО: Вызывается из DockFactory когда Document.Owner становится null
+        /// </summary>
+        public void HandleModuleClosedInDock(string moduleId)
+        {
+            Console.WriteLine($"[MainWindowViewModel] Module closed in dock: {moduleId}");
+
+            if (ActiveWorkMode == null) return;
+
+            // 1. Уведомляем ModulePanel (снимает IsActive для модуля)
+            ModulePanel.MarkModuleAsClosed(moduleId);
+
+            // 2. Обновляем ТОЛЬКО меню (БЕЗ перезагрузки панели!)
+            UpdateModuleMenuItems();
+
+            Console.WriteLine($"[MainWindowViewModel] UI updated after dock close");
         }
     }
 }

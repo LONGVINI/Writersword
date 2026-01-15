@@ -165,34 +165,34 @@
   <data name="Menu_Help" xml:space="preserve">
     <value>_Справка</value>
   </data>
-  <data name="Menu_NewProject" xml:space="preserve">
+  <data name="Menu_File_NewProject" xml:space="preserve">
     <value>Новый Проект</value>
   </data>
-  <data name="Menu_Open" xml:space="preserve">
+  <data name="Menu_File_OpenProject" xml:space="preserve">
     <value>Открыть...</value>
   </data>
-  <data name="Menu_Close" xml:space="preserve">
+  <data name="Menu_File_CloseTab" xml:space="preserve">
     <value>Закрыть</value>
   </data>
-  <data name="Menu_Save" xml:space="preserve">
+  <data name="Menu_File_Save" xml:space="preserve">
     <value>Сохранить</value>
   </data>
-  <data name="Menu_SaveAs" xml:space="preserve">
+  <data name="Menu_File_SaveAs" xml:space="preserve">
     <value>Сохранить как...</value>
   </data>
-  <data name="Menu_Exit" xml:space="preserve">
+  <data name="Menu_File_Exit" xml:space="preserve">
     <value>Выход</value>
   </data>
-  <data name="Menu_Undo" xml:space="preserve">
+  <data name="Menu_Edit_Undo" xml:space="preserve">
     <value>Отменить</value>
   </data>
-  <data name="Menu_Redo" xml:space="preserve">
+  <data name="Menu_Edit_Redo" xml:space="preserve">
     <value>Повторить</value>
   </data>
-  <data name="Menu_Modules" xml:space="preserve">
+  <data name="Menu_View_Modules" xml:space="preserve">
     <value>Модули</value>
   </data>
-  <data name="Menu_Settings" xml:space="preserve">
+  <data name="Menu_File_Settings" xml:space="preserve">
     <value>Настройки</value>
   </data>
   <data name="Module_Writer" xml:space="preserve">
@@ -279,7 +279,7 @@
   <data name="HotKey_File_NewTab" xml:space="preserve">
     <value>Новая вкладка</value>
   </data>
-  <data name="Menu_WorkModes" xml:space="preserve">
+  <data name="Menu_View_WorkModes" xml:space="preserve">
     <value>Режимы работы</value>
   </data>
   <data name="AutoSave_Banner_ViewingCache" xml:space="preserve">
@@ -434,5 +434,62 @@
   </data>
   <data name="Recovery_Button_DeleteCache" xml:space="preserve">
     <value>Удалить кеш</value>
+  </data>
+  <data name="Menu_File_RecentProjects" xml:space="preserve">
+    <value>Недавние проекты</value>
+  </data>
+  <data name="Menu_File_SaveAll" xml:space="preserve">
+    <value>Сохранить все</value>
+  </data>
+  <data name="Menu_File_CloseAllTabs" xml:space="preserve">
+    <value>Закрыть все вкладки</value>
+  </data>
+  <data name="Menu_File_CloseOtherTabs" xml:space="preserve">
+    <value>Закрыть остальные вкладки</value>
+  </data>
+  <data name="Menu_Edit_Cut" xml:space="preserve">
+    <value>Вырезать</value>
+  </data>
+  <data name="Menu_Edit_Copy" xml:space="preserve">
+    <value>Копировать</value>
+  </data>
+  <data name="Menu_Edit_Paste" xml:space="preserve">
+    <value>Вставить</value>
+  </data>
+  <data name="Menu_Edit_SelectAll" xml:space="preserve">
+    <value>Выделить всё</value>
+  </data>
+  <data name="Menu_Edit_Find" xml:space="preserve">
+    <value>Найти</value>
+  </data>
+  <data name="Menu_Edit_FindReplace" xml:space="preserve">
+    <value>Найти и заменить</value>
+  </data>
+  <data name="Menu_Workspace" xml:space="preserve">
+    <value>Рабочее пространство</value>
+  </data>
+  <data name="Menu_Workspace_SaveConfiguration" xml:space="preserve">
+    <value>Сохранить конфигурацию</value>
+  </data>
+  <data name="Menu_Workspace_SaveForProject" xml:space="preserve">
+    <value>Только для этого проекта</value>
+  </data>
+  <data name="Menu_Workspace_SaveForType" xml:space="preserve">
+    <value>Для всех проектов этого типа</value>
+  </data>
+  <data name="Menu_Workspace_ResetToDefault" xml:space="preserve">
+    <value>Сбросить до дефолта</value>
+  </data>
+  <data name="Menu_Tools_Statistics" xml:space="preserve">
+    <value>Статистика</value>
+  </data>
+  <data name="Menu_Help_Documentation" xml:space="preserve">
+    <value>Документация</value>
+  </data>
+  <data name="Menu_Help_CheckUpdates" xml:space="preserve">
+    <value>Проверить обновления</value>
+  </data>
+  <data name="Menu_Help_About" xml:space="preserve">
+    <value>О программе</value>
   </data>
 </root>

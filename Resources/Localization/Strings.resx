@@ -181,45 +181,44 @@
     <value>_Help</value>
     <comment>Main menu: Help</comment>
   </data>
-  <data name="Menu_NewProject" xml:space="preserve">
+  <data name="Menu_File_NewProject" xml:space="preserve">
     <value>New Project</value>
     <comment>File menu: Create new project (Ctrl+N)</comment>
   </data>
-  <data name="Menu_Open" xml:space="preserve">
+  <data name="Menu_File_OpenProject" xml:space="preserve">
     <value>Open...</value>
     <comment>File menu: Open existing project (Ctrl+O)</comment>
   </data>
-  <data name="Menu_Close" xml:space="preserve">
+  <data name="Menu_File_CloseTab" xml:space="preserve">
     <value>Close</value>
     <comment>File menu: Close current project (Ctrl+W)</comment>
   </data>
-  <data name="Menu_Save" xml:space="preserve">
+  <data name="Menu_File_Save" xml:space="preserve">
     <value>Save</value>
     <comment>File menu: Save project (Ctrl+S)</comment>
   </data>
-  <data name="Menu_SaveAs" xml:space="preserve">
+  <data name="Menu_File_SaveAs" xml:space="preserve">
     <value>Save As...</value>
     <comment>File menu: Save project with new name (Ctrl+Shift+S)</comment>
   </data>
-  <data name="Menu_Exit" xml:space="preserve">
+  <data name="Menu_File_Exit" xml:space="preserve">
     <value>Exit</value>
     <comment>File menu: Exit application</comment>
   </data>
-  <data name="Menu_Undo" xml:space="preserve">
+  <data name="Menu_Edit_Undo" xml:space="preserve">
     <value>Undo</value>
     <comment>Edit menu: Undo last action (Ctrl+Z)</comment>
   </data>
-  <data name="Menu_Redo" xml:space="preserve">
+  <data name="Menu_Edit_Redo" xml:space="preserve">
     <value>Redo</value>
     <comment>Edit menu: Redo last undone action (Ctrl+Y)</comment>
   </data>
-  <data name="Menu_Modules" xml:space="preserve">
+  <data name="Menu_View_Modules" xml:space="preserve">
     <value>Modules</value>
     <comment>View menu: Show/hide modules panel</comment>
   </data>
-  <data name="Menu_Settings" xml:space="preserve">
-    <value>
-	</value>
+  <data name="Menu_File_Settings" xml:space="preserve">
+    <value>Settings</value>
     <comment>View menu: Open settings window</comment>
   </data>
   <data name="Module_Writer" xml:space="preserve">
@@ -331,7 +330,7 @@
     <value>New Tab</value>
     <comment>Opens welcome screen to create/open tab</comment>
   </data>
-  <data name="Menu_WorkModes" xml:space="preserve">
+  <data name="Menu_View_WorkModes" xml:space="preserve">
     <value>Work Modes</value>
     <comment>View menu: Switch between work modes</comment>
   </data>
@@ -537,5 +536,81 @@
   <data name="Recovery_Button_DeleteCache" xml:space="preserve">
     <value>Delete Cache</value>
     <comment>Button to delete auto-save cache</comment>
+  </data>
+  <data name="Menu_File_RecentProjects" xml:space="preserve">
+    <value>Recent Projects</value>
+    <comment>Recent projects submenu</comment>
+  </data>
+  <data name="Menu_File_SaveAll" xml:space="preserve">
+    <value>Save All</value>
+    <comment>Save all open projects menu item</comment>
+  </data>
+  <data name="Menu_File_CloseAllTabs" xml:space="preserve">
+    <value>Close All Tabs</value>
+    <comment>Close all tabs menu item</comment>
+  </data>
+  <data name="Menu_File_CloseOtherTabs" xml:space="preserve">
+    <value>Close Other Tabs</value>
+    <comment>Close all tabs except current menu item</comment>
+  </data>
+  <data name="Menu_Edit_Cut" xml:space="preserve">
+    <value>Cut</value>
+    <comment>Cut selection menu item</comment>
+  </data>
+  <data name="Menu_Edit_Copy" xml:space="preserve">
+    <value>Copy</value>
+    <comment>Copy selection menu item</comment>
+  </data>
+  <data name="Menu_Edit_Paste" xml:space="preserve">
+    <value>Paste</value>
+    <comment>Paste from clipboard menu item</comment>
+  </data>
+  <data name="Menu_Edit_SelectAll" xml:space="preserve">
+    <value>Select All</value>
+    <comment>Select all text menu item</comment>
+  </data>
+  <data name="Menu_Edit_Find" xml:space="preserve">
+    <value>Find</value>
+    <comment>Find text menu item</comment>
+  </data>
+  <data name="Menu_Edit_FindReplace" xml:space="preserve">
+    <value>Find and Replace</value>
+    <comment>Find and replace text menu item</comment>
+  </data>
+  <data name="Menu_Workspace" xml:space="preserve">
+    <value>Workspace</value>
+    <comment>Main menu Workspace item</comment>
+  </data>
+  <data name="Menu_Workspace_SaveConfiguration" xml:space="preserve">
+    <value>Save Configuration</value>
+    <comment>Save workspace configuration submenu</comment>
+  </data>
+  <data name="Menu_Workspace_SaveForProject" xml:space="preserve">
+    <value>For This Project Only</value>
+    <comment>Save configuration for current project only</comment>
+  </data>
+  <data name="Menu_Workspace_SaveForType" xml:space="preserve">
+    <value>For All Projects of This Type</value>
+    <comment>Save configuration for all projects of this type</comment>
+  </data>
+  <data name="Menu_Workspace_ResetToDefault" xml:space="preserve">
+    <value>Reset to Default</value>
+    <comment>Reset workspace to default configuration</comment>
+  </data>
+  <data name="Menu_Tools_Statistics" xml:space="preserve">
+    <value>Statistics</value>
+    <comment>Project statistics menu item</comment>
+  </data>
+  <data name="Menu_Help_Documentation" xml:space="preserve">
+    <value>Documentation</value>
+    <comment>Open documentation menu item</comment>
+  </data>
+  <data name="Menu_Help_CheckUpdates" xml:space="preserve">
+    <value>Check for Updates</value>
+    <comment>Check for application updates menu item</comment>
+  </data>
+  <data name="Menu_Help_About" xml:space="preserve">
+    <value>About</value>
+    <comment>About application menu item</comment>
   </data>
 </root>

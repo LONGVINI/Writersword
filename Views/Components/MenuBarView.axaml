@@ -9,70 +9,123 @@
 	<!-- Главное меню -->
 	<Menu Background="#2D2D30" Padding="5,3">
 
-		<!-- Файл -->
+		<!-- FILE -->
 		<MenuItem Header="{x:Static loc:Strings.Menu_File}"
-                  Foreground="#F0F0F0"
-                  FontSize="13">
+		          Foreground="#F0F0F0"
+		          FontSize="13">
 
-			<MenuItem Header="{x:Static loc:Strings.Menu_NewProject}"
-                      InputGesture="Ctrl+N"
-                      Command="{Binding NewProjectCommand}"/>
+			<MenuItem Header="{x:Static loc:Strings.Menu_File_NewProject}"
+			          InputGesture="Ctrl+N"
+			          Command="{Binding NewProjectCommand}"/>
 
-			<MenuItem Header="{x:Static loc:Strings.Menu_Open}"
-                      InputGesture="Ctrl+O"
-                      Command="{Binding OpenProjectCommand}"/>
+			<MenuItem Header="{x:Static loc:Strings.Menu_File_OpenProject}"
+			          InputGesture="Ctrl+O"
+			          Command="{Binding OpenProjectCommand}"/>
 
-			<Separator/>
-
-			<MenuItem Header="{x:Static loc:Strings.Menu_Close}"
-                      InputGesture="Ctrl+W"/>
-
-			<MenuItem Header="{x:Static loc:Strings.Menu_Save}"
-                      InputGesture="Ctrl+S"
-                      Command="{Binding SaveProjectCommand}"/>
-
-			<MenuItem Header="{x:Static loc:Strings.Menu_SaveAs}"
-                      InputGesture="Ctrl+Shift+S"
-                      Command="{Binding SaveAsProjectCommand}"/>
+			<MenuItem Header="{x:Static loc:Strings.Menu_File_RecentProjects}"
+			          ItemsSource="{Binding RecentProjects}">
+				<MenuItem.ItemTemplate>
+					<DataTemplate>
+						<MenuItem Header="{Binding ProjectName}"
+						          Command="{Binding $parent[UserControl].DataContext.OpenRecentProjectCommand}"
+						          CommandParameter="{Binding FilePath}"/>
+					</DataTemplate>
+				</MenuItem.ItemTemplate>
+			</MenuItem>
 
 			<Separator/>
 
-			<MenuItem Header="{x:Static loc:Strings.Menu_Exit}"
-                      Command="{Binding ExitCommand}"/>
+			<MenuItem Header="{x:Static loc:Strings.Menu_File_Save}"
+			          InputGesture="Ctrl+S"
+			          Command="{Binding SaveProjectCommand}"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_File_SaveAs}"
+			          InputGesture="Ctrl+Shift+S"
+			          Command="{Binding SaveAsProjectCommand}"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_File_SaveAll}"
+			          InputGesture="Ctrl+Alt+S"/>
+
+			<Separator/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_File_CloseTab}"
+			          InputGesture="Ctrl+W"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_File_CloseAllTabs}"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_File_CloseOtherTabs}"/>
+
+			<Separator/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_File_Settings}"
+			          InputGesture="Ctrl+,"/>
+
+			<Separator/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_File_Exit}"
+			          Command="{Binding ExitCommand}"/>
 		</MenuItem>
 
-		<!-- Правка -->
+		<!-- EDIT -->
 		<MenuItem Header="{x:Static loc:Strings.Menu_Edit}"
-                  Foreground="#F0F0F0"
-                  FontSize="13">
+		          Foreground="#F0F0F0"
+		          FontSize="13">
 
-			<MenuItem Header="{x:Static loc:Strings.Menu_Undo}"
-                      InputGesture="Ctrl+Z"
-                      IsEnabled="False"/>
+			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_Undo}"
+			          InputGesture="Ctrl+Z"
+			          IsEnabled="False"/>
 
-			<MenuItem Header="{x:Static loc:Strings.Menu_Redo}"
-                      InputGesture="Ctrl+Y"
-                      IsEnabled="False"/>
+			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_Redo}"
+			          InputGesture="Ctrl+Y"
+			          IsEnabled="False"/>
+
+			<Separator/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_Cut}"
+			          InputGesture="Ctrl+X"
+			          IsEnabled="False"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_Copy}"
+			          InputGesture="Ctrl+C"
+			          IsEnabled="False"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_Paste}"
+			          InputGesture="Ctrl+V"
+			          IsEnabled="False"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_SelectAll}"
+			          InputGesture="Ctrl+A"
+			          IsEnabled="False"/>
+
+			<Separator/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_Find}"
+			          InputGesture="Ctrl+F"
+			          IsEnabled="False"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_FindReplace}"
+			          InputGesture="Ctrl+H"
+			          IsEnabled="False"/>
 		</MenuItem>
 
-		<!-- Вид -->
+		<!-- VIEW -->
 		<MenuItem Header="{x:Static loc:Strings.Menu_View}"
-                  Foreground="#F0F0F0"
-                  FontSize="13">
+		          Foreground="#F0F0F0"
+		          FontSize="13">
 
-			<!-- Режимы работы -->
-			<MenuItem Header="{x:Static loc:Strings.Menu_WorkModes}"
-                      ItemsSource="{Binding $parent[Window].DataContext.AllWorkModes}">
+			<!-- WorkModes -->
+			<MenuItem Header="{x:Static loc:Strings.Menu_View_WorkModes}"
+			          ItemsSource="{Binding AllWorkModes}">
 				<MenuItem.ItemTemplate>
 					<DataTemplate>
-						<MenuItem Command="{Binding $parent[Window].DataContext.ToggleWorkModeCommand}"
-                                  CommandParameter="{Binding WorkModeId}">
+						<MenuItem Command="{Binding $parent[UserControl].DataContext.ToggleWorkModeCommand}"
+						          CommandParameter="{Binding WorkModeId}">
 							<MenuItem.Header>
 								<StackPanel Orientation="Horizontal" Spacing="5">
 									<TextBlock Text="✓"
-                                               IsVisible="{Binding IsChecked}"
-                                               FontWeight="Bold"
-                                               Width="15"/>
+									           IsVisible="{Binding IsChecked}"
+									           FontWeight="Bold"
+									           Width="15"/>
 									<TextBlock Text="{Binding Icon}"/>
 									<TextBlock Text="{Binding Name}"/>
 								</StackPanel>
@@ -82,36 +135,70 @@
 				</MenuItem.ItemTemplate>
 			</MenuItem>
 
-			<Separator/>
-
-			<!-- Модули -->
-			<MenuItem Header="{x:Static loc:Strings.Menu_Modules}"
-                      ItemsSource="{Binding $parent[Window].DataContext.AllModules}"
-                      x:Name="ModulesMenu">
+			<!-- Modules -->
+			<MenuItem Header="{x:Static loc:Strings.Menu_View_Modules}"
+					  ItemsSource="{Binding AllModules}"
+					  x:Name="ModulesMenuItem">
 				<MenuItem.ItemTemplate>
 					<DataTemplate>
-						<MenuItem Command="{Binding $parent[Window].DataContext.ToggleModuleCommand}"
-                                  CommandParameter="{Binding Type}"
-                                  IsEnabled="{Binding IsEnabled}">
-							<MenuItem.Header>
+						<MenuItem Header="{Binding Name}"
+								  Command="{Binding #MenuBarViewRoot.DataContext.ToggleModuleCommand}"
+								  CommandParameter="{Binding ModuleId}"
+								  IsEnabled="{Binding IsEnabled}">
+							<MenuItem.Icon>
 								<StackPanel Orientation="Horizontal" Spacing="5">
 									<TextBlock Text="✓"
-                                               IsVisible="{Binding IsChecked}"
-                                               FontWeight="Bold"
-                                               Width="15"/>
+											   IsVisible="{Binding IsChecked}"
+											   FontWeight="Bold"/>
 									<TextBlock Text="{Binding Icon}"/>
-									<TextBlock Text="{Binding Name}"/>
 								</StackPanel>
-							</MenuItem.Header>
+							</MenuItem.Icon>
 						</MenuItem>
 					</DataTemplate>
 				</MenuItem.ItemTemplate>
 			</MenuItem>
+		</MenuItem>
+
+		<!-- WORKSPACE -->
+		<MenuItem Header="{x:Static loc:Strings.Menu_Workspace}"
+		          Foreground="#F0F0F0"
+		          FontSize="13">
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Workspace_SaveForProject}"
+			          IsEnabled="False"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Workspace_SaveForType}"
+			          IsEnabled="False"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Workspace_ResetToDefault}"
+			          IsEnabled="False"/>
+		</MenuItem>
+
+		<!-- TOOLS -->
+		<MenuItem Header="{x:Static loc:Strings.Menu_Tools}"
+		          Foreground="#F0F0F0"
+		          FontSize="13">
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Tools_Statistics}"
+			          IsEnabled="False"/>
+		</MenuItem>
+
+		<!-- HELP -->
+		<MenuItem Header="{x:Static loc:Strings.Menu_Help}"
+		          Foreground="#F0F0F0"
+		          FontSize="13">
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Help_Documentation}"
+			          InputGesture="F1"
+			          IsEnabled="False"/>
+
+			<MenuItem Header="{x:Static loc:Strings.Menu_Help_CheckUpdates}"
+			          IsEnabled="False"/>
 
 			<Separator/>
 
-			<MenuItem Header="{x:Static loc:Strings.Menu_Settings}"
-                      IsEnabled="False"/>
+			<MenuItem Header="{x:Static loc:Strings.Menu_Help_About}"
+			          IsEnabled="False"/>
 		</MenuItem>
 
 	</Menu>

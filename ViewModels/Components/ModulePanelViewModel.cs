@@ -107,7 +107,70 @@ namespace Writersword.ViewModels.Components
             Console.WriteLine("[ModulePanelViewModel] Cleared all modules");
         }
 
-        /// <summary>Переключить видимость модуля</summary>
+        /// <summary>
+        /// Открыть модуль (публичный метод для вызова из меню)
+        /// Если уже открыт - ничего не делаем (MainWindow сфокусирует)
+        /// </summary>
+        public void OpenModule(string moduleId)
+        {
+            Console.WriteLine($"[ModulePanelViewModel] OpenModule: {moduleId}");
+
+            var moduleItem = AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
+
+            if (moduleItem == null)
+            {
+                Console.WriteLine($"[ModulePanelViewModel] Module not found: {moduleId}");
+                return;
+            }
+
+            // Если уже активен - ничего не делаем
+            if (moduleItem.IsActive)
+            {
+                Console.WriteLine($"[ModulePanelViewModel] Module already active");
+                return;
+            }
+
+            // Открываем модуль
+            Console.WriteLine($"[ModulePanelViewModel] Opening module");
+            _onModuleAdded?.Invoke(moduleId);
+            moduleItem.IsActive = true;
+
+            // Пересортируем список (активные наверх)
+            AvailableModules = AvailableModules
+                .OrderByDescending(m => m.IsActive)
+                .ThenBy(m => m.DisplayName)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Отметить модуль как закрытый (снять галочку IsActive)
+        /// Вызывается из MainWindowViewModel.HandleModuleClosedInDock
+        /// когда пользователь закрыл модуль крестиком в Dock
+        /// </summary>
+        public void MarkModuleAsClosed(string moduleId)
+        {
+            Console.WriteLine($"[ModulePanelViewModel] Marking module as closed: {moduleId}");
+
+            var moduleItem = AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
+            if (moduleItem != null)
+            {
+                moduleItem.IsActive = false;
+
+                // Пересортируем список (активные наверх)
+                AvailableModules = AvailableModules
+                    .OrderByDescending(m => m.IsActive)
+                    .ThenBy(m => m.DisplayName)
+                    .ToList();
+
+                Console.WriteLine($"[ModulePanelViewModel] Module marked as closed: {moduleId}");
+            }
+            else
+            {
+                Console.WriteLine($"[ModulePanelViewModel] WARNING: Module not found in list: {moduleId}");
+            }
+        }
+
+        /// <summary>Переключить видимость модуля (из панели модулей)</summary>
         private void ToggleModule(ModuleItemViewModel module)
         {
             // Обязательные модули нельзя выключить

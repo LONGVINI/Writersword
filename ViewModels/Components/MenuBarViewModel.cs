@@ -1,10 +1,14 @@
 ﻿using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
+using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.WorkFlows;
 
 namespace Writersword.ViewModels.Components
@@ -16,9 +20,14 @@ namespace Writersword.ViewModels.Components
     public class MenuBarViewModel : ViewModelBase
     {
         private readonly IProjectWorkflow _projectWorkflow;
+        private readonly ISettingsService _settingsService;
+        private readonly ITabCollection _tabCollection;
 
         // Провайдер для доступа к MainWindowViewModel (для меню View)
         private Func<MainWindowViewModel>? _mainViewModelProvider;
+
+        /// <summary>Список недавних проектов</summary>
+        public ObservableCollection<RecentProjectItem> RecentProjects { get; } = new();
 
         /// <summary>Список всех доступных WorkModes (для меню View)</summary>
         public ObservableCollection<MainWindowViewModel.WorkModeMenuItem> AllWorkModes
@@ -66,6 +75,9 @@ namespace Writersword.ViewModels.Components
         /// <summary>Команда открытия проекта (Ctrl+O)</summary>
         public ReactiveCommand<Unit, Unit> OpenProjectCommand { get; }
 
+        /// <summary>Команда открытия недавнего проекта</summary>
+        public ReactiveCommand<string, Unit> OpenRecentProjectCommand { get; }
+
         /// <summary>Команда сохранения проекта (Ctrl+S)</summary>
         public ReactiveCommand<Unit, Unit> SaveProjectCommand { get; }
 
@@ -78,18 +90,51 @@ namespace Writersword.ViewModels.Components
         /// <summary>Функция для получения активной вкладки (передаётся извне)</summary>
         private Func<DocumentTabViewModel?>? _getActiveTab;
 
-        public MenuBarViewModel(IProjectWorkflow projectWorkflow)
+        public MenuBarViewModel(
+            IProjectWorkflow projectWorkflow,
+            ISettingsService settingsService,
+            ITabCollection tabCollection)
         {
             _projectWorkflow = projectWorkflow;
+            _settingsService = settingsService;
+            _tabCollection = tabCollection;
 
             // Создаём команды
             NewProjectCommand = ReactiveCommand.Create(NewProject);
             OpenProjectCommand = ReactiveCommand.CreateFromTask(OpenProject);
+            OpenRecentProjectCommand = ReactiveCommand.CreateFromTask<string>(OpenRecentProject);
             SaveProjectCommand = ReactiveCommand.CreateFromTask(SaveProject);
             SaveAsProjectCommand = ReactiveCommand.CreateFromTask(SaveAsProject);
             ExitCommand = ReactiveCommand.Create(Exit);
 
+            // Загружаем список недавних проектов
+            LoadRecentProjects();
+
             Console.WriteLine("[MenuBarViewModel] Initialized");
+        }
+
+        /// <summary>
+        /// Загрузить список недавних проектов из настроек
+        /// </summary>
+        private void LoadRecentProjects()
+        {
+            RecentProjects.Clear();
+
+            var recentProjects = _settingsService.RecentProjects;
+
+            foreach (var recent in recentProjects.Take(10)) // Максимум 10 проектов
+            {
+                if (File.Exists(recent.Path))
+                {
+                    RecentProjects.Add(new RecentProjectItem
+                    {
+                        FilePath = recent.Path,
+                        ProjectName = recent.Name // Используем имя из настроек!
+                    });
+                }
+            }
+
+            Console.WriteLine($"[MenuBarViewModel] Loaded {RecentProjects.Count} recent projects");
         }
 
         /// <summary>
@@ -125,6 +170,48 @@ namespace Writersword.ViewModels.Components
             }
         }
 
+        /// <summary>Открыть недавний проект</summary>
+        private async Task OpenRecentProject(string filePath)
+        {
+            Console.WriteLine($"[MenuBarViewModel] Opening recent project: {filePath}");
+
+            // Проверяем существует ли файл
+            if (!File.Exists(filePath))
+            {
+                Console.WriteLine($"[MenuBarViewModel] File not found: {filePath}");
+
+                // Удаляем из списка недавних
+                var item = RecentProjects.FirstOrDefault(r => r.FilePath == filePath);
+                if (item != null)
+                {
+                    RecentProjects.Remove(item);
+                }
+
+                return;
+            }
+
+            // Проверяем не открыт ли уже
+            var existingTab = _tabCollection.FindByPath(filePath);
+            if (existingTab != null)
+            {
+                Console.WriteLine($"[MenuBarViewModel] Project already open, activating tab");
+                _tabCollection.ActiveTab = existingTab;
+                return;
+            }
+
+            // Открываем проект
+            var tab = await _projectWorkflow.OpenDocumentAsync(filePath);
+            if (tab != null)
+            {
+                _tabCollection.Add(tab);
+                _tabCollection.ActiveTab = tab;
+                _settingsService.AddRecentProject(filePath);
+
+                // Обновляем список
+                LoadRecentProjects();
+            }
+        }
+
         /// <summary>Сохранить активный проект</summary>
         private async Task SaveProject()
         {
@@ -153,6 +240,9 @@ namespace Writersword.ViewModels.Components
 
             Console.WriteLine($"[MenuBarViewModel] SaveAsProject: {activeTab.Title}");
             await _projectWorkflow.SaveAsDocumentAsync(activeTab);
+
+            // Обновляем список недавних проектов
+            LoadRecentProjects();
         }
 
         /// <summary>Выход из приложения</summary>
@@ -179,5 +269,17 @@ namespace Writersword.ViewModels.Components
             _mainViewModelProvider = provider;
             Console.WriteLine("[MenuBarViewModel] MainViewModel provider set");
         }
+    }
+
+    /// <summary>
+    /// Элемент списка недавних проектов
+    /// </summary>
+    public class RecentProjectItem
+    {
+        /// <summary>Полный путь к файлу проекта</summary>
+        public string FilePath { get; set; } = "";
+
+        /// <summary>Имя файла для отображения в меню</summary>
+        public string ProjectName { get; set; } = "";
     }
 }

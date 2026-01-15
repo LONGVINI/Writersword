@@ -1,7 +1,10 @@
-﻿using Dock.Model.Avalonia;
+﻿using Avalonia;
+using Dock.Model.Avalonia;
 using Dock.Model.Avalonia.Controls;
+using Dock.Model.Avalonia.Core;
 using Dock.Model.Controls;
 using Dock.Model.Core;
+using DynamicData.Binding;
 using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using System;
@@ -21,7 +24,7 @@ namespace Writersword.Src.Infrastructure.Dock
     public class DockFactory : Factory
     {
         private readonly ModuleRegistry _moduleRegistry;
-
+        private readonly Dictionary<string, bool> _modulesBeingMoved = new();
         public DockFactory(ModuleRegistry moduleRegistry)
         {
             _moduleRegistry = moduleRegistry;
@@ -204,6 +207,14 @@ namespace Writersword.Src.Infrastructure.Dock
                     Console.WriteLine($"[DockFactory] Set proportion {dock.Proportion} for nested layout {panelConfig.Id}");
                 }
 
+                // КРИТИЧНО: Устанавливаем ID и Title!
+                if (nestedDock is ProportionalDock pd)
+                {
+                    pd.Id = panelConfig.Id;
+                    pd.Title = panelConfig.Id;
+                    Console.WriteLine($"[DockFactory] Set ID for nested layout: {pd.Id}");
+                }
+
                 return nestedDock;
             }
 
@@ -286,6 +297,10 @@ namespace Writersword.Src.Infrastructure.Dock
             return documentDock;
         }
 
+        /// <summary>
+        /// Создать Document для модуля с подпиской на закрытие
+        /// ИСПРАВЛЕНО: Игнорирует Remove события во время drag&drop эмуляции
+        /// </summary>
         public IDockable? CreateModuleDocument(ModuleSlot slot)
         {
             Console.WriteLine($"[DockFactory] Creating document for: {slot.ModuleId}");
@@ -297,14 +312,12 @@ namespace Writersword.Src.Infrastructure.Dock
                 return null;
             }
 
-            // ВАЖНО: Получаем Context от активной вкладки и передаём модулю
             var tabCollection = App.Services.GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>();
             if (tabCollection.ActiveTab != null)
             {
                 module.Context = tabCollection.ActiveTab.Context;
                 Console.WriteLine($"[DockFactory] Context assigned to module: {slot.ModuleId}");
 
-                // ВОССТАНАВЛИВАЕМ состояние модуля из проекта
                 var project = tabCollection.ActiveTab.GetProject();
                 if (project.ModulesData.TryGetValue(slot.ModuleId.ToString(), out var data))
                 {
@@ -335,22 +348,62 @@ namespace Writersword.Src.Infrastructure.Dock
                 CanFloat = true
             };
 
+            Console.WriteLine($"[DockFactory] Document created: {slot.ModuleId}, CanClose={document.CanClose}, slot.IsCloseable={slot.IsCloseable}");
             bool wasAddedToDock = false;
+            bool hasSubscribedToCollection = false;  // НОВЫЙ ФЛАГ!
             IDisposable? subscription = null;
 
             subscription = document.WhenAnyValue(x => x.Owner)
                 .Subscribe(owner =>
                 {
+                    Console.WriteLine($"[DockFactory] Owner changed for {slot.ModuleId}: owner={(owner != null ? "NOT NULL" : "NULL")}, wasAdded={wasAddedToDock}");
+
                     if (owner != null && !wasAddedToDock)
                     {
                         wasAddedToDock = true;
                         Console.WriteLine($"[DockFactory] Document added: {slot.ModuleId}");
-                    }
-                    else if (owner == null && wasAddedToDock && slot.IsCloseable)
-                    {
-                        Console.WriteLine($"[DockFactory] Document closed: {slot.ModuleId}");
-                        slot.IsVisible = false;
-                        subscription?.Dispose();
+
+                        if (owner is IDock dock && !hasSubscribedToCollection)  // ПРОВЕРЯЕМ ФЛАГ!
+                        {
+                            hasSubscribedToCollection = true;  // УСТАНАВЛИВАЕМ РАЗ И НАВСЕГДА!
+
+                            var visibleType = dock.VisibleDockables?.GetType().Name ?? "NULL";
+                            Console.WriteLine($"[DockFactory] VisibleDockables type: {visibleType}");
+                            Console.WriteLine($"[DockFactory] Is INotifyCollectionChanged: {dock.VisibleDockables is System.Collections.Specialized.INotifyCollectionChanged}");
+
+                            if (dock.VisibleDockables is System.Collections.Specialized.INotifyCollectionChanged observable)
+                            {
+                                Console.WriteLine($"[DockFactory] Subscribing to CollectionChanged for: {slot.ModuleId}");
+
+                                observable.CollectionChanged += (s, e) =>
+                                {
+                                    Console.WriteLine($"[DockFactory] CollectionChanged event! Action: {e.Action}");
+
+                                    if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Remove &&
+                                        e.OldItems?.Contains(document) == true)
+                                    {
+                                        if (_modulesBeingMoved.TryGetValue(slot.ModuleId, out var movingFlag) && movingFlag)
+                                        {
+                                            Console.WriteLine($"[DockFactory] Ignoring Remove - internal move in progress");
+                                            return;
+                                        }
+
+                                        Console.WriteLine($"[DockFactory] Document REMOVED from VisibleDockables: {slot.ModuleId}");
+
+                                        slot.IsVisible = false;
+
+                                        var mainVM = App.Services.GetRequiredService<MainWindowViewModel>();
+                                        mainVM.HandleModuleClosedInDock(slot.ModuleId);
+
+                                        subscription?.Dispose();
+                                    }
+                                };
+                            }
+                            else
+                            {
+                                Console.WriteLine($"[DockFactory] VisibleDockables is NOT INotifyCollectionChanged!");
+                            }
+                        }
                     }
                 });
 
@@ -359,9 +412,9 @@ namespace Writersword.Src.Infrastructure.Dock
             return document;
         }
 
+
         /// <summary>
         /// Вставить новый модуль в существующий layout по PreferredPosition
-        /// Используется когда пользователь добавляет модуль динамически
         /// </summary>
         public void InsertModuleByPreference(IRootDock rootDock, ModuleSlot slot)
         {
@@ -386,8 +439,13 @@ namespace Writersword.Src.Infrastructure.Dock
                 if (targetDock.VisibleDockables == null)
                     targetDock.VisibleDockables = new List<IDockable>();
 
+                // КРИТИЧНО: СНАЧАЛА добавляем в VisibleDockables!
+                // Это важно для срабатывания подписки WhenAnyValue(Owner)
                 targetDock.VisibleDockables.Add(document);
                 targetDock.ActiveDockable = document;
+
+                // ПОТОМ регистрируем для Float (Owner уже будет установлен подпиской!)
+                SetOwnerAndRegisterForFloat(document, targetDock);
 
                 Console.WriteLine($"[DockFactory] Module {slot.ModuleId} inserted successfully");
             }
@@ -395,6 +453,131 @@ namespace Writersword.Src.Infrastructure.Dock
             {
                 Console.WriteLine($"[DockFactory] ERROR: Could not find or create dock for position {basePosition}");
             }
+        }
+
+        /// <summary>
+        /// Эмулирует drag&drop для регистрации документа в Float системе
+        /// Перемещает документ между Dock'ами и обратно
+        /// ИСПРАВЛЕНО: Устанавливает флаг чтобы игнорировать Remove события
+        /// </summary>
+        private void SetOwnerAndRegisterForFloat(IDockable document, IDock owner)
+        {
+            Console.WriteLine($"[DockFactory] Emulating drag&drop: {document.Id}");
+
+            if (document is Document diagnosticDoc)
+            {
+                Console.WriteLine($"[BEFORE] CanFloat={diagnosticDoc.CanFloat}, Owner={diagnosticDoc.Owner?.Id ?? "NULL"}");
+            }
+
+            if (owner.Factory == null)
+            {
+                owner.Factory = this;
+            }
+
+            InitDockable(document, owner);
+
+            if (document is Document doc)
+            {
+                doc.CanFloat = true;
+                Console.WriteLine($"[SetOwnerAndRegisterForFloat] Set CanFloat=true");
+            }
+
+            string moduleId = document.Id?.Replace("Module_", "") ?? "";
+
+            try
+            {
+                Console.WriteLine($"[DockFactory] Moving document to trigger registration...");
+
+                var sourceDock = document.Owner as IDock;
+                if (sourceDock == null || sourceDock.VisibleDockables == null)
+                {
+                    Console.WriteLine($"[DockFactory] No source dock, skipping move");
+                    _modulesBeingMoved[moduleId] = false;
+
+                    if (document is Document d1)
+                    {
+                        Console.WriteLine($"[AFTER - NO MOVE] CanFloat={d1.CanFloat}, Owner={d1.Owner?.Id ?? "NULL"}");
+                    }
+                    return;
+                }
+
+                var targetDock = FindAnotherDock(sourceDock);
+                if (targetDock == null)
+                {
+                    Console.WriteLine($"[DockFactory] No target dock found, skipping move");
+                    _modulesBeingMoved[moduleId] = false;
+
+                    if (document is Document d2)
+                    {
+                        Console.WriteLine($"[AFTER - NO TARGET] CanFloat={d2.CanFloat}, Owner={d2.Owner?.Id ?? "NULL"}");
+                    }
+                    return;
+                }
+
+                Console.WriteLine($"[DockFactory] Moving from {sourceDock.Id} to {targetDock.Id}");
+
+                _modulesBeingMoved[moduleId] = true;
+
+                var originalIndex = sourceDock.VisibleDockables.IndexOf(document);
+                sourceDock.VisibleDockables.Remove(document);
+
+                if (targetDock.VisibleDockables == null)
+                    targetDock.VisibleDockables = new List<IDockable>();
+
+                targetDock.VisibleDockables.Add(document);
+                targetDock.ActiveDockable = document;
+
+                targetDock.VisibleDockables.Remove(document);
+                sourceDock.VisibleDockables.Insert(originalIndex, document);
+                sourceDock.ActiveDockable = document;
+
+                _modulesBeingMoved[moduleId] = false;
+
+                Console.WriteLine($"[DockFactory] Move complete - document should be registered!");
+            }
+            catch (Exception ex)
+            {
+                _modulesBeingMoved[moduleId] = false;
+                Console.WriteLine($"[DockFactory] Move failed: {ex.Message}");
+            }
+
+            if (document is Document finalDoc)
+            {
+                Console.WriteLine($"[AFTER - FINAL] CanFloat={finalDoc.CanFloat}, Owner={finalDoc.Owner?.Id ?? "NULL"}");
+            }
+        }
+
+        private DocumentDock? FindAnotherDock(IDock sourceDock)
+        {
+            var root = sourceDock;
+            while (root.Owner != null)
+            {
+                root = root.Owner as IDock;
+                if (root == null) break;
+            }
+
+            if (root == null) return null;
+
+            return FindAnotherDockRecursive(root, sourceDock);
+        }
+
+        private DocumentDock? FindAnotherDockRecursive(IDockable dockable, IDock exclude)
+        {
+            if (dockable is DocumentDock dd && dockable != exclude)
+            {
+                return dd;
+            }
+
+            if (dockable is IDock dock && dock.VisibleDockables != null)
+            {
+                foreach (var child in dock.VisibleDockables)
+                {
+                    var found = FindAnotherDockRecursive(child, exclude);
+                    if (found != null) return found;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>Получить базовую позицию без AsTab</summary>
@@ -437,26 +620,71 @@ namespace Writersword.Src.Infrastructure.Dock
                 _ => null
             };
         }
-
-        /// <summary>Найти или создать правую панель</summary>
         private IDock? FindOrCreateRightDock(ProportionalDock mainDock, PreferredDockPosition position, bool asTab)
         {
-            Console.WriteLine($"[DockFactory] FindOrCreateRightDock: {position}, asTab={asTab}");
+            Console.WriteLine($"[FindOrCreateRightDock] {position}, asTab={asTab}");
+            Console.WriteLine($"[FindOrCreateRightDock] mainDock.Id={mainDock.Id}, Orientation={mainDock.Orientation}");
 
-            var rightPanels = FindPanelsInDirection(mainDock, "Right");
+            ProportionalDock searchDock = mainDock;
+
+            // Если это horizontal root dock, ищем вложенный vertical layout справа
+            if (mainDock.Orientation == Orientation.Horizontal)
+            {
+                Console.WriteLine($"[FindOrCreateRightDock] mainDock is Horizontal, checking children...");
+                Console.WriteLine($"[FindOrCreateRightDock] Children count: {mainDock.VisibleDockables?.Count ?? 0}");
+
+                var rightElement = mainDock.VisibleDockables?.LastOrDefault(d => d is not ProportionalDockSplitter);
+
+                Console.WriteLine($"[FindOrCreateRightDock] rightElement type: {rightElement?.GetType().Name ?? "NULL"}");
+                Console.WriteLine($"[FindOrCreateRightDock] rightElement id: {rightElement?.Id ?? "NULL"}");
+
+                if (rightElement is ProportionalDock nestedLayout)
+                {
+                    Console.WriteLine($"[FindOrCreateRightDock] Found ProportionalDock, orientation: {nestedLayout.Orientation}");
+
+                    if (nestedLayout.Orientation == Orientation.Vertical)
+                    {
+                        Console.WriteLine($"[FindOrCreateRightDock] Found nested vertical layout: {nestedLayout.Id}");
+                        searchDock = nestedLayout;
+                    }
+                }
+            }
+
+            // КРИТИЧНО: Если searchDock VERTICAL - ищем Top/Bottom панели, НЕ Right!
+            List<IDock> panels;
+            if (searchDock.Orientation == Orientation.Vertical)
+            {
+                Console.WriteLine($"[FindOrCreateRightDock] searchDock is VERTICAL, looking for Top/Bottom panels");
+                panels = CollectAllDocumentDocks(searchDock);  // ← Собираем ВСЕ DocumentDock'и
+            }
+            else
+            {
+                panels = FindPanelsInDirection(searchDock, "Right");
+            }
+
+            Console.WriteLine($"[FindOrCreateRightDock] Found {panels.Count} panels in {searchDock.Id}");
+
+            foreach (var panel in panels)
+            {
+                Console.WriteLine($"  - Panel: {panel.Id}");
+            }
 
             // AsTab - добавляем в существующую панель
-            if (asTab && rightPanels.Count > 0)
+            if (asTab && panels.Count > 0)
             {
-                return position switch
+                var targetPanel = position switch
                 {
-                    PreferredDockPosition.BottomRight => rightPanels.Last(),
-                    PreferredDockPosition.TopRight => rightPanels.First(),
-                    _ => rightPanels.First()
+                    PreferredDockPosition.BottomRight => panels.Last(),
+                    PreferredDockPosition.TopRight => panels.First(),
+                    _ => panels.First()
                 };
+
+                Console.WriteLine($"[FindOrCreateRightDock] Using existing panel: {targetPanel.Id}");
+                return targetPanel;
             }
 
             // Отдельная панель - создаём новую
+            Console.WriteLine($"[FindOrCreateRightDock] Creating new right panel");
             var newPanel = new DocumentDock
             {
                 Id = $"Right_{Guid.NewGuid()}",
@@ -465,10 +693,32 @@ namespace Writersword.Src.Infrastructure.Dock
                 CanCreateDocument = false
             };
 
-            InsertPanelInDirection(mainDock, newPanel, "Right", position);
+            InsertPanelInDirection(searchDock, newPanel, "Right", position);
             return newPanel;
         }
 
+        /// <summary>
+        /// Собрать ВСЕ DocumentDock'и из структуры (рекурсивно)
+        /// </summary>
+        private static List<IDock> CollectAllDocumentDocks(ProportionalDock dock)
+        {
+            var result = new List<IDock>();
+            if (dock.VisibleDockables == null) return result;
+
+            foreach (var child in dock.VisibleDockables)
+            {
+                if (child is DocumentDock dd)
+                {
+                    result.Add(dd);
+                }
+                else if (child is ProportionalDock pd)
+                {
+                    result.AddRange(CollectAllDocumentDocks(pd));
+                }
+            }
+
+            return result;
+        }
         /// <summary>Найти или создать левую панель</summary>
         private IDock? FindOrCreateLeftDock(ProportionalDock mainDock, PreferredDockPosition position, bool asTab)
         {
@@ -699,14 +949,24 @@ namespace Writersword.Src.Infrastructure.Dock
                 // Нет правой части - создаём horizontal split
                 if (mainDock.Orientation != Orientation.Horizontal)
                 {
-                    Console.WriteLine($"[DockFactory] Converting mainDock to Horizontal");
+                    Console.WriteLine($"[InsertRightPanel] Converting mainDock to Horizontal");
                     mainDock.Orientation = Orientation.Horizontal;
                 }
 
-                newPanel.Proportion = 0.3;
-                mainDock.VisibleDockables!.Add(newPanel);
+                // КРИТИЧНО: Добавляем СПЛИТТЕР перед новой панелью!
+                var splitter = new ProportionalDockSplitter
+                {
+                    Id = $"Splitter_{mainDock.VisibleDockables!.Count}",
+                    Title = $"Splitter_{mainDock.VisibleDockables.Count}"
+                };
 
-                Console.WriteLine($"[DockFactory] Added first right panel");
+                mainDock.VisibleDockables.Add(splitter);
+                Console.WriteLine($"[InsertRightPanel] Added splitter");
+
+                newPanel.Proportion = 0.3;
+                mainDock.VisibleDockables.Add(newPanel);
+
+                Console.WriteLine($"[InsertRightPanel] Added first right panel with splitter");
             }
         }
 
