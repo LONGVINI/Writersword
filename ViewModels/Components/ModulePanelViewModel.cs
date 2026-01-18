@@ -79,7 +79,6 @@ namespace Writersword.ViewModels.Components
                 {
                     ModuleId = metadata.ModuleId,
                     DisplayName = metadata.DisplayName,
-                    Icon = metadata.Icon,
                     Description = metadata.Description,
                     IsActive = moduleSlot != null && moduleSlot.IsVisible,
                     IsRequired = moduleSlot != null && !moduleSlot.IsCloseable

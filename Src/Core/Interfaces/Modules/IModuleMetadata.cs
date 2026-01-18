@@ -12,9 +12,6 @@
         /// <summary>Отображаемое название модуля</summary>
         string DisplayName { get; }
 
-        /// <summary>Иконка модуля (emoji или символ)</summary>
-        string Icon { get; }
-
         /// <summary>Описание модуля</summary>
         string Description { get; }
 

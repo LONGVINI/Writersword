@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models;
+using Writersword.Core.Models.Modules;
 using Writersword.Core.Models.Project;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Infrastructure.Services.Modules;
@@ -183,7 +184,7 @@ namespace Writersword.ViewModels
         /// <summary>
         /// Сохранить в кеш асинхронно
         /// Используется при переключении вкладок
-        /// СРАВНИВАЕТ с кешем И с файлом перед сохранением
+        /// ВСЕГДА создаёт .wsasd для быстрого восстановления из ZIP
         /// </summary>
         public async Task SaveToCacheAsync()
         {
@@ -191,71 +192,99 @@ namespace Writersword.ViewModels
             {
                 if (_getActiveModules == null)
                 {
-                    Console.WriteLine($"[DocumentTabViewModel] No active modules provider, skipping cache save");
+                    Console.WriteLine($"[DocumentTabViewModel] No active modules provider");
                     return;
                 }
 
                 var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
                 var cacheService = App.Services.GetRequiredService<ICacheService>();
-                var comparisonService = App.Services.GetRequiredService<IDataComparisonService>();
+                var projectService = App.Services.GetRequiredService<IProjectService>();
 
-                // ПОЛУЧАЕМ МОДУЛИ ЧЕРЕЗ СОХРАНЁННУЮ ФУНКЦИЮ (для ЭТОЙ вкладки)
                 var activeModules = _getActiveModules().ToList();
 
                 if (activeModules.Count > 0)
                 {
-                    // Собираем текущие состояния модулей
-                    var moduleStates = stateCollector.CollectAllStates(activeModules);
+                    // Собираем текущие состояния всех активных модулей
+                    var currentStates = stateCollector.CollectAllStates(activeModules);
 
-                    if (moduleStates.Count > 0)
+                    if (currentStates.Count > 0)
                     {
-                        // Извлекаем ТОЛЬКО CustomData для сравнения
-                        var currentCustomData = new Dictionary<string, object?>();
-                        foreach (var kvp in moduleStates)
+                        // Временно закрываем ZIP чтобы освободить файл для чтения
+                        Context.CloseZipStorage();
+
+                        // Загружаем сохранённую версию проекта из ZIP
+                        var savedProject = await projectService.LoadAsync(FilePath);
+
+                        // Открываем ZIP обратно для работы модулей
+                        Context.ReopenZipStorage();
+
+                        if (savedProject != null)
                         {
-                            if (kvp.Value.CustomData != null)
+                            bool dataChanged = false;
+
+                            // Быстрая проверка: разное количество модулей = изменения есть
+                            if (currentStates.Count != savedProject.ModulesData.Count)
                             {
-                                currentCustomData[kvp.Key] = kvp.Value.CustomData;
+                                dataChanged = true;
+                                Console.WriteLine($"[DocumentTabViewModel] Module count differs");
                             }
-                        }
-
-                        // СРАВНИВАЕМ с данными из ФАЙЛА .writersword
-                        var project = GetProject();
-                        bool dataMatchesFile = comparisonService.AreDataEqual(currentCustomData, project.ModulesData);
-
-                        if (dataMatchesFile)
-                        {
-                            Console.WriteLine($"[DocumentTabViewModel] Data matches saved file, skipping cache");
-
-                            // Если есть старый кеш - удаляем его (он больше не нужен)
-                            if (cacheService.HasCache(FilePath))
+                            else
                             {
-                                cacheService.DeleteCache(FilePath);
-                                Console.WriteLine($"[DocumentTabViewModel] Deleted outdated cache");
+                                // Сравниваем данные каждого модуля
+                                foreach (var kvp in currentStates)
+                                {
+                                    if (!savedProject.ModulesData.TryGetValue(kvp.Key, out var savedData))
+                                    {
+                                        dataChanged = true;
+                                        Console.WriteLine($"[DocumentTabViewModel] New module: {kvp.Key}");
+                                        break;
+                                    }
+
+                                    var currentCustomData = kvp.Value.CustomData;
+
+                                    // Оптимизированное сравнение для строк (основной случай)
+                                    if (currentCustomData is string currentStr && savedData is string savedStr)
+                                    {
+                                        if (currentStr != savedStr)
+                                        {
+                                            dataChanged = true;
+                                            Console.WriteLine($"[DocumentTabViewModel] Data changed: {kvp.Key}");
+                                            break;
+                                        }
+                                    }
+                                    else if (!Equals(currentCustomData, savedData))
+                                    {
+                                        dataChanged = true;
+                                        Console.WriteLine($"[DocumentTabViewModel] Data changed: {kvp.Key}");
+                                        break;
+                                    }
+                                }
                             }
 
-                            return;
-                        }
-
-                        // Данные отличаются от файла - проверяем кеш
-                        var oldCache = cacheService.LoadCache(FilePath);
-
-                        // Сравниваем с кешем (если есть)
-                        if (!comparisonService.AreStatesEqual(oldCache, moduleStates))
-                        {
-                            await cacheService.SaveCacheAsync(FilePath, moduleStates);
-                            Console.WriteLine($"[DocumentTabViewModel] Cache saved: {moduleStates.Count} modules");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"[DocumentTabViewModel] No changes from cache, skipping save");
+                            // Сохраняем кеш только если есть несохранённые изменения
+                            if (dataChanged)
+                            {
+                                await cacheService.SaveCacheAsync(FilePath, currentStates);
+                                Console.WriteLine($"[DocumentTabViewModel] Cache saved (differs from ZIP)");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"[DocumentTabViewModel] No changes, cache not needed");
+                            }
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[DocumentTabViewModel] Cache save error: {ex.Message}");
+                Console.WriteLine($"[DocumentTabViewModel] SaveToCache error: {ex.Message}");
+
+                // В случае ошибки обязательно переоткрываем ZIP
+                try
+                {
+                    Context.ReopenZipStorage();
+                }
+                catch { }
             }
         }
 

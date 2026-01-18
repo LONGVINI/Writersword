@@ -79,6 +79,9 @@ namespace Writersword
             // Сервис работы с проектами (.writersword файлы)
             services.AddSingleton<IProjectService, ProjectService>();
 
+            // Сервис работы с ZIP архивами проектов
+            services.AddSingleton<ZipProjectService>();
+
             // Сервис локализации (переключение языков)
             services.AddSingleton<ILocalizationService, LocalizationService>();
 
@@ -197,7 +200,7 @@ namespace Writersword
                         Activator.CreateInstance(moduleType) as BaseModule
                         ?? throw new InvalidOperationException($"Failed to create module {moduleType.Name}"));
 
-                    Console.WriteLine($"[App] ✓ Auto-registered module: {instance.Metadata.DisplayName} ({instance.Metadata.Icon})");
+                    Console.WriteLine($"[App] ✓ Auto-registered module: {instance.Metadata.DisplayName}");
                 }
             }
 

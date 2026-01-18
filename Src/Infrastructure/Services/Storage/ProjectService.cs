@@ -1,5 +1,4 @@
-﻿using Newtonsoft.Json;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -13,6 +12,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
     /// <summary>
     /// Реализация сервиса работы с проектами
     /// Каждая вкладка = отдельный проект
+    /// Теперь работает с ZIP архивами вместо JSON
     /// </summary>
     public class ProjectService : IProjectService
     {
@@ -22,12 +22,13 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         // Соответствие: ID проекта -> путь к файлу
         private readonly Dictionary<string, string> _projectPaths = new Dictionary<string, string>();
 
-
         private readonly ModuleRegistry _moduleRegistry;
+        private readonly ZipProjectService _zipService;
 
         public ProjectService(ModuleRegistry moduleRegistry)
         {
             _moduleRegistry = moduleRegistry;
+            _zipService = new ZipProjectService();
         }
 
         /// <summary>Получить все открытые проекты</summary>
@@ -36,10 +37,10 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         /// <summary>Найти проект по пути к файлу</summary>
         public ProjectFile? GetProjectByPath(string filePath)
         {
-            var projectId = _projectPaths.FirstOrDefault(x => x.Value == filePath).Key;  // ← Key это Title!
+            var projectId = _projectPaths.FirstOrDefault(x => x.Value == filePath).Key;
             if (projectId == null) return null;
 
-            return _openProjects.FirstOrDefault(p => p.Title == projectId);  // ← Ищет по Title
+            return _openProjects.FirstOrDefault(p => p.Title == projectId);
         }
 
         /// <summary>Получить путь к файлу проекта</summary>
@@ -57,22 +58,22 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 Type = type,
                 CreatedAt = DateTime.Now,
                 LastModified = DateTime.Now,
-                FormatVersion = "1.0"
+                FormatVersion = "3.0"  // ← НОВАЯ ВЕРСИЯ (ZIP формат)
             };
 
             return project;
         }
 
-        /// <summary>Загрузить проект из файла</summary>
+        /// <summary>Загрузить проект из файла (ZIP архив)</summary>
         public async Task<ProjectFile?> LoadAsync(string filePath)
         {
             try
             {
-                Console.WriteLine($"Loading project from: {filePath}");
+                Console.WriteLine($"[ProjectService] Loading project from: {filePath}");
 
                 if (!File.Exists(filePath))
                 {
-                    Console.WriteLine("File does not exist!");
+                    Console.WriteLine("[ProjectService] File does not exist!");
                     return null;
                 }
 
@@ -80,21 +81,17 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 var existing = GetProjectByPath(filePath);
                 if (existing != null)
                 {
-                    Console.WriteLine("Project already loaded, RE-LOADING from file");
-                    // НЕ возвращаем старую версию, а ПЕРЕЗАГРУЖАЕМ из файла!
-                    // Удаляем старую версию
+                    Console.WriteLine("[ProjectService] Project already loaded, RE-LOADING from file");
                     _openProjects.Remove(existing);
                     _projectPaths.Remove(existing.Title);
                 }
 
-                var json = await File.ReadAllTextAsync(filePath);
-                Console.WriteLine($"JSON loaded, length: {json.Length}");
-
-                var project = JsonConvert.DeserializeObject<ProjectFile>(json);
+                // Загружаем через ZipProjectService
+                var project = await _zipService.LoadFromZipAsync(filePath);
 
                 if (project != null)
                 {
-                    Console.WriteLine($"Project deserialized: {project.Title}");
+                    Console.WriteLine($"[ProjectService] Project loaded: {project.Title}");
 
                     // Добавляем в список открытых проектов
                     _openProjects.Add(project);
@@ -102,51 +99,45 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 }
                 else
                 {
-                    Console.WriteLine("Failed to deserialize project!");
+                    Console.WriteLine("[ProjectService] Failed to load project!");
                 }
 
                 return project;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to load project: {ex.Message}");
-                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                Console.WriteLine($"[ProjectService] Failed to load project: {ex.Message}");
+                Console.WriteLine($"[ProjectService] Stack trace: {ex.StackTrace}");
                 return null;
             }
         }
 
-        /// <summary>Сохранить проект в файл</summary>
+        /// <summary>Сохранить проект в файл (ZIP архив)</summary>
         public async Task<bool> SaveAsync(ProjectFile project, string filePath)
         {
             try
             {
-                Console.WriteLine($"[SAVE] Saving project: {project.Title}");
+                Console.WriteLine($"[ProjectService] Saving project: {project.Title}");
 
                 // Обновляем дату модификации
                 project.LastModified = DateTime.Now;
 
-                // Сериализуем в JSON
-                var json = JsonConvert.SerializeObject(project, Formatting.Indented);
+                // Сохраняем через ZipProjectService
+                bool success = await _zipService.SaveToZipAsync(project, filePath);
 
-                Console.WriteLine($"[SAVE] Serialized JSON length: {json.Length}");
-
-                // Создаём директорию если не существует
-                var directory = Path.GetDirectoryName(filePath);
-                if (!string.IsNullOrEmpty(directory))
+                if (!success)
                 {
-                    Directory.CreateDirectory(directory);
+                    Console.WriteLine($"[ProjectService] Failed to save to ZIP");
+                    return false;
                 }
 
-                // Сохраняем в файл
-                await File.WriteAllTextAsync(filePath, json);
-
-                Console.WriteLine($"[SAVE] File written to: {filePath}");
+                Console.WriteLine($"[ProjectService] Project saved to: {filePath}");
 
                 // Удаляем старый проект с таким же путём
                 var existingProject = GetProjectByPath(filePath);
                 if (existingProject != null && existingProject != project)
                 {
-                    Console.WriteLine($"[SAVE] Removing old project from cache: {existingProject.Title}");
+                    Console.WriteLine($"[ProjectService] Removing old project from cache: {existingProject.Title}");
                     _openProjects.Remove(existingProject);
                     _projectPaths.Remove(existingProject.Title);
                 }
@@ -164,8 +155,8 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to save project: {ex.Message}");
-                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                Console.WriteLine($"[ProjectService] Failed to save project: {ex.Message}");
+                Console.WriteLine($"[ProjectService] Stack trace: {ex.StackTrace}");
                 return false;
             }
         }

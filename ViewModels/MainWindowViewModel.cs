@@ -742,7 +742,6 @@ namespace Writersword.ViewModels
                 {
                     ModuleId = metadata.ModuleId,
                     Name = metadata.DisplayName,
-                    Icon = metadata.Icon,
                     IsUniversal = metadata.IsUniversal,
                     IsEnabled = false,
                     IsChecked = false
