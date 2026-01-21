@@ -11,7 +11,6 @@ using Writersword.Core.Models;
 using Writersword.Core.Models.Modules;
 using Writersword.Core.Models.Project;
 using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Infrastructure.Services.Modules;
 
 namespace Writersword.ViewModels
 {
@@ -19,13 +18,12 @@ namespace Writersword.ViewModels
     /// ViewModel для одной вкладки документа
     /// Теперь работает напрямую с ProjectFile и управляет DocumentContext
     /// Каждая вкладка имеет свой RecoveryBanner (если есть кеш)
+    /// КЕШИРОВАНИЕ управляется MainWindowViewModel для активной вкладки
     /// </summary>
     public class DocumentTabViewModel : ViewModelBase
     {
         private readonly ProjectFile _project;
         private readonly Func<DocumentTabViewModel, Task>? _onClose;
-        private readonly ICacheUpdateService _cacheUpdateService;
-        private Func<IEnumerable<IModule>>? _getActiveModules;
         private bool _isActive;
         private string _filePath = "";
         private RecoveryBannerViewModel? _recoveryBanner;
@@ -110,23 +108,12 @@ namespace Writersword.ViewModels
         public DocumentTabViewModel(
                 ProjectFile project,
                 string filePath = "",
-                Func<DocumentTabViewModel, Task>? onClose = null,
-                ICacheUpdateService? cacheUpdateService = null)
+                Func<DocumentTabViewModel, Task>? onClose = null)
         {
             _project = project;
             _filePath = filePath;
             _onClose = onClose;
             Id = Guid.NewGuid().ToString();
-
-            // Создаём НОВЫЙ экземпляр CacheUpdateService для ЭТОЙ вкладки
-            var cacheService = App.Services.GetRequiredService<ICacheService>();
-            var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
-            var comparisonService = App.Services.GetRequiredService<IDataComparisonService>();
-            _cacheUpdateService = new CacheUpdateService(
-                cacheService,
-                stateCollector,
-                comparisonService
-            );
 
             // Создаём контекст документа
             Context = new DocumentContext(project, filePath);
@@ -152,55 +139,19 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>
-        /// Установить функцию получения активных модулей
-        /// Вызывается из MainWindowViewModel после создания вкладки
-        /// </summary>
-        public void SetActiveModulesProvider(Func<IEnumerable<IModule>> getActiveModules)
-        {
-            _getActiveModules = getActiveModules;
-        }
-
-        /// <summary>Запустить фоновое кеширование для этой вкладки</summary>
-        public void StartCaching()
-        {
-            if (!string.IsNullOrEmpty(FilePath) && _getActiveModules != null)
-            {
-                _cacheUpdateService.Start(FilePath, _getActiveModules);
-                Console.WriteLine($"[DocumentTabViewModel] Caching started for: {Title}");
-            }
-            else
-            {
-                Console.WriteLine($"[DocumentTabViewModel] Cannot start caching: FilePath={FilePath}, hasProvider={_getActiveModules != null}");
-            }
-        }
-
-        /// <summary>Остановить фоновое кеширование для этой вкладки</summary>
-        public void StopCaching()
-        {
-            _cacheUpdateService.Stop();
-            Console.WriteLine($"[DocumentTabViewModel] Caching stopped for: {Title}");
-        }
-
-        /// <summary>
         /// Сохранить в кеш асинхронно
         /// Используется при переключении вкладок
         /// ВСЕГДА создаёт .wsasd для быстрого восстановления из ZIP
         /// </summary>
-        public async Task SaveToCacheAsync()
+        public async Task SaveToCacheAsync(Func<IEnumerable<IModule>> getActiveModules)
         {
             try
             {
-                if (_getActiveModules == null)
-                {
-                    Console.WriteLine($"[DocumentTabViewModel] No active modules provider");
-                    return;
-                }
-
                 var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
-                var cacheService = App.Services.GetRequiredService<ICacheService>();
+                var cacheService = App.Services.GetRequiredService<IZipCacheService>();
                 var projectService = App.Services.GetRequiredService<IProjectService>();
 
-                var activeModules = _getActiveModules().ToList();
+                var activeModules = getActiveModules().ToList();
 
                 if (activeModules.Count > 0)
                 {
@@ -264,7 +215,7 @@ namespace Writersword.ViewModels
                             // Сохраняем кеш только если есть несохранённые изменения
                             if (dataChanged)
                             {
-                                await cacheService.SaveCacheAsync(FilePath, currentStates);
+                                await cacheService.SaveCacheAsync(FilePath, _project.Id, currentStates);
                                 Console.WriteLine($"[DocumentTabViewModel] Cache saved (differs from ZIP)");
                             }
                             else

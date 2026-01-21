@@ -62,5 +62,11 @@ namespace Writersword.Core.Interfaces.Modules
 
         /// <summary>Создать View для отображения модуля</summary>
         Control? CreateView();
+
+        /// <summary>
+        /// Принудительно обновить состояние модуля из контекста
+        /// Используется при выходе из CompareMode
+        /// </summary>
+        void RefreshFromContext();
     }
 }

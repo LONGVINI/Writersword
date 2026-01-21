@@ -46,6 +46,9 @@ namespace Writersword.ViewModels.Components
         /// <summary>Путь к текущему проекту (для сохранения кеша)</summary>
         private string? _currentProjectPath;
 
+        /// <summary>GUID текущего проекта (для сохранения кеша)</summary>
+        private string? _currentProjectId;
+
         public WorkModeBarViewModel(IWorkModeService workModeService)
         {
             _workModeService = workModeService;
@@ -70,10 +73,14 @@ namespace Writersword.ViewModels.Components
         /// Установить функцию получения активных модулей
         /// Необходимо для переключения WorkMode (закрытие старых модулей)
         /// </summary>
-        public void SetActiveModulesProvider(Func<IEnumerable<IModule>> getActiveModules, string projectPath)
+        /// <param name="getActiveModules">Функция получения активных модулей</param>
+        /// <param name="projectPath">Путь к проекту</param>
+        /// <param name="projectId">GUID проекта</param>
+        public void SetActiveModulesProvider(Func<IEnumerable<IModule>> getActiveModules, string projectPath, string projectId)
         {
             _getActiveModules = getActiveModules;
             _currentProjectPath = projectPath;
+            _currentProjectId = projectId;
             Console.WriteLine("[WorkModeBarViewModel] Active modules provider set");
         }
 
@@ -101,7 +108,7 @@ namespace Writersword.ViewModels.Components
             Console.WriteLine($"[WorkModeBarViewModel] Switching WorkMode: {ActiveWorkMode?.Title} → {newWorkMode.Title}");
 
             // Проверяем что у нас есть всё необходимое
-            if (_getActiveModules == null || string.IsNullOrEmpty(_currentProjectPath))
+            if (_getActiveModules == null || string.IsNullOrEmpty(_currentProjectPath) || string.IsNullOrEmpty(_currentProjectId))
             {
                 Console.WriteLine("[WorkModeBarViewModel] ERROR: Missing dependencies for WorkMode switch");
                 return;
@@ -111,7 +118,8 @@ namespace Writersword.ViewModels.Components
             await _workModeService.SwitchWorkModeAsync(
                 newWorkMode,
                 _getActiveModules(),
-                _currentProjectPath
+                _currentProjectPath,
+                _currentProjectId
             );
 
             // Обновляем активный WorkMode

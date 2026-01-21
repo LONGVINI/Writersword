@@ -28,7 +28,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
     public class ProjectWorkflow : IProjectWorkflow
     {
         private readonly IProjectService _projectService;
-        private readonly ICacheService _cacheService;
+        private readonly IZipCacheService _cacheService;
         private readonly IDialogService _dialogService;
         private readonly ISettingsService _settingsService;
         private readonly INotificationService _notificationService;
@@ -42,7 +42,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
         public ProjectWorkflow(
                IProjectService projectService,
-               ICacheService cacheService,
+               IZipCacheService cacheService,
                IDialogService dialogService,
                ISettingsService settingsService,
                INotificationService notificationService,
@@ -183,13 +183,10 @@ namespace Writersword.Src.Infrastructure.Services.Project
                 // 4. Создаём вкладку с собственным AutoSaveService
                 var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
                 var cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
-                var tabVM = new DocumentTabViewModel(project, filePath, onClose: null, cacheUpdateService);
+				var tabVM = new DocumentTabViewModel(project, filePath, onClose: null);
 
-                // Передаём функцию получения активных модулей
-                tabVM.SetActiveModulesProvider(() => mainViewModel.GetActiveModules());
-
-                // Создаём ZipFileStorage для работы с файлами в ZIP
-                if (!string.IsNullOrEmpty(filePath))
+				// Создаём ZipFileStorage для работы с файлами в ZIP
+				if (!string.IsNullOrEmpty(filePath))
                 {
                     var storage = new ZipFileStorageService(filePath);
                     _openStorages[filePath] = storage;
@@ -205,10 +202,14 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                     if (cacheDate.HasValue)
                     {
+                        // Захватываем локальные копии для замыкания
+                        var capturedTab = tabVM;
+                        var capturedPath = filePath;
+
                         tabVM.RecoveryBanner = new RecoveryBannerViewModel(
-                            onSwitchVersion: async () => await SwitchVersionAsync(tabVM, filePath),
-                            onSave: async () => await SaveAndHideBannerAsync(tabVM),
-                            onDiscard: async () => await DiscardCacheAsync(tabVM, filePath)
+                            onSwitchVersion: async () => await SwitchVersionAsync(capturedTab, capturedPath),
+                            onSave: async () => await SaveAndHideBannerAsync(capturedTab),
+                            onDiscard: async () => await DiscardCacheAsync(capturedTab, capturedPath)
                         )
                         {
                             IsViewingCache = true,
@@ -227,18 +228,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     Console.WriteLine("[ProjectWorkflow] No RecoveryBanner (not in Compare mode)");
                 }
 
-                // 6.Запускаем автосохранение ТОЛЬКО если НЕ в Compare mode
-                if (recoveryChoice != RecoveryDialogResult.Compare)
-                {
-                    tabVM.StartCaching();
-                    Console.WriteLine("[ProjectWorkflow] AutoSave started");
-                }
-                else
-                {
-                    Console.WriteLine("[ProjectWorkflow] AutoSave NOT started (Compare mode)");
-                }
-
-                // 7. Добавляем в недавние проекты
+                // 6. Добавляем в недавние проекты
                 _settingsService.AddRecentProject(filePath);
 
                 Console.WriteLine($"[ProjectWorkflow] Project opened: {project.Title}");
@@ -261,49 +251,6 @@ namespace Writersword.Src.Infrastructure.Services.Project
             }
         }
 
-        /// <summary>Переключить между кешем и сохранённой версией</summary>
-        private async Task SwitchVersionAsync(DocumentTabViewModel tab, string filePath)
-        {
-            try
-            {
-                if (tab.RecoveryBanner == null) return;
-
-                var isViewingCache = tab.RecoveryBanner.IsViewingCache;
-                ProjectFile? project;
-
-                if (isViewingCache)
-                {
-                    // Переключаемся на сохранённую версию
-                    project = await _projectService.LoadAsync(filePath);
-                    Console.WriteLine("[ProjectWorkflow] Switched to saved version");
-                }
-                else
-                {
-                    // Переключаемся на кеш
-                    project = await LoadProjectWithCacheData(filePath);
-                    Console.WriteLine("[ProjectWorkflow] Switched to cache version");
-                }
-
-                if (project != null)
-                {
-                    // Обновляем данные проекта
-                    tab.UpdateProject(project);
-
-                    // КРИТИЧЕСКИ ВАЖНО: Перезагружаем модули из новых данных!
-                    await ReloadModulesFromProject(tab);
-
-                    // Переключаем флаг
-                    tab.RecoveryBanner.IsViewingCache = !isViewingCache;
-
-                    Console.WriteLine($"[ProjectWorkflow] Switched version, now viewing: {(tab.RecoveryBanner.IsViewingCache ? "cache" : "saved")}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ProjectWorkflow] ERROR switching version: {ex.Message}");
-            }
-        }
-
         /// <summary>
         /// Перезагрузить все активные модули из данных проекта
         /// Используется при переключении версий в Compare mode
@@ -320,7 +267,6 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                 foreach (var module in activeModules)
                 {
-                    // Получаем данные модуля из проекта
                     if (project.ModulesData.TryGetValue(module.ModuleId.ToString(), out var data))
                     {
                         var state = new ModuleState
@@ -328,13 +274,11 @@ namespace Writersword.Src.Infrastructure.Services.Project
                             CustomData = data
                         };
 
-                        // Перезагружаем состояние модуля
                         module.RestoreState(state);
                         Console.WriteLine($"[ProjectWorkflow] Reloaded module: {module.ModuleId}");
                     }
                     else
                     {
-                        // Если данных нет - очищаем модуль
                         var emptyState = new ModuleState
                         {
                             CustomData = null
@@ -352,87 +296,165 @@ namespace Writersword.Src.Infrastructure.Services.Project
             }
         }
 
-        /// <summary>Сохранить текущую версию и скрыть баннер</summary>
-        private async Task SaveAndHideBannerAsync(DocumentTabViewModel tab)
-        {
-            // СНАЧАЛА скрываем баннер - сразу в UI потоке!
-            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                // Скрываем баннер СРАЗУ
-                tab.RecoveryBanner = null;
-
-                // Выходим из Compare mode
-                tab.Context.IsInCompareMode = false;
-
-                Console.WriteLine("[ProjectWorkflow] RecoveryBanner hidden BEFORE save");
-            });
-
-            // ПОТОМ сохраняем
-            bool success = await SaveDocumentAsync(tab);
-
-            if (success)
-            {
-                // Запускаем автосохранение
-                tab.StartCaching();
-
-                Console.WriteLine("[ProjectWorkflow] Saved and enabled editing");
-            }
-        }
-
         /// <summary>Удалить кеш с подтверждением</summary>
         private async Task DiscardCacheAsync(DocumentTabViewModel tab, string filePath)
         {
-            var result = await _dialogService.ShowMessageAsync(
-                "Удалить автосохранение?",
-                "Автосохранённая версия будет удалена. Продолжить?",
-                MessageBoxType.Warning,
-                MessageBoxButtons.YesNo
-            );
-
-            if (result == MessageBoxResult.Yes)
+            try
             {
-                // Если просматриваем кеш - загружаем сохранённую версию
-                if (tab.RecoveryBanner?.IsViewingCache == true)
+                // Захватываем локальные копии для защиты от изменения
+                var capturedTab = tab;
+                var capturedPath = filePath;
+
+                var result = await _dialogService.ShowMessageAsync(
+                    "Удалить автосохранение?",
+                    "Автосохранённая версия будет удалена. Продолжить?",
+                    MessageBoxType.Warning,
+                    MessageBoxButtons.YesNo
+                );
+
+                if (result == MessageBoxResult.Yes)
                 {
-                    var project = await _projectService.LoadAsync(filePath);
+                    if (capturedTab.RecoveryBanner?.IsViewingCache == true)
+                    {
+                        capturedTab.Context.CloseZipStorage();
+
+                        try
+                        {
+                            var project = await _projectService.LoadAsync(capturedPath);
+                            if (project != null)
+                            {
+                                capturedTab.UpdateProject(project);
+                                await ReloadModulesFromProject(capturedTab);
+                            }
+                        }
+                        finally
+                        {
+                            capturedTab.Context.ReopenZipStorage();
+                        }
+                    }
+
+                    _cacheService.DeleteCache(capturedPath);
+
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        capturedTab.Context.IsInCompareMode = false;
+                        capturedTab.RecoveryBanner = null;
+                        Console.WriteLine("[ProjectWorkflow] CompareMode disabled, RecoveryBanner hidden");
+                    });
+
+                    var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+                    var activeModules = mainViewModel.GetActiveModules();
+
+                    foreach (var module in activeModules)
+                    {
+                        module.RefreshFromContext();
+                    }
+
+                    Console.WriteLine("[ProjectWorkflow] Cache discarded, editing enabled");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ProjectWorkflow] ERROR DiscardCache: {ex.Message}");
+
+                try
+                {
+                    tab.Context.ReopenZipStorage();
+                }
+                catch { }
+            }
+        }
+
+
+        /// <summary>Сохранить текущую версию и скрыть баннер</summary>
+        private async Task SaveAndHideBannerAsync(DocumentTabViewModel tab)
+        {
+            try
+            {
+                // Захватываем локальную копию для защиты от изменения
+                var capturedTab = tab;
+
+                bool success = await SaveDocumentAsync(capturedTab);
+
+                if (success)
+                {
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        capturedTab.Context.IsInCompareMode = false;
+                        capturedTab.RecoveryBanner = null;
+                        Console.WriteLine("[ProjectWorkflow] CompareMode disabled, RecoveryBanner hidden");
+                    });
+
+                    var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+                    var activeModules = mainViewModel.GetActiveModules();
+
+                    foreach (var module in activeModules)
+                    {
+                        module.RefreshFromContext();
+                    }
+
+                    Console.WriteLine("[ProjectWorkflow] Saved and enabled editing");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ProjectWorkflow] ERROR SaveAndHideBanner: {ex.Message}");
+            }
+        }
+
+
+        /// <summary>Переключить между кешем и сохранённой версией</summary>
+        private async Task SwitchVersionAsync(DocumentTabViewModel tab, string filePath)
+        {
+            try
+            {
+                // Захватываем локальные копии для защиты от изменения
+                var capturedTab = tab;
+                var capturedPath = filePath;
+
+                if (capturedTab.RecoveryBanner == null) return;
+
+                var isViewingCache = capturedTab.RecoveryBanner.IsViewingCache;
+                ProjectFile? project;
+
+                capturedTab.Context.CloseZipStorage();
+
+                try
+                {
+                    if (isViewingCache)
+                    {
+                        project = await _projectService.LoadAsync(capturedPath);
+                        Console.WriteLine("[ProjectWorkflow] Switched to saved version");
+                    }
+                    else
+                    {
+                        project = await LoadProjectWithCacheData(capturedPath);
+                        Console.WriteLine("[ProjectWorkflow] Switched to cache version");
+                    }
+
                     if (project != null)
                     {
-                        tab.UpdateProject(project);
+                        capturedTab.UpdateProject(project);
+                        await ReloadModulesFromProject(capturedTab);
+                        capturedTab.RecoveryBanner.IsViewingCache = !isViewingCache;
+
+                        Console.WriteLine($"[ProjectWorkflow] Switched version, now viewing: {(capturedTab.RecoveryBanner.IsViewingCache ? "cache" : "saved")}");
                     }
                 }
-
-                // Удаляем кеш
-                _cacheService.DeleteCache(filePath);
-
-                // СНАЧАЛА скрываем баннер
-                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                finally
                 {
-                    // Скрываем баннер СРАЗУ
-                    tab.RecoveryBanner = null;
-
-                    // Выходим из Compare mode
-                    tab.Context.IsInCompareMode = false;
-
-                    Console.WriteLine("[ProjectWorkflow] RecoveryBanner hidden BEFORE delete");
-                });
-
-                // Если просматриваем кеш - загружаем сохранённую версию
-                if (tab.RecoveryBanner?.IsViewingCache == true)  // Это уже null, но оставим на всякий случай
-                {
-                    var project = await _projectService.LoadAsync(filePath);
-                    if (project != null)
-                    {
-                        tab.UpdateProject(project);
-                    }
+                    capturedTab.Context.ReopenZipStorage();
                 }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ProjectWorkflow] ERROR switching version: {ex.Message}");
 
-                // Удаляем кеш
-                _cacheService.DeleteCache(filePath);
-
-                // Запускаем автосохранение
-                tab.StartCaching();
-
-                Console.WriteLine("[ProjectWorkflow] Cache discarded, editing enabled");
+                try
+                {
+                    tab.Context.ReopenZipStorage();
+                }
+                catch { }
             }
         }
 
@@ -597,9 +619,6 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     tab.RecoveryBanner = null;
                     Console.WriteLine("[ProjectWorkflow] RecoveryBanner cleared");
 
-                    // Перезапускаем автосохранение для нового пути
-                    tab.StartCaching();
-
                     // Добавляем в недавние
                     _settingsService.AddRecentProject(filePath);
 
@@ -630,7 +649,6 @@ namespace Writersword.Src.Infrastructure.Services.Project
             {
                 Console.WriteLine($"[ProjectWorkflow] Closing tab: {tab.Title}, force: {force}");
 
-                // Проверяем несохранённые изменения
                 if (!force && await HasUnsavedChanges(tab))
                 {
                     var result = await _dialogService.ShowMessageAsync(
@@ -654,31 +672,28 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     }
                 }
 
-                // Убираем RecoveryBanner перед закрытием
                 tab.RecoveryBanner = null;
                 Console.WriteLine("[ProjectWorkflow] RecoveryBanner cleared");
 
-                // Останавливаем автосохранение
-                tab.StartCaching();
-
                 var filePath = tab.FilePath;
 
-                // Закрываем проект в ProjectService
                 if (!string.IsNullOrEmpty(filePath))
                 {
+                    tab.Context.CloseZipStorage();
+                    Console.WriteLine($"[ProjectWorkflow] ZipStorage closed for context");
+
+                    if (_openStorages.TryGetValue(filePath, out var storage))
+                    {
+                        storage.Dispose();
+                        _openStorages.Remove(filePath);
+                        Console.WriteLine($"[ProjectWorkflow] ZipFileStorage removed from registry: {filePath}");
+                    }
+
                     var project = _projectService.GetProjectByPath(filePath);
                     if (project != null)
                     {
                         _projectService.CloseProject(project);
                     }
-                }
-
-                // Закрываем ZipFileStorage
-                if (!string.IsNullOrEmpty(filePath) && _openStorages.TryGetValue(filePath, out var storage))
-                {
-                    storage.Dispose();
-                    _openStorages.Remove(filePath);
-                    Console.WriteLine($"[ProjectWorkflow] ZipFileStorage closed for: {filePath}");
                 }
 
                 Console.WriteLine("[ProjectWorkflow] Tab closed successfully");
@@ -693,30 +708,32 @@ namespace Writersword.Src.Infrastructure.Services.Project
         }
 
         /// <summary>
-        /// Проверить есть ли несохранённые изменения
-        /// Сравнивает текущие данные с данными В ПАМЯТИ (не перезагружая файл!)
+        /// Проверяет наличие несохранённых изменений в документе
+        /// Сравнивает текущие данные модулей с данными из сохранённого файла
         /// </summary>
+        /// <param name="tab">Вкладка документа для проверки</param>
+        /// <returns>true если есть несохранённые изменения, иначе false</returns>
         public async Task<bool> HasUnsavedChanges(DocumentTabViewModel tab)
         {
             var filePath = tab.FilePath;
 
-            // Если проект новый (нет пути) - проверяем есть ли данные в модулях
+            // Новый проект (нет пути к файлу)
             if (string.IsNullOrEmpty(filePath))
             {
                 var tabCollection = App.Services.GetRequiredService<ITabCollection>();
                 var activeTab = tabCollection.ActiveTab;
 
-                // Проверяем только если это активная вкладка
+                // Если это активная вкладка - проверяем наличие контента
                 if (tab == activeTab)
                 {
                     var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
                     var activeModules = mainViewModel.GetActiveModules();
                     var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
 
-                    // Проверяем есть ли хоть какие-то данные в модулях
+                    // Собираем CustomData из активных модулей
                     var currentData = stateCollector.CollectCustomData(activeModules);
 
-                    // Проверяем есть ли РЕАЛЬНЫЕ данные (не пустые строки)
+                    // Если хоть один модуль содержит данные - есть несохранённые изменения
                     bool hasContent = currentData.Any(kvp =>
                     {
                         if (kvp.Value == null) return false;
@@ -728,6 +745,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     return hasContent;
                 }
 
+                // Неактивная новая вкладка - изменений нет
                 Console.WriteLine($"[ProjectWorkflow] HasUnsavedChanges (new project, inactive): false");
                 return false;
             }
@@ -740,24 +758,25 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                 Dictionary<string, object?> allCurrentData;
 
-                // Если это АКТИВНАЯ вкладка - собираем CustomData из UI модулей + кеш
+                // Если это АКТИВНАЯ вкладка - собираем данные из UI модулей + кеша
                 if (tab == activeTab)
                 {
                     var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
                     var activeModules = mainViewModel.GetActiveModules();
 
-                    // Собираем ТОЛЬКО CustomData активных модулей
+                    // Собираем ТОЛЬКО CustomData из активных UI модулей
                     var activeCustomData = stateCollector.CollectCustomData(activeModules);
 
-                    // Добавляем CustomData из кеша (закрытые модули/WorkMode)
+                    // Создаём словарь для объединения данных
                     allCurrentData = new Dictionary<string, object?>(activeCustomData);
 
+                    // Добавляем данные из кеша (для неактивных/закрытых модулей)
                     var cache = _cacheService.LoadCache(filePath);
                     if (cache != null)
                     {
                         foreach (var kvp in cache)
                         {
-                            // Если модуль не в активных - берём из кеша
+                            // Если модуля нет в активных - берём его данные из кеша
                             if (!allCurrentData.ContainsKey(kvp.Key) && kvp.Value.CustomData != null)
                             {
                                 allCurrentData[kvp.Key] = kvp.Value.CustomData;
@@ -769,17 +788,17 @@ namespace Writersword.Src.Infrastructure.Services.Project
                 }
                 else
                 {
-                    // Если это НЕ активная вкладка - берём только из кеша
+                    // Если это НЕ активная вкладка - берём данные ТОЛЬКО из кеша
                     var cache = _cacheService.LoadCache(filePath);
 
                     if (cache == null || cache.Count == 0)
                     {
-                        // Нет кеша = нет изменений
+                        // Нет кеша = нет изменений (вкладка не была активирована)
                         Console.WriteLine($"[ProjectWorkflow] HasUnsavedChanges ({tab.Title}, inactive): false (no cache)");
                         return false;
                     }
 
-                    // Берём ТОЛЬКО CustomData из кеша
+                    // Извлекаем CustomData из всех закешированных модулей
                     allCurrentData = new Dictionary<string, object?>();
                     foreach (var kvp in cache)
                     {
@@ -792,10 +811,25 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     Console.WriteLine($"[ProjectWorkflow] HasUnsavedChanges - inactive tab, loaded {allCurrentData.Count} modules from cache");
                 }
 
-                // КРИТИЧНО: Берём данные ИЗ ПАМЯТИ, а не перезагружаем файл!
-                var savedProject = tab.GetProject();
+                // КРИТИЧНО: Закрываем ZIP перед чтением файла
+                tab.Context.CloseZipStorage();
+                Console.WriteLine($"[ProjectWorkflow] ZIP closed for comparison");
 
-                // Сравниваем CustomData
+                // Загружаем свежие данные напрямую из ZIP файла
+                var savedProject = await _projectService.LoadAsync(filePath);
+
+                // КРИТИЧНО: Переоткрываем ZIP после чтения
+                tab.Context.ReopenZipStorage();
+                Console.WriteLine($"[ProjectWorkflow] ZIP reopened after comparison");
+
+                // Проверка на успешную загрузку файла
+                if (savedProject == null)
+                {
+                    Console.WriteLine($"[ProjectWorkflow] HasUnsavedChanges - failed to load project from file");
+                    return false;
+                }
+
+                // Сравниваем текущие данные с данными из файла
                 bool hasChanges = !_comparisonService.AreDataEqual(allCurrentData, savedProject.ModulesData);
 
                 Console.WriteLine($"[ProjectWorkflow] HasUnsavedChanges ({tab.Title}): {hasChanges}");
@@ -803,8 +837,16 @@ namespace Writersword.Src.Infrastructure.Services.Project
             }
             catch (Exception ex)
             {
+                // В случае ошибки пытаемся переоткрыть ZIP
+                try
+                {
+                    tab.Context.ReopenZipStorage();
+                    Console.WriteLine($"[ProjectWorkflow] ZIP reopened after error");
+                }
+                catch { }
+
+                // В случае ошибки считаем что изменений нет (безопасный fallback)
                 Console.WriteLine($"[ProjectWorkflow] ERROR checking unsaved changes: {ex.Message}");
-                // В случае ошибки считаем что изменений нет (безопаснее)
                 return false;
             }
         }

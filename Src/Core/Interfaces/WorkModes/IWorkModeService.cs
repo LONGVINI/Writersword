@@ -45,6 +45,7 @@ namespace Writersword.Src.Core.Interfaces.WorkModes
         /// <param name="newWorkMode">WorkMode на который переключаемся</param>
         /// <param name="activeModules">Список АКТИВНЫХ модулей текущего WorkMode</param>
         /// <param name="projectPath">Путь к проекту (для сохранения в кеш)</param>
-        Task SwitchWorkModeAsync(WorkMode newWorkMode, IEnumerable<IModule> activeModules, string projectPath);
+        /// <param name="projectId">GUID проекта</param>
+        Task SwitchWorkModeAsync(WorkMode newWorkMode, IEnumerable<IModule> activeModules, string projectPath, string projectId);
     }
 }

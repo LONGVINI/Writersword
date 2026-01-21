@@ -9,35 +9,75 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 {
     /// <summary>
     /// Реализация работы с файлами внутри ZIP архива проекта
-    /// Держит ZIP открытым в режиме Update для быстрой записи
+    /// DEBUG: Открывает/закрывает ZIP при каждой операции (не блокирует файл)
+    /// RELEASE: Держит ZIP открытым в режиме Update для быстрой записи (оптимизация)
     /// </summary>
     public class ZipFileStorageService : IProjectFileStorage, IDisposable
     {
         private readonly string _zipFilePath;
         private ZipArchive? _archive;
-        private readonly Dictionary<string, byte[]> _pendingWrites = new();
         private bool _isDisposed = false;
 
+#if DEBUG
+        // DEBUG режим: не держим архив открытым
+        private const bool KeepArchiveOpen = false;
+#else
+        // RELEASE режим: держим архив открытым для оптимизации
+        private const bool KeepArchiveOpen = true;
+#endif
+
+#pragma warning disable CS0162 // Недостижимый код (ожидается в DEBUG/RELEASE режимах)
         public ZipFileStorageService(string zipFilePath)
         {
             _zipFilePath = zipFilePath;
 
-            // Открываем ZIP в режиме Update
-            if (File.Exists(zipFilePath))
+            if (!File.Exists(zipFilePath))
             {
-                var fileStream = new FileStream(zipFilePath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
-                _archive = new ZipArchive(fileStream, ZipArchiveMode.Update, leaveOpen: false);
-                Console.WriteLine($"[ZipFileStorage] Opened ZIP: {zipFilePath}");
+                Console.WriteLine($"[ZipFileStorage] WARNING: ZIP file not found: {zipFilePath}");
+                return;
+            }
+
+            // В RELEASE режиме открываем архив сразу и держим открытым
+            if (KeepArchiveOpen)
+            {
+                OpenArchive();
+                Console.WriteLine($"[ZipFileStorage] Opened ZIP (RELEASE mode): {zipFilePath}");
             }
             else
             {
-                Console.WriteLine($"[ZipFileStorage] WARNING: ZIP file not found: {zipFilePath}");
+                Console.WriteLine($"[ZipFileStorage] Initialized (DEBUG mode): {zipFilePath}");
+            }
+        }
+#pragma warning restore CS0162
+
+        /// <summary>
+        /// Открыть ZIP архив для работы
+        /// </summary>
+        private void OpenArchive()
+        {
+            if (_archive != null)
+                return;
+
+            var fileStream = new FileStream(_zipFilePath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
+            _archive = new ZipArchive(fileStream, ZipArchiveMode.Update, leaveOpen: false);
+        }
+
+        /// <summary>
+        /// Закрыть ZIP архив (только в DEBUG режиме)
+        /// </summary>
+        private void CloseArchive()
+        {
+            if (_archive != null && !KeepArchiveOpen)
+            {
+                _archive.Dispose();
+                _archive = null;
             }
         }
 
         /// <summary>
         /// Записать файл в ZIP
-        /// ВАЖНО: Запись происходит сразу в ZIP (не в память)
+        /// DEBUG: Открывает ZIP → пишет → закрывает (не блокирует файл)
+        /// RELEASE: Пишет в уже открытый ZIP (быстро)
         /// </summary>
         public void WriteFile(string relativePath, byte[] data)
         {
@@ -47,14 +87,20 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 return;
             }
 
-            if (_archive == null)
-            {
-                Console.WriteLine("[ZipFileStorage] ERROR: Archive is null");
-                return;
-            }
-
             try
             {
+                // В DEBUG режиме открываем архив перед записью
+                if (!KeepArchiveOpen)
+                {
+                    OpenArchive();
+                }
+
+                if (_archive == null)
+                {
+                    Console.WriteLine("[ZipFileStorage] ERROR: Archive is null");
+                    return;
+                }
+
                 // Нормализуем путь (заменяем \ на /)
                 relativePath = relativePath.Replace("\\", "/");
 
@@ -63,7 +109,6 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 if (existingEntry != null)
                 {
                     existingEntry.Delete();
-                    Console.WriteLine($"[ZipFileStorage] Deleted old entry: {relativePath}");
                 }
 
                 // Создаём новую запись
@@ -81,21 +126,40 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 Console.WriteLine($"[ZipFileStorage] Write error: {ex.Message}");
                 throw;
             }
+            finally
+            {
+                // В DEBUG режиме закрываем архив после записи
+                CloseArchive();
+            }
         }
 
         /// <summary>
         /// Прочитать файл из ZIP
+        /// DEBUG: Открывает ZIP → читает → закрывает
+        /// RELEASE: Читает из уже открытого ZIP
         /// </summary>
         public byte[]? ReadFile(string relativePath)
         {
-            if (_isDisposed || _archive == null)
+            if (_isDisposed)
             {
-                Console.WriteLine("[ZipFileStorage] ERROR: Cannot read, storage is disposed or null");
+                Console.WriteLine("[ZipFileStorage] ERROR: Cannot read, storage is disposed");
                 return null;
             }
 
             try
             {
+                // В DEBUG режиме открываем архив перед чтением
+                if (!KeepArchiveOpen)
+                {
+                    OpenArchive();
+                }
+
+                if (_archive == null)
+                {
+                    Console.WriteLine("[ZipFileStorage] ERROR: Archive is null");
+                    return null;
+                }
+
                 // Нормализуем путь
                 relativePath = relativePath.Replace("\\", "/");
 
@@ -120,33 +184,71 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 Console.WriteLine($"[ZipFileStorage] Read error: {ex.Message}");
                 return null;
             }
+            finally
+            {
+                // В DEBUG режиме закрываем архив после чтения
+                CloseArchive();
+            }
         }
 
         /// <summary>
         /// Проверить существует ли файл
+        /// DEBUG: Открывает ZIP → проверяет → закрывает
+        /// RELEASE: Проверяет в уже открытом ZIP
         /// </summary>
         public bool FileExists(string relativePath)
         {
-            if (_isDisposed || _archive == null)
+            if (_isDisposed)
                 return false;
 
-            relativePath = relativePath.Replace("\\", "/");
-            return _archive.GetEntry(relativePath) != null;
+            try
+            {
+                // В DEBUG режиме открываем архив
+                if (!KeepArchiveOpen)
+                {
+                    OpenArchive();
+                }
+
+                if (_archive == null)
+                    return false;
+
+                relativePath = relativePath.Replace("\\", "/");
+                return _archive.GetEntry(relativePath) != null;
+            }
+            finally
+            {
+                // В DEBUG режиме закрываем архив
+                CloseArchive();
+            }
         }
 
         /// <summary>
         /// Удалить файл из ZIP
+        /// DEBUG: Открывает ZIP → удаляет → закрывает
+        /// RELEASE: Удаляет из уже открытого ZIP
         /// </summary>
         public void DeleteFile(string relativePath)
         {
-            if (_isDisposed || _archive == null)
+            if (_isDisposed)
             {
-                Console.WriteLine("[ZipFileStorage] ERROR: Cannot delete, storage is disposed or null");
+                Console.WriteLine("[ZipFileStorage] ERROR: Cannot delete, storage is disposed");
                 return;
             }
 
             try
             {
+                // В DEBUG режиме открываем архив
+                if (!KeepArchiveOpen)
+                {
+                    OpenArchive();
+                }
+
+                if (_archive == null)
+                {
+                    Console.WriteLine("[ZipFileStorage] ERROR: Archive is null");
+                    return;
+                }
+
                 relativePath = relativePath.Replace("\\", "/");
                 var entry = _archive.GetEntry(relativePath);
 
@@ -161,25 +263,50 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 Console.WriteLine($"[ZipFileStorage] Delete error: {ex.Message}");
                 throw;
             }
+            finally
+            {
+                // В DEBUG режиме закрываем архив
+                CloseArchive();
+            }
         }
 
         /// <summary>
         /// Получить список файлов в папке
+        /// DEBUG: Открывает ZIP → читает список → закрывает
+        /// RELEASE: Читает из уже открытого ZIP
         /// </summary>
         public IEnumerable<string> GetFiles(string relativePath)
         {
-            if (_isDisposed || _archive == null)
+            if (_isDisposed)
                 return Enumerable.Empty<string>();
 
-            relativePath = relativePath.Replace("\\", "/").TrimEnd('/') + "/";
+            try
+            {
+                // В DEBUG режиме открываем архив
+                if (!KeepArchiveOpen)
+                {
+                    OpenArchive();
+                }
 
-            return _archive.Entries
-                .Where(e => e.FullName.StartsWith(relativePath) && !e.FullName.EndsWith("/"))
-                .Select(e => e.FullName);
+                if (_archive == null)
+                    return Enumerable.Empty<string>();
+
+                relativePath = relativePath.Replace("\\", "/").TrimEnd('/') + "/";
+
+                return _archive.Entries
+                    .Where(e => e.FullName.StartsWith(relativePath) && !e.FullName.EndsWith("/"))
+                    .Select(e => e.FullName)
+                    .ToList(); // Материализуем список до закрытия архива
+            }
+            finally
+            {
+                // В DEBUG режиме закрываем архив
+                CloseArchive();
+            }
         }
 
         /// <summary>
-        /// Закрыть ZIP архив
+        /// Закрыть ZIP архив и освободить ресурсы
         /// ВАЖНО: Все изменения сохраняются при вызове Dispose()
         /// </summary>
         public void Dispose()

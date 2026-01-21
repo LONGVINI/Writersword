@@ -136,19 +136,13 @@ namespace Writersword.Views
                 // Если "Нет" - просто продолжаем дальше
             }
 
-            // 4. Останавливаем кеширование для всех вкладок
-            foreach (var tab in tabCollection.Tabs)
-            {
-                tab.StopCaching();
-            }
-
-            // 5. Закрываем все Float окна
+            // 4. Закрываем все Float окна
             System.Console.WriteLine("[MainWindow] Closing all Float windows");
             HostWindow.CloseAllWindows();
 
             System.Console.WriteLine("[MainWindow] OnClosing finished - shutting down");
 
-            // 6. Закрываем приложение
+            // 5. Закрываем приложение
             // Флаг уже установлен, Shutdown() вызовет OnClosing снова, но мы выйдем сразу
             if (Application.Current?.ApplicationLifetime
                 is IClassicDesktopStyleApplicationLifetime desktop)

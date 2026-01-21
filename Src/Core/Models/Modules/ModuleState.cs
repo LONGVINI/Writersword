@@ -1,7 +1,7 @@
 ﻿namespace Writersword.Core.Models.Modules
 {
     /// <summary>
-    /// Состояние модуля для сохранения/восстановления
+    /// Состояние модуля для сохранения/восстановленияCacheUpdateService
     /// Содержит данные двух типов: основные (CustomData) и сессионные (SessionData)
     /// </summary>
     public class ModuleState

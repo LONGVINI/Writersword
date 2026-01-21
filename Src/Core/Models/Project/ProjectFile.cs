@@ -7,6 +7,7 @@ namespace Writersword.Core.Models.Project
     /// <summary>
     /// Модель файла проекта (.writersword)
     /// Один проект = один документ
+    /// Хранится в виде JSON внутри ZIP архива
     /// </summary>
     public class ProjectFile
     {
@@ -18,9 +19,17 @@ namespace Writersword.Core.Models.Project
         [JsonProperty("Type")]
         public string Type { get; set; } = "Novel";
 
-        /// <summary>Версия формата файла</summary>
+        /// <summary>Версия формата файла проекта</summary>
         [JsonProperty("FormatVersion")]
-        public string FormatVersion { get; set; } = "2.0";
+        public string FormatVersion { get; set; } = "1.0";
+
+        /// <summary>
+        /// Уникальный идентификатор проекта (GUID)
+        /// Используется в кеше для защиты от путаницы проектов
+        /// Генерируется автоматически при создании проекта
+        /// </summary>
+        [JsonProperty("Id")]
+        public string Id { get; set; } = Guid.NewGuid().ToString();
 
         /// <summary>Дата создания проекта</summary>
         [JsonProperty("CreatedAt")]
@@ -33,7 +42,7 @@ namespace Writersword.Core.Models.Project
         /// <summary>
         /// Данные модулей
         /// Ключ = тип модуля (TextEditor, Characters, Timeline...)
-        /// Значение = JSON данные модуля
+        /// Значение = данные модуля (может быть строка, объект, массив)
         /// </summary>
         [JsonProperty("ModulesData")]
         public Dictionary<string, object?> ModulesData { get; set; } = new();
@@ -53,7 +62,7 @@ namespace Writersword.Core.Models.Project
         [JsonProperty("IsEnabled")]
         public bool IsEnabled { get; set; } = true;
 
-        /// <summary>Настройки WorkModes</summary>
+        /// <summary>Настройки WorkModes для этого проекта</summary>
         [JsonProperty("WorkModes")]
         public List<UserWorkModeConfig> WorkModes { get; set; } = new();
 
@@ -67,49 +76,62 @@ namespace Writersword.Core.Models.Project
     }
 
     /// <summary>
-    /// Конфигурация WorkMode
+    /// Конфигурация WorkMode (режима работы)
+    /// Содержит информацию о том какие модули открыты и где расположены
     /// </summary>
     public class UserWorkModeConfig
     {
+        /// <summary>ID WorkMode (например "Writing", "Editing")</summary>
         [JsonProperty("Id")]
         public string Id { get; set; } = "";
 
+        /// <summary>Название WorkMode</summary>
         [JsonProperty("Title")]
         public string Title { get; set; } = "";
 
+        /// <summary>Активен ли этот WorkMode</summary>
         [JsonProperty("IsActive")]
         public bool IsActive { get; set; }
 
+        /// <summary>Слоты модулей (какие модули открыты и где)</summary>
         [JsonProperty("ModuleSlots")]
         public List<UserModuleSlotConfig> ModuleSlots { get; set; } = new();
     }
 
     /// <summary>
     /// Конфигурация слота модуля
+    /// Определяет какой модуль открыт и где он расположен в интерфейсе
     /// </summary>
     public class UserModuleSlotConfig
     {
+        /// <summary>Тип модуля (TextEditor, Timer, Characters...)</summary>
         [JsonProperty("ModuleType")]
         public string ModuleType { get; set; } = "";
 
+        /// <summary>Виден ли модуль</summary>
         [JsonProperty("IsVisible")]
         public bool IsVisible { get; set; }
 
+        /// <summary>Позиция модуля (Left, Right, Center, Float)</summary>
         [JsonProperty("Position")]
         public string? Position { get; set; }
     }
 
     /// <summary>
     /// Конфигурация размеров окон
+    /// Сохраняет размеры и позиции разделителей (splitters)
     /// </summary>
     public class UserWindowLayoutConfig
     {
+        /// <summary>Ширина окна в пикселях</summary>
         [JsonProperty("Width")]
         public int Width { get; set; }
 
+        /// <summary>Высота окна в пикселях</summary>
         [JsonProperty("Height")]
         public int Height { get; set; }
 
+        /// <summary>Позиции разделителей (splitters) в процентах</summary>
         [JsonProperty("SplitterPositions")]
         public List<double> SplitterPositions { get; set; } = new();
     }

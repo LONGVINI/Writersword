@@ -11,7 +11,6 @@ using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Infrastructure.Services.Modules;
 using Writersword.Modules.Common;
-using Writersword.Services;
 using Writersword.Src.Core.Interfaces.Services.Input;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.Services.UI;
@@ -19,7 +18,6 @@ using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.Infrastructure.Services;
 using Writersword.Src.Infrastructure.Services.Input;
-using Writersword.Src.Infrastructure.Services.Modules;
 using Writersword.Src.Infrastructure.Services.Project;
 using Writersword.Src.Infrastructure.Services.Storage;
 using Writersword.Src.Infrastructure.Services.Tabs;
@@ -95,8 +93,11 @@ namespace Writersword
             // Сервис управления WorkModes (переключение режимов)
             services.AddSingleton<IWorkModeService, WorkModeService>();
 
-            // Сервис кеширования данных (.wsasd файлы)
-            services.AddSingleton<ICacheService, CacheService>();
+            // Сервис хеширования (для оптимизации кеша)
+            services.AddSingleton<IHashService, HashService>();
+
+            // Сервис кеширования данных (.writersword.wsasd файлы, ZIP формат)
+            services.AddSingleton<IZipCacheService, ZipCacheService>();
 
             // Сервис фонового кеширования (каждые 10 секунд)
             services.AddSingleton<ICacheUpdateService, CacheUpdateService>();

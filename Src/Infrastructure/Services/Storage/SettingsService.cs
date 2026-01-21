@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -136,7 +137,10 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             }
         }
 
-        /// <summary>Добавить проект в список недавних</summary>
+        /// <summary>
+        /// Добавить проект в список недавних
+        /// Получает данные из уже загруженного проекта в IProjectService
+        /// </summary>
         public void AddRecentProject(string filePath)
         {
             if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
@@ -144,12 +148,22 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
             try
             {
-                // Загружаем проект чтобы получить информацию
-                var json = File.ReadAllText(filePath);
-                var project = JsonConvert.DeserializeObject<ProjectFile>(json);
+                // Получаем IProjectService из DI контейнера
+                var projectService = App.Services.GetRequiredService<IProjectService>();
+                if (projectService == null)
+                {
+                    Console.WriteLine($"[SettingsService] IProjectService not found in DI");
+                    return;
+                }
+
+                // Получаем проект из IProjectService (уже загружен в память)
+                var project = projectService.GetProjectByPath(filePath);
 
                 if (project == null)
+                {
+                    Console.WriteLine($"[SettingsService] Project not found in service: {filePath}");
                     return;
+                }
 
                 // Удаляем дубликат если есть
                 _settings.RecentProjects.RemoveAll(r => r.Path.Equals(filePath, StringComparison.OrdinalIgnoreCase));

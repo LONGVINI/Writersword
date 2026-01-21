@@ -11,11 +11,11 @@ namespace Writersword.Infrastructure.Services.Modules
     /// </summary>
     public class ModuleLifecycleService : IModuleLifecycleService
     {
-        private readonly ICacheService _cacheService;
+        private readonly IZipCacheService _cacheService;
         private readonly IModuleStateCollectorService _stateCollector;
 
         public ModuleLifecycleService(
-            ICacheService cacheService,
+            IZipCacheService cacheService,
             IModuleStateCollectorService stateCollector)
         {
             _cacheService = cacheService;
@@ -26,7 +26,10 @@ namespace Writersword.Infrastructure.Services.Modules
         /// Закрыть модуль с сохранением его состояния в кеш
         /// ЕДИНАЯ ТОЧКА закрытия модулей во всём приложении
         /// </summary>
-        public async Task CloseModuleAsync(IModule module, string projectPath)
+        /// <param name="module">Модуль для закрытия</param>
+        /// <param name="projectPath">Путь к проекту</param>
+        /// <param name="projectId">GUID проекта</param>
+        public async Task CloseModuleAsync(IModule module, string projectPath, string projectId)
         {
             Console.WriteLine($"[ModuleLifecycle] Closing module: {module.ModuleId}");
 
@@ -38,7 +41,7 @@ namespace Writersword.Infrastructure.Services.Modules
                 // 2. Сохраняем в кеш (если есть что сохранять)
                 if (state != null)
                 {
-                    await _cacheService.SaveModuleStateAsync(projectPath, module.ModuleId.ToString(), state);
+                    await _cacheService.SaveModuleStateAsync(projectPath, projectId, module.ModuleId.ToString(), state);
                     Console.WriteLine($"[ModuleLifecycle] State saved for: {module.ModuleId}");
                 }
 

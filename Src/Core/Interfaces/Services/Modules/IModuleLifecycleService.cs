@@ -17,9 +17,10 @@ namespace Writersword.Core.Interfaces.Services
         /// - Закрытии вкладки
         /// - Закрытии приложения
         /// </summary>
-        /// <param name="module">Модуль для закрытия</param>
-        /// <param name="projectPath">Путь к проекту (для сохранения в кеш)</param>
-        Task CloseModuleAsync(IModule module, string projectPath);
+        /// <param name="module"ё>Модуль для закрытия</param>
+        /// <param name="projectPath">Путь к проекту</param>
+        /// <param name="projectId">GUID проекта</param>
+        Task CloseModuleAsync(IModule module, string projectPath, string projectId);
 
         /// <summary>
         /// Открыть модуль с восстановлением его состояния из кеша

@@ -146,6 +146,8 @@
        📂 ПУСТЫЕ ПАПКИ (для структуры проекта)
        ======================================== -->
 	<ItemGroup>
+		<Folder Include="Docs\Architecture\" />
+		<Folder Include="Docs\UserGuide\" />
 		<Folder Include="Models\" />
 		<Folder Include="Resources\Images\" />
 		<Folder Include="Projects\" />

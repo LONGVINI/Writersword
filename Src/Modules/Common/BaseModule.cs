@@ -51,6 +51,17 @@ namespace Writersword.Modules.Common
         }
 
         /// <summary>
+        /// Принудительно обновить состояние модуля из контекста
+        /// Вызывает OnContextChanged заново
+        /// Используется при выходе из CompareMode
+        /// </summary>
+        public void RefreshFromContext()
+        {
+            OnContextChanged(Context);
+            Console.WriteLine($"[{ModuleId}] Context refreshed");
+        }
+
+        /// <summary>
         /// Событие запроса на закрытие модуля
         /// Вызывается когда модуль хочет закрыться
         /// </summary>
@@ -80,7 +91,7 @@ namespace Writersword.Modules.Common
             RequestDetach?.Invoke(this);
         }
 
-        /// <summary>
+        /// <summary>ы
         /// Вызывается при изменении контекста
         /// Переопределите в наследниках для реакции на смену контекста/проекта
         /// </summary>

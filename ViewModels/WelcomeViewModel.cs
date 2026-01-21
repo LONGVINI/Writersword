@@ -4,6 +4,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
+using System.Threading.Tasks;
 using Writersword.Core.Models.Project;
 using Writersword.Resources.Localization;
 using Writersword.Src.Core.Interfaces.Services.Storage;
@@ -119,11 +120,13 @@ namespace Writersword.ViewModels
             // Добавляем в недавние
             _settingsService.AddRecentProject(savePath);
 
+            LoadRecentProjects();
+
             ProjectSelected?.Invoke();
         }
 
         /// <summary>Открыть существующий проект</summary>
-        private async System.Threading.Tasks.Task OpenExistingProject()
+        private async Task OpenExistingProject()
         {
             var path = await _dialogService.OpenFileAsync();
             if (string.IsNullOrEmpty(path))
@@ -149,6 +152,8 @@ namespace Writersword.ViewModels
                 tabCollection.Add(tab);
                 tabCollection.ActiveTab = tab;
                 _settingsService.AddRecentProject(path);
+
+                LoadRecentProjects();
             }
 
             ProjectSelected?.Invoke();
@@ -213,6 +218,9 @@ namespace Writersword.ViewModels
                     tabCollection.Add(tab);
                     tabCollection.ActiveTab = tab;
                     _settingsService.AddRecentProject(recent.Path);
+
+                    LoadRecentProjects(); // Обновляем список в UI
+                    
                     ProjectSelected?.Invoke();
                 }
             }

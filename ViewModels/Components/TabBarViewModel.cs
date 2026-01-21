@@ -81,9 +81,10 @@ namespace Writersword.ViewModels.Components
             }
         }
 
-        //// <summary>
+        /// <summary>
         /// Активировать вкладку
-        /// Сохраняет старую вкладку в кеш и запускает кеширование для новой
+        /// Сохраняет старую вкладку в кеш перед переключением
+        /// Кеширование для новой вкладки управляется MainWindowViewModel
         /// </summary>
         private async void ActivateTab(DocumentTabViewModel tab)
         {
@@ -91,33 +92,23 @@ namespace Writersword.ViewModels.Components
 
             var oldTab = ActiveTab;
 
-            // Если есть старая вкладка - деактивируем её
+            // Если есть старая вкладка - деактивируем её и сохраняем в кеш
             if (oldTab != null && oldTab != tab)
             {
                 Console.WriteLine($"[TabBarViewModel] Deactivating old tab: {oldTab.Title}");
 
+                // Получаем функцию для получения активных модулей
+                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+
                 // Сохраняем в кеш асинхронно
-                await oldTab.SaveToCacheAsync();
+                await oldTab.SaveToCacheAsync(() => mainViewModel.GetActiveModules());
 
-                // Останавливаем фоновое кеширование
-                oldTab.StopCaching();
-
-                Console.WriteLine($"[TabBarViewModel] Old tab saved to cache and stopped");
+                Console.WriteLine($"[TabBarViewModel] Old tab saved to cache");
             }
 
             // Устанавливаем активную вкладку
+            // MainWindowViewModel подпишется на ActiveTabChanged и запустит кеширование
             ActiveTab = tab;
-
-            // Запускаем фоновое кеширование для новой вкладки
-            if (!tab.Context.IsInCompareMode)
-            {
-                tab.StartCaching();
-                Console.WriteLine($"[TabBarViewModel] Caching started for new tab: {tab.Title}");
-            }
-            else
-            {
-                Console.WriteLine($"[TabBarViewModel] Caching NOT started (Compare mode): {tab.Title}");
-            }
         }
 
         /// <summary>Закрыть вкладку</summary>

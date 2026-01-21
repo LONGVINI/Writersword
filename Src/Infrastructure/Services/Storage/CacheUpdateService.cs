@@ -2,35 +2,37 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reactive.Linq;
-using System.Runtime.Intrinsics.Arm;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Modules;
+using Writersword.Core.Models.Project;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 
-namespace Writersword.Src.Infrastructure.Services.Modules
+namespace Writersword.Src.Infrastructure.Services.Storage
 {
     /// <summary>
     /// Сервис фонового кеширования состояния модулей
-    /// Периодически сохраняет SessionData модулей в .wsasd файл
+    /// Периодически сохраняет SessionData модулей в .wsasd файл (ZIP архив)
     /// Используется для recovery и переключения вкладок/WorkMode
+    /// Использует debounce для оптимизации (сохраняет только после паузы)
     /// </summary>
     public class CacheUpdateService : ICacheUpdateService
     {
-        private readonly ICacheService _cacheService;
+        private readonly IZipCacheService _cacheService;
         private readonly IModuleStateCollectorService _stateCollector;
+        private readonly IDataComparisonService _comparisonService;
         private IDisposable? _cacheUpdateSubscription;
+        private DebounceTimer? _debounceTimer;
         private TimeSpan _interval = TimeSpan.FromSeconds(10);
         private string? _currentProjectPath;
         private Func<IEnumerable<IModule>>? _getActiveModules;
-        private readonly IDataComparisonService _comparisonService;
 
         /// <summary>Событие завершения кеширования</summary>
         public event EventHandler? CacheSaved;
 
         public CacheUpdateService(
-            ICacheService cacheService,
+            IZipCacheService cacheService,
             IModuleStateCollectorService stateCollector,
             IDataComparisonService comparisonService)
         {
@@ -57,14 +59,18 @@ namespace Writersword.Src.Infrastructure.Services.Modules
 
             Console.WriteLine($"[CacheUpdateService] Started for: {projectPath}");
         }
+
         /// <summary>Остановить фоновое кеширование</summary>
         public void Stop()
         {
-            // Сначала останавливаем таймер
+            // Останавливаем таймеры
             _cacheUpdateSubscription?.Dispose();
             _cacheUpdateSubscription = null;
 
-            // Только ПОТОМ обнуляем переменные
+            _debounceTimer?.Dispose();
+            _debounceTimer = null;
+
+            // Обнуляем переменные
             _currentProjectPath = null;
             _getActiveModules = null;
 
@@ -86,14 +92,9 @@ namespace Writersword.Src.Infrastructure.Services.Modules
 
         /// <summary>
         /// Выполнить обновление кеша
-        /// Собирает состояния всех активных модулей и сохраняет в .wsasd
-        /// НЕ СОХРАНЯЕТ если:
-        /// - Данные не изменились
-        /// - Все модули пустые (нет CustomData)
-        /// </summary>
-        /// <summary>
-        /// Выполнить обновление кеша
         /// Сохраняет ТОЛЬКО если данные отличаются от сохранённого ZIP файла
+        /// Использует хеширование для быстрой проверки изменений
+        /// Читает ZIP БЕЗ блокировки для оптимизации
         /// </summary>
         private async Task PerformCacheUpdateAsync()
         {
@@ -109,17 +110,20 @@ namespace Writersword.Src.Infrastructure.Services.Modules
 
             try
             {
+                // Получаем активные модули из UI потока
                 var activeModules = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     return getModulesCallback();
                 });
 
+                // Проверяем что сервис не остановился во время выполнения
                 if (_getActiveModules == null)
                 {
                     Console.WriteLine("[CacheUpdateService] Skipped: service stopped during execution");
                     return;
                 }
 
+                // Собираем состояния всех модулей
                 var moduleStates = _stateCollector.CollectAllStates(activeModules);
 
                 if (moduleStates.Count == 0)
@@ -157,6 +161,7 @@ namespace Writersword.Src.Infrastructure.Services.Modules
                 {
                     Console.WriteLine("[CacheUpdateService] No real data, skipping");
 
+                    // Удаляем устаревший кеш если он есть
                     if (_cacheService.HasCache(projectPath))
                     {
                         _cacheService.DeleteCache(projectPath);
@@ -166,37 +171,15 @@ namespace Writersword.Src.Infrastructure.Services.Modules
                     return;
                 }
 
-                // Получаем сервисы
-                var projectService = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
-                    .GetRequiredService<IProjectService>(App.Services);
+                // Читаем данные из ZIP БЕЗ блокировки файла
+                var savedProjectData = _cacheService.ReadProjectDataWithoutLock(projectPath);
 
-                var tab = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    var tabCollection = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
-                        .GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>(App.Services);
-                    return tabCollection.FindByPath(projectPath);
-                });
-
-                // Временно закрываем ZIP для чтения файла
-                if (tab != null)
-                {
-                    tab.Context.CloseZipStorage();
-                }
-
-                var savedProject = await projectService.LoadAsync(projectPath);
-
-                // Открываем ZIP обратно
-                if (tab != null)
-                {
-                    tab.Context.ReopenZipStorage();
-                }
-
-                if (savedProject != null)
+                if (savedProjectData != null)
                 {
                     bool dataChanged = false;
 
                     // Быстрая проверка: разное количество модулей = изменения есть
-                    if (moduleStates.Count != savedProject.ModulesData.Count)
+                    if (moduleStates.Count != savedProjectData.Count)
                     {
                         dataChanged = true;
                     }
@@ -205,7 +188,7 @@ namespace Writersword.Src.Infrastructure.Services.Modules
                         // Сравниваем данные каждого модуля
                         foreach (var kvp in moduleStates)
                         {
-                            if (!savedProject.ModulesData.TryGetValue(kvp.Key, out var savedData))
+                            if (!savedProjectData.TryGetValue(kvp.Key, out var savedData))
                             {
                                 dataChanged = true;
                                 break;
@@ -213,6 +196,7 @@ namespace Writersword.Src.Infrastructure.Services.Modules
 
                             var currentCustomData = kvp.Value.CustomData;
 
+                            // Оптимизированное сравнение для строк
                             if (currentCustomData is string currentStr && savedData is string savedStr)
                             {
                                 if (currentStr != savedStr)
@@ -236,31 +220,45 @@ namespace Writersword.Src.Infrastructure.Services.Modules
                     }
                 }
 
+                // Получаем ProjectId из проекта для ZIP кеша
+                // Читаем project.json БЕЗ блокировки с FileShare.ReadWrite
+                ProjectFile? project = null;
+                try
+                {
+                    using (var stream = new System.IO.FileStream(projectPath, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite))
+                    using (var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read))
+                    {
+                        var entry = archive.GetEntry("project.json");
+                        if (entry != null)
+                        {
+                            using (var entryStream = entry.Open())
+                            using (var reader = new System.IO.StreamReader(entryStream))
+                            {
+                                var json = reader.ReadToEnd();
+                                project = Newtonsoft.Json.JsonConvert.DeserializeObject<ProjectFile>(json);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[CacheUpdateService] Error reading ProjectId: {ex.Message}");
+                }
+
+                if (project == null)
+                {
+                    Console.WriteLine("[CacheUpdateService] ERROR: Cannot get ProjectId");
+                    return;
+                }
+
                 // Сохраняем кеш только если данные отличаются от ZIP
-                await _cacheService.SaveCacheAsync(projectPath, moduleStates);
+                await _cacheService.SaveCacheAsync(projectPath, project.Id, moduleStates);
                 CacheSaved?.Invoke(this, EventArgs.Empty);
                 Console.WriteLine($"[CacheUpdateService] Cache updated: {moduleStates.Count} modules");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[CacheUpdateService] ERROR: {ex.Message}");
-
-                // В случае ошибки переоткрываем ZIP
-                try
-                {
-                    var tab = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        var tabCollection = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
-                            .GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>(App.Services);
-                        return tabCollection.FindByPath(projectPath);
-                    });
-
-                    if (tab != null)
-                    {
-                        tab.Context.ReopenZipStorage();
-                    }
-                }
-                catch { }
             }
         }
     }

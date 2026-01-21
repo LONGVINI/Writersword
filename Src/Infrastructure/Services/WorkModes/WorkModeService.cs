@@ -173,7 +173,11 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         /// Переключиться на другой WorkMode
         /// Закрывает модули старого WorkMode и открывает новые
         /// </summary>
-        public async Task SwitchWorkModeAsync(WorkMode newWorkMode, IEnumerable<IModule> activeModules, string projectPath)
+        /// <param name="newWorkMode">Новый режим работы</param>
+        /// <param name="activeModules">Активные модули</param>
+        /// <param name="projectPath">Путь к проекту</param>
+        /// <param name="projectId">GUID проекта</param>
+        public async Task SwitchWorkModeAsync(WorkMode newWorkMode, IEnumerable<IModule> activeModules, string projectPath, string projectId)
         {
             var oldWorkMode = GetActiveWorkMode();
 
@@ -188,7 +192,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             // 1. Закрываем все модули старого WorkMode (с сохранением в кеш)
             foreach (var module in activeModules)
             {
-                await _lifecycleService.CloseModuleAsync(module, projectPath);
+                await _lifecycleService.CloseModuleAsync(module, projectPath, projectId);
             }
 
             // 2. Активируем новый WorkMode

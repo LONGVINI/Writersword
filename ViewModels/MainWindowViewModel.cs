@@ -16,7 +16,6 @@ using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
-using Writersword.Core.Models;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
 using Writersword.Src.Core.Interfaces.Services.Input;
@@ -73,7 +72,8 @@ namespace Writersword.ViewModels
         private readonly IWorkModeService _workModeService;
         private readonly DockFactory _dockFactory;
         private readonly ModuleRegistry _moduleRegistry;
-        private readonly ICacheService _cacheService;
+        private readonly IZipCacheService _cacheService;
+        private readonly ICacheUpdateService _cacheUpdateService;
 
         // ========================================
         // СОСТОЯНИЕ
@@ -140,7 +140,7 @@ namespace Writersword.ViewModels
             IHotKeyService hotKeyService,
             IWorkModeConfigurationService workModeConfigService,
             IWorkModeService workModeService,
-            ICacheService cacheService,
+            IZipCacheService cacheService,
             DockFactory dockFactory)
         {
             // Инициализация компонентов
@@ -160,6 +160,7 @@ namespace Writersword.ViewModels
             _workModeService = workModeService;
             _dockFactory = dockFactory;
             _cacheService = cacheService;
+            _cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
             _moduleRegistry = App.Services.GetRequiredService<ModuleRegistry>();
 
             // Связываем компоненты с MainWindow
@@ -206,6 +207,7 @@ namespace Writersword.ViewModels
         /// <summary>
         /// Обработчик активации вкладки (из TabBar)
         /// Восстанавливает WorkModes и Dock layout для вкладки
+        /// Запускает кеширование ТОЛЬКО для активной вкладки
         /// </summary>
         private void OnTabActivated(DocumentTabViewModel tab)
         {
@@ -228,6 +230,14 @@ namespace Writersword.ViewModels
 
                 RefreshWorkModeUI();
 
+                // КРИТИЧНО: Перезапускаем кеширование для ЭТОЙ вкладки
+                if (!string.IsNullOrEmpty(tab.FilePath) && !tab.Context.IsInCompareMode)
+                {
+                    _cacheUpdateService.Stop();
+                    _cacheUpdateService.Start(tab.FilePath, () => GetActiveModules());
+                    Console.WriteLine($"[MainWindowViewModel] Caching restarted for: {tab.Title}");
+                }
+
                 return;
             }
 
@@ -239,8 +249,15 @@ namespace Writersword.ViewModels
             {
                 _tabLayouts[tabKey] = DockLayout;
             }
-        }
 
+            // Запускаем кеширование для НОВОЙ вкладки
+            if (!string.IsNullOrEmpty(tab.FilePath) && !tab.Context.IsInCompareMode)
+            {
+                _cacheUpdateService.Stop();
+                _cacheUpdateService.Start(tab.FilePath, () => GetActiveModules());
+                Console.WriteLine($"[MainWindowViewModel] Caching started for new tab: {tab.Title}");
+            }
+        }
         /// <summary>
         /// Обработчик переключения WorkMode (из WorkModeBar)
         /// Показывает модули нового режима
@@ -425,6 +442,10 @@ namespace Writersword.ViewModels
         {
             Console.WriteLine($"[MainWindowViewModel] Project closed: {tab.Title}");
 
+            // Останавливаем кеширование если это была активная вкладка
+            _cacheUpdateService.Stop();
+            Console.WriteLine($"[MainWindowViewModel] Caching stopped");
+
             // Удаляем layout вкладки
             string tabKey = tab.FilePath ?? tab.Id;
             _tabLayouts.Remove(tabKey);
@@ -438,12 +459,16 @@ namespace Writersword.ViewModels
         {
             Console.WriteLine("[MainWindowViewModel] ClearUIWhenNoTabs called");
 
+            // Останавливаем кеширование когда нет вкладок
+            _cacheUpdateService.Stop();
+            Console.WriteLine("[MainWindowViewModel] Caching stopped (no tabs)");
+
             // ПОЛНАЯ ОЧИСТКА UI!
             ActiveWorkMode = null;
             DockLayout = null;
 
             // Очищаем WorkModeBar
-            WorkModeBar.LoadWorkModes(new System.Collections.Generic.List<Core.Models.WorkModes.WorkMode>());
+            WorkModeBar.LoadWorkModes(new List<WorkMode>());
 
             // Очищаем ModulePanel
             ModulePanel.Clear();
@@ -474,7 +499,11 @@ namespace Writersword.ViewModels
             WorkModeBar.LoadWorkModes(workModes);
 
             // Устанавливаем провайдер модулей для переключения WorkMode
-            WorkModeBar.SetActiveModulesProvider(() => GetActiveModules(), tab.FilePath);
+
+            if (project != null)
+            {
+                WorkModeBar.SetActiveModulesProvider(() => GetActiveModules(), tab.FilePath, project.Id);
+            }
 
             // Активируем первый WorkMode
             var activeWM = workModes.FirstOrDefault(wm => wm.IsActive) ?? workModes.FirstOrDefault();
