@@ -13,6 +13,7 @@ using System.Linq;
 using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
+using Writersword.Src.Core.Interfaces.Services;
 using Writersword.ViewModels;
 
 namespace Writersword.Src.Infrastructure.Dock
@@ -25,6 +26,17 @@ namespace Writersword.Src.Infrastructure.Dock
     {
         private readonly ModuleRegistry _moduleRegistry;
         private readonly Dictionary<string, bool> _modulesBeingMoved = new();
+
+        /// <summary>Словарь подписок по пути к проекту (для безопасной отписки)</summary>
+        private readonly Dictionary<string, List<IDisposable>> _subscriptions = new();
+
+        /// <summary>Сервис автосохранения для уведомления об изменениях</summary>
+        private IWorkspaceAutoSaveService? _autoSaveService;
+
+        /// <summary>Путь к текущему проекту (для логирования)</summary>
+        private string? _currentProjectPath;
+
+
         public DockFactory(ModuleRegistry moduleRegistry)
         {
             _moduleRegistry = moduleRegistry;
@@ -466,7 +478,7 @@ namespace Writersword.Src.Infrastructure.Dock
 
             if (document is Document diagnosticDoc)
             {
-                Console.WriteLine($"[BEFORE] CanFloat={diagnosticDoc.CanFloat}, Owner={diagnosticDoc.Owner?.Id ?? "NULL"}");
+                Console.WriteLine($"[DockFactory] CanFloat={diagnosticDoc.CanFloat}, Owner={diagnosticDoc.Owner?.Id ?? "NULL"}");
             }
 
             if (owner.Factory == null)
@@ -479,7 +491,7 @@ namespace Writersword.Src.Infrastructure.Dock
             if (document is Document doc)
             {
                 doc.CanFloat = true;
-                Console.WriteLine($"[SetOwnerAndRegisterForFloat] Set CanFloat=true");
+                Console.WriteLine($"[DockFactory] Set CanFloat=true");
             }
 
             string moduleId = document.Id?.Replace("Module_", "") ?? "";
@@ -1095,6 +1107,350 @@ namespace Writersword.Src.Infrastructure.Dock
             mainDock.VisibleDockables.Add(contentDock);
 
             Console.WriteLine($"[DockFactory] Added top panel with vertical split");
+        }
+
+        /// <summary>
+        /// Сериализовать текущий layout в DockLayoutConfig
+        /// Используется для сохранения конфигурации в workspace.json
+        /// </summary>
+        /// <param name="rootDock">Корневой Dock для сериализации</param>
+        /// <returns>Конфигурация layout или null если ошибка</returns>
+        public DockLayoutConfig? SerializeCurrentLayout(IRootDock rootDock)
+        {
+            try
+            {
+                Console.WriteLine("[DockFactory] Serializing current layout");
+
+                var mainDock = rootDock.VisibleDockables?.FirstOrDefault() as ProportionalDock;
+                if (mainDock == null)
+                {
+                    Console.WriteLine("[DockFactory] No main dock to serialize");
+                    return null;
+                }
+
+                var config = new DockLayoutConfig
+                {
+                    MainOrientation = ((Avalonia.Layout.Orientation)mainDock.Orientation) == Avalonia.Layout.Orientation.Horizontal
+                                        ? DockOrientation.Horizontal
+                                        : DockOrientation.Vertical,
+                };
+
+                // Рекурсивно обходим все панели
+                SerializeDockRecursive(mainDock, config.Panels);
+
+                Console.WriteLine($"[DockFactory] Serialized layout: {config.Panels.Count} panels");
+                return config;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[DockFactory] Error serializing layout: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Рекурсивно сериализовать панели Dock
+        /// </summary>
+        private void SerializeDockRecursive(IDock dock, List<DockPanelConfig> panels)
+        {
+            if (dock.VisibleDockables == null)
+                return;
+
+            foreach (var dockable in dock.VisibleDockables)
+            {
+                // Пропускаем сплиттеры
+                if (dockable is ProportionalDockSplitter)
+                    continue;
+
+                // Если это DocumentDock - сохраняем список модулей
+                if (dockable is DocumentDock docDock)
+                {
+                    var panelConfig = new DockPanelConfig
+                    {
+                        Id = docDock.Id ?? Guid.NewGuid().ToString(),
+                        Proportion = docDock.Proportion,
+                        Modules = new List<string>()
+                    };
+
+                    // Собираем ID модулей
+                    if (docDock.VisibleDockables != null)
+                    {
+                        foreach (var doc in docDock.VisibleDockables)
+                        {
+                            if (doc is Document document && document.Id != null)
+                            {
+                                // Извлекаем ModuleId из "Module_TextEditor" → "TextEditor"
+                                var moduleId = document.Id.Replace("Module_", "");
+                                panelConfig.Modules.Add(moduleId);
+                            }
+                        }
+                    }
+
+                    panels.Add(panelConfig);
+                    Console.WriteLine($"[DockFactory] Serialized panel: {panelConfig.Id}, modules: {panelConfig.Modules.Count}");
+                }
+
+                // Если это вложенный ProportionalDock - рекурсивно обрабатываем
+                else if (dockable is ProportionalDock nestedDock)
+                {
+                    var nestedConfig = new DockPanelConfig
+                    {
+                        Id = nestedDock.Id ?? Guid.NewGuid().ToString(),
+                        Proportion = nestedDock.Proportion,
+                        NestedLayout = new DockLayoutConfig
+                        {
+                            MainOrientation = ((Avalonia.Layout.Orientation)nestedDock.Orientation) == Avalonia.Layout.Orientation.Horizontal
+                                        ? DockOrientation.Horizontal
+                                        : DockOrientation.Vertical,
+                            Panels = new List<DockPanelConfig>()
+                        }
+                    };
+
+                    // Рекурсивно обрабатываем вложенные панели
+                    SerializeDockRecursive(nestedDock, nestedConfig.NestedLayout.Panels);
+
+                    panels.Add(nestedConfig);
+                    Console.WriteLine($"[DockFactory] Serialized nested layout: {nestedConfig.Id}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Установить сервис автосохранения для проекта
+        /// Вызывается из MainWindowViewModel при создании layout
+        /// </summary>
+        /// <param name="autoSaveService">Сервис автосохранения</param>
+        /// <param name="projectPath">Путь к файлу проекта</param>
+        public void SetAutoSaveService(IWorkspaceAutoSaveService autoSaveService, string projectPath)
+        {
+            _autoSaveService = autoSaveService;
+            _currentProjectPath = projectPath;
+
+            // Создаём список подписок для этого проекта если его нет
+            if (!_subscriptions.ContainsKey(projectPath))
+            {
+                _subscriptions[projectPath] = new List<IDisposable>();
+            }
+
+            Console.WriteLine($"[DockFactory] AutoSaveService set for: {projectPath}");
+        }
+
+        /// <summary>
+        /// Подписаться на события изменения Dock структуры (рекурсивно)
+        /// Отслеживает изменения размеров, активных вкладок, добавление/удаление элементов
+        /// </summary>
+        /// <param name="dockable">Корневой Dock элемент</param>
+        /// <param name="projectPath">Путь к файлу проекта</param>
+        public void SubscribeToDockEvents(IDockable dockable, string projectPath)
+        {
+            if (!_subscriptions.ContainsKey(projectPath))
+            {
+                _subscriptions[projectPath] = new List<IDisposable>();
+            }
+
+            var subscriptions = _subscriptions[projectPath];
+
+            Console.WriteLine($"[DockFactory] SUBSCRIBE for: {dockable.Id}");
+            Console.WriteLine($"  Type: {dockable.GetType().Name}");
+
+            // Подписываемся на изменение свойств Dock элемента (Proportion, ActiveDockable)
+            // Используем INotifyPropertyChanged вместо IReactiveObject т.к. Dock.Avalonia не использует ReactiveUI
+            if (dockable is System.ComponentModel.INotifyPropertyChanged notifyProperty)
+            {
+                Console.WriteLine($"  Subscribing to PropertyChanged...");
+
+                // Обработчик изменения свойств
+                System.ComponentModel.PropertyChangedEventHandler handler = (sender, e) =>
+                {
+                    // Логируем ВСЕ изменения свойств для диагностики
+                    // Console.WriteLine($"[DockFactory] PropertyChanged: {dockable.Id}.{e.PropertyName}");
+
+                    // Отслеживаем только изменения Proportion (размеры) и ActiveDockable (активная вкладка)
+                    if (e.PropertyName == nameof(IDock.Proportion) ||
+                        e.PropertyName == nameof(IDock.ActiveDockable))
+                    {
+                        OnDockPropertyChanged(projectPath, dockable.Id);
+                    }
+                };
+
+                notifyProperty.PropertyChanged += handler;
+
+                // Создаём IDisposable для безопасной отписки при закрытии проекта
+                var subscription = System.Reactive.Disposables.Disposable.Create(() =>
+                {
+                    notifyProperty.PropertyChanged -= handler;
+                    Console.WriteLine($"[DockFactory] Unsubscribed PropertyChanged: {dockable.Id}");
+                });
+
+                subscriptions.Add(subscription);
+                Console.WriteLine($"  PropertyChanged subscribed");
+            }
+            else
+            {
+                Console.WriteLine($"  NOT INotifyPropertyChanged");
+            }
+
+            // Подписываемся на изменение коллекции VisibleDockables (добавление/удаление/перемещение модулей)
+            if (dockable is IDock dock && dock.VisibleDockables is System.Collections.Specialized.INotifyCollectionChanged observable)
+            {
+                Console.WriteLine($"  Subscribing to CollectionChanged...");
+
+                // Обработчик изменения коллекции
+                System.Collections.Specialized.NotifyCollectionChangedEventHandler handler = (s, e) =>
+                    OnDockCollectionChanged(projectPath, dockable.Id, e);
+
+                observable.CollectionChanged += handler;
+
+                // Создаём IDisposable для безопасной отписки
+                var subscription = System.Reactive.Disposables.Disposable.Create(() =>
+                {
+                    observable.CollectionChanged -= handler;
+                    Console.WriteLine($"[DockFactory] Unsubscribed CollectionChanged: {dockable.Id}");
+                });
+
+                subscriptions.Add(subscription);
+                Console.WriteLine($"  CollectionChanged subscribed");
+            }
+
+            // Подписываемся на изменение Owner у Document (отслеживание Float/Dock операций)
+            if (dockable is Document document)
+            {
+                Console.WriteLine($"  Subscribing to Owner changes...");
+
+                // Обработчик изменения Owner (когда модуль становится плавающим окном)
+                System.ComponentModel.PropertyChangedEventHandler handler = (sender, e) =>
+                {
+                    if (e.PropertyName == nameof(Document.Owner))
+                    {
+                        OnDocumentOwnerChanged(projectPath, document.Id);
+                    }
+                };
+
+                // Document тоже должен быть INotifyPropertyChanged
+                if (document is System.ComponentModel.INotifyPropertyChanged docNotify)
+                {
+                    docNotify.PropertyChanged += handler;
+
+                    // Создаём IDisposable для безопасной отписки
+                    var subscription = System.Reactive.Disposables.Disposable.Create(() =>
+                    {
+                        docNotify.PropertyChanged -= handler;
+                        Console.WriteLine($"[DockFactory] Unsubscribed Owner: {document.Id}");
+                    });
+
+                    subscriptions.Add(subscription);
+                    Console.WriteLine($"  Owner subscribed");
+                }
+            }
+
+            Console.WriteLine($"[DockFactory] END SUBSCRIBE");
+
+            // Рекурсивно подписываемся на дочерние элементы
+            if (dockable is IDock dockWithChildren && dockWithChildren.VisibleDockables != null)
+            {
+                foreach (var child in dockWithChildren.VisibleDockables)
+                {
+                    SubscribeToDockEvents(child, projectPath);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Обработчик изменения свойств Dock элемента
+        /// Вызывается при изменении Proportion, ActiveDockable и т.д.
+        /// </summary>
+        private void OnDockPropertyChanged(string projectPath, string? dockId)
+        {
+            if (_autoSaveService == null || _currentProjectPath != projectPath)
+            {
+                return;
+            }
+
+            Console.WriteLine($"[DockFactory] Property changed: {dockId}");
+            _autoSaveService.NotifyChange();
+        }
+
+        /// <summary>
+        /// Обработчик изменения коллекции VisibleDockables
+        /// Вызывается при добавлении/удалении/перемещении элементов
+        /// </summary>
+        private void OnDockCollectionChanged(string projectPath, string? dockId, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            if (_autoSaveService == null || _currentProjectPath != projectPath)
+            {
+                return;
+            }
+
+            // Игнорируем изменения во время внутренних операций (drag&drop эмуляция)
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Remove && e.OldItems != null)
+            {
+                foreach (var item in e.OldItems)
+                {
+                    if (item is Document doc)
+                    {
+                        var moduleId = doc.Id?.Replace("Module_", "") ?? "";
+                        if (_modulesBeingMoved.TryGetValue(moduleId, out var isMoving) && isMoving)
+                        {
+                            Console.WriteLine($"[DockFactory] Ignoring collection change - internal move: {moduleId}");
+                            return;
+                        }
+                    }
+                }
+            }
+
+            Console.WriteLine($"[DockFactory] Collection changed in {dockId}: {e.Action}");
+            _autoSaveService.NotifyChange();
+        }
+
+        /// <summary>
+        /// Обработчик изменения Owner у Document (Float/Dock операции)
+        /// Вызывается когда документ становится плавающим или возвращается в Dock
+        /// </summary>
+        private void OnDocumentOwnerChanged(string projectPath, string? documentId)
+        {
+            if (_autoSaveService == null || _currentProjectPath != projectPath)
+            {
+                return;
+            }
+
+            Console.WriteLine($"[DockFactory] Owner changed: {documentId}");
+            _autoSaveService.NotifyChange();
+        }
+        /// <summary>
+        /// Отписаться от всех событий для проекта
+        /// Вызывается из ProjectWorkflow при закрытии проекта
+        /// Освобождает ресурсы и предотвращает утечки памяти
+        /// </summary>
+        /// <param name="projectPath">Путь к файлу проекта</param>
+        public void UnsubscribeFromDockEvents(string projectPath)
+        {
+            if (!_subscriptions.ContainsKey(projectPath))
+            {
+                Console.WriteLine($"[DockFactory] No subscriptions found for: {projectPath}");
+                return;
+            }
+
+            var subscriptions = _subscriptions[projectPath];
+
+            Console.WriteLine($"[DockFactory] Unsubscribing from {subscriptions.Count} events for: {projectPath}");
+
+            // Отписываемся от всех событий
+            foreach (var subscription in subscriptions)
+            {
+                subscription.Dispose();
+            }
+
+            // Удаляем из словаря
+            _subscriptions.Remove(projectPath);
+
+            // Если это текущий проект - очищаем ссылки
+            if (_currentProjectPath == projectPath)
+            {
+                _autoSaveService = null;
+                _currentProjectPath = null;
+            }
+
+            Console.WriteLine($"[DockFactory] Unsubscribed successfully from: {projectPath}");
         }
     }
 }

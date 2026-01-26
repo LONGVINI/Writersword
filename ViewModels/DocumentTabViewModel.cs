@@ -161,13 +161,7 @@ namespace Writersword.ViewModels
                     if (currentStates.Count > 0)
                     {
                         // Временно закрываем ZIP чтобы освободить файл для чтения
-                        Context.CloseZipStorage();
-
-                        // Загружаем сохранённую версию проекта из ZIP
                         var savedProject = await projectService.LoadAsync(FilePath);
-
-                        // Открываем ZIP обратно для работы модулей
-                        Context.ReopenZipStorage();
 
                         if (savedProject != null)
                         {
@@ -229,13 +223,6 @@ namespace Writersword.ViewModels
             catch (Exception ex)
             {
                 Console.WriteLine($"[DocumentTabViewModel] SaveToCache error: {ex.Message}");
-
-                // В случае ошибки обязательно переоткрываем ZIP
-                try
-                {
-                    Context.ReopenZipStorage();
-                }
-                catch { }
             }
         }
 

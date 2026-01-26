@@ -26,6 +26,7 @@ using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.Infrastructure.Dock;
 using Writersword.ViewModels.Components;
 using Writersword.Core.Models.Settings;
+using Writersword.Src.Core.Interfaces.Services;
 
 namespace Writersword.ViewModels
 {
@@ -190,6 +191,8 @@ namespace Writersword.ViewModels
             {
                 if (tab != null)
                     OnTabActivated(tab);
+
+                MenuBar.UpdateHasActiveTab();
             };
 
             // Инициализация
@@ -223,6 +226,17 @@ namespace Writersword.ViewModels
             {
                 Console.WriteLine($"[MainWindowViewModel] Reusing existing layout for tab: {tab.Title}");
                 DockLayout = existingLayout;
+
+                // Восстанавливаем AutoSaveService для ЭТОГО проекта
+                if (!string.IsNullOrEmpty(tab.FilePath))
+                {
+                    var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(tab.FilePath);
+                    if (autoSave != null)
+                    {
+                        _dockFactory.SetAutoSaveService(autoSave, tab.FilePath);
+                        Console.WriteLine($"[MainWindowViewModel] AutoSaveService restored for: {tab.Title}");
+                    }
+                }
 
                 // Загружаем WorkModes в компонент
                 var workModes = _workModeService.GetAllWorkModes();
@@ -305,7 +319,12 @@ namespace Writersword.ViewModels
                 {
                     ModuleId = moduleId,
                     IsVisible = true,
-                    IsCloseable = _workModeConfigService.CanRemoveModule(ActiveWorkMode.WorkModeId, moduleId),
+                    IsCloseable = _workModeConfigService.CanRemoveModule(
+                        _tabCollection.ActiveTab?.GetProject()?.Type
+                            ?? throw new InvalidOperationException("[OnModuleAdded] No active project!"),
+                        ActiveWorkMode.WorkModeId,
+                        moduleId
+                    ),
                     MinWidth = 200,
                     MinHeight = 150,
                     PreferredPosition = PreferredDockPosition.RightAsTab
@@ -341,6 +360,15 @@ namespace Writersword.ViewModels
 
             UpdateModuleMenuItems();
             FocusModule(moduleId);
+
+            // Уведомляем об изменении для автосохранения
+            var tab = _tabCollection.ActiveTab;
+            if (tab?.FilePath != null)
+            {
+                var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(tab.FilePath);
+                autoSave?.NotifyChange();
+                Console.WriteLine("[MainWindowViewModel] NotifyChange called after module added");
+            }
         }
 
         /// <summary>
@@ -491,9 +519,8 @@ namespace Writersword.ViewModels
 
             Console.WriteLine($"[InitializeWorkModesForTab] Initializing for: {tab.Title}");
 
-            // Загружаем WorkModes из проекта или глобальных настроек
-            List<WorkMode>? savedWorkModes = null; // TODO: Загрузка из UserConfig
-            var workModes = _workModeService.InitializeWorkModes(project.Type, savedWorkModes);
+            // Загружаем WorkModes из проекта (уже загружены в ProjectWorkflow)
+            var workModes = _workModeService.InitializeWorkModes(project.Type, project.WorkModes);
 
             // Загружаем в компонент WorkModeBar
             WorkModeBar.LoadWorkModes(workModes);
@@ -514,6 +541,18 @@ namespace Writersword.ViewModels
                 // Создаём Dock layout
                 var layout = _dockFactory.CreateLayout(activeWM);
                 DockLayout = layout;
+
+                // Устанавливаем AutoSaveService и подписываемся на события
+                if (!string.IsNullOrEmpty(tab.FilePath))
+                {
+                    var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(tab.FilePath);
+                    if (autoSave != null)
+                    {
+                        _dockFactory.SetAutoSaveService(autoSave, tab.FilePath);
+                        _dockFactory.SubscribeToDockEvents(layout, tab.FilePath);
+                        Console.WriteLine($"[MainWindowViewModel] DockFactory subscribed to events for: {tab.Title}");
+                    }
+                }
 
                 // Загружаем модули в панель
                 ModulePanel.LoadModulesForWorkMode(activeWM);
@@ -1004,7 +1043,13 @@ namespace Writersword.ViewModels
             // 2. Обновляем ТОЛЬКО меню (БЕЗ перезагрузки панели!)
             UpdateModuleMenuItems();
 
-            Console.WriteLine($"[MainWindowViewModel] UI updated after dock close");
+            var tab = _tabCollection.ActiveTab;
+            if (tab?.FilePath != null)
+            {
+                var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(tab.FilePath);
+                autoSave?.NotifyChange();
+                Console.WriteLine($"[MainWindowViewModel] UI updated after dock close");
+            }
         }
     }
 }

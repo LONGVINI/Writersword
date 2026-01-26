@@ -586,11 +586,11 @@
     <comment>Save workspace configuration submenu</comment>
   </data>
   <data name="Menu_Workspace_SaveForProject" xml:space="preserve">
-    <value>For This Project Only</value>
+    <value>Save for This Project</value>
     <comment>Save configuration for current project only</comment>
   </data>
   <data name="Menu_Workspace_SaveForType" xml:space="preserve">
-    <value>For All Projects of This Type</value>
+    <value>Save as Global Settings for Project Type</value>
     <comment>Save configuration for all projects of this type</comment>
   </data>
   <data name="Menu_Workspace_ResetToDefault" xml:space="preserve">
@@ -612,5 +612,41 @@
   <data name="Menu_Help_About" xml:space="preserve">
     <value>About</value>
     <comment>About application menu item</comment>
+  </data>
+  <data name="Menu_Workspace_ResetToGlobal" xml:space="preserve">
+    <value>Reset to Global Settings</value>
+    <comment>Menu item to reset workspace to saved global config</comment>
+  </data>
+  <data name="Notification_WorkspaceSavedGlobal" xml:space="preserve">
+    <value>Configuration saved globally</value>
+    <comment>Notification after saving global config</comment>
+  </data>
+  <data name="Notification_WorkspaceSavedProject" xml:space="preserve">
+    <value>Configuration saved for project</value>
+    <comment>Notification after saving project config</comment>
+  </data>
+  <data name="Notification_WorkspaceResetGlobal" xml:space="preserve">
+    <value>Configuration reset to global</value>
+    <comment>Notification after reset to global</comment>
+  </data>
+  <data name="Notification_WorkspaceResetDefault" xml:space="preserve">
+    <value>Configuration reset to default</value>
+    <comment>Notification after reset to default</comment>
+  </data>
+  <data name="Dialog_ResetToDefaultTitle" xml:space="preserve">
+    <value>Reset to Default Configuration?</value>
+    <comment>Dialog title for reset to default confirmation</comment>
+  </data>
+  <data name="Dialog_ResetToDefaultMessage" xml:space="preserve">
+    <value>Your local configuration will be lost. This action cannot be undone. Continue?</value>
+    <comment>Warning message in reset dialog</comment>
+  </data>
+  <data name="Dialog_ResetToGlobalTitle" xml:space="preserve">
+    <value>Reset to Global Configuration?</value>
+    <comment>Dialog title for reset to global confirmation</comment>
+  </data>
+  <data name="Dialog_ResetToGlobalMessage" xml:space="preserve">
+    <value>Your local configuration will be replaced with the global one. Continue?</value>
+    <comment>Warning message for global reset</comment>
   </data>
 </root>

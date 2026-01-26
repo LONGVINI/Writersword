@@ -472,13 +472,13 @@
     <value>Сохранить конфигурацию</value>
   </data>
   <data name="Menu_Workspace_SaveForProject" xml:space="preserve">
-    <value>Только для этого проекта</value>
+    <value>Сохранить для этого проекта</value>
   </data>
   <data name="Menu_Workspace_SaveForType" xml:space="preserve">
-    <value>Для всех проектов этого типа</value>
+    <value>Сохранить как глобальные настройки для типа проекта</value>
   </data>
   <data name="Menu_Workspace_ResetToDefault" xml:space="preserve">
-    <value>Сбросить до дефолта</value>
+    <value>Сбросить до дефолтных настроек</value>
   </data>
   <data name="Menu_Tools_Statistics" xml:space="preserve">
     <value>Статистика</value>
@@ -491,5 +491,32 @@
   </data>
   <data name="Menu_Help_About" xml:space="preserve">
     <value>О программе</value>
+  </data>
+  <data name="Menu_Workspace_ResetToGlobal" xml:space="preserve">
+    <value>Восстановить из глобальных настроек</value>
+  </data>
+  <data name="Notification_WorkspaceSavedGlobal" xml:space="preserve">
+    <value>Конфигурация сохранена глобально</value>
+  </data>
+  <data name="Notification_WorkspaceSavedProject" xml:space="preserve">
+    <value>Конфигурация сохранена для проекта</value>
+  </data>
+  <data name="Notification_WorkspaceResetGlobal" xml:space="preserve">
+    <value>Конфигурация сброшена до глобальной</value>
+  </data>
+  <data name="Notification_WorkspaceResetDefault" xml:space="preserve">
+    <value>Конфигурация сброшена до дефолта</value>
+  </data>
+  <data name="Dialog_ResetToDefaultTitle" xml:space="preserve">
+    <value>Сбросить до дефолтной конфигурации?</value>
+  </data>
+  <data name="Dialog_ResetToDefaultMessage" xml:space="preserve">
+    <value>Ваша локальная конфигурация будет утеряна. Это действие нельзя отменить. Продолжить?</value>
+  </data>
+  <data name="Dialog_ResetToGlobalTitle" xml:space="preserve">
+    <value>Сбросить до глобальной конфигурации?</value>
+  </data>
+  <data name="Dialog_ResetToGlobalMessage" xml:space="preserve">
+    <value>Ваша локальная конфигурация будет заменена глобальной. Продолжить?</value>
   </data>
 </root>

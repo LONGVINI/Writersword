@@ -83,8 +83,8 @@ namespace Writersword.ViewModels.Components
 
         /// <summary>
         /// Активировать вкладку
-        /// Сохраняет старую вкладку в кеш перед переключением
-        /// Кеширование для новой вкладки управляется MainWindowViewModel
+        /// Сохраняет workspace.json старой вкладки НЕМЕДЛЕННО перед переключением
+        /// Сохраняет кеш старой вкладки
         /// </summary>
         private async void ActivateTab(DocumentTabViewModel tab)
         {
@@ -92,15 +92,28 @@ namespace Writersword.ViewModels.Components
 
             var oldTab = ActiveTab;
 
-            // Если есть старая вкладка - деактивируем её и сохраняем в кеш
+            // Если есть старая вкладка - деактивируем её
             if (oldTab != null && oldTab != tab)
             {
                 Console.WriteLine($"[TabBarViewModel] Deactivating old tab: {oldTab.Title}");
 
+                // КРИТИЧНО: Сохраняем workspace.json НЕМЕДЛЕННО если есть pending changes!
+                if (!string.IsNullOrEmpty(oldTab.FilePath))
+                {
+                    var workflow = App.Services.GetRequiredService<IProjectWorkflow>();
+                    var autoSave = workflow.GetAutoSaveServiceForProject(oldTab.FilePath);
+
+                    if (autoSave != null)
+                    {
+                        await autoSave.SaveNowAsync();  // ← СОХРАНЯЕМ СРАЗУ!
+                        Console.WriteLine($"[TabBarViewModel] workspace.json saved immediately for: {oldTab.Title}");
+                    }
+                }
+
                 // Получаем функцию для получения активных модулей
                 var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
 
-                // Сохраняем в кеш асинхронно
+                // Сохраняем кеш асинхронно
                 await oldTab.SaveToCacheAsync(() => mainViewModel.GetActiveModules());
 
                 Console.WriteLine($"[TabBarViewModel] Old tab saved to cache");

@@ -8,8 +8,14 @@ using System.IO;
 using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
+using Writersword.Core.Models.Settings;
+using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.Services.Storage;
+using Writersword.Src.Core.Interfaces.Services.UI;
 using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Src.Core.Interfaces.WorkModes;
+using Writersword.Src.ProjectTypes.Common;
+using Writersword.Views;
 
 namespace Writersword.ViewModels.Components
 {
@@ -22,6 +28,11 @@ namespace Writersword.ViewModels.Components
         private readonly IProjectWorkflow _projectWorkflow;
         private readonly ISettingsService _settingsService;
         private readonly ITabCollection _tabCollection;
+        private readonly IWorkModeConfigurationService _workModeConfigService;
+        private readonly INotificationService _notificationService;
+        private readonly IDialogService _dialogService;
+        private readonly IWorkspaceConfigService _workspaceConfigService;
+        private readonly ProjectTypeRegistry _projectTypeRegistry;
 
         // Провайдер для доступа к MainWindowViewModel (для меню View)
         private Func<MainWindowViewModel>? _mainViewModelProvider;
@@ -87,17 +98,57 @@ namespace Writersword.ViewModels.Components
         /// <summary>Команда выхода из приложения</summary>
         public ReactiveCommand<Unit, Unit> ExitCommand { get; }
 
+        /// <summary>Команда сохранения конфигурации для проекта (локальная)</summary>
+        public ReactiveCommand<Unit, Unit> SaveWorkspaceForProjectCommand { get; }
+
+        /// <summary>Команда сохранения конфигурации глобально (для типа проекта)</summary>
+        public ReactiveCommand<Unit, Unit> SaveWorkspaceGlobalCommand { get; }
+
+        /// <summary>Команда сброса до глобальной конфигурации</summary>
+        public ReactiveCommand<Unit, Unit> ResetWorkspaceToGlobalCommand { get; }
+
+        /// <summary>Команда сброса до дефолтной конфигурации</summary>
+        public ReactiveCommand<Unit, Unit> ResetWorkspaceToDefaultCommand { get; }
+
+        /// <summary>Есть ли активная вкладка (для IsEnabled кнопок)</summary>
+        //public bool HasActiveTab => _getActiveTab?.Invoke() != null;
+
+        private bool _hasActiveTab;
+
+        /// <summary>Есть ли активная вкладка (для IsEnabled кнопок)</summary>
+        public bool HasActiveTab
+        {
+            get => _hasActiveTab;
+            private set => this.RaiseAndSetIfChanged(ref _hasActiveTab, value);
+        }
+
+        /// <summary>Обновить состояние HasActiveTab</summary>
+        public void UpdateHasActiveTab()
+        {
+            HasActiveTab = _getActiveTab?.Invoke() != null;
+        }
+
         /// <summary>Функция для получения активной вкладки (передаётся извне)</summary>
         private Func<DocumentTabViewModel?>? _getActiveTab;
 
         public MenuBarViewModel(
-            IProjectWorkflow projectWorkflow,
-            ISettingsService settingsService,
-            ITabCollection tabCollection)
+             IProjectWorkflow projectWorkflow,
+             ISettingsService settingsService,
+             ITabCollection tabCollection,
+             IWorkModeConfigurationService workModeConfigService,
+             INotificationService notificationService,
+             IDialogService dialogService,
+             IWorkspaceConfigService workspaceConfigService,
+             ProjectTypeRegistry projectTypeRegistry)
         {
             _projectWorkflow = projectWorkflow;
             _settingsService = settingsService;
             _tabCollection = tabCollection;
+            _workModeConfigService = workModeConfigService;
+            _notificationService = notificationService;
+            _dialogService = dialogService;
+            _workspaceConfigService = workspaceConfigService;
+            _projectTypeRegistry = projectTypeRegistry;
 
             // Создаём команды
             NewProjectCommand = ReactiveCommand.Create(NewProject);
@@ -106,6 +157,10 @@ namespace Writersword.ViewModels.Components
             SaveProjectCommand = ReactiveCommand.CreateFromTask(SaveProject);
             SaveAsProjectCommand = ReactiveCommand.CreateFromTask(SaveAsProject);
             ExitCommand = ReactiveCommand.Create(Exit);
+            SaveWorkspaceForProjectCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceForProject);
+            SaveWorkspaceGlobalCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceGlobal);
+            ResetWorkspaceToGlobalCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToGlobal);
+            ResetWorkspaceToDefaultCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToDefault);
 
             // Загружаем список недавних проектов
             LoadRecentProjects();
@@ -268,6 +323,210 @@ namespace Writersword.ViewModels.Components
         {
             _mainViewModelProvider = provider;
             Console.WriteLine("[MenuBarViewModel] MainViewModel provider set");
+        }
+
+        /// <summary>
+        /// Сохранить конфигурацию для проекта (локальная)
+        /// АВТОСОХРАНЕНИЕ делает это автоматически, но эта кнопка - для явного сохранения
+        /// </summary>
+        private async Task SaveWorkspaceForProject()
+        {
+            var activeTab = _getActiveTab?.Invoke();
+            if (activeTab == null)
+            {
+                Console.WriteLine("[MenuBarViewModel] SaveWorkspaceForProject: No active tab");
+                return;
+            }
+
+            try
+            {
+                Console.WriteLine($"[MenuBarViewModel] Saving workspace for project: {activeTab.Title}");
+
+                // Сохраняем проект (UserConfig уже обновлён в памяти автосохранением)
+                var success = await _projectWorkflow.SaveDocumentAsync(activeTab);
+
+                if (success)
+                {
+                    _notificationService.ShowSuccess(Resources.Localization.Strings.Notification_WorkspaceSavedProject);
+                    Console.WriteLine("[MenuBarViewModel] Workspace saved for project");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MenuBarViewModel] Error saving workspace: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Сохранить конфигурацию глобально (для всех проектов данного типа)
+        /// Применится ко ВСЕМ будущим проектам типа "Novel", "Screenplay" и т.д.
+        /// </summary>
+        private async Task SaveWorkspaceGlobal()
+        {
+            var activeTab = _getActiveTab?.Invoke();
+            if (activeTab == null)
+            {
+                Console.WriteLine("[MenuBarViewModel] SaveWorkspaceGlobal: No active tab");
+                return;
+            }
+
+            try
+            {
+                var project = activeTab.GetProject();
+
+                // Получаем текущие WorkModes
+                var workModeService = App.Services.GetRequiredService<IWorkModeService>();
+                var currentWorkModes = workModeService.GetAllWorkModes();
+
+                // Создаём конфигурацию
+                var config = new WorkspaceConfig
+                {
+                    ProjectType = project.Type,
+                    Name = $"{project.Type} Configuration",
+                    WorkModes = currentWorkModes
+                };
+
+                // Сохраняем через SettingsService
+                _settingsService.SaveWorkspaceConfig(project.Type, config);
+
+                // Получаем локализованное название типа проекта
+                var projectTypeObj = _projectTypeRegistry.GetById(project.Type);
+                string displayName = projectTypeObj?.DisplayName ?? project.Type;
+
+                _notificationService.ShowSuccess($"Конфигурация сохранена для типа {displayName}");
+                Console.WriteLine($"[MenuBarViewModel] Workspace saved globally for: {project.Type}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MenuBarViewModel] Error saving global workspace: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Сбросить конфигурацию до глобальной
+        /// Удаляет workspace.json из ZIP и перезагружает глобальную конфигурацию
+        /// </summary>
+        private async Task ResetWorkspaceToGlobal()
+        {
+            var activeTab = _getActiveTab?.Invoke();
+            if (activeTab == null)
+            {
+                Console.WriteLine("[MenuBarViewModel] ResetWorkspaceToGlobal: No active tab");
+                return;
+            }
+
+            try
+            {
+                // Показываем диалог подтверждения
+                var result = await _dialogService.ShowMessageAsync(
+                    "Восстановить из глобальных настроек?",
+                    "Локальная конфигурация будет удалена. Продолжить?",
+                    MessageBoxType.Warning,
+                    MessageBoxButtons.YesNo
+                );
+
+                if (result != MessageBoxResult.Yes)
+                {
+                    Console.WriteLine("[MenuBarViewModel] Reset to global cancelled");
+                    return;
+                }
+
+                var project = activeTab.GetProject();
+                var fileStorage = activeTab.Context.FileStorage;
+
+                if (fileStorage == null)
+                {
+                    Console.WriteLine("[MenuBarViewModel] No FileStorage available");
+                    return;
+                }
+
+                // Удаляем workspace.json из ZIP
+                _workspaceConfigService.DeleteFromZip(fileStorage);
+
+                // Загружаем глобальную конфигурацию
+                var globalWorkModes = _workModeConfigService.LoadConfiguration(project.Type, null);
+
+                // Обновляем WorkModeService
+                var workModeService = App.Services.GetRequiredService<IWorkModeService>();
+                workModeService.InitializeWorkModes(project.Type, globalWorkModes);
+
+                // Перезагружаем UI
+                var mainVM = _mainViewModelProvider?.Invoke();
+                mainVM?.InitializeWorkModesForTab(activeTab);
+
+                _notificationService.ShowSuccess("Конфигурация восстановлена из глобальных настроек");
+                Console.WriteLine("[MenuBarViewModel] Workspace reset to global");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MenuBarViewModel] Error resetting to global: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Сбросить конфигурацию до дефолтной
+        /// Удаляет workspace.json из ZIP и загружает hardcoded дефолт
+        /// </summary>
+        private async Task ResetWorkspaceToDefault()
+        {
+            Console.WriteLine("[MenuBarViewModel] ResetWorkspaceToDefault CALLED!");
+
+            var activeTab = _getActiveTab?.Invoke();
+            if (activeTab == null)
+            {
+                Console.WriteLine("[MenuBarViewModel] No active tab");
+                return;
+            }
+
+            try
+            {
+                var result = await _dialogService.ShowMessageAsync(
+                    "Сбросить до дефолта?",
+                    "Все настройки рабочего пространства будут сброшены. Продолжить?",
+                    MessageBoxType.Warning,
+                    MessageBoxButtons.YesNo
+                );
+
+                Console.WriteLine($"[MenuBarViewModel] User choice: {result}");
+
+                if (result != MessageBoxResult.Yes)
+                {
+                    Console.WriteLine("[MenuBarViewModel] Cancelled");
+                    return;
+                }
+
+                var project = activeTab.GetProject();
+                var fileStorage = activeTab.Context.FileStorage;
+
+                if (fileStorage == null)
+                {
+                    Console.WriteLine("[MenuBarViewModel] No FileStorage");
+                    return;
+                }
+
+                // 1. Удаляем LOCAL workspace.json из ZIP
+                _workspaceConfigService.DeleteFromZip(fileStorage);
+
+                // 2. УДАЛЯЕМ GLOBAL конфигурацию из Settings.json!
+                _settingsService.DeleteWorkspaceConfig(project.Type);
+
+                Console.WriteLine("[MenuBarViewModel] Deleted LOCAL and GLOBAL configs");
+
+                // 3. ОЧИЩАЕМ WorkModes в проекте чтобы загрузились дефолтные!
+                project.WorkModes.Clear();
+                Console.WriteLine("[MenuBarViewModel] Cleared project.WorkModes");
+
+                // 4. Теперь InitializeWorkModesForTab загрузит DEFAULT!
+                var mainVM = _mainViewModelProvider?.Invoke();
+                mainVM?.InitializeWorkModesForTab(activeTab);
+
+                _notificationService.ShowSuccess("Конфигурация сброшена до дефолта");
+                Console.WriteLine("[MenuBarViewModel] Reset to default complete");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MenuBarViewModel] ERROR: {ex.Message}");
+            }
         }
     }
 

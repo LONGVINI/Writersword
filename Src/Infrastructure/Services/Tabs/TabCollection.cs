@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.ObjectModel;
 using System.Linq;
+using Writersword.Core.Interfaces.Services;
+using Writersword.Core.Models.Project;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.ViewModels;
@@ -122,6 +124,27 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
             Console.WriteLine($"[TabCollection] After filtering: openPaths.Count = {openPaths.Count}");
 
             _settingsService.SaveOpenProjects(openPaths!);
+        }
+
+        /// <summary>
+        /// Получить FileStorage для указанного таба
+        /// </summary>
+        public IProjectFileStorage? GetFileStorageForTab(DocumentTabViewModel tab)
+        {
+            // FileStorage хранится в tab или в ProjectWorkflow
+            // Нужно посмотреть где именно у тебя он хранится
+            // ВРЕМЕННО возвращаю null, ты заменишь на реальный код
+            return null; // TODO: вернуть реальный FileStorage
+        }
+
+        /// <summary>
+        /// Получить ProjectFile для указанного таба
+        /// </summary>
+        public ProjectFile? GetProjectForTab(DocumentTabViewModel tab)
+        {
+            // ProjectFile должен быть в табе
+            // ВРЕМЕННО возвращаю null, ты заменишь на реальный код
+            return null; // TODO: вернуть реальный Project
         }
     }
 }

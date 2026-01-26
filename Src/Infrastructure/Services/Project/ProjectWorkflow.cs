@@ -11,10 +11,13 @@ using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Modules;
 using Writersword.Core.Models.Project;
 using Writersword.Resources.Localization;
+using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.Services.UI;
 using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Src.Infrastructure.Dock;
 using Writersword.Src.Infrastructure.Services.Storage;
+using Writersword.Src.Infrastructure.Services.WorkModes;
 using Writersword.ViewModels;
 using Writersword.Views;
 
@@ -39,6 +42,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
         public event Action<DocumentTabViewModel>? ProjectClosed;
 
         private readonly Dictionary<string, ZipFileStorageService> _openStorages = new Dictionary<string, ZipFileStorageService>();
+        private readonly Dictionary<string, IWorkspaceAutoSaveService> _autoSaveServices = new Dictionary<string, IWorkspaceAutoSaveService>();
 
         public ProjectWorkflow(
                IProjectService projectService,
@@ -115,10 +119,10 @@ namespace Writersword.Src.Infrastructure.Services.Project
                         if (dataIsSame)
                         {
                             Console.WriteLine("[ProjectWorkflow] Data is identical, skipping Recovery dialog");
-    
+
                             // НЕ удаляем кеш! Он актуален и будет использоваться CacheUpdateService
                             // Кеш удалится только при успешном Ctrl+S
-    
+
                             project = savedProject;
                             recoveryChoice = RecoveryDialogResult.None;
                         }
@@ -183,15 +187,30 @@ namespace Writersword.Src.Infrastructure.Services.Project
                 // 4. Создаём вкладку с собственным AutoSaveService
                 var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
                 var cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
-				var tabVM = new DocumentTabViewModel(project, filePath, onClose: null);
+                var tabVM = new DocumentTabViewModel(project, filePath, onClose: null);
 
-				// Создаём ZipFileStorage для работы с файлами в ZIP
-				if (!string.IsNullOrEmpty(filePath))
+                // Создаём ZipFileStorage для работы с файлами в ZIP
+                ZipFileStorageService? storage = null;
+                if (!string.IsNullOrEmpty(filePath))
                 {
-                    var storage = new ZipFileStorageService(filePath);
+                    storage = new ZipFileStorageService(filePath);
                     _openStorages[filePath] = storage;
                     tabVM.Context.FileStorage = storage;
                     Console.WriteLine($"[ProjectWorkflow] ZipFileStorage created for: {filePath}");
+
+                    // НОВОЕ: Загружаем локальную конфигурацию workspace.json из ZIP
+                    var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
+                    var workModes = workModeConfigService.LoadConfiguration(project.Type, storage);
+
+                    // Сохраняем загруженные WorkModes в проект
+                    project.WorkModes = workModes;
+                    Console.WriteLine($"[ProjectWorkflow] Loaded {workModes.Count} WorkModes for project");
+
+                    // Создаём и запускаем WorkspaceAutoSaveService для этого проекта
+                    var autoSaveService = App.Services.GetRequiredService<IWorkspaceAutoSaveService>();
+                    autoSaveService.Start(filePath, project);
+                    _autoSaveServices[filePath] = autoSaveService;
+                    Console.WriteLine($"[ProjectWorkflow] WorkspaceAutoSave started for: {filePath}");
                 }
 
                 // 5. Если режим Compare - создаём RecoveryBanner
@@ -682,12 +701,19 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     tab.Context.CloseZipStorage();
                     Console.WriteLine($"[ProjectWorkflow] ZipStorage closed for context");
 
-                    if (_openStorages.TryGetValue(filePath, out var storage))
+                    // Останавливаем и удаляем WorkspaceAutoSaveService
+                    if (_autoSaveServices.TryGetValue(filePath, out var autoSaveService))
                     {
-                        storage.Dispose();
-                        _openStorages.Remove(filePath);
-                        Console.WriteLine($"[ProjectWorkflow] ZipFileStorage removed from registry: {filePath}");
+                        await autoSaveService.SaveNowAsync(); // Сохраняем перед закрытием
+                        autoSaveService.Dispose();
+                        _autoSaveServices.Remove(filePath);
+                        Console.WriteLine($"[ProjectWorkflow] WorkspaceAutoSave stopped for: {filePath}");
                     }
+
+                    // НОВОЕ: Отписываемся от событий DockFactory
+                    var dockFactory = App.Services.GetRequiredService<DockFactory>();
+                    dockFactory.UnsubscribeFromDockEvents(filePath);
+                    Console.WriteLine($"[ProjectWorkflow] DockFactory unsubscribed from: {filePath}");
 
                     var project = _projectService.GetProjectByPath(filePath);
                     if (project != null)
@@ -873,6 +899,36 @@ namespace Writersword.Src.Infrastructure.Services.Project
             }
 
             return project;
+        }
+
+        /// <summary>
+        /// Получить WorkspaceAutoSaveService для указанного проекта
+        /// Используется при переключении табов для немедленного сохранения
+        /// </summary>
+        public IWorkspaceAutoSaveService? GetAutoSaveServiceForProject(string filePath)
+        {
+            if (_autoSaveServices.TryGetValue(filePath, out var service))
+            {
+                return service;
+            }
+
+            Console.WriteLine($"[ProjectWorkflow] WARNING: No AutoSaveService found for: {filePath}");
+            return null;
+        }
+
+        /// <summary>
+        /// Получить FileStorage для указанного проекта
+        /// Используется WorkspaceAutoSaveService для сохранения workspace.json
+        /// </summary>
+        public IProjectFileStorage? GetFileStorageForProject(string filePath)
+        {
+            if (_openStorages.TryGetValue(filePath, out var storage))
+            {
+                return storage;
+            }
+
+            Console.WriteLine($"[ProjectWorkflow] WARNING: No FileStorage found for: {filePath}");
+            return null;
         }
     }
 }

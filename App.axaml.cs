@@ -11,11 +11,13 @@ using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Infrastructure.Services.Modules;
 using Writersword.Modules.Common;
+using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.Services.Input;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.Services.UI;
 using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Src.Core.Interfaces.WorkModes;
+using Writersword.Src.Infrastructure.Dock;
 using Writersword.Src.Infrastructure.Services;
 using Writersword.Src.Infrastructure.Services.Input;
 using Writersword.Src.Infrastructure.Services.Project;
@@ -93,6 +95,12 @@ namespace Writersword
             // Сервис управления WorkModes (переключение режимов)
             services.AddSingleton<IWorkModeService, WorkModeService>();
 
+            // Сервис автоматического сохранения рабочего пространства
+            services.AddTransient<IWorkspaceAutoSaveService, WorkspaceAutoSaveService>();
+
+            // Сервис управления локальной конфигурацией workspace (workspace.json в ZIP)
+            services.AddSingleton<IWorkspaceConfigService, WorkspaceConfigService>();
+
             // Сервис хеширования (для оптимизации кеша)
             services.AddSingleton<IHashService, HashService>();
 
@@ -158,7 +166,7 @@ namespace Writersword
 
             // --- DOCK СИСТЕМА ---
             // Фабрика для создания dock layout'ов
-            services.AddSingleton<Src.Infrastructure.Dock.DockFactory>();
+            services.AddSingleton<DockFactory>();
 
             // --- УПРАВЛЕНИЕ ВКЛАДКАМИ ---
             // Сервис управления коллекцией вкладок

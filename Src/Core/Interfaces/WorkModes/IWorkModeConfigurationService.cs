@@ -1,38 +1,40 @@
 ﻿using System.Collections.Generic;
+using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.WorkModes;
 
-namespace Writersword.Src.Core.Interfaces.WorkModes
+namespace Writersword.Src.Core.Interfaces.Services
 {
     /// <summary>
-    /// Сервис управления конфигурациями WorkModes
-    /// Определяет приоритет: Проект → Глобальная → Дефолтная
+    /// Интерфейс сервиса управления конфигурациями WorkModes
+    /// Определяет приоритет: LOCAL (workspace.json в ZIP) → GLOBAL (Settings.json) → DEFAULT (hardcoded)
     /// </summary>
     public interface IWorkModeConfigurationService
     {
         /// <summary>
         /// Загрузить конфигурацию для проекта
-        /// Приоритет: если в проекте есть WorkModes → используем их
-        /// Если нет → берём глобальную конфигурацию
-        /// Если нет → берём дефолтную
+        /// Приоритет: LOCAL (workspace.json в ZIP) → GLOBAL (Settings.json) → DEFAULT (hardcoded)
         /// </summary>
-        List<WorkMode> LoadConfiguration(string projectType, List<WorkMode>? projectWorkModes);
+        /// <param name="projectType">Тип проекта (Novel, Translation, и т.д.)</paramф>
+        /// <param name="fileStorage">Хранилище файлов проекта (ZIP) для загрузки локальной конфигурации</param>
+        /// <returns>Список настроенных WorkMode</returns>
+        List<WorkMode> LoadConfiguration(string projectType, IProjectFileStorage? fileStorage = null);
 
-        /// <summary>Сохранить конфигурацию глобально (для всех проектов данного типа)</summary>
-        void SaveGlobalConfiguration(string projectType, List<WorkMode> workModes);
-
-        /// <summary>Удалить глобальную конфигурацию (вернуться к дефолтной)</summary>
-        void DeleteGlobalConfiguration(string projectType);
-
-        /// <summary>Загрузить дефолтную конфигурацию (без сохранения)</summary>
+        /// <summary>
+        /// Загрузить дефолтную конфигурацию из реестра WorkMode (hardcoded)
+        /// Использует GetDefaultConfig() каждого зарегистрированного WorkMode
+        /// </summary>
+        /// <param name="projectType">Тип проекта (Novel, Translation, и т.д.)</param>
+        /// <returns>Список WorkMode с дефолтными настройками</returns>
         List<WorkMode> LoadDefaultConfiguration(string projectType);
 
-        /// <summary>Проверить можно ли удалить модуль из режима</summary>
-        bool CanRemoveModule(string workModeId, string moduleId);
-
-        /// <summary>Получить обязательные модули для режима</summary>
-        List<string> GetRequiredModules(string workModeId);
-
-        /// <summary>Клонировать WorkModes (глубокое копирование)</summary>
-        List<WorkMode> CloneWorkModes(List<WorkMode> source);
+        /// <summary>
+        /// Проверить можно ли удалить модуль из WorkMode
+        /// Проверяет дефолтную конфигурацию - если модуль Required, то нельзя удалить
+        /// </summary>
+        /// <param name="projectType">Тип проекта (Novel, Translation, и т.д.)</param>
+        /// <param name="workModeId">ID режима работы (editor, timeline, и т.д.)</param>
+        /// <param name="moduleId">ID модуля (TextEditor, Notes, и т.д.)</param>
+        /// <returns>true если можно удалить, false если нельзя</returns>
+        bool CanRemoveModule(string projectType, string workModeId, string moduleId);
     }
 }

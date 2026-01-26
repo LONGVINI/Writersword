@@ -13,7 +13,8 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 {
     /// <summary>
     /// Сервис для работы с настройками приложения
-    /// Хранит настройки рядом с .exe файлом (портативный режим)
+    /// Хранит настройки в settings.json рядом с .exe (портативный режим)
+    /// ВСЕГДА сохраняет ВСЕ настройки включая WorkspaceConfigs
     /// </summary>
     public class SettingsService : ISettingsService
     {
@@ -46,9 +47,12 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     _settings.RecentProjects = _settings.RecentProjects
                         .Where(r => File.Exists(r.Path))
                         .ToList();
+
+                    Console.WriteLine($"[SettingsService] Settings loaded, WorkspaceConfigs count: {_settings.WorkspaceConfigs.Count}");
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Console.WriteLine($"[SettingsService] ERROR loading settings: {ex.Message}");
                     // Если ошибка чтения - используем настройки по умолчанию
                     _settings = new AppSettings();
                 }
@@ -59,7 +63,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 _settings = new AppSettings
                 {
                     Theme = "Dark",
-                    Language = "en",
+                    Language = "ru",
                     DefaultProjectsFolder = Path.Combine(_applicationDirectory, "Projects")
                 };
 
@@ -72,28 +76,14 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         }
 
         /// <summary>
-        /// Сохранить настройки в файл (ЛЁГКАЯ ВЕРСИЯ)
-        /// Сохраняет ТОЛЬКО: Theme, Language, RecentProjects, OpenProjectPaths
-        /// НЕ сохраняет WorkspaceConfigs (они сохраняются отдельно через SaveWorkspaceConfig)
+        /// Сохранить ВСЕ настройки в файл
+        /// ВСЕГДА сохраняет полностью включая WorkspaceConfigs
         /// </summary>
         public void Save()
         {
             try
             {
-                Console.WriteLine("[SettingsService] Saving settings (lightweight)");
-
-                // Создаём облегчённую версию настроек БЕЗ WorkspaceConfigs
-                var lightSettings = new
-                {
-                    Theme = _settings.Theme,
-                    Language = _settings.Language,
-                    LastOpenedProject = _settings.LastOpenedProject,
-                    DefaultProjectsFolder = _settings.DefaultProjectsFolder,
-                    LastUsedPath = _settings.LastUsedPath,
-                    RecentProjects = _settings.RecentProjects,
-                    OpenProjectPaths = _settings.OpenProjectPaths
-                    // WorkspaceConfigs НЕ ВКЛЮЧЕНЫ!
-                };
+                Console.WriteLine("[SettingsService] Saving ALL settings");
 
                 // ЯВНАЯ НАСТРОЙКА: игнорировать циклы
                 var jsonSettings = new JsonSerializerSettings
@@ -103,37 +93,18 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     Formatting = Formatting.Indented
                 };
 
-                var json = JsonConvert.SerializeObject(lightSettings, jsonSettings);
+                var json = JsonConvert.SerializeObject(_settings, jsonSettings);
                 File.WriteAllText(_settingsPath, json);
 
-                Console.WriteLine("[SettingsService] Settings saved successfully");
+                Console.WriteLine($"[SettingsService] Settings saved successfully");
+                Console.WriteLine($"[SettingsService]   WorkspaceConfigs: {_settings.WorkspaceConfigs.Count}");
+                Console.WriteLine($"[SettingsService]   RecentProjects: {_settings.RecentProjects.Count}");
+                Console.WriteLine($"[SettingsService]   OpenProjects: {_settings.OpenProjectPaths.Count}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SettingsService] Failed to save settings: {ex.Message}");
+                Console.WriteLine($"[SettingsService] ERROR saving settings: {ex.Message}");
                 Console.WriteLine($"[SettingsService] Stack trace: {ex.StackTrace}");
-            }
-        }
-
-        /// <summary>
-        /// Сохранить ВСЕ настройки включая WorkspaceConfigs
-        /// Вызывается ТОЛЬКО когда пользователь явно сохраняет глобальную конфигурацию
-        /// </summary>
-        private void SaveFull()
-        {
-            try
-            {
-                Console.WriteLine("[SettingsService] Saving FULL settings (including WorkspaceConfigs)");
-
-                // Сохраняем ВСЁ
-                var json = JsonConvert.SerializeObject(_settings, Formatting.Indented);
-                File.WriteAllText(_settingsPath, json);
-
-                Console.WriteLine($"[SettingsService] Full settings saved: {_settings.WorkspaceConfigs.Count} workspace configs");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[SettingsService] Failed to save full settings: {ex.Message}");
             }
         }
 
@@ -184,11 +155,11 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 }
 
                 Console.WriteLine($"[SettingsService] Added recent project: {project.Title}, total: {_settings.RecentProjects.Count}");
-                Save(); // Лёгкое сохранение
+                Save();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SettingsService] Failed to add recent project: {ex.Message}");
+                Console.WriteLine($"[SettingsService] ERROR adding recent project: {ex.Message}");
             }
         }
 
@@ -203,7 +174,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             {
                 Console.WriteLine($"[SettingsService] Theme changed: {_settings.Theme} → {value}");
                 _settings.Theme = value;
-                Save(); // Лёгкое сохранение
+                Save();
             }
         }
 
@@ -215,7 +186,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             {
                 Console.WriteLine($"[SettingsService] Language changed: {_settings.Language} → {value}");
                 _settings.Language = value;
-                Save(); // Лёгкое сохранение
+                Save();
             }
         }
 
@@ -226,7 +197,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             set
             {
                 _settings.LastOpenedProject = value;
-                Save(); // Лёгкое сохранение
+                Save();
             }
         }
 
@@ -238,7 +209,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             {
                 Console.WriteLine($"[SettingsService] DefaultProjectsFolder changed: {value}");
                 _settings.DefaultProjectsFolder = value;
-                Save(); // Лёгкое сохранение
+                Save();
             }
         }
 
@@ -249,7 +220,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             set
             {
                 _settings.LastUsedPath = value;
-                Save(); // Лёгкое сохранение
+                Save();
             }
         }
 
@@ -260,7 +231,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             set
             {
                 _settings.OpenProjectPaths = value;
-                Save(); // Лёгкое сохранение
+                Save();
             }
         }
 
@@ -277,7 +248,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             }
 
             _settings.OpenProjectPaths = paths;
-            Save(); // Лёгкое сохранение (БЕЗ WorkspaceConfigs!)
+            Save();
 
             Console.WriteLine($"[SettingsService] Saved {_settings.OpenProjectPaths.Count} open projects");
         }
@@ -288,8 +259,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         /// </summary>
         public WorkspaceConfig? GetWorkspaceConfig(string projectType)
         {
-            var key = projectType;
-            var found = _settings.WorkspaceConfigs.TryGetValue(key, out var config);
+            var found = _settings.WorkspaceConfigs.TryGetValue(projectType, out var config);
 
             Console.WriteLine($"[SettingsService] GetWorkspaceConfig({projectType}): {(found ? "FOUND" : "NOT FOUND")}");
 
@@ -298,18 +268,17 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
         /// <summary>
         /// Сохранить глобальную конфигурацию для типа проекта
-        /// Вызывается ТОЛЬКО когда пользователь явно нажимает "Сохранить как глобальную конфигурацию"
+        /// Вызывается когда пользователь нажимает "Сохранить как глобальные"
         /// </summary>
         public void SaveWorkspaceConfig(string projectType, WorkspaceConfig config)
         {
-            var key = projectType;
             config.LastModified = DateTime.Now;
-            _settings.WorkspaceConfigs[key] = config;
+            _settings.WorkspaceConfigs[projectType] = config;
 
             Console.WriteLine($"[SettingsService] SaveWorkspaceConfig({projectType})");
             Console.WriteLine($"[SettingsService]   WorkModes count: {config.WorkModes.Count}");
 
-            SaveFull(); // ПОЛНОЕ сохранение (включая WorkspaceConfigs!)
+            Save(); // Сохраняет ВСЁ включая WorkspaceConfigs
 
             Console.WriteLine($"[SettingsService] WorkspaceConfig saved for {projectType}");
         }
@@ -320,12 +289,11 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         /// </summary>
         public void DeleteWorkspaceConfig(string projectType)
         {
-            var key = projectType;
-            if (_settings.WorkspaceConfigs.Remove(key))
+            if (_settings.WorkspaceConfigs.Remove(projectType))
             {
                 Console.WriteLine($"[SettingsService] DeleteWorkspaceConfig({projectType})");
 
-                SaveFull(); // ПОЛНОЕ сохранение
+                Save(); // Сохраняет ВСЁ
 
                 Console.WriteLine($"[SettingsService] WorkspaceConfig deleted for {projectType}");
             }

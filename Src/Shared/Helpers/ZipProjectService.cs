@@ -12,6 +12,8 @@ namespace Writersword.Src.Infrastructure.Services.Storage
     /// <summary>
     /// Сервис для работы с проектами в формате ZIP
     /// НЕ использует временные папки - работает с ZIP напрямую
+    /// Отвечает ТОЛЬКО за project.json и modules/*.json
+    /// workspace.json управляется через IWorkspaceConfigService
     /// </summary>
     public class ZipProjectService
     {
@@ -43,12 +45,13 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 using (var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
                 using (var archive = new ZipArchive(fileStream, ZipArchiveMode.Create))
                 {
-                    // 1. Сохраняем project.json (метаданные БЕЗ ModulesData)
+                    // 1. Сохраняем project.json (метаданные проекта)
                     var projectMeta = new
                     {
                         project.Title,
                         project.Type,
                         project.FormatVersion,
+                        project.Id,
                         project.CreatedAt,
                         project.LastModified
                     };
@@ -62,20 +65,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                     Console.WriteLine($"[ZipProjectService] Saved project.json");
 
-                    // 2. Сохраняем user-config.json
-                    if (project.UserConfig != null)
-                    {
-                        var userConfigJson = JsonHelper.Serialize(project.UserConfig);
-                        var userConfigEntry = archive.CreateEntry("user-config.json", CompressionLevel.Optimal);
-                        using (var writer = new StreamWriter(userConfigEntry.Open()))
-                        {
-                            await writer.WriteAsync(userConfigJson);
-                        }
-
-                        Console.WriteLine($"[ZipProjectService] Saved user-config.json");
-                    }
-
-                    // 3. Сохраняем данные модулей в modules/*.json
+                    // 2. Сохраняем данные модулей в modules/*.json
                     foreach (var moduleEntry in project.ModulesData)
                     {
                         var moduleId = moduleEntry.Key;
@@ -102,8 +92,9 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                         }
                     }
 
-                    // ВАЖНО: Все файлы которые модули записали через Context.WriteFile()
-                    // уже находятся в ZIP благодаря ZipFileStorage!
+                    // ВАЖНО: 
+                    // - workspace.json сохраняется через IWorkspaceConfigService (отдельно)
+                    // - Все файлы которые модули записали через Context.WriteFile() уже находятся в ZIP благодаря ZipFileStorage
                 }
 
                 var fileSize = new FileInfo(filePath).Length / 1024;
@@ -161,21 +152,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                     Console.WriteLine($"[ZipProjectService] Loaded project.json: {project.Title}");
 
-                    // 2. Загружаем user-config.json
-                    var userConfigEntry = archive.GetEntry("user-config.json");
-                    if (userConfigEntry != null)
-                    {
-                        string userConfigJson;
-                        using (var reader = new StreamReader(userConfigEntry.Open()))
-                        {
-                            userConfigJson = await reader.ReadToEndAsync();
-                        }
-
-                        project.UserConfig = JsonConvert.DeserializeObject<UserConfiguration>(userConfigJson);
-                        Console.WriteLine($"[ZipProjectService] Loaded user-config.json");
-                    }
-
-                    // 3. Загружаем данные модулей из modules/*.json
+                    // 2. Загружаем данные модулей из modules/*.json
                     foreach (var entry in archive.Entries)
                     {
                         if (entry.FullName.StartsWith("modules/") && entry.FullName.EndsWith(".json"))
@@ -204,8 +181,9 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     Console.WriteLine($"[ZipProjectService] Project loaded successfully");
                     Console.WriteLine($"[ZipProjectService] Modules: {project.ModulesData.Count}");
 
-                    // ВАЖНО: Файлы которые модули сохранили через Context.WriteFile()
-                    // останутся в ZIP и будут доступны через ZipFileStorage!
+                    // ВАЖНО: 
+                    // - workspace.json загружается через IWorkspaceConfigService (отдельно)
+                    // - Файлы которые модули сохранили через Context.WriteFile() останутся в ZIP и будут доступны через ZipFileStorage
 
                     return project;
                 }

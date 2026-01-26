@@ -7,8 +7,7 @@ namespace Writersword.Core.Models.WorkModes
     /// Режим работы (WorkMode) - большая кнопка под вкладкой документа
     /// Например: "Редактор", "Таймлайн", "Персонажи"
     /// Содержит список модулей, которые отображаются в этом режиме
-    /// Сохраняется в файле проекта (.writersword) или в 
-    /// .json
+    /// Сохраняется в файле проекта (.writersword) или в workspace.json
     /// </summary>
     public class WorkMode
     {
@@ -35,12 +34,6 @@ namespace Writersword.Core.Models.WorkModes
 
         /// <summary>Список модулей в этом режиме</summary>
         public List<ModuleSlot> ModuleSlots { get; set; } = new();
-
-        /// <summary>Дата создания режима</summary>
-        public DateTime CreatedAt { get; set; } = DateTime.Now;
-
-        /// <summary>Дата последнего использования</summary>
-        public DateTime LastAccessedAt { get; set; } = DateTime.Now;
 
         /// <summary>Настройки режима (раскладка, тема)</summary>
         public WorkModeSettings Settings { get; set; } = new();

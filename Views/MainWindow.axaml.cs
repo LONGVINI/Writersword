@@ -1,7 +1,10 @@
-﻿using Avalonia.Controls;
+﻿using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Microsoft.Extensions.DependencyInjection;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -11,8 +14,6 @@ using Writersword.Src.Core.Interfaces.Services.UI;
 using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Src.Infrastructure.Dock;
 using Writersword.ViewModels;
-using Avalonia;
-using Avalonia.Controls.ApplicationLifetimes;
 
 namespace Writersword.Views
 {
@@ -26,6 +27,20 @@ namespace Writersword.Views
         public MainWindow()
         {
             InitializeComponent();
+
+            this.Opened += (s, e) =>
+            {
+                Console.WriteLine("===========================================");
+                Console.WriteLine($"[MainWindow.Opened] DataContext: {DataContext}");
+                Console.WriteLine($"[MainWindow.Opened] DataContext type: {DataContext?.GetType().Name}");
+
+                if (DataContext is MainWindowViewModel vm)
+                {
+                    Console.WriteLine($"[MainWindow.Opened] MenuBar: {vm.MenuBar}");
+                    Console.WriteLine($"[MainWindow.Opened] MenuBar type: {vm.MenuBar?.GetType().Name}");
+                }
+                Console.WriteLine("===========================================");
+            };
 
             // Один обработчик для всей логики закрытия
             Closing += OnClosing;

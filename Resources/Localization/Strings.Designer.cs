@@ -313,6 +313,42 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Your local configuration will be lost. This action cannot be undone. Continue?.
+        /// </summary>
+        public static string Dialog_ResetToDefaultMessage {
+            get {
+                return ResourceManager.GetString("Dialog_ResetToDefaultMessage", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset to Default Configuration?.
+        /// </summary>
+        public static string Dialog_ResetToDefaultTitle {
+            get {
+                return ResourceManager.GetString("Dialog_ResetToDefaultTitle", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Your local configuration will be replaced with the global one. Continue?.
+        /// </summary>
+        public static string Dialog_ResetToGlobalMessage {
+            get {
+                return ResourceManager.GetString("Dialog_ResetToGlobalMessage", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset to Global Configuration?.
+        /// </summary>
+        public static string Dialog_ResetToGlobalTitle {
+            get {
+                return ResourceManager.GetString("Dialog_ResetToGlobalTitle", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Don&apos;t Save.
         /// </summary>
         public static string Dialog_UnsavedChanges_Button_DontSave {
@@ -691,6 +727,15 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset to Global Settings.
+        /// </summary>
+        public static string Menu_Workspace_ResetToGlobal {
+            get {
+                return ResourceManager.GetString("Menu_Workspace_ResetToGlobal", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Save Configuration.
         /// </summary>
         public static string Menu_Workspace_SaveConfiguration {
@@ -700,7 +745,7 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на For This Project Only.
+        ///   Ищет локализованную строку, похожую на Save for This Project.
         /// </summary>
         public static string Menu_Workspace_SaveForProject {
             get {
@@ -709,7 +754,7 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на For All Projects of This Type.
+        ///   Ищет локализованную строку, похожую на Save as Global Settings for Project Type.
         /// </summary>
         public static string Menu_Workspace_SaveForType {
             get {
@@ -993,6 +1038,42 @@ namespace Writersword.Resources.Localization {
         public static string Notification_WorkModeSwitched {
             get {
                 return ResourceManager.GetString("Notification_WorkModeSwitched", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Configuration reset to default.
+        /// </summary>
+        public static string Notification_WorkspaceResetDefault {
+            get {
+                return ResourceManager.GetString("Notification_WorkspaceResetDefault", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Configuration reset to global.
+        /// </summary>
+        public static string Notification_WorkspaceResetGlobal {
+            get {
+                return ResourceManager.GetString("Notification_WorkspaceResetGlobal", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Configuration saved globally.
+        /// </summary>
+        public static string Notification_WorkspaceSavedGlobal {
+            get {
+                return ResourceManager.GetString("Notification_WorkspaceSavedGlobal", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Configuration saved for project.
+        /// </summary>
+        public static string Notification_WorkspaceSavedProject {
+            get {
+                return ResourceManager.GetString("Notification_WorkspaceSavedProject", resourceCulture);
             }
         }
         

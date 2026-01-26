@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Writersword.Core.Interfaces.Services;
+using Writersword.Src.Core.Interfaces.Services;
 using Writersword.ViewModels;
 
 namespace Writersword.Src.Core.Interfaces.WorkFlows
@@ -38,5 +40,11 @@ namespace Writersword.Src.Core.Interfaces.WorkFlows
 
         /// <summary>Событие закрытия проекта</summary>
         event Action<DocumentTabViewModel>? ProjectClosed;
+
+        /// <summary>Получить WorkspaceAutoSaveService для проекта</summary>
+        IWorkspaceAutoSaveService? GetAutoSaveServiceForProject(string filePath);
+
+        /// <summary>Получить FileStorage для проекта</summary>
+        IProjectFileStorage? GetFileStorageForProject(string filePath);
     }
 }

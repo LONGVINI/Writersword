@@ -1,4 +1,6 @@
-﻿using Avalonia.Controls;
+﻿using Avalonia;
+using Avalonia.Controls;
+using System;
 
 namespace Writersword.Views.Components
 {
