@@ -11,9 +11,9 @@ namespace Writersword.Src.WorkModes.Common
     {
         /// <summary>
         /// Получить DEFAULT конфигурацию для этого WorkMode
-        /// Эта конфигурация hardcoded в коде и используется когда нет GLOBAL или PROJECT настроек
-        /// Возвращает расположение модулей по умолчанию и их категории
+        /// Возвращает полностью настроенный WorkMode с модулями и структурой layout
+        /// Используется когда нет GLOBAL или LOCAL настроек
         /// </summary>
-        WorkModeConfig GetDefaultConfig();
+        WorkMode GetDefaultConfig();
     }
 }

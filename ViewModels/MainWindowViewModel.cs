@@ -16,8 +16,10 @@ using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
+using Writersword.Core.Models.Settings;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
+using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.Services.Input;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.Services.UI;
@@ -25,8 +27,7 @@ using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.Infrastructure.Dock;
 using Writersword.ViewModels.Components;
-using Writersword.Core.Models.Settings;
-using Writersword.Src.Core.Interfaces.Services;
+using Writersword.Views;
 
 namespace Writersword.ViewModels
 {
@@ -219,59 +220,82 @@ namespace Writersword.ViewModels
             var project = GetProjectForTab(tab);
             if (project == null) return;
 
-            string tabKey = tab.FilePath ?? tab.Id;
-
-            // Проверяем есть ли уже созданный layout для этой вкладки
-            if (_tabLayouts.TryGetValue(tabKey, out var existingLayout))
+            // Закрываем окна предыдущей вкладки перед переключением
+            if (DockLayout != null && DockLayout.Windows != null)
             {
-                Console.WriteLine($"[MainWindowViewModel] Reusing existing layout for tab: {tab.Title}");
-                DockLayout = existingLayout;
+                Console.WriteLine($"[MainWindowViewModel] Closing windows from previous tab");
 
-                // Восстанавливаем AutoSaveService для ЭТОГО проекта
+                foreach (var window in DockLayout.Windows.ToList())
+                {
+                    if (window.Host is HostWindow hostWindow)
+                    {
+                        hostWindow.Exit();
+                    }
+                }
+
+                DockLayout.Windows.Clear();
+            }
+
+            //  перезагружаем Workmode из файла, если есть путь
+            if (!string.IsNullOrEmpty(tab.FilePath))
+            {
+                // Получаем FileStorage для этого проекта
+                var fileStorage = _projectWorkflow.GetFileStorageForProject(tab.FilePath);
+
+                if (fileStorage != null)
+                {
+                    // Перезагружаем конфигурацию из workspace.json
+                    var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
+                    var reloadedWorkModes = workModeConfigService.LoadConfiguration(project.Type, fileStorage);
+
+                    // Инициализируем _workModeService с ПЕРЕЗАГРУЖЕННЫМИ данными
+                    _workModeService.InitializeWorkModes(project.Type, reloadedWorkModes);
+
+                    Console.WriteLine($"[MainWindowViewModel] Reloaded {reloadedWorkModes.Count} WorkModes from file");
+                }
+                else
+                {
+                    Console.WriteLine($"[MainWindowViewModel] WARNING: No FileStorage for project, using existing WorkModes");
+                }
+            }
+
+            var workModes = _workModeService.GetAllWorkModes();
+            WorkModeBar.LoadWorkModes(workModes);
+
+            if (project != null)
+            {
+                WorkModeBar.SetActiveModulesProvider(() => GetActiveModules(), tab.FilePath, project.Id);
+            }
+
+            var activeWM = workModes.FirstOrDefault(wm => wm.IsActive) ?? workModes.FirstOrDefault();
+            if (activeWM != null)
+            {
+                ActiveWorkMode = activeWM;
+                var layout = _dockFactory.CreateLayout(activeWM);
+                DockLayout = layout;
+
                 if (!string.IsNullOrEmpty(tab.FilePath))
                 {
                     var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(tab.FilePath);
                     if (autoSave != null)
                     {
                         _dockFactory.SetAutoSaveService(autoSave, tab.FilePath);
-                        Console.WriteLine($"[MainWindowViewModel] AutoSaveService restored for: {tab.Title}");
+                        _dockFactory.SubscribeToDockEvents(layout, tab.FilePath);
                     }
                 }
 
-                // Загружаем WorkModes в компонент
-                var workModes = _workModeService.GetAllWorkModes();
-                WorkModeBar.LoadWorkModes(workModes);
-
-                RefreshWorkModeUI();
-
-                // КРИТИЧНО: Перезапускаем кеширование для ЭТОЙ вкладки
-                if (!string.IsNullOrEmpty(tab.FilePath) && !tab.Context.IsInCompareMode)
-                {
-                    _cacheUpdateService.Stop();
-                    _cacheUpdateService.Start(tab.FilePath, () => GetActiveModules());
-                    Console.WriteLine($"[MainWindowViewModel] Caching restarted for: {tab.Title}");
-                }
-
-                return;
+                ModulePanel.LoadModulesForWorkMode(activeWM);
+                UpdateWorkModeMenuItems();
+                UpdateModuleMenuItems();
             }
 
-            // Создаём новый layout для вкладки
-            Console.WriteLine($"[MainWindowViewModel] Creating new layout for tab: {tab.Title}");
-            InitializeWorkModesForTab(tab);
-
-            if (DockLayout != null)
-            {
-                _tabLayouts[tabKey] = DockLayout;
-            }
-
-            // Запускаем кеширование для НОВОЙ вкладки
             if (!string.IsNullOrEmpty(tab.FilePath) && !tab.Context.IsInCompareMode)
             {
                 _cacheUpdateService.Stop();
                 _cacheUpdateService.Start(tab.FilePath, () => GetActiveModules());
-                Console.WriteLine($"[MainWindowViewModel] Caching started for new tab: {tab.Title}");
             }
         }
+
         /// <summary>
         /// Обработчик переключения WorkMode (из WorkModeBar)
         /// Показывает модули нового режима
@@ -309,16 +333,11 @@ namespace Writersword.ViewModels
             // 1. Ищем/создаём слот
             var existingSlot = ActiveWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
 
-            if (existingSlot != null)
-            {
-                existingSlot.IsVisible = true;
-            }
-            else
+            if (existingSlot == null)
             {
                 var newSlot = new ModuleSlot
                 {
                     ModuleId = moduleId,
-                    IsVisible = true,
                     IsCloseable = _workModeConfigService.CanRemoveModule(
                         _tabCollection.ActiveTab?.GetProject()?.Type
                             ?? throw new InvalidOperationException("[OnModuleAdded] No active project!"),
@@ -335,7 +354,7 @@ namespace Writersword.ViewModels
             }
 
             // 2. ПРОВЕРЯЕМ: Есть ли хоть один видимый модуль?
-            var hasVisibleModules = ActiveWorkMode.ModuleSlots.Any(s => s.IsVisible && s.ModuleId != moduleId);
+            var hasVisibleModules = ActiveWorkMode.ModuleSlots.Any(s => s.ModuleId != moduleId);
 
             if (!hasVisibleModules)
             {
@@ -384,7 +403,6 @@ namespace Writersword.ViewModels
             var slot = ActiveWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
             if (slot != null)
             {
-                slot.IsVisible = false;
 
                 // Находим Document и закрываем его
                 RemoveModuleFromLayout(DockLayout, moduleId);
@@ -470,11 +488,8 @@ namespace Writersword.ViewModels
         {
             Console.WriteLine($"[MainWindowViewModel] Project closed: {tab.Title}");
 
-            // Останавливаем кеширование если это была активная вкладка
             _cacheUpdateService.Stop();
-            Console.WriteLine($"[MainWindowViewModel] Caching stopped");
 
-            // Удаляем layout вкладки
             string tabKey = tab.FilePath ?? tab.Id;
             _tabLayouts.Remove(tabKey);
         }

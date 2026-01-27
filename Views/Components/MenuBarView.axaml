@@ -163,12 +163,6 @@
 		<MenuItem Header="{x:Static loc:Strings.Menu_Workspace}"
 				  Foreground="#F0F0F0"
 				  FontSize="13">
-			<!-- Сохранить для проекта (локальная конфигурация) -->
-			<MenuItem Header="{x:Static loc:Strings.Menu_Workspace_SaveForProject}"
-					  Command="{Binding SaveWorkspaceForProjectCommand}"
-					  IsEnabled="{Binding HasActiveTab}"/>
-	
-			<Separator Background="#3F3F46" Height="1" Margin="0,2"/>
 	
 			<!-- Сохранить для типа проекта (глобальная конфигурация) -->
 			<MenuItem Header="{x:Static loc:Strings.Menu_Workspace_SaveForType}"

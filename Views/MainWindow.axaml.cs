@@ -54,8 +54,7 @@ namespace Writersword.Views
         /// </summary>
         private async void OnClosing(object? sender, CancelEventArgs e)
         {
-            // КРИТИЧЕСКИ ВАЖНО: Защита от рекурсии!
-            // Shutdown() вызывает OnClosing снова - без флага будет Stack Overflow
+            // Защита от рекурсии
             if (_isClosing)
             {
                 e.Cancel = false; // Разрешаем закрытие
@@ -65,7 +64,7 @@ namespace Writersword.Views
             e.Cancel = true; // Останавливаем стандартное закрытие
             _isClosing = true; // Устанавливаем флаг
 
-            System.Console.WriteLine("[MainWindow] OnClosing started");
+            Console.WriteLine("[MainWindow] OnClosing started");
 
             if (DataContext is not MainWindowViewModel vm)
             {
@@ -81,14 +80,14 @@ namespace Writersword.Views
             var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
             var dialogService = App.Services.GetRequiredService<IDialogService>();
 
-            System.Console.WriteLine($"[MainWindow] Open tabs count: {tabCollection.Tabs.Count}");
+            Console.WriteLine($"[MainWindow] Open tabs count: {tabCollection.Tabs.Count}");
 
             // 1. Если нет вкладок - показываем Welcome
             if (tabCollection.Tabs.Count == 0)
             {
-                System.Console.WriteLine("[MainWindow] No tabs, showing welcome");
+                Console.WriteLine("[MainWindow] No tabs, showing welcome");
                 _isClosing = false; // Сбрасываем флаг
-                await Writersword.App.ShowWelcomeScreen(this);
+                await App.ShowWelcomeScreen(this);
                 return; // НЕ закрывать приложение
             }
 
@@ -100,7 +99,7 @@ namespace Writersword.Views
                 .Distinct()
                 .ToList();
             settingsService.SaveOpenProjects(openPaths!);
-            System.Console.WriteLine($"[MainWindow] Saved {openPaths.Count} open projects");
+            Console.WriteLine($"[MainWindow] Saved {openPaths.Count} open projects");
 
             // 3. Проверяем каждую вкладку на несохранённые изменения
             var tabs = tabCollection.Tabs.ToList(); // Копия списка
@@ -110,11 +109,11 @@ namespace Writersword.Views
                 // Пропускаем вкладки без изменений
                 if (!await projectWorkflow.HasUnsavedChanges(tab))
                 {
-                    System.Console.WriteLine($"[MainWindow] Tab {tab.Title} - no changes");
+                    Console.WriteLine($"[MainWindow] Tab {tab.Title} - no changes");
                     continue;
                 }
 
-                System.Console.WriteLine($"[MainWindow] Tab {tab.Title} has unsaved changes");
+                Console.WriteLine($"[MainWindow] Tab {tab.Title} has unsaved changes");
 
                 // Показываем диалог для КАЖДОЙ несохранённой вкладки
                 var result = await dialogService.ShowMessageAsync(
@@ -124,11 +123,11 @@ namespace Writersword.Views
                     MessageBoxButtons.YesNoCancel
                 );
 
-                System.Console.WriteLine($"[MainWindow] User choice for {tab.Title}: {result}");
+                Console.WriteLine($"[MainWindow] User choice for {tab.Title}: {result}");
 
                 if (result == MessageBoxResult.Cancel)
                 {
-                    System.Console.WriteLine("[MainWindow] Closing cancelled by user");
+                    Console.WriteLine("[MainWindow] Closing cancelled by user");
                     _isClosing = false; // Сбрасываем флаг
                     return; // STOP - не закрываем приложение
                 }
@@ -136,26 +135,22 @@ namespace Writersword.Views
                 if (result == MessageBoxResult.Yes)
                 {
                     // Сохраняем вкладку
-                    System.Console.WriteLine($"[MainWindow] Saving tab: {tab.Title}");
+                    Console.WriteLine($"[MainWindow] Saving tab: {tab.Title}");
                     bool saved = await projectWorkflow.SaveDocumentAsync(tab);
 
                     if (!saved)
                     {
-                        System.Console.WriteLine($"[MainWindow] Save failed for {tab.Title}");
+                        Console.WriteLine($"[MainWindow] Save failed for {tab.Title}");
                         _isClosing = false; // Сбрасываем флаг
                         return; // STOP - не закрываем приложение
                     }
 
-                    System.Console.WriteLine($"[MainWindow] Tab saved: {tab.Title}");
+                    Console.WriteLine($"[MainWindow] Tab saved: {tab.Title}");
                 }
                 // Если "Нет" - просто продолжаем дальше
             }
 
-            // 4. Закрываем все Float окна
-            System.Console.WriteLine("[MainWindow] Closing all Float windows");
-            HostWindow.CloseAllWindows();
-
-            System.Console.WriteLine("[MainWindow] OnClosing finished - shutting down");
+            Console.WriteLine("[MainWindow] OnClosing finished - shutting down");
 
             // 5. Закрываем приложение
             // Флаг уже установлен, Shutdown() вызовет OnClosing снова, но мы выйдем сразу

@@ -80,7 +80,7 @@ namespace Writersword.ViewModels.Components
                     ModuleId = metadata.ModuleId,
                     DisplayName = metadata.DisplayName,
                     Description = metadata.Description,
-                    IsActive = moduleSlot != null && moduleSlot.IsVisible,
+                    IsActive = moduleSlot != null,
                     IsRequired = moduleSlot != null && !moduleSlot.IsCloseable
                 };
 

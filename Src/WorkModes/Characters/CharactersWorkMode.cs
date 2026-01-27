@@ -12,7 +12,6 @@ namespace Writersword.Src.WorkModes.Characters
     public class CharactersWorkMode : IWorkMode
     {
         // ===== МЕТАДАННЫЕ (из IWorkModeMetadata) =====
-
         public string Id => "characters";
         public string DisplayName => "Персонажи";
         public string Icon => "👥";
@@ -21,49 +20,54 @@ namespace Writersword.Src.WorkModes.Characters
         public int Order => 2;
 
         // ===== DEFAULT КОНФИГУРАЦИЯ =====
-
-        /// <summary>
-        /// DEFAULT конфигурация Characters режима
-        /// Описывает расположение модулей для работы с персонажами
-        /// </summary>
-        public WorkModeConfig GetDefaultConfig()
+        public WorkMode GetDefaultConfig()
         {
-            return new WorkModeConfig
+            return new WorkMode
             {
-                Order = 2,
-                ModuleSlots = new List<ModuleSlotConfig>
+                WorkModeId = Id,
+                Title = DisplayName,
+                Icon = Icon,
+                IsActive = false,
+                Order = Order,
+                IsCloseable = IsCloseable,
+
+                ModuleSlots = new List<ModuleSlot>
                 {
-                    // ОБЯЗАТЕЛЬНЫЙ: Characters - список персонажей
-                    new ModuleSlotConfig
+                    new ModuleSlot
                     {
                         ModuleId = "Characters",
+                        ContainerId = "Main",
+                        IsFloating = false,
+                        TabOrder = 0,
+                        IsActiveTab = true,
+                        IsCloseable = false,
                         MinWidth = 400,
                         MinHeight = 400,
-                        IsVisible = true,
-                        Category = ModuleCategory.Required,
                         PreferredPosition = PreferredDockPosition.RightAsTab
                     },
 
-                    // НЕОБЯЗАТЕЛЬНЫЙ: Relationships - граф связей персонажей
-                    new ModuleSlotConfig
+                    new ModuleSlot
                     {
                         ModuleId = "Relationships",
+                        ContainerId = "Main",
+                        IsFloating = false,
+                        TabOrder = 1,
+                        IsActiveTab = false,
+                        IsCloseable = true,
                         MinWidth = 400,
                         MinHeight = 400,
-                        IsVisible = true,
-                        Category = ModuleCategory.Optional,
                         PreferredPosition = PreferredDockPosition.RightAsTab
-                    },
+                    }
+                },
 
-                    // НЕОБЯЗАТЕЛЬНЫЙ: Notes - заметки о персонажах
-                    new ModuleSlotConfig
+                Containers = new List<SplitContainer>
+                {
+                    new SplitContainer
                     {
-                        ModuleId = "Notes",
-                        MinWidth = 300,
-                        MinHeight = 200,
-                        IsVisible = false,
-                        Category = ModuleCategory.Optional,
-                        PreferredPosition = PreferredDockPosition.RightAsTab
+                        Id = "Main",
+                        Proportion = 1.0,
+                        Orientation = null,
+                        Children = null
                     }
                 }
             };

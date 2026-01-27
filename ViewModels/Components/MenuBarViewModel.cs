@@ -98,9 +98,6 @@ namespace Writersword.ViewModels.Components
         /// <summary>Команда выхода из приложения</summary>
         public ReactiveCommand<Unit, Unit> ExitCommand { get; }
 
-        /// <summary>Команда сохранения конфигурации для проекта (локальная)</summary>
-        public ReactiveCommand<Unit, Unit> SaveWorkspaceForProjectCommand { get; }
-
         /// <summary>Команда сохранения конфигурации глобально (для типа проекта)</summary>
         public ReactiveCommand<Unit, Unit> SaveWorkspaceGlobalCommand { get; }
 
@@ -157,7 +154,6 @@ namespace Writersword.ViewModels.Components
             SaveProjectCommand = ReactiveCommand.CreateFromTask(SaveProject);
             SaveAsProjectCommand = ReactiveCommand.CreateFromTask(SaveAsProject);
             ExitCommand = ReactiveCommand.Create(Exit);
-            SaveWorkspaceForProjectCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceForProject);
             SaveWorkspaceGlobalCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceGlobal);
             ResetWorkspaceToGlobalCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToGlobal);
             ResetWorkspaceToDefaultCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToDefault);
@@ -326,38 +322,6 @@ namespace Writersword.ViewModels.Components
         }
 
         /// <summary>
-        /// Сохранить конфигурацию для проекта (локальная)
-        /// АВТОСОХРАНЕНИЕ делает это автоматически, но эта кнопка - для явного сохранения
-        /// </summary>
-        private async Task SaveWorkspaceForProject()
-        {
-            var activeTab = _getActiveTab?.Invoke();
-            if (activeTab == null)
-            {
-                Console.WriteLine("[MenuBarViewModel] SaveWorkspaceForProject: No active tab");
-                return;
-            }
-
-            try
-            {
-                Console.WriteLine($"[MenuBarViewModel] Saving workspace for project: {activeTab.Title}");
-
-                // Сохраняем проект (UserConfig уже обновлён в памяти автосохранением)
-                var success = await _projectWorkflow.SaveDocumentAsync(activeTab);
-
-                if (success)
-                {
-                    _notificationService.ShowSuccess(Resources.Localization.Strings.Notification_WorkspaceSavedProject);
-                    Console.WriteLine("[MenuBarViewModel] Workspace saved for project");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[MenuBarViewModel] Error saving workspace: {ex.Message}");
-            }
-        }
-
-        /// <summary>
         /// Сохранить конфигурацию глобально (для всех проектов данного типа)
         /// Применится ко ВСЕМ будущим проектам типа "Novel", "Screenplay" и т.д.
         /// </summary>
@@ -373,6 +337,22 @@ namespace Writersword.ViewModels.Components
             try
             {
                 var project = activeTab.GetProject();
+                var projectTypeObj = _projectTypeRegistry.GetById(project.Type);
+                string displayName = projectTypeObj?.DisplayName ?? project.Type;
+
+                // Показываем диалог подтверждения
+                var result = await _dialogService.ShowMessageAsync(
+                    "Сохранить как глобальные настройки?",
+                    $"Текущая конфигурация будет применена ко всем новым проектам типа \"{displayName}\". Предыдущие глобальные настройки будут перезаписаны. Продолжить?",
+                    MessageBoxType.Warning,
+                    MessageBoxButtons.YesNo
+                );
+
+                if (result != MessageBoxResult.Yes)
+                {
+                    Console.WriteLine("[MenuBarViewModel] Save global cancelled");
+                    return;
+                }
 
                 // Получаем текущие WorkModes
                 var workModeService = App.Services.GetRequiredService<IWorkModeService>();
@@ -388,10 +368,6 @@ namespace Writersword.ViewModels.Components
 
                 // Сохраняем через SettingsService
                 _settingsService.SaveWorkspaceConfig(project.Type, config);
-
-                // Получаем локализованное название типа проекта
-                var projectTypeObj = _projectTypeRegistry.GetById(project.Type);
-                string displayName = projectTypeObj?.DisplayName ?? project.Type;
 
                 _notificationService.ShowSuccess($"Конфигурация сохранена для типа {displayName}");
                 Console.WriteLine($"[MenuBarViewModel] Workspace saved globally for: {project.Type}");
@@ -440,6 +416,24 @@ namespace Writersword.ViewModels.Components
                     return;
                 }
 
+                // === НОВОЕ: ЗАКРЫВАЕМ ВСЕ ФЛОАТ ОКНА ===
+                var mainVM = _mainViewModelProvider?.Invoke();
+                if (mainVM?.DockLayout?.Windows != null)
+                {
+                    Console.WriteLine($"[MenuBarViewModel] Closing {mainVM.DockLayout.Windows.Count} float windows");
+
+                    foreach (var window in mainVM.DockLayout.Windows.ToList())
+                    {
+                        if (window.Host is Writersword.Src.Infrastructure.Dock.HostWindow hostWindow)
+                        {
+                            hostWindow.Exit();
+                            Console.WriteLine($"[MenuBarViewModel] Closed float window: {window.Id}");
+                        }
+                    }
+
+                    mainVM.DockLayout.Windows.Clear();
+                }
+
                 // Удаляем workspace.json из ZIP
                 _workspaceConfigService.DeleteFromZip(fileStorage);
 
@@ -451,7 +445,6 @@ namespace Writersword.ViewModels.Components
                 workModeService.InitializeWorkModes(project.Type, globalWorkModes);
 
                 // Перезагружаем UI
-                var mainVM = _mainViewModelProvider?.Invoke();
                 mainVM?.InitializeWorkModesForTab(activeTab);
 
                 _notificationService.ShowSuccess("Конфигурация восстановлена из глобальных настроек");
@@ -504,6 +497,24 @@ namespace Writersword.ViewModels.Components
                     return;
                 }
 
+                // === НОВОЕ: ЗАКРЫВАЕМ ВСЕ ФЛОАТ ОКНА ===
+                var mainVM = _mainViewModelProvider?.Invoke();
+                if (mainVM?.DockLayout?.Windows != null)
+                {
+                    Console.WriteLine($"[MenuBarViewModel] Closing {mainVM.DockLayout.Windows.Count} float windows");
+
+                    foreach (var window in mainVM.DockLayout.Windows.ToList())
+                    {
+                        if (window.Host is Writersword.Src.Infrastructure.Dock.HostWindow hostWindow)
+                        {
+                            hostWindow.Exit();
+                            Console.WriteLine($"[MenuBarViewModel] Closed float window: {window.Id}");
+                        }
+                    }
+
+                    mainVM.DockLayout.Windows.Clear();
+                }
+
                 // 1. Удаляем LOCAL workspace.json из ZIP
                 _workspaceConfigService.DeleteFromZip(fileStorage);
 
@@ -517,7 +528,6 @@ namespace Writersword.ViewModels.Components
                 Console.WriteLine("[MenuBarViewModel] Cleared project.WorkModes");
 
                 // 4. Теперь InitializeWorkModesForTab загрузит DEFAULT!
-                var mainVM = _mainViewModelProvider?.Invoke();
                 mainVM?.InitializeWorkModesForTab(activeTab);
 
                 _notificationService.ShowSuccess("Конфигурация сброшена до дефолта");

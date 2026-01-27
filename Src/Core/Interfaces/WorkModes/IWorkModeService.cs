@@ -26,9 +26,6 @@ namespace Writersword.Src.Core.Interfaces.WorkModes
         /// <summary>Удалить модуль из режима</summary>
         bool RemoveModuleFromWorkMode(WorkMode workMode, ModuleSlot moduleSlot);
 
-        /// <summary>Показать/скрыть модуль</summary>
-        void ToggleModuleVisibility(ModuleSlot moduleSlot);
-
         /// <summary>Получить все WorkModes проекта</summary>
         List<WorkMode> GetAllWorkModes();
 
@@ -42,10 +39,6 @@ namespace Writersword.Src.Core.Interfaces.WorkModes
         /// Переключиться на другой WorkMode
         /// Закрывает модули старого WorkMode и открывает новые
         /// </summary>
-        /// <param name="newWorkMode">WorkMode на который переключаемся</param>
-        /// <param name="activeModules">Список АКТИВНЫХ модулей текущего WorkMode</param>
-        /// <param name="projectPath">Путь к проекту (для сохранения в кеш)</param>
-        /// <param name="projectId">GUID проекта</param>
         Task SwitchWorkModeAsync(WorkMode newWorkMode, IEnumerable<IModule> activeModules, string projectPath, string projectId);
     }
 }

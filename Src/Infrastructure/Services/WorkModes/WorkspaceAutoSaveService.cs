@@ -11,6 +11,7 @@ using Writersword.Core.Models.WorkModes;
 using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Src.Core.Interfaces.WorkModes;
+using Writersword.Src.Infrastructure.Dock;
 using Writersword.ViewModels;
 
 namespace Writersword.Src.Infrastructure.Services.WorkModes
@@ -18,7 +19,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
     /// <summary>
     /// Сервис автоматического сохранения локальной конфигурации workspace
     /// Сохраняет изменения в workspace.json внутри ZIP спустя 5 секунд после последнего изменения
-    /// Использует debounce для оптимизации (не сохраняет при каждом клике)
     /// </summary>
     public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
     {
@@ -33,8 +33,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         /// <summary>
         /// Запустить автосохранение для проекта
         /// </summary>
-        /// <param name="projectPath">Путь к .writersword файлу</param>
-        /// <param name="project">Экземпляр проекта</param>
         public void Start(string projectPath, ProjectFile project)
         {
             Stop();
@@ -65,14 +63,8 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         /// </summary>
         public void NotifyChange()
         {
-            Console.WriteLine("[WorkspaceAutoSave] NotifyChange() called");
-            Console.WriteLine($"  _isDisposed: {_isDisposed}");
-            Console.WriteLine($"  _currentProject is null: {_currentProject == null}");
-            Console.WriteLine($"  _currentProjectPath is null: {_currentProjectPath == null}");
-
             if (_isDisposed || _currentProject == null || _currentProjectPath == null)
             {
-                Console.WriteLine("[WorkspaceAutoSave] EXITING EARLY - condition failed");
                 return;
             }
 
@@ -87,7 +79,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
         /// <summary>
         /// Сохранить конфигурацию в workspace.json внутри ZIP
-        /// Вызывается автоматически через 5 секунд после последнего изменения
         /// </summary>
         private async void SaveConfiguration()
         {
@@ -100,7 +91,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             {
                 Console.WriteLine($"[WorkspaceAutoSave] Saving workspace.json");
 
-                // Получаем актуальный FileStorage для проекта
                 var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
                 var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
 
@@ -110,7 +100,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                     return;
                 }
 
-                // Собираем текущую конфигурацию из UI
                 var currentConfig = CollectCurrentConfiguration();
 
                 if (currentConfig == null)
@@ -119,7 +108,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                     return;
                 }
 
-                // Сохраняем ТОЛЬКО workspace.json в ZIP
                 var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
                 var success = workspaceConfigService.SaveToZip(fileStorage, currentConfig);
 
@@ -127,44 +115,47 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 {
                     Console.WriteLine("[WorkspaceAutoSave] workspace.json saved successfully");
                 }
-                else
-                {
-                    Console.WriteLine("[WorkspaceAutoSave] Failed to save workspace.json");
-                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[WorkspaceAutoSave] Error saving configuration: {ex.Message}");
+                Console.WriteLine($"[WorkspaceAutoSave] Error saving: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Собрать текущую конфигурацию из UI (активной вкладки)
-        /// Берёт информацию из IWorkModeService о текущих WorkMode
+        /// Собрать текущую конфигурацию из UI
+        /// ОБНОВЛЕНО: Сериализует структуру из DockFactory в новый формат
         /// </summary>
         private WorkspaceLocalConfig? CollectCurrentConfiguration()
         {
             try
             {
                 var workModeService = App.Services.GetRequiredService<IWorkModeService>();
-
-                // Получаем ТОЛЬКО активный WorkMode
                 var activeWorkMode = workModeService.GetActiveWorkMode();
 
                 if (activeWorkMode == null)
                 {
-                    Console.WriteLine("[WorkspaceAutoSave] No active WorkMode to save");
+                    Console.WriteLine("[WorkspaceAutoSave] No active WorkMode");
                     return null;
                 }
 
-                // Проверяем что есть DockLayout
-                if (!activeWorkMode.Settings.CustomSettings.ContainsKey("DockLayout"))
+                // НОВОЕ: Сериализуем текущий layout из UI через DockFactory
+                var mainVM = App.Services.GetRequiredService<MainWindowViewModel>();
+                var dockFactory = App.Services.GetRequiredService<DockFactory>();
+
+                if (mainVM.DockLayout != null)
                 {
-                    Console.WriteLine("[WorkspaceAutoSave] No DockLayout in active WorkMode");
-                    return null;
+                    // Сериализуем layout и получаем обновлённые данные
+                    var (containers, updatedSlots) = dockFactory.SerializeCurrentLayout(mainVM.DockLayout, activeWorkMode);
+
+                    // Обновляем WorkMode
+                    activeWorkMode.Containers = containers;
+                    activeWorkMode.ModuleSlots = updatedSlots;
+
+                    Console.WriteLine($"[WorkspaceAutoSave] Serialized: {containers.Count} containers, {updatedSlots.Count} slots");
                 }
 
-                // Загружаем существующий workspace.json (если есть)
+                // Загружаем существующий workspace.json
                 var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
                 var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath!);
                 var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
@@ -175,7 +166,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                     existingConfig = workspaceConfigService.LoadFromZip(fileStorage);
                 }
 
-                // Если конфига нет - создаём новый
                 if (existingConfig == null)
                 {
                     existingConfig = new WorkspaceLocalConfig
@@ -184,37 +174,33 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                     };
                 }
 
-                // Ищем активный WorkMode в существующем конфиге
+                // Обновляем или добавляем активный WorkMode
                 var existingWorkMode = existingConfig.WorkModes
                     .FirstOrDefault(wm => wm.WorkModeId == activeWorkMode.WorkModeId);
 
                 if (existingWorkMode != null)
                 {
-                    // Обновляем существующий
                     var index = existingConfig.WorkModes.IndexOf(existingWorkMode);
                     existingConfig.WorkModes[index] = activeWorkMode;
-                    Console.WriteLine($"[WorkspaceAutoSave] Updated existing WorkMode: {activeWorkMode.Title}");
+                    Console.WriteLine($"[WorkspaceAutoSave] Updated WorkMode: {activeWorkMode.Title}");
                 }
                 else
                 {
-                    // Добавляем новый
                     existingConfig.WorkModes.Add(activeWorkMode);
-                    Console.WriteLine($"[WorkspaceAutoSave] Added new WorkMode: {activeWorkMode.Title}");
+                    Console.WriteLine($"[WorkspaceAutoSave] Added WorkMode: {activeWorkMode.Title}");
                 }
 
-                Console.WriteLine($"[WorkspaceAutoSave] Total WorkModes in config: {existingConfig.WorkModes.Count}");
                 return existingConfig;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[WorkspaceAutoSave] Error collecting configuration: {ex.Message}");
+                Console.WriteLine($"[WorkspaceAutoSave] Error collecting: {ex.Message}");
                 return null;
             }
         }
 
         /// <summary>
         /// Принудительно сохранить конфигурацию СЕЙЧАС
-        /// Используется при закрытии проекта
         /// </summary>
         public async Task SaveNowAsync()
         {
@@ -227,30 +213,22 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             {
                 Console.WriteLine("[WorkspaceAutoSave] Force saving NOW");
 
-                // Получаем актуальный FileStorage для проекта
                 var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
                 var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
 
                 if (fileStorage == null)
                 {
-                    Console.WriteLine("[WorkspaceAutoSave] FileStorage not found");
                     return;
                 }
 
-                // Отменяем таймер если был
                 _debounceSubscription?.Dispose();
 
-                // Собираем и сохраняем
                 var currentConfig = CollectCurrentConfiguration();
                 if (currentConfig != null)
                 {
                     var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
-                    var success = workspaceConfigService.SaveToZip(fileStorage, currentConfig);
-
-                    if (success)
-                    {
-                        Console.WriteLine("[WorkspaceAutoSave] Force save successful");
-                    }
+                    workspaceConfigService.SaveToZip(fileStorage, currentConfig);
+                    Console.WriteLine("[WorkspaceAutoSave] Force save successful");
                 }
             }
             catch (Exception ex)
@@ -259,7 +237,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             }
         }
 
-        /// <summary>Освободить ресурсы</summary>
         public void Dispose()
         {
             if (_isDisposed)

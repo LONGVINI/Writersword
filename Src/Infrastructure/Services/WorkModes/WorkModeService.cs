@@ -81,39 +81,32 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         /// <summary>Добавить новый режим работы</summary>
         public WorkMode AddWorkMode(string workModeId, string title, string icon)
         {
-            var workMode = new WorkMode
-            {
-                WorkModeId = workModeId,
-                Title = title,
-                Icon = icon,
-                Order = _workModes.Count,
-                IsCloseable = workModeId != "editor", // Editor нельзя закрыть
-                IsActive = false
-            };
-
             // Получаем дефолтную конфигурацию для этого типа WorkMode
             var defaultConfig = _configService.LoadDefaultConfiguration(_currentProjectType);
             var defaultWorkMode = defaultConfig.FirstOrDefault(wm => wm.WorkModeId == workModeId);
 
             if (defaultWorkMode != null)
             {
-                // Копируем слоты модулей из дефолтной конфигурации
-                foreach (var slot in defaultWorkMode.ModuleSlots)
-                {
-                    workMode.ModuleSlots.Add(new ModuleSlot
-                    {
-                        ModuleId = slot.ModuleId,
-                        IsVisible = slot.IsVisible,
-                        IsCloseable = slot.IsCloseable,
-                        MinWidth = slot.MinWidth,
-                        MinHeight = slot.MinHeight,
-                        PreferredPosition = slot.PreferredPosition
-                    });
-                }
+                // Используем готовый WorkMode из дефолтной конфигурации
+                defaultWorkMode.IsActive = false;
+                _workModes.Add(defaultWorkMode);
+                Console.WriteLine($"[WorkModeService] Added WorkMode from default: {defaultWorkMode.Title}");
+                return defaultWorkMode;
             }
 
+            // Если не нашли в дефолтах - создаём минимальный
+            var workMode = new WorkMode
+            {
+                WorkModeId = workModeId,
+                Title = title,
+                Icon = icon,
+                Order = _workModes.Count,
+                IsCloseable = workModeId != "editor",
+                IsActive = false
+            };
+
             _workModes.Add(workMode);
-            Console.WriteLine($"[WorkModeService] Added WorkMode: {title}");
+            Console.WriteLine($"[WorkModeService] Added minimal WorkMode: {title}");
 
             return workMode;
         }
@@ -121,7 +114,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         /// <summary>Удалить режим работы</summary>
         public bool RemoveWorkMode(WorkMode workMode)
         {
-            // Нельзя удалить если режим нельзя закрыть
             if (!workMode.IsCloseable)
             {
                 Console.WriteLine($"[WorkModeService] Cannot remove WorkMode: {workMode.Title} (not closeable)");
@@ -133,7 +125,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             {
                 Console.WriteLine($"[WorkModeService] Removed WorkMode: {workMode.Title}");
 
-                // Если это был активный режим - активируем первый
                 if (workMode.IsActive && _workModes.Count > 0)
                 {
                     SetActiveWorkMode(_workModes[0]);
@@ -149,7 +140,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             var slot = new ModuleSlot
             {
                 ModuleId = moduleId,
-                IsVisible = true,
                 PreferredPosition = PreferredDockPosition.RightAsTab
             };
 
@@ -162,7 +152,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         /// <summary>Удалить модуль из режима</summary>
         public bool RemoveModuleFromWorkMode(WorkMode workMode, ModuleSlot moduleSlot)
         {
-            // Проверяем можно ли удалить этот модуль
             if (!_configService.CanRemoveModule(_currentProjectType, workMode.WorkModeId, moduleSlot.ModuleId))
             {
                 Console.WriteLine($"[WorkModeService] Cannot remove module {moduleSlot.ModuleId} (required)");
@@ -176,13 +165,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             }
 
             return removed;
-        }
-
-        /// <summary>Показать/скрыть модуль</summary>
-        public void ToggleModuleVisibility(ModuleSlot moduleSlot)
-        {
-            moduleSlot.IsVisible = !moduleSlot.IsVisible;
-            Console.WriteLine($"[WorkModeService] Module visibility: {moduleSlot.IsVisible}");
         }
 
         /// <summary>Получить все WorkModes</summary>
@@ -200,13 +182,11 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         /// <summary>Установить активный WorkMode</summary>
         public void SetActiveWorkMode(WorkMode workMode)
         {
-            // Деактивируем все
             foreach (var wm in _workModes)
             {
                 wm.IsActive = false;
             }
 
-            // Активируем выбранный
             workMode.IsActive = true;
 
             Console.WriteLine($"[WorkModeService] Active WorkMode: {workMode.Title}");
@@ -214,12 +194,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
         /// <summary>
         /// Переключиться на другой WorkMode
-        /// Закрывает модули старого WorkMode и открывает новые
         /// </summary>
-        /// <param name="newWorkMode">Новый режим работы</param>
-        /// <param name="activeModules">Активные модули</param>
-        /// <param name="projectPath">Путь к проекту</param>
-        /// <param name="projectId">GUID проекта</param>
         public async Task SwitchWorkModeAsync(WorkMode newWorkMode, IEnumerable<IModule> activeModules, string projectPath, string projectId)
         {
             var oldWorkMode = GetActiveWorkMode();
@@ -232,13 +207,11 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
             Console.WriteLine($"[WorkModeService] Switching: {oldWorkMode?.Title} → {newWorkMode.Title}");
 
-            // 1. Закрываем все модули старого WorkMode (с сохранением в кеш)
             foreach (var module in activeModules)
             {
                 await _lifecycleService.CloseModuleAsync(module, projectPath, projectId);
             }
 
-            // 2. Активируем новый WorkMode
             SetActiveWorkMode(newWorkMode);
 
             Console.WriteLine($"[WorkModeService] Switched to: {newWorkMode.Title}");

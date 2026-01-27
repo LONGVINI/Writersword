@@ -12,7 +12,6 @@ namespace Writersword.Src.WorkModes.Timeline
     public class TimelineWorkMode : IWorkMode
     {
         // ===== МЕТАДАННЫЕ (из IWorkModeMetadata) =====
-
         public string Id => "timeline";
         public string DisplayName => "Таймлайн";
         public string Icon => "📅";
@@ -21,49 +20,54 @@ namespace Writersword.Src.WorkModes.Timeline
         public int Order => 1;
 
         // ===== DEFAULT КОНФИГУРАЦИЯ =====
-
-        /// <summary>
-        /// DEFAULT конфигурация Timeline режима
-        /// Описывает расположение модулей для работы с событиями
-        /// </summary>
-        public WorkModeConfig GetDefaultConfig()
+        public WorkMode GetDefaultConfig()
         {
-            return new WorkModeConfig
+            return new WorkMode
             {
-                Order = 1,
-                ModuleSlots = new List<ModuleSlotConfig>
+                WorkModeId = Id,
+                Title = DisplayName,
+                Icon = Icon,
+                IsActive = false,
+                Order = Order,
+                IsCloseable = IsCloseable,
+
+                ModuleSlots = new List<ModuleSlot>
                 {
-                    // ОБЯЗАТЕЛЬНЫЙ: Timeline - визуализация временной шкалы
-                    new ModuleSlotConfig
+                    new ModuleSlot
                     {
                         ModuleId = "Timeline",
+                        ContainerId = "Main",
+                        IsFloating = false,
+                        TabOrder = 0,
+                        IsActiveTab = true,
+                        IsCloseable = false,
                         MinWidth = 500,
                         MinHeight = 400,
-                        IsVisible = true,
-                        Category = ModuleCategory.Required,
                         PreferredPosition = PreferredDockPosition.RightAsTab
                     },
 
-                    // НЕОБЯЗАТЕЛЬНЫЙ: Characters - список персонажей
-                    new ModuleSlotConfig
+                    new ModuleSlot
                     {
                         ModuleId = "Characters",
+                        ContainerId = "Main",
+                        IsFloating = false,
+                        TabOrder = 1,
+                        IsActiveTab = false,
+                        IsCloseable = true,
                         MinWidth = 250,
                         MinHeight = 300,
-                        IsVisible = true,
-                        Category = ModuleCategory.Optional,
                         PreferredPosition = PreferredDockPosition.RightAsTab
-                    },
+                    }
+                },
 
-                    // НЕОБЯЗАТЕЛЬНЫЙ: Notes - заметки к событиям
-                    new ModuleSlotConfig
+                Containers = new List<SplitContainer>
+                {
+                    new SplitContainer
                     {
-                        ModuleId = "Notes",
-                        MinWidth = 250,
-                        MinHeight = 200,
-                        IsVisible = false,
-                        Category = ModuleCategory.Optional,
-                        PreferredPosition = PreferredDockPosition.RightAsTab
+                        Id = "Main",
+                        Proportion = 1.0,
+                        Orientation = null,
+                        Children = null
                     }
                 }
             };

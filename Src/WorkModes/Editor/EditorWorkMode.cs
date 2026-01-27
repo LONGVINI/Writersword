@@ -19,102 +19,114 @@ namespace Writersword.Src.WorkModes.Editor
         public string Description => "Основной редактор текста";
         public bool IsCloseable => false;
         public int Order => 0;
-        public DockLayoutConfig DockLayout { get; set; } = new();
 
         // ===== DEFAULT КОНФИГУРАЦИЯ =====
 
         /// <summary>
         /// DEFAULT конфигурация Editor режима
-        /// Описывает расположение модулей и их категории по умолчанию
+        /// Возвращает полностью настроенный WorkMode с модулями и структурой layout
         /// </summary>
-        public WorkModeConfig GetDefaultConfig()
+        public WorkMode GetDefaultConfig()
         {
-            return new WorkModeConfig
+            return new WorkMode
             {
-                Order = 0,
-                ModuleSlots = new List<ModuleSlotConfig>
-                 {
-                    // ОБЯЗАТЕЛЬНЫЙ: TextEditor
-                    new ModuleSlotConfig
+                WorkModeId = Id,
+                Title = DisplayName,
+                Icon = Icon,
+                IsActive = false,
+                Order = Order,
+                IsCloseable = IsCloseable,
+
+                // Список модулей с расположением
+                ModuleSlots = new List<ModuleSlot>
+                {
+                    // TextEditor - левая панель
+                    new ModuleSlot
                     {
                         ModuleId = "TextEditor",
-                        IsVisible = true,
-                        Category = ModuleCategory.Required,
+                        ContainerId = "LeftPanel",
+                        IsFloating = false,
+                        TabOrder = 0,
+                        IsActiveTab = true,
+                        IsCloseable = false,  // Required модуль
                         MinWidth = 400,
                         MinHeight = 300,
                         PreferredPosition = PreferredDockPosition.RightAsTab
                     },
 
-                    // НЕОБЯЗАТЕЛЬНЫЙ: Synonyms
-                    new ModuleSlotConfig
+                    // Synonyms - правая верхняя панель
+                    new ModuleSlot
                     {
                         ModuleId = "Synonyms",
-                        IsVisible = true,
-                        Category = ModuleCategory.Optional,
+                        ContainerId = "RightTop",
+                        IsFloating = false,
+                        TabOrder = 0,
+                        IsActiveTab = true,
+                        IsCloseable = true,
                         MinWidth = 250,
                         MinHeight = 200,
                         PreferredPosition = PreferredDockPosition.RightAsTab
                     },
 
-                    // НЕОБЯЗАТЕЛЬНЫЙ: Timer
-                    new ModuleSlotConfig
+                    // Timer - правая нижняя панель
+                    new ModuleSlot
                     {
                         ModuleId = "Timer",
-                        IsVisible = true,
-                        Category = ModuleCategory.Optional,
+                        ContainerId = "RightBottom",
+                        IsFloating = false,
+                        TabOrder = 0,
+                        IsActiveTab = true,
+                        IsCloseable = true,
                         MinWidth = 200,
                         MinHeight = 150,
-                        PreferredPosition = PreferredDockPosition.RightAsTab
-                    },
-
-                    // НЕОБЯЗАТЕЛЬНЫЙ: Notes (скрыт)
-                    new ModuleSlotConfig
-                    {
-                        ModuleId = "Notes",
-                        IsVisible = false,
-                        Category = ModuleCategory.Optional,
-                        MinWidth = 200,
-                        MinHeight = 200,
                         PreferredPosition = PreferredDockPosition.RightAsTab
                     }
                 },
 
-                // DEFAULT Dock-раскладка для Editor
-                DockLayout = new DockLayoutConfig
+                // Структура контейнеров (split панелей)
+                Containers = new List<SplitContainer>
                 {
-                    MainOrientation = DockOrientation.Horizontal,
-                    Panels = new List<DockPanelConfig>
+                    // Корневой контейнер - горизонтальный split
+                    new SplitContainer
                     {
-                        // Левая панель - TextEditor (70% ширины)
-                        new DockPanelConfig
+                        Id = "Root",
+                        Proportion = 1.0,
+                        Orientation = "Horizontal",
+                        Children = new List<SplitContainer>
                         {
-                            Id = "LeftPanel",
-                            Proportion = 0.7,
-                            Modules = new List<string> { "TextEditor" }
-                        },
-
-                        // Правая панель - Synonyms и Timer столбиком (30% ширины)
-                        new DockPanelConfig
-                        {
-                            Id = "RightPanel",
-                            Proportion = 0.3,
-                            Modules = new List<string>(), // Пустой список - будет nested
-                            NestedLayout = new DockLayoutConfig
+                            // Левая панель (70%)
+                            new SplitContainer
                             {
-                                MainOrientation = DockOrientation.Vertical,
-                                Panels = new List<DockPanelConfig>
+                                Id = "LeftPanel",
+                                Proportion = 0.7,
+                                Orientation = null,  // Конечный узел
+                                Children = null
+                            },
+
+                            // Правая панель (30%) - вертикальный split
+                            new SplitContainer
+                            {
+                                Id = "RightPanel",
+                                Proportion = 0.3,
+                                Orientation = "Vertical",
+                                Children = new List<SplitContainer>
                                 {
-                                    new DockPanelConfig
+                                    // Правая верхняя (50%)
+                                    new SplitContainer
                                     {
                                         Id = "RightTop",
                                         Proportion = 0.5,
-                                        Modules = new List<string> { "Synonyms" }
+                                        Orientation = null,
+                                        Children = null
                                     },
-                                    new DockPanelConfig
+
+                                    // Правая нижняя (50%)
+                                    new SplitContainer
                                     {
                                         Id = "RightBottom",
                                         Proportion = 0.5,
-                                        Modules = new List<string> { "Timer" }
+                                        Orientation = null,
+                                        Children = null
                                     }
                                 }
                             }

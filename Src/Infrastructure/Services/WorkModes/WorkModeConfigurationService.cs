@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Src.Core.Interfaces.Services;
@@ -73,42 +72,15 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             // Создаём WorkMode из каждого зарегистрированного
             foreach (var registeredWM in registeredWorkModes)
             {
-                // Получаем DEFAULT конфигурацию из WorkMode
-                var defaultConfig = registeredWM.GetDefaultConfig();
+                // Получаем DEFAULT конфигурацию - теперь это уже готовый WorkMode!
+                var workMode = registeredWM.GetDefaultConfig();
 
-                // Создаём экземпляр WorkMode
-                var workMode = new WorkMode
-                {
-                    WorkModeId = registeredWM.Id,
-                    Title = registeredWM.DisplayName,
-                    Icon = registeredWM.Icon,
-                    Order = defaultConfig.Order,
-                    IsActive = defaultConfig.Order == 0, // Первый активен
-                    IsCloseable = registeredWM.IsCloseable
-                };
-
-                // КОПИРУЕМ ModuleSlots из конфига
-                foreach (var slotConfig in defaultConfig.ModuleSlots)
-                {
-                    workMode.ModuleSlots.Add(new ModuleSlot
-                    {
-                        ModuleId = slotConfig.ModuleId,
-                        IsVisible = slotConfig.IsVisible,
-                        IsCloseable = slotConfig.Category != ModuleCategory.Required,
-                        MinWidth = slotConfig.MinWidth,
-                        MinHeight = slotConfig.MinHeight,
-                        PreferredPosition = slotConfig.PreferredPosition ?? PreferredDockPosition.RightAsTab
-                    });
-                }
-
-                // КРИТИЧЕСКИ ВАЖНО: Сохраняем DockLayout в CustomSettings!
-                if (defaultConfig.DockLayout != null)
-                {
-                    workMode.Settings.CustomSettings["DockLayout"] = defaultConfig.DockLayout;
-                    Console.WriteLine($"[WorkModeConfigService] DockLayout saved for: {workMode.Title}");
-                }
+                // Устанавливаем активность - первый активен
+                workMode.IsActive = registeredWM.Order == 0;
 
                 workModes.Add(workMode);
+
+                Console.WriteLine($"[WorkModeConfigService] Loaded default config for: {workMode.Title}");
             }
 
             Console.WriteLine($"[WorkModeConfigService] Created DEFAULT configuration with {workModes.Count} modes");
@@ -130,18 +102,32 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 Icon = "✍️",
                 Order = 0,
                 IsActive = true,
-                IsCloseable = false
-            };
-
-            editorMode.ModuleSlots.Add(new ModuleSlot
-            {
-                ModuleId = "TextEditor",
-                IsVisible = true,
                 IsCloseable = false,
-                MinWidth = 400,
-                MinHeight = 300,
-                PreferredPosition = PreferredDockPosition.Left
-            });
+                ModuleSlots = new List<ModuleSlot>
+                {
+                    new ModuleSlot
+                    {
+                        ModuleId = "TextEditor",
+                        ContainerId = "Main",
+                        IsFloating = false,
+                        TabOrder = 0,
+                        IsActiveTab = true,
+                        IsCloseable = false,
+                        MinWidth = 400,
+                        MinHeight = 300
+                    }
+                },
+                Containers = new List<SplitContainer>
+                {
+                    new SplitContainer
+                    {
+                        Id = "Main",
+                        Proportion = 1.0,
+                        Orientation = null,
+                        Children = null
+                    }
+                }
+            };
 
             workModes.Add(editorMode);
 
@@ -205,7 +191,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
         /// <summary>
         /// Проверить можно ли удалить модуль из WorkMode
-        /// Проверяет дефолтную конфигурацию - если модуль Required, то нельзя удалить
+        /// Проверяет дефолтную конфигурацию - если модуль Required (IsCloseable=false), то нельзя удалить
         /// </summary>
         public bool CanRemoveModule(string projectType, string workModeId, string moduleId)
         {
