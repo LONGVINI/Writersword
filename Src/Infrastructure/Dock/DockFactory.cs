@@ -1,21 +1,28 @@
 ﻿using Avalonia;
+using Avalonia.Controls;
 using Dock.Model.Avalonia;
 using Dock.Model.Avalonia.Controls;
 using Dock.Model.Avalonia.Core;
 using Dock.Model.Controls;
 using Dock.Model.Core;
+using DynamicData;
 using DynamicData.Binding;
 using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
+using System.Reactive.Disposables;
 using Writersword.Core.Enums;
+using Writersword.Core.Models.Modules;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
 using Writersword.Src.Core.Interfaces.Services;
+using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.ViewModels;
-using DynamicData;
+using Writersword.Views;
 
 namespace Writersword.Src.Infrastructure.Dock
 {
@@ -373,7 +380,6 @@ namespace Writersword.Src.Infrastructure.Dock
         {
             var documents = new List<IDockable>();
 
-            // Берём только не-floating модули
             foreach (var slot in workMode.ModuleSlots.Where(s => !s.IsFloating))
             {
                 var doc = CreateModuleDocument(slot);
@@ -387,7 +393,7 @@ namespace Writersword.Src.Infrastructure.Dock
             {
                 Id = "Documents",
                 Title = "Documents",
-                Proportion = double.NaN,
+                Proportion = double.NaN, // Растягивается на весь экран
                 ActiveDockable = documents.Count > 0 ? documents[0] : null,
                 CanCreateDocument = false
             };
@@ -412,21 +418,60 @@ namespace Writersword.Src.Infrastructure.Dock
         {
             Console.WriteLine($"[DockFactory] Creating document for: {slot.ModuleId}");
 
-            var module = _moduleRegistry.CreateModule(slot.ModuleId);
+            string? instanceIdToUse = null;
+            var tabCollection = App.Services.GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>();
+
+            if (tabCollection.ActiveTab != null)
+            {
+                var project = tabCollection.ActiveTab.GetProject();
+
+                // Приоритет 1: Данные модуля (ModuleState)
+                if (project.ModulesData.TryGetValue(slot.ModuleId, out var data))
+                {
+                    if (data is ModuleState moduleState && !string.IsNullOrEmpty(moduleState.InstanceId))
+                    {
+                        instanceIdToUse = moduleState.InstanceId;
+                        Console.WriteLine($"[DockFactory] Found InstanceId in module data: {instanceIdToUse}");
+                    }
+                }
+
+                // Приоритет 2: Слот в workspace.json
+                if (string.IsNullOrEmpty(instanceIdToUse) && !string.IsNullOrEmpty(slot.InstanceId))
+                {
+                    instanceIdToUse = slot.InstanceId;
+                    Console.WriteLine($"[DockFactory] Using InstanceId from slot: {instanceIdToUse}");
+                }
+
+                if (!string.IsNullOrEmpty(instanceIdToUse))
+                {
+                    Console.WriteLine($"[DockFactory] Creating module WITH InstanceId: {instanceIdToUse}");
+                }
+                else
+                {
+                    Console.WriteLine($"[DockFactory] Creating module WITHOUT InstanceId (will generate new)");
+                }
+            }
+
+            var module = _moduleRegistry.CreateModule(slot.ModuleId, instanceIdToUse);
             if (module?.ViewModel == null)
             {
                 Console.WriteLine($"[DockFactory] Module not created: {slot.ModuleId}");
                 return null;
             }
 
-            var tabCollection = App.Services.GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>();
+            if (string.IsNullOrEmpty(slot.InstanceId))
+            {
+                slot.InstanceId = module.InstanceId;
+                Console.WriteLine($"[DockFactory] Saved InstanceId to slot: {module.InstanceId}");
+            }
+
             if (tabCollection.ActiveTab != null)
             {
                 module.Context = tabCollection.ActiveTab.Context;
                 Console.WriteLine($"[DockFactory] Context assigned to module: {slot.ModuleId}");
 
                 var project = tabCollection.ActiveTab.GetProject();
-                if (project.ModulesData.TryGetValue(slot.ModuleId.ToString(), out var data))
+                if (project.ModulesData.TryGetValue(slot.ModuleId, out var data))
                 {
                     var state = new Writersword.Core.Models.Modules.ModuleState
                     {
@@ -455,7 +500,7 @@ namespace Writersword.Src.Infrastructure.Dock
                 CanFloat = true
             };
 
-            Console.WriteLine($"[DockFactory] Document created: {slot.ModuleId}, CanClose={document.CanClose}");
+            Console.WriteLine($"[DockFactory] Document created: {slot.ModuleId}, InstanceId: {module.InstanceId}, CanClose={document.CanClose}");
 
             bool wasAddedToDock = false;
             bool hasSubscribedToCollection = false;
@@ -1165,7 +1210,6 @@ namespace Writersword.Src.Infrastructure.Dock
                 Proportion = dock.Proportion
             };
 
-            // Если это ProportionalDock со split - рекурсивно обрабатываем детей
             if (dock is ProportionalDock propDock && propDock.VisibleDockables != null && propDock.VisibleDockables.Count > 0)
             {
                 container.Orientation = propDock.Orientation == Orientation.Horizontal ? "Horizontal" : "Vertical";
@@ -1173,12 +1217,18 @@ namespace Writersword.Src.Infrastructure.Dock
 
                 foreach (var child in propDock.VisibleDockables)
                 {
-                    // Пропускаем сплиттеры
                     if (child is ProportionalDockSplitter)
                         continue;
 
                     if (child is IDock childDock)
                     {
+                        // Проверяем что контейнер не пустой перед добавлением
+                        if (IsContainerEmpty(childDock))
+                        {
+                            Console.WriteLine($"[DockFactory] Skipping empty container: {childDock.Id}");
+                            continue;
+                        }
+
                         var childContainer = SerializeContainerRecursive(childDock, childDock.Id ?? Guid.NewGuid().ToString());
                         container.Children.Add(childContainer);
                     }
@@ -1188,7 +1238,6 @@ namespace Writersword.Src.Infrastructure.Dock
             }
             else
             {
-                // Конечный узел (DocumentDock с модулями)
                 container.Orientation = null;
                 container.Children = null;
                 Console.WriteLine($"[DockFactory] Serialized leaf container: {container.Id}");
@@ -1198,19 +1247,47 @@ namespace Writersword.Src.Infrastructure.Dock
         }
 
         /// <summary>
+        /// Проверить что контейнер пустой (не содержит модулей)
+        /// </summary>
+        private bool IsContainerEmpty(IDock dock)
+        {
+            // Если это DocumentDock - проверяем есть ли в нём документы
+            if (dock is DocumentDock docDock)
+            {
+                return docDock.VisibleDockables == null || docDock.VisibleDockables.Count == 0;
+            }
+
+            // Если это ProportionalDock - проверяем рекурсивно все дочерние элементы
+            if (dock is ProportionalDock propDock && propDock.VisibleDockables != null)
+            {
+                foreach (var child in propDock.VisibleDockables)
+                {
+                    if (child is ProportionalDockSplitter)
+                        continue;
+
+                    if (child is IDock childDock)
+                    {
+                        if (!IsContainerEmpty(childDock))
+                            return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Обновить ModuleSlots с актуальными данными из UI
-        /// Устанавливает ContainerId, TabOrder, IsActiveTab для каждого модуля
+        /// Устанавливает ContainerId, TabOrder, IsActiveTab, InstanceId для каждого модуля
         /// </summary>
         private void UpdateModuleSlotsFromDock(IRootDock rootDock, List<ModuleSlot> slots)
         {
-            // Сначала собираем информацию о всех модулях в UI
-            var moduleInfo = new Dictionary<string, (string ContainerId, int TabOrder, bool IsActiveTab)>();
+            var moduleInfo = new Dictionary<string, (string ContainerId, int TabOrder, bool IsActiveTab, string InstanceId)>();
 
             CollectModuleInfoRecursive(rootDock, moduleInfo);
 
             Console.WriteLine($"[DockFactory] Collected info for {moduleInfo.Count} modules from UI");
 
-            // Обновляем слоты
             foreach (var slot in slots)
             {
                 if (moduleInfo.TryGetValue(slot.ModuleId, out var info))
@@ -1218,8 +1295,9 @@ namespace Writersword.Src.Infrastructure.Dock
                     slot.ContainerId = info.ContainerId;
                     slot.TabOrder = info.TabOrder;
                     slot.IsActiveTab = info.IsActiveTab;
+                    slot.InstanceId = info.InstanceId;
 
-                    Console.WriteLine($"[DockFactory] Updated slot: {slot.ModuleId}, Container: {info.ContainerId}, Tab: {info.TabOrder}, Active: {info.IsActiveTab}");
+                    Console.WriteLine($"[DockFactory] Updated slot: {slot.ModuleId}, Instance: {info.InstanceId}, Container: {info.ContainerId}, Tab: {info.TabOrder}, Active: {info.IsActiveTab}");
                 }
             }
         }
@@ -1229,83 +1307,136 @@ namespace Writersword.Src.Infrastructure.Dock
         /// </summary>
         private void UpdateFloatingModules(IRootDock rootDock, List<ModuleSlot> slots)
         {
-            Console.WriteLine($"[DockFactory] === UpdateFloatingModules DIAGNOSTIC ===");
             Console.WriteLine($"[DockFactory] rootDock.Windows count: {rootDock.Windows?.Count ?? 0}");
 
+            // Сначала сбрасываем ВСЕ флоат флаги
+            foreach (var slot in slots)
+            {
+                if (slot.IsFloating)
+                {
+                    slot.IsFloating = false;
+                    slot.ContainerId = null;
+                    Console.WriteLine($"[DockFactory] Reset floating flag: {slot.ModuleId}");
+                }
+            }
+
+            // Если нет окон - выходим
             if (rootDock.Windows == null || rootDock.Windows.Count == 0)
             {
-                Console.WriteLine($"[DockFactory] === END DIAGNOSTIC ===");
-                Console.WriteLine($"[DockFactory] No floating windows");
-
-                // ВАЖНО: Сбрасываем IsFloating для модулей, которые больше не флоат
-                foreach (var slot in slots.Where(s => s.IsFloating))
-                {
-                    // Если модуль был флоат, но окон нет - значит он закрыт
-                    // Проверяем, есть ли он в основном dock
-                    bool foundInDock = false;
-
-                    if (rootDock.VisibleDockables != null)
-                    {
-                        foundInDock = FindModuleInDock(rootDock, slot.ModuleId);
-                    }
-
-                    if (!foundInDock)
-                    {
-                        // Модуль не найден нигде - он закрыт, убираем флоат
-                        slot.IsFloating = false;
-                        slot.ContainerId = null;
-                        Console.WriteLine($"[DockFactory] Reset floating flag for closed module: {slot.ModuleId}");
-                    }
-                }
-
+                Console.WriteLine($"[DockFactory] No floating windows to restore");
                 return;
             }
 
+            // Собираем данные ТОЛЬКО из видимых окон
+            var windowsData = new List<(string ModuleId, double X, double Y, double Width, double Height)>();
+
             foreach (var window in rootDock.Windows)
             {
-                Console.WriteLine($"[DockFactory]   Window ID: {window.Id}");
-                Console.WriteLine($"[DockFactory]   Window Title: {(window as IDockable)?.Title ?? "N/A"}");
-                Console.WriteLine($"[DockFactory]   Host type: {window.Host?.GetType().Name ?? "null"}");
-                Console.WriteLine($"[DockFactory]   Layout type: {window.Layout?.GetType().Name ?? "null"}");
+                // ПРОВЕРЯЕМ ЧТО ОКНО ВИДИМО
+                if (window.Host is HostWindow hostWindow)
+                {
+                    bool isVisible = false;
+
+                    try
+                    {
+                        if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+                        {
+                            // Проверяем видимость окна
+                            if (hostWindow.GetWindow() is FloatingWindow floatWindow)
+                            {
+                                isVisible = floatWindow.IsVisible;
+                            }
+                        }
+                        else
+                        {
+                            var task = Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                if (hostWindow.GetWindow() is FloatingWindow floatWindow)
+                                {
+                                    return floatWindow.IsVisible;
+                                }
+                                return false;
+                            });
+                            isVisible = task.GetAwaiter().GetResult();
+                        }
+                    }
+                    catch
+                    {
+                        isVisible = false;
+                    }
+
+                    if (!isVisible)
+                    {
+                        Console.WriteLine($"[DockFactory] Skipping invisible window: {window.Id}");
+                        continue;
+                    }
+                }
 
                 var floatDock = FindDocumentDockInLayout(window.Layout);
-
                 if (floatDock != null && floatDock.VisibleDockables != null)
                 {
-                    Console.WriteLine($"[DockFactory]   Found DocumentDock inside, VisibleDockables: {floatDock.VisibleDockables.Count}");
-
                     foreach (var dockable in floatDock.VisibleDockables)
                     {
-                        Console.WriteLine($"[DockFactory]     - Dockable: {dockable.Id}, Type: {dockable.GetType().Name}");
-
                         if (dockable is Document document)
                         {
                             string moduleId = document.Id.Replace("Module_", "");
+                            double x = 0, y = 0, width = 800, height = 600;
 
-                            var slot = slots.FirstOrDefault(s => s.ModuleId == moduleId);
-                            if (slot != null)
+                            try
                             {
-                                slot.IsFloating = true;
-                                slot.ContainerId = null;
-
-                                double x = 0, y = 0, width = 800, height = 600;
-                                window.Host?.GetPosition(out x, out y);
-                                window.Host?.GetSize(out width, out height);
-
-                                slot.FloatX = (int)x;
-                                slot.FloatY = (int)y;
-                                slot.FloatWidth = (int)width;
-                                slot.FloatHeight = (int)height;
-
-                                Console.WriteLine($"[DockFactory] Updated floating module: {moduleId} at ({x}, {y})");
+                                if (window.Host is HostWindow hw)
+                                {
+                                    if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+                                    {
+                                        hw.GetPosition(out x, out y);
+                                        hw.GetSize(out width, out height);
+                                    }
+                                    else
+                                    {
+                                        var task = Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                                        {
+                                            double tx = 0, ty = 0, tw = 800, th = 600;
+                                            hw.GetPosition(out tx, out ty);
+                                            hw.GetSize(out tw, out th);
+                                            return (tx, ty, tw, th);
+                                        });
+                                        var result = task.GetAwaiter().GetResult();
+                                        x = result.Item1;
+                                        y = result.Item2;
+                                        width = result.Item3;
+                                        height = result.Item4;
+                                    }
+                                }
                             }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[DockFactory] Error getting window position: {ex.Message}");
+                            }
+
+                            windowsData.Add((moduleId, x, y, width, height));
+                            Console.WriteLine($"[DockFactory] Captured visible float window: {moduleId}");
                         }
                     }
                 }
             }
 
-            Console.WriteLine($"[DockFactory] === END DIAGNOSTIC ===");
-            Console.WriteLine($"[DockFactory] Updating {rootDock.Windows.Count} floating windows");
+            // Обновляем только видимые
+            foreach (var data in windowsData)
+            {
+                var slot = slots.FirstOrDefault(s => s.ModuleId == data.ModuleId);
+                if (slot != null)
+                {
+                    slot.IsFloating = true;
+                    slot.ContainerId = null;
+                    slot.FloatX = (int)data.X;
+                    slot.FloatY = (int)data.Y;
+                    slot.FloatWidth = (int)data.Width;
+                    slot.FloatHeight = (int)data.Height;
+                    Console.WriteLine($"[DockFactory] Restored floating: {data.ModuleId}");
+                }
+            }
+
+            Console.WriteLine($"[DockFactory] Updated {windowsData.Count} visible floating windows");
         }
 
         private bool FindModuleInDock(IDock? dock, string moduleId)
@@ -1375,7 +1506,7 @@ namespace Writersword.Src.Infrastructure.Dock
         /// <summary>
         /// Рекурсивно собрать информацию о модулях из Dock структуры
         /// </summary>
-        private void CollectModuleInfoRecursive(IDockable dockable, Dictionary<string, (string ContainerId, int TabOrder, bool IsActiveTab)> moduleInfo)
+        private void CollectModuleInfoRecursive(IDockable dockable, Dictionary<string, (string ContainerId, int TabOrder, bool IsActiveTab, string InstanceId)> moduleInfo)
         {
             if (dockable is DocumentDock docDock && docDock.VisibleDockables != null)
             {
@@ -1390,14 +1521,23 @@ namespace Writersword.Src.Infrastructure.Dock
                         var moduleId = document.Id.Replace("Module_", "");
                         var isActive = docDock.ActiveDockable == document;
 
-                        moduleInfo[moduleId] = (containerId, i, isActive);
+                        // Получаем модуль напрямую из реестра
+                        var module = _moduleRegistry.GetActiveModule(moduleId);
+                        string? instanceId = module?.InstanceId;
 
-                        Console.WriteLine($"[DockFactory] Found module: {moduleId} in {containerId}, tab {i}, active: {isActive}");
+                        if (instanceId != null)
+                        {
+                            moduleInfo[moduleId] = (containerId, i, isActive, instanceId);
+                            Console.WriteLine($"[DockFactory] Found module: {moduleId} (Instance: {instanceId}) in {containerId}, tab {i}, active: {isActive}");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[DockFactory] WARNING: Could not get InstanceId for module: {moduleId}");
+                        }
                     }
                 }
             }
 
-            // Рекурсивно обходим дочерние элементы
             if (dockable is IDock dock && dock.VisibleDockables != null)
             {
                 foreach (var child in dock.VisibleDockables)
@@ -1437,14 +1577,15 @@ namespace Writersword.Src.Infrastructure.Dock
 
             Console.WriteLine($"[DockFactory] SUBSCRIBE for: {dockable.Id}");
 
-            // Подписка на создание флоат окон
-            if (dockable is IRootDock rootDock && rootDock.Windows is System.Collections.Specialized.INotifyCollectionChanged windowsObservable)
+            // Подписка на создание и закрытие флоат окон
+            if (dockable is IRootDock rootDock && rootDock.Windows is INotifyCollectionChanged windowsObservable)
             {
                 Console.WriteLine($"[DockFactory] Subscribing to Windows.CollectionChanged");
 
-                System.Collections.Specialized.NotifyCollectionChangedEventHandler windowsHandler = (s, e) =>
+                NotifyCollectionChangedEventHandler windowsHandler = (s, e) =>
                 {
-                    if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add && e.NewItems != null)
+                    // Обработка создания флоат окна
+                    if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
                     {
                         foreach (var item in e.NewItems)
                         {
@@ -1460,11 +1601,53 @@ namespace Writersword.Src.Infrastructure.Dock
                             }
                         }
                     }
+
+                    // Обработка закрытия флоат окна
+                    if (e.Action == NotifyCollectionChangedAction.Remove && e.OldItems != null)
+                    {
+                        foreach (var item in e.OldItems)
+                        {
+                            if (item is IDockWindow dockWindow)
+                            {
+                                Console.WriteLine($"[DockFactory] FLOAT WINDOW CLOSED: {dockWindow.Id}");
+
+                                var moduleId = dockWindow.Id?.Replace("Float_", "") ?? "";
+
+                                // Сбрасываем IsFloating в ModuleSlots чтобы окно не воссоздавалось
+                                var tabCollection = App.Services.GetRequiredService<ITabCollection>();
+                                if (tabCollection.ActiveTab != null)
+                                {
+                                    var project = tabCollection.ActiveTab.GetProject();
+                                    var activeWorkMode = project.WorkModes.FirstOrDefault(w => w.IsActive);
+                                    if (activeWorkMode != null)
+                                    {
+                                        var slot = activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
+                                        if (slot != null)
+                                        {
+                                            slot.IsFloating = false;
+                                            slot.ContainerId = null;
+                                            Console.WriteLine($"[DockFactory] Reset IsFloating for: {moduleId}");
+                                        }
+                                    }
+                                }
+
+                                // Уведомляем MainViewModel о закрытии модуля
+                                var mainVM = App.Services.GetRequiredService<MainWindowViewModel>();
+                                mainVM.HandleModuleClosedInDock(moduleId);
+
+                                // Уведомляем автосохранение
+                                if (_autoSaveService != null && _currentProjectPath == projectPath)
+                                {
+                                    _autoSaveService.NotifyChange();
+                                }
+                            }
+                        }
+                    }
                 };
 
                 windowsObservable.CollectionChanged += windowsHandler;
 
-                var windowsSubscription = System.Reactive.Disposables.Disposable.Create(() =>
+                var windowsSubscription = Disposable.Create(() =>
                 {
                     windowsObservable.CollectionChanged -= windowsHandler;
                 });
@@ -1472,20 +1655,24 @@ namespace Writersword.Src.Infrastructure.Dock
                 subscriptions.Add(windowsSubscription);
             }
 
-            if (dockable is System.ComponentModel.INotifyPropertyChanged notifyProperty)
+            // Подписка на изменение свойств (Proportion, ActiveDockable)
+            if (dockable is INotifyPropertyChanged notifyProperty)
             {
-                System.ComponentModel.PropertyChangedEventHandler handler = (sender, e) =>
+                PropertyChangedEventHandler handler = (sender, e) =>
                 {
+                    Console.WriteLine($"[DockFactory] PropertyChanged: {dockable.Id}, Property: {e.PropertyName}");
+
                     if (e.PropertyName == nameof(IDock.Proportion) ||
                         e.PropertyName == nameof(IDock.ActiveDockable))
                     {
+                        Console.WriteLine($"[DockFactory] *** PROPORTION/ACTIVE CHANGED: {dockable.Id}");
                         OnDockPropertyChanged(projectPath, dockable.Id);
                     }
                 };
 
                 notifyProperty.PropertyChanged += handler;
 
-                var subscription = System.Reactive.Disposables.Disposable.Create(() =>
+                var subscription = Disposable.Create(() =>
                 {
                     notifyProperty.PropertyChanged -= handler;
                 });
@@ -1493,14 +1680,15 @@ namespace Writersword.Src.Infrastructure.Dock
                 subscriptions.Add(subscription);
             }
 
-            if (dockable is IDock dock && dock.VisibleDockables is System.Collections.Specialized.INotifyCollectionChanged observable)
+            // Подписка на изменение коллекции VisibleDockables (добавление/удаление вкладок)
+            if (dockable is IDock dock && dock.VisibleDockables is INotifyCollectionChanged observable)
             {
-                System.Collections.Specialized.NotifyCollectionChangedEventHandler handler = (s, e) =>
+                NotifyCollectionChangedEventHandler handler = (s, e) =>
                     OnDockCollectionChanged(projectPath, dockable.Id, e);
 
                 observable.CollectionChanged += handler;
 
-                var subscription = System.Reactive.Disposables.Disposable.Create(() =>
+                var subscription = Disposable.Create(() =>
                 {
                     observable.CollectionChanged -= handler;
                 });
@@ -1508,9 +1696,10 @@ namespace Writersword.Src.Infrastructure.Dock
                 subscriptions.Add(subscription);
             }
 
+            // Подписка на изменение Owner у Document (для отслеживания перемещений)
             if (dockable is Document document)
             {
-                System.ComponentModel.PropertyChangedEventHandler handler = (sender, e) =>
+                PropertyChangedEventHandler handler = (sender, e) =>
                 {
                     if (e.PropertyName == nameof(Document.Owner))
                     {
@@ -1518,11 +1707,11 @@ namespace Writersword.Src.Infrastructure.Dock
                     }
                 };
 
-                if (document is System.ComponentModel.INotifyPropertyChanged docNotify)
+                if (document is INotifyPropertyChanged docNotify)
                 {
                     docNotify.PropertyChanged += handler;
 
-                    var subscription = System.Reactive.Disposables.Disposable.Create(() =>
+                    var subscription = Disposable.Create(() =>
                     {
                         docNotify.PropertyChanged -= handler;
                     });
@@ -1531,6 +1720,7 @@ namespace Writersword.Src.Infrastructure.Dock
                 }
             }
 
+            // Рекурсивно подписываемся на все дочерние элементы
             if (dockable is IDock dockWithChildren && dockWithChildren.VisibleDockables != null)
             {
                 foreach (var child in dockWithChildren.VisibleDockables)
@@ -1539,7 +1729,7 @@ namespace Writersword.Src.Infrastructure.Dock
                 }
             }
         }
-      
+
         private void OnDockPropertyChanged(string projectPath, string? dockId)
         {
             if (_autoSaveService == null || _currentProjectPath != projectPath)
@@ -1551,14 +1741,14 @@ namespace Writersword.Src.Infrastructure.Dock
             _autoSaveService.NotifyChange();
         }
 
-        private void OnDockCollectionChanged(string projectPath, string? dockId, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        private void OnDockCollectionChanged(string projectPath, string? dockId, NotifyCollectionChangedEventArgs e)
         {
             if (_autoSaveService == null || _currentProjectPath != projectPath)
             {
                 return;
             }
 
-            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Remove && e.OldItems != null)
+            if (e.Action == NotifyCollectionChangedAction.Remove && e.OldItems != null)
             {
                 foreach (var item in e.OldItems)
                 {

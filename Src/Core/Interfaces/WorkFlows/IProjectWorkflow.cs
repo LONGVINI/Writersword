@@ -46,5 +46,10 @@ namespace Writersword.Src.Core.Interfaces.WorkFlows
 
         /// <summary>Получить FileStorage для проекта</summary>
         IProjectFileStorage? GetFileStorageForProject(string filePath);
+
+        /// <summary>Зарегистрировать FileStorage для проекта</summary>
+        void RegisterStorage(string filePath, DocumentTabViewModel tab);
+        /// <summary>Обновить FileStorage для проекта</summary>
+        void UpdateStorageForProject(string filePath, IProjectFileStorage newStorage);
     }
 }

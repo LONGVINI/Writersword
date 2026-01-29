@@ -99,24 +99,50 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     // Загружаем состояния модулей
                     foreach (var moduleId in metadata.Modules.Keys)
                     {
-                        var statePath = $"modules/{moduleId}/state.json";
-                        var entry = archive.GetEntry(statePath);
+                        var state = new ModuleState();
 
-                        if (entry != null)
+                        // metadata.json
+                        var metadataEntry = archive.GetEntry($"modules/{moduleId}/metadata.json");
+                        if (metadataEntry != null)
                         {
-                            using (var stream = entry.Open())
+                            using (var stream = metadataEntry.Open())
                             using (var reader = new StreamReader(stream))
                             {
                                 var json = reader.ReadToEnd();
-                                var state = JsonConvert.DeserializeObject<ModuleState>(json);
-
-                                if (state != null)
+                                var meta = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
+                                if (meta != null && meta.TryGetValue("InstanceId", out var id))
                                 {
-                                    states[moduleId] = state;
-                                    Console.WriteLine($"[ZipCacheService]   - {moduleId}: loaded");
+                                    state.InstanceId = id?.ToString() ?? "";
                                 }
                             }
                         }
+
+                        // customdata.json
+                        var customDataEntry = archive.GetEntry($"modules/{moduleId}/customdata.json");
+                        if (customDataEntry != null)
+                        {
+                            using (var stream = customDataEntry.Open())
+                            using (var reader = new StreamReader(stream))
+                            {
+                                var json = reader.ReadToEnd();
+                                state.CustomData = JsonConvert.DeserializeObject<object>(json);
+                            }
+                        }
+
+                        // sessiondata.json
+                        var sessionDataEntry = archive.GetEntry($"modules/{moduleId}/sessiondata.json");
+                        if (sessionDataEntry != null)
+                        {
+                            using (var stream = sessionDataEntry.Open())
+                            using (var reader = new StreamReader(stream))
+                            {
+                                var json = reader.ReadToEnd();
+                                state.SessionData = JsonConvert.DeserializeObject<object>(json);
+                            }
+                        }
+
+                        states[moduleId] = state;
+                        Console.WriteLine($"[ZipCacheService]   - {moduleId}: loaded (Instance: {state.InstanceId})");
                     }
 
                     Console.WriteLine($"[ZipCacheService] =======================");
@@ -155,7 +181,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     ProjectPath = projectPath,
                     CacheDate = DateTime.Now,
                     Version = 1,
-                    Modules = new Dictionary<string, ModuleMetadata>()
+                    Modules = new Dictionary<string, ModuleHashMetadata>()
                 };
 
                 // Список модулей для сохранения
@@ -166,6 +192,14 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 {
                     var moduleId = kvp.Key;
                     var state = kvp.Value;
+
+                    // ПРОПУСКАЕМ модули без данных
+                    if (state.CustomData == null ||
+                        (state.CustomData is string str && string.IsNullOrWhiteSpace(str)))
+                    {
+                        Console.WriteLine($"[ZipCacheService] Skipping module without data: {moduleId}");
+                        continue;
+                    }
 
                     // Вычисляем хеш CustomData
                     var currentHash = _hashService.ComputeHash(state.CustomData);
@@ -191,7 +225,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     var stateJson = JsonConvert.SerializeObject(state);
                     var stateSize = Encoding.UTF8.GetByteCount(stateJson);
 
-                    newMetadata.Modules[moduleId] = new ModuleMetadata
+                    newMetadata.Modules[moduleId] = new ModuleHashMetadata
                     {
                         Hash = currentHash,
                         LastModified = DateTime.Now,
@@ -225,14 +259,43 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                         var moduleId = kvp.Key;
                         var state = kvp.Value;
 
-                        var statePath = $"modules/{moduleId}/state.json";
-                        var stateEntry = archive.CreateEntry(statePath, CompressionLevel.Optimal);
-
-                        using (var stream = stateEntry.Open())
+                        // metadata.json
+                        var metadata = new
+                        {
+                            InstanceId = state.InstanceId,
+                            ModuleId = moduleId,
+                            Version = "1.0"
+                        };
+                        var metadataJson = JsonConvert.SerializeObject(metadata, Formatting.Indented);
+                        var moduleMetadataEntry = archive.CreateEntry($"modules/{moduleId}/metadata.json", CompressionLevel.Optimal);
+                        using (var stream = moduleMetadataEntry.Open())
                         using (var writer = new StreamWriter(stream))
                         {
-                            var stateJson = JsonConvert.SerializeObject(state, Formatting.Indented);
-                            await writer.WriteAsync(stateJson);
+                            await writer.WriteAsync(metadataJson);
+                        }
+
+                        // customdata.json
+                        if (state.CustomData != null)
+                        {
+                            var customDataJson = JsonConvert.SerializeObject(state.CustomData, Formatting.Indented);
+                            var customDataEntry = archive.CreateEntry($"modules/{moduleId}/customdata.json", CompressionLevel.Optimal);
+                            using (var stream = customDataEntry.Open())
+                            using (var writer = new StreamWriter(stream))
+                            {
+                                await writer.WriteAsync(customDataJson);
+                            }
+                        }
+
+                        // sessiondata.json
+                        if (state.SessionData != null)
+                        {
+                            var sessionDataJson = JsonConvert.SerializeObject(state.SessionData, Formatting.Indented);
+                            var sessionDataEntry = archive.CreateEntry($"modules/{moduleId}/sessiondata.json", CompressionLevel.Optimal);
+                            using (var stream = sessionDataEntry.Open())
+                            using (var writer = new StreamWriter(stream))
+                            {
+                                await writer.WriteAsync(sessionDataJson);
+                            }
                         }
                     }
                 }

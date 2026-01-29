@@ -6,6 +6,9 @@
     /// </summary>
     public class ModuleState
     {
+        /// <summary>ID экземпляра модуля (стабильный между сессиями)</summary>
+        public string InstanceId { get; set; } = null!;
+
         /// <summary>
         /// Основные данные модуля (сохраняются в .writersword файл)
         /// Примеры: весь текст документа, список персонажей, полная статистика таймера

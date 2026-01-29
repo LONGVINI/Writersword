@@ -1,9 +1,11 @@
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Threading.Tasks;
-using Newtonsoft.Json;
+using Writersword.Core.Models.Modules;
 using Writersword.Core.Models.Project;
 using Writersword.Src.Shared.Helpers;
 
@@ -34,17 +36,42 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     Directory.CreateDirectory(directory);
                 }
 
-                // Если файл существует - удаляем (создадим новый)
-                // TODO: В будущем можно оптимизировать - открывать в режиме Update
-                if (File.Exists(filePath))
-                {
-                    File.Delete(filePath);
-                }
+                // Определяем режим: Update для существующего файла, Create для нового
+                bool fileExists = File.Exists(filePath);
+                ZipArchiveMode mode = fileExists ? ZipArchiveMode.Update : ZipArchiveMode.Create;
+                FileMode fileMode = fileExists ? FileMode.Open : FileMode.Create;
 
-                // Создаём новый ZIP
-                using (var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
-                using (var archive = new ZipArchive(fileStream, ZipArchiveMode.Create))
+                Console.WriteLine($"[ZipProjectService] Mode: {mode}, FileExists: {fileExists}");
+
+                // Открываем ZIP (Update сохранит workspace.json!)
+                using (var fileStream = new FileStream(filePath, fileMode, FileAccess.ReadWrite))
+                using (var archive = new ZipArchive(fileStream, mode))
                 {
+                    // УДАЛЯЕМ только если файл существовал (режим Update)
+                    if (mode == ZipArchiveMode.Update)
+                    {
+                        var projectEntry = archive.GetEntry("project.json");
+                        if (projectEntry != null)
+                        {
+                            projectEntry.Delete();
+                            Console.WriteLine($"[ZipProjectService] Deleted old project.json");
+                        }
+
+                        var oldModules = archive.Entries
+                            .Where(e => e.FullName.StartsWith("modules/"))
+                            .ToList();
+
+                        foreach (var entry in oldModules)
+                        {
+                            entry.Delete();
+                        }
+
+                        if (oldModules.Count > 0)
+                        {
+                            Console.WriteLine($"[ZipProjectService] Deleted {oldModules.Count} old module entries");
+                        }
+                    }
+
                     // 1. Сохраняем project.json (метаданные проекта)
                     var projectMeta = new
                     {
@@ -57,8 +84,8 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     };
 
                     var projectJson = JsonHelper.Serialize(projectMeta);
-                    var projectEntry = archive.CreateEntry("project.json", CompressionLevel.Optimal);
-                    using (var writer = new StreamWriter(projectEntry.Open()))
+                    var newProjectEntry = archive.CreateEntry("project.json", CompressionLevel.Optimal);
+                    using (var writer = new StreamWriter(newProjectEntry.Open()))
                     {
                         await writer.WriteAsync(projectJson);
                     }
@@ -69,32 +96,38 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     foreach (var moduleEntry in project.ModulesData)
                     {
                         var moduleId = moduleEntry.Key;
-                        var moduleData = moduleEntry.Value;
+                        var moduleState = moduleEntry.Value as ModuleState;
 
-                        if (moduleData != null)
+                        if (moduleState != null)
                         {
-                            var moduleFile = new
+                            // metadata.json
+                            var metadata = new
                             {
+                                InstanceId = moduleState.InstanceId,
                                 ModuleId = moduleId,
-                                Version = "1.0",
-                                Data = moduleData
+                                Version = "1.0"
                             };
-
-                            var moduleJson = JsonHelper.Serialize(moduleFile);
-                            var zipEntry = archive.CreateEntry($"modules/{moduleId}.json", CompressionLevel.Optimal);
-
-                            using (var writer = new StreamWriter(zipEntry.Open()))
+                            var metadataJson = JsonHelper.Serialize(metadata);
+                            var metadataEntry = archive.CreateEntry($"modules/{moduleId}/metadata.json", CompressionLevel.Optimal);
+                            using (var writer = new StreamWriter(metadataEntry.Open()))
                             {
-                                await writer.WriteAsync(moduleJson);
+                                await writer.WriteAsync(metadataJson);
                             }
 
-                            Console.WriteLine($"[ZipProjectService] Saved module: {moduleId}");
+                            // customdata.json
+                            if (moduleState.CustomData != null)
+                            {
+                                var customDataJson = JsonHelper.Serialize(moduleState.CustomData);
+                                var customDataEntry = archive.CreateEntry($"modules/{moduleId}/customdata.json", CompressionLevel.Optimal);
+                                using (var writer = new StreamWriter(customDataEntry.Open()))
+                                {
+                                    await writer.WriteAsync(customDataJson);
+                                }
+                            }
+
+                            Console.WriteLine($"[ZipProjectService] Saved module: {moduleId} (Instance: {moduleState.InstanceId})");
                         }
                     }
-
-                    // ВАЖНО: 
-                    // - workspace.json сохраняется через IWorkspaceConfigService (отдельно)
-                    // - Все файлы которые модули записали через Context.WriteFile() уже находятся в ZIP благодаря ZipFileStorage
                 }
 
                 var fileSize = new FileInfo(filePath).Length / 1024;
@@ -152,39 +185,55 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                     Console.WriteLine($"[ZipProjectService] Loaded project.json: {project.Title}");
 
-                    // 2. Загружаем данные модулей из modules/*.json
-                    foreach (var entry in archive.Entries)
+                    // 2. Загружаем данные модулей из modules/*/
+                    var moduleIds = archive.Entries
+                        .Where(e => e.FullName.StartsWith("modules/") && e.FullName.EndsWith("/metadata.json"))
+                        .Select(e => e.FullName.Split('/')[1])
+                        .Distinct()
+                        .ToList();
+
+                    foreach (var moduleId in moduleIds)
                     {
-                        if (entry.FullName.StartsWith("modules/") && entry.FullName.EndsWith(".json"))
+                        // metadata.json
+                        var metadataEntry = archive.GetEntry($"modules/{moduleId}/metadata.json");
+                        if (metadataEntry == null) continue;
+
+                        string metadataJson;
+                        using (var reader = new StreamReader(metadataEntry.Open()))
                         {
-                            string moduleJson;
-                            using (var reader = new StreamReader(entry.Open()))
+                            metadataJson = await reader.ReadToEndAsync();
+                        }
+
+                        var metadata = JsonConvert.DeserializeObject<Dictionary<string, object>>(metadataJson);
+                        if (metadata == null) continue;
+
+                        var instanceId = metadata.TryGetValue("InstanceId", out var id) ? id?.ToString() : "";
+
+                        // customdata.json
+                        object? customData = null;
+                        var customDataEntry = archive.GetEntry($"modules/{moduleId}/customdata.json");
+                        if (customDataEntry != null)
+                        {
+                            using (var reader = new StreamReader(customDataEntry.Open()))
                             {
-                                moduleJson = await reader.ReadToEndAsync();
-                            }
-
-                            var moduleObject = JsonConvert.DeserializeObject<Dictionary<string, object>>(moduleJson);
-
-                            if (moduleObject != null && moduleObject.TryGetValue("ModuleId", out var moduleIdObj))
-                            {
-                                var moduleId = moduleIdObj?.ToString();
-
-                                if (!string.IsNullOrEmpty(moduleId) && moduleObject.TryGetValue("Data", out var data))
-                                {
-                                    project.ModulesData[moduleId] = data;
-                                    Console.WriteLine($"[ZipProjectService] Loaded module: {moduleId}");
-                                }
+                                var customDataJson = await reader.ReadToEndAsync();
+                                customData = JsonConvert.DeserializeObject<object>(customDataJson);
                             }
                         }
+
+                        // Создаем ModuleState
+                        var moduleState = new ModuleState
+                        {
+                            InstanceId = instanceId ?? "",
+                            CustomData = customData
+                        };
+
+                        project.ModulesData[moduleId] = moduleState;
+                        Console.WriteLine($"[ZipProjectService] Loaded module: {moduleId} (Instance: {instanceId})");
                     }
 
                     Console.WriteLine($"[ZipProjectService] Project loaded successfully");
                     Console.WriteLine($"[ZipProjectService] Modules: {project.ModulesData.Count}");
-
-                    // ВАЖНО: 
-                    // - workspace.json загружается через IWorkspaceConfigService (отдельно)
-                    // - Файлы которые модули сохранили через Context.WriteFile() останутся в ZIP и будут доступны через ZipFileStorage
-
                     return project;
                 }
             }

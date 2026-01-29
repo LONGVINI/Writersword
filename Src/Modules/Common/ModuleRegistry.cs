@@ -19,9 +19,11 @@ namespace Writersword.Modules.Common
         }
 
         /// <summary>Создать и зарегистрировать модуль по строковому ID</summary>
-        public IModule? CreateModule(string moduleId)
+        /// <param name="moduleId">Тип модуля</param>
+        /// <param name="instanceId">ID экземпляра (если null - генерируется новый)</param>
+        public IModule? CreateModule(string moduleId, string? instanceId = null)
         {
-            var module = _factory.Create(moduleId);
+            var module = _factory.Create(moduleId, instanceId);
             if (module != null)
             {
                 _activeModules[module.InstanceId] = module;
@@ -76,7 +78,6 @@ namespace Writersword.Modules.Common
         private void OnModuleRequestDetach(IModule module)
         {
             Console.WriteLine($"[ModuleRegistry] Module detach requested: {module.InstanceId}");
-            // TODO: Открепление в отдельное окно
         }
 
         /// <summary>
@@ -87,16 +88,12 @@ namespace Writersword.Modules.Common
         {
             var metadataList = new List<IModuleMetadata>();
 
-            // Получаем все зарегистрированные типы из фабрики
             foreach (var moduleId in _factory.GetRegisteredTypes())
             {
-                // Создаём временный экземпляр для чтения метаданных
                 var tempModule = _factory.Create(moduleId);
                 if (tempModule?.Metadata != null)
                 {
                     metadataList.Add(tempModule.Metadata);
-
-                    // Сразу удаляем временный экземпляр
                     tempModule.Dispose();
                 }
             }

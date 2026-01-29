@@ -488,6 +488,20 @@ namespace Writersword.ViewModels
         {
             Console.WriteLine($"[MainWindowViewModel] Project closed: {tab.Title}");
 
+            // Сохраняем конфигурацию перед закрытием
+            if (!string.IsNullOrEmpty(tab.FilePath) && ActiveWorkMode != null && DockLayout != null)
+            {
+                Console.WriteLine($"[MainWindowViewModel] Saving workspace before closing project");
+
+                var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(tab.FilePath);
+                if (autoSave != null)
+                {
+                    // Принудительное сохранение СЕЙЧАС (не через 5 секунд)
+                    autoSave.SaveNowAsync().Wait();
+                    Console.WriteLine($"[MainWindowViewModel] Workspace saved for: {tab.Title}");
+                }
+            }
+
             _cacheUpdateService.Stop();
 
             string tabKey = tab.FilePath ?? tab.Id;
@@ -587,6 +601,7 @@ namespace Writersword.ViewModels
         /// <summary>
         /// Получить список активных модулей из текущего DockLayout
         /// Используется при переключении WorkMode
+        /// ФИЛЬТРУЕТ модули по InstanceId (только "свои" модули)
         /// </summary>
         public List<IModule> GetActiveModules()
         {
@@ -600,7 +615,33 @@ namespace Writersword.ViewModels
 
             CollectModulesFromDockable(DockLayout, modules);
 
-            Console.WriteLine($"[GetActiveModules] Found {modules.Count} active modules");
+            if (ActiveWorkMode != null && modules.Count > 0)
+            {
+                var validInstanceIds = ActiveWorkMode.ModuleSlots
+                    .Where(s => !string.IsNullOrEmpty(s.InstanceId))
+                    .Select(s => s.InstanceId)
+                    .ToHashSet();
+
+                var filteredModules = modules
+                    .Where(m => validInstanceIds.Contains(m.InstanceId))
+                    .ToList();
+
+                var foreignCount = modules.Count - filteredModules.Count;
+                if (foreignCount > 0)
+                {
+                    Console.WriteLine($"[GetActiveModules] FILTERED OUT {foreignCount} foreign modules!");
+
+                    foreach (var foreign in modules.Except(filteredModules))
+                    {
+                        Console.WriteLine($"  - Foreign: {foreign.ModuleId} (Instance: {foreign.InstanceId})");
+                    }
+                }
+
+                Console.WriteLine($"[GetActiveModules] Returned {filteredModules.Count}/{modules.Count} valid modules");
+                return filteredModules;
+            }
+
+            Console.WriteLine($"[GetActiveModules] Found {modules.Count} active modules (no filtering)");
             return modules;
         }
 
@@ -1020,29 +1061,6 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>
-        /// Полностью перезагрузить UI для текущего WorkMode
-        /// ИСПОЛЬЗУЕТСЯ ТОЛЬКО при переключении WorkMode или создании вкладки!
-        /// НЕ использовать для обновления после добавления/удаления модулей!
-        /// </summary>
-        private void RefreshWorkModeUI()
-        {
-            if (ActiveWorkMode == null)
-            {
-                Console.WriteLine("[RefreshWorkModeUI] No active WorkMode");
-                return;
-            }
-
-            Console.WriteLine($"[RefreshWorkModeUI] FULL REFRESH for: {ActiveWorkMode.Title}");
-
-            // ПОЛНАЯ перезагрузка панели модулей (сбрасывает все IsActive!)
-            ModulePanel.LoadModulesForWorkMode(ActiveWorkMode);
-
-            // Обновляем состояние меню
-            UpdateWorkModeMenuItems();
-            UpdateModuleMenuItems();
-        }
-
-        /// <summary>
         /// Обработчик закрытия модуля пользователем через крестик в Dock
         /// ВАЖНО: Вызывается из DockFactory когда Document.Owner становится null
         /// </summary>
@@ -1052,10 +1070,16 @@ namespace Writersword.ViewModels
 
             if (ActiveWorkMode == null) return;
 
-            // 1. Уведомляем ModulePanel (снимает IsActive для модуля)
-            ModulePanel.MarkModuleAsClosed(moduleId);
+            // СБРОС IsFloating для закрытого модуля
+            var slot = ActiveWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
+            if (slot != null && slot.IsFloating)
+            {
+                slot.IsFloating = false;
+                slot.ContainerId = null;
+                Console.WriteLine($"[MainWindowViewModel] Reset floating flag for: {moduleId}");
+            }
 
-            // 2. Обновляем ТОЛЬКО меню (БЕЗ перезагрузки панели!)
+            ModulePanel.MarkModuleAsClosed(moduleId);
             UpdateModuleMenuItems();
 
             var tab = _tabCollection.ActiveTab;
@@ -1064,6 +1088,30 @@ namespace Writersword.ViewModels
                 var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(tab.FilePath);
                 autoSave?.NotifyChange();
                 Console.WriteLine($"[MainWindowViewModel] UI updated after dock close");
+            }
+        }
+
+
+        /// <summary>
+        /// Принудительно сохранить workspace.json для АКТИВНОЙ вкладки
+        /// Вызывается при закрытии приложения
+        /// </summary>
+        public async Task SaveActiveWorkspaceConfigurationAsync()
+        {
+            Console.WriteLine("[MainWindowViewModel] Saving workspace for ACTIVE tab");
+
+            var activeTab = _tabCollection.ActiveTab;
+            if (activeTab == null || string.IsNullOrEmpty(activeTab.FilePath))
+            {
+                Console.WriteLine("[MainWindowViewModel] No active tab to save");
+                return;
+            }
+
+            var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(activeTab.FilePath);
+            if (autoSave != null)
+            {
+                Console.WriteLine($"[MainWindowViewModel] Force saving workspace for: {activeTab.Title}");
+                await autoSave.SaveNowAsync();
             }
         }
     }

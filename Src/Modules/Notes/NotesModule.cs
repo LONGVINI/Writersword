@@ -22,6 +22,15 @@ namespace Writersword.Modules.Notes
         private NotesViewModel? _viewModel;
         private IDisposable? _notesSubscription;
 
+        /// <summary>
+        /// Конструктор модуля заметок
+        /// </summary>
+        /// <param name="instanceId">ID экземпляра модуля (если null - генерируется новый)</param>
+        public NotesModule(string? instanceId = null) : base(instanceId)
+        {
+
+        }
+
         /// <summary>Идентификатор модуля</summary>
         public override string ModuleId => "Notes";
 
@@ -76,10 +85,11 @@ namespace Writersword.Modules.Notes
         {
             return new ModuleState
             {
+                InstanceId = this.InstanceId,
                 CustomData = _viewModel?.NoteText,
                 SessionData = new
                 {
-                    scrollPosition = 0 
+                    scrollPosition = 0
                 }
             };
         }
@@ -92,7 +102,7 @@ namespace Writersword.Modules.Notes
         {
             base.RestoreState(state);
 
-            if (_viewModel != null && state.CustomData is string notes && !string.IsNullOrEmpty(notes))
+            if (_viewModel != null && state.CustomData is string notes && notes.Length > 0)
             {
                 _viewModel.NoteText = notes;
                 Console.WriteLine($"[NotesModule] Restored {notes.Length} characters");

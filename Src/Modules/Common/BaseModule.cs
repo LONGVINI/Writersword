@@ -16,7 +16,7 @@ namespace Writersword.Modules.Common
         private DocumentContext? _context;
 
         /// <summary>Уникальный ID экземпляра модуля</summary>
-        public string InstanceId { get; } = Guid.NewGuid().ToString();
+        public string InstanceId { get; private set; }
 
         /// <summary>
         /// Идентификатор типа модуля (строка)
@@ -48,6 +48,15 @@ namespace Writersword.Modules.Common
                     OnContextChanged(value);
                 }
             }
+        }
+
+        /// <summary>
+        /// Конструктор базового модуля
+        /// </summary>
+        /// <param name="instanceId">ID экземпляра модуля (если null - генерируется новый)</param>
+        protected BaseModule(string? instanceId = null)
+        {
+            InstanceId = instanceId ?? Guid.NewGuid().ToString();
         }
 
         /// <summary>
@@ -91,7 +100,7 @@ namespace Writersword.Modules.Common
             RequestDetach?.Invoke(this);
         }
 
-        /// <summary>ы
+        /// <summary>
         /// Вызывается при изменении контекста
         /// Переопределите в наследниках для реакции на смену контекста/проекта
         /// </summary>

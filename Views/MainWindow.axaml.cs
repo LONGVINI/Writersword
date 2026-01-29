@@ -91,6 +91,10 @@ namespace Writersword.Views
                 return; // НЕ закрывать приложение
             }
 
+            // 1.5. ПРИНУДИТЕЛЬНО сохраняем workspace.json для ВСЕХ открытых вкладок
+            Console.WriteLine("[MainWindow] Saving workspace configurations for all tabs");
+            await vm.SaveActiveWorkspaceConfigurationAsync();
+
             // 2. Сохраняем список открытых проектов (для восстановления при следующем запуске)
             var settingsService = App.Services.GetRequiredService<ISettingsService>();
             var openPaths = tabCollection.Tabs

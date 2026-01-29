@@ -58,7 +58,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 Type = type,
                 CreatedAt = DateTime.Now,
                 LastModified = DateTime.Now,
-                FormatVersion = "3.0"  // ← НОВАЯ ВЕРСИЯ (ZIP формат)
+                FormatVersion = "1.0"
             };
 
             return project;

@@ -200,16 +200,16 @@ namespace Writersword
 
             foreach (var moduleType in moduleTypes)
             {
-                // Создаём экземпляр модуля для получения его метаданных
-                var instance = Activator.CreateInstance(moduleType) as BaseModule;
+                // Создаём временный экземпляр модуля для получения его метаданных (с null instanceId)
+                var instance = Activator.CreateInstance(moduleType, new object?[] { null }) as BaseModule;
                 if (instance != null)
                 {
-                    // Регистрируем фабричный метод создания модуля
-                    moduleFactory.Register(instance.ModuleId, () =>
-                        Activator.CreateInstance(moduleType) as BaseModule
+                    // Регистрируем фабричный метод создания модуля с поддержкой instanceId
+                    moduleFactory.Register(instance.ModuleId, (instanceId) =>
+                        Activator.CreateInstance(moduleType, new object?[] { instanceId }) as BaseModule
                         ?? throw new InvalidOperationException($"Failed to create module {moduleType.Name}"));
 
-                    Console.WriteLine($"[App] ✓ Auto-registered module: {instance.Metadata.DisplayName}");
+                    Console.WriteLine($"[App] Auto-registered module: {instance.Metadata.DisplayName}");
                 }
             }
 

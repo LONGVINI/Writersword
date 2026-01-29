@@ -19,6 +19,15 @@ namespace Writersword.Modules.Timer
     {
         private TimerViewModel? _viewModel;
 
+        /// <summary>
+        /// Конструктор модуля таймера
+        /// </summary>
+        /// <param name="instanceId">ID экземпляра модуля (если null - генерируется новый)</param>
+        public TimerModule(string? instanceId = null) : base(instanceId)
+        {
+
+        }
+
         /// <summary>Идентификатор модуля</summary>
         public override string ModuleId => "Timer";
 
@@ -58,6 +67,7 @@ namespace Writersword.Modules.Timer
         {
             return new ModuleState
             {
+                InstanceId = this.InstanceId,
                 CustomData = null
             };
         }

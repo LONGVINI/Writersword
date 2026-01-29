@@ -148,11 +148,27 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                     // Сериализуем layout и получаем обновлённые данные
                     var (containers, updatedSlots) = dockFactory.SerializeCurrentLayout(mainVM.DockLayout, activeWorkMode);
 
+                    // ФИЛЬТРАЦИЯ: Оставляем только "свои" модули
+                    var validInstanceIds = activeWorkMode.ModuleSlots
+                        .Where(s => !string.IsNullOrEmpty(s.InstanceId))
+                        .Select(s => s.InstanceId)
+                        .ToHashSet();
+
+                    var filteredSlots = updatedSlots
+                        .Where(s => string.IsNullOrEmpty(s.InstanceId) || validInstanceIds.Contains(s.InstanceId))
+                        .ToList();
+
+                    var foreignCount = updatedSlots.Count - filteredSlots.Count;
+                    if (foreignCount > 0)
+                    {
+                        Console.WriteLine($"[WorkspaceAutoSave] FILTERED OUT {foreignCount} foreign modules from slots!");
+                    }
+
                     // Обновляем WorkMode
                     activeWorkMode.Containers = containers;
-                    activeWorkMode.ModuleSlots = updatedSlots;
+                    activeWorkMode.ModuleSlots = filteredSlots;
 
-                    Console.WriteLine($"[WorkspaceAutoSave] Serialized: {containers.Count} containers, {updatedSlots.Count} slots");
+                    Console.WriteLine($"[WorkspaceAutoSave] Serialized: {containers.Count} containers, {filteredSlots.Count} slots");
                 }
 
                 // Загружаем существующий workspace.json

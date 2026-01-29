@@ -19,6 +19,15 @@ namespace Writersword.Modules.Synonyms
     {
         private SynonymsViewModel? _viewModel;
 
+        /// <summary>
+        /// Конструктор модуля синонимов
+        /// </summary>
+        /// <param name="instanceId">ID экземпляра модуля (если null - генерируется новый)</param>
+        public SynonymsModule(string? instanceId = null) : base(instanceId)
+        {
+
+        }
+
         /// <summary>Идентификатор модуля</summary>
         public override string ModuleId => "Synonyms";
 
@@ -58,6 +67,7 @@ namespace Writersword.Modules.Synonyms
         {
             return new ModuleState
             {
+                InstanceId = this.InstanceId,
                 CustomData = null
             };
         }

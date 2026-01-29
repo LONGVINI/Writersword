@@ -9,21 +9,23 @@ namespace Writersword.Modules.Common
     /// </summary>
     public class ModuleFactory
     {
-        private readonly Dictionary<string, Func<IModule>> _moduleCreators = new();
+        private readonly Dictionary<string, Func<string?, IModule>> _moduleCreators = new();
 
         /// <summary>Зарегистрировать создатель модуля</summary>
-        public void Register(string moduleId, Func<IModule> creator)
+        public void Register(string moduleId, Func<string?, IModule> creator)
         {
             _moduleCreators[moduleId] = creator;
             Console.WriteLine($"[ModuleFactory] Registered: {moduleId}");
         }
 
         /// <summary>Создать экземпляр модуля</summary>
-        public IModule? Create(string moduleId)
+        /// <param name="moduleId">Тип модуля</param>
+        /// <param name="instanceId">ID экземпляра (если null - генерируется новый)</param>
+        public IModule? Create(string moduleId, string? instanceId = null)
         {
             if (_moduleCreators.TryGetValue(moduleId, out var creator))
             {
-                var module = creator();
+                var module = creator(instanceId);
                 Console.WriteLine($"[ModuleFactory] Created: {moduleId} (ID: {module.InstanceId})");
                 return module;
             }

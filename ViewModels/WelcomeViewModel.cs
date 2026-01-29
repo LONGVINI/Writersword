@@ -2,6 +2,7 @@
 using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
@@ -83,7 +84,7 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>Создать новый проект</summary>
-        private async System.Threading.Tasks.Task CreateNewProject()
+        private async Task CreateNewProject()
         {
             var savePath = await _dialogService.SaveFileAsync();
             if (string.IsNullOrEmpty(savePath))
@@ -103,18 +104,22 @@ namespace Writersword.ViewModels
             }
 
             // Создаём новый проект
-            var projectName = System.IO.Path.GetFileNameWithoutExtension(savePath);
+            var projectName = Path.GetFileNameWithoutExtension(savePath);
             var project = _projectService.CreateNew(projectName, SelectedProjectType);
 
-            // Сохраняем проект
+            // Сохраняем его
             await _projectService.SaveAsync(project, savePath);
 
             // Создаём вкладку
             var tabVM = new DocumentTabViewModel(project, savePath);
+
+            // Регистрируем хранилище
+            _projectWorkflow.RegisterStorage(savePath, tabVM);
+
+            // Добавляем вкладку в коллекцию и делаем её активной
             tabCollection.Add(tabVM);
             tabCollection.ActiveTab = tabVM;
 
-            // Инициализируем WorkModes
             mainViewModel.InitializeWorkModesForTab(tabVM);
 
             // Добавляем в недавние
@@ -166,7 +171,7 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>Открыть недавний проект напрямую</summary>
-        public async System.Threading.Tasks.Task OpenRecentProjectDirect(RecentProject recent)
+        public async Task OpenRecentProjectDirect(RecentProject recent)
         {
             if (_isProcessing)
             {

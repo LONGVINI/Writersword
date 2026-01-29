@@ -1,6 +1,8 @@
-﻿using System.IO;
+﻿using Microsoft.Extensions.DependencyInjection;
+using System.IO;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
+using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Src.Infrastructure.Services.Storage;
 
 namespace Writersword.Core.Models
@@ -121,7 +123,11 @@ namespace Writersword.Core.Models
         {
             if (!string.IsNullOrEmpty(FilePath) && File.Exists(FilePath))
             {
-                FileStorage = new ZipFileStorageService(FilePath);
+                var newStorage = new ZipFileStorageService(FilePath);
+                FileStorage = newStorage;
+
+                var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
+                projectWorkflow.UpdateStorageForProject(FilePath, newStorage);
             }
         }
     }

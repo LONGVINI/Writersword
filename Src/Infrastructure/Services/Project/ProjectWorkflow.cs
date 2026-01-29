@@ -504,26 +504,27 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                     var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
                     var activeModules = mainViewModel.GetActiveModules();
-                    var currentCustomData = stateCollector.CollectCustomData(activeModules);
+
+                    // ИСПРАВЛЕНИЕ: Собираем ПОЛНЫЕ состояния (ModuleState), а не только CustomData
+                    var currentStates = stateCollector.CollectAllStates(activeModules);
 
                     var cache = _cacheService.LoadCache(filePath);
 
                     allData = new Dictionary<string, object?>();
 
+                    // Добавляем данные из кеша (для неактивных модулей)
                     if (cache != null)
                     {
                         foreach (var kvp in cache)
                         {
-                            if (kvp.Value.CustomData != null)
-                            {
-                                allData[kvp.Key] = kvp.Value.CustomData;
-                            }
+                            allData[kvp.Key] = kvp.Value; // ModuleState из кеша
                         }
                     }
 
-                    foreach (var kvp in currentCustomData)
+                    // Перезаписываем данными из активных модулей (приоритет у текущих)
+                    foreach (var kvp in currentStates)
                     {
-                        allData[kvp.Key] = kvp.Value;
+                        allData[kvp.Key] = kvp.Value; // ModuleState из UI
                     }
 
                     project.ModulesData = allData;
@@ -561,12 +562,11 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     }
 
                     allData = new Dictionary<string, object?>();
+
+                    // ИСПРАВЛЕНИЕ: Сохраняем ModuleState из кеша, а не только CustomData
                     foreach (var kvp in cache)
                     {
-                        if (kvp.Value.CustomData != null)
-                        {
-                            allData[kvp.Key] = kvp.Value.CustomData;
-                        }
+                        allData[kvp.Key] = kvp.Value; // ModuleState целиком
                     }
 
                     project.ModulesData = allData;
@@ -698,19 +698,18 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                 if (!string.IsNullOrEmpty(filePath))
                 {
-                    tab.Context.CloseZipStorage();
-                    Console.WriteLine($"[ProjectWorkflow] ZipStorage closed for context");
-
-                    // Останавливаем и удаляем WorkspaceAutoSaveService
                     if (_autoSaveServices.TryGetValue(filePath, out var autoSaveService))
                     {
-                        await autoSaveService.SaveNowAsync(); // Сохраняем перед закрытием
+                        await autoSaveService.SaveNowAsync();
                         autoSaveService.Dispose();
                         _autoSaveServices.Remove(filePath);
                         Console.WriteLine($"[ProjectWorkflow] WorkspaceAutoSave stopped for: {filePath}");
                     }
 
-                    // НОВОЕ: Отписываемся от событий DockFactory
+                    tab.Context.CloseZipStorage();
+                    Console.WriteLine($"[ProjectWorkflow] ZipStorage closed for context");
+
+                    // Отписываемся от событий DockFactory
                     var dockFactory = App.Services.GetRequiredService<DockFactory>();
                     dockFactory.UnsubscribeFromDockEvents(filePath);
                     Console.WriteLine($"[ProjectWorkflow] DockFactory unsubscribed from: {filePath}");
@@ -810,7 +809,24 @@ namespace Writersword.Src.Infrastructure.Services.Project
                         }
                     }
 
-                    Console.WriteLine($"[ProjectWorkflow] HasUnsavedChanges - active tab, collected {allCurrentData.Count} modules");
+                    // Фильтруем модули с пустыми данными
+                    var nonEmptyData = allCurrentData
+                        .Where(kvp =>
+                            kvp.Value != null &&
+                            !(kvp.Value is string str && string.IsNullOrWhiteSpace(str))
+                        )
+                        .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+                    Console.WriteLine($"[ProjectWorkflow] HasUnsavedChanges - active tab, collected {nonEmptyData.Count} non-empty modules");
+
+                    // Если нет реальных данных - нет изменений
+                    if (nonEmptyData.Count == 0)
+                    {
+                        Console.WriteLine($"[ProjectWorkflow] HasUnsavedChanges ({tab.Title}): False (no data)");
+                        return false;
+                    }
+
+                    allCurrentData = nonEmptyData;
                 }
                 else
                 {
@@ -834,17 +850,34 @@ namespace Writersword.Src.Infrastructure.Services.Project
                         }
                     }
 
-                    Console.WriteLine($"[ProjectWorkflow] HasUnsavedChanges - inactive tab, loaded {allCurrentData.Count} modules from cache");
+                    // Фильтруем модули с пустыми данными
+                    var nonEmptyData = allCurrentData
+                        .Where(kvp =>
+                            kvp.Value != null &&
+                            !(kvp.Value is string str && string.IsNullOrWhiteSpace(str))
+                        )
+                        .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+                    Console.WriteLine($"[ProjectWorkflow] HasUnsavedChanges - inactive tab, loaded {nonEmptyData.Count} non-empty modules from cache");
+
+                    // Если нет реальных данных - нет изменений
+                    if (nonEmptyData.Count == 0)
+                    {
+                        Console.WriteLine($"[ProjectWorkflow] HasUnsavedChanges ({tab.Title}, inactive): false (no data in cache)");
+                        return false;
+                    }
+
+                    allCurrentData = nonEmptyData;
                 }
 
-                // КРИТИЧНО: Закрываем ZIP перед чтением файла
+                // Закрываем ZIP перед чтением файла
                 tab.Context.CloseZipStorage();
                 Console.WriteLine($"[ProjectWorkflow] ZIP closed for comparison");
 
                 // Загружаем свежие данные напрямую из ZIP файла
                 var savedProject = await _projectService.LoadAsync(filePath);
 
-                // КРИТИЧНО: Переоткрываем ZIP после чтения
+                // Переоткрываем ZIP после чтения
                 tab.Context.ReopenZipStorage();
                 Console.WriteLine($"[ProjectWorkflow] ZIP reopened after comparison");
 
@@ -929,6 +962,34 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
             Console.WriteLine($"[ProjectWorkflow] WARNING: No FileStorage found for: {filePath}");
             return null;
+        }
+
+        public void RegisterStorage(string filePath, DocumentTabViewModel tab)
+        {
+            var storage = new ZipFileStorageService(filePath);
+            _openStorages[filePath] = storage;
+            tab.Context.FileStorage = storage;
+
+            var project = tab.GetProject();
+
+            var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
+            var workModes = workModeConfigService.LoadConfiguration(project.Type, storage);
+            project.WorkModes = workModes;
+
+            var autoSaveService = App.Services.GetRequiredService<IWorkspaceAutoSaveService>();
+            autoSaveService.Start(filePath, project);
+            _autoSaveServices[filePath] = autoSaveService;
+
+            Console.WriteLine($"[ProjectWorkflow] Storage registered for: {filePath}");
+        }
+
+        public void UpdateStorageForProject(string filePath, IProjectFileStorage newStorage)
+        {
+            if (_openStorages.ContainsKey(filePath))
+            {
+                _openStorages[filePath] = (ZipFileStorageService)newStorage;
+                Console.WriteLine($"[ProjectWorkflow] Storage updated for: {filePath}");
+            }
         }
     }
 }

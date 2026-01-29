@@ -23,6 +23,15 @@ namespace Writersword.Modules.TextEditor
         private TextEditorViewModel? _viewModel;
         private IDisposable? _textSubscription;
 
+        /// <summary>
+        /// Конструктор модуля текстового редактора
+        /// </summary>
+        /// <param name="instanceId">ID экземпляра модуля (если null - генерируется новый)</param>
+        public TextEditorModule(string? instanceId = null) : base(instanceId)
+        {
+
+        }
+
         /// <summary>Идентификатор модуля</summary>
         public override string ModuleId => "TextEditor";
 
@@ -83,19 +92,15 @@ namespace Writersword.Modules.TextEditor
         {
             var text = _viewModel?.PlainText ?? "";
 
-            Console.WriteLine($"[TextEditorModule] SaveState called:");
-            Console.WriteLine($"  - InstanceId: {InstanceId}");
-            Console.WriteLine($"  - ViewModel exists: {_viewModel != null}");
-            Console.WriteLine($"  - PlainText length: {text.Length}");
-
             return new ModuleState
             {
+                InstanceId = this.InstanceId,
                 CustomData = text,
                 SessionData = new
                 {
                     lastEditTime = DateTime.Now,
                     scrollPosition = 0
-                },
+                }
             };
         }
 

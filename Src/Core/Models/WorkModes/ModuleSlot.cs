@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+﻿using Newtonsoft.Json;
 using Writersword.Core.Enums;
 
 namespace Writersword.Core.Models.WorkModes
@@ -11,6 +11,9 @@ namespace Writersword.Core.Models.WorkModes
     {
         /// <summary>Идентификатор модуля</summary>
         public string ModuleId { get; set; } = "";
+
+        /// <summary>Уникальный ID экземпляра модуля (стабильный между сессиями)</summary>
+        public string InstanceId { get; set; } = "";
 
         /// <summary>
         /// ID контейнера в котором находится модуль

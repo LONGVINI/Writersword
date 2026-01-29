@@ -6,7 +6,7 @@ namespace Writersword.Core.Models.Cache
     /// Метаданные одного модуля в кеше
     /// Используются для проверки изменений и диагностики
     /// </summary>
-    public class ModuleMetadata
+    public class ModuleHashMetadata
     {
         /// <summary>
         /// SHA256 хеш CustomData модуля
