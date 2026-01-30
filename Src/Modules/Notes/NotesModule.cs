@@ -5,7 +5,6 @@ using System.Reactive.Linq;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
-using Writersword.Core.Models.Modules;
 using Writersword.Modules.Common;
 using Writersword.Modules.Notes.ViewModels;
 using Writersword.Src.Modules.Notes.Resources;
@@ -51,17 +50,10 @@ namespace Writersword.Modules.Notes
         {
             _viewModel = new NotesViewModel();
 
-            // Подписка на изменения текста заметок
             _notesSubscription = _viewModel.WhenAnyValue(x => x.NoteText)
                 .Throttle(TimeSpan.FromSeconds(0.5))
                 .Subscribe(text =>
                 {
-                    // Сохраняем в проект
-                    if (Context?.Project != null)
-                    {
-                        Context.Project.ModulesData[ModuleId] = text;
-                    }
-
                     Console.WriteLine($"[NotesModule {InstanceId}] Notes updated: {text?.Length ?? 0} chars");
                 });
 
@@ -78,35 +70,60 @@ namespace Writersword.Modules.Notes
         }
 
         /// <summary>
-        /// Сохранить состояние модуля
-        /// Возвращает текст заметок в CustomData
+        /// Получить основные данные модуля (текст заметок)
+        /// Возвращает строку с текстом или null если заметки пустые
         /// </summary>
-        public override ModuleState SaveState()
+        public override object? GetCustomData()
         {
-            return new ModuleState
+            var text = _viewModel?.NoteText ?? "";
+
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+
+            return text;
+        }
+
+        /// <summary>
+        /// Получить сессионные данные (позиция скролла)
+        /// </summary>
+        public override object? GetSessionData()
+        {
+            return new
             {
-                InstanceId = this.InstanceId,
-                CustomData = _viewModel?.NoteText,
-                SessionData = new
-                {
-                    scrollPosition = 0
-                }
+                scrollPosition = 0
             };
         }
 
         /// <summary>
-        /// Восстановить состояние модуля
-        /// Загружает текст заметок из CustomData
+        /// Установить основные данные модуля (текст заметок)
+        /// Вызывается при открытии проекта или переключении версий
         /// </summary>
-        public override void RestoreState(ModuleState state)
+        public override void SetCustomData(object? data)
         {
-            base.RestoreState(state);
+            if (_viewModel == null)
+            {
+                Console.WriteLine($"[NotesModule] SetCustomData called but ViewModel is null (ID: {InstanceId})");
+                return;
+            }
 
-            if (_viewModel != null && state.CustomData is string notes && notes.Length > 0)
+            if (data is string notes && notes.Length > 0)
             {
                 _viewModel.NoteText = notes;
-                Console.WriteLine($"[NotesModule] Restored {notes.Length} characters");
+                Console.WriteLine($"[NotesModule] Loaded {notes.Length} characters (ID: {InstanceId})");
             }
+            else
+            {
+                _viewModel.NoteText = "";
+                Console.WriteLine($"[NotesModule] Loaded empty notes (ID: {InstanceId})");
+            }
+        }
+
+        /// <summary>
+        /// Установить сессионные данные (позиция скролла)
+        /// </summary>
+        public override void SetSessionData(object? data)
+        {
+            Console.WriteLine($"[NotesModule] SessionData set (ID: {InstanceId})");
         }
 
         /// <summary>

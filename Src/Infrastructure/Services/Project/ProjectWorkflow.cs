@@ -99,18 +99,9 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                         if (savedProject != null && cache != null)
                         {
-                            // Извлекаем CustomData из кеша
-                            var cacheData = new Dictionary<string, object?>();
-                            foreach (var kvp in cache)
-                            {
-                                if (kvp.Value.CustomData != null)
-                                {
-                                    cacheData[kvp.Key] = kvp.Value.CustomData;
-                                }
-                            }
 
-                            // Сравниваем с данными из файла
-                            dataIsSame = _comparisonService.AreDataEqual(cacheData, savedProject.ModulesData);
+                            // Кеш уже содержит CustomData напрямую
+                            dataIsSame = _comparisonService.AreDataEqual(cache, savedProject.ModulesData);
 
                             Console.WriteLine($"[ProjectWorkflow] Data comparison: {(dataIsSame ? "SAME" : "DIFFERENT")}");
                         }
@@ -198,7 +189,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     tabVM.Context.FileStorage = storage;
                     Console.WriteLine($"[ProjectWorkflow] ZipFileStorage created for: {filePath}");
 
-                    // НОВОЕ: Загружаем локальную конфигурацию workspace.json из ZIP
+                    // Загружаем локальную конфигурацию workspace.json из ZIP
                     var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
                     var workModes = workModeConfigService.LoadConfiguration(project.Type, storage);
 
@@ -288,21 +279,12 @@ namespace Writersword.Src.Infrastructure.Services.Project
                 {
                     if (project.ModulesData.TryGetValue(module.ModuleId.ToString(), out var data))
                     {
-                        var state = new ModuleState
-                        {
-                            CustomData = data
-                        };
-
-                        module.RestoreState(state);
+                        module.SetCustomData(data);
                         Console.WriteLine($"[ProjectWorkflow] Reloaded module: {module.ModuleId}");
                     }
                     else
                     {
-                        var emptyState = new ModuleState
-                        {
-                            CustomData = null
-                        };
-                        module.RestoreState(emptyState);
+                        module.SetCustomData(null);
                         Console.WriteLine($"[ProjectWorkflow] Cleared module (no data): {module.ModuleId}");
                     }
                 }
@@ -505,8 +487,8 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
                     var activeModules = mainViewModel.GetActiveModules();
 
-                    // ИСПРАВЛЕНИЕ: Собираем ПОЛНЫЕ состояния (ModuleState), а не только CustomData
-                    var currentStates = stateCollector.CollectAllStates(activeModules);
+                    // Собираем ТОЛЬКО CustomData из активных модулей
+                    var activeCustomData = stateCollector.CollectCustomData(activeModules);
 
                     var cache = _cacheService.LoadCache(filePath);
 
@@ -517,14 +499,14 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     {
                         foreach (var kvp in cache)
                         {
-                            allData[kvp.Key] = kvp.Value; // ModuleState из кеша
+                            allData[kvp.Key] = kvp.Value; // CustomData из кеша
                         }
                     }
 
                     // Перезаписываем данными из активных модулей (приоритет у текущих)
-                    foreach (var kvp in currentStates)
+                    foreach (var kvp in activeCustomData)
                     {
-                        allData[kvp.Key] = kvp.Value; // ModuleState из UI
+                        allData[kvp.Key] = kvp.Value; // CustomData из UI
                     }
 
                     project.ModulesData = allData;
@@ -563,10 +545,10 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                     allData = new Dictionary<string, object?>();
 
-                    // ИСПРАВЛЕНИЕ: Сохраняем ModuleState из кеша, а не только CustomData
+                    // Кеш уже содержит CustomData напрямую
                     foreach (var kvp in cache)
                     {
-                        allData[kvp.Key] = kvp.Value; // ModuleState целиком
+                        allData[kvp.Key] = kvp.Value; // CustomData из кеша
                     }
 
                     project.ModulesData = allData;
@@ -802,9 +784,9 @@ namespace Writersword.Src.Infrastructure.Services.Project
                         foreach (var kvp in cache)
                         {
                             // Если модуля нет в активных - берём его данные из кеша
-                            if (!allCurrentData.ContainsKey(kvp.Key) && kvp.Value.CustomData != null)
+                            if (!allCurrentData.ContainsKey(kvp.Key) && kvp.Value != null)
                             {
-                                allCurrentData[kvp.Key] = kvp.Value.CustomData;
+                                allCurrentData[kvp.Key] = kvp.Value; // Кеш уже содержит CustomData
                             }
                         }
                     }
@@ -840,15 +822,8 @@ namespace Writersword.Src.Infrastructure.Services.Project
                         return false;
                     }
 
-                    // Извлекаем CustomData из всех закешированных модулей
-                    allCurrentData = new Dictionary<string, object?>();
-                    foreach (var kvp in cache)
-                    {
-                        if (kvp.Value.CustomData != null)
-                        {
-                            allCurrentData[kvp.Key] = kvp.Value.CustomData;
-                        }
-                    }
+                    // Кеш уже содержит CustomData напрямую
+                    allCurrentData = new Dictionary<string, object?>(cache);
 
                     // Фильтруем модули с пустыми данными
                     var nonEmptyData = allCurrentData
@@ -888,8 +863,11 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     return false;
                 }
 
-                // Сравниваем текущие данные с данными из файла
-                bool hasChanges = !_comparisonService.AreDataEqual(allCurrentData, savedProject.ModulesData);
+                // ModulesData уже содержит CustomData напрямую
+                var savedCustomData = savedProject.ModulesData;
+
+                // Сравниваем ТОЛЬКО CustomData (игнорируем SessionData)
+                bool hasChanges = !_comparisonService.AreDataEqual(allCurrentData, savedCustomData);
 
                 Console.WriteLine($"[ProjectWorkflow] HasUnsavedChanges ({tab.Title}): {hasChanges}");
                 return hasChanges;
@@ -921,12 +899,12 @@ namespace Writersword.Src.Infrastructure.Services.Project
             var cache = _cacheService.LoadCache(filePath);
             if (cache != null)
             {
-                // Обновляем данные из кеша
+                // Кеш уже содержит CustomData напрямую
                 foreach (var kvp in cache)
                 {
-                    if (kvp.Value.CustomData != null)
+                    if (kvp.Value != null)
                     {
-                        project.ModulesData[kvp.Key] = kvp.Value.CustomData;
+                        project.ModulesData[kvp.Key] = kvp.Value;
                     }
                 }
             }

@@ -126,9 +126,6 @@ namespace Writersword
             // Сервис для сбора состояний модулей (используется при автосохранении)
             services.AddSingleton<IModuleStateCollectorService, ModuleStateCollectorService>();
 
-            // Сервис управления жизненным циклом модулей (открытие/закрытие с сохранением)
-            services.AddSingleton<IModuleLifecycleService, ModuleLifecycleService>();
-
             // --- WORKMODE СИСТЕМА ---
             // Фабрика для создания экземпляров WorkMode
             services.AddSingleton<WorkModeFactory>();

@@ -171,7 +171,7 @@ namespace Writersword.Src.Infrastructure.Dock
                 // Создаём HostWindow для флоат окна
                 var hostWindow = new HostWindow();
 
-                // КРИТИЧНО: Устанавливаем фабрику для document
+                // Устанавливаем фабрику для document
                 if (document is Document doc)
                 {
                     doc.Owner = rootDock;
@@ -419,23 +419,25 @@ namespace Writersword.Src.Infrastructure.Dock
             Console.WriteLine($"[DockFactory] Creating document for: {slot.ModuleId}");
 
             string? instanceIdToUse = null;
+            object? customDataToRestore = null;
             var tabCollection = App.Services.GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>();
 
             if (tabCollection.ActiveTab != null)
             {
                 var project = tabCollection.ActiveTab.GetProject();
 
-                // Приоритет 1: Данные модуля (ModuleState)
+                // Проверяем есть ли данные модуля в project.ModulesData
                 if (project.ModulesData.TryGetValue(slot.ModuleId, out var data))
                 {
-                    if (data is ModuleState moduleState && !string.IsNullOrEmpty(moduleState.InstanceId))
+                    // ModulesData теперь содержит CustomData напрямую (не ModuleState)
+                    customDataToRestore = data;
+                    if (customDataToRestore != null)
                     {
-                        instanceIdToUse = moduleState.InstanceId;
-                        Console.WriteLine($"[DockFactory] Found InstanceId in module data: {instanceIdToUse}");
+                        Console.WriteLine($"[DockFactory] Found CustomData in module data");
                     }
                 }
 
-                // Приоритет 2: Слот в workspace.json
+                // Если нет в ModulesData - берем из слота
                 if (string.IsNullOrEmpty(instanceIdToUse) && !string.IsNullOrEmpty(slot.InstanceId))
                 {
                     instanceIdToUse = slot.InstanceId;
@@ -470,15 +472,11 @@ namespace Writersword.Src.Infrastructure.Dock
                 module.Context = tabCollection.ActiveTab.Context;
                 Console.WriteLine($"[DockFactory] Context assigned to module: {slot.ModuleId}");
 
-                var project = tabCollection.ActiveTab.GetProject();
-                if (project.ModulesData.TryGetValue(slot.ModuleId, out var data))
+                // Восстанавливаем CustomData ЕСЛИ он есть
+                if (customDataToRestore != null)
                 {
-                    var state = new Writersword.Core.Models.Modules.ModuleState
-                    {
-                        CustomData = data
-                    };
-                    module.RestoreState(state);
-                    Console.WriteLine($"[DockFactory] Restored state for: {slot.ModuleId}");
+                    module.SetCustomData(customDataToRestore);
+                    Console.WriteLine($"[DockFactory] Restored CustomData for: {slot.ModuleId}");
                 }
             }
 

@@ -139,7 +139,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                     return null;
                 }
 
-                // НОВОЕ: Сериализуем текущий layout из UI через DockFactory
+                // Сериализуем текущий layout из UI через DockFactory
                 var mainVM = App.Services.GetRequiredService<MainWindowViewModel>();
                 var dockFactory = App.Services.GetRequiredService<DockFactory>();
 

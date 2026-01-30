@@ -1,54 +1,25 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Writersword.Core.Interfaces.Modules;
-using Writersword.Core.Models.Modules;
 using Writersword.Core.Interfaces.Services;
 
 namespace Writersword.Infrastructure.Services.Modules
 {
     /// <summary>
-    /// Сервис для сбора состояний модулей
-    /// Используется при кешировании, переключении WorkMode и сохранении проекта
-    /// 
-    /// ФУНКЦИИ:
-    /// - Собирает данные из активных модулей через module.SaveState()
-    /// - Фильтрует данные (CustomData, SessionData, или всё)
-    /// - Упаковывает в словари для передачи другим сервисам
-    /// 
+    /// Сервис для сбора данных из модулей
+    /// Используется при кешировании, переключении вкладок и сохранении проекта
     /// НЕ ДЕЛАЕТ:
     /// - Не сравнивает данные (для этого IDataComparisonService)
     /// - Не сохраняет данные (для этого CacheService/ProjectService)
-    /// - Не принимает решения о сохранении
+    /// - Не записывает в Project.ModulesData (это делает ProjectWorkflow)
     /// </summary>
     public class ModuleStateCollectorService : IModuleStateCollectorService
     {
         /// <summary>
-        /// Собрать ПОЛНЫЕ состояния ВСЕХ модулей (CustomData + SessionData)
-        /// БЕЗ проверки IsDirty - собирает всегда
-        /// Используется при кешировании (.wsasd) и переключении вкладок
-        /// </summary>
-        public Dictionary<string, ModuleState> CollectAllStates(IEnumerable<IModule> modules)
-        {
-            var states = new Dictionary<string, ModuleState>();
-
-            foreach (var module in modules)
-            {
-                var state = CollectModuleState(module);
-                if (state != null)
-                {
-                    states[module.ModuleId] = state;
-                    Console.WriteLine($"[ModuleStateCollector] Collected full state: {module.ModuleId}");
-                }
-            }
-
-            Console.WriteLine($"[ModuleStateCollector] Collected {states.Count} full module states");
-            return states;
-        }
-
-        /// <summary>
-        /// Собрать ТОЛЬКО CustomData всех модулей (для сохранения в .writersword)
-        /// Используется при Ctrl+S для сохранения основных данных проекта
-        /// SessionData не включается (это временные рабочие данные)
+        /// Собрать ТОЛЬКО CustomData из всех модулей
+        /// Используется при сохранении в .writersword файл (Ctrl+S)
+        /// Модули без данных НЕ включаются в результат
         /// </summary>
         public Dictionary<string, object?> CollectCustomData(IEnumerable<IModule> modules)
         {
@@ -56,11 +27,22 @@ namespace Writersword.Infrastructure.Services.Modules
 
             foreach (var module in modules)
             {
-                var state = CollectModuleState(module);
-                if (state?.CustomData != null)
+                try
                 {
-                    customData[module.ModuleId] = state.CustomData;
+                    var data = module.GetCustomData();
+
+                    if (IsDataEmpty(data))
+                    {
+                        Console.WriteLine($"[ModuleStateCollector] Module is empty: {module.ModuleId}");
+                        continue;
+                    }
+
+                    customData[module.ModuleId] = data;
                     Console.WriteLine($"[ModuleStateCollector] Collected CustomData: {module.ModuleId}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ModuleStateCollector] Error collecting CustomData from {module.ModuleId}: {ex.Message}");
                 }
             }
 
@@ -69,9 +51,8 @@ namespace Writersword.Infrastructure.Services.Modules
         }
 
         /// <summary>
-        /// Собрать ТОЛЬКО SessionData всех модулей
-        /// Используется редко, в основном для отладки или специальных сценариев
-        /// SessionData = временные данные (курсор, скролл, время редактирования)
+        /// Собрать ТОЛЬКО SessionData из всех модулей
+        /// Используется редко, в основном для отладки
         /// </summary>
         public Dictionary<string, object?> CollectSessionData(IEnumerable<IModule> modules)
         {
@@ -79,11 +60,19 @@ namespace Writersword.Infrastructure.Services.Modules
 
             foreach (var module in modules)
             {
-                var state = CollectModuleState(module);
-                if (state?.SessionData != null)
+                try
                 {
-                    sessionData[module.ModuleId] = state.SessionData;
-                    Console.WriteLine($"[ModuleStateCollector] Collected SessionData: {module.ModuleId}");
+                    var data = module.GetSessionData();
+
+                    if (data != null)
+                    {
+                        sessionData[module.ModuleId] = data;
+                        Console.WriteLine($"[ModuleStateCollector] Collected SessionData: {module.ModuleId}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ModuleStateCollector] Error collecting SessionData from {module.ModuleId}: {ex.Message}");
                 }
             }
 
@@ -92,31 +81,61 @@ namespace Writersword.Infrastructure.Services.Modules
         }
 
         /// <summary>
-        /// Собрать состояние одного модуля
-        /// Вызывает module.SaveState() - модуль сам решает что возвращать
-        /// Возвращает null если модуль пустой (нет ни CustomData, ни SessionData)
+        /// Собрать CustomData И SessionData из всех модулей
+        /// Используется при кешировании (.wsasd) и переключении вкладок
+        /// Возвращает ДВА словаря в виде кортежа
         /// </summary>
-        public ModuleState? CollectModuleState(IModule module)
+        public (Dictionary<string, object?> CustomData, Dictionary<string, object?> SessionData) CollectAllData(IEnumerable<IModule> modules)
         {
-            try
-            {
-                // Модуль сам решает что сохранять
-                var state = module.SaveState();
+            var customData = new Dictionary<string, object?>();
+            var sessionData = new Dictionary<string, object?>();
 
-                // Проверяем есть ли хоть что-то для сохранения
-                if (state.CustomData != null || state.SessionData != null)
+            foreach (var module in modules)
+            {
+                try
                 {
-                    return state;
-                }
+                    var custom = module.GetCustomData();
+                    var session = module.GetSessionData();
 
-                // Модуль пустой - не сохраняем
-                return null;
+                    if (!IsDataEmpty(custom))
+                    {
+                        customData[module.ModuleId] = custom;
+                        Console.WriteLine($"[ModuleStateCollector] Collected CustomData: {module.ModuleId}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[ModuleStateCollector] Module is empty: {module.ModuleId}");
+                    }
+
+                    if (session != null)
+                    {
+                        sessionData[module.ModuleId] = session;
+                        Console.WriteLine($"[ModuleStateCollector] Collected SessionData: {module.ModuleId}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ModuleStateCollector] Error collecting data from {module.ModuleId}: {ex.Message}");
+                }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ModuleStateCollector] Error collecting state from {module.ModuleId}: {ex.Message}");
-                return null;
-            }
+
+            Console.WriteLine($"[ModuleStateCollector] Collected {customData.Count} CustomData and {sessionData.Count} SessionData entries");
+            return (customData, sessionData);
+        }
+
+        /// <summary>
+        /// Проверить пустые ли данные
+        /// null или пустая строка = пустые данные
+        /// </summary>
+        private bool IsDataEmpty(object? data)
+        {
+            if (data == null)
+                return true;
+
+            if (data is string str && string.IsNullOrWhiteSpace(str))
+                return true;
+
+            return false;
         }
     }
 }

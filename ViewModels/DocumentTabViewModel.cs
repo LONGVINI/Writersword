@@ -155,10 +155,10 @@ namespace Writersword.ViewModels
 
                 if (activeModules.Count > 0)
                 {
-                    // Собираем текущие состояния всех активных модулей
-                    var currentStates = stateCollector.CollectAllStates(activeModules);
+                    // Собираем CustomData и SessionData из всех активных модулей
+                    var (customData, sessionData) = stateCollector.CollectAllData(activeModules);
 
-                    if (currentStates.Count > 0)
+                    if (customData.Count > 0)
                     {
                         // Временно закрываем ZIP чтобы освободить файл для чтения
                         var savedProject = await projectService.LoadAsync(FilePath);
@@ -168,7 +168,7 @@ namespace Writersword.ViewModels
                             bool dataChanged = false;
 
                             // Быстрая проверка: разное количество модулей = изменения есть
-                            if (currentStates.Count != savedProject.ModulesData.Count)
+                            if (customData.Count != savedProject.ModulesData.Count)
                             {
                                 dataChanged = true;
                                 Console.WriteLine($"[DocumentTabViewModel] Module count differs");
@@ -176,7 +176,7 @@ namespace Writersword.ViewModels
                             else
                             {
                                 // Сравниваем данные каждого модуля
-                                foreach (var kvp in currentStates)
+                                foreach (var kvp in customData)
                                 {
                                     if (!savedProject.ModulesData.TryGetValue(kvp.Key, out var savedData))
                                     {
@@ -185,10 +185,8 @@ namespace Writersword.ViewModels
                                         break;
                                     }
 
-                                    var currentCustomData = kvp.Value.CustomData;
-
                                     // Оптимизированное сравнение для строк (основной случай)
-                                    if (currentCustomData is string currentStr && savedData is string savedStr)
+                                    if (kvp.Value is string currentStr && savedData is string savedStr)
                                     {
                                         if (currentStr != savedStr)
                                         {
@@ -197,7 +195,7 @@ namespace Writersword.ViewModels
                                             break;
                                         }
                                     }
-                                    else if (!Equals(currentCustomData, savedData))
+                                    else if (!Equals(kvp.Value, savedData))
                                     {
                                         dataChanged = true;
                                         Console.WriteLine($"[DocumentTabViewModel] Data changed: {kvp.Key}");
@@ -209,7 +207,7 @@ namespace Writersword.ViewModels
                             // Сохраняем кеш только если есть несохранённые изменения
                             if (dataChanged)
                             {
-                                await cacheService.SaveCacheAsync(FilePath, _project.Id, currentStates);
+                                await cacheService.SaveCacheAsync(FilePath, _project.Id, customData, sessionData);
                                 Console.WriteLine($"[DocumentTabViewModel] Cache saved (differs from ZIP)");
                             }
                             else

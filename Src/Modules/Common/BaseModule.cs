@@ -2,7 +2,6 @@
 using System;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
-using Writersword.Core.Models.Modules;
 using Writersword.ViewModels;
 
 namespace Writersword.Modules.Common
@@ -107,23 +106,47 @@ namespace Writersword.Modules.Common
         /// <param name="context">Новый контекст или null</param>
         protected virtual void OnContextChanged(DocumentContext? context)
         {
-            // Базовая реализация - ничего не делает
-            // Наследники могут переопределить для своей логики
         }
 
         /// <summary>Инициализация модуля</summary>
         public virtual void Initialize() { }
 
-        /// <summary>Сохранить состояние модуля</summary>
-        public virtual ModuleState SaveState()
+        /// <summary>
+        /// Получить основные данные модуля для сохранения
+        /// Базовая реализация возвращает null (модуль пустой)
+        /// Переопределите в наследниках для сохранения данных
+        /// </summary>
+        public virtual object? GetCustomData()
         {
-            return new ModuleState();
+            return null;
         }
 
-        /// <summary>Восстановить состояние модуля</summary>
-        public virtual void RestoreState(ModuleState state)
+        /// <summary>
+        /// Получить сессионные данные модуля
+        /// Базовая реализация возвращает null (нет сессионных данных)
+        /// Переопределите в наследниках для сохранения позиции курсора, скролла и т.д.
+        /// </summary>
+        public virtual object? GetSessionData()
         {
-            // Базовая реализация - ничего не делает
+            return null;
+        }
+
+        /// <summary>
+        /// Установить основные данные модуля
+        /// Базовая реализация ничего не делает
+        /// Переопределите в наследниках для загрузки данных
+        /// </summary>
+        public virtual void SetCustomData(object? data)
+        {
+        }
+
+        /// <summary>
+        /// Установить сессионные данные модуля
+        /// Базовая реализация ничего не делает
+        /// Переопределите в наследниках для восстановления курсора, скролла и т.д.
+        /// </summary>
+        public virtual void SetSessionData(object? data)
+        {
         }
 
         /// <summary>Очистка ресурсов</summary>

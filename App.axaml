@@ -13,7 +13,7 @@
 	<Application.Styles>
 		<FluentTheme />
 
-		<!-- КРИТИЧНО: Fluent тема для Dock -->
+		<!-- Fluent тема для Dock -->
 		<StyleInclude Source="avares://Dock.Avalonia.Themes.Fluent/DockFluentTheme.axaml"/>
 
 		<!-- Твои кастомные стили -->

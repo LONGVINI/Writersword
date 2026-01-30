@@ -307,7 +307,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
         /// <summary>
         /// Закрыть ZIP архив и освободить ресурсы
-        /// ВАЖНО: Все изменения сохраняются при вызове Dispose()
+        /// Все изменения сохраняются при вызове Dispose()
         /// </summary>
         public void Dispose()
         {

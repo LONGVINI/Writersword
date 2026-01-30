@@ -50,7 +50,7 @@ namespace Writersword.Src.Infrastructure.Services.UI
         {
             try
             {
-                // КРИТИЧЕСКИ ВАЖНО: Работаем в UI потоке!
+                // Работаем в UI потоке!
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                 {
                     // Получаем контейнер для уведомлений

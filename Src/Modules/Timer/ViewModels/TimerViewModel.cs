@@ -119,7 +119,7 @@ namespace Writersword.Modules.Timer.ViewModels
 
         /// <summary>
         /// Освободить ресурсы - остановить и удалить системный таймер
-        /// ВАЖНО! Без этого будет утечка памяти
+        /// Без этого будет утечка памяти
         /// </summary>
         public void Dispose()
         {

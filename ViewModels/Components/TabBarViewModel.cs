@@ -97,7 +97,7 @@ namespace Writersword.ViewModels.Components
             {
                 Console.WriteLine($"[TabBarViewModel] Deactivating old tab: {oldTab.Title}");
 
-                // КРИТИЧНО: Сохраняем workspace.json НЕМЕДЛЕННО если есть pending changes!
+                // Сохраняем workspace.json НЕМЕДЛЕННО если есть pending changes!
                 if (!string.IsNullOrEmpty(oldTab.FilePath))
                 {
                     var workflow = App.Services.GetRequiredService<IProjectWorkflow>();

@@ -1,7 +1,6 @@
 ﻿using Avalonia.Controls;
 using System;
 using Writersword.Core.Models;
-using Writersword.Core.Models.Modules;
 using Writersword.ViewModels;
 
 namespace Writersword.Core.Interfaces.Modules
@@ -49,16 +48,34 @@ namespace Writersword.Core.Interfaces.Modules
         void Initialize();
 
         /// <summary>
-        /// Сохранить состояние модуля
-        /// Возвращает CustomData и SessionData для записи
+        /// Получить основные данные модуля для сохранения в .writersword файл
+        /// Возвращает данные в формате, который модуль определяет сам
+        /// Может быть: строка, объект, словарь, массив, null (если модуль пустой)
         /// </summary>
-        ModuleState SaveState();
+        /// <returns>Данные модуля или null если нечего сохранять</returns>
+        object? GetCustomData();
 
         /// <summary>
-        /// Восстановить состояние модуля
-        /// Вызывается при открытии проекта или переключении WorkMode
+        /// Получить рабочие данные сессии для сохранения в .wsasd кеш
+        /// Примеры: позиция курсора, скролл, текущее время таймера
+        /// Может быть: строка, объект, словарь, null (если нет сессионных данных)
         /// </summary>
-        void RestoreState(ModuleState state);
+        /// <returns>Сессионные данные или null</returns>
+        object? GetSessionData();
+
+        /// <summary>
+        /// Установить основные данные модуля из .writersword файла
+        /// Вызывается при открытии проекта или переключении версий
+        /// </summary>
+        /// <param name="data">Данные модуля (может быть null)</param>
+        void SetCustomData(object? data);
+
+        /// <summary>
+        /// Установить рабочие данные сессии из .wsasd кеша
+        /// Вызывается при восстановлении из кеша
+        /// </summary>
+        /// <param name="data">Сессионные данные (может быть null)</param>
+        void SetSessionData(object? data);
 
         /// <summary>Создать View для отображения модуля</summary>
         Control? CreateView();

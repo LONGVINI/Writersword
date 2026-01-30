@@ -1,6 +1,4 @@
 ﻿using System.Collections.Generic;
-using System.Threading.Tasks;
-using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.WorkModes;
 
 namespace Writersword.Src.Core.Interfaces.WorkModes
@@ -34,11 +32,5 @@ namespace Writersword.Src.Core.Interfaces.WorkModes
 
         /// <summary>Установить активный WorkMode</summary>
         void SetActiveWorkMode(WorkMode workMode);
-
-        /// <summary>
-        /// Переключиться на другой WorkMode
-        /// Закрывает модули старого WorkMode и открывает новые
-        /// </summary>
-        Task SwitchWorkModeAsync(WorkMode newWorkMode, IEnumerable<IModule> activeModules, string projectPath, string projectId);
     }
 }

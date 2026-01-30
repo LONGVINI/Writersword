@@ -60,26 +60,21 @@ namespace Writersword.Modules.Timer
         }
 
         /// <summary>
-        /// Сохранить состояние модуля
-        /// Таймер пока не сохраняет своё состояние
+        /// Получить основные данные модуля
+        /// Таймер пока не сохраняет данные
         /// </summary>
-        public override ModuleState SaveState()
+        public override object? GetCustomData()
         {
-            return new ModuleState
-            {
-                InstanceId = this.InstanceId,
-                CustomData = null
-            };
+            return null;
         }
 
         /// <summary>
-        /// Восстановить состояние модуля
-        /// Таймер пока не восстанавливает своё состояние
+        /// Получить сессионные данные модуля
+        /// Таймер пока не сохраняет сессионные данные
         /// </summary>
-        public override void RestoreState(ModuleState state)
+        public override object? GetSessionData()
         {
-            // Вызываем базовый метод (сбрасывает IsDirty)
-            base.RestoreState(state);
+            return null;
         }
 
         /// <summary>

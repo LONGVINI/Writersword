@@ -43,9 +43,18 @@ namespace Writersword.Core.Models.Project
         public DateTime LastModified { get; set; } = DateTime.Now;
 
         /// <summary>
-        /// Данные модулей
-        /// Ключ = тип модуля (TextEditor, Characters, Timeline...)
-        /// Значение = данные модуля (может быть строка, объект, массив)
+        /// Данные модулей (ТОЛЬКО CustomData)
+        /// Ключ = тип модуля (TextEditor, Notes, Timer, Synonyms...)
+        /// Значение = CustomData модуля (может быть строка, объект, массив - модуль сам решает)
+        /// 
+        /// Важно хранить ТОЛЬКО основные данные (CustomData)
+        /// SessionData (курсор, скролл) НЕ сохраняется в .writersword - только в .wsasd кеш
+        /// 
+        /// Примеры:
+        /// - TextEditor: строка с текстом документа
+        /// - Notes: строка с текстом заметок
+        /// - Timer: объект с временем и статусом
+        /// - Synonyms: не сохраняет данные (вспомогательный модуль)
         /// </summary>
         [JsonProperty("ModulesData")]
         public Dictionary<string, object?> ModulesData { get; set; } = new();

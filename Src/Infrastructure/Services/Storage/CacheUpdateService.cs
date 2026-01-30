@@ -123,10 +123,10 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     return;
                 }
 
-                // Собираем состояния всех модулей
-                var moduleStates = _stateCollector.CollectAllStates(activeModules);
+                // Собираем CustomData и SessionData всех модулей
+                var (customData, sessionData) = _stateCollector.CollectAllData(activeModules);
 
-                if (moduleStates.Count == 0)
+                if (customData.Count == 0)
                 {
                     Console.WriteLine("[CacheUpdateService] No modules to cache");
                     return;
@@ -135,14 +135,12 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 // Проверяем есть ли реальные данные в модулях
                 bool hasAnyRealData = false;
 
-                foreach (var kvp in moduleStates)
+                foreach (var kvp in customData)
                 {
-                    var customData = kvp.Value.CustomData;
-
-                    if (customData == null)
+                    if (kvp.Value == null)
                         continue;
 
-                    if (customData is string str)
+                    if (kvp.Value is string str)
                     {
                         if (!string.IsNullOrWhiteSpace(str))
                         {
@@ -179,14 +177,14 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     bool dataChanged = false;
 
                     // Быстрая проверка: разное количество модулей = изменения есть
-                    if (moduleStates.Count != savedProjectData.Count)
+                    if (customData.Count != savedProjectData.Count)
                     {
                         dataChanged = true;
                     }
                     else
                     {
                         // Сравниваем данные каждого модуля
-                        foreach (var kvp in moduleStates)
+                        foreach (var kvp in customData)
                         {
                             if (!savedProjectData.TryGetValue(kvp.Key, out var savedData))
                             {
@@ -194,10 +192,8 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                                 break;
                             }
 
-                            var currentCustomData = kvp.Value.CustomData;
-
                             // Оптимизированное сравнение для строк
-                            if (currentCustomData is string currentStr && savedData is string savedStr)
+                            if (kvp.Value is string currentStr && savedData is string savedStr)
                             {
                                 if (currentStr != savedStr)
                                 {
@@ -205,7 +201,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                                     break;
                                 }
                             }
-                            else if (!Equals(currentCustomData, savedData))
+                            else if (!Equals(kvp.Value, savedData))
                             {
                                 dataChanged = true;
                                 break;
@@ -252,9 +248,9 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 }
 
                 // Сохраняем кеш только если данные отличаются от ZIP
-                await _cacheService.SaveCacheAsync(projectPath, project.Id, moduleStates);
+                await _cacheService.SaveCacheAsync(projectPath, project.Id, customData, sessionData);
                 CacheSaved?.Invoke(this, EventArgs.Empty);
-                Console.WriteLine($"[CacheUpdateService] Cache updated: {moduleStates.Count} modules");
+                Console.WriteLine($"[CacheUpdateService] Cache updated: {customData.Count} modules");
             }
             catch (Exception ex)
             {

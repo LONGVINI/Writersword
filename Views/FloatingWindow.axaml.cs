@@ -54,7 +54,7 @@ namespace Writersword.Views
                 {
                     System.Console.WriteLine($"[FloatingWindow] Close BLOCKED - contains uncloseable content");
 
-                    // ВАЖНО: Не блокируем закрытие окна!
+                    // Не блокируем закрытие окна!
                     // Вместо этого возвращаем модуль обратно в главное окно
                     e.Cancel = false;  // Разрешаем закрытие окна
 

@@ -262,11 +262,6 @@ namespace Writersword.ViewModels
             var workModes = _workModeService.GetAllWorkModes();
             WorkModeBar.LoadWorkModes(workModes);
 
-            if (project != null)
-            {
-                WorkModeBar.SetActiveModulesProvider(() => GetActiveModules(), tab.FilePath, project.Id);
-            }
-
             var activeWM = workModes.FirstOrDefault(wm => wm.IsActive) ?? workModes.FirstOrDefault();
             if (activeWM != null)
             {
@@ -407,7 +402,7 @@ namespace Writersword.ViewModels
                 // Находим Document и закрываем его
                 RemoveModuleFromLayout(DockLayout, moduleId);
 
-                // КРИТИЧНО: Обновляем IsActive в ModulePanel ПЕРЕД обновлением меню!
+                // Обновляем IsActive в ModulePanel ПЕРЕД обновлением меню!
                 var moduleItem = ModulePanel.AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
                 if (moduleItem != null)
                 {
@@ -553,13 +548,6 @@ namespace Writersword.ViewModels
 
             // Загружаем в компонент WorkModeBar
             WorkModeBar.LoadWorkModes(workModes);
-
-            // Устанавливаем провайдер модулей для переключения WorkMode
-
-            if (project != null)
-            {
-                WorkModeBar.SetActiveModulesProvider(() => GetActiveModules(), tab.FilePath, project.Id);
-            }
 
             // Активируем первый WorkMode
             var activeWM = workModes.FirstOrDefault(wm => wm.IsActive) ?? workModes.FirstOrDefault();
@@ -1062,7 +1050,7 @@ namespace Writersword.ViewModels
 
         /// <summary>
         /// Обработчик закрытия модуля пользователем через крестик в Dock
-        /// ВАЖНО: Вызывается из DockFactory когда Document.Owner становится null
+        /// Вызывается из DockFactory когда Document.Owner становится null
         /// </summary>
         public void HandleModuleClosedInDock(string moduleId)
         {

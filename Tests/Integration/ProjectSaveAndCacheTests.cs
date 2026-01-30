@@ -205,7 +205,7 @@ namespace Tests.Integration
             // - Удалить кеш
             await TestProjectHelper.SaveTestProject(project, "test_autosave");
 
-            // ВАЖНО: В реальных тестах нужно использовать ProjectWorkflow.SaveDocumentAsync()
+            // В реальных тестах нужно использовать ProjectWorkflow.SaveDocumentAsync()
             // Но пока тестируем только базовую логику
 
             // 6. Вручную удаляем кеш (в реальном коде это делает ProjectWorkflow)

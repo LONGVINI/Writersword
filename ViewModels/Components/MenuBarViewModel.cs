@@ -416,7 +416,7 @@ namespace Writersword.ViewModels.Components
                     return;
                 }
 
-                // === НОВОЕ: ЗАКРЫВАЕМ ВСЕ ФЛОАТ ОКНА ===
+                // ЗАКРЫВАЕМ ВСЕ ФЛОАТ ОКНА 
                 var mainVM = _mainViewModelProvider?.Invoke();
                 if (mainVM?.DockLayout?.Windows != null)
                 {
@@ -497,7 +497,7 @@ namespace Writersword.ViewModels.Components
                     return;
                 }
 
-                // === НОВОЕ: ЗАКРЫВАЕМ ВСЕ ФЛОАТ ОКНА ===
+                // ЗАКРЫВАЕМ ВСЕ ФЛОАТ ОКНА 
                 var mainVM = _mainViewModelProvider?.Invoke();
                 if (mainVM?.DockLayout?.Windows != null)
                 {

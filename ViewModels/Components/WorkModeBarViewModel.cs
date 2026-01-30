@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
-using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Src.Core.Interfaces.WorkModes;
 
@@ -40,15 +39,6 @@ namespace Writersword.ViewModels.Components
         /// <summary>Функция переключения WorkMode (передаётся из MainWindowViewModel)</summary>
         private Func<WorkMode, Task>? _onWorkModeSwitched;
 
-        /// <summary>Функция получения активных модулей (для переключения WorkMode)</summary>
-        private Func<IEnumerable<IModule>>? _getActiveModules;
-
-        /// <summary>Путь к текущему проекту (для сохранения кеша)</summary>
-        private string? _currentProjectPath;
-
-        /// <summary>GUID текущего проекта (для сохранения кеша)</summary>
-        private string? _currentProjectId;
-
         public WorkModeBarViewModel(IWorkModeService workModeService)
         {
             _workModeService = workModeService;
@@ -67,21 +57,6 @@ namespace Writersword.ViewModels.Components
         {
             _onWorkModeSwitched = handler;
             Console.WriteLine("[WorkModeBarViewModel] WorkMode switch handler set");
-        }
-
-        /// <summary>
-        /// Установить функцию получения активных модулей
-        /// Необходимо для переключения WorkMode (закрытие старых модулей)
-        /// </summary>
-        /// <param name="getActiveModules">Функция получения активных модулей</param>
-        /// <param name="projectPath">Путь к проекту</param>
-        /// <param name="projectId">GUID проекта</param>
-        public void SetActiveModulesProvider(Func<IEnumerable<IModule>> getActiveModules, string projectPath, string projectId)
-        {
-            _getActiveModules = getActiveModules;
-            _currentProjectPath = projectPath;
-            _currentProjectId = projectId;
-            Console.WriteLine("[WorkModeBarViewModel] Active modules provider set");
         }
 
         /// <summary>
@@ -107,25 +82,13 @@ namespace Writersword.ViewModels.Components
 
             Console.WriteLine($"[WorkModeBarViewModel] Switching WorkMode: {ActiveWorkMode?.Title} → {newWorkMode.Title}");
 
-            // Проверяем что у нас есть всё необходимое
-            if (_getActiveModules == null || string.IsNullOrEmpty(_currentProjectPath) || string.IsNullOrEmpty(_currentProjectId))
-            {
-                Console.WriteLine("[WorkModeBarViewModel] ERROR: Missing dependencies for WorkMode switch");
-                return;
-            }
+            // Активируем новый WorkMode через сервис
+            _workModeService.SetActiveWorkMode(newWorkMode);
 
-            // Переключаем через сервис (закроет старые модули, активирует новый режим)
-            await _workModeService.SwitchWorkModeAsync(
-                newWorkMode,
-                _getActiveModules(),
-                _currentProjectPath,
-                _currentProjectId
-            );
-
-            // Обновляем активный WorkMode
+            // Обновляем локальное состояние
             ActiveWorkMode = newWorkMode;
 
-            // Уведомляем MainWindowViewModel
+            // Уведомляем MainWindowViewModel для перестройки UI
             if (_onWorkModeSwitched != null)
             {
                 await _onWorkModeSwitched(newWorkMode);

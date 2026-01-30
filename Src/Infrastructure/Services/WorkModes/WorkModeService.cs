@@ -1,10 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using Writersword.Core.Enums;
-using Writersword.Core.Interfaces.Modules;
-using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.WorkModes;
@@ -18,16 +15,12 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
     public class WorkModeService : IWorkModeService
     {
         private readonly IWorkModeConfigurationService _configService;
-        private readonly IModuleLifecycleService _lifecycleService;
         private List<WorkMode> _workModes = new();
         private string _currentProjectType = "";
 
-        public WorkModeService(
-            IWorkModeConfigurationService configService,
-            IModuleLifecycleService lifecycleService)
+        public WorkModeService(IWorkModeConfigurationService configService)
         {
             _configService = configService;
-            _lifecycleService = lifecycleService;
         }
 
         /// <summary>Инициализировать WorkModes для проекта</summary>
@@ -190,31 +183,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             workMode.IsActive = true;
 
             Console.WriteLine($"[WorkModeService] Active WorkMode: {workMode.Title}");
-        }
-
-        /// <summary>
-        /// Переключиться на другой WorkMode
-        /// </summary>
-        public async Task SwitchWorkModeAsync(WorkMode newWorkMode, IEnumerable<IModule> activeModules, string projectPath, string projectId)
-        {
-            var oldWorkMode = GetActiveWorkMode();
-
-            if (oldWorkMode == newWorkMode)
-            {
-                Console.WriteLine("[WorkModeService] Already in this WorkMode");
-                return;
-            }
-
-            Console.WriteLine($"[WorkModeService] Switching: {oldWorkMode?.Title} → {newWorkMode.Title}");
-
-            foreach (var module in activeModules)
-            {
-                await _lifecycleService.CloseModuleAsync(module, projectPath, projectId);
-            }
-
-            SetActiveWorkMode(newWorkMode);
-
-            Console.WriteLine($"[WorkModeService] Switched to: {newWorkMode.Title}");
         }
     }
 }

@@ -1,11 +1,11 @@
 ﻿using Avalonia.Controls;
+using Newtonsoft.Json.Linq;
 using ReactiveUI;
 using System;
 using System.Reactive.Linq;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
-using Writersword.Core.Models.Modules;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.ViewModels;
 using Writersword.Resources.Localization;
@@ -54,21 +54,24 @@ namespace Writersword.Modules.TextEditor
 
             _viewModel = new TextEditorViewModel();
 
-            // Подписка на изменения текста с задержкой (debounce)
+            CreateSubscription();
+
+            Console.WriteLine($"[TextEditorModule] Initialized (ID: {InstanceId})");
+        }
+
+        /// <summary>
+        /// Создать подписку на изменения текста
+        /// </summary>
+        private void CreateSubscription()
+        {
+            _textSubscription?.Dispose();
+
             _textSubscription = _viewModel.WhenAnyValue(x => x.PlainText)
                 .Throttle(TimeSpan.FromSeconds(0.5))
                 .Subscribe(text =>
                 {
-                    // Сохраняем в проект
-                    if (Context?.Project != null)
-                    {
-                        Context.Project.ModulesData[ModuleId] = text;
-                    }
-
                     Console.WriteLine($"[TextEditorModule {InstanceId}] Text updated: {text?.Length ?? 0} chars");
                 });
-
-            Console.WriteLine($"[TextEditorModule] Initialized (ID: {InstanceId})");
         }
 
         /// <summary>
@@ -85,38 +88,81 @@ namespace Writersword.Modules.TextEditor
         }
 
         /// <summary>
-        /// Сохранить состояние модуля
-        /// Возвращает текст редактора в CustomData
+        /// Получить основные данные модуля (текст редактора)
+        /// Возвращает строку с текстом или null если редактор пустой
         /// </summary>
-        public override ModuleState SaveState()
+        public override object? GetCustomData()
         {
             var text = _viewModel?.PlainText ?? "";
 
-            return new ModuleState
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+
+            return text;
+        }
+
+        /// <summary>
+        /// Получить сессионные данные (позиция курсора, скролл)
+        /// </summary>
+        public override object? GetSessionData()
+        {
+            return new
             {
-                InstanceId = this.InstanceId,
-                CustomData = text,
-                SessionData = new
-                {
-                    lastEditTime = DateTime.Now,
-                    scrollPosition = 0
-                }
+                lastEditTime = DateTime.Now,
+                scrollPosition = 0
             };
         }
 
         /// <summary>
-        /// Восстановить состояние модуля
-        /// Загружает текст из CustomData в редактор
+        /// Установить основные данные модуля (текст редактора)
+        /// Вызывается при открытии проекта или переключении версий
         /// </summary>
-        public override void RestoreState(ModuleState state)
+        public override void SetCustomData(object? data)
         {
-            base.RestoreState(state);
-
-            if (_viewModel != null && state.CustomData is string text)
+            if (_viewModel == null)
             {
-                _viewModel.LoadDocument(text);
-                Console.WriteLine($"[TextEditorModule] Restored {text.Length} chars");
+                Console.WriteLine($"[TextEditorModule] SetCustomData called but ViewModel is null (ID: {InstanceId})");
+                return;
             }
+
+            _textSubscription?.Dispose();
+
+            if (data != null)
+            {
+                string text = "";
+
+                if (data is string str)
+                {
+                    text = str;
+                }
+                else if (data is JValue jValue)
+                {
+                    text = jValue.Value?.ToString() ?? "";
+                }
+                else
+                {
+                    text = data.ToString() ?? "";
+                }
+
+                _viewModel.LoadDocument(text);
+                Console.WriteLine($"[TextEditorModule] Loaded {text.Length} chars (ID: {InstanceId})");
+            }
+            else
+            {
+                _viewModel.LoadDocument("");
+                Console.WriteLine($"[TextEditorModule] Loaded empty document (ID: {InstanceId})");
+            }
+
+            CreateSubscription();
+            Console.WriteLine($"[TextEditorModule] Subscription recreated after SetCustomData");
+        }
+
+        /// <summary>
+        /// Установить сессионные данные (позиция курсора, скролл)
+        /// </summary>
+        public override void SetSessionData(object? data)
+        {
+            Console.WriteLine($"[TextEditorModule] SessionData set (ID: {InstanceId})");
         }
 
         /// <summary>
@@ -154,7 +200,7 @@ namespace Writersword.Modules.TextEditor
         /// <summary>Отображаемое имя (из локализации)</summary>
         public string DisplayName => TextEditorStrings.DisplayName;
 
-        /// <summary>Описание модуля (из локализации)</summary>
+        /// <summary>Описание модуля (из локализации)</summary>а
         public string Description => TextEditorStrings.Description;
 
         /// <summary>Иконка модуля (emoji)</summary>

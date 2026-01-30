@@ -60,26 +60,21 @@ namespace Writersword.Modules.Synonyms
         }
 
         /// <summary>
-        /// Сохранить состояние модуля
-        /// Модуль синонимов не сохраняет своё состояние
+        /// Получить основные данные модуля
+        /// Модуль синонимов не сохраняет данные (вспомогательный модуль)
         /// </summary>
-        public override ModuleState SaveState()
+        public override object? GetCustomData()
         {
-            return new ModuleState
-            {
-                InstanceId = this.InstanceId,
-                CustomData = null
-            };
+            return null;
         }
 
         /// <summary>
-        /// Восстановить состояние модуля
-        /// Модуль синонимов не восстанавливает своё состояние
+        /// Получить сессионные данные модуля
+        /// Модуль синонимов не сохраняет сессионные данные
         /// </summary>
-        public override void RestoreState(ModuleState state)
+        public override object? GetSessionData()
         {
-            // Вызываем базовый метод (сбрасывает IsDirty)
-            base.RestoreState(state);
+            return null;
         }
 
         /// <summary>
