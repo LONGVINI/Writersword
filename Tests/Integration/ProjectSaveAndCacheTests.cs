@@ -1,5 +1,6 @@
 ﻿using FluentAssertions;
 using NUnit.Framework;
+using System;
 using System.Threading.Tasks;
 using Tests.Helpers;
 using Writersword.Core.Models.Project;
@@ -32,17 +33,19 @@ namespace Tests.Integration
             // Создаём папку TestProjects перед каждым тестом
             TestProjectHelper.EnsureTestDirectoryExists();
 
-            System.Console.WriteLine("=================================================");
-            System.Console.WriteLine($"[TEST START] {TestContext.CurrentContext.Test.Name}");
-            System.Console.WriteLine("=================================================");
+
+
+            Console.WriteLine("=================================================");
+            Console.WriteLine($"[TEST START] {TestContext.CurrentContext.Test.Name}");
+            Console.WriteLine("=================================================");
         }
 
         [TearDown]
         public void TearDown()
         {
-            System.Console.WriteLine("=================================================");
-            System.Console.WriteLine($"[TEST END] {TestContext.CurrentContext.Test.Name}");
-            System.Console.WriteLine("=================================================");
+            Console.WriteLine("=================================================");
+            Console.WriteLine($"[TEST END] {TestContext.CurrentContext.Test.Name}");
+            Console.WriteLine("=================================================");
 
             // Удаляем все тестовые файлы после каждого теста
             TestProjectHelper.CleanupTestFiles();
@@ -67,7 +70,7 @@ namespace Tests.Integration
             // ARRANGE - Подготовка
             // ============================================================
 
-            System.Console.WriteLine("[TEST] ARRANGE: Creating test project...");
+            Console.WriteLine("[TEST] ARRANGE: Creating test project...");
 
             // 1. Создаём тестовый проект
             var project = TestProjectHelper.CreateTestProject("TestSave");
@@ -76,63 +79,63 @@ namespace Tests.Integration
             // 2. Добавляем данные TextEditor в проект
             project.ModulesData["TextEditor"] = testText;
 
-            System.Console.WriteLine($"[TEST] Created project with text: '{testText}'");
+            Console.WriteLine($"[TEST] Created project with text: '{testText}'");
 
             // ============================================================
             // ACT - Действие
             // ============================================================
 
-            System.Console.WriteLine("[TEST] ACT: Saving project...");
+            Console.WriteLine("[TEST] ACT: Saving project...");
 
             // 3. Сохраняем проект на диск
             await TestProjectHelper.SaveTestProject(project, "test_save");
 
             var projectPath = TestProjectHelper.GetTestFilePath("test_save");
-            System.Console.WriteLine($"[TEST] Project saved to: {projectPath}");
+            Console.WriteLine($"[TEST] Project saved to: {projectPath}");
 
             // ============================================================
             // ASSERT - Проверка
             // ============================================================
 
-            System.Console.WriteLine("[TEST] ASSERT: Verifying results...");
+            Console.WriteLine("[TEST] ASSERT: Verifying results...");
 
             // 4. Проверяем что файл .writersword создан
             TestProjectHelper.FileExists("test_save").Should().BeTrue(
                 "потому что проект должен быть сохранён на диск");
 
-            System.Console.WriteLine("[TEST] ✓ File exists");
+            Console.WriteLine("[TEST] ✓ File exists");
 
             // 5. Проверяем что кеш (.wsasd) НЕ создан
             // Кеш создаётся только при автосохранении, не при ручном Ctrl+S
             TestProjectHelper.CacheFileExists("test_save").Should().BeFalse(
                 "потому что при ручном сохранении кеш не должен создаваться");
 
-            System.Console.WriteLine("[TEST] ✓ Cache does not exist (correct!)");
+            Console.WriteLine("[TEST] ✓ Cache does not exist (correct!)");
 
             // 6. Загружаем проект заново
             var loadedProject = await TestProjectHelper.LoadTestProject("test_save");
 
             loadedProject.Should().NotBeNull("потому что проект должен загрузиться с диска");
-            System.Console.WriteLine("[TEST] ✓ Project loaded successfully");
+            Console.WriteLine("[TEST] ✓ Project loaded successfully");
 
             // 7. Проверяем что данные сохранились
             TestProjectHelper.ProjectHasTextEditorData(loadedProject!).Should().BeTrue(
                 "потому что проект содержит данные TextEditor");
 
-            System.Console.WriteLine("[TEST] ✓ Project has TextEditor data");
+            Console.WriteLine("[TEST] ✓ Project has TextEditor data");
 
             // 8. Проверяем что текст совпадает
             var savedText = TestProjectHelper.GetTextFromProject(loadedProject!);
             savedText.Should().Be(testText,
                 "потому что сохранённый текст должен совпадать с оригиналом");
 
-            System.Console.WriteLine($"[TEST] ✓ Text matches: '{savedText}'");
+            Console.WriteLine($"[TEST] ✓ Text matches: '{savedText}'");
 
             // ============================================================
             // SUCCESS
             // ============================================================
 
-            System.Console.WriteLine("[TEST] ✅ TEST PASSED!");
+            Console.WriteLine("[TEST] ✅ TEST PASSED!");
         }
 
         /// <summary>
@@ -154,7 +157,7 @@ namespace Tests.Integration
             // ARRANGE - Подготовка
             // ============================================================
 
-            System.Console.WriteLine("[TEST] ARRANGE: Creating project with initial text...");
+            Console.WriteLine("[TEST] ARRANGE: Creating project with initial text...");
 
             // 1. Создаём проект с исходным текстом
             var project = TestProjectHelper.CreateTestProject("TestAutoSave");
@@ -163,7 +166,7 @@ namespace Tests.Integration
 
             // 2. Сохраняем на диск
             await TestProjectHelper.SaveTestProject(project, "test_autosave");
-            System.Console.WriteLine($"[TEST] Project saved with initial text: '{initialText}'");
+            Console.WriteLine($"[TEST] Project saved with initial text: '{initialText}'");
 
             // 3. Эмулируем автосохранение - создаём кеш вручную
             var cachePath = TestProjectHelper.GetCacheFilePath("test_autosave");
@@ -183,7 +186,7 @@ namespace Tests.Integration
             var cacheJson = Newtonsoft.Json.JsonConvert.SerializeObject(cacheData, Newtonsoft.Json.Formatting.Indented);
             await System.IO.File.WriteAllTextAsync(cachePath, cacheJson);
 
-            System.Console.WriteLine("[TEST] Created cache file (emulating autosave)");
+            Console.WriteLine("[TEST] Created cache file (emulating autosave)");
             TestProjectHelper.CacheFileExists("test_autosave").Should().BeTrue(
                 "потому что мы только что создали кеш файл");
 
@@ -191,7 +194,7 @@ namespace Tests.Integration
             // ACT - Действие
             // ============================================================
 
-            System.Console.WriteLine("[TEST] ACT: Modifying project and saving...");
+            Console.WriteLine("[TEST] ACT: Modifying project and saving...");
 
             // 4. Изменяем текст в проекте (эмулируем редактирование пользователя)
             var newText = "Новый текст после редактирования";
@@ -212,20 +215,20 @@ namespace Tests.Integration
             if (System.IO.File.Exists(cachePath))
             {
                 System.IO.File.Delete(cachePath);
-                System.Console.WriteLine("[TEST] Cache deleted (emulating ProjectWorkflow behavior)");
+                Console.WriteLine("[TEST] Cache deleted (emulating ProjectWorkflow behavior)");
             }
 
             // ============================================================
             // ASSERT - Проверка
             // ============================================================
 
-            System.Console.WriteLine("[TEST] ASSERT: Verifying results...");
+            Console.WriteLine("[TEST] ASSERT: Verifying results...");
 
             // 7. Проверяем что кеш удалён
             TestProjectHelper.CacheFileExists("test_autosave").Should().BeFalse(
                 "потому что при ручном сохранении кеш должен удаляться");
 
-            System.Console.WriteLine("[TEST] ✓ Cache deleted");
+            Console.WriteLine("[TEST] ✓ Cache deleted");
 
             // 8. Загружаем проект
             var loadedProject = await TestProjectHelper.LoadTestProject("test_autosave");
@@ -236,13 +239,13 @@ namespace Tests.Integration
             savedText.Should().Be(newText,
                 "потому что данные из активного модуля имеют приоритет над кешем");
 
-            System.Console.WriteLine($"[TEST] ✓ Saved text matches new text: '{savedText}'");
+            Console.WriteLine($"[TEST] ✓ Saved text matches new text: '{savedText}'");
 
             // ============================================================
             // SUCCESS
             // ============================================================
 
-            System.Console.WriteLine("[TEST] ✅ TEST PASSED!");
+            Console.WriteLine("[TEST] ✅ TEST PASSED!");
         }
 
         /// <summary>
@@ -263,32 +266,32 @@ namespace Tests.Integration
             // ARRANGE - Подготовка
             // ============================================================
 
-            System.Console.WriteLine("[TEST] ARRANGE: Creating project (NOT saving)...");
+            Console.WriteLine("[TEST] ARRANGE: Creating project (NOT saving)...");
 
             // 1. Создаём проект с текстом (в памяти)
             var project = TestProjectHelper.CreateTestProject("TestClose");
             var testText = "Несохранённый текст";
             project.ModulesData["TextEditor"] = testText;
 
-            System.Console.WriteLine($"[TEST] Created project with text: '{testText}' (not saved yet)");
+            Console.WriteLine($"[TEST] Created project with text: '{testText}' (not saved yet)");
 
             // 2. Проверяем что файла НЕТ на диске
             TestProjectHelper.FileExists("test_close").Should().BeFalse(
                 "потому что мы ещё не сохраняли проект");
 
-            System.Console.WriteLine("[TEST] ✓ File does not exist (correct!)");
+            Console.WriteLine("[TEST] ✓ File does not exist (correct!)");
 
             // 3. Создаём mock диалога
             var mockDialog = new MockDialogService();
             mockDialog.NextMessageBoxResult = Writersword.Views.MessageBoxResult.Yes;
 
-            System.Console.WriteLine("[TEST] Mock dialog configured to return 'Yes'");
+            Console.WriteLine("[TEST] Mock dialog configured to return 'Yes'");
 
             // ============================================================
             // ACT - Действие
             // ============================================================
 
-            System.Console.WriteLine("[TEST] ACT: Closing project (should trigger save dialog)...");
+            Console.WriteLine("[TEST] ACT: Closing project (should trigger save dialog)...");
 
             // ПРИМЕЧАНИЕ: Здесь должен быть вызов ProjectWorkflow.CloseDocumentAsync()
             // Но для простоты теста просто проверяем что будет показан диалог
@@ -302,51 +305,51 @@ namespace Tests.Integration
                 MessageBoxButtons.YesNoCancel
             );
 
-            System.Console.WriteLine($"[TEST] Dialog returned: {dialogResult}");
+            Console.WriteLine($"[TEST] Dialog returned: {dialogResult}");
 
             // 5. Если пользователь выбрал "Yes" - сохраняем
-            if (dialogResult == Writersword.Views.MessageBoxResult.Yes)
+            if (dialogResult == MessageBoxResult.Yes)
             {
                 await TestProjectHelper.SaveTestProject(project, "test_close");
-                System.Console.WriteLine("[TEST] Project saved (user chose Yes)");
+                Console.WriteLine("[TEST] Project saved (user chose Yes)");
             }
 
             // ============================================================
             // ASSERT - Проверка
             // ============================================================
 
-            System.Console.WriteLine("[TEST] ASSERT: Verifying results...");
+            Console.WriteLine("[TEST] ASSERT: Verifying results...");
 
             // 6. Проверяем что диалог был вызван
             mockDialog.ShowMessageCallCount.Should().Be(1,
                 "потому что должен был показаться диалог о сохранении");
 
-            System.Console.WriteLine("[TEST] ✓ Dialog was shown");
+            Console.WriteLine("[TEST] ✓ Dialog was shown");
 
             // 7. Проверяем что были правильные кнопки
             mockDialog.WasMessageShownWithButtons(MessageBoxButtons.YesNoCancel)
                 .Should().BeTrue("потому что должны быть кнопки Yes/No/Cancel");
 
-            System.Console.WriteLine("[TEST] ✓ Dialog had correct buttons");
+            Console.WriteLine("[TEST] ✓ Dialog had correct buttons");
 
             // 8. Проверяем что файл создан
             TestProjectHelper.FileExists("test_close").Should().BeTrue(
                 "потому что проект должен быть сохранён после выбора Yes");
 
-            System.Console.WriteLine("[TEST] ✓ File exists after save");
+            Console.WriteLine("[TEST] ✓ File exists after save");
 
             // 9. Проверяем что текст сохранился
             var loadedProject = await TestProjectHelper.LoadTestProject("test_close");
             var savedText = TestProjectHelper.GetTextFromProject(loadedProject!);
             savedText.Should().Be(testText);
 
-            System.Console.WriteLine($"[TEST] ✓ Text saved correctly: '{savedText}'");
+            Console.WriteLine($"[TEST] ✓ Text saved correctly: '{savedText}'");
 
             // ============================================================
             // SUCCESS
             // ============================================================
 
-            System.Console.WriteLine("[TEST] ✅ TEST PASSED!");
+            Console.WriteLine("[TEST] ✅ TEST PASSED!");
         }
     }
 }

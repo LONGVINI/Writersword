@@ -1,11 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Writersword.Core.Interfaces.Modules;
 
 namespace Writersword.Modules.Common
 {
     /// <summary>
     /// Фабрика для создания экземпляров модулей
+    /// Также предоставляет метаданные всех зарегистрированных типов модулей
     /// </summary>
     public class ModuleFactory
     {
@@ -44,6 +46,29 @@ namespace Writersword.Modules.Common
         public IEnumerable<string> GetRegisteredTypes()
         {
             return _moduleCreators.Keys;
+        }
+
+        /// <summary>
+        /// Получить метаданные ВСЕХ зарегистрированных модулей
+        /// Создаёт временный экземпляр каждого типа для чтения метаданных
+        /// Используется для построения меню модулей в UI
+        /// </summary>
+        public List<IModuleMetadata> GetAllModuleMetadata()
+        {
+            var metadataList = new List<IModuleMetadata>();
+
+            foreach (var moduleId in GetRegisteredTypes())
+            {
+                var tempModule = Create(moduleId);
+                if (tempModule?.Metadata != null)
+                {
+                    metadataList.Add(tempModule.Metadata);
+                    tempModule.Dispose();
+                }
+            }
+
+            Console.WriteLine($"[ModuleFactory] Loaded metadata for {metadataList.Count} module types");
+            return metadataList;
         }
     }
 }

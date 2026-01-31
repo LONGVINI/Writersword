@@ -10,6 +10,9 @@ using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models;
 using Writersword.Core.Models.Modules;
 using Writersword.Core.Models.Project;
+using Writersword.Core.Services;
+using Writersword.Infrastructure.Services.Modules;
+using Writersword.Modules.Common;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 
 namespace Writersword.ViewModels
@@ -36,6 +39,13 @@ namespace Writersword.ViewModels
         /// Содержит информацию о проекте и режиме просмотра
         /// </summary>
         public DocumentContext Context { get; }
+
+        /// <summary>
+        /// Изолированный контейнер модулей для этого проекта
+        /// Каждый проект имеет свой собственный набор модулей
+        /// При закрытии проекта все модули автоматически уничтожаются
+        /// </summary>
+        public ProjectModuleContext ModuleContext { get; }
 
         /// <summary>
         /// Баннер восстановления версий (null если нет кеша)
@@ -117,6 +127,11 @@ namespace Writersword.ViewModels
 
             // Создаём контекст документа
             Context = new DocumentContext(project, filePath);
+
+            // Создаём изолированный контейнер модулей для этого проекта
+            var moduleFactory = App.Services.GetRequiredService<ModuleFactory>();
+            ModuleContext = new ProjectModuleContext(project.Id, moduleFactory);
+            Console.WriteLine($"[DocumentTabViewModel] ProjectModuleContext created for: {project.Title}");
 
             CloseCommand = ReactiveCommand.CreateFromTask(async () =>
             {
@@ -245,5 +260,18 @@ namespace Writersword.ViewModels
 
         /// <summary>Получить проект</summary>
         public ProjectFile GetProject() => _project;
+
+        /// <summary>
+        /// Очистка ресурсов
+        /// Уничтожает все модули проекта
+        /// </summary>
+        public void Dispose()
+        {
+            Console.WriteLine($"[DocumentTabViewModel] Disposing: {Title}");
+
+            // Уничтожаем все модули проекта
+            ModuleContext?.Dispose();
+            Console.WriteLine($"[DocumentTabViewModel] All modules disposed for: {Title}");
+        }
     }
 }

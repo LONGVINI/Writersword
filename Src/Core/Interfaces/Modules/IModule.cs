@@ -1,5 +1,6 @@
-﻿using Avalonia.Controls;
-using System;
+﻿using System;
+using System.Collections.Generic;
+using Avalonia.Controls;
 using Writersword.Core.Models;
 using Writersword.ViewModels;
 
@@ -85,5 +86,37 @@ namespace Writersword.Core.Interfaces.Modules
         /// Используется при выходе из CompareMode
         /// </summary>
         void RefreshFromContext();
+
+        /// <summary>
+        /// Поддерживает ли модуль дельта-сравнение (разбивка на части с хешами)
+        /// false (по умолчанию) - сравнивать хеш всего объекта целиком (Simple режим)
+        /// true - данные содержат маркер "__deltaMode" и структуру с хешами частей (Delta режим)
+        /// 
+        /// Simple режим (Timer, Notes, Synonyms):
+        ///   GetCustomData() возвращает обычные данные (строка, объект)
+        ///   DataComparisonService хеширует весь объект целиком для быстрого сравнения
+        /// 
+        /// Delta режим (TextEditor):
+        ///   GetCustomData() возвращает структуру с "__deltaMode": true и хешами частей
+        ///   DataComparisonService сравнивает хеши частей, а не хеширует весь объект
+        ///   Позволяет найти только измененные части и сохранить только их
+        /// </summary>
+        bool SupportsDeltaComparison { get; }
+
+        /// <summary>
+        /// Получить измененные части данных (только для SupportsDeltaComparison = true)
+        /// Сравнивает хеши частей между current и saved
+        /// Возвращает только те части, которые изменились
+        /// Используется для оптимизации сохранения больших документов
+        /// 
+        /// Пример для TextEditor:
+        ///   current = { "__deltaMode": true, "paragraph_0": {..., hash: "aaa"}, "paragraph_1": {..., hash: "bbb"} }
+        ///   saved   = { "__deltaMode": true, "paragraph_0": {..., hash: "aaa"}, "paragraph_1": {..., hash: "ccc"} }
+        ///   return  = { "paragraph_1": {..., hash: "bbb"} }  - только измененный абзац
+        /// </summary>
+        /// <param name="current">Текущие данные из GetCustomData()</param>
+        /// <param name="saved">Сохраненные данные из файла</param>
+        /// <returns>Словарь измененных частей или null если изменений нет</returns>
+        Dictionary<string, object?>? GetChangedParts(object? current, object? saved);
     }
 }

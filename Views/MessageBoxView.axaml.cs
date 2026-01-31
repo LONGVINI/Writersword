@@ -55,17 +55,19 @@ namespace Writersword.Views
             MessageBoxType type = MessageBoxType.Info,
             MessageBoxButtons buttons = MessageBoxButtons.OK) : this()
         {
-            System.Console.WriteLine($"[MessageBoxView] Creating with message: '{message}'");
-            System.Console.WriteLine($"[MessageBoxView] Message length: {message.Length}");
+
+
+            Console.WriteLine($"[MessageBoxView] Creating with message: '{message}'");
+            Console.WriteLine($"[MessageBoxView] Message length: {message.Length}");
 
             this.FindControl<TextBlock>("TitleText")!.Text = title;
 
             var messageTextBlock = this.FindControl<TextBlock>("MessageText")!;
             messageTextBlock.Text = message;
 
-            System.Console.WriteLine($"[MessageBoxView] TextBlock.Text: '{messageTextBlock.Text}'");
-            System.Console.WriteLine($"[MessageBoxView] TextBlock.MaxWidth: {messageTextBlock.MaxWidth}");
-            System.Console.WriteLine($"[MessageBoxView] TextBlock.MaxHeight: {messageTextBlock.MaxHeight}");
+            Console.WriteLine($"[MessageBoxView] TextBlock.Text: '{messageTextBlock.Text}'");
+            Console.WriteLine($"[MessageBoxView] TextBlock.MaxWidth: {messageTextBlock.MaxWidth}");
+            Console.WriteLine($"[MessageBoxView] TextBlock.MaxHeight: {messageTextBlock.MaxHeight}");
 
             Title = title;
 
@@ -87,7 +89,7 @@ namespace Writersword.Views
             DateTime cacheDate,
             DateTime saveDate) : this()
         {
-            System.Console.WriteLine($"[MessageBoxView] Creating Recovery dialog");
+            Console.WriteLine($"[MessageBoxView] Creating Recovery dialog");
 
             this.FindControl<TextBlock>("TitleText")!.Text = title;
             this.FindControl<TextBlock>("MessageText")!.Text = message;

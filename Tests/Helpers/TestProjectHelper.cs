@@ -287,14 +287,14 @@ namespace Tests.Helpers
         /// </summary>
         public static string SaveAndRestoreModule(TextEditorModule module)
         {
-            // 1. Сохранить состояние
-            var state = module.SaveState();
+            // 1. Сохранить состояние через GetCustomData
+            var customData = module.GetCustomData();
 
             // 2. Создать новый модуль
             var newModule = CreateTextEditor();
 
-            // 3. Восстановить состояние
-            newModule.RestoreState(state);
+            // 3. Восстановить состояние через SetCustomData
+            newModule.SetCustomData(customData);
 
             // 4. Получить текст
             return GetTextFromModule(newModule);

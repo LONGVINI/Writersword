@@ -1,14 +1,29 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Writersword.Core.Interfaces.Services;
 
 namespace Writersword.Src.Infrastructure.Services
 {
     /// <summary>
     /// Реализация сервиса сравнения данных модулей
+    /// Поддерживает два режима:
+    /// - Simple: хеширование всего объекта (быстрое сравнение)
+    /// - Delta: сравнение хешей частей (для больших документов)
     /// </summary>
     public class DataComparisonService : IDataComparisonService
     {
+        private readonly IHashService _hashService;
+
+        /// <summary>
+        /// Конструктор сервиса сравнения данных
+        /// </summary>
+        /// <param name="hashService">Сервис хеширования для оптимизации сравнений</param>
+        public DataComparisonService(IHashService hashService)
+        {
+            _hashService = hashService;
+        }
+
         /// <summary>
         /// Сравнить два словаря CustomData
         /// ОПТИМИЗИРОВАНО: early exit при первом различии
@@ -55,7 +70,7 @@ namespace Writersword.Src.Infrastructure.Services
 
         /// <summary>
         /// Сравнить CustomData двух модулей
-        /// ОПТИМИЗИРОВАНО: для строк сначала проверяем длину
+        /// Автоматически определяет режим сравнения (Simple или Delta)
         /// </summary>
         private bool AreCustomDataEqual(object? data1, object? data2)
         {
@@ -67,19 +82,91 @@ namespace Writersword.Src.Infrastructure.Services
             if (data1 == null || data2 == null)
                 return false;
 
-            // Если оба string - ОПТИМИЗИРОВАННОЕ сравнение
-            if (data1 is string str1 && data2 is string str2)
+            // ПРОВЕРКА: Delta режим?
+            if (IsDeltaMode(data1) && IsDeltaMode(data2))
             {
-                // БЫСТРАЯ ПРОВЕРКА: разная длина - разные строки
-                if (str1.Length != str2.Length)
-                    return false;
-
-                // Сравниваем содержимое
-                return str1 == str2;
+                Console.WriteLine($"[DataComparison] Using Delta mode comparison");
+                return CompareDeltaData(data1, data2);
             }
 
-            // Для остальных типов - простое сравнение
-            return data1.Equals(data2);
+            // SIMPLE РЕЖИМ: хешируем весь объект целиком
+            var hash1 = _hashService.ComputeHash(data1);
+            var hash2 = _hashService.ComputeHash(data2);
+
+            bool areEqual = hash1 == hash2;
+
+            if (!areEqual)
+            {
+                Console.WriteLine($"[DataComparison] Hash mismatch (Simple mode)");
+            }
+
+            return areEqual;
+        }
+
+        /// <summary>
+        /// Проверить является ли объект данными в Delta режиме
+        /// Delta режим определяется наличием маркера "__deltaMode": true
+        /// </summary>
+        private bool IsDeltaMode(object? data)
+        {
+            return data is Dictionary<string, object> dict &&
+                   dict.TryGetValue("__deltaMode", out var mode) &&
+                   mode is true;
+        }
+
+        /// <summary>
+        /// Сравнить данные в Delta режиме
+        /// Сравниваются хеши ЧАСТЕЙ, а не хеш всего объекта
+        /// </summary>
+        private bool CompareDeltaData(object? data1, object? data2)
+        {
+            var dict1 = (Dictionary<string, object>)data1!;
+            var dict2 = (Dictionary<string, object>)data2!;
+
+            // Получаем все ключи частей (кроме служебного __deltaMode)
+            var parts1 = dict1.Keys.Where(k => k != "__deltaMode").ToHashSet();
+            var parts2 = dict2.Keys.Where(k => k != "__deltaMode").ToHashSet();
+
+            // БЫСТРАЯ ПРОВЕРКА: разное количество частей?
+            if (parts1.Count != parts2.Count)
+            {
+                Console.WriteLine($"[DataComparison] Different parts count: {parts1.Count} vs {parts2.Count}");
+                return false;
+            }
+
+            // Сравниваем хеши КАЖДОЙ части
+            foreach (var partKey in parts1)
+            {
+                // Проверяем что часть есть в обоих объектах
+                if (!parts2.Contains(partKey))
+                {
+                    Console.WriteLine($"[DataComparison] Part missing: {partKey}");
+                    return false;
+                }
+
+                // Получаем объекты частей
+                var part1 = dict1[partKey] as Dictionary<string, object>;
+                var part2 = dict2[partKey] as Dictionary<string, object>;
+
+                if (part1 == null || part2 == null)
+                {
+                    Console.WriteLine($"[DataComparison] Invalid part structure: {partKey}");
+                    return false;
+                }
+
+                // Сравниваем ХЕШИ частей (НЕ текст!)
+                var hash1 = part1.TryGetValue("hash", out var h1) ? h1?.ToString() : null;
+                var hash2 = part2.TryGetValue("hash", out var h2) ? h2?.ToString() : null;
+
+                if (hash1 != hash2)
+                {
+                    Console.WriteLine($"[DataComparison] Part hash differs: {partKey} ({hash1} vs {hash2})");
+                    return false;
+                }
+            }
+
+            Console.WriteLine($"[DataComparison] All {parts1.Count} parts identical (Delta mode)");
+            return true;
         }
     }
 }

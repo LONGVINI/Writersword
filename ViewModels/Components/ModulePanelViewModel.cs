@@ -15,7 +15,7 @@ namespace Writersword.ViewModels.Components
     /// </summary>
     public class ModulePanelViewModel : ViewModelBase
     {
-        private readonly ModuleRegistry _moduleRegistry;
+        private readonly ModuleFactory _moduleFactory;
         private List<ModuleItemViewModel> _availableModules = new();
         private WorkMode? _currentWorkMode;
 
@@ -35,9 +35,9 @@ namespace Writersword.ViewModels.Components
         /// <summary>Функция удаления модуля (передаётся из MainWindowViewModel)</summary>
         private Action<string>? _onModuleRemoved;
 
-        public ModulePanelViewModel(ModuleRegistry moduleRegistry)
+        public ModulePanelViewModel(ModuleFactory moduleFactory)
         {
-            _moduleRegistry = moduleRegistry;
+            _moduleFactory = moduleFactory;
 
             // Команда переключения модуля
             ToggleModuleCommand = ReactiveCommand.Create<ModuleItemViewModel>(ToggleModule);
@@ -64,8 +64,8 @@ namespace Writersword.ViewModels.Components
         {
             _currentWorkMode = workMode;
 
-            // Получаем все доступные модули из реестра
-            var allModules = _moduleRegistry.GetAllModuleMetadata();
+            // Получаем все доступные модули из фабрики
+            var allModules = _moduleFactory.GetAllModuleMetadata();
 
             // Создаём список ModuleItemViewModel
             var moduleItems = new List<ModuleItemViewModel>();

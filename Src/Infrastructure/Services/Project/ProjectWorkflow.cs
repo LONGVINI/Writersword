@@ -703,6 +703,10 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     }
                 }
 
+                // Уничтожаем все модули проекта
+                tab.Dispose();
+                Console.WriteLine("[ProjectWorkflow] All modules disposed via tab.Dispose()");
+
                 Console.WriteLine("[ProjectWorkflow] Tab closed successfully");
                 ProjectClosed?.Invoke(tab);
                 return true;

@@ -4,6 +4,7 @@ using Dock.Model.Controls;
 using Dock.Model.Core;
 using Microsoft.Extensions.DependencyInjection;
 using System;
+using System.Linq;
 using Writersword.ViewModels;
 using Writersword.Views;
 
@@ -163,10 +164,23 @@ namespace Writersword.Src.Infrastructure.Dock
                         if (dockable is Document document)
                         {
                             string moduleId = document.Id?.Replace("Module_", "") ?? "";
-                            Console.WriteLine($"[HostWindow] Notifying close for module: {moduleId}");
 
-                            var mainVM = App.Services.GetRequiredService<MainWindowViewModel>();
-                            mainVM.HandleModuleClosedInDock(moduleId);
+                            // ПРОВЕРКА: можно ли закрыть модуль?
+                            if (!document.CanClose)
+                            {
+                                Console.WriteLine($"[HostWindow] Module {moduleId} is required - returning to dock");
+
+                                // Возвращаем модуль в Dock (упрощенный подход)
+                                ReturnRequiredModuleToDock(moduleId);
+                            }
+                            else
+                            {
+                                Console.WriteLine($"[HostWindow] Notifying close for module: {moduleId}");
+
+                                // Обычное закрытие
+                                var mainVM = App.Services.GetRequiredService<MainWindowViewModel>();
+                                mainVM.HandleModuleClosedInDock(moduleId);
+                            }
                         }
                     }
                 }
@@ -174,6 +188,50 @@ namespace Writersword.Src.Infrastructure.Dock
 
             _window = null;
         }
+
+        /// <summary>
+        /// Вернуть обязательный модуль из Float окна обратно в Dock
+        /// ПРОСТОЙ подход - просто сбрасываем флаг и перезагружаем вкладку
+        /// </summary>
+        private void ReturnRequiredModuleToDock(string moduleId)
+        {
+            Console.WriteLine($"[HostWindow] Returning required module to dock: {moduleId}");
+
+            var tabCollection = App.Services.GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>();
+            if (tabCollection.ActiveTab == null)
+            {
+                Console.WriteLine($"[HostWindow] No active tab");
+                return;
+            }
+
+            var project = tabCollection.ActiveTab.GetProject();
+            var activeWorkMode = project.WorkModes.FirstOrDefault(w => w.IsActive);
+
+            if (activeWorkMode == null)
+            {
+                Console.WriteLine($"[HostWindow] No active WorkMode");
+                return;
+            }
+
+            // Находим слот модуля
+            var slot = activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
+            if (slot == null)
+            {
+                Console.WriteLine($"[HostWindow] Module slot not found: {moduleId}");
+                return;
+            }
+
+            // Сбрасываем Float флаг
+            slot.IsFloating = false;
+            Console.WriteLine($"[HostWindow] Reset IsFloating for: {moduleId}");
+
+            // ПРОСТО ПЕРЕЗАГРУЖАЕМ ВКЛАДКУ
+            var mainVM = App.Services.GetRequiredService<MainWindowViewModel>();
+            mainVM.OnTabActivated(tabCollection.ActiveTab);
+
+            Console.WriteLine($"[HostWindow] Module {moduleId} returned successfully");
+        }
+
 
         private DocumentDock? FindDocumentDockInLayout(IDock? layout)
         {

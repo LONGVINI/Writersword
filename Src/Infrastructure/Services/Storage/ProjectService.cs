@@ -22,12 +22,10 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         // Соответствие: ID проекта -> путь к файлу
         private readonly Dictionary<string, string> _projectPaths = new Dictionary<string, string>();
 
-        private readonly ModuleRegistry _moduleRegistry;
         private readonly ZipProjectService _zipService;
 
-        public ProjectService(ModuleRegistry moduleRegistry)
+        public ProjectService()
         {
-            _moduleRegistry = moduleRegistry;
             _zipService = new ZipProjectService();
         }
 

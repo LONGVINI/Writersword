@@ -1,4 +1,5 @@
 ﻿using ReactiveUI;
+using System;
 using System.Collections.ObjectModel;
 
 namespace Writersword.Modules.Synonyms.ViewModels
@@ -54,7 +55,7 @@ namespace Writersword.Modules.Synonyms.ViewModels
         {
             // TODO: Реальная загрузка синонимов через API
             // Например: var synonyms = await _apiService.GetSynonyms(SearchText);
-            System.Console.WriteLine($"[SynonymsViewModel] Searching for: {SearchText}");
+            Console.WriteLine($"[SynonymsViewModel] Searching for: {SearchText}");
         }
     }
 }

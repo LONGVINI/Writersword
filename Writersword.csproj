@@ -68,9 +68,18 @@
 		<AvaloniaResource Include="Styles\**" />
 	</ItemGroup>
 	<ItemGroup>
+	  <AvaloniaXaml Remove="Docs\AI_GUIDE V2.0\**" />
+	  <AvaloniaXaml Remove="Docs\AI_GUIDE V3.0\**" />
 	  <AvaloniaXaml Remove="Tests\**" />
+	  <Compile Remove="Docs\AI_GUIDE V2.0\**" />
+	  <Compile Remove="Docs\AI_GUIDE V3.0\**" />
 	  <Compile Remove="Tests\**" />
+	  <None Remove="Docs\AI_GUIDE V2.0\**" />
+	  <None Remove="Docs\AI_GUIDE V3.0\**" />
 	  <None Remove="Tests\**" />
+	</ItemGroup>
+	<ItemGroup>
+	  <Content Include="Docs\AI_GUIDE V3.0\Configuration_text.txt" />
 	</ItemGroup>
 
 	<!-- ========================================

@@ -73,7 +73,6 @@ namespace Writersword.ViewModels
         private readonly IWorkModeConfigurationService _workModeConfigService;
         private readonly IWorkModeService _workModeService;
         private readonly DockFactory _dockFactory;
-        private readonly ModuleRegistry _moduleRegistry;
         private readonly IZipCacheService _cacheService;
         private readonly ICacheUpdateService _cacheUpdateService;
 
@@ -163,7 +162,6 @@ namespace Writersword.ViewModels
             _dockFactory = dockFactory;
             _cacheService = cacheService;
             _cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
-            _moduleRegistry = App.Services.GetRequiredService<ModuleRegistry>();
 
             // Связываем компоненты с MainWindow
             MenuBar.SetMainViewModelProvider(() => this);
@@ -213,7 +211,7 @@ namespace Writersword.ViewModels
         /// Восстанавливает WorkModes и Dock layout для вкладки
         /// Запускает кеширование ТОЛЬКО для активной вкладки
         /// </summary>
-        private void OnTabActivated(DocumentTabViewModel tab)
+        public void OnTabActivated(DocumentTabViewModel tab)
         {
             Console.WriteLine($"[MainWindowViewModel] Tab activated: {tab.Title}");
 
@@ -587,106 +585,58 @@ namespace Writersword.ViewModels
         // ========================================
 
         /// <summary>
-        /// Получить список активных модулей из текущего DockLayout
-        /// Используется при переключении WorkMode
-        /// ФИЛЬТРУЕТ модули по InstanceId (только "свои" модули)
+        /// Получить список активных модулей из ProjectModuleContext текущей вкладки
+        /// ФИЛЬТРУЕТ модули по InstanceId из ActiveWorkMode.ModuleSlots
+        /// Используется при сохранении, кешировании, переключении WorkMode
         /// </summary>
         public List<IModule> GetActiveModules()
         {
-            var modules = new List<IModule>();
-
-            if (DockLayout == null)
+            var activeTab = TabBar.ActiveTab;
+            if (activeTab == null)
             {
-                Console.WriteLine("[GetActiveModules] No DockLayout");
-                return modules;
+                Console.WriteLine("[GetActiveModules] No active tab");
+                return new List<IModule>();
             }
 
-            CollectModulesFromDockable(DockLayout, modules);
+            // Получаем ВСЕ модули проекта из изолированного контейнера
+            var allModules = activeTab.ModuleContext.GetAllModules();
 
-            if (ActiveWorkMode != null && modules.Count > 0)
+            if (allModules.Count == 0)
+            {
+                Console.WriteLine("[GetActiveModules] No modules in ProjectModuleContext");
+                return new List<IModule>();
+            }
+
+            // Если есть ActiveWorkMode - фильтруем по его ModuleSlots
+            if (ActiveWorkMode != null)
             {
                 var validInstanceIds = ActiveWorkMode.ModuleSlots
                     .Where(s => !string.IsNullOrEmpty(s.InstanceId))
                     .Select(s => s.InstanceId)
                     .ToHashSet();
 
-                var filteredModules = modules
+                var filteredModules = allModules
                     .Where(m => validInstanceIds.Contains(m.InstanceId))
                     .ToList();
 
-                var foreignCount = modules.Count - filteredModules.Count;
+                var foreignCount = allModules.Count - filteredModules.Count;
                 if (foreignCount > 0)
                 {
-                    Console.WriteLine($"[GetActiveModules] FILTERED OUT {foreignCount} foreign modules!");
+                    Console.WriteLine($"[GetActiveModules] FILTERED OUT {foreignCount} modules not in current WorkMode");
 
-                    foreach (var foreign in modules.Except(filteredModules))
+                    foreach (var foreign in allModules.Except(filteredModules))
                     {
-                        Console.WriteLine($"  - Foreign: {foreign.ModuleId} (Instance: {foreign.InstanceId})");
+                        Console.WriteLine($"  - Not in WorkMode: {foreign.ModuleId} (Instance: {foreign.InstanceId})");
                     }
                 }
 
-                Console.WriteLine($"[GetActiveModules] Returned {filteredModules.Count}/{modules.Count} valid modules");
+                Console.WriteLine($"[GetActiveModules] Returned {filteredModules.Count}/{allModules.Count} modules for WorkMode: {ActiveWorkMode.Title}");
                 return filteredModules;
             }
 
-            Console.WriteLine($"[GetActiveModules] Found {modules.Count} active modules (no filtering)");
-            return modules;
-        }
-
-        /// <summary>
-        /// Рекурсивно собрать модули из Dockable структуры
-        /// С ЗАЩИТОЙ ОТ ЦИКЛИЧЕСКИХ ССЫЛОК
-        /// </summary>
-        private void CollectModulesFromDockable(IDockable dockable, List<IModule> modules)
-        {
-            // Создаём HashSet для отслеживания посещённых элементов (защита от циклов)
-            var visited = new HashSet<IDockable>();
-            CollectModulesFromDockableInternal(dockable, modules, visited);
-        }
-
-        /// <summary>Внутренний метод с отслеживанием посещённых элементов</summary>
-        private void CollectModulesFromDockableInternal(IDockable dockable, List<IModule> modules, HashSet<IDockable> visited)
-        {
-            if (!visited.Add(dockable))
-            {
-                Console.WriteLine($"[CollectModules] CYCLE DETECTED: {dockable.Id} already visited!");
-                return;
-            }
-
-            if (visited.Count > 100)
-            {
-                Console.WriteLine($"[CollectModules] MAX DEPTH REACHED: stopping at 100 elements");
-                return;
-            }
-
-            // Если это Document с модулем - получаем модуль через View
-            if (dockable is Document document && document.Id?.StartsWith("Module_") == true)
-            {
-                // Получаем View из Document.Content
-                if (document.Content is Avalonia.Controls.Control control &&
-                    control.DataContext is object viewModel)
-                {
-                    // Ищем модуль по ViewModel (более надёжно чем по ModuleId)
-                    foreach (var module in _moduleRegistry.GetAllModules())
-                    {
-                        if (module.ViewModel == viewModel)
-                        {
-                            modules.Add(module);
-                            Console.WriteLine($"[CollectModules] Added module: {module.ModuleId} (Instance: {module.InstanceId})");
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // Рекурсивно обходим дочерние элементы
-            if (dockable is IDock dock && dock.VisibleDockables != null)
-            {
-                foreach (var child in dock.VisibleDockables)
-                {
-                    CollectModulesFromDockableInternal(child, modules, visited);
-                }
-            }
+            // Нет ActiveWorkMode - возвращаем все модули проекта
+            Console.WriteLine($"[GetActiveModules] No ActiveWorkMode, returning all {allModules.Count} modules");
+            return allModules;
         }
 
         /// <summary>Получить проект для вкладки</summary>
@@ -698,15 +648,15 @@ namespace Writersword.ViewModels
             return _projectService.GetProjectByPath(filePath);
         }
 
-        /// <summary>Показать Welcome если нет вкладок</summary>
-        private static async void ShowWelcomeIfNoTabs()
-        {
-            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
-                && desktop.MainWindow != null)
-            {
-                await App.ShowWelcomeScreen(desktop.MainWindow);
-            }
-        }
+        ///// <summary>Показать Welcome если нет вкладок</summary>
+        //private static async void ShowWelcomeIfNoTabs()
+        //{
+        //    if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
+        //        && desktop.MainWindow != null)
+        //    {
+        //        await App.ShowWelcomeScreen(desktop.MainWindow);
+        //    }
+        //}
 
         /// <summary>Инициализировать Dock фабрику</summary>
         private void InitializeDockFactory()
@@ -842,11 +792,11 @@ namespace Writersword.ViewModels
         /// </summary>
         private void InitializeMenuItems()
         {
-            var moduleRegistry = App.Services.GetRequiredService<ModuleRegistry>();
-            var workModeRegistry = App.Services.GetRequiredService<Writersword.Src.WorkModes.Common.WorkModeRegistry>();
+            var moduleFactory = App.Services.GetRequiredService<ModuleFactory>();
+            var workModeRegistry = App.Services.GetRequiredService<Src.WorkModes.Common.WorkModeRegistry>();
 
             // ===== АВТОМАТИЧЕСКАЯ ЗАГРУЗКА МОДУЛЕЙ =====
-            var allModuleMetadata = moduleRegistry.GetAllModuleMetadata();
+            var allModuleMetadata = moduleFactory.GetAllModuleMetadata();
 
             foreach (var metadata in allModuleMetadata)
             {

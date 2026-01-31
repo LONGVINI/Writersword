@@ -180,12 +180,63 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 }
 
                 Console.WriteLine($"[WorkModeConfigService] Loaded local config: {config.WorkModes.Count} modes");
+
+                // Восстанавливаем метаданные модулей из дефолтной конфигурации
+                RestoreModuleMetadata(config.WorkModes);
+
                 return config.WorkModes;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[WorkModeConfigService] Error loading local config: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Восстановить метаданные модулей из дефолтной конфигурации
+        /// Заполняет IsCloseable, MinWidth, MinHeight, PreferredPosition
+        /// Вызывается после десериализации из workspace.json
+        /// </summary>
+        private void RestoreModuleMetadata(List<WorkMode> workModes)
+        {
+            var workModeRegistry = App.Services.GetRequiredService<WorkModeRegistry>();
+
+            foreach (var workMode in workModes)
+            {
+                // Получаем зарегистрированный WorkMode по ID
+                var registeredWorkMode = workModeRegistry.GetWorkMode(workMode.WorkModeId);
+
+                if (registeredWorkMode == null)
+                {
+                    Console.WriteLine($"[WorkModeConfigService] WorkMode not registered: {workMode.WorkModeId}");
+                    continue;
+                }
+
+                // Получаем дефолтную конфигурацию
+                var defaultConfig = registeredWorkMode.GetDefaultConfig();
+
+                // Восстанавливаем метаданные для каждого модуля
+                foreach (var slot in workMode.ModuleSlots)
+                {
+                    var defaultSlot = defaultConfig.ModuleSlots
+                        .FirstOrDefault(s => s.ModuleId == slot.ModuleId);
+
+                    if (defaultSlot != null)
+                    {
+                        // Восстанавливаем метаданные (помеченные [JsonIgnore])
+                        slot.IsCloseable = defaultSlot.IsCloseable;
+                        slot.MinWidth = defaultSlot.MinWidth;
+                        slot.MinHeight = defaultSlot.MinHeight;
+                        slot.PreferredPosition = defaultSlot.PreferredPosition;
+
+                        Console.WriteLine($"[WorkModeConfigService] Restored metadata for {slot.ModuleId}: IsCloseable={slot.IsCloseable}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[WorkModeConfigService] WARNING: No default config for module: {slot.ModuleId}");
+                    }
+                }
             }
         }
 

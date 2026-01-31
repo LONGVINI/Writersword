@@ -1,6 +1,9 @@
 ﻿using Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Writersword.Views
 {
@@ -13,20 +16,20 @@ namespace Writersword.Views
         public FloatingWindow()
         {
             InitializeComponent();
-            Id = System.Guid.NewGuid().ToString();
+            Id = Guid.NewGuid().ToString();
 
-            System.Console.WriteLine($"[FloatingWindow] Constructor called, ID: {Id}");
+            Console.WriteLine($"[FloatingWindow] Constructor called, ID: {Id}");
 
             // Логирование активации окна
             Activated += (s, e) =>
             {
-                System.Console.WriteLine($"[FloatingWindow] ACTIVATED: {Title}");
+                Console.WriteLine($"[FloatingWindow] ACTIVATED: {Title}");
             };
 
             // Логирование деактивации окна
             Deactivated += (s, e) =>
             {
-                System.Console.WriteLine($"[FloatingWindow] DEACTIVATED: {Title}");
+                Console.WriteLine($"[FloatingWindow] DEACTIVATED: {Title}");
             };
 
             // Отслеживание изменений свойств окна
@@ -34,25 +37,25 @@ namespace Writersword.Views
             {
                 if (e.Property.Name == nameof(IsVisible))
                 {
-                    System.Console.WriteLine($"[FloatingWindow] IsVisible changed: {IsVisible} for {Title}");
+                    Console.WriteLine($"[FloatingWindow] IsVisible changed: {IsVisible} for {Title}");
                 }
                 if (e.Property.Name == nameof(WindowState))
                 {
-                    System.Console.WriteLine($"[FloatingWindow] WindowState changed: {WindowState} for {Title}");
+                    Console.WriteLine($"[FloatingWindow] WindowState changed: {WindowState} for {Title}");
                 }
             };
 
             // Обработка закрытия окна
             Closing += (s, e) =>
             {
-                System.Console.WriteLine($"[FloatingWindow] CLOSING: {Title}");
+                Console.WriteLine($"[FloatingWindow] CLOSING: {Title}");
 
                 // Проверяем можно ли закрыть окно
                 bool canClose = OnClose();
 
                 if (!canClose)
                 {
-                    System.Console.WriteLine($"[FloatingWindow] Close BLOCKED - contains uncloseable content");
+                    Console.WriteLine($"[FloatingWindow] Close BLOCKED - contains uncloseable content");
 
                     // Не блокируем закрытие окна!
                     // Вместо этого возвращаем модуль обратно в главное окно
@@ -64,7 +67,7 @@ namespace Writersword.Views
 
             Closed += (s, e) =>
             {
-                System.Console.WriteLine($"[FloatingWindow] CLOSED: {Title}");
+                Console.WriteLine($"[FloatingWindow] CLOSED: {Title}");
             };
         }
 
@@ -104,8 +107,68 @@ namespace Writersword.Views
         // IDockWindow методы
         public bool OnClose()
         {
-            // Разрешаем закрытие окна
+            // Проверяем можно ли закрыть содержимое окна
+            bool canCloseContent = CanCloseFloatingContent();
+
+            if (!canCloseContent)
+            {
+                Console.WriteLine($"[FloatingWindow] Window contains uncloseable modules - will return to dock");
+            }
+
+            // Всегда разрешаем закрытие ОКНА
+            // Модуль вернется в Dock автоматически через DockFactory
             return true;
+        }
+
+        /// <summary>
+        /// Проверить можно ли закрыть содержимое Float окна
+        /// Возвращает false если в окне есть модули с CanClose = false
+        /// </summary>
+        private bool CanCloseFloatingContent()
+        {
+            if (Layout == null) return true;
+
+            // Ищем все Document в Layout
+            var documents = FindAllDockables(Layout);
+
+            foreach (var dockable in documents)
+            {
+                // Проверяем CanClose через рефлексию (т.к. Document может быть недоступен)
+                var canCloseProperty = dockable.GetType().GetProperty("CanClose");
+                if (canCloseProperty != null)
+                {
+                    var canCloseValue = canCloseProperty.GetValue(dockable);
+                    if (canCloseValue is bool canClose && !canClose)
+                    {
+                        Console.WriteLine($"[FloatingWindow] Found uncloseable dockable: {dockable.Id}");
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Рекурсивно найти все IDockable в Layout
+        /// </summary>
+        private List<IDockable> FindAllDockables(IDockable dockable)
+        {
+            var result = new List<IDockable>();
+
+            // Добавляем текущий элемент
+            result.Add(dockable);
+
+            // Рекурсивно обходим детей
+            if (dockable is IDock dock && dock.VisibleDockables != null)
+            {
+                foreach (var child in dock.VisibleDockables)
+                {
+                    result.AddRange(FindAllDockables(child));
+                }
+            }
+
+            return result;
         }
 
         public bool OnMoveDragBegin()

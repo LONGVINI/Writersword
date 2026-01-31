@@ -3,6 +3,7 @@ using System;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
 using Writersword.ViewModels;
+using System.Collections.Generic;
 
 namespace Writersword.Modules.Common
 {
@@ -154,5 +155,24 @@ namespace Writersword.Modules.Common
 
         /// <summary>Создать View для модуля</summary>
         public abstract Control? CreateView();
+
+        /// <summary>
+        /// Поддерживает ли модуль дельта-сравнение
+        /// Базовая реализация: false (Simple режим - хешируем весь объект)
+        /// Переопределите в наследниках для включения Delta режима
+        /// </summary>
+        public virtual bool SupportsDeltaComparison => false;
+
+        /// <summary>
+        /// Получить измененные части данных
+        /// Базовая реализация: выбрасывает исключение (не поддерживается)
+        /// Переопределите в наследниках если SupportsDeltaComparison = true
+        /// </summary>
+        public virtual Dictionary<string, object?>? GetChangedParts(object? current, object? saved)
+        {
+            throw new NotImplementedException(
+                $"Module {ModuleId} does not support delta comparison. " +
+                $"Override SupportsDeltaComparison and GetChangedParts to enable delta mode.");
+        }
     }
 }

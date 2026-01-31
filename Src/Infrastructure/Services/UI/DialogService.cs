@@ -75,7 +75,7 @@ namespace Writersword.Src.Infrastructure.Services.UI
         {
             if (_mainWindow == null)
             {
-                System.Console.WriteLine($"[DialogService] ShowMessage: {title} - {message}");
+                Console.WriteLine($"[DialogService] ShowMessage: {title} - {message}");
                 return MessageBoxResult.None;
             }
 
@@ -91,7 +91,7 @@ namespace Writersword.Src.Infrastructure.Services.UI
         {
             if (_mainWindow == null)
             {
-                System.Console.WriteLine($"[DialogService] ShowRecoveryDialog: Cache={cacheDate}, Save={saveDate}");
+                Console.WriteLine($"[DialogService] ShowRecoveryDialog: Cache={cacheDate}, Save={saveDate}");
                 return RecoveryDialogResult.Cancel;
             }
 

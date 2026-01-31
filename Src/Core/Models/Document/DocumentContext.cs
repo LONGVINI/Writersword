@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using System;
 using System.IO;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
@@ -46,7 +47,8 @@ namespace Writersword.Core.Models
         {
             if (FileStorage == null)
             {
-                System.Console.WriteLine("[DocumentContext] WARNING: FileStorage is null, cannot write file");
+
+                Console.WriteLine("[DocumentContext] WARNING: FileStorage is null, cannot write file");
                 return;
             }
 
@@ -62,7 +64,7 @@ namespace Writersword.Core.Models
         {
             if (FileStorage == null)
             {
-                System.Console.WriteLine("[DocumentContext] WARNING: FileStorage is null, cannot read file");
+                Console.WriteLine("[DocumentContext] WARNING: FileStorage is null, cannot read file");
                 return null;
             }
 
@@ -87,7 +89,7 @@ namespace Writersword.Core.Models
         {
             if (FileStorage == null)
             {
-                System.Console.WriteLine("[DocumentContext] WARNING: FileStorage is null, cannot delete file");
+                Console.WriteLine("[DocumentContext] WARNING: FileStorage is null, cannot delete file");
                 return;
             }
 

@@ -7,7 +7,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using Writersword.Core.Interfaces.Modules;
+using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Infrastructure.Services.Modules;
 using Writersword.Modules.Common;
@@ -117,11 +117,8 @@ namespace Writersword
             services.AddSingleton<IDataComparisonService, DataComparisonService>();
 
             // --- МОДУЛЬНАЯ СИСТЕМА ---
-            // Фабрика для создания экземпляров модулей
+            // Фабрика для создания экземпляров модулей, также предоставляет метаданные всех типов модулей
             services.AddSingleton<ModuleFactory>();
-
-            // Реестр всех зарегистрированных модулей
-            services.AddSingleton<ModuleRegistry>();
 
             // Сервис для сбора состояний модулей (используется при автосохранении)
             services.AddSingleton<IModuleStateCollectorService, ModuleStateCollectorService>();
@@ -359,7 +356,7 @@ namespace Writersword
         /// Можно вызвать из любого места приложения
         /// </summary>
         /// <param name="owner">Родительское окно (для модального отображения)</param>
-        public static async System.Threading.Tasks.Task ShowWelcomeScreen(Window owner)
+        public static async Task ShowWelcomeScreen(Window owner)
         {
             Console.WriteLine("[App] Showing welcome screen");
 

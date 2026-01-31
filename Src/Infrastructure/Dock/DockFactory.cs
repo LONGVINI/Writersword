@@ -16,6 +16,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Reactive.Disposables;
 using Writersword.Core.Enums;
+using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.Modules;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
@@ -32,7 +33,6 @@ namespace Writersword.Src.Infrastructure.Dock
     /// </summary>
     public class DockFactory : Factory
     {
-        private readonly ModuleRegistry _moduleRegistry;
         private readonly Dictionary<string, bool> _modulesBeingMoved = new();
 
         /// <summary>Словарь подписок по пути к проекту (для безопасной отписки)</summary>
@@ -43,12 +43,6 @@ namespace Writersword.Src.Infrastructure.Dock
 
         /// <summary>Путь к текущему проекту (для логирования)</summary>
         private string? _currentProjectPath;
-
-
-        public DockFactory(ModuleRegistry moduleRegistry)
-        {
-            _moduleRegistry = moduleRegistry;
-        }
 
         /// <summary>
         /// Инициализация Locators (вызывается ОДИН раз)
@@ -251,7 +245,7 @@ namespace Writersword.Src.Infrastructure.Dock
             rootDock.Windows.Add(dockWindow);
 
             // Устанавливаем layout и показываем окно
-            hostWindow.SetLayout(floatRootDock); 
+            hostWindow.SetLayout(floatRootDock);
             hostWindow.Present(false);
 
             Console.WriteLine($"[DockFactory] Float window added to RootDock: {floatDock.Id}");
@@ -418,6 +412,22 @@ namespace Writersword.Src.Infrastructure.Dock
         {
             Console.WriteLine($"[DockFactory] Creating document for: {slot.ModuleId}");
 
+            // ЗАЩИТА: Проверяем что модуль еще не создан
+            if (!string.IsNullOrEmpty(slot.InstanceId))
+            {
+                var tabCollectionForCheck = App.Services.GetRequiredService<ITabCollection>();
+                if (tabCollectionForCheck.ActiveTab != null)
+                {
+                    var existingModule = tabCollectionForCheck.ActiveTab.ModuleContext.GetModule(slot.InstanceId);
+                    if (existingModule != null)
+                    {
+                        Console.WriteLine($"[DockFactory] ERROR: Module already exists with InstanceId: {slot.InstanceId}");
+                        Console.WriteLine($"[DockFactory] Skipping duplicate creation!");
+                        return null;
+                    }
+                }
+            }
+
             string? instanceIdToUse = null;
             object? customDataToRestore = null;
             var tabCollection = App.Services.GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>();
@@ -454,7 +464,13 @@ namespace Writersword.Src.Infrastructure.Dock
                 }
             }
 
-            var module = _moduleRegistry.CreateModule(slot.ModuleId, instanceIdToUse);
+            // ИЗМЕНЕНИЕ: Создаем модуль через ProjectModuleContext вместо глобального ModuleRegistry
+            IModule? module = null;
+            if (tabCollection.ActiveTab != null)
+            {
+                module = tabCollection.ActiveTab.ModuleContext.CreateModule(slot.ModuleId, instanceIdToUse);
+            }
+
             if (module?.ViewModel == null)
             {
                 Console.WriteLine($"[DockFactory] Module not created: {slot.ModuleId}");
@@ -1519,9 +1535,22 @@ namespace Writersword.Src.Infrastructure.Dock
                         var moduleId = document.Id.Replace("Module_", "");
                         var isActive = docDock.ActiveDockable == document;
 
-                        // Получаем модуль напрямую из реестра
-                        var module = _moduleRegistry.GetActiveModule(moduleId);
-                        string? instanceId = module?.InstanceId;
+                        // Получаем InstanceId из View → ViewModel → Module
+                        string? instanceId = null;
+
+                        if (document.Content is Avalonia.Controls.Control control &&
+                            control.DataContext is object viewModel)
+                        {
+                            // Получаем модуль из активной вкладки
+                            var tabCollection = App.Services.GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>();
+                            if (tabCollection.ActiveTab != null)
+                            {
+                                // Ищем модуль по ViewModel в ProjectModuleContext
+                                var allModules = tabCollection.ActiveTab.ModuleContext.GetAllModules();
+                                var module = allModules.FirstOrDefault(m => m.ViewModel == viewModel);
+                                instanceId = module?.InstanceId;
+                            }
+                        }
 
                         if (instanceId != null)
                         {
@@ -1611,27 +1640,49 @@ namespace Writersword.Src.Infrastructure.Dock
 
                                 var moduleId = dockWindow.Id?.Replace("Float_", "") ?? "";
 
-                                // Сбрасываем IsFloating в ModuleSlots чтобы окно не воссоздавалось
+                                // Получаем MainViewModel один раз
+                                var mainWindowVM = App.Services.GetRequiredService<MainWindowViewModel>();
+
+                                // Проверяем можно ли закрыть модуль
                                 var tabCollection = App.Services.GetRequiredService<ITabCollection>();
                                 if (tabCollection.ActiveTab != null)
                                 {
                                     var project = tabCollection.ActiveTab.GetProject();
                                     var activeWorkMode = project.WorkModes.FirstOrDefault(w => w.IsActive);
+
                                     if (activeWorkMode != null)
                                     {
                                         var slot = activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
+
                                         if (slot != null)
                                         {
-                                            slot.IsFloating = false;
-                                            slot.ContainerId = null;
-                                            Console.WriteLine($"[DockFactory] Reset IsFloating for: {moduleId}");
+                                            if (!slot.IsCloseable)
+                                            {
+                                                // Обязательный модуль
+                                                // Логика возврата в HostWindow.ReturnRequiredModuleToDock
+                                                Console.WriteLine($"[DockFactory] Module {moduleId} is required - will be returned by HostWindow");
+
+                                                // Уведомляем об изменении
+                                                if (_autoSaveService != null && _currentProjectPath == projectPath)
+                                                {
+                                                    _autoSaveService.NotifyChange();
+                                                }
+
+                                                return;  // НЕ вызываем HandleModuleClosedInDock!
+                                            }
+                                            else
+                                            {
+                                                // Обычный модуль - сбрасываем IsFloating
+                                                slot.IsFloating = false;
+                                                slot.ContainerId = null;
+                                                Console.WriteLine($"[DockFactory] Reset IsFloating for: {moduleId}");
+                                            }
                                         }
                                     }
                                 }
 
                                 // Уведомляем MainViewModel о закрытии модуля
-                                var mainVM = App.Services.GetRequiredService<MainWindowViewModel>();
-                                mainVM.HandleModuleClosedInDock(moduleId);
+                                mainWindowVM.HandleModuleClosedInDock(moduleId);
 
                                 // Уведомляем автосохранение
                                 if (_autoSaveService != null && _currentProjectPath == projectPath)
