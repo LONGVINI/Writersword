@@ -33,7 +33,7 @@ namespace Writersword.ViewModels
 {
     /// <summary>
     /// ViewModel главного окна приложения
-    /// Координирует компоненты UI и управляет Dock системой
+    /// Координирует компоненты UI и делегирует управление в WorkspaceController
     /// 
     /// АРХИТЕКТУРА:
     /// - MenuBar: управление файлами (New, Open, Save)
@@ -41,6 +41,10 @@ namespace Writersword.ViewModels
     /// - WorkModeBar: переключение режимов работы
     /// - ModulePanel: добавление/удаление модулей
     /// - NotificationService: всплывающие уведомления
+    /// 
+    /// ИЗОЛЯЦИЯ:
+    /// - Вся логика управления WorkModes/Layout/Float окнами находится в WorkspaceController
+    /// - MainWindowViewModel только отображает UI активной вкладки
     /// </summary>
     public class MainWindowViewModel : ViewModelBase
     {
@@ -80,15 +84,14 @@ namespace Writersword.ViewModels
         // СОСТОЯНИЕ
         // ========================================
 
-        private readonly Dictionary<string, IRootDock> _tabLayouts = new();
+        private string _title = "Writersword";
+        private IRootDock? _dockLayout;
+
         /// <summary>Список всех доступных типов модулей с их метаданными</summary>
         public ObservableCollection<ModuleMenuItem> AllModules { get; } = new();
 
         /// <summary>Список всех доступных WorkMode типов с их метаданными</summary>
         public ObservableCollection<WorkModeMenuItem> AllWorkModes { get; } = new();
-        private WorkMode? _activeWorkMode;
-        private string _title = "Writersword";
-        private IRootDock? _dockLayout;
 
         /// <summary>Заголовок окна</summary>
         public string Title
@@ -102,13 +105,6 @@ namespace Writersword.ViewModels
         {
             get => _dockLayout;
             set => this.RaiseAndSetIfChanged(ref _dockLayout, value);
-        }
-
-        /// <summary>Активный режим работы</summary>
-        public WorkMode? ActiveWorkMode
-        {
-            get => _activeWorkMode;
-            set => this.RaiseAndSetIfChanged(ref _activeWorkMode, value);
         }
 
         // ========================================
@@ -144,13 +140,11 @@ namespace Writersword.ViewModels
             IZipCacheService cacheService,
             DockFactory dockFactory)
         {
-            // Инициализация компонентов
             MenuBar = menuBar;
             TabBar = tabBar;
             WorkModeBar = workModeBar;
             ModulePanel = modulePanel;
 
-            // Инициализация сервисов
             _projectWorkflow = projectWorkflow;
             _tabCollection = tabCollection;
             _dialogService = dialogService;
@@ -163,13 +157,11 @@ namespace Writersword.ViewModels
             _cacheService = cacheService;
             _cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
 
-            // Связываем компоненты с MainWindow
             MenuBar.SetMainViewModelProvider(() => this);
             MenuBar.SetActiveTabProvider(() => TabBar.ActiveTab);
             WorkModeBar.SetWorkModeSwitchedHandler(OnWorkModeSwitched);
             ModulePanel.SetModuleHandlers(OnModuleAdded, OnModuleRemoved);
 
-            // Перенаправляем команды на компоненты (для горячих клавиш)
             NewProjectCommand = MenuBar.NewProjectCommand;
             OpenProjectCommand = MenuBar.OpenProjectCommand;
             SaveProjectCommand = MenuBar.SaveProjectCommand;
@@ -177,11 +169,9 @@ namespace Writersword.ViewModels
             ExitCommand = MenuBar.ExitCommand;
             CreateNewTabCommand = TabBar.CreateNewTabCommand;
 
-            // Команды для меню
             ToggleWorkModeCommand = ReactiveCommand.Create<string>(ToggleWorkMode);
             ToggleModuleCommand = ReactiveCommand.Create<string>(ToggleModule);
 
-            // Подписываемся на события сервисов
             _projectWorkflow.ProjectOpened += OnProjectOpened;
             _projectWorkflow.ProjectSaved += OnProjectSaved;
             _projectWorkflow.ProjectClosed += OnProjectClosed;
@@ -194,7 +184,6 @@ namespace Writersword.ViewModels
                 MenuBar.UpdateHasActiveTab();
             };
 
-            // Инициализация
             _settingsService.Load();
             RegisterHotKeys();
             InitializeDockFactory();
@@ -208,162 +197,89 @@ namespace Writersword.ViewModels
 
         /// <summary>
         /// Обработчик активации вкладки (из TabBar)
-        /// Восстанавливает WorkModes и Dock layout для вкладки
-        /// Запускает кеширование ТОЛЬКО для активной вкладки
+        /// Просто показывает UI активной вкладки из её WorkspaceController
+        /// Вся логика управления находится в WorkspaceController
         /// </summary>
         public void OnTabActivated(DocumentTabViewModel tab)
         {
             Console.WriteLine($"[MainWindowViewModel] Tab activated: {tab.Title}");
 
-            var project = GetProjectForTab(tab);
-            if (project == null) return;
-
-            // Закрываем окна предыдущей вкладки перед переключением
-            if (DockLayout != null && DockLayout.Windows != null)
+            if (tab.Workspace == null)
             {
-                Console.WriteLine($"[MainWindowViewModel] Closing windows from previous tab");
-
-                foreach (var window in DockLayout.Windows.ToList())
-                {
-                    if (window.Host is HostWindow hostWindow)
-                    {
-                        hostWindow.Exit();
-                    }
-                }
-
-                DockLayout.Windows.Clear();
+                Console.WriteLine($"[MainWindowViewModel] WARNING: Workspace not initialized for tab: {tab.Title}");
+                return;
             }
 
-            //  перезагружаем Workmode из файла, если есть путь
-            if (!string.IsNullOrEmpty(tab.FilePath))
-            {
-                // Получаем FileStorage для этого проекта
-                var fileStorage = _projectWorkflow.GetFileStorageForProject(tab.FilePath);
+            DockLayout = tab.Workspace.GetCurrentLayout();
 
-                if (fileStorage != null)
-                {
-                    // Перезагружаем конфигурацию из workspace.json
-                    var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
-                    var reloadedWorkModes = workModeConfigService.LoadConfiguration(project.Type, fileStorage);
-
-                    // Инициализируем _workModeService с ПЕРЕЗАГРУЖЕННЫМИ данными
-                    _workModeService.InitializeWorkModes(project.Type, reloadedWorkModes);
-
-                    Console.WriteLine($"[MainWindowViewModel] Reloaded {reloadedWorkModes.Count} WorkModes from file");
-                }
-                else
-                {
-                    Console.WriteLine($"[MainWindowViewModel] WARNING: No FileStorage for project, using existing WorkModes");
-                }
-            }
-
-            var workModes = _workModeService.GetAllWorkModes();
+            var workModes = tab.Workspace.GetAvailableWorkModes();
             WorkModeBar.LoadWorkModes(workModes);
 
-            var activeWM = workModes.FirstOrDefault(wm => wm.IsActive) ?? workModes.FirstOrDefault();
-            if (activeWM != null)
+            var activeWorkMode = tab.Workspace.GetActiveWorkMode();
+            if (activeWorkMode != null)
             {
-                ActiveWorkMode = activeWM;
-                var layout = _dockFactory.CreateLayout(activeWM);
-                DockLayout = layout;
-
-                if (!string.IsNullOrEmpty(tab.FilePath))
-                {
-                    var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(tab.FilePath);
-                    if (autoSave != null)
-                    {
-                        _dockFactory.SetAutoSaveService(autoSave, tab.FilePath);
-                        _dockFactory.SubscribeToDockEvents(layout, tab.FilePath);
-                    }
-                }
-
-                ModulePanel.LoadModulesForWorkMode(activeWM);
-                UpdateWorkModeMenuItems();
-                UpdateModuleMenuItems();
+                ModulePanel.LoadModulesForWorkMode(activeWorkMode);
             }
+
+            UpdateWorkModeMenuItems();
+            UpdateModuleMenuItems();
 
             if (!string.IsNullOrEmpty(tab.FilePath) && !tab.Context.IsInCompareMode)
             {
                 _cacheUpdateService.Stop();
-                _cacheUpdateService.Start(tab.FilePath, () => GetActiveModules());
+                _cacheUpdateService.Start(tab.FilePath, () => tab.Workspace.GetActiveModules());
             }
+
+            Console.WriteLine($"[MainWindowViewModel] Tab UI updated");
         }
 
         /// <summary>
         /// Обработчик переключения WorkMode (из WorkModeBar)
-        /// Показывает модули нового режима
+        /// Делегирует в WorkspaceController активной вкладки
         /// </summary>
         private async Task OnWorkModeSwitched(WorkMode newWorkMode)
         {
-            Console.WriteLine($"[MainWindowViewModel] WorkMode switched: {newWorkMode.Title}");
+            Console.WriteLine($"[MainWindowViewModel] WorkMode switch requested: {newWorkMode.Title}");
 
-            ActiveWorkMode = newWorkMode;
+            var activeTab = TabBar.ActiveTab;
+            if (activeTab?.Workspace == null)
+            {
+                Console.WriteLine($"[MainWindowViewModel] No active tab with Workspace");
+                return;
+            }
 
-            // Показываем модули нового WorkMode
-            var layout = _dockFactory.CreateLayout(newWorkMode);
-            DockLayout = layout;
+            activeTab.Workspace.SwitchWorkMode(newWorkMode);
 
-            // Обновляем панель модулей
+            DockLayout = activeTab.Workspace.GetCurrentLayout();
             ModulePanel.LoadModulesForWorkMode(newWorkMode);
 
-            Console.WriteLine($"[MainWindowViewModel] Loaded {newWorkMode.ModuleSlots.Count} modules for WorkMode");
-
-            // Обновляем состояние меню
             UpdateWorkModeMenuItems();
             UpdateModuleMenuItems();
+
+            Console.WriteLine($"[MainWindowViewModel] WorkMode switched in UI");
+
+            await Task.CompletedTask;
         }
 
         /// <summary>
         /// Обработчик добавления модуля (из ModulePanel)
-        /// Добавляет модуль динамически в существующий layout
+        /// Делегирует в WorkspaceController активной вкладки
         /// </summary>
         private void OnModuleAdded(string moduleId)
         {
-            Console.WriteLine($"[MainWindowViewModel] Module added: {moduleId}");
+            Console.WriteLine($"[MainWindowViewModel] Module add requested: {moduleId}");
 
-            if (ActiveWorkMode == null || DockLayout == null) return;
-
-            // 1. Ищем/создаём слот
-            var existingSlot = ActiveWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
-
-            if (existingSlot == null)
+            var activeTab = TabBar.ActiveTab;
+            if (activeTab?.Workspace == null)
             {
-                var newSlot = new ModuleSlot
-                {
-                    ModuleId = moduleId,
-                    IsCloseable = _workModeConfigService.CanRemoveModule(
-                        _tabCollection.ActiveTab?.GetProject()?.Type
-                            ?? throw new InvalidOperationException("[OnModuleAdded] No active project!"),
-                        ActiveWorkMode.WorkModeId,
-                        moduleId
-                    ),
-                    MinWidth = 200,
-                    MinHeight = 150,
-                    PreferredPosition = PreferredDockPosition.RightAsTab
-                };
-
-                ActiveWorkMode.ModuleSlots.Add(newSlot);
-                existingSlot = newSlot;
+                Console.WriteLine($"[MainWindowViewModel] No active tab with Workspace");
+                return;
             }
 
-            // 2. ПРОВЕРЯЕМ: Есть ли хоть один видимый модуль?
-            var hasVisibleModules = ActiveWorkMode.ModuleSlots.Any(s => s.ModuleId != moduleId);
+            activeTab.Workspace.AddModule(moduleId);
 
-            if (!hasVisibleModules)
-            {
-                // НЕТ видимых модулей - ПЕРЕСОЗДАЁМ layout!
-                Console.WriteLine($"[OnModuleAdded] No visible modules - recreating layout");
-                var newLayout = _dockFactory.CreateLayout(ActiveWorkMode);
-                DockLayout = newLayout;
-            }
-            else
-            {
-                // Есть видимые - добавляем динамически
-                Console.WriteLine($"[OnModuleAdded] Adding module dynamically");
-                _dockFactory.InsertModuleByPreference(DockLayout, existingSlot);
-            }
+            DockLayout = activeTab.Workspace.GetCurrentLayout();
 
-            // 3. Обновляем UI
             var moduleItem = ModulePanel.AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
             if (moduleItem != null)
             {
@@ -373,91 +289,36 @@ namespace Writersword.ViewModels
             UpdateModuleMenuItems();
             FocusModule(moduleId);
 
-            // Уведомляем об изменении для автосохранения
-            var tab = _tabCollection.ActiveTab;
-            if (tab?.FilePath != null)
-            {
-                var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(tab.FilePath);
-                autoSave?.NotifyChange();
-                Console.WriteLine("[MainWindowViewModel] NotifyChange called after module added");
-            }
+            Console.WriteLine($"[MainWindowViewModel] Module added in UI");
         }
 
         /// <summary>
         /// Обработчик удаления модуля (из ModulePanel)
-        /// ДИНАМИЧЕСКИ скрывает модуль БЕЗ пересоздания layout
+        /// Делегирует в WorkspaceController активной вкладки
         /// </summary>
         private void OnModuleRemoved(string moduleId)
         {
-            Console.WriteLine($"[MainWindowViewModel] Module removed: {moduleId}");
+            Console.WriteLine($"[MainWindowViewModel] Module remove requested: {moduleId}");
 
-            if (ActiveWorkMode == null || DockLayout == null) return;
-
-            var slot = ActiveWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
-            if (slot != null)
+            var activeTab = TabBar.ActiveTab;
+            if (activeTab?.Workspace == null)
             {
-
-                // Находим Document и закрываем его
-                RemoveModuleFromLayout(DockLayout, moduleId);
-
-                // Обновляем IsActive в ModulePanel ПЕРЕД обновлением меню!
-                var moduleItem = ModulePanel.AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
-                if (moduleItem != null)
-                {
-                    moduleItem.IsActive = false;
-                    Console.WriteLine($"[OnModuleRemoved] Set IsActive=false for {moduleId}");
-                }
-
-                // Обновляем меню (теперь увидит правильный IsActive)
-                UpdateModuleMenuItems();
-            }
-        }
-
-        /// <summary>
-        /// Найти и удалить модуль из layout
-        /// </summary>
-        private void RemoveModuleFromLayout(IRootDock rootDock, string moduleId)
-        {
-            string documentId = $"Module_{moduleId}";
-            Console.WriteLine($"[RemoveModuleFromLayout] Searching for: {documentId}");
-
-            RemoveDocumentRecursive(rootDock, documentId);
-        }
-
-        /// <summary>
-        /// Рекурсивно найти и удалить Document
-        /// </summary>
-        private bool RemoveDocumentRecursive(IDockable dockable, string documentId)
-        {
-            if (dockable is IDock dock && dock.VisibleDockables != null)
-            {
-                // Ищем документ с нужным ID
-                var document = dock.VisibleDockables.FirstOrDefault(d => d.Id == documentId);
-                if (document != null)
-                {
-                    Console.WriteLine($"[RemoveDocumentRecursive] Found document, removing from {dock.Id}");
-                    dock.VisibleDockables.Remove(document);
-
-                    // Если это был активный документ - активируем другой
-                    if (dock.ActiveDockable == document)
-                    {
-                        dock.ActiveDockable = dock.VisibleDockables.FirstOrDefault();
-                    }
-
-                    return true;
-                }
-
-                // Рекурсивно ищем в дочерних элементах
-                foreach (var child in dock.VisibleDockables.ToList())
-                {
-                    if (RemoveDocumentRecursive(child, documentId))
-                    {
-                        return true;
-                    }
-                }
+                Console.WriteLine($"[MainWindowViewModel] No active tab with Workspace");
+                return;
             }
 
-            return false;
+            activeTab.Workspace.RemoveModule(moduleId);
+
+            var moduleItem = ModulePanel.AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
+            if (moduleItem != null)
+            {
+                moduleItem.IsActive = false;
+                Console.WriteLine($"[MainWindowViewModel] Set IsActive=false for {moduleId}");
+            }
+
+            UpdateModuleMenuItems();
+
+            Console.WriteLine($"[MainWindowViewModel] Module removed in UI");
         }
 
         // ========================================
@@ -481,24 +342,14 @@ namespace Writersword.ViewModels
         {
             Console.WriteLine($"[MainWindowViewModel] Project closed: {tab.Title}");
 
-            // Сохраняем конфигурацию перед закрытием
-            if (!string.IsNullOrEmpty(tab.FilePath) && ActiveWorkMode != null && DockLayout != null)
+            if (!string.IsNullOrEmpty(tab.FilePath) && tab.Workspace != null)
             {
                 Console.WriteLine($"[MainWindowViewModel] Saving workspace before closing project");
-
-                var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(tab.FilePath);
-                if (autoSave != null)
-                {
-                    // Принудительное сохранение СЕЙЧАС (не через 5 секунд)
-                    autoSave.SaveNowAsync().Wait();
-                    Console.WriteLine($"[MainWindowViewModel] Workspace saved for: {tab.Title}");
-                }
+                tab.Workspace.SaveWorkspaceAsync().Wait();
+                Console.WriteLine($"[MainWindowViewModel] Workspace saved for: {tab.Title}");
             }
 
             _cacheUpdateService.Stop();
-
-            string tabKey = tab.FilePath ?? tab.Id;
-            _tabLayouts.Remove(tabKey);
         }
 
         /// <summary>
@@ -509,18 +360,13 @@ namespace Writersword.ViewModels
         {
             Console.WriteLine("[MainWindowViewModel] ClearUIWhenNoTabs called");
 
-            // Останавливаем кеширование когда нет вкладок
             _cacheUpdateService.Stop();
             Console.WriteLine("[MainWindowViewModel] Caching stopped (no tabs)");
 
-            // ПОЛНАЯ ОЧИСТКА UI!
-            ActiveWorkMode = null;
             DockLayout = null;
 
-            // Очищаем WorkModeBar
             WorkModeBar.LoadWorkModes(new List<WorkMode>());
 
-            // Очищаем ModulePanel
             ModulePanel.Clear();
 
             Console.WriteLine("[MainWindowViewModel] UI completely cleared - EMPTY!");
@@ -532,52 +378,19 @@ namespace Writersword.ViewModels
 
         /// <summary>
         /// Инициализировать WorkModes для вкладки
-        /// Вызывается при первом открытии вкладки
+        /// Теперь только обновляет UI, вся логика в WorkspaceController
         /// </summary>
         public void InitializeWorkModesForTab(DocumentTabViewModel tab)
         {
-            var project = GetProjectForTab(tab);
-            if (project == null) return;
-
-            Console.WriteLine($"[InitializeWorkModesForTab] Initializing for: {tab.Title}");
-
-            // Загружаем WorkModes из проекта (уже загружены в ProjectWorkflow)
-            var workModes = _workModeService.InitializeWorkModes(project.Type, project.WorkModes);
-
-            // Загружаем в компонент WorkModeBar
-            WorkModeBar.LoadWorkModes(workModes);
-
-            // Активируем первый WorkMode
-            var activeWM = workModes.FirstOrDefault(wm => wm.IsActive) ?? workModes.FirstOrDefault();
-            if (activeWM != null)
+            if (tab.Workspace == null)
             {
-                ActiveWorkMode = activeWM;
-
-                // Создаём Dock layout
-                var layout = _dockFactory.CreateLayout(activeWM);
-                DockLayout = layout;
-
-                // Устанавливаем AutoSaveService и подписываемся на события
-                if (!string.IsNullOrEmpty(tab.FilePath))
-                {
-                    var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(tab.FilePath);
-                    if (autoSave != null)
-                    {
-                        _dockFactory.SetAutoSaveService(autoSave, tab.FilePath);
-                        _dockFactory.SubscribeToDockEvents(layout, tab.FilePath);
-                        Console.WriteLine($"[MainWindowViewModel] DockFactory subscribed to events for: {tab.Title}");
-                    }
-                }
-
-                // Загружаем модули в панель
-                ModulePanel.LoadModulesForWorkMode(activeWM);
-
-                Console.WriteLine($"[InitializeWorkModesForTab] Activated WorkMode: {activeWM.Title}");
-
-                // Обновляем состояние меню
-                UpdateWorkModeMenuItems();
-                UpdateModuleMenuItems();
+                Console.WriteLine($"[InitializeWorkModesForTab] WARNING: Workspace not initialized");
+                return;
             }
+
+            Console.WriteLine($"[InitializeWorkModesForTab] Updating UI for: {tab.Title}");
+
+            OnTabActivated(tab);
         }
 
         // ========================================
@@ -585,58 +398,19 @@ namespace Writersword.ViewModels
         // ========================================
 
         /// <summary>
-        /// Получить список активных модулей из ProjectModuleContext текущей вкладки
-        /// ФИЛЬТРУЕТ модули по InstanceId из ActiveWorkMode.ModuleSlots
-        /// Используется при сохранении, кешировании, переключении WorkMode
+        /// Получить список активных модулей текущей вкладки
+        /// Делегирует в WorkspaceController
         /// </summary>
         public List<IModule> GetActiveModules()
         {
             var activeTab = TabBar.ActiveTab;
-            if (activeTab == null)
+            if (activeTab?.Workspace == null)
             {
-                Console.WriteLine("[GetActiveModules] No active tab");
+                Console.WriteLine("[GetActiveModules] No active tab with Workspace");
                 return new List<IModule>();
             }
 
-            // Получаем ВСЕ модули проекта из изолированного контейнера
-            var allModules = activeTab.ModuleContext.GetAllModules();
-
-            if (allModules.Count == 0)
-            {
-                Console.WriteLine("[GetActiveModules] No modules in ProjectModuleContext");
-                return new List<IModule>();
-            }
-
-            // Если есть ActiveWorkMode - фильтруем по его ModuleSlots
-            if (ActiveWorkMode != null)
-            {
-                var validInstanceIds = ActiveWorkMode.ModuleSlots
-                    .Where(s => !string.IsNullOrEmpty(s.InstanceId))
-                    .Select(s => s.InstanceId)
-                    .ToHashSet();
-
-                var filteredModules = allModules
-                    .Where(m => validInstanceIds.Contains(m.InstanceId))
-                    .ToList();
-
-                var foreignCount = allModules.Count - filteredModules.Count;
-                if (foreignCount > 0)
-                {
-                    Console.WriteLine($"[GetActiveModules] FILTERED OUT {foreignCount} modules not in current WorkMode");
-
-                    foreach (var foreign in allModules.Except(filteredModules))
-                    {
-                        Console.WriteLine($"  - Not in WorkMode: {foreign.ModuleId} (Instance: {foreign.InstanceId})");
-                    }
-                }
-
-                Console.WriteLine($"[GetActiveModules] Returned {filteredModules.Count}/{allModules.Count} modules for WorkMode: {ActiveWorkMode.Title}");
-                return filteredModules;
-            }
-
-            // Нет ActiveWorkMode - возвращаем все модули проекта
-            Console.WriteLine($"[GetActiveModules] No ActiveWorkMode, returning all {allModules.Count} modules");
-            return allModules;
+            return activeTab.Workspace.GetActiveModules();
         }
 
         /// <summary>Получить проект для вкладки</summary>
@@ -647,16 +421,6 @@ namespace Writersword.ViewModels
 
             return _projectService.GetProjectByPath(filePath);
         }
-
-        ///// <summary>Показать Welcome если нет вкладок</summary>
-        //private static async void ShowWelcomeIfNoTabs()
-        //{
-        //    if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
-        //        && desktop.MainWindow != null)
-        //    {
-        //        await App.ShowWelcomeScreen(desktop.MainWindow);
-        //    }
-        //}
 
         /// <summary>Инициализировать Dock фабрику</summary>
         private void InitializeDockFactory()
@@ -788,14 +552,12 @@ namespace Writersword.ViewModels
 
         /// <summary>
         /// Инициализировать элементы меню для модулей и WorkMode
-        /// ПОЛНОСТЬЮ автоматическая загрузка из метаданных
         /// </summary>
         private void InitializeMenuItems()
         {
             var moduleFactory = App.Services.GetRequiredService<ModuleFactory>();
             var workModeRegistry = App.Services.GetRequiredService<Src.WorkModes.Common.WorkModeRegistry>();
 
-            // ===== АВТОМАТИЧЕСКАЯ ЗАГРУЗКА МОДУЛЕЙ =====
             var allModuleMetadata = moduleFactory.GetAllModuleMetadata();
 
             foreach (var metadata in allModuleMetadata)
@@ -812,7 +574,6 @@ namespace Writersword.ViewModels
 
             Console.WriteLine($"[InitializeMenuItems] Loaded {AllModules.Count} modules from metadata");
 
-            // ===== АВТОМАТИЧЕСКАЯ ЗАГРУЗКА WORKMODES =====
             var allWorkModes = workModeRegistry.GetAll();
 
             foreach (var workMode in allWorkModes)
@@ -834,24 +595,26 @@ namespace Writersword.ViewModels
         {
             Console.WriteLine($"[ToggleWorkMode] Toggling: {workModeId}");
 
-            if (ActiveWorkMode == null) return;
+            var activeTab = TabBar.ActiveTab;
+            if (activeTab?.Workspace == null)
+            {
+                Console.WriteLine("[ToggleWorkMode] No active tab with Workspace");
+                return;
+            }
 
-            // Ищем WorkMode в доступных
             var workModeBar = WorkModeBar;
             var existingWorkMode = workModeBar.WorkModes.FirstOrDefault(wm => wm.WorkModeId == workModeId);
 
             if (existingWorkMode != null)
             {
-                // WorkMode уже открыт - переключаемся на него
                 Console.WriteLine($"[ToggleWorkMode] WorkMode exists, switching to it");
                 workModeBar.SwitchWorkModeCommand.Execute(existingWorkMode).Subscribe();
             }
             else
             {
-                // WorkMode не открыт - создаём новый
                 Console.WriteLine($"[ToggleWorkMode] WorkMode not found, creating new");
 
-                var project = TabBar.ActiveTab != null ? GetProjectForTab(TabBar.ActiveTab) : null;
+                var project = GetProjectForTab(activeTab);
                 if (project == null)
                 {
                     Console.WriteLine("[ToggleWorkMode] No active project");
@@ -893,16 +656,15 @@ namespace Writersword.ViewModels
         {
             Console.WriteLine($"[ToggleModule] Menu clicked: {moduleId}");
 
-            if (ActiveWorkMode == null)
+            var activeTab = TabBar.ActiveTab;
+            if (activeTab?.Workspace == null)
             {
-                Console.WriteLine($"[ToggleModule] ERROR: No active WorkMode!");
+                Console.WriteLine($"[ToggleModule] No active tab with Workspace");
                 return;
             }
 
-            // Делегируем в ModulePanel
             ModulePanel.OpenModule(moduleId);
 
-            // Если модуль уже открыт - фокусируем
             var moduleItem = ModulePanel.AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
             if (moduleItem?.IsActive == true)
             {
@@ -930,7 +692,6 @@ namespace Writersword.ViewModels
         {
             if (dockable is IDock dock && dock.VisibleDockables != null)
             {
-                // Ищем документ с нужным ID
                 var document = dock.VisibleDockables.FirstOrDefault(d => d.Id == documentId);
                 if (document != null)
                 {
@@ -939,7 +700,6 @@ namespace Writersword.ViewModels
                     return true;
                 }
 
-                // Рекурсивно ищем в дочерних элементах
                 foreach (var child in dock.VisibleDockables)
                 {
                     if (FocusDocumentRecursive(child, documentId))
@@ -966,7 +726,8 @@ namespace Writersword.ViewModels
         /// <summary>Обновить состояние элементов меню модулей</summary>
         private void UpdateModuleMenuItems()
         {
-            if (ActiveWorkMode == null)
+            var activeTab = TabBar.ActiveTab;
+            if (activeTab?.Workspace == null)
             {
                 Console.WriteLine("[UpdateModuleMenuItems] No active WorkMode - all disabled");
                 foreach (var menuItem in AllModules)
@@ -977,7 +738,19 @@ namespace Writersword.ViewModels
                 return;
             }
 
-            Console.WriteLine($"[UpdateModuleMenuItems] Updating for WorkMode: {ActiveWorkMode.Title}");
+            var activeWorkMode = activeTab.Workspace.GetActiveWorkMode();
+            if (activeWorkMode == null)
+            {
+                Console.WriteLine("[UpdateModuleMenuItems] No active WorkMode - all disabled");
+                foreach (var menuItem in AllModules)
+                {
+                    menuItem.IsEnabled = false;
+                    menuItem.IsChecked = false;
+                }
+                return;
+            }
+
+            Console.WriteLine($"[UpdateModuleMenuItems] Updating for WorkMode: {activeWorkMode.Title}");
 
             foreach (var menuItem in AllModules)
             {
@@ -1000,35 +773,23 @@ namespace Writersword.ViewModels
 
         /// <summary>
         /// Обработчик закрытия модуля пользователем через крестик в Dock
-        /// Вызывается из DockFactory когда Document.Owner становится null
+        /// Делегирует в WorkspaceController активной вкладки
         /// </summary>
         public void HandleModuleClosedInDock(string moduleId)
         {
             Console.WriteLine($"[MainWindowViewModel] Module closed in dock: {moduleId}");
 
-            if (ActiveWorkMode == null) return;
-
-            // СБРОС IsFloating для закрытого модуля
-            var slot = ActiveWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
-            if (slot != null && slot.IsFloating)
+            var activeTab = TabBar.ActiveTab;
+            if (activeTab?.Workspace == null)
             {
-                slot.IsFloating = false;
-                slot.ContainerId = null;
-                Console.WriteLine($"[MainWindowViewModel] Reset floating flag for: {moduleId}");
+                Console.WriteLine($"[MainWindowViewModel] No active tab with Workspace");
+                return;
             }
 
-            ModulePanel.MarkModuleAsClosed(moduleId);
+            activeTab.Workspace.HandleModuleClosedInDock(moduleId);
+
             UpdateModuleMenuItems();
-
-            var tab = _tabCollection.ActiveTab;
-            if (tab?.FilePath != null)
-            {
-                var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(tab.FilePath);
-                autoSave?.NotifyChange();
-                Console.WriteLine($"[MainWindowViewModel] UI updated after dock close");
-            }
         }
-
 
         /// <summary>
         /// Принудительно сохранить workspace.json для АКТИВНОЙ вкладки
@@ -1039,18 +800,14 @@ namespace Writersword.ViewModels
             Console.WriteLine("[MainWindowViewModel] Saving workspace for ACTIVE tab");
 
             var activeTab = _tabCollection.ActiveTab;
-            if (activeTab == null || string.IsNullOrEmpty(activeTab.FilePath))
+            if (activeTab?.Workspace == null)
             {
-                Console.WriteLine("[MainWindowViewModel] No active tab to save");
+                Console.WriteLine("[MainWindowViewModel] No active tab with Workspace");
                 return;
             }
 
-            var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(activeTab.FilePath);
-            if (autoSave != null)
-            {
-                Console.WriteLine($"[MainWindowViewModel] Force saving workspace for: {activeTab.Title}");
-                await autoSave.SaveNowAsync();
-            }
+            Console.WriteLine($"[MainWindowViewModel] Force saving workspace for: {activeTab.Title}");
+            await activeTab.Workspace.SaveWorkspaceAsync();
         }
     }
 }

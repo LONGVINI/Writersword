@@ -10,6 +10,10 @@ using Writersword.Views;
 
 namespace Writersword.Src.Infrastructure.Dock
 {
+    /// <summary>
+    /// Реализация IHostWindow для Float окон
+    /// Управляет жизненным циклом плавающих окон модулей
+    /// </summary>
     public class HostWindow : IHostWindow
     {
         private FloatingWindow? _window;
@@ -25,6 +29,9 @@ namespace Writersword.Src.Infrastructure.Dock
             set => _window = value as FloatingWindow;
         }
 
+        /// <summary>
+        /// Показать Float окно
+        /// </summary>
         public void Present(bool isDialog)
         {
             Console.WriteLine($"[HostWindow] Present() START");
@@ -72,17 +79,26 @@ namespace Writersword.Src.Infrastructure.Dock
             }
         }
 
+        /// <summary>
+        /// Закрыть Float окно
+        /// </summary>
         public void Exit()
         {
             _window?.Close();
             _window = null;
         }
 
+        /// <summary>
+        /// Установить позицию окна
+        /// </summary>
         public void SetPosition(double x, double y)
         {
             _pendingPosition = new Avalonia.PixelPoint((int)x, (int)y);
         }
 
+        /// <summary>
+        /// Получить позицию окна
+        /// </summary>
         public void GetPosition(out double x, out double y)
         {
             if (_window != null)
@@ -97,6 +113,9 @@ namespace Writersword.Src.Infrastructure.Dock
             }
         }
 
+        /// <summary>
+        /// Установить размер окна
+        /// </summary>
         public void SetSize(double width, double height)
         {
             if (_window != null)
@@ -106,6 +125,9 @@ namespace Writersword.Src.Infrastructure.Dock
             }
         }
 
+        /// <summary>
+        /// Получить размер окна
+        /// </summary>
         public void GetSize(out double width, out double height)
         {
             if (_window != null)
@@ -120,11 +142,16 @@ namespace Writersword.Src.Infrastructure.Dock
             }
         }
 
+        /// <summary>
+        /// Установить заголовок окна
+        /// </summary>
         public void SetTitle(string? title)
         {
-            // Title устанавливается автоматически через Layout.Title
         }
 
+        /// <summary>
+        /// Установить Layout для окна
+        /// </summary>
         public void SetLayout(IDock layout)
         {
             _pendingLayout = layout;
@@ -140,11 +167,18 @@ namespace Writersword.Src.Infrastructure.Dock
             }
         }
 
+        /// <summary>
+        /// Активировать окно
+        /// </summary>
         public void SetActive()
         {
             _window?.Activate();
         }
 
+        /// <summary>
+        /// Обработчик закрытия Float окна
+        /// Проверяет можно ли закрыть модуль или нужно вернуть в Dock
+        /// </summary>
         private void OnWindowClosed(object? sender, EventArgs e)
         {
             Console.WriteLine($"[HostWindow] Float window closed");
@@ -165,19 +199,16 @@ namespace Writersword.Src.Infrastructure.Dock
                         {
                             string moduleId = document.Id?.Replace("Module_", "") ?? "";
 
-                            // ПРОВЕРКА: можно ли закрыть модуль?
                             if (!document.CanClose)
                             {
                                 Console.WriteLine($"[HostWindow] Module {moduleId} is required - returning to dock");
 
-                                // Возвращаем модуль в Dock (упрощенный подход)
                                 ReturnRequiredModuleToDock(moduleId);
                             }
                             else
                             {
                                 Console.WriteLine($"[HostWindow] Notifying close for module: {moduleId}");
 
-                                // Обычное закрытие
                                 var mainVM = App.Services.GetRequiredService<MainWindowViewModel>();
                                 mainVM.HandleModuleClosedInDock(moduleId);
                             }
@@ -191,7 +222,7 @@ namespace Writersword.Src.Infrastructure.Dock
 
         /// <summary>
         /// Вернуть обязательный модуль из Float окна обратно в Dock
-        /// ПРОСТОЙ подход - просто сбрасываем флаг и перезагружаем вкладку
+        /// Делегирует в WorkspaceController активной вкладки
         /// </summary>
         private void ReturnRequiredModuleToDock(string moduleId)
         {
@@ -204,35 +235,20 @@ namespace Writersword.Src.Infrastructure.Dock
                 return;
             }
 
-            var project = tabCollection.ActiveTab.GetProject();
-            var activeWorkMode = project.WorkModes.FirstOrDefault(w => w.IsActive);
-
-            if (activeWorkMode == null)
+            if (tabCollection.ActiveTab.Workspace == null)
             {
-                Console.WriteLine($"[HostWindow] No active WorkMode");
+                Console.WriteLine($"[HostWindow] No Workspace in active tab");
                 return;
             }
 
-            // Находим слот модуля
-            var slot = activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
-            if (slot == null)
-            {
-                Console.WriteLine($"[HostWindow] Module slot not found: {moduleId}");
-                return;
-            }
-
-            // Сбрасываем Float флаг
-            slot.IsFloating = false;
-            Console.WriteLine($"[HostWindow] Reset IsFloating for: {moduleId}");
-
-            // ПРОСТО ПЕРЕЗАГРУЖАЕМ ВКЛАДКУ
-            var mainVM = App.Services.GetRequiredService<MainWindowViewModel>();
-            mainVM.OnTabActivated(tabCollection.ActiveTab);
+            tabCollection.ActiveTab.Workspace.ReturnRequiredModuleToDock(moduleId);
 
             Console.WriteLine($"[HostWindow] Module {moduleId} returned successfully");
         }
 
-
+        /// <summary>
+        /// Найти DocumentDock внутри Layout
+        /// </summary>
         private DocumentDock? FindDocumentDockInLayout(IDock? layout)
         {
             if (layout == null) return null;
@@ -267,6 +283,9 @@ namespace Writersword.Src.Infrastructure.Dock
             return null;
         }
 
+        /// <summary>
+        /// Найти RootDock в иерархии
+        /// </summary>
         private IRootDock? FindRootDock(IDock? layout)
         {
             if (layout == null) return null;
@@ -282,6 +301,9 @@ namespace Writersword.Src.Infrastructure.Dock
             return null;
         }
 
+        /// <summary>
+        /// Получить окно
+        /// </summary>
         public FloatingWindow? GetWindow()
         {
             return _window;

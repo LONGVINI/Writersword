@@ -14,6 +14,10 @@ using Writersword.Core.Services;
 using Writersword.Infrastructure.Services.Modules;
 using Writersword.Modules.Common;
 using Writersword.Src.Core.Interfaces.Services.Storage;
+using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Src.Core.Interfaces.Workspace;
+using Writersword.Src.Infrastructure.Dock;
+using Writersword.Src.Infrastructure.Workspace;
 
 namespace Writersword.ViewModels
 {
@@ -21,7 +25,7 @@ namespace Writersword.ViewModels
     /// ViewModel для одной вкладки документа
     /// Теперь работает напрямую с ProjectFile и управляет DocumentContext
     /// Каждая вкладка имеет свой RecoveryBanner (если есть кеш)
-    /// КЕШИРОВАНИЕ управляется MainWindowViewModel для активной вкладки
+    /// ИЗОЛЯЦИЯ: каждая вкладка имеет свой WorkspaceController
     /// </summary>
     public class DocumentTabViewModel : ViewModelBase
     {
@@ -46,6 +50,12 @@ namespace Writersword.ViewModels
         /// При закрытии проекта все модули автоматически уничтожаются
         /// </summary>
         public ProjectModuleContext ModuleContext { get; }
+
+        /// <summary>
+        /// Контроллер рабочего пространства (WorkModes, Layout, Float окна)
+        /// Полностью изолирован для этой вкладки
+        /// </summary>
+        public IWorkspaceController? Workspace { get; private set; }
 
         /// <summary>
         /// Баннер восстановления версий (null если нет кеша)
@@ -125,10 +135,8 @@ namespace Writersword.ViewModels
             _onClose = onClose;
             Id = Guid.NewGuid().ToString();
 
-            // Создаём контекст документа
             Context = new DocumentContext(project, filePath);
 
-            // Создаём изолированный контейнер модулей для этого проекта
             var moduleFactory = App.Services.GetRequiredService<ModuleFactory>();
             ModuleContext = new ProjectModuleContext(project.Id, moduleFactory);
             Console.WriteLine($"[DocumentTabViewModel] ProjectModuleContext created for: {project.Title}");
@@ -148,9 +156,34 @@ namespace Writersword.ViewModels
                 }
             });
 
-            // Подписываемся на изменения RecoveryBanner для обновления HasRecoveryBanner
             this.WhenAnyValue(x => x.RecoveryBanner)
                 .Subscribe(_ => this.RaisePropertyChanged(nameof(HasRecoveryBanner)));
+        }
+
+        /// <summary>
+        /// Инициализировать WorkspaceController
+        /// Вызывается из ProjectWorkflow после загрузки WorkModes
+        /// </summary>
+        public void InitializeWorkspace(List<Core.Models.WorkModes.WorkMode> loadedWorkModes)
+        {
+            if (string.IsNullOrEmpty(_filePath))
+            {
+                Console.WriteLine("[DocumentTabViewModel] Cannot initialize workspace - no file path");
+                return;
+            }
+
+            var dockFactory = App.Services.GetRequiredService<DockFactory>();
+            var autoSave = App.Services.GetRequiredService<Src.Core.Interfaces.Services.IWorkspaceAutoSaveService>();
+
+            Workspace = new WorkspaceController(
+                this,
+                _filePath,
+                loadedWorkModes,
+                dockFactory,
+                autoSave
+            );
+
+            Console.WriteLine($"[DocumentTabViewModel] WorkspaceController initialized for: {Title}");
         }
 
         /// <summary>
@@ -170,19 +203,16 @@ namespace Writersword.ViewModels
 
                 if (activeModules.Count > 0)
                 {
-                    // Собираем CustomData и SessionData из всех активных модулей
                     var (customData, sessionData) = stateCollector.CollectAllData(activeModules);
 
                     if (customData.Count > 0)
                     {
-                        // Временно закрываем ZIP чтобы освободить файл для чтения
                         var savedProject = await projectService.LoadAsync(FilePath);
 
                         if (savedProject != null)
                         {
                             bool dataChanged = false;
 
-                            // Быстрая проверка: разное количество модулей = изменения есть
                             if (customData.Count != savedProject.ModulesData.Count)
                             {
                                 dataChanged = true;
@@ -190,7 +220,6 @@ namespace Writersword.ViewModels
                             }
                             else
                             {
-                                // Сравниваем данные каждого модуля
                                 foreach (var kvp in customData)
                                 {
                                     if (!savedProject.ModulesData.TryGetValue(kvp.Key, out var savedData))
@@ -200,7 +229,6 @@ namespace Writersword.ViewModels
                                         break;
                                     }
 
-                                    // Оптимизированное сравнение для строк (основной случай)
                                     if (kvp.Value is string currentStr && savedData is string savedStr)
                                     {
                                         if (currentStr != savedStr)
@@ -219,7 +247,6 @@ namespace Writersword.ViewModels
                                 }
                             }
 
-                            // Сохраняем кеш только если есть несохранённые изменения
                             if (dataChanged)
                             {
                                 await cacheService.SaveCacheAsync(FilePath, _project.Id, customData, sessionData);
@@ -242,17 +269,14 @@ namespace Writersword.ViewModels
         /// <summary>Обновить данные проекта (используется при переключении версий)</summary>
         public void UpdateProject(ProjectFile newProject)
         {
-            // Обновляем ModulesData (словарь изменяется по ссылке)
             _project.ModulesData.Clear();
             foreach (var kvp in newProject.ModulesData)
             {
                 _project.ModulesData[kvp.Key] = kvp.Value;
             }
 
-            // Обновляем дату
             _project.LastModified = newProject.LastModified;
 
-            // Уведомляем UI об изменении Content
             this.RaisePropertyChanged(nameof(Content));
 
             Console.WriteLine($"[DocumentTabViewModel] Project data updated, ModulesData count: {_project.ModulesData.Count}");
@@ -263,13 +287,16 @@ namespace Writersword.ViewModels
 
         /// <summary>
         /// Очистка ресурсов
-        /// Уничтожает все модули проекта
+        /// Уничтожает все модули проекта и WorkspaceController
         /// </summary>
         public void Dispose()
         {
             Console.WriteLine($"[DocumentTabViewModel] Disposing: {Title}");
 
-            // Уничтожаем все модули проекта
+            Workspace?.Dispose();
+            Workspace = null;
+            Console.WriteLine($"[DocumentTabViewModel] WorkspaceController disposed");
+
             ModuleContext?.Dispose();
             Console.WriteLine($"[DocumentTabViewModel] All modules disposed for: {Title}");
         }

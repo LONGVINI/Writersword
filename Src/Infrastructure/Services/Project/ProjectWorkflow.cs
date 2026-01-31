@@ -197,11 +197,15 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     project.WorkModes = workModes;
                     Console.WriteLine($"[ProjectWorkflow] Loaded {workModes.Count} WorkModes for project");
 
-                    // Создаём и запускаем WorkspaceAutoSaveService для этого проекта
+                    // Создаём WorkspaceAutoSaveService для этого проекта
                     var autoSaveService = App.Services.GetRequiredService<IWorkspaceAutoSaveService>();
-                    autoSaveService.Start(filePath, project);
                     _autoSaveServices[filePath] = autoSaveService;
-                    Console.WriteLine($"[ProjectWorkflow] WorkspaceAutoSave started for: {filePath}");
+                    Console.WriteLine($"[ProjectWorkflow] WorkspaceAutoSave created for: {filePath}");
+
+                    // Инициализируем WorkspaceController для вкладки
+                    var dockFactory = App.Services.GetRequiredService<DockFactory>();
+                    tabVM.InitializeWorkspace(workModes);
+                    Console.WriteLine($"[ProjectWorkflow] WorkspaceController initialized for: {filePath}");
                 }
 
                 // 5. Если режим Compare - создаём RecoveryBanner
@@ -682,7 +686,6 @@ namespace Writersword.Src.Infrastructure.Services.Project
                 {
                     if (_autoSaveServices.TryGetValue(filePath, out var autoSaveService))
                     {
-                        await autoSaveService.SaveNowAsync();
                         autoSaveService.Dispose();
                         _autoSaveServices.Remove(filePath);
                         Console.WriteLine($"[ProjectWorkflow] WorkspaceAutoSave stopped for: {filePath}");
@@ -690,11 +693,6 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                     tab.Context.CloseZipStorage();
                     Console.WriteLine($"[ProjectWorkflow] ZipStorage closed for context");
-
-                    // Отписываемся от событий DockFactory
-                    var dockFactory = App.Services.GetRequiredService<DockFactory>();
-                    dockFactory.UnsubscribeFromDockEvents(filePath);
-                    Console.WriteLine($"[ProjectWorkflow] DockFactory unsubscribed from: {filePath}");
 
                     var project = _projectService.GetProjectByPath(filePath);
                     if (project != null)
@@ -959,8 +957,10 @@ namespace Writersword.Src.Infrastructure.Services.Project
             project.WorkModes = workModes;
 
             var autoSaveService = App.Services.GetRequiredService<IWorkspaceAutoSaveService>();
-            autoSaveService.Start(filePath, project);
             _autoSaveServices[filePath] = autoSaveService;
+
+            var dockFactory = App.Services.GetRequiredService<DockFactory>();
+            tab.InitializeWorkspace(workModes);
 
             Console.WriteLine($"[ProjectWorkflow] Storage registered for: {filePath}");
         }
