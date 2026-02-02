@@ -232,7 +232,10 @@ namespace Writersword.Src.Infrastructure.Services.Project
                         };
 
                         tabVM.Context.IsInCompareMode = true;
-                        Console.WriteLine("[ProjectWorkflow] RecoveryBanner created (Compare mode)");
+
+                        // Отключаем автосохранение в Compare mode
+                        cacheUpdateService.Stop();
+                        Console.WriteLine("[ProjectWorkflow] Compare mode enabled, cache disabled");
                     }
                 }
                 else
@@ -344,18 +347,30 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     {
                         capturedTab.Context.IsInCompareMode = false;
                         capturedTab.RecoveryBanner = null;
-                        Console.WriteLine("[ProjectWorkflow] CompareMode disabled, RecoveryBanner hidden");
+                        Console.WriteLine("[ProjectWorkflow] CompareMode disabled, RecoveryBanner hidden, IsReadOnly = false");
                     });
 
-                    var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
-                    var activeModules = mainViewModel.GetActiveModules();
-
-                    foreach (var module in activeModules)
+                    // Обновляем модули через WorkspaceController
+                    if (capturedTab.Workspace != null)
                     {
-                        module.RefreshFromContext();
+                        capturedTab.Workspace.RefreshModulesFromContext();
                     }
 
-                    Console.WriteLine("[ProjectWorkflow] Cache discarded, editing enabled");
+                    // Обновляем модули через WorkspaceController
+                    if (capturedTab.Workspace != null)
+                    {
+                        capturedTab.Workspace.RefreshModulesFromContext();
+                    }
+
+                    // Включаем автосохранение обратно
+                    if (capturedTab.Workspace != null)
+                    {
+                        var cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
+                        cacheUpdateService.Stop();
+                        cacheUpdateService.Start(capturedPath, () => capturedTab.Workspace.GetActiveModules());
+                    }
+
+                    Console.WriteLine("[ProjectWorkflow] Cache discarded, editing enabled, cache service started");
                 }
             }
             catch (Exception ex)
@@ -390,15 +405,21 @@ namespace Writersword.Src.Infrastructure.Services.Project
                         Console.WriteLine("[ProjectWorkflow] CompareMode disabled, RecoveryBanner hidden");
                     });
 
-                    var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
-                    var activeModules = mainViewModel.GetActiveModules();
-
-                    foreach (var module in activeModules)
+                    // Обновляем модули через WorkspaceController
+                    if (capturedTab.Workspace != null)
                     {
-                        module.RefreshFromContext();
+                        capturedTab.Workspace.RefreshModulesFromContext();
                     }
 
-                    Console.WriteLine("[ProjectWorkflow] Saved and enabled editing");
+                    // Включаем автосохранение обратно
+                    if (capturedTab.Workspace != null)
+                    {
+                        var cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
+                        cacheUpdateService.Stop();
+                        cacheUpdateService.Start(capturedTab.FilePath, () => capturedTab.Workspace.GetActiveModules());
+                    }
+
+                    Console.WriteLine("[ProjectWorkflow] Saved and enabled editing, cache service started");
                 }
             }
             catch (Exception ex)

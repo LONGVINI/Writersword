@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using Writersword.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.Services.Input;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.Services.UI;
@@ -95,6 +96,48 @@ namespace Writersword.Views
             Console.WriteLine("[MainWindow] Saving workspace configurations for all tabs");
             await vm.SaveActiveWorkspaceConfigurationAsync();
 
+            // 1.6. ПРИНУДИТЕЛЬНО сохраняем активную вкладку в кеш перед проверкой изменений
+            // Это необходимо потому что CacheUpdateService работает раз в 10 секунд
+            // и может не успеть сохранить изменения если пользователь быстро закрыл приложение
+            Console.WriteLine("[MainWindow] Force saving active tab to cache");
+            var activeTab = tabCollection.ActiveTab;
+            if (activeTab != null && !string.IsNullOrEmpty(activeTab.FilePath))
+            {
+                try
+                {
+                    var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
+                    var cacheService = App.Services.GetRequiredService<IZipCacheService>();
+
+                    // Получаем активные модули текущего WorkMode
+                    var activeModules = vm.GetActiveModules();
+
+                    // Собираем CustomData и SessionData
+                    var (customData, sessionData) = stateCollector.CollectAllData(activeModules);
+
+                    if (customData.Count > 0)
+                    {
+                        // Получаем ProjectId для кеша
+                        var project = activeTab.GetProject();
+
+                        // Сохраняем кеш принудительно
+                        await cacheService.SaveCacheAsync(activeTab.FilePath, project.Id, customData, sessionData);
+
+                        // Отмечаем вкладку как изменённую (для правильной работы HasUnsavedChanges)
+                        activeTab.MarkAsModified();
+
+                        Console.WriteLine($"[MainWindow] Active tab cached: {customData.Count} modules");
+                    }
+                    else
+                    {
+                        Console.WriteLine("[MainWindow] Active tab has no data to cache");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[MainWindow] Error caching active tab: {ex.Message}");
+                }
+            }
+
             // 2. Сохраняем список открытых проектов (для восстановления при следующем запуске)
             var settingsService = App.Services.GetRequiredService<ISettingsService>();
             var openPaths = tabCollection.Tabs
@@ -151,7 +194,16 @@ namespace Writersword.Views
 
                     Console.WriteLine($"[MainWindow] Tab saved: {tab.Title}");
                 }
-                // Если "Нет" - просто продолжаем дальше
+                else if (result == MessageBoxResult.No)
+                {
+                    // Пользователь выбрал "НЕ СОХРАНЯТЬ" - удаляем кеш
+                    if (!string.IsNullOrEmpty(tab.FilePath))
+                    {
+                        var cacheService = App.Services.GetRequiredService<IZipCacheService>();
+                        cacheService.DeleteCache(tab.FilePath);
+                        Console.WriteLine($"[MainWindow] Cache deleted for {tab.Title}");
+                    }
+                }
             }
 
             Console.WriteLine("[MainWindow] OnClosing finished - shutting down");

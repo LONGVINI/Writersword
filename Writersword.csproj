@@ -31,6 +31,7 @@
 		<PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.10" />
 		<PackageReference Include="Avalonia.Diagnostics" Version="11.3.10" />
 		<PackageReference Include="Avalonia.ReactiveUI" Version="11.3.8" />
+		<PackageReference Include="Avalonia.Xaml.Interactivity" Version="11.3.0.6" />
 
 		<!-- Dock система (11.3.8 совместима с Avalonia 11.3.10) -->
 		<PackageReference Include="Dock.Avalonia" Version="11.3.8" />
@@ -70,12 +71,15 @@
 	<ItemGroup>
 	  <AvaloniaXaml Remove="Docs\AI_GUIDE V2.0\**" />
 	  <AvaloniaXaml Remove="Docs\AI_GUIDE V3.0\**" />
+	  <AvaloniaXaml Remove="Src\Core\Models\Document\**" />
 	  <AvaloniaXaml Remove="Tests\**" />
 	  <Compile Remove="Docs\AI_GUIDE V2.0\**" />
 	  <Compile Remove="Docs\AI_GUIDE V3.0\**" />
+	  <Compile Remove="Src\Core\Models\Document\**" />
 	  <Compile Remove="Tests\**" />
 	  <None Remove="Docs\AI_GUIDE V2.0\**" />
 	  <None Remove="Docs\AI_GUIDE V3.0\**" />
+	  <None Remove="Src\Core\Models\Document\**" />
 	  <None Remove="Tests\**" />
 	</ItemGroup>
 	<ItemGroup>

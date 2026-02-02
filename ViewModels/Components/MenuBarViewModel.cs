@@ -518,14 +518,17 @@ namespace Writersword.ViewModels.Components
                 // 1. Удаляем LOCAL workspace.json из ZIP
                 _workspaceConfigService.DeleteFromZip(fileStorage);
 
-                // 2. УДАЛЯЕМ GLOBAL конфигурацию из Settings.json!
-                _settingsService.DeleteWorkspaceConfig(project.Type);
+                // 3. Загружаем DEFAULT конфигурацию явно
+                var defaultWorkModes = _workModeConfigService.LoadConfiguration(project.Type, fileStorage);
+                project.WorkModes = defaultWorkModes;
 
-                Console.WriteLine("[MenuBarViewModel] Deleted LOCAL and GLOBAL configs");
+                Console.WriteLine($"[MenuBarViewModel] Loaded {defaultWorkModes.Count} default WorkModes");
 
-                // 3. ОЧИЩАЕМ WorkModes в проекте чтобы загрузились дефолтные!
-                project.WorkModes.Clear();
-                Console.WriteLine("[MenuBarViewModel] Cleared project.WorkModes");
+                // 4. Пересоздаём Workspace с новыми WorkModes
+                activeTab.InitializeWorkspace(defaultWorkModes);
+
+                // 5. Обновляем UI
+                mainVM?.InitializeWorkModesForTab(activeTab);
 
                 // 4. Теперь InitializeWorkModesForTab загрузит DEFAULT!
                 mainVM?.InitializeWorkModesForTab(activeTab);

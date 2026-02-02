@@ -76,6 +76,12 @@ namespace Writersword.Src.Core.Interfaces.Workspace
         Task SaveWorkspaceAsync();
 
         /// <summary>
+        /// Обновить все активные модули из Context
+        /// Используется когда Context.IsInCompareMode меняется
+        /// </summary>
+        void RefreshModulesFromContext();
+
+        /// <summary>
         /// Обработчик закрытия модуля в Dock
         /// Вызывается из DockFactory когда модуль закрыт пользователем
         /// </summary>

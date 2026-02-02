@@ -114,6 +114,20 @@ namespace Writersword.Src.Infrastructure.Workspace
         }
 
         /// <summary>
+        /// Обновить все активные модули из Context
+        /// Используется когда Context.IsInCompareMode меняется
+        /// </summary>
+        public void RefreshModulesFromContext()
+        {
+            var modules = GetActiveModules();
+            foreach (var module in modules)
+            {
+                module.RefreshFromContext();
+            }
+            Console.WriteLine($"[WorkspaceController] Refreshed {modules.Count()} modules from context");
+        }
+
+        /// <summary>
         /// Переключить WorkMode
         /// </summary>
         public void SwitchWorkMode(WorkMode newMode)

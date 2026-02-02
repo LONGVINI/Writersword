@@ -496,7 +496,7 @@ namespace Writersword.Src.Infrastructure.Dock
                 Title = module.Title,
                 Content = view,
                 CanClose = slot.IsCloseable,
-                CanFloat = true
+                CanFloat = slot.IsCloseable
             };
 
             Console.WriteLine($"[DockFactory] Document created: {slot.ModuleId}, InstanceId: {module.InstanceId}, CanClose={document.CanClose}");

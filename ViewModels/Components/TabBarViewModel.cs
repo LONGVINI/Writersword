@@ -1,12 +1,14 @@
-﻿using ReactiveUI;
+﻿using Avalonia.Controls.ApplicationLifetimes;
+using Microsoft.Extensions.DependencyInjection;
+using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
+using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.ViewModels;
-using Avalonia.Controls.ApplicationLifetimes;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Writersword.ViewModels.Components
 {
@@ -48,19 +50,14 @@ namespace Writersword.ViewModels.Components
             _tabCollection = tabCollection;
             _projectWorkflow = projectWorkflow;
 
-            // Команда создания новой вкладки
             CreateNewTabCommand = ReactiveCommand.Create(CreateNewTab);
 
-            // Команда активации вкладки (в UI потоке)
             ActivateTabCommand = ReactiveCommand.Create<DocumentTabViewModel>(ActivateTab);
 
-            // Команда закрытия вкладки
             CloseTabCommand = ReactiveCommand.CreateFromTask<DocumentTabViewModel>(CloseTabAsync);
 
-            // Подписываемся на изменения активной вкладки
             _tabCollection.ActiveTabChanged += OnActiveTabChanged;
 
-            // Обновляем HasRecoveryBanner при изменении вкладки
             _tabCollection.ActiveTabChanged += _ =>
             {
                 this.RaisePropertyChanged(nameof(HasRecoveryBanner));
@@ -92,12 +89,10 @@ namespace Writersword.ViewModels.Components
 
             var oldTab = ActiveTab;
 
-            // Если есть старая вкладка - деактивируем её
             if (oldTab != null && oldTab != tab)
             {
                 Console.WriteLine($"[TabBarViewModel] Deactivating old tab: {oldTab.Title}");
 
-                // Сохраняем workspace.json НЕМЕДЛЕННО если есть pending changes!
                 if (!string.IsNullOrEmpty(oldTab.FilePath))
                 {
                     var workflow = App.Services.GetRequiredService<IProjectWorkflow>();
@@ -105,22 +100,18 @@ namespace Writersword.ViewModels.Components
 
                     if (autoSave != null)
                     {
-                        await autoSave.SaveNowAsync();  // ← СОХРАНЯЕМ СРАЗУ!
+                        await autoSave.SaveNowAsync();
                         Console.WriteLine($"[TabBarViewModel] workspace.json saved immediately for: {oldTab.Title}");
                     }
                 }
 
-                // Получаем функцию для получения активных модулей
                 var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
 
-                // Сохраняем кеш асинхронно
                 await oldTab.SaveToCacheAsync(() => mainViewModel.GetActiveModules());
 
                 Console.WriteLine($"[TabBarViewModel] Old tab saved to cache");
             }
 
-            // Устанавливаем активную вкладку
-            // MainWindowViewModel подпишется на ActiveTabChanged и запустит кеширование
             ActiveTab = tab;
         }
 
@@ -137,14 +128,12 @@ namespace Writersword.ViewModels.Components
                 return;
             }
 
-            // Очищаем RecoveryBanner перед удалением вкладки
             tab.RecoveryBanner = null;
             Console.WriteLine($"[TabBarViewModel] RecoveryBanner cleared before removal");
 
             _tabCollection.Remove(tab);
             Console.WriteLine($"[TabBarViewModel] Tab removed from collection");
 
-            // Если не осталось вкладок - очищаем UI и показываем Welcome
             if (_tabCollection.Tabs.Count == 0)
             {
                 Console.WriteLine("[TabBarViewModel] No tabs left - clearing UI and showing Welcome");
@@ -166,13 +155,51 @@ namespace Writersword.ViewModels.Components
         /// </summary>
         private void OnActiveTabChanged(DocumentTabViewModel? tab)
         {
-            // Уведомляем UI об изменении
             this.RaisePropertyChanged(nameof(ActiveTab));
 
             if (tab != null)
             {
                 Console.WriteLine($"[TabBarViewModel] Active tab changed: {tab.Title}");
             }
+        }
+
+        /// <summary>
+        /// Поменять местами две вкладки в коллекции.
+        /// Вызывается из TabDragDropBehavior при перетаскивании.
+        /// </summary>
+        public void SwapTabs(int oldIndex, int newIndex)
+        {
+            if (oldIndex < 0 || oldIndex >= Tabs.Count ||
+                newIndex < 0 || newIndex >= Tabs.Count)
+            {
+                return;
+            }
+
+            Console.WriteLine($"[TabBarViewModel] SwapTabs: {oldIndex} <-> {newIndex}");
+
+            var tab = Tabs[oldIndex];
+            Tabs.RemoveAt(oldIndex);
+            Tabs.Insert(newIndex, tab);
+        }
+
+        /// <summary>
+        /// Сохранить порядок вкладок в settings.json.
+        /// Вызывается из TabDragDropBehavior после завершения перетаскивания.
+        /// </summary>
+        public void SaveTabsOrder()
+        {
+            Console.WriteLine("[TabBarViewModel] Saving tabs order");
+
+            var settingsService = App.Services.GetRequiredService<ISettingsService>();
+
+            var paths = Tabs
+                .Select(t => t.FilePath)
+                .Where(p => !string.IsNullOrEmpty(p))
+                .ToList();
+
+            settingsService.SaveOpenProjects(paths!);
+
+            Console.WriteLine($"[TabBarViewModel] Saved {paths.Count} tabs in new order");
         }
     }
 }

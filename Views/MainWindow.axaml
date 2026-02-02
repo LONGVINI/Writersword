@@ -24,37 +24,37 @@
 
 		<!-- ===== МЕНЮ (КОМПОНЕНТ) ===== -->
 		<components:MenuBarView DockPanel.Dock="Top"
-                                DataContext="{Binding MenuBar}"/>
+		                        DataContext="{Binding MenuBar}"/>
 
 		<!-- ===== ПАНЕЛЬ ВКЛАДОК (КОМПОНЕНТ) ===== -->
 		<components:TabBarView DockPanel.Dock="Top"
-                               DataContext="{Binding TabBar}"/>
+		                       DataContext="{Binding TabBar}"/>
 
 		<!-- ===== ПАНЕЛЬ WORKMODES (КОМПОНЕНТ) ===== -->
 		<components:WorkModeBarView DockPanel.Dock="Top"
-                                    DataContext="{Binding WorkModeBar}"/>
+		                            DataContext="{Binding WorkModeBar}"/>
 
 		<!-- ===== БАННЕР ВОССТАНОВЛЕНИЯ ===== -->
-        <ContentControl DockPanel.Dock="Top"
-                        Content="{Binding TabBar.ActiveTab.RecoveryBanner, FallbackValue={x:Null}}"
-                        IsVisible="{Binding TabBar.ActiveTab.HasRecoveryBanner}">
-            <ContentControl.ContentTemplate>
-                <DataTemplate>
-                    <components:RecoveryBanner/>
-                </DataTemplate>
-            </ContentControl.ContentTemplate>
-        </ContentControl>
+		<ContentControl DockPanel.Dock="Top"
+		                Content="{Binding TabBar.ActiveTab.RecoveryBanner, FallbackValue={x:Null}}"
+		                IsVisible="{Binding TabBar.ActiveTab.HasRecoveryBanner}">
+			<ContentControl.ContentTemplate>
+				<DataTemplate>
+					<components:RecoveryBanner/>
+				</DataTemplate>
+			</ContentControl.ContentTemplate>
+		</ContentControl>
 
 		<!-- ===== DOCK КОНТРОЛ (ГЛАВНАЯ ОБЛАСТЬ С МОДУЛЯМИ) ===== -->
 		<dock:DockControl Layout="{Binding DockLayout}"
-                          Background="#252526"/>
+		                  Background="#252526"/>
 
 		<!-- Контейнер для уведомлений -->
 		<Panel Name="NotificationContainer"
-               ZIndex="1000"
-               HorizontalAlignment="Stretch"
-               VerticalAlignment="Stretch"
-               IsHitTestVisible="False"/>
+		       ZIndex="1000"
+		       HorizontalAlignment="Stretch"
+		       VerticalAlignment="Stretch"
+		       IsHitTestVisible="False"/>
 
 	</DockPanel>
 

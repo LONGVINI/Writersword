@@ -35,6 +35,8 @@ namespace Writersword.ViewModels
         private string _filePath = "";
         private RecoveryBannerViewModel? _recoveryBanner;
 
+        private bool _hasUnsavedChanges = false;
+
         /// <summary>ID вкладки (для UI)</summary>
         public string Id { get; }
 
@@ -284,6 +286,33 @@ namespace Writersword.ViewModels
 
         /// <summary>Получить проект</summary>
         public ProjectFile GetProject() => _project;
+
+        /// <summary>
+        /// Отметить что есть несохранённые изменения
+        /// Вызывается при реальном изменении данных в модулях
+        /// </summary>
+        public void MarkAsModified()
+        {
+            _hasUnsavedChanges = true;
+            Console.WriteLine($"[DocumentTabViewModel] Marked as modified: {Title}");
+        }
+
+        /// <summary>
+        /// Сбросить флаг изменений (после успешного сохранения)
+        /// </summary>
+        public void MarkAsSaved()
+        {
+            _hasUnsavedChanges = false;
+            Console.WriteLine($"[DocumentTabViewModel] Marked as saved: {Title}");
+        }
+
+        /// <summary>
+        /// Проверить есть ли несохранённые изменения
+        /// </summary>
+        public bool HasUnsavedChanges()
+        {
+            return _hasUnsavedChanges;
+        }
 
         /// <summary>
         /// Очистка ресурсов

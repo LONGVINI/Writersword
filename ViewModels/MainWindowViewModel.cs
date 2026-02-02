@@ -224,7 +224,14 @@ namespace Writersword.ViewModels
             UpdateWorkModeMenuItems();
             UpdateModuleMenuItems();
 
-            if (!string.IsNullOrEmpty(tab.FilePath) && !tab.Context.IsInCompareMode)
+            // ВАЖНО: В Compare mode отключаем автосохранение кеша
+            if (tab.Context.IsInCompareMode)
+            {
+                _cacheUpdateService.Stop();
+                tab.Workspace.RefreshModulesFromContext();
+                Console.WriteLine("[MainWindowViewModel] Compare mode - cache disabled, modules read-only");
+            }
+            else if (!string.IsNullOrEmpty(tab.FilePath))
             {
                 _cacheUpdateService.Stop();
                 _cacheUpdateService.Start(tab.FilePath, () => tab.Workspace.GetActiveModules());
@@ -389,6 +396,9 @@ namespace Writersword.ViewModels
             }
 
             Console.WriteLine($"[InitializeWorkModesForTab] Updating UI for: {tab.Title}");
+
+            // Очищаем старые кнопки WorkMode чтобы не было дубликатов
+            AllWorkModes.Clear();
 
             OnTabActivated(tab);
         }
