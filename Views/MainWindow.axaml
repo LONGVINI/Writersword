@@ -14,12 +14,6 @@
         Background="#1E1E1E"
         RequestedThemeVariant="Dark">
 
-	<Window.Resources>
-		<converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
-		<converters:TabBackgroundConverter x:Key="TabBackgroundConverter"/>
-		<converters:TabForegroundConverter x:Key="TabForegroundConverter"/>
-	</Window.Resources>
-
 	<DockPanel>
 
 		<!-- ===== МЕНЮ (КОМПОНЕНТ) ===== -->

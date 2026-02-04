@@ -25,6 +25,7 @@ namespace Writersword.Behaviors
         private Point _dragStartPoint;
         private double _currentOffsetX = 0;
         private bool _isDragging = false;
+        private bool _isSwapping = false;
         private Button? _draggedButton = null;
         private ContentPresenter? _draggedPresenter = null;
         private int _originalIndex = -1;
@@ -62,7 +63,7 @@ namespace Writersword.Behaviors
 
         private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
         {
-            if (!e.GetCurrentPoint(AssociatedObject).Properties.IsLeftButtonPressed)
+            if (_isSwapping || !e.GetCurrentPoint(AssociatedObject).Properties.IsLeftButtonPressed)
                 return;
 
             var button = FindWorkModeButton(e.Source);
@@ -79,11 +80,10 @@ namespace Writersword.Behaviors
             Console.WriteLine($"[WorkModeDragDrop] === POINTER PRESSED ===");
             Console.WriteLine($"[WorkModeDragDrop]   Index: {_originalIndex}, Button width: {button.Bounds.Width}");
 
-            // СНАЧАЛА активируем (чтобы кнопка стала синей)
-            ActivateWorkModeImmediately();
+            button.Classes.Add("dragging");
+            Console.WriteLine($"[WorkModeDragDrop]   Added class 'dragging'");
 
-            // ПОТОМ блокируем (после того как цвет обновился)
-            button.IsEnabled = false;
+            ActivateWorkModeImmediately();
         }
 
         private void OnPointerMoved(object? sender, PointerEventArgs e)
@@ -116,12 +116,14 @@ namespace Writersword.Behaviors
 
         private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
+            if (_draggedButton != null)
+            {
+                _draggedButton.Classes.Remove("dragging");
+                Console.WriteLine($"[WorkModeDragDrop]   Removed class 'dragging'");
+            }
+
             if (!_isDragging)
             {
-                if (_draggedButton != null)
-                {
-                    _draggedButton.IsEnabled = true;
-                }
                 ResetState();
                 return;
             }
@@ -129,15 +131,30 @@ namespace Writersword.Behaviors
             Console.WriteLine($"[WorkModeDragDrop] === POINTER RELEASED ===");
             Console.WriteLine($"[WorkModeDragDrop]   Original: {_originalIndex}, Visual: {_currentVisualIndex}, Offset: {_currentOffsetX:F1}px");
 
+            _isDragging = false;
+            _isSwapping = true;
+
             foreach (var cts in _activeAnimations.Values) cts.Cancel();
             _activeAnimations.Clear();
             _targetPositions.Clear();
 
+            Console.WriteLine($"[WorkModeDragDrop] === REMOVING ALL TRANSFORMS ===");
+            var allButtons = GetAllButtons();
+            Console.WriteLine($"[WorkModeDragDrop]   Found {allButtons.Count} buttons");
+            foreach (var button in allButtons)
+            {
+                Console.WriteLine($"[WorkModeDragDrop]     Removing transform from button");
+                button.RenderTransform = null;
+                button.Transitions = null;
+            }
+
             var viewModel = AssociatedObject?.DataContext as WorkModeBarViewModel;
             if (viewModel == null)
             {
+                Console.WriteLine($"[WorkModeDragDrop] ERROR: ViewModel is null");
                 StopDragging();
                 ResetState();
+                _isSwapping = false;
                 return;
             }
 
@@ -163,43 +180,26 @@ namespace Writersword.Behaviors
                 }
 
                 viewModel.SaveWorkModesOrder();
-
-                Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
-                {
-                    await Task.Delay(300);
-                    Console.WriteLine($"[WorkModeDragDrop] === RESETTING ALL TRANSFORMS ===");
-                    var allButtons = GetAllButtons();
-                    for (int i = 0; i < allButtons.Count; i++)
-                    {
-                        var btn = allButtons[i];
-                        var t = btn.RenderTransform as TranslateTransform;
-                        if (t != null) { t.X = 0; t.Y = 0; }
-                        btn.Transitions = null;
-                    }
-                    Console.WriteLine($"[WorkModeDragDrop] === RESET COMPLETE ===");
-                }, Avalonia.Threading.DispatcherPriority.Background);
             }
             else
             {
                 Console.WriteLine($"[WorkModeDragDrop] No swap needed");
-                if (_draggedButton != null)
-                {
-                    var t = _draggedButton.RenderTransform as TranslateTransform;
-                    if (t != null) { t.X = 0; t.Y = 0; }
-                }
             }
-
-            var allBtns = GetAllButtons();
-            foreach (var btn in allBtns)
-                btn.IsEnabled = true;
 
             StopDragging();
             ResetState();
+            _isSwapping = false;
             Console.WriteLine($"[WorkModeDragDrop] === DRAG COMPLETE ===");
         }
 
         private void ResetState()
         {
+            if (_draggedButton != null)
+            {
+                _draggedButton.Classes.Remove("dragging");
+                Console.WriteLine($"[WorkModeDragDrop]   ResetState: Removed class 'dragging'");
+            }
+
             _isDragging = false;
             IsDragging = false;
             _draggedButton = null;
@@ -420,15 +420,26 @@ namespace Writersword.Behaviors
             var workMode = _draggedButton.DataContext as WorkMode;
             if (workMode == null) return;
 
-            Console.WriteLine($"[WorkModeDragDrop] Activating WorkMode immediately: {workMode.Title}");
+            Console.WriteLine($"[WorkModeDragDrop] === ACTIVATING WORKMODE ===");
+            Console.WriteLine($"[WorkModeDragDrop]   Target: {workMode.Title}");
 
             foreach (var wm in viewModel.WorkModes)
             {
+                Console.WriteLine($"[WorkModeDragDrop]   Setting {wm.Title}.IsActive = false");
                 wm.IsActive = false;
             }
+
+            Console.WriteLine($"[WorkModeDragDrop]   Setting {workMode.Title}.IsActive = true");
             workMode.IsActive = true;
 
+            Console.WriteLine($"[WorkModeDragDrop]   Executing SwitchWorkModeCommand...");
             viewModel.SwitchWorkModeCommand.Execute(workMode).Subscribe();
+
+            Console.WriteLine($"[WorkModeDragDrop]   Final state:");
+            foreach (var wm in viewModel.WorkModes)
+            {
+                Console.WriteLine($"[WorkModeDragDrop]     {wm.Title}: IsActive={wm.IsActive}");
+            }
         }
 
         private Button? FindWorkModeButton(object? source)

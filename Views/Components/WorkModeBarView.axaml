@@ -7,62 +7,81 @@
              x:Class="Writersword.Views.Components.WorkModeBarView"
              x:DataType="vm:WorkModeBarViewModel"
              x:Name="WorkModeBarViewRoot">
-
-	<UserControl.Resources>
-		<converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
-	</UserControl.Resources>
-
 	<Border Background="#2D2D30"
             BorderBrush="#3F3F46"
             BorderThickness="0,0,0,1"
             Padding="10,5">
-
 		<ItemsControl ItemsSource="{Binding WorkModes}">
-
 			<i:Interaction.Behaviors>
 				<behaviors:WorkModeDragDropBehavior />
 			</i:Interaction.Behaviors>
-
 			<ItemsControl.ItemsPanel>
 				<ItemsPanelTemplate>
 					<StackPanel Orientation="Horizontal" Spacing="5"/>
 				</ItemsPanelTemplate>
 			</ItemsControl.ItemsPanel>
-
 			<ItemsControl.ItemTemplate>
 				<DataTemplate>
 					<Button Content="{Binding Title}"
-                            Command="{Binding #WorkModeBarViewRoot.DataContext.SwitchWorkModeCommand}"
-                            CommandParameter="{Binding}"
-                            Padding="10,4"
-                            FontSize="12">
-
-						<!-- TranslateTransform для drag-and-drop анимации -->
+			Command="{Binding #WorkModeBarViewRoot.DataContext.SwitchWorkModeCommand}"
+			CommandParameter="{Binding}"
+			Classes.active="{Binding IsActive}"
+			Padding="10,4"
+			FontSize="12"
+			Foreground="White">
+						<Button.Effect>
+							<DropShadowEffect BlurRadius="0" OffsetX="0" OffsetY="0" Opacity="0" Color="Transparent"/>
+						</Button.Effect>
 						<Button.RenderTransform>
 							<TranslateTransform X="0" Y="0" />
 						</Button.RenderTransform>
-
-						<!-- Стили -->
+						<!-- Свой Template БЕЗ Theme Button -->
+						<Button.Template>
+							<ControlTemplate>
+								<Border x:Name="PART_Border"
+										Background="#3E3E42"
+										BorderThickness="0"
+										CornerRadius="4"
+										Padding="{TemplateBinding Padding}">
+									<ContentPresenter Content="{TemplateBinding Content}"
+													  HorizontalAlignment="Center"
+													  VerticalAlignment="Center"/>
+								</Border>
+							</ControlTemplate>
+						</Button.Template>
 						<Button.Styles>
-							<Style Selector="Button">
-								<Setter Property="Background" Value="#3E3E42"/>
-								<Setter Property="Foreground" Value="White"/>
+							<!-- Активная кнопка - синий фон -->
+							<Style Selector="Button.active /template/ Border#PART_Border">
+								<Setter Property="Background" Value="#007ACC"/>
 							</Style>
-							<Style Selector="Button:pointerover">
+							<!-- Hover на неактивной -->
+							<Style Selector="Button:pointerover /template/ Border#PART_Border">
 								<Setter Property="Background" Value="#4A4A4C"/>
 							</Style>
+							<!-- Hover на активной -->
+							<Style Selector="Button.active:pointerover /template/ Border#PART_Border">
+								<Setter Property="Background" Value="#1C86C8"/>
+							</Style>
+							<!-- Pressed на неактивной -->
+							<Style Selector="Button:pressed /template/ Border#PART_Border">
+								<Setter Property="Background" Value="#2D2D2D"/>
+							</Style>
+							<!-- Pressed на активной -->
+							<Style Selector="Button.active:pressed /template/ Border#PART_Border">
+								<Setter Property="Background" Value="#005A9E"/>
+							</Style>
+							<!-- Dragging на неактивной - как pressed -->
+							<Style Selector="Button.dragging /template/ Border#PART_Border">
+								<Setter Property="Background" Value="#2D2D2D"/>
+							</Style>
+							<!-- Dragging на активной - как pressed -->
+							<Style Selector="Button.active.dragging /template/ Border#PART_Border">
+								<Setter Property="Background" Value="#005A9E"/>
+							</Style>
 						</Button.Styles>
-
-						<!-- Динамический цвет по IsActive -->
-						<Button.Background>
-							<SolidColorBrush Color="{Binding IsActive, Converter={StaticResource BoolToColorConverter}}"/>
-						</Button.Background>
-
 					</Button>
 				</DataTemplate>
 			</ItemsControl.ItemTemplate>
 		</ItemsControl>
-
 	</Border>
-
 </UserControl>
