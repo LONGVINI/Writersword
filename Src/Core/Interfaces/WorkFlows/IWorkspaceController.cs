@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.WorkModes;
+using Writersword.Src.Core.Interfaces.WorkModes;
 
 namespace Writersword.Src.Core.Interfaces.Workspace
 {
@@ -86,5 +87,11 @@ namespace Writersword.Src.Core.Interfaces.Workspace
         /// Вызывается из DockFactory когда модуль закрыт пользователем
         /// </summary>
         void HandleModuleClosedInDock(string moduleId);
+
+        /// <summary>
+        /// Получить WorkModeService этого проекта
+        /// Используется для получения списка WorkModes при сохранении workspace.json
+        /// </summary>
+        IWorkModeService GetWorkModeService();
     }
 }

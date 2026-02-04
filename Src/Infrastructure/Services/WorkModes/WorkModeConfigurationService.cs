@@ -184,12 +184,50 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 // Восстанавливаем метаданные модулей из дефолтной конфигурации
                 RestoreModuleMetadata(config.WorkModes);
 
+                // ВАЖНО: Восстанавливаем дефолтную конфигурацию для пустых WorkModes
+                RestoreEmptyWorkModes(config.WorkModes);
+
                 return config.WorkModes;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[WorkModeConfigService] Error loading local config: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Восстановить дефолтную конфигурацию для пустых WorkModes
+        /// Если WorkMode не имеет модулей - восстанавливаем их из дефолтной конфигурации
+        /// </summary>
+        private void RestoreEmptyWorkModes(List<WorkMode> workModes)
+        {
+            var workModeRegistry = App.Services.GetRequiredService<WorkModeRegistry>();
+
+            foreach (var workMode in workModes)
+            {
+                // Если WorkMode пустой - восстанавливаем дефолтную конфигурацию
+                if (workMode.ModuleSlots == null || workMode.ModuleSlots.Count == 0)
+                {
+                    Console.WriteLine($"[WorkModeConfigService] WorkMode '{workMode.Title}' is empty, restoring defaults");
+
+                    var registeredWorkMode = workModeRegistry.GetWorkMode(workMode.WorkModeId);
+
+                    if (registeredWorkMode != null)
+                    {
+                        var defaultConfig = registeredWorkMode.GetDefaultConfig();
+
+                        // Восстанавливаем ModuleSlots и Containers
+                        workMode.ModuleSlots = new List<ModuleSlot>(defaultConfig.ModuleSlots);
+                        workMode.Containers = new List<SplitContainer>(defaultConfig.Containers);
+
+                        Console.WriteLine($"[WorkModeConfigService] Restored {workMode.ModuleSlots.Count} slots and {workMode.Containers.Count} containers for '{workMode.Title}'");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[WorkModeConfigService] WARNING: WorkMode not registered: {workMode.WorkModeId}");
+                    }
+                }
             }
         }
 

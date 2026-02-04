@@ -28,19 +28,23 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         {
             _currentProjectType = projectType;
 
-            // Если переданы сохранённые WorkModes - загружаем ТОЛЬКО активный
+            // Если переданы сохранённые WorkModes - загружаем ВСЕ
             if (savedWorkModes != null && savedWorkModes.Count > 0)
             {
-                var activeWorkMode = savedWorkModes.FirstOrDefault(wm => wm.IsActive);
+                _workModes = savedWorkModes;
 
+                var activeWorkMode = _workModes.FirstOrDefault(wm => wm.IsActive);
                 if (activeWorkMode == null)
                 {
-                    Console.WriteLine("[WorkModeService] ERROR: No active WorkMode in saved data!");
-                    return new List<WorkMode>();
+                    _workModes[0].IsActive = true;
+                    Console.WriteLine($"[WorkModeService] No active WorkMode, activated first: {_workModes[0].Title}");
+                }
+                else
+                {
+                    Console.WriteLine($"[WorkModeService] Restored active WorkMode: {activeWorkMode.Title}");
                 }
 
-                _workModes = new List<WorkMode> { activeWorkMode };
-                Console.WriteLine($"[WorkModeService] Loaded ONLY active WorkMode: {activeWorkMode.Title}");
+                Console.WriteLine($"[WorkModeService] Loaded {_workModes.Count} WorkModes from saved data");
             }
             else
             {
@@ -54,20 +58,20 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                     return new List<WorkMode>();
                 }
 
-                // Берём ТОЛЬКО активный
-                var activeWorkMode = allWorkModes.FirstOrDefault(wm => wm.IsActive);
+                _workModes = allWorkModes;
+
+                // Проверяем что есть активный
+                var activeWorkMode = _workModes.FirstOrDefault(wm => wm.IsActive);
                 if (activeWorkMode == null)
                 {
-                    // Активируем первый
-                    allWorkModes[0].IsActive = true;
-                    activeWorkMode = allWorkModes[0];
+                    _workModes[0].IsActive = true;
+                    Console.WriteLine($"[WorkModeService] Activated first WorkMode: {_workModes[0].Title}");
                 }
 
-                _workModes = new List<WorkMode> { activeWorkMode };
-                Console.WriteLine($"[WorkModeService] Loaded active WorkMode from config: {activeWorkMode.Title}");
+                Console.WriteLine($"[WorkModeService] Loaded {_workModes.Count} WorkModes from config");
             }
 
-            Console.WriteLine($"[WorkModeService] Initialized with 1 WorkMode");
+            Console.WriteLine($"[WorkModeService] Initialized with {_workModes.Count} WorkModes");
             return _workModes;
         }
 

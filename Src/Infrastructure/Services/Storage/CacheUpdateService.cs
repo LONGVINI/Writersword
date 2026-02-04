@@ -5,7 +5,6 @@ using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
-using Writersword.Core.Models.Modules;
 using Writersword.Core.Models.Project;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 

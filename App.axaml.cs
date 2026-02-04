@@ -92,9 +92,6 @@ namespace Writersword
             // Сервис конфигурации WorkModes (загрузка из файлов)
             services.AddSingleton<IWorkModeConfigurationService, WorkModeConfigurationService>();
 
-            // Сервис управления WorkModes (переключение режимов)
-            services.AddSingleton<IWorkModeService, WorkModeService>();
-
             // Сервис автоматического сохранения рабочего пространства
             services.AddTransient<IWorkspaceAutoSaveService, WorkspaceAutoSaveService>();
 

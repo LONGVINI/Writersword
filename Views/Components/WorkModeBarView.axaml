@@ -2,6 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.ViewModels.Components"
              xmlns:converters="using:Writersword.Converters"
+             xmlns:i="clr-namespace:Avalonia.Xaml.Interactivity;assembly=Avalonia.Xaml.Interactivity"
+             xmlns:behaviors="using:Writersword.Behaviors"
              x:Class="Writersword.Views.Components.WorkModeBarView"
              x:DataType="vm:WorkModeBarViewModel"
              x:Name="WorkModeBarViewRoot">
@@ -10,13 +12,17 @@
 		<converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
 	</UserControl.Resources>
 
-	<!-- ТОЧНО КАК В СТАРОМ ДИЗАЙНЕ - ГОРИЗОНТАЛЬНО -->
 	<Border Background="#2D2D30"
             BorderBrush="#3F3F46"
             BorderThickness="0,0,0,1"
             Padding="10,5">
 
 		<ItemsControl ItemsSource="{Binding WorkModes}">
+
+			<i:Interaction.Behaviors>
+				<behaviors:WorkModeDragDropBehavior />
+			</i:Interaction.Behaviors>
+
 			<ItemsControl.ItemsPanel>
 				<ItemsPanelTemplate>
 					<StackPanel Orientation="Horizontal" Spacing="5"/>
@@ -30,6 +36,11 @@
                             CommandParameter="{Binding}"
                             Padding="10,4"
                             FontSize="12">
+
+						<!-- TranslateTransform для drag-and-drop анимации -->
+						<Button.RenderTransform>
+							<TranslateTransform X="0" Y="0" />
+						</Button.RenderTransform>
 
 						<!-- Стили -->
 						<Button.Styles>

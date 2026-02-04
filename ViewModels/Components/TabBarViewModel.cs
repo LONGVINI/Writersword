@@ -163,10 +163,6 @@ namespace Writersword.ViewModels.Components
             }
         }
 
-        /// <summary>
-        /// Поменять местами две вкладки в коллекции.
-        /// Вызывается из TabDragDropBehavior при перетаскивании.
-        /// </summary>
         public void SwapTabs(int oldIndex, int newIndex)
         {
             if (oldIndex < 0 || oldIndex >= Tabs.Count ||
@@ -178,6 +174,8 @@ namespace Writersword.ViewModels.Components
             Console.WriteLine($"[TabBarViewModel] SwapTabs: {oldIndex} <-> {newIndex}");
 
             var tab = Tabs[oldIndex];
+            var wasActive = (tab == ActiveTab);
+
             Tabs.RemoveAt(oldIndex);
             Tabs.Insert(newIndex, tab);
         }

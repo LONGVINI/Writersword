@@ -75,7 +75,6 @@ namespace Writersword.ViewModels
         private readonly IProjectService _projectService;
         private readonly IHotKeyService _hotKeyService;
         private readonly IWorkModeConfigurationService _workModeConfigService;
-        private readonly IWorkModeService _workModeService;
         private readonly DockFactory _dockFactory;
         private readonly IZipCacheService _cacheService;
         private readonly ICacheUpdateService _cacheUpdateService;
@@ -136,7 +135,6 @@ namespace Writersword.ViewModels
             IProjectService projectService,
             IHotKeyService hotKeyService,
             IWorkModeConfigurationService workModeConfigService,
-            IWorkModeService workModeService,
             IZipCacheService cacheService,
             DockFactory dockFactory)
         {
@@ -152,7 +150,6 @@ namespace Writersword.ViewModels
             _projectService = projectService;
             _hotKeyService = hotKeyService;
             _workModeConfigService = workModeConfigService;
-            _workModeService = workModeService;
             _dockFactory = dockFactory;
             _cacheService = cacheService;
             _cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
@@ -160,6 +157,7 @@ namespace Writersword.ViewModels
             MenuBar.SetMainViewModelProvider(() => this);
             MenuBar.SetActiveTabProvider(() => TabBar.ActiveTab);
             WorkModeBar.SetWorkModeSwitchedHandler(OnWorkModeSwitched);
+            WorkModeBar.SetWorkModesReorderedHandler(OnWorkModesReordered);
             ModulePanel.SetModuleHandlers(OnModuleAdded, OnModuleRemoved);
 
             NewProjectCommand = MenuBar.NewProjectCommand;
@@ -266,6 +264,28 @@ namespace Writersword.ViewModels
             Console.WriteLine($"[MainWindowViewModel] WorkMode switched in UI");
 
             await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Обработчик сохранения порядка WorkModes после drag-and-drop (из WorkModeBar)
+        /// Делегирует в WorkspaceController активной вкладки для сохранения в workspace.json
+        /// </summary>
+        private void OnWorkModesReordered()
+        {
+            Console.WriteLine($"[MainWindowViewModel] WorkModes reordered, saving workspace");
+
+            var activeTab = TabBar.ActiveTab;
+            if (activeTab?.Workspace == null)
+            {
+                Console.WriteLine($"[MainWindowViewModel] No active tab with Workspace");
+                return;
+            }
+
+            // Уведомляем WorkspaceAutoSave что изменилась конфигурация
+            // Сохранение произойдёт через 5 секунд (debounce)
+            activeTab.Workspace.SaveWorkspaceAsync();
+
+            Console.WriteLine($"[MainWindowViewModel] WorkModes order saved for: {activeTab.Title}");
         }
 
         /// <summary>
@@ -639,8 +659,15 @@ namespace Writersword.ViewModels
                     Console.WriteLine($"[ToggleWorkMode] WorkMode not found in registry: {workModeId}");
                     return;
                 }
+                // Получаем WorkModeService из активной вкладки через её Workspace
+                var workModeService = activeTab.Workspace.GetWorkModeService();
+                if (workModeService == null)
+                {
+                    Console.WriteLine($"[ToggleWorkMode] No WorkModeService available");
+                    return;
+                }
 
-                var newWorkMode = _workModeService.AddWorkMode(
+                var newWorkMode = workModeService.AddWorkMode(
                     workModeId,
                     workModeInstance.DisplayName,
                     workModeInstance.Icon
@@ -649,7 +676,7 @@ namespace Writersword.ViewModels
                 newWorkMode.IsCloseable = workModeInstance.IsCloseable;
                 newWorkMode.Order = workModeInstance.Order;
 
-                WorkModeBar.LoadWorkModes(_workModeService.GetAllWorkModes());
+                WorkModeBar.LoadWorkModes(workModeService.GetAllWorkModes());
                 workModeBar.SwitchWorkModeCommand.Execute(newWorkMode).Subscribe();
 
                 Console.WriteLine($"[ToggleWorkMode] Created and switched to: {newWorkMode.Title}");

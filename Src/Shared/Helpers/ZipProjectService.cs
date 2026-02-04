@@ -91,20 +91,48 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                         var moduleId = moduleEntry.Key;
                         var customData = moduleEntry.Value;
 
-                        if (customData == null || (customData is string str && string.IsNullOrWhiteSpace(str)))
+                        // Ищем InstanceId для этого модуля из WorkModes
+                        string? instanceId = null;
+                        if (project.WorkModes != null)
                         {
-                            Console.WriteLine($"[ZipProjectService] Skipping empty module: {moduleId}");
-                            continue;
+                            foreach (var workMode in project.WorkModes)
+                            {
+                                var slot = workMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId && !string.IsNullOrEmpty(s.InstanceId));
+                                if (slot != null)
+                                {
+                                    instanceId = slot.InstanceId;
+                                    break;
+                                }
+                            }
                         }
 
-                        var customDataJson = JsonHelper.Serialize(customData);
-                        var customDataEntry = archive.CreateEntry($"modules/{moduleId}/customdata.json", CompressionLevel.Optimal);
-                        using (var writer = new StreamWriter(customDataEntry.Open()))
+                        // Создаем Metadata.json с InstanceId
+                        var metadataEntry = archive.CreateEntry($"modules/{moduleId}/Metadata.json", CompressionLevel.Optimal);
+                        using (var writer = new StreamWriter(metadataEntry.Open()))
                         {
-                            await writer.WriteAsync(customDataJson);
+                            var metadata = new
+                            {
+                                ModuleId = moduleId,
+                                InstanceId = instanceId
+                            };
+                            var metadataJson = JsonHelper.Serialize(metadata);
+                            await writer.WriteAsync(metadataJson);
                         }
 
-                        Console.WriteLine($"[ZipProjectService] Saved module: {moduleId}");
+                        Console.WriteLine($"[ZipProjectService] Saved Metadata for: {moduleId}, InstanceId: {instanceId ?? "null"}");
+
+                        // CustomData сохраняем как раньше
+                        if (customData != null && !(customData is string str && string.IsNullOrWhiteSpace(str)))
+                        {
+                            var customDataJson = JsonHelper.Serialize(customData);
+                            var customDataEntry = archive.CreateEntry($"modules/{moduleId}/CustomData.json", CompressionLevel.Optimal);
+                            using (var writer = new StreamWriter(customDataEntry.Open()))
+                            {
+                                await writer.WriteAsync(customDataJson);
+                            }
+
+                            Console.WriteLine($"[ZipProjectService] Saved CustomData for: {moduleId}");
+                        }
                     }
                 }
 
@@ -163,14 +191,14 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     Console.WriteLine($"[ZipProjectService] Loaded project.json: {project.Title}");
 
                     var moduleIds = archive.Entries
-                        .Where(e => e.FullName.StartsWith("modules/") && e.FullName.EndsWith("/customdata.json"))
+                        .Where(e => e.FullName.StartsWith("modules/") && e.FullName.EndsWith("/CustomData.json"))  // ? Заглавная!
                         .Select(e => e.FullName.Split('/')[1])
                         .Distinct()
                         .ToList();
 
                     foreach (var moduleId in moduleIds)
                     {
-                        var customDataEntry = archive.GetEntry($"modules/{moduleId}/customdata.json");
+                        var customDataEntry = archive.GetEntry($"modules/{moduleId}/CustomData.json");
                         if (customDataEntry != null)
                         {
                             using (var reader = new StreamReader(customDataEntry.Open()))

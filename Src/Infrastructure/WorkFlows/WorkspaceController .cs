@@ -13,8 +13,10 @@ using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.Core.Interfaces.Workspace;
 using Writersword.Src.Infrastructure.Dock;
+using Writersword.Src.Infrastructure.Services.WorkModes;
 using Writersword.ViewModels;
 
 namespace Writersword.Src.Infrastructure.Workspace
@@ -36,10 +38,18 @@ namespace Writersword.Src.Infrastructure.Workspace
         private List<WorkMode> _availableWorkModes;
         private readonly List<IDisposable> _subscriptions;
 
+        private readonly IWorkModeService _workModeService;
+
         /// <summary>
         /// Событие изменения workspace
         /// </summary>
         public event EventHandler? WorkspaceChanged;
+
+        /// <summary>
+        /// Получить WorkModeService этого проекта
+        /// </summary>
+        public IWorkModeService GetWorkModeService() => _workModeService;
+
 
         /// <summary>
         /// Конструктор контроллера workspace
@@ -58,6 +68,11 @@ namespace Writersword.Src.Infrastructure.Workspace
             _availableWorkModes = loadedWorkModes;
             _subscriptions = new List<IDisposable>();
 
+            // Создаём СВОЙ экземпляр WorkModeService для ЭТОГО проекта
+            var configService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
+            _workModeService = new WorkModeService(configService);
+            _workModeService.InitializeWorkModes(tab.GetProject().Type, loadedWorkModes);
+
             _activeWorkMode = loadedWorkModes.FirstOrDefault(w => w.IsActive)
                               ?? loadedWorkModes.First();
 
@@ -70,6 +85,7 @@ namespace Writersword.Src.Infrastructure.Workspace
             }
 
             Console.WriteLine($"[WorkspaceController] Created for: {tab.Title}");
+            Console.WriteLine($"[WorkspaceController] Total WorkModes: {_availableWorkModes.Count}, Active: {_activeWorkMode.Title}");
         }
 
         /// <summary>
@@ -290,7 +306,6 @@ namespace Writersword.Src.Infrastructure.Workspace
         {
             Console.WriteLine($"[WorkspaceController] Disposing");
 
-            _autoSave.SaveNowAsync().Wait();
             _autoSave.Stop();
 
             CloseAllFloatWindows();

@@ -100,7 +100,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                     return;
                 }
 
-                var currentConfig = CollectCurrentConfiguration();
+                var currentConfig = await CollectCurrentConfigurationAsync();
 
                 if (currentConfig == null)
                 {
@@ -124,89 +124,147 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
         /// <summary>
         /// Собрать текущую конфигурацию из UI
-        /// ОБНОВЛЕНО: Сериализует структуру из DockFactory в новый формат
+        /// Сохраняет ВСЕ WorkModes, но детали (модули) только для активного
         /// </summary>
-        private WorkspaceLocalConfig? CollectCurrentConfiguration()
+        private async Task<WorkspaceLocalConfig?> CollectCurrentConfigurationAsync()
         {
             try
             {
-                var workModeService = App.Services.GetRequiredService<IWorkModeService>();
-                var activeWorkMode = workModeService.GetActiveWorkMode();
-
-                if (activeWorkMode == null)
+                if (string.IsNullOrEmpty(_currentProjectPath))
                 {
-                    Console.WriteLine("[WorkspaceAutoSave] No active WorkMode");
+                    Console.WriteLine("[WorkspaceAutoSave] No project path");
                     return null;
                 }
 
-                // Сериализуем текущий layout из UI через DockFactory
+                // Получаем WorkModes из активного WorkspaceController проекта
+                var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
+                var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
+
+                if (fileStorage == null)
+                {
+                    Console.WriteLine("[WorkspaceAutoSave] FileStorage not found");
+                    return null;
+                }
+
+                var tabCollection = App.Services.GetRequiredService<ITabCollection>();
+                var activeTab = tabCollection.Tabs?.FirstOrDefault(t => t.FilePath == _currentProjectPath);
+
+                if (activeTab?.Workspace == null)
+                {
+                    Console.WriteLine("[WorkspaceAutoSave] No workspace for project");
+                    return null;
+                }
+
+                var workModeService = activeTab.Workspace.GetWorkModeService();
+                var allWorkModes = workModeService.GetAllWorkModes();
+
+                if (allWorkModes == null || allWorkModes.Count == 0)
+                {
+                    Console.WriteLine("[WorkspaceAutoSave] No WorkModes to save");
+                    return null;
+                }
+
                 var mainVM = App.Services.GetRequiredService<MainWindowViewModel>();
                 var dockFactory = App.Services.GetRequiredService<DockFactory>();
 
-                if (mainVM.DockLayout != null)
+                // Находим активный WorkMode
+                var activeWorkMode = allWorkModes.FirstOrDefault(wm => wm.IsActive);
+
+                Console.WriteLine($"[WorkspaceAutoSave] CollectCurrentConfiguration:");
+                Console.WriteLine($"[WorkspaceAutoSave]   Total WorkModes: {allWorkModes.Count}");
+                Console.WriteLine($"[WorkspaceAutoSave]   ActiveWorkMode: {activeWorkMode?.Title ?? "NULL"}");
+                Console.WriteLine($"[WorkspaceAutoSave]   DockLayout: {(mainVM.DockLayout != null ? "EXISTS" : "NULL")}");
+
+                // Создаём список для сохранения
+                var workModesToSave = new List<WorkMode>();
+
+                foreach (var wm in allWorkModes)
                 {
-                    // Сериализуем layout и получаем обновлённые данные
-                    var (containers, updatedSlots) = dockFactory.SerializeCurrentLayout(mainVM.DockLayout, activeWorkMode);
+                    Console.WriteLine($"[WorkspaceAutoSave] Processing WorkMode: {wm.Title}, IsActive={wm.IsActive}");
 
-                    // ФИЛЬТРАЦИЯ: Оставляем только "свои" модули
-                    var validInstanceIds = activeWorkMode.ModuleSlots
-                        .Where(s => !string.IsNullOrEmpty(s.InstanceId))
-                        .Select(s => s.InstanceId)
-                        .ToHashSet();
-
-                    var filteredSlots = updatedSlots
-                        .Where(s => string.IsNullOrEmpty(s.InstanceId) || validInstanceIds.Contains(s.InstanceId))
-                        .ToList();
-
-                    var foreignCount = updatedSlots.Count - filteredSlots.Count;
-                    if (foreignCount > 0)
+                    if (wm == activeWorkMode && mainVM.DockLayout != null)
                     {
-                        Console.WriteLine($"[WorkspaceAutoSave] FILTERED OUT {foreignCount} foreign modules from slots!");
+                        Console.WriteLine($"[WorkspaceAutoSave]   → Saving as ACTIVE with full data");
+
+                        // Для АКТИВНОГО - сериализуем полный layout с модулями
+                        // ВАЖНО: SerializeCurrentLayout должен вызываться из UI потока
+                        var (containers, updatedSlots) = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            return dockFactory.SerializeCurrentLayout(mainVM.DockLayout, wm);
+                        });
+
+                        // ФИЛЬТРАЦИЯ: Оставляем только "свои" модули
+                        var validInstanceIds = wm.ModuleSlots
+                            .Where(s => !string.IsNullOrEmpty(s.InstanceId))
+                            .Select(s => s.InstanceId)
+                            .ToHashSet();
+
+                        var filteredSlots = updatedSlots
+                            .Where(s => string.IsNullOrEmpty(s.InstanceId) || validInstanceIds.Contains(s.InstanceId))
+                            .ToList();
+
+                        var foreignCount = updatedSlots.Count - filteredSlots.Count;
+                        if (foreignCount > 0)
+                        {
+                            Console.WriteLine($"[WorkspaceAutoSave] FILTERED OUT {foreignCount} foreign modules from slots!");
+                        }
+
+                        // Создаём копию активного WorkMode с полными данными
+                        var activeToSave = new WorkMode
+                        {
+                            Id = wm.Id,
+                            WorkModeId = wm.WorkModeId,
+                            Title = wm.Title,
+                            Icon = wm.Icon,
+                            IsActive = true,
+                            Order = wm.Order,
+                            IsCloseable = wm.IsCloseable,
+                            ModuleSlots = filteredSlots,
+                            Containers = containers
+                        };
+
+                        // DEBUG: Проверяем что создалось
+                        Console.WriteLine($"[WorkspaceAutoSave] DEBUG activeToSave:");
+                        Console.WriteLine($"  Id: {activeToSave.Id}");
+                        Console.WriteLine($"  WorkModeId: {activeToSave.WorkModeId}");
+                        Console.WriteLine($"  Title: {activeToSave.Title}");
+                        Console.WriteLine($"  ModuleSlots.Count: {activeToSave.ModuleSlots?.Count ?? -1}");
+                        Console.WriteLine($"  Containers.Count: {activeToSave.Containers?.Count ?? -1}");
+
+
+                        workModesToSave.Add(activeToSave);
+                        Console.WriteLine($"[WorkspaceAutoSave] Saved ACTIVE WorkMode: {wm.Title} ({containers.Count} containers, {filteredSlots.Count} slots)");
                     }
-
-                    // Обновляем WorkMode
-                    activeWorkMode.Containers = containers;
-                    activeWorkMode.ModuleSlots = filteredSlots;
-
-                    Console.WriteLine($"[WorkspaceAutoSave] Serialized: {containers.Count} containers, {filteredSlots.Count} slots");
-                }
-
-                // Загружаем существующий workspace.json
-                var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
-                var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath!);
-                var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
-
-                WorkspaceLocalConfig? existingConfig = null;
-                if (fileStorage != null)
-                {
-                    existingConfig = workspaceConfigService.LoadFromZip(fileStorage);
-                }
-
-                if (existingConfig == null)
-                {
-                    existingConfig = new WorkspaceLocalConfig
+                    else
                     {
-                        WorkModes = new List<WorkMode>()
-                    };
+                        Console.WriteLine($"[WorkspaceAutoSave]   → Saving as INACTIVE (structure only)");
+
+                        // Для НЕАКТИВНЫХ - только базовая инфа без модулей
+                        var inactiveToSave = new WorkMode
+                        {
+                            Id = wm.Id,
+                            WorkModeId = wm.WorkModeId,
+                            Title = wm.Title,
+                            Icon = wm.Icon,
+                            IsActive = false,
+                            Order = wm.Order,
+                            IsCloseable = wm.IsCloseable,
+                            ModuleSlots = new List<ModuleSlot>(),  // Пусто
+                            Containers = new List<SplitContainer>() // Пусто
+                        };
+
+                        workModesToSave.Add(inactiveToSave);
+                        Console.WriteLine($"[WorkspaceAutoSave] Saved INACTIVE WorkMode: {wm.Title} (structure only)");
+                    }
                 }
 
-                // Обновляем или добавляем активный WorkMode
-                var existingWorkMode = existingConfig.WorkModes
-                    .FirstOrDefault(wm => wm.WorkModeId == activeWorkMode.WorkModeId);
-
-                if (existingWorkMode != null)
+                var config = new WorkspaceLocalConfig
                 {
-                    var index = existingConfig.WorkModes.IndexOf(existingWorkMode);
-                    existingConfig.WorkModes[index] = activeWorkMode;
-                    Console.WriteLine($"[WorkspaceAutoSave] Updated WorkMode: {activeWorkMode.Title}");
-                }
-                else
-                {
-                    existingConfig.WorkModes.Add(activeWorkMode);
-                    Console.WriteLine($"[WorkspaceAutoSave] Added WorkMode: {activeWorkMode.Title}");
-                }
+                    WorkModes = workModesToSave
+                };
 
-                return existingConfig;
+                Console.WriteLine($"[WorkspaceAutoSave] Collected configuration: {config.WorkModes.Count} WorkModes");
+                return config;
             }
             catch (Exception ex)
             {
@@ -239,7 +297,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
                 _debounceSubscription?.Dispose();
 
-                var currentConfig = CollectCurrentConfiguration();
+                var currentConfig = await CollectCurrentConfigurationAsync();
                 if (currentConfig != null)
                 {
                     var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();

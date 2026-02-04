@@ -3,7 +3,6 @@ using System;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
-using Writersword.Core.Models.Modules;
 using Writersword.Modules.Common;
 using Writersword.Modules.Synonyms.ViewModels;
 using Writersword.Src.Modules.Synonyms.Resources;

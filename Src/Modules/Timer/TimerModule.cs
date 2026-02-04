@@ -3,11 +3,9 @@ using System;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
-using Writersword.Core.Models.Modules;
 using Writersword.Modules.Common;
 using Writersword.Modules.Timer.ViewModels;
 using Writersword.Src.Modules.Timer.Resources;
-using Writersword.ViewModels;
 
 namespace Writersword.Modules.Timer
 {

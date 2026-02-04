@@ -11,7 +11,6 @@
 	<UserControl.Resources>
 		<converters:TabBackgroundConverter x:Key="TabBackgroundConverter"/>
 		<converters:TabForegroundConverter x:Key="TabForegroundConverter"/>
-		<converters:TabSeparatorConverter x:Key="TabSeparatorConverter"/>
 	</UserControl.Resources>
 
 	<Border Background="#2D2D30"
@@ -22,7 +21,7 @@
 		<ScrollViewer HorizontalScrollBarVisibility="Auto"
                       VerticalScrollBarVisibility="Disabled">
 
-			<StackPanel Orientation="Horizontal" Spacing="2">
+			<StackPanel Orientation="Horizontal" Spacing="4">
 
 				<ItemsControl ItemsSource="{Binding Tabs}"
 				              x:Name="TabsItemsControl">
@@ -33,110 +32,83 @@
 
 					<ItemsControl.ItemsPanel>
 						<ItemsPanelTemplate>
-							<StackPanel Orientation="Horizontal" Spacing="0"/>
+							<StackPanel Orientation="Horizontal" Spacing="4"/>
 						</ItemsPanelTemplate>
 					</ItemsControl.ItemsPanel>
 
 					<ItemsControl.ItemTemplate>
 						<DataTemplate>
-							<StackPanel Orientation="Horizontal" Spacing="0">
-								<Button Classes="TabButton"
-									    Background="{Binding IsActive, Converter={StaticResource TabBackgroundConverter}}"
-										CornerRadius="8,8,0,0"
-										Padding="12,6,8,6"
-										Width="180"
-										Height="32"
-										BorderThickness="0"
-										HorizontalContentAlignment="Stretch"
-										VerticalContentAlignment="Center"
-										Command="{Binding #TabBarViewRoot.DataContext.ActivateTabCommand}"
-										CommandParameter="{Binding}">
+							<Button Classes="TabButton"
+								    Background="{Binding IsActive, Converter={StaticResource TabBackgroundConverter}}"
+									CornerRadius="8,8,0,0"
+									Padding="12,6,8,6"
+									Width="180"
+									Height="32"
+									BorderThickness="0"
+									HorizontalContentAlignment="Stretch"
+									VerticalContentAlignment="Center"
+									Command="{Binding #TabBarViewRoot.DataContext.ActivateTabCommand}"
+									CommandParameter="{Binding}">
 
-									<Button.RenderTransform>
-										<TranslateTransform X="0" Y="0" />
-									</Button.RenderTransform>
+								<Button.Effect>
+									<DropShadowEffect BlurRadius="0" OffsetX="0" OffsetY="0" Opacity="0" Color="Transparent"/>
+								</Button.Effect>
 
-									<Button.Styles>
-										<Style Selector="Button:pointerover">
-											<Setter Property="Background" Value="#2A2D2E"/>
-										</Style>
-									</Button.Styles>
+								<Button.RenderTransform>
+									<TranslateTransform X="0" Y="0" />
+								</Button.RenderTransform>
 
-									<Grid ColumnDefinitions="*,Auto">
-										<TextBlock Grid.Column="0"
-												   Text="{Binding Title}"
-												   Foreground="{Binding IsActive, Converter={StaticResource TabForegroundConverter}}"
-												   FontSize="12"
-												   VerticalAlignment="Center"
-												   IsHitTestVisible="False"
-												   TextTrimming="CharacterEllipsis"
-												   Margin="0,0,8,0"/>
+								<Button.Styles>
+									<Style Selector="Button:pointerover">
+										<Setter Property="Background" Value="#2A2D2E"/>
+									</Style>
+								</Button.Styles>
 
-										<Button Grid.Column="1"
-												Command="{Binding #TabBarViewRoot.DataContext.CloseTabCommand}"
-												CommandParameter="{Binding}"
-												Background="Transparent"
-												BorderThickness="0"
-												Width="18"
-												Height="18"
-												Padding="0"
-												CornerRadius="3"
-												VerticalAlignment="Center"
-												HorizontalAlignment="Center"
-												Margin="4,0,0,0">
-											<Viewbox Width="10" Height="10">
-												<TextBlock Text="✕"
-														   Foreground="#858585"
-														   FontSize="16"
-														   HorizontalAlignment="Center"
-														   VerticalAlignment="Center"
-														   IsHitTestVisible="False"/>
-											</Viewbox>
-											<Button.Styles>
-												<Style Selector="Button:pointerover /template/ TextBlock">
-													<Setter Property="Foreground" Value="White"/>
-												</Style>
-												<Style Selector="Button:pointerover">
-													<Setter Property="Background" Value="#4A4A4A"/>
-												</Style>
-											</Button.Styles>
-										</Button>
-									</Grid>
+								<Grid ColumnDefinitions="*,Auto">
+									<TextBlock Grid.Column="0"
+											   Text="{Binding Title}"
+											   Foreground="{Binding IsActive, Converter={StaticResource TabForegroundConverter}}"
+											   FontSize="12"
+											   VerticalAlignment="Center"
+											   IsHitTestVisible="False"
+											   TextTrimming="CharacterEllipsis"
+											   Margin="0,0,8,0"/>
 
-								</Button>
+									<Button Grid.Column="1"
+											Command="{Binding #TabBarViewRoot.DataContext.CloseTabCommand}"
+											CommandParameter="{Binding}"
+											Background="Transparent"
+											BorderThickness="0"
+											Width="18"
+											Height="18"
+											Padding="0"
+											CornerRadius="3"
+											VerticalAlignment="Center"
+											HorizontalAlignment="Center"
+											Margin="4,0,0,0">
+										<Viewbox Width="10" Height="10">
+											<TextBlock Text="✕"
+													   Foreground="#858585"
+													   FontSize="16"
+													   HorizontalAlignment="Center"
+													   VerticalAlignment="Center"
+													   IsHitTestVisible="False"/>
+										</Viewbox>
+										<Button.Styles>
+											<Style Selector="Button:pointerover /template/ TextBlock">
+												<Setter Property="Foreground" Value="White"/>
+											</Style>
+											<Style Selector="Button:pointerover">
+												<Setter Property="Background" Value="#4A4A4A"/>
+											</Style>
+										</Button.Styles>
+									</Button>
+								</Grid>
 
-								<!-- Разделитель справа от вкладки -->
-								<Border Width="1" 
-										Height="20" 
-										Background="#3F3F46"
-										VerticalAlignment="Center"
-										Margin="4,0,4,0">
-									<Border.IsVisible>
-										<MultiBinding Converter="{StaticResource TabSeparatorConverter}">
-											<Binding Path="." />
-											<Binding Path="#TabBarViewRoot.DataContext.Tabs" />
-											<Binding Path="#TabBarViewRoot.DataContext.ActiveTab" />
-										</MultiBinding>
-									</Border.IsVisible>
-								</Border>
-							</StackPanel>
+							</Button>
 						</DataTemplate>
 					</ItemsControl.ItemTemplate>
 				</ItemsControl>
-
-				<!-- Разделитель перед кнопкой "+" -->
-				<Border Width="1" 
-						Height="20" 
-						Background="#3F3F46"
-						VerticalAlignment="Center"
-						Margin="0,0,4,0">
-					<Border.IsVisible>
-						<MultiBinding Converter="{StaticResource TabSeparatorConverter}" ConverterParameter="LastTab">
-							<Binding Path="Tabs" />
-							<Binding Path="ActiveTab" />
-						</MultiBinding>
-					</Border.IsVisible>
-				</Border>
 
 				<Button Content="+"
 						Command="{Binding CreateNewTabCommand}"

@@ -6,18 +6,16 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Writersword.Core.Enums;
-using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
-using Writersword.Core.Models.Modules;
 using Writersword.Core.Models.Project;
 using Writersword.Resources.Localization;
 using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.Services.UI;
 using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.Infrastructure.Dock;
 using Writersword.Src.Infrastructure.Services.Storage;
-using Writersword.Src.Infrastructure.Services.WorkModes;
 using Writersword.ViewModels;
 using Writersword.Views;
 
@@ -705,6 +703,13 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                 if (!string.IsNullOrEmpty(filePath))
                 {
+                    // ВАЖНО: Сохраняем workspace ДО dispose
+                    if (tab.Workspace != null)
+                    {
+                        Console.WriteLine($"[ProjectWorkflow] Saving workspace before closing");
+                        await tab.Workspace.SaveWorkspaceAsync();
+                    }
+
                     if (_autoSaveServices.TryGetValue(filePath, out var autoSaveService))
                     {
                         autoSaveService.Dispose();
@@ -723,6 +728,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
                 }
 
                 // Уничтожаем все модули проекта
+                tab.Dispose();
                 tab.Dispose();
                 Console.WriteLine("[ProjectWorkflow] All modules disposed via tab.Dispose()");
 

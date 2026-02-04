@@ -22,11 +22,11 @@ namespace Writersword.Behaviors
     {
         private const double TAB_SPACING = 4;
         private const double DRAG_THRESHOLD = 10;
-        private const double EDGE_BUFFER = 10;
 
         private Point _dragStartPoint;
         private double _currentOffsetX = 0;
         private bool _isDragging = false;
+        private bool _isSwapping = false;
         private Button? _draggedButton = null;
         private ContentPresenter? _draggedPresenter = null;
         private int _originalIndex = -1;
@@ -64,7 +64,7 @@ namespace Writersword.Behaviors
 
         private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
         {
-            if (!e.GetCurrentPoint(AssociatedObject).Properties.IsLeftButtonPressed)
+            if (_isSwapping || !e.GetCurrentPoint(AssociatedObject).Properties.IsLeftButtonPressed)
                 return;
 
             var button = FindTabButton(e.Source);
@@ -91,7 +91,7 @@ namespace Writersword.Behaviors
 
         private void OnPointerMoved(object? sender, PointerEventArgs e)
         {
-            if (_draggedButton == null || AssociatedObject == null)
+            if (_isSwapping || _draggedButton == null || AssociatedObject == null)
                 return;
 
             var currentPoint = e.GetPosition(AssociatedObject);
@@ -121,7 +121,7 @@ namespace Writersword.Behaviors
             UpdateVisualPositions();
         }
 
-        private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+        private async void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
             if (!_isDragging)
             {
@@ -137,6 +137,9 @@ namespace Writersword.Behaviors
             Console.WriteLine($"[TabDragDrop]   Current visual index: {_currentVisualIndex}");
             Console.WriteLine($"[TabDragDrop]   Final offset: {_currentOffsetX:F1}px");
 
+            _isDragging = false;
+            _isSwapping = true;
+
             Console.WriteLine($"[TabDragDrop] Cancelling {_activeAnimations.Count} active animations");
             foreach (var cts in _activeAnimations.Values)
             {
@@ -145,12 +148,23 @@ namespace Writersword.Behaviors
             _activeAnimations.Clear();
             _targetPositions.Clear();
 
+            Console.WriteLine($"[TabDragDrop] === REMOVING ALL TRANSFORMS ===");
+            var allButtons = GetAllButtons();
+            Console.WriteLine($"[TabDragDrop]   Found {allButtons.Count} buttons");
+            foreach (var button in allButtons)
+            {
+                Console.WriteLine($"[TabDragDrop]     Removing transform from button");
+                button.RenderTransform = null;  // УБИРАЕМ полностью, не сбрасываем!
+                button.Transitions = null;
+            }
+
             var viewModel = AssociatedObject?.DataContext as TabBarViewModel;
             if (viewModel == null)
             {
                 Console.WriteLine($"[TabDragDrop] ERROR: ViewModel is null");
                 StopDragging();
                 ResetState();
+                _isSwapping = false;
                 return;
             }
 
@@ -180,50 +194,15 @@ namespace Writersword.Behaviors
                 }
 
                 viewModel.SaveTabsOrder();
-
-                // Ждём завершения ВСЕХ анимаций перед reset'ом
-                Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
-                {
-                    // Даём время анимациям полностью завершиться
-                    await Task.Delay(250);
-
-                    Console.WriteLine($"[TabDragDrop] === RESETTING ALL TRANSFORMS (AFTER UI UPDATE) ===");
-                    var allButtons = GetAllButtons();
-                    Console.WriteLine($"[TabDragDrop]   Total buttons AFTER swap: {allButtons.Count}");
-
-                    for (int i = 0; i < allButtons.Count; i++)
-                    {
-                        var button = allButtons[i];
-                        var transform = button.RenderTransform as TranslateTransform;
-                        if (transform != null)
-                        {
-                            Console.WriteLine($"[TabDragDrop]     Button {i}: offset={transform.X:F1} -> 0");
-                            transform.X = 0;
-                            transform.Y = 0;
-                        }
-                        button.Transitions = null;
-                    }
-
-                    Console.WriteLine($"[TabDragDrop] === RESET COMPLETE ===");
-                }, Avalonia.Threading.DispatcherPriority.Background);
             }
             else
             {
                 Console.WriteLine($"[TabDragDrop] No swap needed (same position)");
-                if (_draggedButton != null)
-                {
-                    var transform = _draggedButton.RenderTransform as TranslateTransform;
-                    if (transform != null)
-                    {
-                        Console.WriteLine($"[TabDragDrop]   Resetting dragged button: offset={transform.X:F1} -> 0");
-                        transform.X = 0;
-                        transform.Y = 0;
-                    }
-                }
             }
 
             StopDragging();
             ResetState();
+            _isSwapping = false;
             Console.WriteLine($"[TabDragDrop] === DRAG COMPLETE ===");
         }
 
@@ -245,8 +224,8 @@ namespace Writersword.Behaviors
                 return;
 
             Console.WriteLine($"[TabDragDrop] === START DRAGGING ===");
-            Console.WriteLine($"[TabDragDrop]   Cancelling {_activeAnimations.Count} previous animations");
 
+            Console.WriteLine($"[TabDragDrop]   Cancelling {_activeAnimations.Count} previous animations");
             foreach (var cts in _activeAnimations.Values)
             {
                 cts.Cancel();
@@ -293,7 +272,6 @@ namespace Writersword.Behaviors
                 }
             }
 
-            ResetAllTransforms();
             Console.WriteLine($"[TabDragDrop] === STOP COMPLETE ===");
         }
 
@@ -374,7 +352,7 @@ namespace Writersword.Behaviors
             if (_activeAnimations.ContainsKey(transform))
             {
                 _activeAnimations[transform].Cancel();
-                _activeAnimations.Remove(transform);  // ← ИСПРАВЛЕНО
+                _activeAnimations.Remove(transform);
             }
 
             var cts = new CancellationTokenSource();
@@ -436,33 +414,13 @@ namespace Writersword.Behaviors
 
             var tabsCount = viewModel.Tabs.Count;
 
-            // Считаем offset в "позициях" (сколько вкладок прошли)
             var positionsOffset = _currentOffsetX / (_tabWidth + TAB_SPACING);
 
-            // Округляем до ближайшей позиции (0.5 = swap, -0.5 = swap)
             int newIndex = _originalIndex + (int)Math.Round(positionsOffset);
 
-            // Ограничиваем границами
             newIndex = Math.Max(0, Math.Min(newIndex, tabsCount - 1));
 
             return newIndex;
-        }
-
-        private void ResetAllTransforms()
-        {
-            var allButtons = GetAllButtons();
-
-            foreach (var button in allButtons)
-            {
-                var transform = button.RenderTransform as TranslateTransform;
-                if (transform != null)
-                {
-                    transform.X = 0;
-                    transform.Y = 0;
-                }
-
-                button.Transitions = null;
-            }
         }
 
         private TranslateTransform GetOrCreateTransform(Button button)
