@@ -1,4 +1,6 @@
-﻿using ReactiveUI;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
 
@@ -10,6 +12,8 @@ namespace Writersword.Modules.Synonyms.ViewModels
     /// </summary>
     public class SynonymsViewModel : ReactiveObject
     {
+        private readonly ILogger<SynonymsViewModel> _logger;
+
         /// <summary>Текст поискового запроса</summary>
         private string _searchText = string.Empty;
 
@@ -23,7 +27,7 @@ namespace Writersword.Modules.Synonyms.ViewModels
             set
             {
                 this.RaiseAndSetIfChanged(ref _searchText, value);
-                LoadSynonyms(); // Загружаем синонимы при изменении текста
+                LoadSynonyms();
             }
         }
 
@@ -39,7 +43,8 @@ namespace Writersword.Modules.Synonyms.ViewModels
         /// </summary>
         public SynonymsViewModel()
         {
-            // Заглушка - добавляем примеры синонимов
+            _logger = App.Services.GetService<ILogger<SynonymsViewModel>>()!;
+
             Synonyms.Add("писать");
             Synonyms.Add("сочинять");
             Synonyms.Add("излагать");
@@ -53,9 +58,7 @@ namespace Writersword.Modules.Synonyms.ViewModels
         /// </summary>
         private void LoadSynonyms()
         {
-            // TODO: Реальная загрузка синонимов через API
-            // Например: var synonyms = await _apiService.GetSynonyms(SearchText);
-            Console.WriteLine($"[SynonymsViewModel] Searching for: {SearchText}");
+            _logger.LogDebug("Searching for: {SearchText}", SearchText);
         }
     }
 }

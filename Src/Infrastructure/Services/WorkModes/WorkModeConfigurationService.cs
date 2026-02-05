@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,6 +18,13 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
     /// </summary>
     public class WorkModeConfigurationService : IWorkModeConfigurationService
     {
+        private readonly ILogger<WorkModeConfigurationService> _logger;
+
+        public WorkModeConfigurationService()
+        {
+            _logger = App.Services.GetService<ILogger<WorkModeConfigurationService>>()!;
+        }
+
         /// <summary>
         /// Загрузить конфигурацию для проекта
         /// Приоритет: LOCAL (workspace.json в ZIP) → GLOBAL (Settings.json) → DEFAULT (hardcoded)
@@ -29,7 +37,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 var localWorkModes = LoadLocalConfiguration(fileStorage);
                 if (localWorkModes != null && localWorkModes.Count > 0)
                 {
-                    Console.WriteLine($"[WorkModeConfigService] Using LOCAL configuration ({localWorkModes.Count} modes)");
+                    _logger.LogDebug("Using LOCAL configuration ({Count} modes)", localWorkModes.Count);
                     return localWorkModes;
                 }
             }
@@ -38,12 +46,12 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             var globalWorkModes = LoadGlobalConfiguration(projectType);
             if (globalWorkModes != null && globalWorkModes.Count > 0)
             {
-                Console.WriteLine($"[WorkModeConfigService] Using GLOBAL configuration ({globalWorkModes.Count} modes)");
+                _logger.LogDebug("Using GLOBAL configuration ({Count} modes)", globalWorkModes.Count);
                 return globalWorkModes;
             }
 
             // 3. Если нет глобальной → используем дефолтную (hardcoded) конфигурацию
-            Console.WriteLine($"[WorkModeConfigService] Using DEFAULT configuration");
+            _logger.LogDebug("Using DEFAULT configuration");
             return LoadDefaultConfiguration(projectType);
         }
 
@@ -63,7 +71,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
             if (registeredWorkModes == null || registeredWorkModes.Count == 0)
             {
-                Console.WriteLine($"[WorkModeConfigService] No WorkModes registered for project type: {projectType}");
+                _logger.LogWarning("No WorkModes registered for project type: {ProjectType}", projectType);
 
                 // FALLBACK: Хардкод для Editor (если реестр пуст)
                 return CreateFallbackEditorMode();
@@ -80,10 +88,10 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
                 workModes.Add(workMode);
 
-                Console.WriteLine($"[WorkModeConfigService] Loaded default config for: {workMode.Title}");
+                _logger.LogDebug("Loaded default config for: {Title}", workMode.Title);
             }
 
-            Console.WriteLine($"[WorkModeConfigService] Created DEFAULT configuration with {workModes.Count} modes");
+            _logger.LogDebug("Created DEFAULT configuration with {Count} modes", workModes.Count);
             return workModes;
         }
 
@@ -131,7 +139,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
             workModes.Add(editorMode);
 
-            Console.WriteLine($"[WorkModeConfigService] Created FALLBACK configuration");
+            _logger.LogDebug("Created FALLBACK configuration");
             return workModes;
         }
 
@@ -148,16 +156,16 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
                 if (workspaceConfig == null)
                 {
-                    Console.WriteLine($"[WorkModeConfigService] No global config for: {projectType}");
+                    _logger.LogDebug("No global config for: {ProjectType}", projectType);
                     return null;
                 }
 
-                Console.WriteLine($"[WorkModeConfigService] Loading global config: {workspaceConfig.WorkModes.Count} modes");
+                _logger.LogDebug("Loading global config: {Count} modes", workspaceConfig.WorkModes.Count);
                 return workspaceConfig.WorkModes;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[WorkModeConfigService] Error loading global config: {ex.Message}");
+                _logger.LogError(ex, "Error loading global config");
                 return null;
             }
         }
@@ -175,11 +183,11 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
                 if (config == null)
                 {
-                    Console.WriteLine($"[WorkModeConfigService] No local config in ZIP");
+                    _logger.LogDebug("No local config in ZIP");
                     return null;
                 }
 
-                Console.WriteLine($"[WorkModeConfigService] Loaded local config: {config.WorkModes.Count} modes");
+                _logger.LogDebug("Loaded local config: {Count} modes", config.WorkModes.Count);
 
                 // Восстанавливаем метаданные модулей из дефолтной конфигурации
                 RestoreModuleMetadata(config.WorkModes);
@@ -191,7 +199,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[WorkModeConfigService] Error loading local config: {ex.Message}");
+                _logger.LogError(ex, "Error loading local config");
                 return null;
             }
         }
@@ -209,7 +217,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 // Если WorkMode пустой - восстанавливаем дефолтную конфигурацию
                 if (workMode.ModuleSlots == null || workMode.ModuleSlots.Count == 0)
                 {
-                    Console.WriteLine($"[WorkModeConfigService] WorkMode '{workMode.Title}' is empty, restoring defaults");
+                    _logger.LogDebug("WorkMode '{Title}' is empty, restoring defaults", workMode.Title);
 
                     var registeredWorkMode = workModeRegistry.GetWorkMode(workMode.WorkModeId);
 
@@ -221,11 +229,11 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                         workMode.ModuleSlots = new List<ModuleSlot>(defaultConfig.ModuleSlots);
                         workMode.Containers = new List<SplitContainer>(defaultConfig.Containers);
 
-                        Console.WriteLine($"[WorkModeConfigService] Restored {workMode.ModuleSlots.Count} slots and {workMode.Containers.Count} containers for '{workMode.Title}'");
+                        _logger.LogDebug("Restored {SlotsCount} slots and {ContainersCount} containers for '{Title}'", workMode.ModuleSlots.Count, workMode.Containers.Count, workMode.Title);
                     }
                     else
                     {
-                        Console.WriteLine($"[WorkModeConfigService] WARNING: WorkMode not registered: {workMode.WorkModeId}");
+                        _logger.LogWarning("WorkMode not registered: {WorkModeId}", workMode.WorkModeId);
                     }
                 }
             }
@@ -247,7 +255,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
                 if (registeredWorkMode == null)
                 {
-                    Console.WriteLine($"[WorkModeConfigService] WorkMode not registered: {workMode.WorkModeId}");
+                    _logger.LogWarning("WorkMode not registered: {WorkModeId}", workMode.WorkModeId);
                     continue;
                 }
 
@@ -268,11 +276,11 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                         slot.MinHeight = defaultSlot.MinHeight;
                         slot.PreferredPosition = defaultSlot.PreferredPosition;
 
-                        Console.WriteLine($"[WorkModeConfigService] Restored metadata for {slot.ModuleId}: IsCloseable={slot.IsCloseable}");
+                        _logger.LogDebug("Restored metadata for {ModuleId}: IsCloseable={IsCloseable}", slot.ModuleId, slot.IsCloseable);
                     }
                     else
                     {
-                        Console.WriteLine($"[WorkModeConfigService] WARNING: No default config for module: {slot.ModuleId}");
+                        _logger.LogWarning("No default config for module: {ModuleId}", slot.ModuleId);
                     }
                 }
             }
@@ -290,7 +298,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
             if (workMode == null)
             {
-                Console.WriteLine($"[WorkModeConfigService] WorkMode not found: {workModeId}");
+                _logger.LogWarning("WorkMode not found: {WorkModeId}", workModeId);
                 return true; // Если WorkMode не найден - разрешаем удаление
             }
 
@@ -298,13 +306,13 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             var moduleSlot = workMode.ModuleSlots.FirstOrDefault(ms => ms.ModuleId == moduleId);
             if (moduleSlot == null)
             {
-                Console.WriteLine($"[WorkModeConfigService] Module not found in WorkMode: {moduleId}");
+                _logger.LogDebug("Module not found in WorkMode: {ModuleId}", moduleId);
                 return true; // Модуль не найден в дефолтной конфигурации - можно удалить
             }
 
             // Если модуль IsCloseable=false - его нельзя удалить
             bool canRemove = moduleSlot.IsCloseable;
-            Console.WriteLine($"[WorkModeConfigService] CanRemoveModule({workModeId}, {moduleId}): {canRemove}");
+            _logger.LogDebug("CanRemoveModule({WorkModeId}, {ModuleId}): {CanRemove}", workModeId, moduleId, canRemove);
             return canRemove;
         }
     }

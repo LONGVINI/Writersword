@@ -367,3 +367,6 @@ FodyWeavers.xsd
 *.writersword/export/
 *.writersword/history/
 app.manifest
+
+# Serilog logs
+logs/

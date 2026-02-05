@@ -1,4 +1,6 @@
-﻿using ReactiveUI;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using ReactiveUI;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,6 +17,7 @@ namespace Writersword.ViewModels.Components
     /// </summary>
     public class ModulePanelViewModel : ViewModelBase
     {
+        private readonly ILogger<ModulePanelViewModel> _logger;
         private readonly ModuleFactory _moduleFactory;
         private List<ModuleItemViewModel> _availableModules = new();
         private WorkMode? _currentWorkMode;
@@ -37,12 +40,12 @@ namespace Writersword.ViewModels.Components
 
         public ModulePanelViewModel(ModuleFactory moduleFactory)
         {
+            _logger = App.Services.GetService<ILogger<ModulePanelViewModel>>()!;
             _moduleFactory = moduleFactory;
 
-            // Команда переключения модуля
             ToggleModuleCommand = ReactiveCommand.Create<ModuleItemViewModel>(ToggleModule);
 
-            Console.WriteLine("[ModulePanelViewModel] Initialized");
+            _logger.LogDebug("Initialized");
         }
 
         /// <summary>
@@ -53,7 +56,7 @@ namespace Writersword.ViewModels.Components
         {
             _onModuleAdded = onModuleAdded;
             _onModuleRemoved = onModuleRemoved;
-            Console.WriteLine("[ModulePanelViewModel] Module handlers set");
+            _logger.LogDebug("Module handlers set");
         }
 
         /// <summary>
@@ -64,15 +67,12 @@ namespace Writersword.ViewModels.Components
         {
             _currentWorkMode = workMode;
 
-            // Получаем все доступные модули из фабрики
             var allModules = _moduleFactory.GetAllModuleMetadata();
 
-            // Создаём список ModuleItemViewModel
             var moduleItems = new List<ModuleItemViewModel>();
 
             foreach (var metadata in allModules)
             {
-                // Проверяем есть ли модуль в текущем WorkMode
                 var moduleSlot = workMode.ModuleSlots.FirstOrDefault(ms => ms.ModuleId == metadata.ModuleId);
 
                 var item = new ModuleItemViewModel
@@ -87,13 +87,12 @@ namespace Writersword.ViewModels.Components
                 moduleItems.Add(item);
             }
 
-            // Сортируем: сначала активные, потом по алфавиту
             AvailableModules = moduleItems
                 .OrderByDescending(m => m.IsActive)
                 .ThenBy(m => m.DisplayName)
                 .ToList();
 
-            Console.WriteLine($"[ModulePanelViewModel] Loaded {AvailableModules.Count} modules for WorkMode: {workMode.Title}");
+            _logger.LogDebug("Loaded {Count} modules for WorkMode: {WorkModeTitle}", AvailableModules.Count, workMode.Title);
         }
 
         /// <summary>
@@ -103,7 +102,7 @@ namespace Writersword.ViewModels.Components
         {
             _currentWorkMode = null;
             AvailableModules = new List<ModuleItemViewModel>();
-            Console.WriteLine("[ModulePanelViewModel] Cleared all modules");
+            _logger.LogDebug("Cleared all modules");
         }
 
         /// <summary>
@@ -112,29 +111,26 @@ namespace Writersword.ViewModels.Components
         /// </summary>
         public void OpenModule(string moduleId)
         {
-            Console.WriteLine($"[ModulePanelViewModel] OpenModule: {moduleId}");
+            _logger.LogDebug("OpenModule: {ModuleId}", moduleId);
 
             var moduleItem = AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
 
             if (moduleItem == null)
             {
-                Console.WriteLine($"[ModulePanelViewModel] Module not found: {moduleId}");
+                _logger.LogWarning("Module not found: {ModuleId}", moduleId);
                 return;
             }
 
-            // Если уже активен - ничего не делаем
             if (moduleItem.IsActive)
             {
-                Console.WriteLine($"[ModulePanelViewModel] Module already active");
+                _logger.LogDebug("Module already active");
                 return;
             }
 
-            // Открываем модуль
-            Console.WriteLine($"[ModulePanelViewModel] Opening module");
+            _logger.LogDebug("Opening module");
             _onModuleAdded?.Invoke(moduleId);
             moduleItem.IsActive = true;
 
-            // Пересортируем список (активные наверх)
             AvailableModules = AvailableModules
                 .OrderByDescending(m => m.IsActive)
                 .ThenBy(m => m.DisplayName)
@@ -148,53 +144,48 @@ namespace Writersword.ViewModels.Components
         /// </summary>
         public void MarkModuleAsClosed(string moduleId)
         {
-            Console.WriteLine($"[ModulePanelViewModel] Marking module as closed: {moduleId}");
+            _logger.LogDebug("Marking module as closed: {ModuleId}", moduleId);
 
             var moduleItem = AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
             if (moduleItem != null)
             {
                 moduleItem.IsActive = false;
 
-                // Пересортируем список (активные наверх)
                 AvailableModules = AvailableModules
                     .OrderByDescending(m => m.IsActive)
                     .ThenBy(m => m.DisplayName)
                     .ToList();
 
-                Console.WriteLine($"[ModulePanelViewModel] Module marked as closed: {moduleId}");
+                _logger.LogDebug("Module marked as closed: {ModuleId}", moduleId);
             }
             else
             {
-                Console.WriteLine($"[ModulePanelViewModel] WARNING: Module not found in list: {moduleId}");
+                _logger.LogWarning("Module not found in list: {ModuleId}", moduleId);
             }
         }
 
         /// <summary>Переключить видимость модуля (из панели модулей)</summary>
         private void ToggleModule(ModuleItemViewModel module)
         {
-            // Обязательные модули нельзя выключить
             if (module.IsRequired)
             {
-                Console.WriteLine($"[ModulePanelViewModel] Cannot toggle required module: {module.DisplayName}");
+                _logger.LogDebug("Cannot toggle required module: {DisplayName}", module.DisplayName);
                 return;
             }
 
-            Console.WriteLine($"[ModulePanelViewModel] Toggling module: {module.DisplayName} (current: {module.IsActive})");
+            _logger.LogDebug("Toggling module: {DisplayName} (current: {IsActive})", module.DisplayName, module.IsActive);
 
             if (module.IsActive)
             {
-                // Выключаем модуль
                 _onModuleRemoved?.Invoke(module.ModuleId);
                 module.IsActive = false;
             }
             else
             {
-                // Включаем модуль
                 _onModuleAdded?.Invoke(module.ModuleId);
                 module.IsActive = true;
             }
 
-            // Пересортируем список (активные наверх)
             AvailableModules = AvailableModules
                 .OrderByDescending(m => m.IsActive)
                 .ThenBy(m => m.DisplayName)

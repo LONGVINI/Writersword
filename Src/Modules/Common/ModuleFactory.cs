@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Writersword.Core.Interfaces.Modules;
@@ -11,13 +13,19 @@ namespace Writersword.Modules.Common
     /// </summary>
     public class ModuleFactory
     {
+        private readonly ILogger<ModuleFactory> _logger;
         private readonly Dictionary<string, Func<string?, IModule>> _moduleCreators = new();
+
+        public ModuleFactory()
+        {
+            _logger = App.Services.GetService<ILogger<ModuleFactory>>()!;
+        }
 
         /// <summary>Зарегистрировать создатель модуля</summary>
         public void Register(string moduleId, Func<string?, IModule> creator)
         {
             _moduleCreators[moduleId] = creator;
-            Console.WriteLine($"[ModuleFactory] Registered: {moduleId}");
+            _logger.LogDebug("Registered: {ModuleId}", moduleId);
         }
 
         /// <summary>Создать экземпляр модуля</summary>
@@ -28,11 +36,11 @@ namespace Writersword.Modules.Common
             if (_moduleCreators.TryGetValue(moduleId, out var creator))
             {
                 var module = creator(instanceId);
-                Console.WriteLine($"[ModuleFactory] Created: {moduleId} (ID: {module.InstanceId})");
+                _logger.LogDebug("Created: {ModuleId} (ID: {InstanceId})", moduleId, module.InstanceId);
                 return module;
             }
 
-            Console.WriteLine($"[ModuleFactory] ERROR: Module not registered: {moduleId}");
+            _logger.LogError("Module not registered: {ModuleId}", moduleId);
             return null;
         }
 
@@ -67,7 +75,7 @@ namespace Writersword.Modules.Common
                 }
             }
 
-            Console.WriteLine($"[ModuleFactory] Loaded metadata for {metadataList.Count} module types");
+            _logger.LogDebug("Loaded metadata for {Count} module types", metadataList.Count);
             return metadataList;
         }
     }

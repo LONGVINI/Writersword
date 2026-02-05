@@ -5,6 +5,8 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 using Avalonia.Xaml.Interactivity;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -20,6 +22,8 @@ namespace Writersword.Behaviors
     /// </summary>
     public class TabDragDropBehavior : Behavior<ItemsControl>
     {
+        private readonly ILogger<TabDragDropBehavior> _logger;
+
         private const double TAB_SPACING = 4;
         private const double DRAG_THRESHOLD = 10;
 
@@ -36,6 +40,11 @@ namespace Writersword.Behaviors
         private Dictionary<TranslateTransform, CancellationTokenSource> _activeAnimations = new Dictionary<TranslateTransform, CancellationTokenSource>();
         private Dictionary<TranslateTransform, double> _targetPositions = new Dictionary<TranslateTransform, double>();
 
+        public TabDragDropBehavior()
+        {
+            _logger = App.Services.GetService<ILogger<TabDragDropBehavior>>()!;
+        }
+
         protected override void OnAttached()
         {
             base.OnAttached();
@@ -46,7 +55,7 @@ namespace Writersword.Behaviors
                 AssociatedObject.AddHandler(InputElement.PointerMovedEvent, OnPointerMoved, handledEventsToo: true);
                 AssociatedObject.AddHandler(InputElement.PointerReleasedEvent, OnPointerReleased, handledEventsToo: true);
 
-                Console.WriteLine("[TabDragDrop] Behavior attached");
+                _logger.LogDebug("Behavior attached");
             }
         }
 
@@ -62,6 +71,9 @@ namespace Writersword.Behaviors
             }
         }
 
+        /// <summary>
+        /// Обработчик нажатия кнопки мыши
+        /// </summary>
         private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (_isSwapping || !e.GetCurrentPoint(AssociatedObject).Properties.IsLeftButtonPressed)
@@ -70,7 +82,7 @@ namespace Writersword.Behaviors
             var button = FindTabButton(e.Source);
             if (button == null)
             {
-                Console.WriteLine("[TabDragDrop] Button is null, ignoring press");
+                _logger.LogDebug("Button is null, ignoring press");
                 return;
             }
 
@@ -83,12 +95,12 @@ namespace Writersword.Behaviors
             _tabWidth = button.Bounds.Width;
             _isDragging = false;
 
-            Console.WriteLine($"[TabDragDrop] === POINTER PRESSED ===");
-            Console.WriteLine($"[TabDragDrop]   Index: {_originalIndex}");
-            Console.WriteLine($"[TabDragDrop]   Tab width: {_tabWidth}");
-            Console.WriteLine($"[TabDragDrop]   Start point: {_dragStartPoint}");
+            _logger.LogDebug("Pointer pressed - Index: {Index}, Tab width: {Width}, Start point: {Point}", _originalIndex, _tabWidth, _dragStartPoint);
         }
 
+        /// <summary>
+        /// Обработчик движения мыши
+        /// </summary>
         private void OnPointerMoved(object? sender, PointerEventArgs e)
         {
             if (_isSwapping || _draggedButton == null || AssociatedObject == null)
@@ -101,7 +113,7 @@ namespace Writersword.Behaviors
             {
                 if (Math.Abs(rawOffsetX) > DRAG_THRESHOLD)
                 {
-                    Console.WriteLine($"[TabDragDrop] Threshold exceeded: {Math.Abs(rawOffsetX):F1}px");
+                    _logger.LogDebug("Threshold exceeded: {Offset:F1}px", Math.Abs(rawOffsetX));
                     StartDragging();
                 }
                 return;
@@ -121,6 +133,9 @@ namespace Writersword.Behaviors
             UpdateVisualPositions();
         }
 
+        /// <summary>
+        /// Обработчик отпускания кнопки мыши
+        /// </summary>
         private async void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
             if (!_isDragging)
@@ -132,15 +147,13 @@ namespace Writersword.Behaviors
                 return;
             }
 
-            Console.WriteLine($"[TabDragDrop] === POINTER RELEASED ===");
-            Console.WriteLine($"[TabDragDrop]   Original index: {_originalIndex}");
-            Console.WriteLine($"[TabDragDrop]   Current visual index: {_currentVisualIndex}");
-            Console.WriteLine($"[TabDragDrop]   Final offset: {_currentOffsetX:F1}px");
+            _logger.LogDebug("Pointer released - Original index: {OriginalIndex}, Current visual index: {CurrentIndex}, Final offset: {Offset:F1}px",
+                _originalIndex, _currentVisualIndex, _currentOffsetX);
 
             _isDragging = false;
             _isSwapping = true;
 
-            Console.WriteLine($"[TabDragDrop] Cancelling {_activeAnimations.Count} active animations");
+            _logger.LogDebug("Cancelling {Count} active animations", _activeAnimations.Count);
             foreach (var cts in _activeAnimations.Values)
             {
                 cts.Cancel();
@@ -148,20 +161,20 @@ namespace Writersword.Behaviors
             _activeAnimations.Clear();
             _targetPositions.Clear();
 
-            Console.WriteLine($"[TabDragDrop] === REMOVING ALL TRANSFORMS ===");
+            _logger.LogDebug("Removing all transforms");
             var allButtons = GetAllButtons();
-            Console.WriteLine($"[TabDragDrop]   Found {allButtons.Count} buttons");
+            _logger.LogDebug("Found {Count} buttons", allButtons.Count);
             foreach (var button in allButtons)
             {
-                Console.WriteLine($"[TabDragDrop]     Removing transform from button");
-                button.RenderTransform = null;  // УБИРАЕМ полностью, не сбрасываем!
+                _logger.LogDebug("Removing transform from button");
+                button.RenderTransform = null;
                 button.Transitions = null;
             }
 
             var viewModel = AssociatedObject?.DataContext as TabBarViewModel;
             if (viewModel == null)
             {
-                Console.WriteLine($"[TabDragDrop] ERROR: ViewModel is null");
+                _logger.LogError("ViewModel is null");
                 StopDragging();
                 ResetState();
                 _isSwapping = false;
@@ -170,25 +183,23 @@ namespace Writersword.Behaviors
 
             if (_currentVisualIndex != _originalIndex)
             {
-                Console.WriteLine($"[TabDragDrop] === APPLYING SWAP ===");
-                Console.WriteLine($"[TabDragDrop]   From: {_originalIndex}");
-                Console.WriteLine($"[TabDragDrop]   To: {_currentVisualIndex}");
+                _logger.LogDebug("Applying swap - From: {From}, To: {To}", _originalIndex, _currentVisualIndex);
 
                 if (_currentVisualIndex > _originalIndex)
                 {
-                    Console.WriteLine($"[TabDragDrop]   Direction: RIGHT (forward swaps)");
+                    _logger.LogDebug("Direction: RIGHT (forward swaps)");
                     for (int i = _originalIndex; i < _currentVisualIndex; i++)
                     {
-                        Console.WriteLine($"[TabDragDrop]     Swap: {i} <-> {i + 1}");
+                        _logger.LogDebug("Swap: {I} <-> {Next}", i, i + 1);
                         viewModel.SwapTabs(i, i + 1);
                     }
                 }
                 else
                 {
-                    Console.WriteLine($"[TabDragDrop]   Direction: LEFT (backward swaps)");
+                    _logger.LogDebug("Direction: LEFT (backward swaps)");
                     for (int i = _originalIndex; i > _currentVisualIndex; i--)
                     {
-                        Console.WriteLine($"[TabDragDrop]     Swap: {i} <-> {i - 1}");
+                        _logger.LogDebug("Swap: {I} <-> {Prev}", i, i - 1);
                         viewModel.SwapTabs(i, i - 1);
                     }
                 }
@@ -197,15 +208,18 @@ namespace Writersword.Behaviors
             }
             else
             {
-                Console.WriteLine($"[TabDragDrop] No swap needed (same position)");
+                _logger.LogDebug("No swap needed (same position)");
             }
 
             StopDragging();
             ResetState();
             _isSwapping = false;
-            Console.WriteLine($"[TabDragDrop] === DRAG COMPLETE ===");
+            _logger.LogDebug("Drag complete");
         }
 
+        /// <summary>
+        /// Сбросить состояние поведения
+        /// </summary>
         private void ResetState()
         {
             _isDragging = false;
@@ -216,6 +230,9 @@ namespace Writersword.Behaviors
             _currentOffsetX = 0;
         }
 
+        /// <summary>
+        /// Начать перетаскивание
+        /// </summary>
         private void StartDragging()
         {
             _isDragging = true;
@@ -223,9 +240,9 @@ namespace Writersword.Behaviors
             if (_draggedButton == null)
                 return;
 
-            Console.WriteLine($"[TabDragDrop] === START DRAGGING ===");
+            _logger.LogDebug("Start dragging");
 
-            Console.WriteLine($"[TabDragDrop]   Cancelling {_activeAnimations.Count} previous animations");
+            _logger.LogDebug("Cancelling {Count} previous animations", _activeAnimations.Count);
             foreach (var cts in _activeAnimations.Values)
             {
                 cts.Cancel();
@@ -237,31 +254,34 @@ namespace Writersword.Behaviors
             if (viewModel != null && _draggedButton.DataContext is DocumentTabViewModel tab)
             {
                 viewModel.ActiveTab = tab;
-                Console.WriteLine($"[TabDragDrop]   Activated tab: {tab.Title}");
+                _logger.LogDebug("Activated tab: {Title}", tab.Title);
             }
 
             if (_draggedPresenter != null)
             {
                 _draggedPresenter.ZIndex = 1000;
-                Console.WriteLine($"[TabDragDrop]   Set ZIndex=1000 on ContentPresenter");
+                _logger.LogDebug("Set ZIndex=1000 on ContentPresenter");
             }
 
             _draggedButton.Transitions = null;
-            Console.WriteLine($"[TabDragDrop] === DRAG STARTED ===");
+            _logger.LogDebug("Drag started");
         }
 
+        /// <summary>
+        /// Остановить перетаскивание
+        /// </summary>
         private void StopDragging()
         {
-            Console.WriteLine($"[TabDragDrop] === STOP DRAGGING ===");
+            _logger.LogDebug("Stop dragging");
 
             if (_draggedPresenter != null)
             {
                 _draggedPresenter.ZIndex = 0;
-                Console.WriteLine($"[TabDragDrop]   Reset dragged presenter ZIndex to 0");
+                _logger.LogDebug("Reset dragged presenter ZIndex to 0");
             }
 
             var allButtons = GetAllButtons();
-            Console.WriteLine($"[TabDragDrop]   Resetting ZIndex for {allButtons.Count} buttons");
+            _logger.LogDebug("Resetting ZIndex for {Count} buttons", allButtons.Count);
 
             foreach (var button in allButtons)
             {
@@ -272,9 +292,12 @@ namespace Writersword.Behaviors
                 }
             }
 
-            Console.WriteLine($"[TabDragDrop] === STOP COMPLETE ===");
+            _logger.LogDebug("Stop complete");
         }
 
+        /// <summary>
+        /// Обновить позицию перетаскиваемой кнопки
+        /// </summary>
         private void UpdateDraggedButton()
         {
             if (_draggedButton == null)
@@ -285,6 +308,9 @@ namespace Writersword.Behaviors
             transform.Y = 0;
         }
 
+        /// <summary>
+        /// Обновить визуальные позиции всех кнопок
+        /// </summary>
         private void UpdateVisualPositions()
         {
             if (_originalIndex == -1 || AssociatedObject == null)
@@ -302,10 +328,7 @@ namespace Writersword.Behaviors
 
             if (newVisualIndex != _currentVisualIndex)
             {
-                Console.WriteLine($"[TabDragDrop] === VISUAL INDEX CHANGED ===");
-                Console.WriteLine($"[TabDragDrop]   From: {_currentVisualIndex}");
-                Console.WriteLine($"[TabDragDrop]   To: {newVisualIndex}");
-                Console.WriteLine($"[TabDragDrop]   Offset: {_currentOffsetX:F1}px");
+                _logger.LogDebug("Visual index changed - From: {From}, To: {To}, Offset: {Offset:F1}px", _currentVisualIndex, newVisualIndex, _currentOffsetX);
                 _currentVisualIndex = newVisualIndex;
             }
 
@@ -337,7 +360,7 @@ namespace Writersword.Behaviors
                 if (!_targetPositions.ContainsKey(transform) || Math.Abs(_targetPositions[transform] - targetOffset) > 0.1)
                 {
                     var oldTarget = _targetPositions.ContainsKey(transform) ? _targetPositions[transform] : transform.X;
-                    Console.WriteLine($"[TabDragDrop]   Button {i}: animating {oldTarget:F1} -> {targetOffset:F1}");
+                    _logger.LogDebug("Button {Index}: animating {Old:F1} -> {New:F1}", i, oldTarget, targetOffset);
                     _targetPositions[transform] = targetOffset;
                     AnimateTransform(transform, targetOffset);
                 }
@@ -403,6 +426,9 @@ namespace Writersword.Behaviors
             return 1 - Math.Pow(1 - t, 3);
         }
 
+        /// <summary>
+        /// Рассчитать новый визуальный индекс на основе смещения
+        /// </summary>
         private int CalculateNewVisualIndex()
         {
             if (_originalIndex == -1 || AssociatedObject == null)
@@ -423,6 +449,9 @@ namespace Writersword.Behaviors
             return newIndex;
         }
 
+        /// <summary>
+        /// Получить или создать трансформацию для кнопки
+        /// </summary>
         private TranslateTransform GetOrCreateTransform(Button button)
         {
             if (button.RenderTransform is TranslateTransform transform)
@@ -433,6 +462,9 @@ namespace Writersword.Behaviors
             return transform;
         }
 
+        /// <summary>
+        /// Найти кнопку вкладки в визуальном дереве
+        /// </summary>
         private Button? FindTabButton(object? source)
         {
             var current = source as Control;
@@ -453,6 +485,9 @@ namespace Writersword.Behaviors
             return null;
         }
 
+        /// <summary>
+        /// Получить индекс вкладки
+        /// </summary>
         private int GetTabIndex(Button button)
         {
             if (AssociatedObject?.DataContext is not TabBarViewModel viewModel)
@@ -465,6 +500,9 @@ namespace Writersword.Behaviors
             return viewModel.Tabs.IndexOf(tab);
         }
 
+        /// <summary>
+        /// Получить все кнопки вкладок
+        /// </summary>
         private List<Button> GetAllButtons()
         {
             if (AssociatedObject == null)

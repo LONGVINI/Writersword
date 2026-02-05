@@ -1,7 +1,8 @@
-﻿using System;
+﻿using Avalonia.Controls;
+using System;
 using System.Collections.Generic;
-using Avalonia.Controls;
 using Writersword.Core.Models;
+using Writersword.Src.Core.Services;
 using Writersword.ViewModels;
 
 namespace Writersword.Core.Interfaces.Modules

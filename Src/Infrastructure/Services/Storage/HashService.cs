@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Security.Cryptography;
 using System.Text;
 using Newtonsoft.Json;
@@ -12,6 +14,13 @@ namespace Writersword.Src.Infrastructure.Services.Storage
     /// </summary>
     public class HashService : IHashService
     {
+        private readonly ILogger<HashService> _logger;
+
+        public HashService()
+        {
+            _logger = App.Services.GetService<ILogger<HashService>>()!;
+        }
+
         /// <summary>
         /// Вычислить SHA256 хеш для объекта
         /// Объект сериализуется в JSON, затем вычисляется хеш
@@ -35,7 +44,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[HashService] Error serializing data: {ex.Message}");
+                _logger.LogError(ex, "Error serializing data");
                 return ComputeHashFromString(data.ToString() ?? "");
             }
         }

@@ -39,9 +39,8 @@ namespace Writersword.Src.Shared.Helpers
             {
                 return JsonConvert.DeserializeObject<T>(json, DefaultSettings);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"[JsonHelper] Deserialization error: {ex.Message}");
                 return default;
             }
         }
@@ -54,20 +53,16 @@ namespace Writersword.Src.Shared.Helpers
             try
             {
                 var json = Serialize(obj);
-
                 // Создаём директорию если не существует
                 var directory = Path.GetDirectoryName(filePath);
                 if (!string.IsNullOrEmpty(directory))
                 {
                     Directory.CreateDirectory(directory);
                 }
-
                 await File.WriteAllTextAsync(filePath, json);
-                Console.WriteLine($"[JsonHelper] Saved to: {filePath}");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"[JsonHelper] Save error: {ex.Message}");
                 throw;
             }
         }
@@ -81,16 +76,13 @@ namespace Writersword.Src.Shared.Helpers
             {
                 if (!File.Exists(filePath))
                 {
-                    Console.WriteLine($"[JsonHelper] File not found: {filePath}");
                     return default;
                 }
-
                 var json = await File.ReadAllTextAsync(filePath);
                 return Deserialize<T>(json);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"[JsonHelper] Load error: {ex.Message}");
                 return default;
             }
         }

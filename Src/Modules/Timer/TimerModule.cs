@@ -1,10 +1,13 @@
 ﻿using Avalonia.Controls;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
 using Writersword.Modules.Common;
 using Writersword.Modules.Timer.ViewModels;
+using Writersword.Src.Core.Services;
 using Writersword.Src.Modules.Timer.Resources;
 
 namespace Writersword.Modules.Timer
@@ -15,6 +18,7 @@ namespace Writersword.Modules.Timer
     /// </summary>
     public class TimerModule : BaseModule
     {
+        private readonly ILogger<TimerModule> _logger;
         private TimerViewModel? _viewModel;
 
         /// <summary>
@@ -23,7 +27,7 @@ namespace Writersword.Modules.Timer
         /// <param name="instanceId">ID экземпляра модуля (если null - генерируется новый)</param>
         public TimerModule(string? instanceId = null) : base(instanceId)
         {
-
+            _logger = App.Services.GetService<ILogger<TimerModule>>()!;
         }
 
         /// <summary>Идентификатор модуля</summary>
@@ -45,7 +49,7 @@ namespace Writersword.Modules.Timer
         public override void Initialize()
         {
             _viewModel = new TimerViewModel();
-            Console.WriteLine($"[TimerModule] Initialized (ID: {InstanceId})");
+            _logger.LogDebug("Initialized (ID: {InstanceId})", InstanceId);
         }
 
         /// <summary>
@@ -54,7 +58,7 @@ namespace Writersword.Modules.Timer
         /// </summary>
         protected override void OnContextChanged(DocumentContext? context)
         {
-            Console.WriteLine($"[TimerModule] Context changed - timer continues running");
+            _logger.LogDebug("Context changed - timer continues running");
         }
 
         /// <summary>

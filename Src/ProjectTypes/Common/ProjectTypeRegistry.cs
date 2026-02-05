@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -13,6 +15,8 @@ namespace Writersword.Src.ProjectTypes.Common
     /// </summary>
     public class ProjectTypeRegistry
     {
+        private readonly ILogger<ProjectTypeRegistry> _logger;
+
         /// <summary>Словарь зарегистрированных типов проектов (ключ = Id типа)</summary>
         private readonly Dictionary<string, BaseProjectType> _types = new();
 
@@ -21,6 +25,7 @@ namespace Writersword.Src.ProjectTypes.Common
 
         public ProjectTypeRegistry(WorkModeRegistry workModeRegistry)
         {
+            _logger = App.Services.GetService<ILogger<ProjectTypeRegistry>>()!;
             _workModeRegistry = workModeRegistry;
         }
 
@@ -30,7 +35,7 @@ namespace Writersword.Src.ProjectTypes.Common
         /// </summary>
         public void LoadAll()
         {
-            Console.WriteLine("[ProjectTypeRegistry] Starting automatic registration...");
+            _logger.LogDebug("Starting automatic registration...");
 
             var assembly = Assembly.GetExecutingAssembly();
 
@@ -58,19 +63,21 @@ namespace Writersword.Src.ProjectTypes.Common
                     // Если есть несуществующие WorkMode - НЕ регистрируем тип проекта
                     if (missingWorkModes.Count > 0)
                     {
-                        Console.WriteLine($"[ProjectTypeRegistry] ⚠️ ERRORS in {instance.DisplayName}:");
+                        _logger.LogWarning("Errors in {DisplayName}:", instance.DisplayName);
                         foreach (var missing in missingWorkModes)
-                            Console.WriteLine($"  - WorkMode '{missing}' not found");
+                        {
+                            _logger.LogWarning("WorkMode '{WorkMode}' not found", missing);
+                        }
                         continue;
                     }
 
                     // Всё ОК - регистрируем
                     _types[instance.Id] = instance;
-                    Console.WriteLine($"[ProjectTypeRegistry] ✓ Registered: {instance.DisplayName} ({instance.Icon})");
+                    _logger.LogDebug("Registered: {DisplayName} ({Icon})", instance.DisplayName, instance.Icon);
                 }
             }
 
-            Console.WriteLine($"[ProjectTypeRegistry] Total registered: {_types.Count}");
+            _logger.LogDebug("Total registered: {Count}", _types.Count);
         }
 
         /// <summary>Получить все зарегистрированные типы проектов</summary>

@@ -3,6 +3,7 @@ using Dock.Model.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Linq;
 using Writersword.ViewModels;
@@ -16,6 +17,7 @@ namespace Writersword.Src.Infrastructure.Dock
     /// </summary>
     public class HostWindow : IHostWindow
     {
+        private readonly ILogger<HostWindow> _logger;
         private FloatingWindow? _window;
         private IDock? _pendingLayout;
         private PixelPoint? _pendingPosition;
@@ -29,12 +31,17 @@ namespace Writersword.Src.Infrastructure.Dock
             set => _window = value as FloatingWindow;
         }
 
+        public HostWindow()
+        {
+            _logger = App.Services.GetService<ILogger<HostWindow>>()!;
+        }
+
         /// <summary>
         /// Показать Float окно
         /// </summary>
         public void Present(bool isDialog)
         {
-            Console.WriteLine($"[HostWindow] Present() START");
+            _logger.LogDebug("Present() START");
 
             _window = new FloatingWindow();
 
@@ -74,7 +81,7 @@ namespace Writersword.Src.Infrastructure.Dock
                     dockWindow.Id = "Float_" + (_pendingLayout as IDockable)?.Id;
 
                     rootDock.Windows.Add(dockWindow);
-                    Console.WriteLine($"[HostWindow] Added window to RootDock.Windows: {dockWindow.Id}");
+                    _logger.LogDebug("Added window to RootDock.Windows: {WindowId}", dockWindow.Id);
                 }
             }
         }
@@ -181,7 +188,7 @@ namespace Writersword.Src.Infrastructure.Dock
         /// </summary>
         private void OnWindowClosed(object? sender, EventArgs e)
         {
-            Console.WriteLine($"[HostWindow] Float window closed");
+            _logger.LogDebug("Float window closed");
 
             if (_window != null)
             {
@@ -201,13 +208,13 @@ namespace Writersword.Src.Infrastructure.Dock
 
                             if (!document.CanClose)
                             {
-                                Console.WriteLine($"[HostWindow] Module {moduleId} is required - returning to dock");
+                                _logger.LogDebug("Module {ModuleId} is required - returning to dock", moduleId);
 
                                 ReturnRequiredModuleToDock(moduleId);
                             }
                             else
                             {
-                                Console.WriteLine($"[HostWindow] Notifying close for module: {moduleId}");
+                                _logger.LogDebug("Notifying close for module: {ModuleId}", moduleId);
 
                                 var mainVM = App.Services.GetRequiredService<MainWindowViewModel>();
                                 mainVM.HandleModuleClosedInDock(moduleId);
@@ -226,24 +233,24 @@ namespace Writersword.Src.Infrastructure.Dock
         /// </summary>
         private void ReturnRequiredModuleToDock(string moduleId)
         {
-            Console.WriteLine($"[HostWindow] Returning required module to dock: {moduleId}");
+            _logger.LogDebug("Returning required module to dock: {ModuleId}", moduleId);
 
             var tabCollection = App.Services.GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>();
             if (tabCollection.ActiveTab == null)
             {
-                Console.WriteLine($"[HostWindow] No active tab");
+                _logger.LogWarning("No active tab");
                 return;
             }
 
             if (tabCollection.ActiveTab.Workspace == null)
             {
-                Console.WriteLine($"[HostWindow] No Workspace in active tab");
+                _logger.LogWarning("No Workspace in active tab");
                 return;
             }
 
             tabCollection.ActiveTab.Workspace.ReturnRequiredModuleToDock(moduleId);
 
-            Console.WriteLine($"[HostWindow] Module {moduleId} returned successfully");
+            _logger.LogDebug("Module {ModuleId} returned successfully", moduleId);
         }
 
         /// <summary>

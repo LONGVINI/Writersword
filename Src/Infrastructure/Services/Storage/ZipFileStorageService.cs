@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -14,6 +16,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
     /// </summary>
     public class ZipFileStorageService : IProjectFileStorage, IDisposable
     {
+        private readonly ILogger<ZipFileStorageService> _logger;
         private readonly string _zipFilePath;
         private ZipArchive? _archive;
         private bool _isDisposed = false;
@@ -29,11 +32,12 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 #pragma warning disable CS0162 // Недостижимый код (ожидается в DEBUG/RELEASE режимах)
         public ZipFileStorageService(string zipFilePath)
         {
+            _logger = App.Services.GetService<ILogger<ZipFileStorageService>>()!;
             _zipFilePath = zipFilePath;
 
             if (!File.Exists(zipFilePath))
             {
-                Console.WriteLine($"[ZipFileStorage] WARNING: ZIP file not found: {zipFilePath}");
+                _logger.LogWarning("ZIP file not found: {FilePath}", zipFilePath);
                 return;
             }
 
@@ -41,11 +45,11 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             if (KeepArchiveOpen)
             {
                 OpenArchive();
-                Console.WriteLine($"[ZipFileStorage] Opened ZIP (RELEASE mode): {zipFilePath}");
+                _logger.LogDebug("Opened ZIP (RELEASE mode): {FilePath}", zipFilePath);
             }
             else
             {
-                Console.WriteLine($"[ZipFileStorage] Initialized (DEBUG mode): {zipFilePath}");
+                _logger.LogDebug("Initialized (DEBUG mode): {FilePath}", zipFilePath);
             }
         }
 #pragma warning restore CS0162
@@ -83,7 +87,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         {
             if (_isDisposed)
             {
-                Console.WriteLine("[ZipFileStorage] ERROR: Cannot write, storage is disposed");
+                _logger.LogError("Cannot write, storage is disposed");
                 return;
             }
 
@@ -97,7 +101,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                 if (_archive == null)
                 {
-                    Console.WriteLine("[ZipFileStorage] ERROR: Archive is null");
+                    _logger.LogError("Archive is null");
                     return;
                 }
 
@@ -119,11 +123,11 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     stream.Write(data, 0, data.Length);
                 }
 
-                Console.WriteLine($"[ZipFileStorage] Written: {relativePath} ({data.Length} bytes)");
+                _logger.LogDebug("Written: {RelativePath} ({Size} bytes)", relativePath, data.Length);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ZipFileStorage] Write error: {ex.Message}");
+                _logger.LogError(ex, "Write error");
                 throw;
             }
             finally
@@ -142,7 +146,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         {
             if (_isDisposed)
             {
-                Console.WriteLine("[ZipFileStorage] ERROR: Cannot read, storage is disposed");
+                _logger.LogError("Cannot read, storage is disposed");
                 return null;
             }
 
@@ -156,7 +160,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                 if (_archive == null)
                 {
-                    Console.WriteLine("[ZipFileStorage] ERROR: Archive is null");
+                    _logger.LogError("Archive is null");
                     return null;
                 }
 
@@ -166,7 +170,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 var entry = _archive.GetEntry(relativePath);
                 if (entry == null)
                 {
-                    Console.WriteLine($"[ZipFileStorage] File not found: {relativePath}");
+                    _logger.LogDebug("File not found: {RelativePath}", relativePath);
                     return null;
                 }
 
@@ -175,13 +179,13 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 {
                     stream.CopyTo(memoryStream);
                     var data = memoryStream.ToArray();
-                    Console.WriteLine($"[ZipFileStorage] Read: {relativePath} ({data.Length} bytes)");
+                    _logger.LogDebug("Read: {RelativePath} ({Size} bytes)", relativePath, data.Length);
                     return data;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ZipFileStorage] Read error: {ex.Message}");
+                _logger.LogError(ex, "Read error");
                 return null;
             }
             finally
@@ -231,7 +235,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         {
             if (_isDisposed)
             {
-                Console.WriteLine("[ZipFileStorage] ERROR: Cannot delete, storage is disposed");
+                _logger.LogError("Cannot delete, storage is disposed");
                 return;
             }
 
@@ -245,7 +249,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                 if (_archive == null)
                 {
-                    Console.WriteLine("[ZipFileStorage] ERROR: Archive is null");
+                    _logger.LogError("Archive is null");
                     return;
                 }
 
@@ -255,12 +259,12 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 if (entry != null)
                 {
                     entry.Delete();
-                    Console.WriteLine($"[ZipFileStorage] Deleted: {relativePath}");
+                    _logger.LogDebug("Deleted: {RelativePath}", relativePath);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ZipFileStorage] Delete error: {ex.Message}");
+                _logger.LogError(ex, "Delete error");
                 throw;
             }
             finally
@@ -320,7 +324,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             {
                 _archive.Dispose();
                 _archive = null;
-                Console.WriteLine($"[ZipFileStorage] Closed ZIP: {_zipFilePath}");
+                _logger.LogDebug("Closed ZIP: {FilePath}", _zipFilePath);
             }
         }
     }

@@ -1,5 +1,7 @@
 ﻿using Avalonia.Controls;
 using Avalonia.Media;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using Writersword.Core.Enums;
 using Writersword.Resources.Localization;
@@ -12,7 +14,7 @@ namespace Writersword.Views
         Warning,
         Error,
         Question,
-        Recovery // Новый тип для диалога восстановления
+        Recovery
     }
 
     public enum MessageBoxButtons
@@ -21,7 +23,7 @@ namespace Writersword.Views
         OKCancel,
         YesNo,
         YesNoCancel,
-        Recovery // Новый набор кнопок для восстановления
+        Recovery
     }
 
     public enum MessageBoxResult
@@ -31,18 +33,24 @@ namespace Writersword.Views
         Cancel,
         Yes,
         No,
-        // Новые результаты для Recovery диалога
         Restore,
         OpenSaved,
         Compare
     }
 
+    /// <summary>
+    /// Диалоговое окно MessageBox
+    /// Поддерживает различные типы сообщений и наборы кнопок
+    /// </summary>
     public partial class MessageBoxView : Window
     {
+        private readonly ILogger<MessageBoxView>? _logger;
+
         public MessageBoxResult Result { get; private set; } = MessageBoxResult.None;
 
         public MessageBoxView()
         {
+            _logger = App.Services?.GetService<ILogger<MessageBoxView>>();
             InitializeComponent();
         }
 
@@ -55,19 +63,16 @@ namespace Writersword.Views
             MessageBoxType type = MessageBoxType.Info,
             MessageBoxButtons buttons = MessageBoxButtons.OK) : this()
         {
-
-
-            Console.WriteLine($"[MessageBoxView] Creating with message: '{message}'");
-            Console.WriteLine($"[MessageBoxView] Message length: {message.Length}");
+            _logger?.LogDebug("Creating MessageBox - Title: {Title}, Message length: {Length}, Type: {Type}",
+                title, message.Length, type);
 
             this.FindControl<TextBlock>("TitleText")!.Text = title;
 
             var messageTextBlock = this.FindControl<TextBlock>("MessageText")!;
             messageTextBlock.Text = message;
 
-            Console.WriteLine($"[MessageBoxView] TextBlock.Text: '{messageTextBlock.Text}'");
-            Console.WriteLine($"[MessageBoxView] TextBlock.MaxWidth: {messageTextBlock.MaxWidth}");
-            Console.WriteLine($"[MessageBoxView] TextBlock.MaxHeight: {messageTextBlock.MaxHeight}");
+            _logger?.LogDebug("TextBlock configured - MaxWidth: {MaxWidth}, MaxHeight: {MaxHeight}",
+                messageTextBlock.MaxWidth, messageTextBlock.MaxHeight);
 
             Title = title;
 
@@ -89,7 +94,8 @@ namespace Writersword.Views
             DateTime cacheDate,
             DateTime saveDate) : this()
         {
-            Console.WriteLine($"[MessageBoxView] Creating Recovery dialog");
+            _logger?.LogDebug("Creating Recovery dialog - Cache: {CacheDate}, Save: {SaveDate}",
+                cacheDate, saveDate);
 
             this.FindControl<TextBlock>("TitleText")!.Text = title;
             this.FindControl<TextBlock>("MessageText")!.Text = message;
@@ -202,6 +208,7 @@ namespace Writersword.Views
 
             button.Click += (s, e) =>
             {
+                _logger?.LogDebug("MessageBox button clicked: {Result}", result);
                 Result = result;
                 Close();
             };

@@ -1,6 +1,7 @@
 ﻿using Dock.Model.Controls;
 using Dock.Model.Core;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
@@ -28,6 +29,7 @@ namespace Writersword.Src.Infrastructure.Workspace
     /// </summary>
     public class WorkspaceController : IWorkspaceController
     {
+        private readonly ILogger<WorkspaceController> _logger;
         private readonly DocumentTabViewModel _tab;
         private readonly string _projectPath;
         private readonly DockFactory _dockFactory;
@@ -61,6 +63,7 @@ namespace Writersword.Src.Infrastructure.Workspace
             DockFactory dockFactory,
             IWorkspaceAutoSaveService autoSave)
         {
+            _logger = App.Services.GetService<ILogger<WorkspaceController>>()!;
             _tab = tab;
             _projectPath = projectPath;
             _dockFactory = dockFactory;
@@ -68,7 +71,6 @@ namespace Writersword.Src.Infrastructure.Workspace
             _availableWorkModes = loadedWorkModes;
             _subscriptions = new List<IDisposable>();
 
-            // Создаём СВОЙ экземпляр WorkModeService для ЭТОГО проекта
             var configService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
             _workModeService = new WorkModeService(configService);
             _workModeService.InitializeWorkModes(tab.GetProject().Type, loadedWorkModes);
@@ -84,8 +86,8 @@ namespace Writersword.Src.Infrastructure.Workspace
                 SubscribeToDockEvents(_dockLayout);
             }
 
-            Console.WriteLine($"[WorkspaceController] Created for: {tab.Title}");
-            Console.WriteLine($"[WorkspaceController] Total WorkModes: {_availableWorkModes.Count}, Active: {_activeWorkMode.Title}");
+            _logger.LogDebug("Created for: {TabTitle}", tab.Title);
+            _logger.LogDebug("Total WorkModes: {TotalCount}, Active: {ActiveTitle}", _availableWorkModes.Count, _activeWorkMode.Title);
         }
 
         /// <summary>
@@ -121,11 +123,11 @@ namespace Writersword.Src.Infrastructure.Workspace
                     .Where(m => validInstanceIds.Contains(m.InstanceId))
                     .ToList();
 
-                Console.WriteLine($"[WorkspaceController] Returned {filteredModules.Count}/{allModules.Count} modules for WorkMode: {_activeWorkMode.Title}");
+                _logger.LogDebug("Returned {FilteredCount}/{TotalCount} modules for WorkMode: {WorkModeTitle}", filteredModules.Count, allModules.Count, _activeWorkMode.Title);
                 return filteredModules;
             }
 
-            Console.WriteLine($"[WorkspaceController] No ActiveWorkMode, returning all {allModules.Count} modules");
+            _logger.LogDebug("No ActiveWorkMode, returning all {Count} modules", allModules.Count);
             return allModules;
         }
 
@@ -140,7 +142,7 @@ namespace Writersword.Src.Infrastructure.Workspace
             {
                 module.RefreshFromContext();
             }
-            Console.WriteLine($"[WorkspaceController] Refreshed {modules.Count()} modules from context");
+            _logger.LogDebug("Refreshed {Count} modules from context", modules.Count());
         }
 
         /// <summary>
@@ -148,7 +150,7 @@ namespace Writersword.Src.Infrastructure.Workspace
         /// </summary>
         public void SwitchWorkMode(WorkMode newMode)
         {
-            Console.WriteLine($"[WorkspaceController] Switching WorkMode: {_activeWorkMode.Title} -> {newMode.Title}");
+            _logger.LogDebug("Switching WorkMode: {OldTitle} -> {NewTitle}", _activeWorkMode.Title, newMode.Title);
 
             _autoSave.NotifyChange();
 
@@ -168,7 +170,7 @@ namespace Writersword.Src.Infrastructure.Workspace
 
             WorkspaceChanged?.Invoke(this, EventArgs.Empty);
 
-            Console.WriteLine($"[WorkspaceController] WorkMode switched successfully");
+            _logger.LogDebug("WorkMode switched successfully");
         }
 
         /// <summary>
@@ -176,7 +178,7 @@ namespace Writersword.Src.Infrastructure.Workspace
         /// </summary>
         public void AddModule(string moduleId)
         {
-            Console.WriteLine($"[WorkspaceController] Adding module: {moduleId}");
+            _logger.LogDebug("Adding module: {ModuleId}", moduleId);
 
             if (_activeWorkMode == null || _dockLayout == null) return;
 
@@ -206,7 +208,7 @@ namespace Writersword.Src.Infrastructure.Workspace
 
             if (!hasVisibleModules)
             {
-                Console.WriteLine($"[WorkspaceController] No visible modules - recreating layout");
+                _logger.LogDebug("No visible modules - recreating layout");
                 var newLayout = _dockFactory.CreateLayout(_activeWorkMode);
                 UnsubscribeFromDockEvents();
                 _dockLayout = newLayout;
@@ -214,14 +216,14 @@ namespace Writersword.Src.Infrastructure.Workspace
             }
             else
             {
-                Console.WriteLine($"[WorkspaceController] Adding module dynamically");
+                _logger.LogDebug("Adding module dynamically");
                 _dockFactory.InsertModuleByPreference(_dockLayout, existingSlot);
             }
 
             _autoSave.NotifyChange();
             WorkspaceChanged?.Invoke(this, EventArgs.Empty);
 
-            Console.WriteLine($"[WorkspaceController] Module added successfully");
+            _logger.LogDebug("Module added successfully");
         }
 
         /// <summary>
@@ -229,7 +231,7 @@ namespace Writersword.Src.Infrastructure.Workspace
         /// </summary>
         public void RemoveModule(string moduleId)
         {
-            Console.WriteLine($"[WorkspaceController] Removing module: {moduleId}");
+            _logger.LogDebug("Removing module: {ModuleId}", moduleId);
 
             if (_activeWorkMode == null || _dockLayout == null) return;
 
@@ -247,17 +249,17 @@ namespace Writersword.Src.Infrastructure.Workspace
         /// </summary>
         public void ReturnRequiredModuleToDock(string moduleId)
         {
-            Console.WriteLine($"[WorkspaceController] Returning required module to dock: {moduleId}");
+            _logger.LogDebug("Returning required module to dock: {ModuleId}", moduleId);
 
             var slot = _activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId);
             if (slot == null)
             {
-                Console.WriteLine($"[WorkspaceController] Module slot not found: {moduleId}");
+                _logger.LogWarning("Module slot not found: {ModuleId}", moduleId);
                 return;
             }
 
             slot.IsFloating = false;
-            Console.WriteLine($"[WorkspaceController] Reset IsFloating for: {moduleId}");
+            _logger.LogDebug("Reset IsFloating for: {ModuleId}", moduleId);
 
             UnsubscribeFromDockEvents();
             _dockLayout = _dockFactory.CreateLayout(_activeWorkMode, _tab);
@@ -266,7 +268,7 @@ namespace Writersword.Src.Infrastructure.Workspace
             _autoSave.NotifyChange();
             WorkspaceChanged?.Invoke(this, EventArgs.Empty);
 
-            Console.WriteLine($"[WorkspaceController] Module returned successfully");
+            _logger.LogDebug("Module returned successfully");
         }
 
         /// <summary>
@@ -274,7 +276,7 @@ namespace Writersword.Src.Infrastructure.Workspace
         /// </summary>
         public void HandleModuleClosedInDock(string moduleId)
         {
-            Console.WriteLine($"[WorkspaceController] Module closed in dock: {moduleId}");
+            _logger.LogDebug("Module closed in dock: {ModuleId}", moduleId);
 
             if (_activeWorkMode == null) return;
 
@@ -283,7 +285,7 @@ namespace Writersword.Src.Infrastructure.Workspace
             {
                 slot.IsFloating = false;
                 slot.ContainerId = null;
-                Console.WriteLine($"[WorkspaceController] Reset floating flag for: {moduleId}");
+                _logger.LogDebug("Reset floating flag for: {ModuleId}", moduleId);
             }
 
             _autoSave.NotifyChange();
@@ -295,7 +297,7 @@ namespace Writersword.Src.Infrastructure.Workspace
         /// </summary>
         public async Task SaveWorkspaceAsync()
         {
-            Console.WriteLine($"[WorkspaceController] Saving workspace");
+            _logger.LogDebug("Saving workspace");
             await _autoSave.SaveNowAsync();
         }
 
@@ -304,7 +306,7 @@ namespace Writersword.Src.Infrastructure.Workspace
         /// </summary>
         public void Dispose()
         {
-            Console.WriteLine($"[WorkspaceController] Disposing");
+            _logger.LogDebug("Disposing");
 
             _autoSave.Stop();
 
@@ -317,7 +319,7 @@ namespace Writersword.Src.Infrastructure.Workspace
             _subscriptions.ForEach(s => s.Dispose());
             _subscriptions.Clear();
 
-            Console.WriteLine($"[WorkspaceController] Disposed");
+            _logger.LogDebug("Disposed");
         }
 
         private void DisposeCurrentModules()
@@ -350,7 +352,7 @@ namespace Writersword.Src.Infrastructure.Workspace
         private void RemoveModuleFromLayout(IRootDock rootDock, string moduleId)
         {
             string documentId = $"Module_{moduleId}";
-            Console.WriteLine($"[WorkspaceController] Searching for: {documentId}");
+            _logger.LogDebug("Searching for: {DocumentId}", documentId);
             RemoveDocumentRecursive(rootDock, documentId);
         }
 
@@ -361,7 +363,7 @@ namespace Writersword.Src.Infrastructure.Workspace
                 var document = dock.VisibleDockables.FirstOrDefault(d => d.Id == documentId);
                 if (document != null)
                 {
-                    Console.WriteLine($"[WorkspaceController] Found document, removing from {dock.Id}");
+                    _logger.LogDebug("Found document, removing from {DockId}", dock.Id);
                     dock.VisibleDockables.Remove(document);
 
                     if (dock.ActiveDockable == document)
@@ -386,7 +388,7 @@ namespace Writersword.Src.Infrastructure.Workspace
 
         private void SubscribeToDockEvents(IDockable dockable)
         {
-            Console.WriteLine($"[WorkspaceController] Subscribing to events: {dockable.Id}");
+            _logger.LogDebug("Subscribing to events: {DockableId}", dockable.Id);
 
             if (dockable is IRootDock rootDock && rootDock.Windows is INotifyCollectionChanged windowsObservable)
             {
@@ -394,7 +396,7 @@ namespace Writersword.Src.Infrastructure.Workspace
                 {
                     if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
                     {
-                        Console.WriteLine($"[WorkspaceController] Float window created");
+                        _logger.LogDebug("Float window created");
                         _autoSave.NotifyChange();
                     }
 
@@ -404,7 +406,7 @@ namespace Writersword.Src.Infrastructure.Workspace
                         {
                             if (item is IDockWindow dockWindow)
                             {
-                                Console.WriteLine($"[WorkspaceController] Float window closed: {dockWindow.Id}");
+                                _logger.LogDebug("Float window closed: {WindowId}", dockWindow.Id);
                                 var moduleId = dockWindow.Id?.Replace("Float_", "") ?? "";
                                 HandleModuleClosedInDock(moduleId);
                             }
@@ -471,7 +473,7 @@ namespace Writersword.Src.Infrastructure.Workspace
 
         private void UnsubscribeFromDockEvents()
         {
-            Console.WriteLine($"[WorkspaceController] Unsubscribing from events");
+            _logger.LogDebug("Unsubscribing from events");
             _subscriptions.ForEach(s => s.Dispose());
             _subscriptions.Clear();
         }

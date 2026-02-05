@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using Writersword.Core.Interfaces.Services;
@@ -15,6 +17,7 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
     /// </summary>
     public class TabCollection : ITabCollection
     {
+        private readonly ILogger<TabCollection> _logger;
         private readonly ISettingsService _settingsService;
         private DocumentTabViewModel? _activeTab;
 
@@ -39,7 +42,7 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
                     if (_activeTab != null)
                         _activeTab.IsActive = true;
 
-                    Console.WriteLine($"[TabCollection] Active tab changed: {_activeTab?.Title ?? "none"}");
+                    _logger.LogDebug("Active tab changed: {Title}", _activeTab?.Title ?? "none");
                     ActiveTabChanged?.Invoke(_activeTab);
                 }
             }
@@ -51,6 +54,7 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
         /// <summary>Конструктор с dependency injection</summary>
         public TabCollection(ISettingsService settingsService)
         {
+            _logger = App.Services.GetService<ILogger<TabCollection>>()!;
             _settingsService = settingsService;
         }
 
@@ -60,7 +64,7 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
             if (!Tabs.Contains(tab))
             {
                 Tabs.Add(tab);
-                Console.WriteLine($"[TabCollection] Added tab: {tab.Title}");
+                _logger.LogDebug("Added tab: {Title}", tab.Title);
 
                 // Сохраняем обновлённый список в настройки
                 SaveOpenProjectsToSettings();
@@ -72,7 +76,7 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
         {
             if (Tabs.Remove(tab))
             {
-                Console.WriteLine($"[TabCollection] Removed tab: {tab.Title}");
+                _logger.LogDebug("Removed tab: {Title}", tab.Title);
 
                 // Если удалили активную вкладку - активируем другую
                 if (ActiveTab == tab)
@@ -96,7 +100,7 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
         {
             Tabs.Clear();
             ActiveTab = null;
-            Console.WriteLine("[TabCollection] Cleared all tabs");
+            _logger.LogDebug("Cleared all tabs");
 
             // Сохраняем пустой список в настройки
             SaveOpenProjectsToSettings();
@@ -108,11 +112,11 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
         /// </summary>
         private void SaveOpenProjectsToSettings()
         {
-            Console.WriteLine($"[TabCollection] SaveOpenProjectsToSettings: Tabs.Count = {Tabs.Count}");
+            _logger.LogDebug("SaveOpenProjectsToSettings: Tabs.Count = {Count}", Tabs.Count);
 
             foreach (var tab in Tabs)
             {
-                Console.WriteLine($"[TabCollection] Tab FilePath: '{tab.FilePath}'");
+                _logger.LogDebug("Tab FilePath: '{FilePath}'", tab.FilePath);
             }
 
             var openPaths = Tabs
@@ -121,7 +125,7 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
                 .Distinct()
                 .ToList();
 
-            Console.WriteLine($"[TabCollection] After filtering: openPaths.Count = {openPaths.Count}");
+            _logger.LogDebug("After filtering: openPaths.Count = {Count}", openPaths.Count);
 
             _settingsService.SaveOpenProjects(openPaths!);
         }

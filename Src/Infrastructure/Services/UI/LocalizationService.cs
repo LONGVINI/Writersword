@@ -35,6 +35,7 @@ namespace Writersword.Src.Infrastructure.Services.UI
         public void SetLanguage(string languageCode)
         {
             _currentLanguage = languageCode;
+
             var culture = new CultureInfo(languageCode);
             CultureInfo.CurrentUICulture = culture;
             CultureInfo.CurrentCulture = culture;

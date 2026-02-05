@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -22,6 +23,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
     /// </summary>
     public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
     {
+        private readonly ILogger<WorkspaceAutoSaveService> _logger;
         private IDisposable? _debounceSubscription;
         private string? _currentProjectPath;
         private ProjectFile? _currentProject;
@@ -29,6 +31,11 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
         /// <summary>Задержка перед сохранением (5 секунд)</summary>
         private readonly TimeSpan _debounceDelay = TimeSpan.FromSeconds(5);
+
+        public WorkspaceAutoSaveService()
+        {
+            _logger = App.Services.GetService<ILogger<WorkspaceAutoSaveService>>()!;
+        }
 
         /// <summary>
         /// Запустить автосохранение для проекта
@@ -40,7 +47,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             _currentProjectPath = projectPath;
             _currentProject = project;
 
-            Console.WriteLine($"[WorkspaceAutoSave] Started for: {projectPath}");
+            _logger.LogDebug("Started for: {ProjectPath}", projectPath);
         }
 
         /// <summary>
@@ -54,7 +61,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             _currentProjectPath = null;
             _currentProject = null;
 
-            Console.WriteLine("[WorkspaceAutoSave] Stopped");
+            _logger.LogDebug("Stopped");
         }
 
         /// <summary>
@@ -74,7 +81,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 .Timer(_debounceDelay)
                 .Subscribe(_ => SaveConfiguration());
 
-            Console.WriteLine("[WorkspaceAutoSave] Change detected, will save in 5 seconds...");
+            _logger.LogDebug("Change detected, will save in 5 seconds...");
         }
 
         /// <summary>
@@ -89,14 +96,14 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
             try
             {
-                Console.WriteLine($"[WorkspaceAutoSave] Saving workspace.json");
+                _logger.LogDebug("Saving workspace.json");
 
                 var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
                 var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
 
                 if (fileStorage == null)
                 {
-                    Console.WriteLine("[WorkspaceAutoSave] FileStorage not found");
+                    _logger.LogWarning("FileStorage not found");
                     return;
                 }
 
@@ -104,7 +111,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
                 if (currentConfig == null)
                 {
-                    Console.WriteLine("[WorkspaceAutoSave] Failed to collect configuration");
+                    _logger.LogWarning("Failed to collect configuration");
                     return;
                 }
 
@@ -113,12 +120,12 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
                 if (success)
                 {
-                    Console.WriteLine("[WorkspaceAutoSave] workspace.json saved successfully");
+                    _logger.LogDebug("workspace.json saved successfully");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[WorkspaceAutoSave] Error saving: {ex.Message}");
+                _logger.LogError(ex, "Error saving workspace");
             }
         }
 
@@ -132,17 +139,16 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             {
                 if (string.IsNullOrEmpty(_currentProjectPath))
                 {
-                    Console.WriteLine("[WorkspaceAutoSave] No project path");
+                    _logger.LogWarning("No project path");
                     return null;
                 }
 
-                // Получаем WorkModes из активного WorkspaceController проекта
                 var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
                 var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
 
                 if (fileStorage == null)
                 {
-                    Console.WriteLine("[WorkspaceAutoSave] FileStorage not found");
+                    _logger.LogWarning("FileStorage not found");
                     return null;
                 }
 
@@ -151,7 +157,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
                 if (activeTab?.Workspace == null)
                 {
-                    Console.WriteLine("[WorkspaceAutoSave] No workspace for project");
+                    _logger.LogWarning("No workspace for project");
                     return null;
                 }
 
@@ -160,40 +166,35 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
                 if (allWorkModes == null || allWorkModes.Count == 0)
                 {
-                    Console.WriteLine("[WorkspaceAutoSave] No WorkModes to save");
+                    _logger.LogWarning("No WorkModes to save");
                     return null;
                 }
 
                 var mainVM = App.Services.GetRequiredService<MainWindowViewModel>();
                 var dockFactory = App.Services.GetRequiredService<DockFactory>();
 
-                // Находим активный WorkMode
                 var activeWorkMode = allWorkModes.FirstOrDefault(wm => wm.IsActive);
 
-                Console.WriteLine($"[WorkspaceAutoSave] CollectCurrentConfiguration:");
-                Console.WriteLine($"[WorkspaceAutoSave]   Total WorkModes: {allWorkModes.Count}");
-                Console.WriteLine($"[WorkspaceAutoSave]   ActiveWorkMode: {activeWorkMode?.Title ?? "NULL"}");
-                Console.WriteLine($"[WorkspaceAutoSave]   DockLayout: {(mainVM.DockLayout != null ? "EXISTS" : "NULL")}");
+                _logger.LogDebug("CollectCurrentConfiguration:");
+                _logger.LogDebug("Total WorkModes: {TotalCount}", allWorkModes.Count);
+                _logger.LogDebug("ActiveWorkMode: {ActiveTitle}", activeWorkMode?.Title ?? "NULL");
+                _logger.LogDebug("DockLayout: {HasLayout}", mainVM.DockLayout != null ? "EXISTS" : "NULL");
 
-                // Создаём список для сохранения
                 var workModesToSave = new List<WorkMode>();
 
                 foreach (var wm in allWorkModes)
                 {
-                    Console.WriteLine($"[WorkspaceAutoSave] Processing WorkMode: {wm.Title}, IsActive={wm.IsActive}");
+                    _logger.LogDebug("Processing WorkMode: {Title}, IsActive={IsActive}", wm.Title, wm.IsActive);
 
                     if (wm == activeWorkMode && mainVM.DockLayout != null)
                     {
-                        Console.WriteLine($"[WorkspaceAutoSave]   → Saving as ACTIVE with full data");
+                        _logger.LogDebug("Saving as ACTIVE with full data");
 
-                        // Для АКТИВНОГО - сериализуем полный layout с модулями
-                        // ВАЖНО: SerializeCurrentLayout должен вызываться из UI потока
                         var (containers, updatedSlots) = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                         {
                             return dockFactory.SerializeCurrentLayout(mainVM.DockLayout, wm);
                         });
 
-                        // ФИЛЬТРАЦИЯ: Оставляем только "свои" модули
                         var validInstanceIds = wm.ModuleSlots
                             .Where(s => !string.IsNullOrEmpty(s.InstanceId))
                             .Select(s => s.InstanceId)
@@ -206,10 +207,9 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                         var foreignCount = updatedSlots.Count - filteredSlots.Count;
                         if (foreignCount > 0)
                         {
-                            Console.WriteLine($"[WorkspaceAutoSave] FILTERED OUT {foreignCount} foreign modules from slots!");
+                            _logger.LogDebug("FILTERED OUT {ForeignCount} foreign modules from slots", foreignCount);
                         }
 
-                        // Создаём копию активного WorkMode с полными данными
                         var activeToSave = new WorkMode
                         {
                             Id = wm.Id,
@@ -223,23 +223,20 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                             Containers = containers
                         };
 
-                        // DEBUG: Проверяем что создалось
-                        Console.WriteLine($"[WorkspaceAutoSave] DEBUG activeToSave:");
-                        Console.WriteLine($"  Id: {activeToSave.Id}");
-                        Console.WriteLine($"  WorkModeId: {activeToSave.WorkModeId}");
-                        Console.WriteLine($"  Title: {activeToSave.Title}");
-                        Console.WriteLine($"  ModuleSlots.Count: {activeToSave.ModuleSlots?.Count ?? -1}");
-                        Console.WriteLine($"  Containers.Count: {activeToSave.Containers?.Count ?? -1}");
-
+                        _logger.LogDebug("DEBUG activeToSave:");
+                        _logger.LogDebug("Id: {Id}", activeToSave.Id);
+                        _logger.LogDebug("WorkModeId: {WorkModeId}", activeToSave.WorkModeId);
+                        _logger.LogDebug("Title: {Title}", activeToSave.Title);
+                        _logger.LogDebug("ModuleSlots.Count: {SlotsCount}", activeToSave.ModuleSlots?.Count ?? -1);
+                        _logger.LogDebug("Containers.Count: {ContainersCount}", activeToSave.Containers?.Count ?? -1);
 
                         workModesToSave.Add(activeToSave);
-                        Console.WriteLine($"[WorkspaceAutoSave] Saved ACTIVE WorkMode: {wm.Title} ({containers.Count} containers, {filteredSlots.Count} slots)");
+                        _logger.LogDebug("Saved ACTIVE WorkMode: {Title} ({ContainersCount} containers, {SlotsCount} slots)", wm.Title, containers.Count, filteredSlots.Count);
                     }
                     else
                     {
-                        Console.WriteLine($"[WorkspaceAutoSave]   → Saving as INACTIVE (structure only)");
+                        _logger.LogDebug("Saving as INACTIVE (structure only)");
 
-                        // Для НЕАКТИВНЫХ - только базовая инфа без модулей
                         var inactiveToSave = new WorkMode
                         {
                             Id = wm.Id,
@@ -249,12 +246,12 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                             IsActive = false,
                             Order = wm.Order,
                             IsCloseable = wm.IsCloseable,
-                            ModuleSlots = new List<ModuleSlot>(),  // Пусто
-                            Containers = new List<SplitContainer>() // Пусто
+                            ModuleSlots = new List<ModuleSlot>(),
+                            Containers = new List<SplitContainer>()
                         };
 
                         workModesToSave.Add(inactiveToSave);
-                        Console.WriteLine($"[WorkspaceAutoSave] Saved INACTIVE WorkMode: {wm.Title} (structure only)");
+                        _logger.LogDebug("Saved INACTIVE WorkMode: {Title} (structure only)", wm.Title);
                     }
                 }
 
@@ -263,12 +260,12 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                     WorkModes = workModesToSave
                 };
 
-                Console.WriteLine($"[WorkspaceAutoSave] Collected configuration: {config.WorkModes.Count} WorkModes");
+                _logger.LogDebug("Collected configuration: {Count} WorkModes", config.WorkModes.Count);
                 return config;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[WorkspaceAutoSave] Error collecting: {ex.Message}");
+                _logger.LogError(ex, "Error collecting configuration");
                 return null;
             }
         }
@@ -285,7 +282,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
             try
             {
-                Console.WriteLine("[WorkspaceAutoSave] Force saving NOW");
+                _logger.LogDebug("Force saving NOW");
 
                 var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
                 var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
@@ -302,12 +299,12 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 {
                     var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
                     workspaceConfigService.SaveToZip(fileStorage, currentConfig);
-                    Console.WriteLine("[WorkspaceAutoSave] Force save successful");
+                    _logger.LogDebug("Force save successful");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[WorkspaceAutoSave] Error in force save: {ex.Message}");
+                _logger.LogError(ex, "Error in force save");
             }
         }
 
@@ -319,7 +316,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             _isDisposed = true;
             Stop();
 
-            Console.WriteLine("[WorkspaceAutoSave] Disposed");
+            _logger.LogDebug("Disposed");
         }
     }
 }

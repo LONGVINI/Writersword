@@ -2,13 +2,17 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Serilog;
 using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Services;
+using Writersword.Infrastructure.Logging;
 using Writersword.Infrastructure.Services.Modules;
 using Writersword.Modules.Common;
 using Writersword.Src.Core.Interfaces.Services;
@@ -60,198 +64,115 @@ namespace Writersword
         /// </summary>
         public override void OnFrameworkInitializationCompleted()
         {
-            // ========================================
-            // НАСТРОЙКА DI КОНТЕЙНЕРА
-            // Dependency Injection - все сервисы регистрируются здесь
-            // ========================================
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .Build();
+
+            Log.Logger = new LoggerConfiguration()
+                .ReadFrom.Configuration(configuration)
+                .Enrich.With<ShortSourceContextEnricher>()
+                .CreateLogger();
+
+            Log.ForContext<App>().Information("Application started");
+
             var services = new ServiceCollection();
 
-            // --- ОСНОВНЫЕ СЕРВИСЫ ---
-            // Сервис настроек (сохранение/загрузка settings.json)
+            services.AddLogging(loggingBuilder =>
+            {
+                loggingBuilder.ClearProviders();
+                loggingBuilder.AddSerilog(dispose: true);
+            });
+
             services.AddSingleton<ISettingsService, SettingsService>();
-
-            // Сервис диалоговых окон (сохранение файлов, MessageBox)
             services.AddSingleton<IDialogService, DialogService>();
-
-            // Сервис всплывающих уведомлений (toast notifications)
             services.AddSingleton<INotificationService, NotificationService>();
-
-            // Сервис работы с проектами (.writersword файлы)
             services.AddSingleton<IProjectService, ProjectService>();
-
-            // Сервис работы с ZIP архивами проектов
             services.AddSingleton<ZipProjectService>();
-
-            // Сервис локализации (переключение языков)
             services.AddSingleton<ILocalizationService, LocalizationService>();
-
-            // Сервис горячих клавиш
             services.AddSingleton<IHotKeyService, HotKeyService>();
-
-            // --- СЕРВИСЫ WORKMODES ---
-            // Сервис конфигурации WorkModes (загрузка из файлов)
             services.AddSingleton<IWorkModeConfigurationService, WorkModeConfigurationService>();
-
-            // Сервис автоматического сохранения рабочего пространства
             services.AddTransient<IWorkspaceAutoSaveService, WorkspaceAutoSaveService>();
-
-            // Сервис управления локальной конфигурацией workspace (workspace.json в ZIP)
             services.AddSingleton<IWorkspaceConfigService, WorkspaceConfigService>();
-
-            // Сервис хеширования (для оптимизации кеша)
             services.AddSingleton<IHashService, HashService>();
-
-            // Сервис кеширования данных (.writersword.wsasd файлы, ZIP формат)
             services.AddSingleton<IZipCacheService, ZipCacheService>();
-
-            // Сервис фонового кеширования (каждые 10 секунд)
             services.AddSingleton<ICacheUpdateService, CacheUpdateService>();
-
-            // Сервис автоматического сохранения активной вкладки (Ctrl+S каждые 2 минуты)
             services.AddSingleton<IAutoSaveService, AutoSaveService>();
-
-            // Сервис сравнения данных полученных из модулей
             services.AddSingleton<IDataComparisonService, DataComparisonService>();
-
-            // --- МОДУЛЬНАЯ СИСТЕМА ---
-            // Фабрика для создания экземпляров модулей, также предоставляет метаданные всех типов модулей
             services.AddSingleton<ModuleFactory>();
-
-            // Сервис для сбора состояний модулей (используется при автосохранении)
             services.AddSingleton<IModuleStateCollectorService, ModuleStateCollectorService>();
-
-            // --- WORKMODE СИСТЕМА ---
-            // Фабрика для создания экземпляров WorkMode
             services.AddSingleton<WorkModeFactory>();
-
-            // Реестр всех зарегистрированных WorkMode
             services.AddSingleton<WorkModeRegistry>();
 
-            // --- СИСТЕМА ТИПОВ ПРОЕКТОВ ---
-            // Реестр всех типов проектов (Novel, Screenplay, etc)
             services.AddSingleton<ProjectTypeRegistry>(sp =>
             {
                 var workModeRegistry = sp.GetRequiredService<WorkModeRegistry>();
                 return new ProjectTypeRegistry(workModeRegistry);
             });
 
-            // --- VIEWMODELS ---
-            // ViewModel главного окна
             services.AddSingleton<MainWindowViewModel>();
-
-            // --- КОМПОНЕНТЫ ГЛАВНОГО ОКНА ---
-            // ViewModel компонента главного меню
             services.AddSingleton<MenuBarViewModel>();
-
-            // ViewModel панели вкладок
             services.AddSingleton<TabBarViewModel>();
-
-            // ViewModel панели режимов работы
             services.AddSingleton<WorkModeBarViewModel>();
-
-            // ViewModel панели модулей
             services.AddSingleton<ModulePanelViewModel>();
-
-            // ViewModel экрана приветствия (создаётся каждый раз новый)
             services.AddTransient<WelcomeViewModel>();
-
-            // --- DOCK СИСТЕМА ---
-            // Фабрика для создания dock layout'ов
             services.AddSingleton<DockFactory>();
 
-            // --- УПРАВЛЕНИЕ ВКЛАДКАМИ ---
-            // Сервис управления коллекцией вкладок
             services.AddSingleton<ITabCollection>(sp =>
             {
                 var settingsService = sp.GetRequiredService<ISettingsService>();
                 return new TabCollection(settingsService);
             });
 
-            // Сервис управления жизненным циклом проектов
             services.AddSingleton<IProjectWorkflow, ProjectWorkflow>();
 
-            // ========================================
-            // СОЗДАНИЕ КОНТЕЙНЕРА
-            // После этого можно получать сервисы через App.Services
-            // ========================================
             Services = services.BuildServiceProvider();
 
-            // ========================================
-            // АВТОМАТИЧЕСКАЯ РЕГИСТРАЦИЯ МОДУЛЕЙ
-            // Все классы наследующие BaseModule регистрируются автоматически
-            // ========================================
             var moduleFactory = Services.GetRequiredService<ModuleFactory>();
             var assembly = Assembly.GetExecutingAssembly();
 
-            // Находим все классы которые наследуют BaseModule и не являются абстрактными
             var moduleTypes = assembly.GetTypes()
                 .Where(t => typeof(BaseModule).IsAssignableFrom(t) && !t.IsAbstract);
 
-            Console.WriteLine("[App] Starting automatic module registration...");
-
             foreach (var moduleType in moduleTypes)
             {
-                // Создаём временный экземпляр модуля для получения его метаданных (с null instanceId)
                 var instance = Activator.CreateInstance(moduleType, new object?[] { null }) as BaseModule;
                 if (instance != null)
                 {
-                    // Регистрируем фабричный метод создания модуля с поддержкой instanceId
                     moduleFactory.Register(instance.ModuleId, (instanceId) =>
                         Activator.CreateInstance(moduleType, new object?[] { instanceId }) as BaseModule
                         ?? throw new InvalidOperationException($"Failed to create module {moduleType.Name}"));
-
-                    Console.WriteLine($"[App] Auto-registered module: {instance.Metadata.DisplayName}");
                 }
             }
 
-            Console.WriteLine($"[App] All modules registered successfully! Total: {moduleTypes.Count()}");
+            Log.ForContext<App>().Debug("Registered {Count} modules", moduleTypes.Count());
 
-            // ========================================
-            // АВТОМАТИЧЕСКАЯ РЕГИСТРАЦИЯ WORKMODES
-            // Все классы реализующие IWorkMode регистрируются автоматически
-            // ========================================
             var workModeFactory = Services.GetRequiredService<WorkModeFactory>();
             var workModeRegistry = Services.GetRequiredService<WorkModeRegistry>();
 
-            // Находим все классы которые реализуют IWorkMode (но не сам интерфейс)
             var workModeTypes = assembly.GetTypes()
                 .Where(t => typeof(IWorkMode).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
 
-            Console.WriteLine("[App] Starting automatic WorkMode registration...");
-
             foreach (var workModeType in workModeTypes)
             {
-                // Создаём экземпляр WorkMode
                 var instance = Activator.CreateInstance(workModeType) as IWorkMode;
                 if (instance != null)
                 {
-                    // Регистрируем в фабрике и реестре
                     RegisterWorkMode(workModeFactory, workModeRegistry, instance);
-                    Console.WriteLine($"[App] ✓ Auto-registered WorkMode: {instance.DisplayName} ({instance.Icon})");
                 }
             }
 
-            Console.WriteLine($"[App] All WorkModes registered successfully! Total: {workModeTypes.Count()}");
+            Log.ForContext<App>().Debug("Registered {Count} WorkModes", workModeTypes.Count());
 
-            // ========================================
-            // АВТОМАТИЧЕСКАЯ РЕГИСТРАЦИЯ ТИПОВ ПРОЕКТОВ
-            // Все классы наследующие BaseProjectType регистрируются автоматически
-            // ========================================
             var projectTypeRegistry = Services.GetRequiredService<ProjectTypeRegistry>();
             projectTypeRegistry.LoadAll();
-            Console.WriteLine($"[App] All ProjectTypes registered successfully! Total: {projectTypeRegistry.GetAll().Count}");
+            Log.ForContext<App>().Debug("Registered {Count} ProjectTypes", projectTypeRegistry.GetAll().Count);
 
-            // ========================================
-            // СОЗДАНИЕ ГЛАВНОГО ОКНА
-            // ========================================
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
-                // --- ЗАГРУЗКА НАСТРОЕК ---
                 var settingsService = Services.GetRequiredService<ISettingsService>();
                 settingsService.Load();
-                Console.WriteLine("[App] Settings loaded");
 
-                // --- СОЗДАНИЕ ГЛАВНОГО ОКНА ---
                 var mainViewModel = Services.GetRequiredService<MainWindowViewModel>();
                 var mainWindow = new MainWindow
                 {
@@ -259,77 +180,53 @@ namespace Writersword
                 };
 
 #if DEBUG
-                // В режиме отладки добавляем DevTools (F12 для открытия)
                 mainWindow.AttachDevTools();
-                Console.WriteLine("[App] DevTools attached (press F12)");
 #endif
 
-                // --- РЕГИСТРАЦИЯ ОКНА В DIALOGSERVICE ---
-                // Нужно для показа диалогов (Save, Open и т.д.)
                 var dialogService = Services.GetRequiredService<IDialogService>() as DialogService;
                 dialogService?.SetMainWindow(mainWindow);
 
-                // Устанавливаем главное окно приложения
                 desktop.MainWindow = mainWindow;
 
-                // ========================================
-                // ВОССТАНОВЛЕНИЕ ПРОЕКТОВ ИЗ ПРОШЛОЙ СЕССИИ
-                // Срабатывает когда главное окно открылось
-                // ========================================
                 mainWindow.Opened += async (s, e) =>
                 {
-                    // Получаем список открытых проектов из прошлой сессии
                     var openProjects = settingsService.OpenProjectPaths;
-                    Console.WriteLine($"[App] Open projects from last session: {openProjects.Count}");
 
-                    // --- ЕСТЬ ОТКРЫТЫЕ ПРОЕКТЫ? ---
                     if (openProjects.Count > 0)
                     {
                         var projectWorkflow = Services.GetRequiredService<IProjectWorkflow>();
                         var tabCollection = Services.GetRequiredService<ITabCollection>();
 
-                        Console.WriteLine($"[App] Restoring {openProjects.Count} projects...");
+                        Log.ForContext<App>().Debug("Restoring {Count} projects from last session", openProjects.Count);
 
-                        // Загружаем каждый проект через ProjectWorkflow
                         foreach (var projectPath in openProjects)
                         {
                             if (File.Exists(projectPath))
                             {
-                                Console.WriteLine($"[App] Loading project: {projectPath}");
-
-                                // Открываем через ProjectWorkflow
                                 var tab = await projectWorkflow.OpenDocumentAsync(projectPath);
 
                                 if (tab != null)
                                 {
-                                    // Добавляем БЕЗ автоматической активации
                                     tabCollection.Add(tab);
-                                    Console.WriteLine($"[App] Added tab: {tab.Title}");
                                 }
                             }
                             else
                             {
-                                Console.WriteLine($"[App] WARNING: Project file not found: {projectPath}");
+                                Log.ForContext<App>().Warning("Project file not found: {Path}", projectPath);
                             }
                         }
 
-                        // Активируем первую вкладку (это вызовет ActivateTab ОДИН РАЗ)
                         if (tabCollection.Tabs.Count > 0)
                         {
-                            Console.WriteLine($"[App] All projects loaded. Total tabs: {tabCollection.Tabs.Count}");
                             tabCollection.ActiveTab = tabCollection.Tabs[0];
                         }
                         else
                         {
-                            // Ни один проект не загрузился - показываем Welcome
-                            Console.WriteLine("[App] No projects loaded, showing welcome");
                             await ShowWelcomeScreen(mainWindow);
                         }
                     }
                     else
                     {
-                        // --- НЕТ ОТКРЫТЫХ ПРОЕКТОВ - ПОКАЗЫВАЕМ WELCOME ---
-                        Console.WriteLine("[App] No projects from last session, showing welcome");
                         await ShowWelcomeScreen(mainWindow);
                     }
                 };
@@ -355,16 +252,12 @@ namespace Writersword
         /// <param name="owner">Родительское окно (для модального отображения)</param>
         public static async Task ShowWelcomeScreen(Window owner)
         {
-            Console.WriteLine("[App] Showing welcome screen");
-
-            // Создаём ViewModel и View
             var welcomeViewModel = Services.GetRequiredService<WelcomeViewModel>();
             var welcomeWindow = new WelcomeView
             {
                 DataContext = welcomeViewModel
             };
 
-            // Показываем модально (блокирует главное окно)
             await welcomeWindow.ShowDialog(owner);
         }
     }

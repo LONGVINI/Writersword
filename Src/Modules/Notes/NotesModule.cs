@@ -1,4 +1,6 @@
 ﻿using Avalonia.Controls;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using System;
 using System.Reactive.Linq;
@@ -7,6 +9,7 @@ using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
 using Writersword.Modules.Common;
 using Writersword.Modules.Notes.ViewModels;
+using Writersword.Src.Core.Services;
 using Writersword.Src.Modules.Notes.Resources;
 using Writersword.ViewModels;
 
@@ -18,6 +21,7 @@ namespace Writersword.Modules.Notes
     /// </summary>
     public class NotesModule : BaseModule
     {
+        private readonly ILogger<NotesModule> _logger;
         private NotesViewModel? _viewModel;
         private IDisposable? _notesSubscription;
 
@@ -27,7 +31,7 @@ namespace Writersword.Modules.Notes
         /// <param name="instanceId">ID экземпляра модуля (если null - генерируется новый)</param>
         public NotesModule(string? instanceId = null) : base(instanceId)
         {
-
+            _logger = App.Services.GetService<ILogger<NotesModule>>()!;
         }
 
         /// <summary>Идентификатор модуля</summary>
@@ -54,10 +58,10 @@ namespace Writersword.Modules.Notes
                 .Throttle(TimeSpan.FromSeconds(0.5))
                 .Subscribe(text =>
                 {
-                    Console.WriteLine($"[NotesModule {InstanceId}] Notes updated: {text?.Length ?? 0} chars");
+                    _logger.LogDebug("Notes updated: {Length} chars (ID: {InstanceId})", text?.Length ?? 0, InstanceId);
                 });
 
-            Console.WriteLine($"[NotesModule] Initialized (ID: {InstanceId})");
+            _logger.LogDebug("Initialized (ID: {InstanceId})", InstanceId);
         }
 
         /// <summary>
@@ -66,7 +70,7 @@ namespace Writersword.Modules.Notes
         /// </summary>
         protected override void OnContextChanged(DocumentContext? context)
         {
-            Console.WriteLine($"[NotesModule] Context changed - notes remain editable");
+            _logger.LogDebug("Context changed - notes remain editable");
         }
 
         /// <summary>
@@ -102,19 +106,19 @@ namespace Writersword.Modules.Notes
         {
             if (_viewModel == null)
             {
-                Console.WriteLine($"[NotesModule] SetCustomData called but ViewModel is null (ID: {InstanceId})");
+                _logger.LogWarning("SetCustomData called but ViewModel is null (ID: {InstanceId})", InstanceId);
                 return;
             }
 
             if (data is string notes && notes.Length > 0)
             {
                 _viewModel.NoteText = notes;
-                Console.WriteLine($"[NotesModule] Loaded {notes.Length} characters (ID: {InstanceId})");
+                _logger.LogDebug("Loaded {Length} characters (ID: {InstanceId})", notes.Length, InstanceId);
             }
             else
             {
                 _viewModel.NoteText = "";
-                Console.WriteLine($"[NotesModule] Loaded empty notes (ID: {InstanceId})");
+                _logger.LogDebug("Loaded empty notes (ID: {InstanceId})", InstanceId);
             }
         }
 
@@ -123,7 +127,7 @@ namespace Writersword.Modules.Notes
         /// </summary>
         public override void SetSessionData(object? data)
         {
-            Console.WriteLine($"[NotesModule] SessionData set (ID: {InstanceId})");
+            _logger.LogDebug("SessionData set (ID: {InstanceId})", InstanceId);
         }
 
         /// <summary>
@@ -133,7 +137,7 @@ namespace Writersword.Modules.Notes
         public override void Dispose()
         {
             _notesSubscription?.Dispose();
-            Console.WriteLine($"[NotesModule] Disposed (ID: {InstanceId})");
+            _logger.LogDebug("Disposed (ID: {InstanceId})", InstanceId);
         }
 
         /// <summary>

@@ -1,10 +1,13 @@
 ﻿using Avalonia.Controls;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
 using Writersword.Modules.Common;
 using Writersword.Modules.Synonyms.ViewModels;
+using Writersword.Src.Core.Services;
 using Writersword.Src.Modules.Synonyms.Resources;
 using Writersword.ViewModels;
 
@@ -16,6 +19,7 @@ namespace Writersword.Modules.Synonyms
     /// </summary>
     public class SynonymsModule : BaseModule
     {
+        private readonly ILogger<SynonymsModule> _logger;
         private SynonymsViewModel? _viewModel;
 
         /// <summary>
@@ -24,7 +28,7 @@ namespace Writersword.Modules.Synonyms
         /// <param name="instanceId">ID экземпляра модуля (если null - генерируется новый)</param>
         public SynonymsModule(string? instanceId = null) : base(instanceId)
         {
-
+            _logger = App.Services.GetService<ILogger<SynonymsModule>>()!;
         }
 
         /// <summary>Идентификатор модуля</summary>
@@ -46,7 +50,7 @@ namespace Writersword.Modules.Synonyms
         public override void Initialize()
         {
             _viewModel = new SynonymsViewModel();
-            Console.WriteLine($"[SynonymsModule] Initialized (ID: {InstanceId})");
+            _logger.LogDebug("Initialized (ID: {InstanceId})", InstanceId);
         }
 
         /// <summary>
@@ -55,7 +59,7 @@ namespace Writersword.Modules.Synonyms
         /// </summary>
         protected override void OnContextChanged(DocumentContext? context)
         {
-            Console.WriteLine($"[SynonymsModule] Context changed - no action needed (helper module)");
+            _logger.LogDebug("Context changed - no action needed (helper module)");
         }
 
         /// <summary>

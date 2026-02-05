@@ -2,6 +2,7 @@
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using Writersword.Core.Models.Project;
 using Writersword.ViewModels;
@@ -9,11 +10,22 @@ using Writersword.Src.Core.Interfaces.WorkFlows;
 
 namespace Writersword.Views
 {
+    /// <summary>
+    /// Окно приветствия (Welcome screen)
+    /// Показывается при первом запуске или когда нет открытых проектов
+    /// </summary>
     public partial class WelcomeView : Window
     {
+        private readonly ILogger<WelcomeView> _logger;
+
         public WelcomeView()
         {
+            _logger = App.Services.GetService<ILogger<WelcomeView>>()!;
+
             InitializeComponent();
+
+            _logger.LogDebug("WelcomeView created");
+
             // Подписываемся на событие выбора проекта
             DataContextChanged += OnDataContextChanged;
         }
@@ -23,7 +35,11 @@ namespace Writersword.Views
             if (DataContext is WelcomeViewModel viewModel)
             {
                 // Когда проект выбран - закрываем окно
-                viewModel.ProjectSelected += () => Close();
+                viewModel.ProjectSelected += () =>
+                {
+                    _logger.LogDebug("Project selected, closing WelcomeView");
+                    Close();
+                };
             }
         }
 
@@ -36,13 +52,13 @@ namespace Writersword.Views
             if (tabCollection.Tabs.Count > 0)
             {
                 // Есть открытые вкладки - просто закрываем Welcome окно
-                Console.WriteLine("[CloseButton_Click] Has open tabs, closing welcome window");
+                _logger.LogDebug("CloseButton clicked - has open tabs, closing welcome window");
                 Close();
             }
             else
             {
                 // Нет открытых вкладок - закрываем всю программу
-                Console.WriteLine("[CloseButton_Click] No open tabs, closing application");
+                _logger.LogInformation("CloseButton clicked - no open tabs, closing application");
 
                 // Закрываем главное окно, что приведёт к закрытию приложения
                 if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
@@ -59,7 +75,7 @@ namespace Writersword.Views
             {
                 if (DataContext is WelcomeViewModel viewModel)
                 {
-                    Console.WriteLine($"[RecentProject_Click] Clicked on: {recentProject.Name}");
+                    _logger.LogDebug("RecentProject clicked: {ProjectName}", recentProject.Name);
                     await viewModel.OpenRecentProjectDirect(recentProject);
                 }
             }

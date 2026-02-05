@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Writersword.Core.Interfaces.Services;
@@ -13,6 +15,7 @@ namespace Writersword.Src.Infrastructure.Services
     /// </summary>
     public class DataComparisonService : IDataComparisonService
     {
+        private readonly ILogger<DataComparisonService> _logger;
         private readonly IHashService _hashService;
 
         /// <summary>
@@ -21,6 +24,7 @@ namespace Writersword.Src.Infrastructure.Services
         /// <param name="hashService">Сервис хеширования для оптимизации сравнений</param>
         public DataComparisonService(IHashService hashService)
         {
+            _logger = App.Services.GetService<ILogger<DataComparisonService>>()!;
             _hashService = hashService;
         }
 
@@ -43,7 +47,7 @@ namespace Writersword.Src.Infrastructure.Services
             // БЫСТРАЯ ПРОВЕРКА: разное количество - разные
             if (data1.Count != data2.Count)
             {
-                Console.WriteLine($"[DataComparison] Different count: {data1.Count} vs {data2.Count}");
+                _logger.LogDebug("Different count: {Count1} vs {Count2}", data1.Count, data2.Count);
                 return false;
             }
 
@@ -53,18 +57,18 @@ namespace Writersword.Src.Infrastructure.Services
             {
                 if (!data2.TryGetValue(kvp.Key, out var value2))
                 {
-                    Console.WriteLine($"[DataComparison] Module missing: {kvp.Key}");
+                    _logger.LogDebug("Module missing: {ModuleKey}", kvp.Key);
                     return false;
                 }
 
                 if (!AreCustomDataEqual(kvp.Value, value2))
                 {
-                    Console.WriteLine($"[DataComparison] CustomData differs for module: {kvp.Key}");
+                    _logger.LogDebug("CustomData differs for module: {ModuleKey}", kvp.Key);
                     return false;
                 }
             }
 
-            Console.WriteLine($"[DataComparison] All {data1.Count} modules are identical");
+            _logger.LogDebug("All {Count} modules are identical", data1.Count);
             return true;
         }
 
@@ -85,7 +89,7 @@ namespace Writersword.Src.Infrastructure.Services
             // ПРОВЕРКА: Delta режим?
             if (IsDeltaMode(data1) && IsDeltaMode(data2))
             {
-                Console.WriteLine($"[DataComparison] Using Delta mode comparison");
+                _logger.LogDebug("Using Delta mode comparison");
                 return CompareDeltaData(data1, data2);
             }
 
@@ -97,7 +101,7 @@ namespace Writersword.Src.Infrastructure.Services
 
             if (!areEqual)
             {
-                Console.WriteLine($"[DataComparison] Hash mismatch (Simple mode)");
+                _logger.LogDebug("Hash mismatch (Simple mode)");
             }
 
             return areEqual;
@@ -130,7 +134,7 @@ namespace Writersword.Src.Infrastructure.Services
             // БЫСТРАЯ ПРОВЕРКА: разное количество частей?
             if (parts1.Count != parts2.Count)
             {
-                Console.WriteLine($"[DataComparison] Different parts count: {parts1.Count} vs {parts2.Count}");
+                _logger.LogDebug("Different parts count: {Count1} vs {Count2}", parts1.Count, parts2.Count);
                 return false;
             }
 
@@ -140,7 +144,7 @@ namespace Writersword.Src.Infrastructure.Services
                 // Проверяем что часть есть в обоих объектах
                 if (!parts2.Contains(partKey))
                 {
-                    Console.WriteLine($"[DataComparison] Part missing: {partKey}");
+                    _logger.LogDebug("Part missing: {PartKey}", partKey);
                     return false;
                 }
 
@@ -150,7 +154,7 @@ namespace Writersword.Src.Infrastructure.Services
 
                 if (part1 == null || part2 == null)
                 {
-                    Console.WriteLine($"[DataComparison] Invalid part structure: {partKey}");
+                    _logger.LogDebug("Invalid part structure: {PartKey}", partKey);
                     return false;
                 }
 
@@ -160,12 +164,12 @@ namespace Writersword.Src.Infrastructure.Services
 
                 if (hash1 != hash2)
                 {
-                    Console.WriteLine($"[DataComparison] Part hash differs: {partKey} ({hash1} vs {hash2})");
+                    _logger.LogDebug("Part hash differs: {PartKey} ({Hash1} vs {Hash2})", partKey, hash1, hash2);
                     return false;
                 }
             }
 
-            Console.WriteLine($"[DataComparison] All {parts1.Count} parts identical (Delta mode)");
+            _logger.LogDebug("All {Count} parts identical (Delta mode)", parts1.Count);
             return true;
         }
     }

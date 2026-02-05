@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -18,6 +19,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
     /// </summary>
     public class SettingsService : ISettingsService
     {
+        private readonly ILogger<SettingsService> _logger;
         private const string SettingsFileName = "settings.json";
         private const int MaxRecentProjects = 10;
         private readonly string _settingsPath;
@@ -26,6 +28,8 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
         public SettingsService()
         {
+            _logger = App.Services.GetService<ILogger<SettingsService>>()!;
+
             // Папка с .exe файлом
             _applicationDirectory = AppContext.BaseDirectory;
             _settingsPath = Path.Combine(_applicationDirectory, SettingsFileName);
@@ -48,11 +52,11 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                         .Where(r => File.Exists(r.Path))
                         .ToList();
 
-                    Console.WriteLine($"[SettingsService] Settings loaded, WorkspaceConfigs count: {_settings.WorkspaceConfigs.Count}");
+                    _logger.LogDebug("Settings loaded, WorkspaceConfigs count: {Count}", _settings.WorkspaceConfigs.Count);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[SettingsService] ERROR loading settings: {ex.Message}");
+                    _logger.LogError(ex, "Error loading settings");
                     // Если ошибка чтения - используем настройки по умолчанию
                     _settings = new AppSettings();
                 }
@@ -83,7 +87,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         {
             try
             {
-                Console.WriteLine("[SettingsService] Saving ALL settings");
+                _logger.LogDebug("Saving ALL settings");
 
                 // ЯВНАЯ НАСТРОЙКА: игнорировать циклы
                 var jsonSettings = new JsonSerializerSettings
@@ -96,15 +100,14 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 var json = JsonConvert.SerializeObject(_settings, jsonSettings);
                 File.WriteAllText(_settingsPath, json);
 
-                Console.WriteLine($"[SettingsService] Settings saved successfully");
-                Console.WriteLine($"[SettingsService]   WorkspaceConfigs: {_settings.WorkspaceConfigs.Count}");
-                Console.WriteLine($"[SettingsService]   RecentProjects: {_settings.RecentProjects.Count}");
-                Console.WriteLine($"[SettingsService]   OpenProjects: {_settings.OpenProjectPaths.Count}");
+                _logger.LogDebug("Settings saved successfully");
+                _logger.LogDebug("WorkspaceConfigs: {WorkspaceConfigsCount}", _settings.WorkspaceConfigs.Count);
+                _logger.LogDebug("RecentProjects: {RecentProjectsCount}", _settings.RecentProjects.Count);
+                _logger.LogDebug("OpenProjects: {OpenProjectsCount}", _settings.OpenProjectPaths.Count);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SettingsService] ERROR saving settings: {ex.Message}");
-                Console.WriteLine($"[SettingsService] Stack trace: {ex.StackTrace}");
+                _logger.LogError(ex, "Error saving settings");
             }
         }
 
@@ -123,7 +126,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 var projectService = App.Services.GetRequiredService<IProjectService>();
                 if (projectService == null)
                 {
-                    Console.WriteLine($"[SettingsService] IProjectService not found in DI");
+                    _logger.LogWarning("IProjectService not found in DI");
                     return;
                 }
 
@@ -132,7 +135,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                 if (project == null)
                 {
-                    Console.WriteLine($"[SettingsService] Project not found in service: {filePath}");
+                    _logger.LogWarning("Project not found in service: {FilePath}", filePath);
                     return;
                 }
 
@@ -154,12 +157,12 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     _settings.RecentProjects = _settings.RecentProjects.Take(MaxRecentProjects).ToList();
                 }
 
-                Console.WriteLine($"[SettingsService] Added recent project: {project.Title}, total: {_settings.RecentProjects.Count}");
+                _logger.LogDebug("Added recent project: {ProjectTitle}, total: {TotalCount}", project.Title, _settings.RecentProjects.Count);
                 Save();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SettingsService] ERROR adding recent project: {ex.Message}");
+                _logger.LogError(ex, "Error adding recent project");
             }
         }
 
@@ -172,7 +175,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             get => _settings.Theme;
             set
             {
-                Console.WriteLine($"[SettingsService] Theme changed: {_settings.Theme} → {value}");
+                _logger.LogDebug("Theme changed: {OldTheme} → {NewTheme}", _settings.Theme, value);
                 _settings.Theme = value;
                 Save();
             }
@@ -184,7 +187,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             get => _settings.Language;
             set
             {
-                Console.WriteLine($"[SettingsService] Language changed: {_settings.Language} → {value}");
+                _logger.LogDebug("Language changed: {OldLanguage} → {NewLanguage}", _settings.Language, value);
                 _settings.Language = value;
                 Save();
             }
@@ -207,7 +210,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             get => _settings.DefaultProjectsFolder;
             set
             {
-                Console.WriteLine($"[SettingsService] DefaultProjectsFolder changed: {value}");
+                _logger.LogDebug("DefaultProjectsFolder changed: {Folder}", value);
                 _settings.DefaultProjectsFolder = value;
                 Save();
             }
@@ -241,16 +244,16 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         /// </summary>
         public void SaveOpenProjects(List<string> paths)
         {
-            Console.WriteLine($"[SettingsService] SaveOpenProjects called with {paths.Count} paths");
+            _logger.LogDebug("SaveOpenProjects called with {Count} paths", paths.Count);
             foreach (var path in paths)
             {
-                Console.WriteLine($"[SettingsService]   Path: '{path}'");
+                _logger.LogDebug("Path: '{Path}'", path);
             }
 
             _settings.OpenProjectPaths = paths;
             Save();
 
-            Console.WriteLine($"[SettingsService] Saved {_settings.OpenProjectPaths.Count} open projects");
+            _logger.LogDebug("Saved {Count} open projects", _settings.OpenProjectPaths.Count);
         }
 
         /// <summary>
@@ -261,7 +264,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         {
             var found = _settings.WorkspaceConfigs.TryGetValue(projectType, out var config);
 
-            Console.WriteLine($"[SettingsService] GetWorkspaceConfig({projectType}): {(found ? "FOUND" : "NOT FOUND")}");
+            _logger.LogDebug("GetWorkspaceConfig({ProjectType}): {Result}", projectType, found ? "FOUND" : "NOT FOUND");
 
             return found ? config : null;
         }
@@ -275,12 +278,12 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             config.LastModified = DateTime.Now;
             _settings.WorkspaceConfigs[projectType] = config;
 
-            Console.WriteLine($"[SettingsService] SaveWorkspaceConfig({projectType})");
-            Console.WriteLine($"[SettingsService]   WorkModes count: {config.WorkModes.Count}");
+            _logger.LogDebug("SaveWorkspaceConfig({ProjectType})", projectType);
+            _logger.LogDebug("WorkModes count: {Count}", config.WorkModes.Count);
 
             Save(); // Сохраняет ВСЁ включая WorkspaceConfigs
 
-            Console.WriteLine($"[SettingsService] WorkspaceConfig saved for {projectType}");
+            _logger.LogDebug("WorkspaceConfig saved for {ProjectType}", projectType);
         }
 
         /// <summary>
@@ -291,18 +294,18 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         {
             if (_settings.WorkspaceConfigs.Remove(projectType))
             {
-                Console.WriteLine($"[SettingsService] DeleteWorkspaceConfig({projectType})");
+                _logger.LogDebug("DeleteWorkspaceConfig({ProjectType})", projectType);
 
                 Save(); // Сохраняет ВСЁ
 
-                Console.WriteLine($"[SettingsService] WorkspaceConfig deleted for {projectType}");
+                _logger.LogDebug("WorkspaceConfig deleted for {ProjectType}", projectType);
             }
         }
 
         /// <summary>Получить все глобальные конфигурации</summary>
         public Dictionary<string, WorkspaceConfig> GetAllWorkspaceConfigs()
         {
-            Console.WriteLine($"[SettingsService] GetAllWorkspaceConfigs: {_settings.WorkspaceConfigs.Count} configs");
+            _logger.LogDebug("GetAllWorkspaceConfigs: {Count} configs", _settings.WorkspaceConfigs.Count);
             return _settings.WorkspaceConfigs;
         }
     }

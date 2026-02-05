@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
@@ -21,6 +22,7 @@ namespace Writersword.ViewModels
     /// </summary>
     public class WelcomeViewModel : ViewModelBase
     {
+        private readonly ILogger<WelcomeViewModel> _logger;
         private readonly IDialogService _dialogService;
         private readonly ISettingsService _settingsService;
         private readonly IProjectService _projectService;
@@ -57,6 +59,7 @@ namespace Writersword.ViewModels
             IProjectService projectService,
             IProjectWorkflow projectWorkflow)
         {
+            _logger = App.Services.GetService<ILogger<WelcomeViewModel>>()!;
             _dialogService = dialogService;
             _settingsService = settingsService;
             _projectService = projectService;
@@ -97,7 +100,7 @@ namespace Writersword.ViewModels
             var existingTab = tabCollection.FindByPath(savePath);
             if (existingTab != null)
             {
-                Console.WriteLine($"[CreateNewProject] Project already open: {savePath}");
+                _logger.LogDebug("Project already open: {Path}", savePath);
                 tabCollection.ActiveTab = existingTab;
                 ProjectSelected?.Invoke();
                 return;
@@ -127,6 +130,8 @@ namespace Writersword.ViewModels
 
             LoadRecentProjects();
 
+            _logger.LogInformation("New project created: {Name} ({Type})", projectName, SelectedProjectType);
+
             ProjectSelected?.Invoke();
         }
 
@@ -144,7 +149,7 @@ namespace Writersword.ViewModels
             var existingTab = tabCollection.FindByPath(path);
             if (existingTab != null)
             {
-                Console.WriteLine($"[OpenExistingProject] Already open: {path}");
+                _logger.LogDebug("Project already open: {Path}", path);
                 tabCollection.ActiveTab = existingTab;
                 ProjectSelected?.Invoke();
                 return;
@@ -157,6 +162,8 @@ namespace Writersword.ViewModels
                 tabCollection.Add(tab);
                 tabCollection.ActiveTab = tab;
                 _settingsService.AddRecentProject(path);
+
+                _logger.LogInformation("Opened existing project: {Path}", path);
 
                 LoadRecentProjects();
             }
@@ -175,7 +182,7 @@ namespace Writersword.ViewModels
         {
             if (_isProcessing)
             {
-                Console.WriteLine($"[OpenRecentProjectDirect] Already processing");
+                _logger.LogDebug("Already processing project open");
                 return;
             }
 
@@ -183,12 +190,12 @@ namespace Writersword.ViewModels
 
             try
             {
-                Console.WriteLine($"[OpenRecentProjectDirect] Opening: {recent.Name}");
+                _logger.LogDebug("Opening recent project: {Name}", recent.Name);
 
                 // Проверяем существует ли файл
                 if (!System.IO.File.Exists(recent.Path))
                 {
-                    Console.WriteLine($"[OpenRecentProjectDirect] File not found: {recent.Path}");
+                    _logger.LogWarning("Recent project file not found: {Path}", recent.Path);
 
                     await _dialogService.ShowMessageAsync(
                         Strings.MessageBox_Error_ProjectNotFound_Title,
@@ -210,7 +217,7 @@ namespace Writersword.ViewModels
                 var existingTab = tabCollection.FindByPath(recent.Path);
                 if (existingTab != null)
                 {
-                    Console.WriteLine($"[OpenRecentProjectDirect] Already open");
+                    _logger.LogDebug("Recent project already open");
                     tabCollection.ActiveTab = existingTab;
                     ProjectSelected?.Invoke();
                     return;
@@ -224,14 +231,16 @@ namespace Writersword.ViewModels
                     tabCollection.ActiveTab = tab;
                     _settingsService.AddRecentProject(recent.Path);
 
+                    _logger.LogInformation("Opened recent project: {Name}", recent.Name);
+
                     LoadRecentProjects(); // Обновляем список в UI
-                    
+
                     ProjectSelected?.Invoke();
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[OpenRecentProjectDirect] ERROR: {ex.Message}");
+                _logger.LogError(ex, "Failed to open recent project: {Name}", recent.Name);
 
                 await _dialogService.ShowMessageAsync(
                     Strings.MessageBox_Error_ProjectLoadFailed_Title,
@@ -256,7 +265,7 @@ namespace Writersword.ViewModels
                 RecentProjects.Add(recent);
             }
 
-            Console.WriteLine($"Loaded {RecentProjects.Count} recent projects");
+            _logger.LogDebug("Loaded {Count} recent projects", RecentProjects.Count);
         }
     }
 }

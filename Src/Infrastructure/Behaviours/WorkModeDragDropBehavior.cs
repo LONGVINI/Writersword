@@ -5,6 +5,8 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 using Avalonia.Xaml.Interactivity;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,12 +17,17 @@ using Writersword.ViewModels.Components;
 
 namespace Writersword.Behaviors
 {
+    /// <summary>
+    /// Behavior для перетаскивания кнопок WorkMode с визуальной анимацией
+    /// </summary>
     public class WorkModeDragDropBehavior : Behavior<ItemsControl>
     {
         private const double DRAG_THRESHOLD = 10;
         private const double BUTTON_SPACING = 5;
 
         public static bool IsDragging { get; private set; } = false;
+
+        private ILogger<WorkModeDragDropBehavior>? _logger;
 
         private Point _dragStartPoint;
         private double _currentOffsetX = 0;
@@ -41,12 +48,15 @@ namespace Writersword.Behaviors
         protected override void OnAttached()
         {
             base.OnAttached();
+
+            _logger = App.Services.GetService<ILogger<WorkModeDragDropBehavior>>();
+
             if (AssociatedObject != null)
             {
                 AssociatedObject.AddHandler(InputElement.PointerPressedEvent, OnPointerPressed, handledEventsToo: true);
                 AssociatedObject.AddHandler(InputElement.PointerMovedEvent, OnPointerMoved, handledEventsToo: true);
                 AssociatedObject.AddHandler(InputElement.PointerReleasedEvent, OnPointerReleased, handledEventsToo: true);
-                Console.WriteLine("[WorkModeDragDrop] Behavior attached");
+                _logger?.LogDebug("Behavior attached");
             }
         }
 
@@ -77,11 +87,10 @@ namespace Writersword.Behaviors
             _currentVisualIndex = _originalIndex;
             _isDragging = false;
 
-            Console.WriteLine($"[WorkModeDragDrop] === POINTER PRESSED ===");
-            Console.WriteLine($"[WorkModeDragDrop]   Index: {_originalIndex}, Button width: {button.Bounds.Width}");
+            _logger?.LogDebug("Pointer pressed - Index: {Index}, Button width: {Width}", _originalIndex, button.Bounds.Width);
 
             button.Classes.Add("dragging");
-            Console.WriteLine($"[WorkModeDragDrop]   Added class 'dragging'");
+            _logger?.LogDebug("Added class 'dragging'");
 
             ActivateWorkModeImmediately();
         }
@@ -97,7 +106,7 @@ namespace Writersword.Behaviors
             {
                 if (Math.Abs(rawOffsetX) > DRAG_THRESHOLD)
                 {
-                    Console.WriteLine($"[WorkModeDragDrop] Threshold exceeded: {Math.Abs(rawOffsetX):F1}px");
+                    _logger?.LogDebug("Threshold exceeded: {Offset:F1}px", Math.Abs(rawOffsetX));
                     StartDragging();
                 }
                 return;
@@ -119,7 +128,7 @@ namespace Writersword.Behaviors
             if (_draggedButton != null)
             {
                 _draggedButton.Classes.Remove("dragging");
-                Console.WriteLine($"[WorkModeDragDrop]   Removed class 'dragging'");
+                _logger?.LogDebug("Removed class 'dragging'");
             }
 
             if (!_isDragging)
@@ -128,8 +137,7 @@ namespace Writersword.Behaviors
                 return;
             }
 
-            Console.WriteLine($"[WorkModeDragDrop] === POINTER RELEASED ===");
-            Console.WriteLine($"[WorkModeDragDrop]   Original: {_originalIndex}, Visual: {_currentVisualIndex}, Offset: {_currentOffsetX:F1}px");
+            _logger?.LogDebug("Pointer released - Original: {Original}, Visual: {Visual}, Offset: {Offset:F1}px", _originalIndex, _currentVisualIndex, _currentOffsetX);
 
             _isDragging = false;
             _isSwapping = true;
@@ -138,12 +146,11 @@ namespace Writersword.Behaviors
             _activeAnimations.Clear();
             _targetPositions.Clear();
 
-            Console.WriteLine($"[WorkModeDragDrop] === REMOVING ALL TRANSFORMS ===");
             var allButtons = GetAllButtons();
-            Console.WriteLine($"[WorkModeDragDrop]   Found {allButtons.Count} buttons");
+            _logger?.LogDebug("Removing all transforms - Found {Count} buttons", allButtons.Count);
+
             foreach (var button in allButtons)
             {
-                Console.WriteLine($"[WorkModeDragDrop]     Removing transform from button");
                 button.RenderTransform = null;
                 button.Transitions = null;
             }
@@ -151,7 +158,7 @@ namespace Writersword.Behaviors
             var viewModel = AssociatedObject?.DataContext as WorkModeBarViewModel;
             if (viewModel == null)
             {
-                Console.WriteLine($"[WorkModeDragDrop] ERROR: ViewModel is null");
+                _logger?.LogError("ViewModel is null");
                 StopDragging();
                 ResetState();
                 _isSwapping = false;
@@ -160,13 +167,13 @@ namespace Writersword.Behaviors
 
             if (_currentVisualIndex != _originalIndex)
             {
-                Console.WriteLine($"[WorkModeDragDrop] === APPLYING SWAP: {_originalIndex} -> {_currentVisualIndex} ===");
+                _logger?.LogDebug("Applying swap: {Original} -> {Visual}", _originalIndex, _currentVisualIndex);
 
                 if (_currentVisualIndex > _originalIndex)
                 {
                     for (int i = _originalIndex; i < _currentVisualIndex; i++)
                     {
-                        Console.WriteLine($"[WorkModeDragDrop]   Swap: {i} <-> {i + 1}");
+                        _logger?.LogDebug("Swap: {A} <-> {B}", i, i + 1);
                         viewModel.SwapWorkModes(i, i + 1);
                     }
                 }
@@ -174,7 +181,7 @@ namespace Writersword.Behaviors
                 {
                     for (int i = _originalIndex; i > _currentVisualIndex; i--)
                     {
-                        Console.WriteLine($"[WorkModeDragDrop]   Swap: {i} <-> {i - 1}");
+                        _logger?.LogDebug("Swap: {A} <-> {B}", i, i - 1);
                         viewModel.SwapWorkModes(i, i - 1);
                     }
                 }
@@ -183,13 +190,13 @@ namespace Writersword.Behaviors
             }
             else
             {
-                Console.WriteLine($"[WorkModeDragDrop] No swap needed");
+                _logger?.LogDebug("No swap needed");
             }
 
             StopDragging();
             ResetState();
             _isSwapping = false;
-            Console.WriteLine($"[WorkModeDragDrop] === DRAG COMPLETE ===");
+            _logger?.LogDebug("Drag complete");
         }
 
         private void ResetState()
@@ -197,7 +204,7 @@ namespace Writersword.Behaviors
             if (_draggedButton != null)
             {
                 _draggedButton.Classes.Remove("dragging");
-                Console.WriteLine($"[WorkModeDragDrop]   ResetState: Removed class 'dragging'");
+                _logger?.LogDebug("ResetState: Removed class 'dragging'");
             }
 
             _isDragging = false;
@@ -225,8 +232,8 @@ namespace Writersword.Behaviors
             _buttonWidths = allButtons.Select(b => b.Bounds.Width).ToArray();
             _draggedWidth = _originalIndex < _buttonWidths.Length ? _buttonWidths[_originalIndex] : 0;
 
-            Console.WriteLine($"[WorkModeDragDrop] === START DRAGGING ===");
-            Console.WriteLine($"[WorkModeDragDrop]   Widths: [{string.Join(", ", _buttonWidths.Select(w => $"{w:F0}"))}], Dragged: {_draggedWidth:F0}");
+            _logger?.LogDebug("Start dragging - Widths: [{Widths}], Dragged: {DraggedWidth:F0}",
+                string.Join(", ", _buttonWidths.Select(w => $"{w:F0}")), _draggedWidth);
 
             if (_draggedPresenter != null)
                 _draggedPresenter.ZIndex = 1000;
@@ -276,7 +283,7 @@ namespace Writersword.Behaviors
 
             if (newVisualIndex != _currentVisualIndex)
             {
-                Console.WriteLine($"[WorkModeDragDrop] === VISUAL INDEX: {_currentVisualIndex} -> {newVisualIndex}, Offset: {_currentOffsetX:F1}px ===");
+                _logger?.LogDebug("Visual index: {Old} -> {New}, Offset: {Offset:F1}px", _currentVisualIndex, newVisualIndex, _currentOffsetX);
                 _currentVisualIndex = newVisualIndex;
             }
 
@@ -301,7 +308,8 @@ namespace Writersword.Behaviors
 
                 if (!_targetPositions.ContainsKey(transform) || Math.Abs(_targetPositions[transform] - targetOffset) > 0.1)
                 {
-                    Console.WriteLine($"[WorkModeDragDrop]   Button {i}: {(_targetPositions.ContainsKey(transform) ? _targetPositions[transform] : transform.X):F1} -> {targetOffset:F1}");
+                    _logger?.LogDebug("Button {Index}: {Old:F1} -> {New:F1}", i,
+                        _targetPositions.ContainsKey(transform) ? _targetPositions[transform] : transform.X, targetOffset);
                     _targetPositions[transform] = targetOffset;
                     AnimateTransform(transform, targetOffset);
                 }
@@ -420,26 +428,17 @@ namespace Writersword.Behaviors
             var workMode = _draggedButton.DataContext as WorkMode;
             if (workMode == null) return;
 
-            Console.WriteLine($"[WorkModeDragDrop] === ACTIVATING WORKMODE ===");
-            Console.WriteLine($"[WorkModeDragDrop]   Target: {workMode.Title}");
+            _logger?.LogDebug("Activating WorkMode: {Title}", workMode.Title);
 
             foreach (var wm in viewModel.WorkModes)
             {
-                Console.WriteLine($"[WorkModeDragDrop]   Setting {wm.Title}.IsActive = false");
                 wm.IsActive = false;
             }
 
-            Console.WriteLine($"[WorkModeDragDrop]   Setting {workMode.Title}.IsActive = true");
             workMode.IsActive = true;
 
-            Console.WriteLine($"[WorkModeDragDrop]   Executing SwitchWorkModeCommand...");
+            _logger?.LogDebug("Executing SwitchWorkModeCommand");
             viewModel.SwitchWorkModeCommand.Execute(workMode).Subscribe();
-
-            Console.WriteLine($"[WorkModeDragDrop]   Final state:");
-            foreach (var wm in viewModel.WorkModes)
-            {
-                Console.WriteLine($"[WorkModeDragDrop]     {wm.Title}: IsActive={wm.IsActive}");
-            }
         }
 
         private Button? FindWorkModeButton(object? source)

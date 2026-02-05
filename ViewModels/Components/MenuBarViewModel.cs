@@ -1,6 +1,7 @@
 ﻿using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
@@ -25,6 +26,7 @@ namespace Writersword.ViewModels.Components
     /// </summary>
     public class MenuBarViewModel : ViewModelBase
     {
+        private readonly ILogger<MenuBarViewModel> _logger;
         private readonly IProjectWorkflow _projectWorkflow;
         private readonly ISettingsService _settingsService;
         private readonly ITabCollection _tabCollection;
@@ -34,7 +36,6 @@ namespace Writersword.ViewModels.Components
         private readonly IWorkspaceConfigService _workspaceConfigService;
         private readonly ProjectTypeRegistry _projectTypeRegistry;
 
-        // Провайдер для доступа к MainWindowViewModel (для меню View)
         private Func<MainWindowViewModel>? _mainViewModelProvider;
 
         /// <summary>Список недавних проектов</summary>
@@ -107,9 +108,6 @@ namespace Writersword.ViewModels.Components
         /// <summary>Команда сброса до дефолтной конфигурации</summary>
         public ReactiveCommand<Unit, Unit> ResetWorkspaceToDefaultCommand { get; }
 
-        /// <summary>Есть ли активная вкладка (для IsEnabled кнопок)</summary>
-        //public bool HasActiveTab => _getActiveTab?.Invoke() != null;
-
         private bool _hasActiveTab;
 
         /// <summary>Есть ли активная вкладка (для IsEnabled кнопок)</summary>
@@ -138,6 +136,7 @@ namespace Writersword.ViewModels.Components
              IWorkspaceConfigService workspaceConfigService,
              ProjectTypeRegistry projectTypeRegistry)
         {
+            _logger = App.Services.GetService<ILogger<MenuBarViewModel>>()!;
             _projectWorkflow = projectWorkflow;
             _settingsService = settingsService;
             _tabCollection = tabCollection;
@@ -147,7 +146,6 @@ namespace Writersword.ViewModels.Components
             _workspaceConfigService = workspaceConfigService;
             _projectTypeRegistry = projectTypeRegistry;
 
-            // Создаём команды
             NewProjectCommand = ReactiveCommand.Create(NewProject);
             OpenProjectCommand = ReactiveCommand.CreateFromTask(OpenProject);
             OpenRecentProjectCommand = ReactiveCommand.CreateFromTask<string>(OpenRecentProject);
@@ -158,10 +156,9 @@ namespace Writersword.ViewModels.Components
             ResetWorkspaceToGlobalCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToGlobal);
             ResetWorkspaceToDefaultCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToDefault);
 
-            // Загружаем список недавних проектов
             LoadRecentProjects();
 
-            Console.WriteLine("[MenuBarViewModel] Initialized");
+            _logger.LogDebug("Initialized");
         }
 
         /// <summary>
@@ -173,19 +170,19 @@ namespace Writersword.ViewModels.Components
 
             var recentProjects = _settingsService.RecentProjects;
 
-            foreach (var recent in recentProjects.Take(10)) // Максимум 10 проектов
+            foreach (var recent in recentProjects.Take(10))
             {
                 if (File.Exists(recent.Path))
                 {
                     RecentProjects.Add(new RecentProjectItem
                     {
                         FilePath = recent.Path,
-                        ProjectName = recent.Name // Используем имя из настроек!
+                        ProjectName = recent.Name
                     });
                 }
             }
 
-            Console.WriteLine($"[MenuBarViewModel] Loaded {RecentProjects.Count} recent projects");
+            _logger.LogDebug("Loaded {Count} recent projects", RecentProjects.Count);
         }
 
         /// <summary>
@@ -200,7 +197,7 @@ namespace Writersword.ViewModels.Components
         /// <summary>Создать новый проект (показывает Welcome окно)</summary>
         private async void NewProject()
         {
-            Console.WriteLine("[MenuBarViewModel] NewProject clicked");
+            _logger.LogDebug("NewProject clicked");
 
             if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
                 && desktop.MainWindow != null)
@@ -212,7 +209,7 @@ namespace Writersword.ViewModels.Components
         /// <summary>Открыть существующий проект (показывает Welcome окно)</summary>
         private async Task OpenProject()
         {
-            Console.WriteLine("[MenuBarViewModel] OpenProject clicked");
+            _logger.LogDebug("OpenProject clicked");
 
             if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
                 && desktop.MainWindow != null)
@@ -224,14 +221,12 @@ namespace Writersword.ViewModels.Components
         /// <summary>Открыть недавний проект</summary>
         private async Task OpenRecentProject(string filePath)
         {
-            Console.WriteLine($"[MenuBarViewModel] Opening recent project: {filePath}");
+            _logger.LogDebug("Opening recent project: {FilePath}", filePath);
 
-            // Проверяем существует ли файл
             if (!File.Exists(filePath))
             {
-                Console.WriteLine($"[MenuBarViewModel] File not found: {filePath}");
+                _logger.LogWarning("File not found: {FilePath}", filePath);
 
-                // Удаляем из списка недавних
                 var item = RecentProjects.FirstOrDefault(r => r.FilePath == filePath);
                 if (item != null)
                 {
@@ -241,16 +236,14 @@ namespace Writersword.ViewModels.Components
                 return;
             }
 
-            // Проверяем не открыт ли уже
             var existingTab = _tabCollection.FindByPath(filePath);
             if (existingTab != null)
             {
-                Console.WriteLine($"[MenuBarViewModel] Project already open, activating tab");
+                _logger.LogDebug("Project already open, activating tab");
                 _tabCollection.ActiveTab = existingTab;
                 return;
             }
 
-            // Открываем проект
             var tab = await _projectWorkflow.OpenDocumentAsync(filePath);
             if (tab != null)
             {
@@ -258,7 +251,6 @@ namespace Writersword.ViewModels.Components
                 _tabCollection.ActiveTab = tab;
                 _settingsService.AddRecentProject(filePath);
 
-                // Обновляем список
                 LoadRecentProjects();
             }
         }
@@ -270,11 +262,11 @@ namespace Writersword.ViewModels.Components
 
             if (activeTab == null)
             {
-                Console.WriteLine("[MenuBarViewModel] SaveProject: No active tab");
+                _logger.LogDebug("SaveProject: No active tab");
                 return;
             }
 
-            Console.WriteLine($"[MenuBarViewModel] SaveProject: {activeTab.Title}");
+            _logger.LogDebug("SaveProject: {TabTitle}", activeTab.Title);
             await _projectWorkflow.SaveDocumentAsync(activeTab);
         }
 
@@ -285,24 +277,21 @@ namespace Writersword.ViewModels.Components
 
             if (activeTab == null)
             {
-                Console.WriteLine("[MenuBarViewModel] SaveAsProject: No active tab");
+                _logger.LogDebug("SaveAsProject: No active tab");
                 return;
             }
 
-            Console.WriteLine($"[MenuBarViewModel] SaveAsProject: {activeTab.Title}");
+            _logger.LogDebug("SaveAsProject: {TabTitle}", activeTab.Title);
             await _projectWorkflow.SaveAsDocumentAsync(activeTab);
 
-            // Обновляем список недавних проектов
             LoadRecentProjects();
         }
 
         /// <summary>Выход из приложения</summary>
         private void Exit()
         {
-            Console.WriteLine("[MenuBarViewModel] Exit clicked");
+            _logger.LogDebug("Exit clicked");
 
-            // Просто закрываем главное окно - это триггернёт OnClosing
-            // OnClosing сам проверит несохранённые изменения в каждой вкладке
             if (Application.Current?.ApplicationLifetime
                 is IClassicDesktopStyleApplicationLifetime desktop
                 && desktop.MainWindow != null)
@@ -318,7 +307,7 @@ namespace Writersword.ViewModels.Components
         public void SetMainViewModelProvider(Func<MainWindowViewModel> provider)
         {
             _mainViewModelProvider = provider;
-            Console.WriteLine("[MenuBarViewModel] MainViewModel provider set");
+            _logger.LogDebug("MainViewModel provider set");
         }
 
         /// <summary>
@@ -330,7 +319,7 @@ namespace Writersword.ViewModels.Components
             var activeTab = _getActiveTab?.Invoke();
             if (activeTab == null)
             {
-                Console.WriteLine("[MenuBarViewModel] SaveWorkspaceGlobal: No active tab");
+                _logger.LogDebug("SaveWorkspaceGlobal: No active tab");
                 return;
             }
 
@@ -340,7 +329,6 @@ namespace Writersword.ViewModels.Components
                 var projectTypeObj = _projectTypeRegistry.GetById(project.Type);
                 string displayName = projectTypeObj?.DisplayName ?? project.Type;
 
-                // Показываем диалог подтверждения
                 var result = await _dialogService.ShowMessageAsync(
                     "Сохранить как глобальные настройки?",
                     $"Текущая конфигурация будет применена ко всем новым проектам типа \"{displayName}\". Предыдущие глобальные настройки будут перезаписаны. Продолжить?",
@@ -350,15 +338,13 @@ namespace Writersword.ViewModels.Components
 
                 if (result != MessageBoxResult.Yes)
                 {
-                    Console.WriteLine("[MenuBarViewModel] Save global cancelled");
+                    _logger.LogDebug("Save global cancelled");
                     return;
                 }
 
-                // Получаем текущие WorkModes
                 var workModeService = App.Services.GetRequiredService<IWorkModeService>();
                 var currentWorkModes = workModeService.GetAllWorkModes();
 
-                // Создаём конфигурацию
                 var config = new WorkspaceConfig
                 {
                     ProjectType = project.Type,
@@ -366,15 +352,14 @@ namespace Writersword.ViewModels.Components
                     WorkModes = currentWorkModes
                 };
 
-                // Сохраняем через SettingsService
                 _settingsService.SaveWorkspaceConfig(project.Type, config);
 
                 _notificationService.ShowSuccess($"Конфигурация сохранена для типа {displayName}");
-                Console.WriteLine($"[MenuBarViewModel] Workspace saved globally for: {project.Type}");
+                _logger.LogDebug("Workspace saved globally for: {ProjectType}", project.Type);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MenuBarViewModel] Error saving global workspace: {ex.Message}");
+                _logger.LogError(ex, "Error saving global workspace");
             }
         }
 
@@ -387,13 +372,12 @@ namespace Writersword.ViewModels.Components
             var activeTab = _getActiveTab?.Invoke();
             if (activeTab == null)
             {
-                Console.WriteLine("[MenuBarViewModel] ResetWorkspaceToGlobal: No active tab");
+                _logger.LogDebug("ResetWorkspaceToGlobal: No active tab");
                 return;
             }
 
             try
             {
-                // Показываем диалог подтверждения
                 var result = await _dialogService.ShowMessageAsync(
                     "Восстановить из глобальных настроек?",
                     "Локальная конфигурация будет удалена. Продолжить?",
@@ -403,7 +387,7 @@ namespace Writersword.ViewModels.Components
 
                 if (result != MessageBoxResult.Yes)
                 {
-                    Console.WriteLine("[MenuBarViewModel] Reset to global cancelled");
+                    _logger.LogDebug("Reset to global cancelled");
                     return;
                 }
 
@@ -412,47 +396,42 @@ namespace Writersword.ViewModels.Components
 
                 if (fileStorage == null)
                 {
-                    Console.WriteLine("[MenuBarViewModel] No FileStorage available");
+                    _logger.LogWarning("No FileStorage available");
                     return;
                 }
 
-                // ЗАКРЫВАЕМ ВСЕ ФЛОАТ ОКНА 
                 var mainVM = _mainViewModelProvider?.Invoke();
                 if (mainVM?.DockLayout?.Windows != null)
                 {
-                    Console.WriteLine($"[MenuBarViewModel] Closing {mainVM.DockLayout.Windows.Count} float windows");
+                    _logger.LogDebug("Closing {Count} float windows", mainVM.DockLayout.Windows.Count);
 
                     foreach (var window in mainVM.DockLayout.Windows.ToList())
                     {
                         if (window.Host is Writersword.Src.Infrastructure.Dock.HostWindow hostWindow)
                         {
                             hostWindow.Exit();
-                            Console.WriteLine($"[MenuBarViewModel] Closed float window: {window.Id}");
+                            _logger.LogDebug("Closed float window: {WindowId}", window.Id);
                         }
                     }
 
                     mainVM.DockLayout.Windows.Clear();
                 }
 
-                // Удаляем workspace.json из ZIP
                 _workspaceConfigService.DeleteFromZip(fileStorage);
 
-                // Загружаем глобальную конфигурацию
                 var globalWorkModes = _workModeConfigService.LoadConfiguration(project.Type, null);
 
-                // Обновляем WorkModeService
                 var workModeService = App.Services.GetRequiredService<IWorkModeService>();
                 workModeService.InitializeWorkModes(project.Type, globalWorkModes);
 
-                // Перезагружаем UI
                 mainVM?.InitializeWorkModesForTab(activeTab);
 
                 _notificationService.ShowSuccess("Конфигурация восстановлена из глобальных настроек");
-                Console.WriteLine("[MenuBarViewModel] Workspace reset to global");
+                _logger.LogDebug("Workspace reset to global");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MenuBarViewModel] Error resetting to global: {ex.Message}");
+                _logger.LogError(ex, "Error resetting to global");
             }
         }
 
@@ -462,12 +441,12 @@ namespace Writersword.ViewModels.Components
         /// </summary>
         private async Task ResetWorkspaceToDefault()
         {
-            Console.WriteLine("[MenuBarViewModel] ResetWorkspaceToDefault CALLED!");
+            _logger.LogDebug("ResetWorkspaceToDefault called");
 
             var activeTab = _getActiveTab?.Invoke();
             if (activeTab == null)
             {
-                Console.WriteLine("[MenuBarViewModel] No active tab");
+                _logger.LogWarning("No active tab");
                 return;
             }
 
@@ -480,11 +459,11 @@ namespace Writersword.ViewModels.Components
                     MessageBoxButtons.YesNo
                 );
 
-                Console.WriteLine($"[MenuBarViewModel] User choice: {result}");
+                _logger.LogDebug("User choice: {Result}", result);
 
                 if (result != MessageBoxResult.Yes)
                 {
-                    Console.WriteLine("[MenuBarViewModel] Cancelled");
+                    _logger.LogDebug("Cancelled");
                     return;
                 }
 
@@ -493,52 +472,46 @@ namespace Writersword.ViewModels.Components
 
                 if (fileStorage == null)
                 {
-                    Console.WriteLine("[MenuBarViewModel] No FileStorage");
+                    _logger.LogWarning("No FileStorage");
                     return;
                 }
 
-                // ЗАКРЫВАЕМ ВСЕ ФЛОАТ ОКНА 
                 var mainVM = _mainViewModelProvider?.Invoke();
                 if (mainVM?.DockLayout?.Windows != null)
                 {
-                    Console.WriteLine($"[MenuBarViewModel] Closing {mainVM.DockLayout.Windows.Count} float windows");
+                    _logger.LogDebug("Closing {Count} float windows", mainVM.DockLayout.Windows.Count);
 
                     foreach (var window in mainVM.DockLayout.Windows.ToList())
                     {
                         if (window.Host is Writersword.Src.Infrastructure.Dock.HostWindow hostWindow)
                         {
                             hostWindow.Exit();
-                            Console.WriteLine($"[MenuBarViewModel] Closed float window: {window.Id}");
+                            _logger.LogDebug("Closed float window: {WindowId}", window.Id);
                         }
                     }
 
                     mainVM.DockLayout.Windows.Clear();
                 }
 
-                // 1. Удаляем LOCAL workspace.json из ZIP
                 _workspaceConfigService.DeleteFromZip(fileStorage);
 
-                // 3. Загружаем DEFAULT конфигурацию явно
                 var defaultWorkModes = _workModeConfigService.LoadConfiguration(project.Type, fileStorage);
                 project.WorkModes = defaultWorkModes;
 
-                Console.WriteLine($"[MenuBarViewModel] Loaded {defaultWorkModes.Count} default WorkModes");
+                _logger.LogDebug("Loaded {Count} default WorkModes", defaultWorkModes.Count);
 
-                // 4. Пересоздаём Workspace с новыми WorkModes
                 activeTab.InitializeWorkspace(defaultWorkModes);
 
-                // 5. Обновляем UI
                 mainVM?.InitializeWorkModesForTab(activeTab);
 
-                // 4. Теперь InitializeWorkModesForTab загрузит DEFAULT!
                 mainVM?.InitializeWorkModesForTab(activeTab);
 
                 _notificationService.ShowSuccess("Конфигурация сброшена до дефолта");
-                Console.WriteLine("[MenuBarViewModel] Reset to default complete");
+                _logger.LogDebug("Reset to default complete");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MenuBarViewModel] ERROR: {ex.Message}");
+                _logger.LogError(ex, "Error resetting to default");
             }
         }
     }

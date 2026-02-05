@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -6,6 +8,7 @@ using System.Threading.Tasks;
 using Writersword.Core.Models.Project;
 using Writersword.Modules.Common;
 using Writersword.Src.Core.Interfaces.Services.Storage;
+using Writersword.Src.Infrastructure.Services.Project;
 
 namespace Writersword.Src.Infrastructure.Services.Storage
 {
@@ -16,6 +19,8 @@ namespace Writersword.Src.Infrastructure.Services.Storage
     /// </summary>
     public class ProjectService : IProjectService
     {
+        private readonly ILogger<ProjectService> _logger;
+
         // Список всех открытых проектов
         private readonly List<ProjectFile> _openProjects = new List<ProjectFile>();
 
@@ -26,6 +31,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
         public ProjectService()
         {
+            _logger = App.Services.GetService<ILogger<ProjectService>>()!;
             _zipService = new ZipProjectService();
         }
 
@@ -67,11 +73,11 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         {
             try
             {
-                Console.WriteLine($"[ProjectService] Loading project from: {filePath}");
+                _logger.LogDebug("Loading project from: {FilePath}", filePath);
 
                 if (!File.Exists(filePath))
                 {
-                    Console.WriteLine("[ProjectService] File does not exist!");
+                    _logger.LogWarning("File does not exist");
                     return null;
                 }
 
@@ -79,7 +85,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 var existing = GetProjectByPath(filePath);
                 if (existing != null)
                 {
-                    Console.WriteLine("[ProjectService] Project already loaded, RE-LOADING from file");
+                    _logger.LogDebug("Project already loaded, RE-LOADING from file");
                     _openProjects.Remove(existing);
                     _projectPaths.Remove(existing.Title);
                 }
@@ -89,7 +95,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                 if (project != null)
                 {
-                    Console.WriteLine($"[ProjectService] Project loaded: {project.Title}");
+                    _logger.LogDebug("Project loaded: {ProjectTitle}", project.Title);
 
                     // Добавляем в список открытых проектов
                     _openProjects.Add(project);
@@ -97,15 +103,14 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 }
                 else
                 {
-                    Console.WriteLine("[ProjectService] Failed to load project!");
+                    _logger.LogWarning("Failed to load project");
                 }
 
                 return project;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ProjectService] Failed to load project: {ex.Message}");
-                Console.WriteLine($"[ProjectService] Stack trace: {ex.StackTrace}");
+                _logger.LogError(ex, "Failed to load project");
                 return null;
             }
         }
@@ -115,7 +120,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         {
             try
             {
-                Console.WriteLine($"[ProjectService] Saving project: {project.Title}");
+                _logger.LogDebug("Saving project: {ProjectTitle}", project.Title);
 
                 // Обновляем дату модификации
                 project.LastModified = DateTime.Now;
@@ -125,17 +130,17 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                 if (!success)
                 {
-                    Console.WriteLine($"[ProjectService] Failed to save to ZIP");
+                    _logger.LogWarning("Failed to save to ZIP");
                     return false;
                 }
 
-                Console.WriteLine($"[ProjectService] Project saved to: {filePath}");
+                _logger.LogDebug("Project saved to: {FilePath}", filePath);
 
                 // Удаляем старый проект с таким же путём
                 var existingProject = GetProjectByPath(filePath);
                 if (existingProject != null && existingProject != project)
                 {
-                    Console.WriteLine($"[ProjectService] Removing old project from cache: {existingProject.Title}");
+                    _logger.LogDebug("Removing old project from cache: {OldProjectTitle}", existingProject.Title);
                     _openProjects.Remove(existingProject);
                     _projectPaths.Remove(existingProject.Title);
                 }
@@ -153,8 +158,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ProjectService] Failed to save project: {ex.Message}");
-                Console.WriteLine($"[ProjectService] Stack trace: {ex.StackTrace}");
+                _logger.LogError(ex, "Failed to save project");
                 return false;
             }
         }

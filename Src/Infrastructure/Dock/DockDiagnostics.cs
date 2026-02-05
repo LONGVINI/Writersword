@@ -1,6 +1,8 @@
 ﻿using Dock.Model.Avalonia;
 using Dock.Model.Controls;
 using Dock.Model.Core;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Reflection;
 
@@ -11,12 +13,26 @@ namespace Writersword.Src.Infrastructure.Dock
     /// </summary>
     public static class DockDiagnostics
     {
+        private static ILogger? _logger;
+
+        private static ILogger Logger
+        {
+            get
+            {
+                if (_logger == null)
+                {
+                    _logger = App.Services.GetService<ILogger<DockFactory>>()!;
+                }
+                return _logger;
+            }
+        }
+
         /// <summary>
         /// Вывести все методы Factory которые связаны с HostWindow
         /// </summary>
         public static void InspectFactoryMethods()
         {
-            Console.WriteLine("=== DOCK FACTORY METHODS ===");
+            Logger.LogDebug("=== DOCK FACTORY METHODS ===");
 
             Type factoryType = typeof(Factory);
 
@@ -26,30 +42,29 @@ namespace Writersword.Src.Infrastructure.Dock
             {
                 if (method.Name.Contains("Host") || method.Name.Contains("Window") || method.Name.Contains("Float"))
                 {
-                    Console.WriteLine($"Method: {method.Name}");
-                    Console.WriteLine($"  Returns: {method.ReturnType.Name}");
+                    Logger.LogDebug("Method: {MethodName}", method.Name);
+                    Logger.LogDebug("  Returns: {ReturnType}", method.ReturnType.Name);
 
                     var parameters = method.GetParameters();
                     if (parameters.Length > 0)
                     {
-                        Console.WriteLine($"  Parameters:");
+                        Logger.LogDebug("  Parameters:");
                         foreach (var param in parameters)
                         {
-                            Console.WriteLine($"    - {param.ParameterType.Name} {param.Name}");
+                            Logger.LogDebug("    - {ParameterType} {ParameterName}", param.ParameterType.Name, param.Name);
                         }
                     }
-                    Console.WriteLine();
                 }
             }
 
-            Console.WriteLine("=== HOST WINDOW LOCATOR TYPE ===");
+            Logger.LogDebug("=== HOST WINDOW LOCATOR TYPE ===");
             var locatorProperty = factoryType.GetProperty("HostWindowLocator");
             if (locatorProperty != null)
             {
-                Console.WriteLine($"Property Type: {locatorProperty.PropertyType.FullName}");
+                Logger.LogDebug("Property Type: {PropertyType}", locatorProperty.PropertyType.FullName);
             }
 
-            Console.WriteLine("=== END DIAGNOSTICS ===");
+            Logger.LogDebug("=== END DIAGNOSTICS ===");
         }
 
         /// <summary>
@@ -59,29 +74,29 @@ namespace Writersword.Src.Infrastructure.Dock
         {
             if (rootDock == null)
             {
-                Console.WriteLine("[Diagnostics] RootDock is NULL!");
+                Logger.LogWarning("RootDock is NULL!");
                 return;
             }
 
-            Console.WriteLine($"[Diagnostics] RootDock.Factory: {(rootDock.Factory != null ? "SET" : "NULL")}");
-            Console.WriteLine($"[Diagnostics] RootDock.Id: {rootDock.Id}");
-            Console.WriteLine($"[Diagnostics] RootDock.ActiveDockable: {rootDock.ActiveDockable?.Id ?? "NULL"}");
+            Logger.LogDebug("RootDock.Factory: {Factory}", rootDock.Factory != null ? "SET" : "NULL");
+            Logger.LogDebug("RootDock.Id: {Id}", rootDock.Id);
+            Logger.LogDebug("RootDock.ActiveDockable: {ActiveDockable}", rootDock.ActiveDockable?.Id ?? "NULL");
 
             if (rootDock.Factory != null)
             {
                 var factoryType = rootDock.Factory.GetType();
-                Console.WriteLine($"[Diagnostics] Factory Type: {factoryType.FullName}");
+                Logger.LogDebug("Factory Type: {FactoryType}", factoryType.FullName);
 
                 // Проверяем HostWindowLocator
                 var locatorProp = factoryType.GetProperty("HostWindowLocator", BindingFlags.Public | BindingFlags.Instance);
                 if (locatorProp != null)
                 {
                     var locatorValue = locatorProp.GetValue(rootDock.Factory);
-                    Console.WriteLine($"[Diagnostics] HostWindowLocator: {(locatorValue != null ? "SET" : "NULL")}");
+                    Logger.LogDebug("HostWindowLocator: {HostWindowLocator}", locatorValue != null ? "SET" : "NULL");
 
                     if (locatorValue != null)
                     {
-                        Console.WriteLine($"[Diagnostics] HostWindowLocator Type: {locatorValue.GetType().FullName}");
+                        Logger.LogDebug("HostWindowLocator Type: {LocatorType}", locatorValue.GetType().FullName);
                     }
                 }
             }
@@ -94,16 +109,16 @@ namespace Writersword.Src.Infrastructure.Dock
         {
             if (dockable == null)
             {
-                Console.WriteLine("[Diagnostics] Document is NULL!");
+                Logger.LogWarning("Document is NULL!");
                 return;
             }
 
-            Console.WriteLine($"[Diagnostics] Document.Id: {dockable.Id}");
-            Console.WriteLine($"[Diagnostics] Document.Title: {dockable.Title}");
-            Console.WriteLine($"[Diagnostics] Document.CanFloat: {dockable.CanFloat}");
-            Console.WriteLine($"[Diagnostics] Document.CanClose: {dockable.CanClose}");
-            Console.WriteLine($"[Diagnostics] Document.Owner: {(dockable.Owner != null ? dockable.Owner.Id : "NULL")}");
-            Console.WriteLine($"[Diagnostics] Document.Factory: {(dockable.Factory != null ? "SET" : "NULL")}");
+            Logger.LogDebug("Document.Id: {Id}", dockable.Id);
+            Logger.LogDebug("Document.Title: {Title}", dockable.Title);
+            Logger.LogDebug("Document.CanFloat: {CanFloat}", dockable.CanFloat);
+            Logger.LogDebug("Document.CanClose: {CanClose}", dockable.CanClose);
+            Logger.LogDebug("Document.Owner: {Owner}", dockable.Owner != null ? dockable.Owner.Id : "NULL");
+            Logger.LogDebug("Document.Factory: {Factory}", dockable.Factory != null ? "SET" : "NULL");
         }
     }
 }

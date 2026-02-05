@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reactive.Linq;
@@ -18,6 +20,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
     /// </summary>
     public class CacheUpdateService : ICacheUpdateService
     {
+        private readonly ILogger<CacheUpdateService> _logger;
         private readonly IZipCacheService _cacheService;
         private readonly IModuleStateCollectorService _stateCollector;
         private readonly IDataComparisonService _comparisonService;
@@ -35,6 +38,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             IModuleStateCollectorService stateCollector,
             IDataComparisonService comparisonService)
         {
+            _logger = App.Services.GetService<ILogger<CacheUpdateService>>()!;
             _cacheService = cacheService;
             _stateCollector = stateCollector;
             _comparisonService = comparisonService;
@@ -56,7 +60,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 .Interval(_interval)
                 .Subscribe(async _ => await PerformCacheUpdateAsync());
 
-            Console.WriteLine($"[CacheUpdateService] Started for: {projectPath}");
+            _logger.LogDebug("Started for: {ProjectPath}", projectPath);
         }
 
         /// <summary>Остановить фоновое кеширование</summary>
@@ -73,7 +77,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             _currentProjectPath = null;
             _getActiveModules = null;
 
-            Console.WriteLine("[CacheUpdateService] Stopped");
+            _logger.LogDebug("Stopped");
         }
 
         /// <summary>Принудительно сохранить в кеш СЕЙЧАС</summary>
@@ -86,7 +90,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         public void SetInterval(TimeSpan interval)
         {
             _interval = interval;
-            Console.WriteLine($"[CacheUpdateService] Interval set to: {interval.TotalSeconds}s");
+            _logger.LogDebug("Interval set to: {Seconds}s", interval.TotalSeconds);
         }
 
         /// <summary>
@@ -103,7 +107,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
             if (string.IsNullOrEmpty(projectPath) || getModulesCallback == null)
             {
-                Console.WriteLine("[CacheUpdateService] Skipped: service stopped");
+                _logger.LogDebug("Skipped: service stopped");
                 return;
             }
 
@@ -118,7 +122,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 // Проверяем что сервис не остановился во время выполнения
                 if (_getActiveModules == null)
                 {
-                    Console.WriteLine("[CacheUpdateService] Skipped: service stopped during execution");
+                    _logger.LogDebug("Skipped: service stopped during execution");
                     return;
                 }
 
@@ -127,7 +131,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                 if (customData.Count == 0)
                 {
-                    Console.WriteLine("[CacheUpdateService] No modules to cache");
+                    _logger.LogDebug("No modules to cache");
                     return;
                 }
 
@@ -156,13 +160,13 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                 if (!hasAnyRealData)
                 {
-                    Console.WriteLine("[CacheUpdateService] No real data, skipping");
+                    _logger.LogDebug("No real data, skipping");
 
                     // Удаляем устаревший кеш если он есть
                     if (_cacheService.HasCache(projectPath))
                     {
                         _cacheService.DeleteCache(projectPath);
-                        Console.WriteLine("[CacheUpdateService] Deleted outdated cache");
+                        _logger.LogDebug("Deleted outdated cache");
                     }
 
                     return;
@@ -210,7 +214,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                     if (!dataChanged)
                     {
-                        Console.WriteLine("[CacheUpdateService] No changes from ZIP, skipping");
+                        _logger.LogDebug("No changes from ZIP, skipping");
                         return;
                     }
                 }
@@ -237,23 +241,23 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[CacheUpdateService] Error reading ProjectId: {ex.Message}");
+                    _logger.LogError(ex, "Error reading ProjectId");
                 }
 
                 if (project == null)
                 {
-                    Console.WriteLine("[CacheUpdateService] ERROR: Cannot get ProjectId");
+                    _logger.LogError("Cannot get ProjectId");
                     return;
                 }
 
                 // Сохраняем кеш только если данные отличаются от ZIP
                 await _cacheService.SaveCacheAsync(projectPath, project.Id, customData, sessionData);
                 CacheSaved?.Invoke(this, EventArgs.Empty);
-                Console.WriteLine($"[CacheUpdateService] Cache updated: {customData.Count} modules");
+                _logger.LogDebug("Cache updated: {Count} modules", customData.Count);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[CacheUpdateService] ERROR: {ex.Message}");
+                _logger.LogError(ex, "Cache update failed");
             }
         }
     }

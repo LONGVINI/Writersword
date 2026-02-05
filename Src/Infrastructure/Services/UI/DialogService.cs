@@ -1,5 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -12,7 +14,13 @@ namespace Writersword.Src.Infrastructure.Services.UI
 {
     public class DialogService : IDialogService
     {
+        private readonly ILogger<DialogService> _logger;
         private Window? _mainWindow;
+
+        public DialogService()
+        {
+            _logger = App.Services.GetService<ILogger<DialogService>>()!;
+        }
 
         public void SetMainWindow(Window mainWindow)
         {
@@ -75,7 +83,7 @@ namespace Writersword.Src.Infrastructure.Services.UI
         {
             if (_mainWindow == null)
             {
-                Console.WriteLine($"[DialogService] ShowMessage: {title} - {message}");
+                _logger.LogWarning("ShowMessage: {Title} - {Message}", title, message);
                 return MessageBoxResult.None;
             }
 
@@ -91,7 +99,7 @@ namespace Writersword.Src.Infrastructure.Services.UI
         {
             if (_mainWindow == null)
             {
-                Console.WriteLine($"[DialogService] ShowRecoveryDialog: Cache={cacheDate}, Save={saveDate}");
+                _logger.LogWarning("ShowRecoveryDialog: Cache={CacheDate}, Save={SaveDate}", cacheDate, saveDate);
                 return RecoveryDialogResult.Cancel;
             }
 

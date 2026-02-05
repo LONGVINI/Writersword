@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Writersword.Core.Interfaces.Modules;
@@ -16,6 +18,13 @@ namespace Writersword.Infrastructure.Services.Modules
     /// </summary>
     public class ModuleStateCollectorService : IModuleStateCollectorService
     {
+        private readonly ILogger<ModuleStateCollectorService> _logger;
+
+        public ModuleStateCollectorService()
+        {
+            _logger = App.Services.GetService<ILogger<ModuleStateCollectorService>>()!;
+        }
+
         /// <summary>
         /// Собрать ТОЛЬКО CustomData из всех модулей
         /// Используется при сохранении в .writersword файл (Ctrl+S)
@@ -33,20 +42,20 @@ namespace Writersword.Infrastructure.Services.Modules
 
                     if (IsDataEmpty(data))
                     {
-                        Console.WriteLine($"[ModuleStateCollector] Module is empty: {module.ModuleId}");
+                        _logger.LogDebug("Module is empty: {ModuleId}", module.ModuleId);
                         continue;
                     }
 
                     customData[module.ModuleId] = data;
-                    Console.WriteLine($"[ModuleStateCollector] Collected CustomData: {module.ModuleId}");
+                    _logger.LogDebug("Collected CustomData: {ModuleId}", module.ModuleId);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[ModuleStateCollector] Error collecting CustomData from {module.ModuleId}: {ex.Message}");
+                    _logger.LogError(ex, "Error collecting CustomData from {ModuleId}", module.ModuleId);
                 }
             }
 
-            Console.WriteLine($"[ModuleStateCollector] Collected {customData.Count} CustomData entries");
+            _logger.LogDebug("Collected {Count} CustomData entries", customData.Count);
             return customData;
         }
 
@@ -67,16 +76,16 @@ namespace Writersword.Infrastructure.Services.Modules
                     if (data != null)
                     {
                         sessionData[module.ModuleId] = data;
-                        Console.WriteLine($"[ModuleStateCollector] Collected SessionData: {module.ModuleId}");
+                        _logger.LogDebug("Collected SessionData: {ModuleId}", module.ModuleId);
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[ModuleStateCollector] Error collecting SessionData from {module.ModuleId}: {ex.Message}");
+                    _logger.LogError(ex, "Error collecting SessionData from {ModuleId}", module.ModuleId);
                 }
             }
 
-            Console.WriteLine($"[ModuleStateCollector] Collected {sessionData.Count} SessionData entries");
+            _logger.LogDebug("Collected {Count} SessionData entries", sessionData.Count);
             return sessionData;
         }
 
@@ -100,26 +109,26 @@ namespace Writersword.Infrastructure.Services.Modules
                     if (!IsDataEmpty(custom))
                     {
                         customData[module.ModuleId] = custom;
-                        Console.WriteLine($"[ModuleStateCollector] Collected CustomData: {module.ModuleId}");
+                        _logger.LogDebug("Collected CustomData: {ModuleId}", module.ModuleId);
                     }
                     else
                     {
-                        Console.WriteLine($"[ModuleStateCollector] Module is empty: {module.ModuleId}");
+                        _logger.LogDebug("Module is empty: {ModuleId}", module.ModuleId);
                     }
 
                     if (session != null)
                     {
                         sessionData[module.ModuleId] = session;
-                        Console.WriteLine($"[ModuleStateCollector] Collected SessionData: {module.ModuleId}");
+                        _logger.LogDebug("Collected SessionData: {ModuleId}", module.ModuleId);
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[ModuleStateCollector] Error collecting data from {module.ModuleId}: {ex.Message}");
+                    _logger.LogError(ex, "Error collecting data from {ModuleId}", module.ModuleId);
                 }
             }
 
-            Console.WriteLine($"[ModuleStateCollector] Collected {customData.Count} CustomData and {sessionData.Count} SessionData entries");
+            _logger.LogDebug("Collected {CustomCount} CustomData and {SessionCount} SessionData entries", customData.Count, sessionData.Count);
             return (customData, sessionData);
         }
 

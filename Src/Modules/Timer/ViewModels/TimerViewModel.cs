@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using System;
 using System.Reactive;
@@ -10,6 +12,8 @@ namespace Writersword.Modules.Timer.ViewModels
     /// </summary>
     public class TimerViewModel : ReactiveObject, IDisposable
     {
+        private readonly ILogger<TimerViewModel> _logger;
+
         /// <summary>Сколько секунд прошло</summary>
         private int _elapsedSeconds = 0;
 
@@ -29,7 +33,7 @@ namespace Writersword.Modules.Timer.ViewModels
             set
             {
                 this.RaiseAndSetIfChanged(ref _elapsedSeconds, value);
-                this.RaisePropertyChanged(nameof(DisplayTime)); // Обновляем отображение
+                this.RaisePropertyChanged(nameof(DisplayTime));
             }
         }
 
@@ -71,22 +75,21 @@ namespace Writersword.Modules.Timer.ViewModels
         /// </summary>
         public TimerViewModel()
         {
-            // Регистрируем команды
+            _logger = App.Services.GetService<ILogger<TimerViewModel>>()!;
+
             StartCommand = ReactiveCommand.Create(Start);
             StopCommand = ReactiveCommand.Create(Stop);
             ResetCommand = ReactiveCommand.Create(Reset);
 
-            // Создаём системный таймер (тикает каждую секунду)
             _timer = new System.Timers.Timer(1000);
             _timer.Elapsed += (s, e) =>
             {
-                // Если таймер работает - увеличиваем счётчик
                 if (_isRunning)
                 {
                     ElapsedSeconds++;
                 }
             };
-            _timer.Start(); // Запускаем системный таймер
+            _timer.Start();
         }
 
         /// <summary>
@@ -95,7 +98,7 @@ namespace Writersword.Modules.Timer.ViewModels
         private void Start()
         {
             IsRunning = true;
-            Console.WriteLine("[TimerViewModel] Timer started");
+            _logger.LogDebug("Timer started");
         }
 
         /// <summary>
@@ -104,7 +107,7 @@ namespace Writersword.Modules.Timer.ViewModels
         private void Stop()
         {
             IsRunning = false;
-            Console.WriteLine("[TimerViewModel] Timer stopped");
+            _logger.LogDebug("Timer stopped");
         }
 
         /// <summary>
@@ -114,7 +117,7 @@ namespace Writersword.Modules.Timer.ViewModels
         {
             IsRunning = false;
             ElapsedSeconds = 0;
-            Console.WriteLine("[TimerViewModel] Timer reset");
+            _logger.LogDebug("Timer reset");
         }
 
         /// <summary>
@@ -125,7 +128,7 @@ namespace Writersword.Modules.Timer.ViewModels
         {
             _timer?.Stop();
             _timer?.Dispose();
-            Console.WriteLine("[TimerViewModel] Disposed");
+            _logger.LogDebug("Disposed");
         }
     }
 }

@@ -1,5 +1,6 @@
 ﻿using Avalonia.Controls.ApplicationLifetimes;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
@@ -18,6 +19,7 @@ namespace Writersword.ViewModels.Components
     /// </summary>
     public class TabBarViewModel : ViewModelBase
     {
+        private readonly ILogger<TabBarViewModel> _logger;
         private readonly ITabCollection _tabCollection;
         private readonly IProjectWorkflow _projectWorkflow;
 
@@ -47,6 +49,7 @@ namespace Writersword.ViewModels.Components
             ITabCollection tabCollection,
             IProjectWorkflow projectWorkflow)
         {
+            _logger = App.Services.GetService<ILogger<TabBarViewModel>>()!;
             _tabCollection = tabCollection;
             _projectWorkflow = projectWorkflow;
 
@@ -63,13 +66,13 @@ namespace Writersword.ViewModels.Components
                 this.RaisePropertyChanged(nameof(HasRecoveryBanner));
             };
 
-            Console.WriteLine("[TabBarViewModel] Initialized");
+            _logger.LogDebug("Initialized");
         }
 
         /// <summary>Создать новую вкладку (показывает Welcome screen)</summary>
         private async void CreateNewTab()
         {
-            Console.WriteLine("[TabBarViewModel] CreateNewTab clicked");
+            _logger.LogDebug("CreateNewTab clicked");
 
             if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
                 && desktop.MainWindow != null)
@@ -85,13 +88,13 @@ namespace Writersword.ViewModels.Components
         /// </summary>
         private async void ActivateTab(DocumentTabViewModel tab)
         {
-            Console.WriteLine($"[TabBarViewModel] Activating tab: {tab.Title}");
+            _logger.LogDebug("Activating tab: {TabTitle}", tab.Title);
 
             var oldTab = ActiveTab;
 
             if (oldTab != null && oldTab != tab)
             {
-                Console.WriteLine($"[TabBarViewModel] Deactivating old tab: {oldTab.Title}");
+                _logger.LogDebug("Deactivating old tab: {OldTabTitle}", oldTab.Title);
 
                 if (!string.IsNullOrEmpty(oldTab.FilePath))
                 {
@@ -101,7 +104,7 @@ namespace Writersword.ViewModels.Components
                     if (autoSave != null)
                     {
                         await autoSave.SaveNowAsync();
-                        Console.WriteLine($"[TabBarViewModel] workspace.json saved immediately for: {oldTab.Title}");
+                        _logger.LogDebug("workspace.json saved immediately for: {OldTabTitle}", oldTab.Title);
                     }
                 }
 
@@ -109,7 +112,7 @@ namespace Writersword.ViewModels.Components
 
                 await oldTab.SaveToCacheAsync(() => mainViewModel.GetActiveModules());
 
-                Console.WriteLine($"[TabBarViewModel] Old tab saved to cache");
+                _logger.LogDebug("Old tab saved to cache");
             }
 
             ActiveTab = tab;
@@ -118,25 +121,25 @@ namespace Writersword.ViewModels.Components
         /// <summary>Закрыть вкладку</summary>
         private async Task CloseTabAsync(DocumentTabViewModel tab)
         {
-            Console.WriteLine($"[TabBarViewModel] Closing tab: {tab.Title}");
+            _logger.LogDebug("Closing tab: {TabTitle}", tab.Title);
 
             bool closed = await _projectWorkflow.CloseDocumentAsync(tab);
 
             if (!closed)
             {
-                Console.WriteLine($"[TabBarViewModel] Close cancelled by user");
+                _logger.LogDebug("Close cancelled by user");
                 return;
             }
 
             tab.RecoveryBanner = null;
-            Console.WriteLine($"[TabBarViewModel] RecoveryBanner cleared before removal");
+            _logger.LogDebug("RecoveryBanner cleared before removal");
 
             _tabCollection.Remove(tab);
-            Console.WriteLine($"[TabBarViewModel] Tab removed from collection");
+            _logger.LogDebug("Tab removed from collection");
 
             if (_tabCollection.Tabs.Count == 0)
             {
-                Console.WriteLine("[TabBarViewModel] No tabs left - clearing UI and showing Welcome");
+                _logger.LogDebug("No tabs left - clearing UI and showing Welcome");
 
                 var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
                 mainViewModel.ClearUIWhenNoTabs();
@@ -159,10 +162,13 @@ namespace Writersword.ViewModels.Components
 
             if (tab != null)
             {
-                Console.WriteLine($"[TabBarViewModel] Active tab changed: {tab.Title}");
+                _logger.LogDebug("Active tab changed: {TabTitle}", tab.Title);
             }
         }
 
+        /// <summary>
+        /// Поменять местами две вкладки
+        /// </summary>
         public void SwapTabs(int oldIndex, int newIndex)
         {
             if (oldIndex < 0 || oldIndex >= Tabs.Count ||
@@ -171,7 +177,7 @@ namespace Writersword.ViewModels.Components
                 return;
             }
 
-            Console.WriteLine($"[TabBarViewModel] SwapTabs: {oldIndex} <-> {newIndex}");
+            _logger.LogDebug("SwapTabs: {OldIndex} <-> {NewIndex}", oldIndex, newIndex);
 
             var tab = Tabs[oldIndex];
             var wasActive = (tab == ActiveTab);
@@ -186,7 +192,7 @@ namespace Writersword.ViewModels.Components
         /// </summary>
         public void SaveTabsOrder()
         {
-            Console.WriteLine("[TabBarViewModel] Saving tabs order");
+            _logger.LogDebug("Saving tabs order");
 
             var settingsService = App.Services.GetRequiredService<ISettingsService>();
 
@@ -197,7 +203,7 @@ namespace Writersword.ViewModels.Components
 
             settingsService.SaveOpenProjects(paths!);
 
-            Console.WriteLine($"[TabBarViewModel] Saved {paths.Count} tabs in new order");
+            _logger.LogDebug("Saved {Count} tabs in new order", paths.Count);
         }
     }
 }

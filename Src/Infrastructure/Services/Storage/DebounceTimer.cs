@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Threading;
 
 namespace Writersword.Src.Infrastructure.Services.Storage
@@ -10,6 +12,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
     /// </summary>
     public class DebounceTimer : IDisposable
     {
+        private readonly ILogger<DebounceTimer> _logger;
         private Timer? _timer;
         private readonly TimeSpan _delay;
         private readonly Action _action;
@@ -22,6 +25,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         /// <param name="action">Действие которое нужно выполнить</param>
         public DebounceTimer(TimeSpan delay, Action action)
         {
+            _logger = App.Services.GetService<ILogger<DebounceTimer>>()!;
             _delay = delay;
             _action = action;
         }
@@ -72,7 +76,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[DebounceTimer] Error executing action: {ex.Message}");
+                _logger.LogError(ex, "Error executing action");
             }
         }
 

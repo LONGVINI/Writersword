@@ -2,6 +2,8 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Writersword.Core.Enums;
 using Writersword.Src.Core.Interfaces.Services.UI;
 using Writersword.ViewModels.Components;
@@ -15,9 +17,15 @@ namespace Writersword.Src.Infrastructure.Services.UI
     /// </summary>
     public class NotificationService : INotificationService
     {
+        private readonly ILogger<NotificationService> _logger;
         private NotificationViewModel? _currentNotification;
         private NotificationView? _currentView;
         private Panel? _notificationContainer;
+
+        public NotificationService()
+        {
+            _logger = App.Services.GetService<ILogger<NotificationService>>()!;
+        }
 
         /// <summary>Показать успешное уведомление (зелёная галочка)</summary>
         public void ShowSuccess(string message)
@@ -58,7 +66,7 @@ namespace Writersword.Src.Infrastructure.Services.UI
 
                     if (_notificationContainer == null)
                     {
-                        Console.WriteLine("[NotificationService] ERROR: No notification container!");
+                        _logger.LogError("No notification container");
                         return;
                     }
 
@@ -82,12 +90,12 @@ namespace Writersword.Src.Infrastructure.Services.UI
                     // Показываем
                     _currentNotification.Show(message, type, duration);
 
-                    Console.WriteLine($"[NotificationService] Shown: {message} (Type: {type})");
+                    _logger.LogDebug("Shown: {Message} (Type: {Type})", message, type);
                 });
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[NotificationService] ERROR: {ex.Message}");
+                _logger.LogError(ex, "Failed to show notification");
             }
         }
 
@@ -111,13 +119,13 @@ namespace Writersword.Src.Infrastructure.Services.UI
 
                 if (_notificationContainer != null)
                 {
-                    Console.WriteLine("[NotificationService] Notification container found");
+                    _logger.LogDebug("Notification container found");
                 }
                 else
                 {
                     // Если контейнер не найден - создаём временный
-                    Console.WriteLine("[NotificationService] WARNING: NotificationContainer not found in MainWindow!");
-                    Console.WriteLine("[NotificationService] Add <Panel Name=\"NotificationContainer\"/> to MainWindow.axaml");
+                    _logger.LogWarning("NotificationContainer not found in MainWindow");
+                    _logger.LogWarning("Add <Panel Name=\"NotificationContainer\"/> to MainWindow.axaml");
 
                     // Создаём временный контейнер
                     _notificationContainer = new Panel
@@ -130,13 +138,13 @@ namespace Writersword.Src.Infrastructure.Services.UI
                     if (mainWindow.Content is Panel rootPanel)
                     {
                         rootPanel.Children.Add(_notificationContainer);
-                        Console.WriteLine("[NotificationService] Created temporary notification container");
+                        _logger.LogDebug("Created temporary notification container");
                     }
                 }
             }
             else
             {
-                Console.WriteLine("[NotificationService] ERROR: MainWindow not found!");
+                _logger.LogError("MainWindow not found");
             }
         }
     }

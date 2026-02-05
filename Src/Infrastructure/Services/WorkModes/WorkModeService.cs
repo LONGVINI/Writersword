@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Writersword.Core.Enums;
@@ -14,12 +16,14 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
     /// </summary>
     public class WorkModeService : IWorkModeService
     {
+        private readonly ILogger<WorkModeService> _logger;
         private readonly IWorkModeConfigurationService _configService;
         private List<WorkMode> _workModes = new();
         private string _currentProjectType = "";
 
         public WorkModeService(IWorkModeConfigurationService configService)
         {
+            _logger = App.Services.GetService<ILogger<WorkModeService>>()!;
             _configService = configService;
         }
 
@@ -28,7 +32,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         {
             _currentProjectType = projectType;
 
-            // Если переданы сохранённые WorkModes - загружаем ВСЕ
             if (savedWorkModes != null && savedWorkModes.Count > 0)
             {
                 _workModes = savedWorkModes;
@@ -37,61 +40,55 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 if (activeWorkMode == null)
                 {
                     _workModes[0].IsActive = true;
-                    Console.WriteLine($"[WorkModeService] No active WorkMode, activated first: {_workModes[0].Title}");
+                    _logger.LogDebug("No active WorkMode, activated first: {Title}", _workModes[0].Title);
                 }
                 else
                 {
-                    Console.WriteLine($"[WorkModeService] Restored active WorkMode: {activeWorkMode.Title}");
+                    _logger.LogDebug("Restored active WorkMode: {Title}", activeWorkMode.Title);
                 }
 
-                Console.WriteLine($"[WorkModeService] Loaded {_workModes.Count} WorkModes from saved data");
+                _logger.LogDebug("Loaded {Count} WorkModes from saved data", _workModes.Count);
             }
             else
             {
-                // Нет сохранённых - вызываем LoadConfiguration
-                // Он сделает: LOCAL → GLOBAL → DEFAULT
                 var allWorkModes = _configService.LoadConfiguration(projectType, fileStorage: null);
 
                 if (allWorkModes.Count == 0)
                 {
-                    Console.WriteLine("[WorkModeService] ERROR: No WorkModes available!");
+                    _logger.LogError("No WorkModes available");
                     return new List<WorkMode>();
                 }
 
                 _workModes = allWorkModes;
 
-                // Проверяем что есть активный
                 var activeWorkMode = _workModes.FirstOrDefault(wm => wm.IsActive);
                 if (activeWorkMode == null)
                 {
                     _workModes[0].IsActive = true;
-                    Console.WriteLine($"[WorkModeService] Activated first WorkMode: {_workModes[0].Title}");
+                    _logger.LogDebug("Activated first WorkMode: {Title}", _workModes[0].Title);
                 }
 
-                Console.WriteLine($"[WorkModeService] Loaded {_workModes.Count} WorkModes from config");
+                _logger.LogDebug("Loaded {Count} WorkModes from config", _workModes.Count);
             }
 
-            Console.WriteLine($"[WorkModeService] Initialized with {_workModes.Count} WorkModes");
+            _logger.LogDebug("Initialized with {Count} WorkModes", _workModes.Count);
             return _workModes;
         }
 
         /// <summary>Добавить новый режим работы</summary>
         public WorkMode AddWorkMode(string workModeId, string title, string icon)
         {
-            // Получаем дефолтную конфигурацию для этого типа WorkMode
             var defaultConfig = _configService.LoadDefaultConfiguration(_currentProjectType);
             var defaultWorkMode = defaultConfig.FirstOrDefault(wm => wm.WorkModeId == workModeId);
 
             if (defaultWorkMode != null)
             {
-                // Используем готовый WorkMode из дефолтной конфигурации
                 defaultWorkMode.IsActive = false;
                 _workModes.Add(defaultWorkMode);
-                Console.WriteLine($"[WorkModeService] Added WorkMode from default: {defaultWorkMode.Title}");
+                _logger.LogDebug("Added WorkMode from default: {Title}", defaultWorkMode.Title);
                 return defaultWorkMode;
             }
 
-            // Если не нашли в дефолтах - создаём минимальный
             var workMode = new WorkMode
             {
                 WorkModeId = workModeId,
@@ -103,7 +100,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             };
 
             _workModes.Add(workMode);
-            Console.WriteLine($"[WorkModeService] Added minimal WorkMode: {title}");
+            _logger.LogDebug("Added minimal WorkMode: {Title}", title);
 
             return workMode;
         }
@@ -113,14 +110,14 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         {
             if (!workMode.IsCloseable)
             {
-                Console.WriteLine($"[WorkModeService] Cannot remove WorkMode: {workMode.Title} (not closeable)");
+                _logger.LogDebug("Cannot remove WorkMode: {Title} (not closeable)", workMode.Title);
                 return false;
             }
 
             var removed = _workModes.Remove(workMode);
             if (removed)
             {
-                Console.WriteLine($"[WorkModeService] Removed WorkMode: {workMode.Title}");
+                _logger.LogDebug("Removed WorkMode: {Title}", workMode.Title);
 
                 if (workMode.IsActive && _workModes.Count > 0)
                 {
@@ -141,7 +138,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             };
 
             workMode.ModuleSlots.Add(slot);
-            Console.WriteLine($"[WorkModeService] Added module {moduleId} to {workMode.Title}");
+            _logger.LogDebug("Added module {ModuleId} to {WorkModeTitle}", moduleId, workMode.Title);
 
             return slot;
         }
@@ -151,14 +148,14 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         {
             if (!_configService.CanRemoveModule(_currentProjectType, workMode.WorkModeId, moduleSlot.ModuleId))
             {
-                Console.WriteLine($"[WorkModeService] Cannot remove module {moduleSlot.ModuleId} (required)");
+                _logger.LogDebug("Cannot remove module {ModuleId} (required)", moduleSlot.ModuleId);
                 return false;
             }
 
             var removed = workMode.ModuleSlots.Remove(moduleSlot);
             if (removed)
             {
-                Console.WriteLine($"[WorkModeService] Removed module {moduleSlot.ModuleId} from {workMode.Title}");
+                _logger.LogDebug("Removed module {ModuleId} from {WorkModeTitle}", moduleSlot.ModuleId, workMode.Title);
             }
 
             return removed;
@@ -186,7 +183,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
             workMode.IsActive = true;
 
-            Console.WriteLine($"[WorkModeService] Active WorkMode: {workMode.Title}");
+            _logger.LogDebug("Active WorkMode: {Title}", workMode.Title);
         }
     }
 }

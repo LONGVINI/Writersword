@@ -5,6 +5,7 @@ using Dock.Model.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using System;
 using System.Collections.Generic;
@@ -48,6 +49,8 @@ namespace Writersword.ViewModels
     /// </summary>
     public class MainWindowViewModel : ViewModelBase
     {
+        private readonly ILogger<MainWindowViewModel> _logger;
+
         // ========================================
         // КОМПОНЕНТЫ UI
         // ========================================
@@ -138,6 +141,8 @@ namespace Writersword.ViewModels
             IZipCacheService cacheService,
             DockFactory dockFactory)
         {
+            _logger = App.Services.GetService<ILogger<MainWindowViewModel>>()!;
+
             MenuBar = menuBar;
             TabBar = tabBar;
             WorkModeBar = workModeBar;
@@ -186,7 +191,8 @@ namespace Writersword.ViewModels
             RegisterHotKeys();
             InitializeDockFactory();
             InitializeMenuItems();
-            Console.WriteLine("[MainWindowViewModel] Initialized with components");
+
+            _logger.LogDebug("MainWindowViewModel initialized");
         }
 
         // ========================================
@@ -200,11 +206,11 @@ namespace Writersword.ViewModels
         /// </summary>
         public void OnTabActivated(DocumentTabViewModel tab)
         {
-            Console.WriteLine($"[MainWindowViewModel] Tab activated: {tab.Title}");
+            _logger.LogDebug("Tab activated: {Title}", tab.Title);
 
             if (tab.Workspace == null)
             {
-                Console.WriteLine($"[MainWindowViewModel] WARNING: Workspace not initialized for tab: {tab.Title}");
+                _logger.LogWarning("Workspace not initialized for tab: {Title}", tab.Title);
                 return;
             }
 
@@ -227,7 +233,7 @@ namespace Writersword.ViewModels
             {
                 _cacheUpdateService.Stop();
                 tab.Workspace.RefreshModulesFromContext();
-                Console.WriteLine("[MainWindowViewModel] Compare mode - cache disabled, modules read-only");
+                _logger.LogDebug("Compare mode - cache disabled, modules read-only");
             }
             else if (!string.IsNullOrEmpty(tab.FilePath))
             {
@@ -235,7 +241,7 @@ namespace Writersword.ViewModels
                 _cacheUpdateService.Start(tab.FilePath, () => tab.Workspace.GetActiveModules());
             }
 
-            Console.WriteLine($"[MainWindowViewModel] Tab UI updated");
+            _logger.LogDebug("Tab UI updated");
         }
 
         /// <summary>
@@ -244,12 +250,12 @@ namespace Writersword.ViewModels
         /// </summary>
         private async Task OnWorkModeSwitched(WorkMode newWorkMode)
         {
-            Console.WriteLine($"[MainWindowViewModel] WorkMode switch requested: {newWorkMode.Title}");
+            _logger.LogDebug("WorkMode switch requested: {Title}", newWorkMode.Title);
 
             var activeTab = TabBar.ActiveTab;
             if (activeTab?.Workspace == null)
             {
-                Console.WriteLine($"[MainWindowViewModel] No active tab with Workspace");
+                _logger.LogDebug("No active tab with Workspace");
                 return;
             }
 
@@ -261,7 +267,7 @@ namespace Writersword.ViewModels
             UpdateWorkModeMenuItems();
             UpdateModuleMenuItems();
 
-            Console.WriteLine($"[MainWindowViewModel] WorkMode switched in UI");
+            _logger.LogDebug("WorkMode switched in UI");
 
             await Task.CompletedTask;
         }
@@ -272,12 +278,12 @@ namespace Writersword.ViewModels
         /// </summary>
         private void OnWorkModesReordered()
         {
-            Console.WriteLine($"[MainWindowViewModel] WorkModes reordered, saving workspace");
+            _logger.LogDebug("WorkModes reordered, saving workspace");
 
             var activeTab = TabBar.ActiveTab;
             if (activeTab?.Workspace == null)
             {
-                Console.WriteLine($"[MainWindowViewModel] No active tab with Workspace");
+                _logger.LogDebug("No active tab with Workspace");
                 return;
             }
 
@@ -285,7 +291,7 @@ namespace Writersword.ViewModels
             // Сохранение произойдёт через 5 секунд (debounce)
             activeTab.Workspace.SaveWorkspaceAsync();
 
-            Console.WriteLine($"[MainWindowViewModel] WorkModes order saved for: {activeTab.Title}");
+            _logger.LogDebug("WorkModes order saved for: {Title}", activeTab.Title);
         }
 
         /// <summary>
@@ -294,12 +300,12 @@ namespace Writersword.ViewModels
         /// </summary>
         private void OnModuleAdded(string moduleId)
         {
-            Console.WriteLine($"[MainWindowViewModel] Module add requested: {moduleId}");
+            _logger.LogDebug("Module add requested: {ModuleId}", moduleId);
 
             var activeTab = TabBar.ActiveTab;
             if (activeTab?.Workspace == null)
             {
-                Console.WriteLine($"[MainWindowViewModel] No active tab with Workspace");
+                _logger.LogDebug("No active tab with Workspace");
                 return;
             }
 
@@ -316,7 +322,7 @@ namespace Writersword.ViewModels
             UpdateModuleMenuItems();
             FocusModule(moduleId);
 
-            Console.WriteLine($"[MainWindowViewModel] Module added in UI");
+            _logger.LogDebug("Module added in UI");
         }
 
         /// <summary>
@@ -325,12 +331,12 @@ namespace Writersword.ViewModels
         /// </summary>
         private void OnModuleRemoved(string moduleId)
         {
-            Console.WriteLine($"[MainWindowViewModel] Module remove requested: {moduleId}");
+            _logger.LogDebug("Module remove requested: {ModuleId}", moduleId);
 
             var activeTab = TabBar.ActiveTab;
             if (activeTab?.Workspace == null)
             {
-                Console.WriteLine($"[MainWindowViewModel] No active tab with Workspace");
+                _logger.LogDebug("No active tab with Workspace");
                 return;
             }
 
@@ -340,12 +346,12 @@ namespace Writersword.ViewModels
             if (moduleItem != null)
             {
                 moduleItem.IsActive = false;
-                Console.WriteLine($"[MainWindowViewModel] Set IsActive=false for {moduleId}");
+                _logger.LogDebug("Set IsActive=false for {ModuleId}", moduleId);
             }
 
             UpdateModuleMenuItems();
 
-            Console.WriteLine($"[MainWindowViewModel] Module removed in UI");
+            _logger.LogDebug("Module removed in UI");
         }
 
         // ========================================
@@ -355,25 +361,25 @@ namespace Writersword.ViewModels
         /// <summary>Обработчик открытия проекта</summary>
         private void OnProjectOpened(DocumentTabViewModel tab)
         {
-            Console.WriteLine($"[MainWindowViewModel] Project opened: {tab.Title}");
+            _logger.LogInformation("Project opened: {Title}", tab.Title);
         }
 
         /// <summary>Обработчик сохранения проекта</summary>
         private void OnProjectSaved(DocumentTabViewModel tab)
         {
-            Console.WriteLine($"[MainWindowViewModel] Project saved: {tab.Title}");
+            _logger.LogInformation("Project saved: {Title}", tab.Title);
         }
 
         /// <summary>Обработчик закрытия проекта</summary>
         private void OnProjectClosed(DocumentTabViewModel tab)
         {
-            Console.WriteLine($"[MainWindowViewModel] Project closed: {tab.Title}");
+            _logger.LogDebug("Project closed: {Title}", tab.Title);
 
             if (!string.IsNullOrEmpty(tab.FilePath) && tab.Workspace != null)
             {
-                Console.WriteLine($"[MainWindowViewModel] Saving workspace before closing project");
+                _logger.LogDebug("Saving workspace before closing project");
                 tab.Workspace.SaveWorkspaceAsync().Wait();
-                Console.WriteLine($"[MainWindowViewModel] Workspace saved for: {tab.Title}");
+                _logger.LogDebug("Workspace saved for: {Title}", tab.Title);
             }
 
             _cacheUpdateService.Stop();
@@ -385,10 +391,10 @@ namespace Writersword.ViewModels
         /// </summary>
         public void ClearUIWhenNoTabs()
         {
-            Console.WriteLine("[MainWindowViewModel] ClearUIWhenNoTabs called");
+            _logger.LogDebug("ClearUIWhenNoTabs called");
 
             _cacheUpdateService.Stop();
-            Console.WriteLine("[MainWindowViewModel] Caching stopped (no tabs)");
+            _logger.LogDebug("Caching stopped (no tabs)");
 
             DockLayout = null;
 
@@ -396,7 +402,7 @@ namespace Writersword.ViewModels
 
             ModulePanel.Clear();
 
-            Console.WriteLine("[MainWindowViewModel] UI completely cleared - EMPTY!");
+            _logger.LogDebug("UI completely cleared");
         }
 
         // ========================================
@@ -411,11 +417,11 @@ namespace Writersword.ViewModels
         {
             if (tab.Workspace == null)
             {
-                Console.WriteLine($"[InitializeWorkModesForTab] WARNING: Workspace not initialized");
+                _logger.LogWarning("Workspace not initialized");
                 return;
             }
 
-            Console.WriteLine($"[InitializeWorkModesForTab] Updating UI for: {tab.Title}");
+            _logger.LogDebug("Updating UI for tab: {Title}", tab.Title);
 
             // Очищаем старые кнопки WorkMode чтобы не было дубликатов
             AllWorkModes.Clear();
@@ -436,7 +442,7 @@ namespace Writersword.ViewModels
             var activeTab = TabBar.ActiveTab;
             if (activeTab?.Workspace == null)
             {
-                Console.WriteLine("[GetActiveModules] No active tab with Workspace");
+                _logger.LogDebug("No active tab with Workspace");
                 return new List<IModule>();
             }
 
@@ -456,7 +462,7 @@ namespace Writersword.ViewModels
         private void InitializeDockFactory()
         {
             _dockFactory.Initialize();
-            Console.WriteLine("[MainWindowViewModel] Dock factory initialized");
+            _logger.LogDebug("Dock factory initialized");
         }
 
         // ========================================
@@ -506,7 +512,7 @@ namespace Writersword.ViewModels
                 DefaultGesture = new KeyGesture(Key.T, KeyModifiers.Control)
             }, CreateNewTabCommand);
 
-            Console.WriteLine("[MainWindowViewModel] Hot keys registered");
+            _logger.LogDebug("Hot keys registered");
         }
 
         // ========================================
@@ -519,12 +525,12 @@ namespace Writersword.ViewModels
         /// </summary>
         public async void LoadProject(string filePath)
         {
-            Console.WriteLine($"[LoadProject] Loading: {filePath}");
+            _logger.LogDebug("Loading project: {Path}", filePath);
 
             var existingTab = _tabCollection.FindByPath(filePath);
             if (existingTab != null)
             {
-                Console.WriteLine($"[LoadProject] Project already open");
+                _logger.LogDebug("Project already open");
                 _tabCollection.ActiveTab = existingTab;
                 return;
             }
@@ -602,7 +608,7 @@ namespace Writersword.ViewModels
                 });
             }
 
-            Console.WriteLine($"[InitializeMenuItems] Loaded {AllModules.Count} modules from metadata");
+            _logger.LogDebug("Loaded {Count} modules from metadata", AllModules.Count);
 
             var allWorkModes = workModeRegistry.GetAll();
 
@@ -617,18 +623,18 @@ namespace Writersword.ViewModels
                 });
             }
 
-            Console.WriteLine($"[InitializeMenuItems] Loaded {AllWorkModes.Count} WorkModes from registry");
+            _logger.LogDebug("Loaded {Count} WorkModes from registry", AllWorkModes.Count);
         }
 
         /// <summary>Открыть/переключить WorkMode</summary>
         private void ToggleWorkMode(string workModeId)
         {
-            Console.WriteLine($"[ToggleWorkMode] Toggling: {workModeId}");
+            _logger.LogDebug("Toggling WorkMode: {WorkModeId}", workModeId);
 
             var activeTab = TabBar.ActiveTab;
             if (activeTab?.Workspace == null)
             {
-                Console.WriteLine("[ToggleWorkMode] No active tab with Workspace");
+                _logger.LogDebug("No active tab with Workspace");
                 return;
             }
 
@@ -637,17 +643,17 @@ namespace Writersword.ViewModels
 
             if (existingWorkMode != null)
             {
-                Console.WriteLine($"[ToggleWorkMode] WorkMode exists, switching to it");
+                _logger.LogDebug("WorkMode exists, switching to it");
                 workModeBar.SwitchWorkModeCommand.Execute(existingWorkMode).Subscribe();
             }
             else
             {
-                Console.WriteLine($"[ToggleWorkMode] WorkMode not found, creating new");
+                _logger.LogDebug("WorkMode not found, creating new");
 
                 var project = GetProjectForTab(activeTab);
                 if (project == null)
                 {
-                    Console.WriteLine("[ToggleWorkMode] No active project");
+                    _logger.LogDebug("No active project");
                     return;
                 }
 
@@ -656,14 +662,14 @@ namespace Writersword.ViewModels
 
                 if (workModeInstance == null)
                 {
-                    Console.WriteLine($"[ToggleWorkMode] WorkMode not found in registry: {workModeId}");
+                    _logger.LogWarning("WorkMode not found in registry: {WorkModeId}", workModeId);
                     return;
                 }
                 // Получаем WorkModeService из активной вкладки через её Workspace
                 var workModeService = activeTab.Workspace.GetWorkModeService();
                 if (workModeService == null)
                 {
-                    Console.WriteLine($"[ToggleWorkMode] No WorkModeService available");
+                    _logger.LogWarning("No WorkModeService available");
                     return;
                 }
 
@@ -679,7 +685,7 @@ namespace Writersword.ViewModels
                 WorkModeBar.LoadWorkModes(workModeService.GetAllWorkModes());
                 workModeBar.SwitchWorkModeCommand.Execute(newWorkMode).Subscribe();
 
-                Console.WriteLine($"[ToggleWorkMode] Created and switched to: {newWorkMode.Title}");
+                _logger.LogInformation("Created and switched to WorkMode: {Title}", newWorkMode.Title);
             }
 
             UpdateWorkModeMenuItems();
@@ -691,12 +697,12 @@ namespace Writersword.ViewModels
         /// </summary>
         private void ToggleModule(string moduleId)
         {
-            Console.WriteLine($"[ToggleModule] Menu clicked: {moduleId}");
+            _logger.LogDebug("Menu clicked for module: {ModuleId}", moduleId);
 
             var activeTab = TabBar.ActiveTab;
             if (activeTab?.Workspace == null)
             {
-                Console.WriteLine($"[ToggleModule] No active tab with Workspace");
+                _logger.LogDebug("No active tab with Workspace");
                 return;
             }
 
@@ -732,7 +738,7 @@ namespace Writersword.ViewModels
                 var document = dock.VisibleDockables.FirstOrDefault(d => d.Id == documentId);
                 if (document != null)
                 {
-                    Console.WriteLine($"[FocusDocumentRecursive] Found and focusing: {documentId}");
+                    _logger.LogDebug("Found and focusing document: {DocumentId}", documentId);
                     dock.ActiveDockable = document;
                     return true;
                 }
@@ -766,7 +772,7 @@ namespace Writersword.ViewModels
             var activeTab = TabBar.ActiveTab;
             if (activeTab?.Workspace == null)
             {
-                Console.WriteLine("[UpdateModuleMenuItems] No active WorkMode - all disabled");
+                _logger.LogDebug("No active WorkMode - all module menu items disabled");
                 foreach (var menuItem in AllModules)
                 {
                     menuItem.IsEnabled = false;
@@ -778,7 +784,7 @@ namespace Writersword.ViewModels
             var activeWorkMode = activeTab.Workspace.GetActiveWorkMode();
             if (activeWorkMode == null)
             {
-                Console.WriteLine("[UpdateModuleMenuItems] No active WorkMode - all disabled");
+                _logger.LogDebug("No active WorkMode - all module menu items disabled");
                 foreach (var menuItem in AllModules)
                 {
                     menuItem.IsEnabled = false;
@@ -787,7 +793,7 @@ namespace Writersword.ViewModels
                 return;
             }
 
-            Console.WriteLine($"[UpdateModuleMenuItems] Updating for WorkMode: {activeWorkMode.Title}");
+            _logger.LogDebug("Updating module menu items for WorkMode: {Title}", activeWorkMode.Title);
 
             foreach (var menuItem in AllModules)
             {
@@ -803,8 +809,6 @@ namespace Writersword.ViewModels
                     menuItem.IsEnabled = false;
                     menuItem.IsChecked = false;
                 }
-
-                Console.WriteLine($"  {menuItem.Icon} {menuItem.Name}: Enabled={menuItem.IsEnabled}, Checked={menuItem.IsChecked}");
             }
         }
 
@@ -814,12 +818,12 @@ namespace Writersword.ViewModels
         /// </summary>
         public void HandleModuleClosedInDock(string moduleId)
         {
-            Console.WriteLine($"[MainWindowViewModel] Module closed in dock: {moduleId}");
+            _logger.LogDebug("Module closed in dock: {ModuleId}", moduleId);
 
             var activeTab = TabBar.ActiveTab;
             if (activeTab?.Workspace == null)
             {
-                Console.WriteLine($"[MainWindowViewModel] No active tab with Workspace");
+                _logger.LogDebug("No active tab with Workspace");
                 return;
             }
 
@@ -834,16 +838,16 @@ namespace Writersword.ViewModels
         /// </summary>
         public async Task SaveActiveWorkspaceConfigurationAsync()
         {
-            Console.WriteLine("[MainWindowViewModel] Saving workspace for ACTIVE tab");
+            _logger.LogDebug("Saving workspace for active tab");
 
             var activeTab = _tabCollection.ActiveTab;
             if (activeTab?.Workspace == null)
             {
-                Console.WriteLine("[MainWindowViewModel] No active tab with Workspace");
+                _logger.LogDebug("No active tab with Workspace");
                 return;
             }
 
-            Console.WriteLine($"[MainWindowViewModel] Force saving workspace for: {activeTab.Title}");
+            _logger.LogDebug("Force saving workspace for: {Title}", activeTab.Title);
             await activeTab.Workspace.SaveWorkspaceAsync();
         }
     }

@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using System;
 using System.Collections.Generic;
@@ -13,6 +14,7 @@ using Writersword.Core.Services;
 using Writersword.Modules.Common;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.Workspace;
+using Writersword.Src.Core.Services;
 using Writersword.Src.Infrastructure.Dock;
 using Writersword.Src.Infrastructure.Workspace;
 
@@ -20,12 +22,13 @@ namespace Writersword.ViewModels
 {
     /// <summary>
     /// ViewModel для одной вкладки документа
-    /// Теперь работает напрямую с ProjectFile и управляет DocumentContext
+    /// Теперь работает напрямую с ProjectFile и управляет 
     /// Каждая вкладка имеет свой RecoveryBanner (если есть кеш)
     /// ИЗОЛЯЦИЯ: каждая вкладка имеет свой WorkspaceController
     /// </summary>
     public class DocumentTabViewModel : ViewModelBase
     {
+        private readonly ILogger<DocumentTabViewModel> _logger;
         private readonly ProjectFile _project;
         private readonly Func<DocumentTabViewModel, Task>? _onClose;
         private bool _isActive;
@@ -129,6 +132,7 @@ namespace Writersword.ViewModels
                 string filePath = "",
                 Func<DocumentTabViewModel, Task>? onClose = null)
         {
+            _logger = App.Services.GetService<ILogger<DocumentTabViewModel>>()!;
             _project = project;
             _filePath = filePath;
             _onClose = onClose;
@@ -138,20 +142,20 @@ namespace Writersword.ViewModels
 
             var moduleFactory = App.Services.GetRequiredService<ModuleFactory>();
             ModuleContext = new ProjectModuleContext(project.Id, moduleFactory);
-            Console.WriteLine($"[DocumentTabViewModel] ProjectModuleContext created for: {project.Title}");
+            _logger.LogDebug("ProjectModuleContext created for: {ProjectTitle}", project.Title);
 
             CloseCommand = ReactiveCommand.CreateFromTask(async () =>
             {
-                Console.WriteLine("[DocumentTabViewModel] CloseCommand EXECUTED!");
+                _logger.LogDebug("CloseCommand executed");
                 if (_onClose != null)
                 {
-                    Console.WriteLine("[DocumentTabViewModel] Calling _onClose!");
+                    _logger.LogDebug("Calling onClose callback");
                     await _onClose(this);
-                    Console.WriteLine("[DocumentTabViewModel] _onClose completed!");
+                    _logger.LogDebug("onClose callback completed");
                 }
                 else
                 {
-                    Console.WriteLine("[DocumentTabViewModel] ERROR: _onClose is NULL!");
+                    _logger.LogError("onClose callback is null");
                 }
             });
 
@@ -167,7 +171,7 @@ namespace Writersword.ViewModels
         {
             if (string.IsNullOrEmpty(_filePath))
             {
-                Console.WriteLine("[DocumentTabViewModel] Cannot initialize workspace - no file path");
+                _logger.LogWarning("Cannot initialize workspace - no file path");
                 return;
             }
 
@@ -182,7 +186,7 @@ namespace Writersword.ViewModels
                 autoSave
             );
 
-            Console.WriteLine($"[DocumentTabViewModel] WorkspaceController initialized for: {Title}");
+            _logger.LogDebug("WorkspaceController initialized for: {Title}", Title);
         }
 
         /// <summary>
@@ -215,7 +219,7 @@ namespace Writersword.ViewModels
                             if (customData.Count != savedProject.ModulesData.Count)
                             {
                                 dataChanged = true;
-                                Console.WriteLine($"[DocumentTabViewModel] Module count differs");
+                                _logger.LogDebug("Module count differs");
                             }
                             else
                             {
@@ -224,7 +228,7 @@ namespace Writersword.ViewModels
                                     if (!savedProject.ModulesData.TryGetValue(kvp.Key, out var savedData))
                                     {
                                         dataChanged = true;
-                                        Console.WriteLine($"[DocumentTabViewModel] New module: {kvp.Key}");
+                                        _logger.LogDebug("New module: {ModuleKey}", kvp.Key);
                                         break;
                                     }
 
@@ -233,14 +237,14 @@ namespace Writersword.ViewModels
                                         if (currentStr != savedStr)
                                         {
                                             dataChanged = true;
-                                            Console.WriteLine($"[DocumentTabViewModel] Data changed: {kvp.Key}");
+                                            _logger.LogDebug("Data changed: {ModuleKey}", kvp.Key);
                                             break;
                                         }
                                     }
                                     else if (!Equals(kvp.Value, savedData))
                                     {
                                         dataChanged = true;
-                                        Console.WriteLine($"[DocumentTabViewModel] Data changed: {kvp.Key}");
+                                        _logger.LogDebug("Data changed: {ModuleKey}", kvp.Key);
                                         break;
                                     }
                                 }
@@ -249,11 +253,11 @@ namespace Writersword.ViewModels
                             if (dataChanged)
                             {
                                 await cacheService.SaveCacheAsync(FilePath, _project.Id, customData, sessionData);
-                                Console.WriteLine($"[DocumentTabViewModel] Cache saved (differs from ZIP)");
+                                _logger.LogDebug("Cache saved (differs from ZIP)");
                             }
                             else
                             {
-                                Console.WriteLine($"[DocumentTabViewModel] No changes, cache not needed");
+                                _logger.LogDebug("No changes, cache not needed");
                             }
                         }
                     }
@@ -261,7 +265,7 @@ namespace Writersword.ViewModels
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[DocumentTabViewModel] SaveToCache error: {ex.Message}");
+                _logger.LogError(ex, "SaveToCache failed");
             }
         }
 
@@ -278,7 +282,7 @@ namespace Writersword.ViewModels
 
             this.RaisePropertyChanged(nameof(Content));
 
-            Console.WriteLine($"[DocumentTabViewModel] Project data updated, ModulesData count: {_project.ModulesData.Count}");
+            _logger.LogDebug("Project data updated, ModulesData count: {Count}", _project.ModulesData.Count);
         }
 
         /// <summary>Получить проект</summary>
@@ -291,7 +295,7 @@ namespace Writersword.ViewModels
         public void MarkAsModified()
         {
             _hasUnsavedChanges = true;
-            Console.WriteLine($"[DocumentTabViewModel] Marked as modified: {Title}");
+            _logger.LogDebug("Marked as modified: {Title}", Title);
         }
 
         /// <summary>
@@ -300,7 +304,7 @@ namespace Writersword.ViewModels
         public void MarkAsSaved()
         {
             _hasUnsavedChanges = false;
-            Console.WriteLine($"[DocumentTabViewModel] Marked as saved: {Title}");
+            _logger.LogDebug("Marked as saved: {Title}", Title);
         }
 
         /// <summary>
@@ -317,14 +321,14 @@ namespace Writersword.ViewModels
         /// </summary>
         public void Dispose()
         {
-            Console.WriteLine($"[DocumentTabViewModel] Disposing: {Title}");
+            _logger.LogDebug("Disposing: {Title}", Title);
 
             Workspace?.Dispose();
             Workspace = null;
-            Console.WriteLine($"[DocumentTabViewModel] WorkspaceController disposed");
+            _logger.LogDebug("WorkspaceController disposed");
 
             ModuleContext?.Dispose();
-            Console.WriteLine($"[DocumentTabViewModel] All modules disposed for: {Title}");
+            _logger.LogDebug("All modules disposed for: {Title}", Title);
         }
     }
 }

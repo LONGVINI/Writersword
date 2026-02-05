@@ -1,4 +1,6 @@
-﻿using ReactiveUI;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using ReactiveUI;
 using System;
 using System.Reactive;
 using System.Reactive.Linq;
@@ -12,6 +14,7 @@ namespace Writersword.ViewModels.Components
     /// </summary>
     public class NotificationViewModel : ViewModelBase
     {
+        private readonly ILogger<NotificationViewModel> _logger;
         private string _message = "";
         private NotificationType _type = NotificationType.Info;
         private bool _isVisible = false;
@@ -61,10 +64,10 @@ namespace Writersword.ViewModels.Components
             {
                 return Type switch
                 {
-                    NotificationType.Success => "#28A745", // Зелёный
-                    NotificationType.Info => "#007ACC",    // Синий
-                    NotificationType.Warning => "#FFA500", // Оранжевый
-                    NotificationType.Error => "#DC3545",   // Красный
+                    NotificationType.Success => "#28A745",
+                    NotificationType.Info => "#007ACC",
+                    NotificationType.Warning => "#FFA500",
+                    NotificationType.Error => "#DC3545",
                     _ => "#007ACC"
                 };
             }
@@ -77,10 +80,10 @@ namespace Writersword.ViewModels.Components
             {
                 return Type switch
                 {
-                    NotificationType.Success => "#1E3A28", // Тёмно-зелёный
-                    NotificationType.Info => "#1E2A3A",    // Тёмно-синий
-                    NotificationType.Warning => "#3A2E1E", // Тёмно-оранжевый
-                    NotificationType.Error => "#3A1E1E",   // Тёмно-красный
+                    NotificationType.Success => "#1E3A28",
+                    NotificationType.Info => "#1E2A3A",
+                    NotificationType.Warning => "#3A2E1E",
+                    NotificationType.Error => "#3A1E1E",
                     _ => "#1E2A3A"
                 };
             }
@@ -91,7 +94,8 @@ namespace Writersword.ViewModels.Components
 
         public NotificationViewModel()
         {
-            // Команда закрытия
+            _logger = App.Services.GetService<ILogger<NotificationViewModel>>()!;
+
             CloseCommand = ReactiveCommand.Create(Hide);
         }
 
@@ -103,24 +107,19 @@ namespace Writersword.ViewModels.Components
         /// <param name="duration">Длительность показа (по умолчанию 3 секунды)</param>
         public void Show(string message, NotificationType type, TimeSpan? duration = null)
         {
-            // Устанавливаем данные
             Message = message;
             Type = type;
 
-            // Уведомляем об изменении иконки и цветов
             this.RaisePropertyChanged(nameof(Icon));
             this.RaisePropertyChanged(nameof(IconColor));
             this.RaisePropertyChanged(nameof(BackgroundColor));
 
-            // Отменяем предыдущий таймер если был
             _hideTimer?.Dispose();
 
-            // Показываем
             IsVisible = true;
 
-            Console.WriteLine($"[NotificationViewModel] Showing: {message} (Type: {type})");
+            _logger.LogDebug("Showing notification: {Message} (Type: {Type})", message, type);
 
-            // Автоматически скрываем через N секунд
             var hideDelay = duration ?? TimeSpan.FromSeconds(3);
             _hideTimer = Observable
                 .Timer(hideDelay)
@@ -135,7 +134,7 @@ namespace Writersword.ViewModels.Components
             _hideTimer?.Dispose();
             _hideTimer = null;
 
-            Console.WriteLine($"[NotificationViewModel] Hidden");
+            _logger.LogDebug("Notification hidden");
         }
 
         /// <summary>Освободить ресурсы</summary>

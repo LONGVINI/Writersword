@@ -1,4 +1,6 @@
 using Avalonia.Controls;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Writersword.Views.Components
 {
@@ -8,9 +10,15 @@ namespace Writersword.Views.Components
     /// </summary>
     public partial class RecoveryBanner : UserControl
     {
+        private readonly ILogger<RecoveryBanner> _logger;
+
         public RecoveryBanner()
         {
+            _logger = App.Services.GetService<ILogger<RecoveryBanner>>()!;
+
             InitializeComponent();
+
+            _logger.LogDebug("RecoveryBanner created");
         }
     }
 }

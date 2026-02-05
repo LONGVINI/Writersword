@@ -1,4 +1,6 @@
-﻿using ReactiveUI;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using ReactiveUI;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,6 +16,7 @@ namespace Writersword.ViewModels.Components
     /// </summary>
     public class WorkModeBarViewModel : ViewModelBase
     {
+        private readonly ILogger<WorkModeBarViewModel> _logger;
         private List<WorkMode> _workModes = new();
         private WorkMode? _activeWorkMode;
 
@@ -42,9 +45,11 @@ namespace Writersword.ViewModels.Components
 
         public WorkModeBarViewModel()
         {
+            _logger = App.Services.GetService<ILogger<WorkModeBarViewModel>>()!;
+
             SwitchWorkModeCommand = ReactiveCommand.CreateFromTask<WorkMode>(SwitchWorkModeAsync);
 
-            Console.WriteLine("[WorkModeBarViewModel] Initialized");
+            _logger.LogDebug("Initialized");
         }
 
         /// <summary>
@@ -54,7 +59,7 @@ namespace Writersword.ViewModels.Components
         public void SetWorkModeSwitchedHandler(Func<WorkMode, Task> handler)
         {
             _onWorkModeSwitched = handler;
-            Console.WriteLine("[WorkModeBarViewModel] WorkMode switch handler set");
+            _logger.LogDebug("WorkMode switch handler set");
         }
 
         /// <summary>
@@ -64,7 +69,7 @@ namespace Writersword.ViewModels.Components
         public void SetWorkModesReorderedHandler(Action handler)
         {
             _onWorkModesReordered = handler;
-            Console.WriteLine("[WorkModeBarViewModel] WorkModes reordered handler set");
+            _logger.LogDebug("WorkModes reordered handler set");
         }
 
         /// <summary>
@@ -76,7 +81,7 @@ namespace Writersword.ViewModels.Components
             WorkModes = workModes;
             ActiveWorkMode = workModes.FirstOrDefault(wm => wm.IsActive);
 
-            Console.WriteLine($"[WorkModeBarViewModel] Loaded {workModes.Count} WorkModes");
+            _logger.LogDebug("Loaded {Count} WorkModes", workModes.Count);
         }
 
         /// <summary>
@@ -88,7 +93,7 @@ namespace Writersword.ViewModels.Components
         {
             if (indexA < 0 || indexA >= WorkModes.Count || indexB < 0 || indexB >= WorkModes.Count)
             {
-                Console.WriteLine($"[WorkModeBarViewModel] SwapWorkModes: invalid indices {indexA} <-> {indexB}");
+                _logger.LogWarning("SwapWorkModes: invalid indices {IndexA} <-> {IndexB}", indexA, indexB);
                 return;
             }
 
@@ -96,7 +101,7 @@ namespace Writersword.ViewModels.Components
             WorkModes[indexA] = WorkModes[indexB];
             WorkModes[indexB] = temp;
 
-            Console.WriteLine($"[WorkModeBarViewModel] SwapWorkModes: {indexA} <-> {indexB}");
+            _logger.LogDebug("SwapWorkModes: {IndexA} <-> {IndexB}", indexA, indexB);
         }
 
         /// <summary>
@@ -105,24 +110,19 @@ namespace Writersword.ViewModels.Components
         /// </summary>
         public void SaveWorkModesOrder()
         {
-            // Обновляем Order у каждого WorkMode согласно текущей позиции
             for (int i = 0; i < WorkModes.Count; i++)
             {
                 WorkModes[i].Order = i;
             }
 
-            Console.WriteLine($"[WorkModeBarViewModel] Saving WorkModes order:");
+            _logger.LogDebug("Saving WorkModes order:");
             for (int i = 0; i < WorkModes.Count; i++)
             {
-                Console.WriteLine($"[WorkModeBarViewModel]   [{i}] {WorkModes[i].Title} (Order={WorkModes[i].Order})");
+                _logger.LogDebug("[{Index}] {Title} (Order={Order})", i, WorkModes[i].Title, WorkModes[i].Order);
             }
 
-            // Создаём новый список чтобы RaiseAndSetIfChanged сработал
-            // и ItemsControl пересоздал кнопки в новом порядке
-            // Это вызывается ПОСЛЕ завершения drag, поэтому безопасно
             WorkModes = new List<WorkMode>(WorkModes);
 
-            // Уведомляем MainWindowViewModel для сохранения в workspace.json
             _onWorkModesReordered?.Invoke();
         }
 
@@ -131,23 +131,20 @@ namespace Writersword.ViewModels.Components
         {
             if (ActiveWorkMode == newWorkMode)
             {
-                Console.WriteLine($"[WorkModeBarViewModel] Already in WorkMode: {newWorkMode.Title}");
+                _logger.LogDebug("Already in WorkMode: {Title}", newWorkMode.Title);
                 return;
             }
 
-            Console.WriteLine($"[WorkModeBarViewModel] Switching WorkMode: {ActiveWorkMode?.Title} → {newWorkMode.Title}");
+            _logger.LogDebug("Switching WorkMode: {OldTitle} → {NewTitle}", ActiveWorkMode?.Title, newWorkMode.Title);
 
-            // Обновляем локальное состояние
             ActiveWorkMode = newWorkMode;
 
-            // Уведомляем MainWindowViewModel для перестройки UI
-            // MainWindowViewModel сам вызовет WorkspaceController.SwitchWorkMode()
             if (_onWorkModeSwitched != null)
             {
                 await _onWorkModeSwitched(newWorkMode);
             }
 
-            Console.WriteLine($"[WorkModeBarViewModel] WorkMode switched to: {newWorkMode.Title}");
+            _logger.LogDebug("WorkMode switched to: {Title}", newWorkMode.Title);
         }
     }
 }

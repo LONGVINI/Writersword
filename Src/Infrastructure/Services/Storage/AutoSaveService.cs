@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Reactive.Linq;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.Services.Storage;
@@ -12,6 +14,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
     /// </summary>
     public class AutoSaveService : IAutoSaveService
     {
+        private readonly ILogger<AutoSaveService> _logger;
         private readonly IProjectWorkflow _projectWorkflow;
         private readonly ITabCollection _tabCollection;
         private IDisposable? _timer;
@@ -41,6 +44,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
             IProjectWorkflow projectWorkflow,
             ITabCollection tabCollection)
         {
+            _logger = App.Services.GetService<ILogger<AutoSaveService>>()!;
             _projectWorkflow = projectWorkflow;
             _tabCollection = tabCollection;
         }
@@ -51,7 +55,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
             // Если интервал = 0, не запускаем
             if (_interval == TimeSpan.Zero)
             {
-                Console.WriteLine("[AutoSaveService] Interval is 0, not starting");
+                _logger.LogDebug("Interval is 0, not starting");
                 return;
             }
 
@@ -62,7 +66,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
             _timer = Observable.Interval(_interval)
                 .Subscribe(async _ => await SaveActiveTabAsync());
 
-            Console.WriteLine($"[AutoSaveService] Enabled with interval: {_interval.TotalMinutes} minutes");
+            _logger.LogDebug("Enabled with interval: {Minutes} minutes", _interval.TotalMinutes);
         }
 
         /// <summary>Выключить автосохранение</summary>
@@ -70,7 +74,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
         {
             _timer?.Dispose();
             _timer = null;
-            Console.WriteLine("[AutoSaveService] Disabled");
+            _logger.LogDebug("Disabled");
         }
 
         /// <summary>
@@ -80,7 +84,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
         public void SetInterval(TimeSpan interval)
         {
             _interval = interval;
-            Console.WriteLine($"[AutoSaveService] Interval set to: {interval.TotalMinutes} minutes");
+            _logger.LogDebug("Interval set to: {Minutes} minutes", interval.TotalMinutes);
 
             // Если интервал = 0, отключаем
             if (interval == TimeSpan.Zero)
@@ -105,34 +109,34 @@ namespace Writersword.Src.Infrastructure.Services.Project
                 var activeTab = _tabCollection.ActiveTab;
                 if (activeTab == null)
                 {
-                    Console.WriteLine("[AutoSaveService] No active tab, skipping");
+                    _logger.LogDebug("No active tab, skipping");
                     return;
                 }
 
                 // Не сохраняем если в Compare mode
                 if (activeTab.Context.IsInCompareMode)
                 {
-                    Console.WriteLine("[AutoSaveService] Active tab in Compare mode, skipping");
+                    _logger.LogDebug("Active tab in Compare mode, skipping");
                     return;
                 }
 
-                Console.WriteLine($"[AutoSaveService] Auto-saving tab: {activeTab.Title}");
+                _logger.LogDebug("Auto-saving tab: {TabTitle}", activeTab.Title);
 
                 bool success = await _projectWorkflow.SaveDocumentAsync(activeTab);
 
                 if (success)
                 {
-                    Console.WriteLine($"[AutoSaveService] Successfully saved: {activeTab.Title}");
+                    _logger.LogDebug("Successfully saved: {TabTitle}", activeTab.Title);
                     ProjectSaved?.Invoke(this, EventArgs.Empty);
                 }
                 else
                 {
-                    Console.WriteLine($"[AutoSaveService] Failed to save: {activeTab.Title}");
+                    _logger.LogWarning("Failed to save: {TabTitle}", activeTab.Title);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[AutoSaveService] ERROR: {ex.Message}");
+                _logger.LogError(ex, "Auto-save failed");
             }
         }
     }

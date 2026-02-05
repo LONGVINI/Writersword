@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using System.IO;
 using Writersword.Core.Interfaces.Services;
@@ -6,14 +7,17 @@ using Writersword.Core.Models.Project;
 using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Src.Infrastructure.Services.Storage;
 
-namespace Writersword.Core.Models
+namespace Writersword.Src.Core.Services
 {
     /// <summary>
-    /// Контекст документа - передаётся модулям для доступа к общим данным
+    /// Контекст документа - передаётся модулям для доступа к общим данным и сервисам
     /// Позволяет модулям быть автономными и самостоятельно реагировать на изменения
+    /// Объединяет данные проекта и функциональность работы с файлами
     /// </summary>
     public class DocumentContext
     {
+        private readonly ILogger<DocumentContext> _logger;
+
         /// <summary>Режим просмотра без редактирования (для сравнения версий)</summary>
         public bool IsInCompareMode { get; set; }
 
@@ -32,10 +36,11 @@ namespace Writersword.Core.Models
         /// <summary>Конструктор</summary>
         public DocumentContext(ProjectFile project, string filePath)
         {
+            _logger = App.Services.GetService<ILogger<DocumentContext>>()!;
             Project = project;
             FilePath = filePath;
             IsInCompareMode = false;
-            FileStorage = null;  // Устанавливается при открытии проекта
+            FileStorage = null;
         }
 
         /// <summary>
@@ -47,8 +52,7 @@ namespace Writersword.Core.Models
         {
             if (FileStorage == null)
             {
-
-                Console.WriteLine("[DocumentContext] WARNING: FileStorage is null, cannot write file");
+                _logger.LogWarning("FileStorage is null, cannot write file");
                 return;
             }
 
@@ -64,7 +68,7 @@ namespace Writersword.Core.Models
         {
             if (FileStorage == null)
             {
-                Console.WriteLine("[DocumentContext] WARNING: FileStorage is null, cannot read file");
+                _logger.LogWarning("FileStorage is null, cannot read file");
                 return null;
             }
 
@@ -89,7 +93,7 @@ namespace Writersword.Core.Models
         {
             if (FileStorage == null)
             {
-                Console.WriteLine("[DocumentContext] WARNING: FileStorage is null, cannot delete file");
+                _logger.LogWarning("FileStorage is null, cannot delete file");
                 return;
             }
 

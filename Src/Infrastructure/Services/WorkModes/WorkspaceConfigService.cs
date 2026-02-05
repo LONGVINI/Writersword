@@ -1,4 +1,6 @@
-﻿using Newtonsoft.Json;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 using System;
 using System.Text;
 using Writersword.Core.Interfaces.Services;
@@ -13,7 +15,13 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
     /// </summary>
     public class WorkspaceConfigService : IWorkspaceConfigService
     {
+        private readonly ILogger<WorkspaceConfigService> _logger;
         private const string ConfigFileName = "workspace.json";
+
+        public WorkspaceConfigService()
+        {
+            _logger = App.Services.GetService<ILogger<WorkspaceConfigService>>()!;
+        }
 
         /// <summary>
         /// Загрузить локальную конфигурацию из workspace.json в ZIP
@@ -23,18 +31,18 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         {
             try
             {
-                Console.WriteLine("[WorkspaceConfigService] Loading workspace.json from ZIP");
+                _logger.LogDebug("Loading workspace.json from ZIP");
 
                 if (!fileStorage.FileExists(ConfigFileName))
                 {
-                    Console.WriteLine("[WorkspaceConfigService] workspace.json not found in ZIP");
+                    _logger.LogDebug("workspace.json not found in ZIP");
                     return null;
                 }
 
                 var data = fileStorage.ReadFile(ConfigFileName);
                 if (data == null || data.Length == 0)
                 {
-                    Console.WriteLine("[WorkspaceConfigService] workspace.json is empty");
+                    _logger.LogWarning("workspace.json is empty");
                     return null;
                 }
 
@@ -43,14 +51,14 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
                 if (config != null)
                 {
-                    Console.WriteLine($"[WorkspaceConfigService]   WorkModes count: {config.WorkModes.Count}");
+                    _logger.LogDebug("WorkModes count: {Count}", config.WorkModes.Count);
                 }
 
                 return config;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[WorkspaceConfigService] ERROR loading config: {ex.Message}");
+                _logger.LogError(ex, "Failed to load config");
                 return null;
             }
         }
@@ -62,21 +70,21 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         {
             try
             {
-                Console.WriteLine("[WorkspaceConfigService] Saving workspace.json to ZIP");
+                _logger.LogDebug("Saving workspace.json to ZIP");
 
                 var json = JsonConvert.SerializeObject(config, Formatting.Indented);
                 var data = Encoding.UTF8.GetBytes(json);
 
                 fileStorage.WriteFile(ConfigFileName, data);
 
-                Console.WriteLine($"[WorkspaceConfigService]   WorkModes count: {config.WorkModes.Count}");
-                Console.WriteLine($"[WorkspaceConfigService]   Size: {data.Length} bytes");
+                _logger.LogDebug("WorkModes count: {Count}", config.WorkModes.Count);
+                _logger.LogDebug("Size: {Size} bytes", data.Length);
 
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[WorkspaceConfigService] ERROR saving config: {ex.Message}");
+                _logger.LogError(ex, "Failed to save config");
                 return false;
             }
         }
@@ -88,22 +96,22 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         {
             try
             {
-                Console.WriteLine("[WorkspaceConfigService] Deleting workspace.json from ZIP");
+                _logger.LogDebug("Deleting workspace.json from ZIP");
 
                 if (!fileStorage.FileExists(ConfigFileName))
                 {
-                    Console.WriteLine("[WorkspaceConfigService] File not found, nothing to delete");
+                    _logger.LogDebug("File not found, nothing to delete");
                     return true;
                 }
 
                 fileStorage.DeleteFile(ConfigFileName);
 
-                Console.WriteLine("[WorkspaceConfigService] Deleted workspace.json");
+                _logger.LogDebug("Deleted workspace.json");
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[WorkspaceConfigService] ERROR deleting config: {ex.Message}");
+                _logger.LogError(ex, "Failed to delete config");
                 return false;
             }
         }

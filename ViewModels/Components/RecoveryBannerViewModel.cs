@@ -1,4 +1,6 @@
-﻿using ReactiveUI;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using ReactiveUI;
 using System;
 using System.Reactive;
 using System.Threading.Tasks;
@@ -12,6 +14,7 @@ namespace Writersword.ViewModels
     /// </summary>
     public class RecoveryBannerViewModel : ViewModelBase
     {
+        private readonly ILogger<RecoveryBannerViewModel> _logger;
         private bool _isViewingCache;
 
         /// <summary>Дата создания кеша (автосохранение)</summary>
@@ -27,8 +30,6 @@ namespace Writersword.ViewModels
             set
             {
                 this.RaiseAndSetIfChanged(ref _isViewingCache, value);
-
-                // Обновляем все зависимые свойства для UI
                 this.RaisePropertyChanged(nameof(CurrentVersionText));
                 this.RaisePropertyChanged(nameof(CurrentVersionColor));
                 this.RaisePropertyChanged(nameof(CacheFontWeight));
@@ -47,8 +48,8 @@ namespace Writersword.ViewModels
 
         /// <summary>Цвет текста текущей версии</summary>
         public string CurrentVersionColor => IsViewingCache
-            ? "#FFA500"  // Оранжевый для кеша
-            : "#00C853"; // Зелёный для сохранённой версии
+            ? "#FFA500"
+            : "#00C853";
 
         /// <summary>Жирность шрифта для строки с кешем</summary>
         public string CacheFontWeight => IsViewingCache ? "Bold" : "Normal";
@@ -76,9 +77,27 @@ namespace Writersword.ViewModels
             Func<Task> onSave,
             Func<Task> onDiscard)
         {
-            SwitchVersionCommand = ReactiveCommand.CreateFromTask(onSwitchVersion);
-            SaveCommand = ReactiveCommand.CreateFromTask(onSave);
-            DiscardCommand = ReactiveCommand.CreateFromTask(onDiscard);
+            _logger = App.Services.GetService<ILogger<RecoveryBannerViewModel>>()!;
+
+            SwitchVersionCommand = ReactiveCommand.CreateFromTask(async () =>
+            {
+                _logger.LogDebug("SwitchVersion command executed");
+                await onSwitchVersion();
+            });
+
+            SaveCommand = ReactiveCommand.CreateFromTask(async () =>
+            {
+                _logger.LogDebug("Save command executed");
+                await onSave();
+            });
+
+            DiscardCommand = ReactiveCommand.CreateFromTask(async () =>
+            {
+                _logger.LogDebug("Discard command executed");
+                await onDiscard();
+            });
+
+            _logger.LogDebug("Initialized");
         }
     }
 }

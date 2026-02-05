@@ -1,4 +1,6 @@
 ﻿using Avalonia.Controls;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using ReactiveUI;
 using System;
@@ -9,6 +11,7 @@ using Writersword.Core.Models;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.ViewModels;
 using Writersword.Resources.Localization;
+using Writersword.Src.Core.Services;
 using Writersword.Src.Modules.TextEditor.Resources;
 using Writersword.ViewModels;
 
@@ -20,6 +23,7 @@ namespace Writersword.Modules.TextEditor
     /// </summary>
     public class TextEditorModule : BaseModule
     {
+        private readonly ILogger<TextEditorModule> _logger;
         private TextEditorViewModel? _viewModel;
         private IDisposable? _textSubscription;
 
@@ -29,7 +33,7 @@ namespace Writersword.Modules.TextEditor
         /// <param name="instanceId">ID экземпляра модуля (если null - генерируется новый)</param>
         public TextEditorModule(string? instanceId = null) : base(instanceId)
         {
-
+            _logger = App.Services.GetService<ILogger<TextEditorModule>>()!;
         }
 
         /// <summary>Идентификатор модуля</summary>
@@ -50,13 +54,13 @@ namespace Writersword.Modules.TextEditor
         /// </summary>
         public override void Initialize()
         {
-            Console.WriteLine($"[TextEditorModule] Initialize START (ID: {InstanceId})");
+            _logger.LogDebug("Initialize START (ID: {InstanceId})", InstanceId);
 
             _viewModel = new TextEditorViewModel();
 
             CreateSubscription();
 
-            Console.WriteLine($"[TextEditorModule] Initialized (ID: {InstanceId})");
+            _logger.LogDebug("Initialized (ID: {InstanceId})", InstanceId);
         }
 
         /// <summary>
@@ -70,7 +74,7 @@ namespace Writersword.Modules.TextEditor
                 .Throttle(TimeSpan.FromSeconds(0.5))
                 .Subscribe(text =>
                 {
-                    Console.WriteLine($"[TextEditorModule {InstanceId}] Text updated: {text?.Length ?? 0} chars");
+                    _logger.LogDebug("Text updated: {Length} chars (ID: {InstanceId})", text?.Length ?? 0, InstanceId);
                 });
         }
 
@@ -83,7 +87,7 @@ namespace Writersword.Modules.TextEditor
             if (context != null && _viewModel != null)
             {
                 _viewModel.IsReadOnly = context.IsInCompareMode;
-                Console.WriteLine($"[TextEditorModule] Context changed - IsReadOnly: {_viewModel.IsReadOnly}");
+                _logger.LogDebug("Context changed - IsReadOnly: {IsReadOnly}", _viewModel.IsReadOnly);
             }
         }
 
@@ -121,7 +125,7 @@ namespace Writersword.Modules.TextEditor
         {
             if (_viewModel == null)
             {
-                Console.WriteLine($"[TextEditorModule] SetCustomData called but ViewModel is null (ID: {InstanceId})");
+                _logger.LogWarning("SetCustomData called but ViewModel is null (ID: {InstanceId})", InstanceId);
                 return;
             }
 
@@ -145,16 +149,16 @@ namespace Writersword.Modules.TextEditor
                 }
 
                 _viewModel.LoadDocument(text);
-                Console.WriteLine($"[TextEditorModule] Loaded {text.Length} chars (ID: {InstanceId})");
+                _logger.LogDebug("Loaded {Length} chars (ID: {InstanceId})", text.Length, InstanceId);
             }
             else
             {
                 _viewModel.LoadDocument("");
-                Console.WriteLine($"[TextEditorModule] Loaded empty document (ID: {InstanceId})");
+                _logger.LogDebug("Loaded empty document (ID: {InstanceId})", InstanceId);
             }
 
             CreateSubscription();
-            Console.WriteLine($"[TextEditorModule] Subscription recreated after SetCustomData");
+            _logger.LogDebug("Subscription recreated after SetCustomData");
         }
 
         /// <summary>
@@ -162,7 +166,7 @@ namespace Writersword.Modules.TextEditor
         /// </summary>
         public override void SetSessionData(object? data)
         {
-            Console.WriteLine($"[TextEditorModule] SessionData set (ID: {InstanceId})");
+            _logger.LogDebug("SessionData set (ID: {InstanceId})", InstanceId);
         }
 
         /// <summary>
@@ -172,7 +176,7 @@ namespace Writersword.Modules.TextEditor
         public override void Dispose()
         {
             _textSubscription?.Dispose();
-            Console.WriteLine($"[TextEditorModule] Disposed (ID: {InstanceId})");
+            _logger.LogDebug("Disposed (ID: {InstanceId})", InstanceId);
         }
 
         /// <summary>
@@ -200,7 +204,7 @@ namespace Writersword.Modules.TextEditor
         /// <summary>Отображаемое имя (из локализации)</summary>
         public string DisplayName => TextEditorStrings.DisplayName;
 
-        /// <summary>Описание модуля (из локализации)</summary>а
+        /// <summary>Описание модуля (из локализации)</summary>
         public string Description => TextEditorStrings.Description;
 
         /// <summary>Иконка модуля (emoji)</summary>

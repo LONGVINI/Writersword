@@ -1,4 +1,6 @@
-﻿using Newtonsoft.Json;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -19,10 +21,12 @@ namespace Writersword.Src.Infrastructure.Services.Storage
     /// </summary>
     public class ZipCacheService : IZipCacheService
     {
+        private readonly ILogger<ZipCacheService> _logger;
         private readonly IHashService _hashService;
 
         public ZipCacheService(IHashService hashService)
         {
+            _logger = App.Services.GetService<ILogger<ZipCacheService>>()!;
             _hashService = hashService;
         }
 
@@ -56,7 +60,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ZipCacheService] Error reading cache date: {ex.Message}");
+                _logger.LogError(ex, "Error reading cache date");
                 return null;
             }
         }
@@ -71,7 +75,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
             if (!File.Exists(cachePath))
             {
-                Console.WriteLine($"[ZipCacheService] Cache not found: {cachePath}");
+                _logger.LogDebug("Cache not found: {CachePath}", cachePath);
                 return null;
             }
 
@@ -84,15 +88,15 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     var metadata = LoadMetadataFromArchive(archive);
                     if (metadata == null)
                     {
-                        Console.WriteLine($"[ZipCacheService] Failed to load metadata");
+                        _logger.LogWarning("Failed to load metadata");
                         return null;
                     }
 
-                    Console.WriteLine($"[ZipCacheService] ===== CACHE LOADED =====");
-                    Console.WriteLine($"[ZipCacheService] Project path: {projectPath}");
-                    Console.WriteLine($"[ZipCacheService] Project ID: {metadata.ProjectId}");
-                    Console.WriteLine($"[ZipCacheService] Cache date: {metadata.CacheDate}");
-                    Console.WriteLine($"[ZipCacheService] Modules: {metadata.Modules.Count}");
+                    _logger.LogDebug("===== CACHE LOADED =====");
+                    _logger.LogDebug("Project path: {ProjectPath}", projectPath);
+                    _logger.LogDebug("Project ID: {ProjectId}", metadata.ProjectId);
+                    _logger.LogDebug("Cache date: {CacheDate}", metadata.CacheDate);
+                    _logger.LogDebug("Modules: {ModulesCount}", metadata.Modules.Count);
 
                     foreach (var moduleId in metadata.Modules.Keys)
                     {
@@ -105,19 +109,19 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                                 var json = reader.ReadToEnd();
                                 var data = JsonConvert.DeserializeObject<object>(json);
                                 customData[moduleId] = data;
-                                Console.WriteLine($"[ZipCacheService]   - {moduleId}: loaded");
+                                _logger.LogDebug("- {ModuleId}: loaded", moduleId);
                             }
                         }
                     }
 
-                    Console.WriteLine($"[ZipCacheService] =======================");
+                    _logger.LogDebug("=======================");
                 }
 
                 return customData;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ZipCacheService] Error loading cache: {ex.Message}");
+                _logger.LogError(ex, "Error loading cache");
                 return null;
             }
         }
@@ -133,9 +137,9 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
             try
             {
-                Console.WriteLine($"[ZipCacheService] ===== SAVING CACHE =====");
-                Console.WriteLine($"[ZipCacheService] CustomData modules: {customDataDict.Count}");
-                Console.WriteLine($"[ZipCacheService] SessionData modules: {sessionDataDict.Count}");
+                _logger.LogDebug("===== SAVING CACHE =====");
+                _logger.LogDebug("CustomData modules: {CustomDataCount}", customDataDict.Count);
+                _logger.LogDebug("SessionData modules: {SessionDataCount}", sessionDataDict.Count);
 
                 ModuleCacheMetadata? oldMetadata = null;
                 if (File.Exists(cachePath))
@@ -161,7 +165,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                     if (customData == null || (customData is string str && string.IsNullOrWhiteSpace(str)))
                     {
-                        Console.WriteLine($"[ZipCacheService] Skipping module without data: {moduleId}");
+                        _logger.LogDebug("Skipping module without data: {ModuleId}", moduleId);
                         continue;
                     }
 
@@ -171,16 +175,16 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     {
                         if (oldMeta.Hash == currentHash)
                         {
-                            Console.WriteLine($"[ZipCacheService] Module unchanged: {moduleId}");
+                            _logger.LogDebug("Module unchanged: {ModuleId}", moduleId);
                         }
                         else
                         {
-                            Console.WriteLine($"[ZipCacheService] Module changed: {moduleId}");
+                            _logger.LogDebug("Module changed: {ModuleId}", moduleId);
                         }
                     }
                     else
                     {
-                        Console.WriteLine($"[ZipCacheService] Module new: {moduleId}");
+                        _logger.LogDebug("Module new: {ModuleId}", moduleId);
                     }
 
                     var customDataJson = JsonConvert.SerializeObject(customData);
@@ -241,15 +245,15 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     }
                 }
 
-                Console.WriteLine($"[ZipCacheService] ===== CACHE SAVED =====");
-                Console.WriteLine($"[ZipCacheService] Project path: {projectPath}");
-                Console.WriteLine($"[ZipCacheService] Cache file: {cachePath}");
-                Console.WriteLine($"[ZipCacheService] Modules saved: {modulesToSave.Count}");
-                Console.WriteLine($"[ZipCacheService] ======================");
+                _logger.LogDebug("===== CACHE SAVED =====");
+                _logger.LogDebug("Project path: {ProjectPath}", projectPath);
+                _logger.LogDebug("Cache file: {CachePath}", cachePath);
+                _logger.LogDebug("Modules saved: {ModulesCount}", modulesToSave.Count);
+                _logger.LogDebug("======================");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ZipCacheService] Error saving cache: {ex.Message}");
+                _logger.LogError(ex, "Error saving cache");
             }
         }
 
@@ -275,7 +279,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             if (File.Exists(cachePath))
             {
                 File.Delete(cachePath);
-                Console.WriteLine($"[ZipCacheService] Cache deleted: {cachePath}");
+                _logger.LogDebug("Cache deleted: {CachePath}", cachePath);
             }
         }
 
@@ -291,7 +295,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ZipCacheService] Error loading metadata: {ex.Message}");
+                _logger.LogError(ex, "Error loading metadata");
                 return null;
             }
         }
@@ -304,7 +308,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 var metadataEntry = archive.GetEntry("cache.json");
                 if (metadataEntry == null)
                 {
-                    Console.WriteLine($"[ZipCacheService] cache.json not found in archive");
+                    _logger.LogWarning("cache.json not found in archive");
                     return null;
                 }
 
@@ -318,7 +322,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ZipCacheService] Error parsing metadata: {ex.Message}");
+                _logger.LogError(ex, "Error parsing metadata");
                 return null;
             }
         }
@@ -338,7 +342,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     var entry = archive.GetEntry("project.json");
                     if (entry == null)
                     {
-                        Console.WriteLine($"[ZipCacheService] project.json not found in: {projectPath}");
+                        _logger.LogWarning("project.json not found in: {ProjectPath}", projectPath);
                         return null;
                     }
 
@@ -348,14 +352,14 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                         var json = reader.ReadToEnd();
                         var project = JsonConvert.DeserializeObject<ProjectFile>(json);
 
-                        Console.WriteLine($"[ZipCacheService] Read project data without lock: {project?.ModulesData.Count ?? 0} modules");
+                        _logger.LogDebug("Read project data without lock: {ModulesCount} modules", project?.ModulesData.Count ?? 0);
                         return project?.ModulesData;
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ZipCacheService] Error reading project data without lock: {ex.Message}");
+                _logger.LogError(ex, "Error reading project data without lock");
                 return null;
             }
         }

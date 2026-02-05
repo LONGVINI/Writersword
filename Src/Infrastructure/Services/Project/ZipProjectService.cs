@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -8,7 +10,7 @@ using System.Threading.Tasks;
 using Writersword.Core.Models.Project;
 using Writersword.Src.Shared.Helpers;
 
-namespace Writersword.Src.Infrastructure.Services.Storage
+namespace Writersword.Src.Infrastructure.Services.Project
 {
     /// <summary>
     /// Сервис для работы с проектами в формате ZIP
@@ -18,6 +20,13 @@ namespace Writersword.Src.Infrastructure.Services.Storage
     /// </summary>
     public class ZipProjectService
     {
+        private readonly ILogger<ZipProjectService> _logger;
+
+        public ZipProjectService()
+        {
+            _logger = App.Services.GetService<ILogger<ZipProjectService>>()!;
+        }
+
         /// <summary>
         /// Сохранить проект в ZIP архив
         /// Создаёт новый ZIP или обновляет существующий
@@ -26,7 +35,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         {
             try
             {
-                Console.WriteLine($"[ZipProjectService] Saving to ZIP: {filePath}");
+                _logger.LogDebug("Saving to ZIP: {FilePath}", filePath);
 
                 var directory = Path.GetDirectoryName(filePath);
                 if (!string.IsNullOrEmpty(directory))
@@ -38,7 +47,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 ZipArchiveMode mode = fileExists ? ZipArchiveMode.Update : ZipArchiveMode.Create;
                 FileMode fileMode = fileExists ? FileMode.Open : FileMode.Create;
 
-                Console.WriteLine($"[ZipProjectService] Mode: {mode}, FileExists: {fileExists}");
+                _logger.LogDebug("Mode: {Mode}, FileExists: {FileExists}", mode, fileExists);
 
                 using (var fileStream = new FileStream(filePath, fileMode, FileAccess.ReadWrite))
                 using (var archive = new ZipArchive(fileStream, mode))
@@ -49,7 +58,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                         if (projectEntry != null)
                         {
                             projectEntry.Delete();
-                            Console.WriteLine($"[ZipProjectService] Deleted old project.json");
+                            _logger.LogDebug("Deleted old project.json");
                         }
 
                         var oldModules = archive.Entries
@@ -63,7 +72,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                         if (oldModules.Count > 0)
                         {
-                            Console.WriteLine($"[ZipProjectService] Deleted {oldModules.Count} old module entries");
+                            _logger.LogDebug("Deleted {Count} old module entries", oldModules.Count);
                         }
                     }
 
@@ -84,7 +93,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                         await writer.WriteAsync(projectJson);
                     }
 
-                    Console.WriteLine($"[ZipProjectService] Saved project.json");
+                    _logger.LogDebug("Saved project.json");
 
                     foreach (var moduleEntry in project.ModulesData)
                     {
@@ -119,7 +128,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                             await writer.WriteAsync(metadataJson);
                         }
 
-                        Console.WriteLine($"[ZipProjectService] Saved Metadata for: {moduleId}, InstanceId: {instanceId ?? "null"}");
+                        _logger.LogDebug("Saved Metadata for: {ModuleId}, InstanceId: {InstanceId}", moduleId, instanceId ?? "null");
 
                         // CustomData сохраняем как раньше
                         if (customData != null && !(customData is string str && string.IsNullOrWhiteSpace(str)))
@@ -131,20 +140,19 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                                 await writer.WriteAsync(customDataJson);
                             }
 
-                            Console.WriteLine($"[ZipProjectService] Saved CustomData for: {moduleId}");
+                            _logger.LogDebug("Saved CustomData for: {ModuleId}", moduleId);
                         }
                     }
                 }
 
                 var fileSize = new FileInfo(filePath).Length / 1024;
-                Console.WriteLine($"[ZipProjectService] ZIP saved successfully: {filePath} ({fileSize} KB)");
+                _logger.LogDebug("ZIP saved successfully: {FilePath} ({FileSize} KB)", filePath, fileSize);
 
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ZipProjectService] Save error: {ex.Message}");
-                Console.WriteLine($"[ZipProjectService] Stack trace: {ex.StackTrace}");
+                _logger.LogError(ex, "Save error");
                 return false;
             }
         }
@@ -157,11 +165,11 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         {
             try
             {
-                Console.WriteLine($"[ZipProjectService] Loading from ZIP: {filePath}");
+                _logger.LogDebug("Loading from ZIP: {FilePath}", filePath);
 
                 if (!File.Exists(filePath))
                 {
-                    Console.WriteLine($"[ZipProjectService] File not found: {filePath}");
+                    _logger.LogWarning("File not found: {FilePath}", filePath);
                     return null;
                 }
 
@@ -171,7 +179,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     var projectEntry = archive.GetEntry("project.json");
                     if (projectEntry == null)
                     {
-                        Console.WriteLine($"[ZipProjectService] project.json not found in ZIP");
+                        _logger.LogWarning("project.json not found in ZIP");
                         return null;
                     }
 
@@ -184,11 +192,11 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     var project = JsonConvert.DeserializeObject<ProjectFile>(projectJson);
                     if (project == null)
                     {
-                        Console.WriteLine($"[ZipProjectService] Failed to deserialize project.json");
+                        _logger.LogWarning("Failed to deserialize project.json");
                         return null;
                     }
 
-                    Console.WriteLine($"[ZipProjectService] Loaded project.json: {project.Title}");
+                    _logger.LogDebug("Loaded project.json: {Title}", project.Title);
 
                     var moduleIds = archive.Entries
                         .Where(e => e.FullName.StartsWith("modules/") && e.FullName.EndsWith("/CustomData.json"))  // ? Заглавная!
@@ -207,20 +215,19 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                                 var customData = JsonConvert.DeserializeObject<object>(customDataJson);
 
                                 project.ModulesData[moduleId] = customData;
-                                Console.WriteLine($"[ZipProjectService] Loaded module: {moduleId}");
+                                _logger.LogDebug("Loaded module: {ModuleId}", moduleId);
                             }
                         }
                     }
 
-                    Console.WriteLine($"[ZipProjectService] Project loaded successfully");
-                    Console.WriteLine($"[ZipProjectService] Modules: {project.ModulesData.Count}");
+                    _logger.LogDebug("Project loaded successfully");
+                    _logger.LogDebug("Modules: {Count}", project.ModulesData.Count);
                     return project;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ZipProjectService] Load error: {ex.Message}");
-                Console.WriteLine($"[ZipProjectService] Stack trace: {ex.StackTrace}");
+                _logger.LogError(ex, "Load error");
                 return null;
             }
         }

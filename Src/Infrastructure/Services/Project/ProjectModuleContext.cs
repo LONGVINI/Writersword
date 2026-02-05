@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Writersword.Core.Interfaces.Modules;
@@ -17,6 +19,7 @@ namespace Writersword.Core.Services
     /// </summary>
     public class ProjectModuleContext : IDisposable
     {
+        private readonly ILogger<ProjectModuleContext> _logger;
         private readonly Dictionary<string, IModule> _modules;
         private readonly ModuleFactory _factory;
         private readonly string _projectId;
@@ -28,11 +31,12 @@ namespace Writersword.Core.Services
         /// <param name="factory">Фабрика для создания модулей</param>
         public ProjectModuleContext(string projectId, ModuleFactory factory)
         {
+            _logger = App.Services.GetService<ILogger<ProjectModuleContext>>()!;
             _projectId = projectId;
             _factory = factory;
             _modules = new Dictionary<string, IModule>();
 
-            Console.WriteLine($"[ProjectModuleContext] Created for project: {_projectId}");
+            _logger.LogDebug("Created for project: {ProjectId}", _projectId);
         }
 
         /// <summary>
@@ -58,11 +62,11 @@ namespace Writersword.Core.Services
                 module.RequestClose += OnModuleRequestClose;
                 module.RequestDetach += OnModuleRequestDetach;
 
-                Console.WriteLine($"[ProjectModuleContext] Module created: {moduleId} (Instance: {module.InstanceId})");
+                _logger.LogDebug("Module created: {ModuleId} (Instance: {InstanceId})", moduleId, module.InstanceId);
             }
             else
             {
-                Console.WriteLine($"[ProjectModuleContext] ERROR: Failed to create module: {moduleId}");
+                _logger.LogError("Failed to create module: {ModuleId}", moduleId);
             }
 
             return module;
@@ -107,7 +111,7 @@ namespace Writersword.Core.Services
                 // Удаляем из контейнера
                 _modules.Remove(instanceId);
 
-                Console.WriteLine($"[ProjectModuleContext] Module removed: {instanceId}");
+                _logger.LogDebug("Module removed: {InstanceId}", instanceId);
             }
         }
 
@@ -118,7 +122,7 @@ namespace Writersword.Core.Services
         /// </summary>
         public void Dispose()
         {
-            Console.WriteLine($"[ProjectModuleContext] Disposing all modules for project: {_projectId}");
+            _logger.LogDebug("Disposing all modules for project: {ProjectId}", _projectId);
 
             // Копируем список модулей (чтобы избежать изменения коллекции во время итерации)
             var modulesToDispose = _modules.Values.ToList();
@@ -134,18 +138,18 @@ namespace Writersword.Core.Services
                     // Уничтожаем модуль
                     module.Dispose();
 
-                    Console.WriteLine($"[ProjectModuleContext] Disposed module: {module.ModuleId} (Instance: {module.InstanceId})");
+                    _logger.LogDebug("Disposed module: {ModuleId} (Instance: {InstanceId})", module.ModuleId, module.InstanceId);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[ProjectModuleContext] ERROR disposing module {module.InstanceId}: {ex.Message}");
+                    _logger.LogError(ex, "Error disposing module {InstanceId}", module.InstanceId);
                 }
             }
 
             // Очищаем контейнер
             _modules.Clear();
 
-            Console.WriteLine($"[ProjectModuleContext] All modules disposed for project: {_projectId}");
+            _logger.LogDebug("All modules disposed for project: {ProjectId}", _projectId);
         }
 
         /// <summary>
@@ -154,7 +158,7 @@ namespace Writersword.Core.Services
         /// </summary>
         private void OnModuleRequestClose(IModule module)
         {
-            Console.WriteLine($"[ProjectModuleContext] Module requests close: {module.InstanceId}");
+            _logger.LogDebug("Module requests close: {InstanceId}", module.InstanceId);
             RemoveModule(module.InstanceId);
         }
 
@@ -163,7 +167,7 @@ namespace Writersword.Core.Services
         /// </summary>
         private void OnModuleRequestDetach(IModule module)
         {
-            Console.WriteLine($"[ProjectModuleContext] Module requests detach: {module.InstanceId}");
+            _logger.LogDebug("Module requests detach: {InstanceId}", module.InstanceId);
             // Обработка открепления (уже реализована в DockFactory)
         }
 

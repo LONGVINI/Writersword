@@ -1,4 +1,6 @@
 ﻿using Avalonia.Controls;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Writersword.Views.Components
 {
@@ -8,9 +10,15 @@ namespace Writersword.Views.Components
     /// </summary>
     public partial class NotificationView : UserControl
     {
+        private readonly ILogger<NotificationView> _logger;
+
         public NotificationView()
         {
+            _logger = App.Services.GetService<ILogger<NotificationView>>()!;
+
             InitializeComponent();
+
+            _logger.LogDebug("NotificationView created");
         }
     }
 }
