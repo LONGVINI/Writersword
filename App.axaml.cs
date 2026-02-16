@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -199,34 +200,57 @@ namespace Writersword
 
                         Log.ForContext<App>().Debug("Restoring {Count} projects from last session", openProjects.Count);
 
-                        foreach (var projectPath in openProjects)
-                        {
-                            if (File.Exists(projectPath))
-                            {
-                                var tab = await projectWorkflow.OpenDocumentAsync(projectPath);
+                        // СОЗДАЁМ ВСЕ ВКЛАДКИ
+                        var tabs = new List<DocumentTabViewModel>();
 
-                                if (tab != null)
-                                {
-                                    tabCollection.Add(tab);
-                                }
+                        for (int i = 0; i < openProjects.Count; i++)
+                        {
+                            var projectPath = openProjects[i];
+
+                            if (!File.Exists(projectPath))
+                            {
+                                Log.ForContext<App>().Warning("Project file not found: {Path}", projectPath);
+                                continue;
+                            }
+
+                            // Первую вкладку инициализируем полностью, остальные - lazy
+                            bool initializeWorkspace = (i == 0);
+
+                            var tab = await projectWorkflow.OpenDocumentAsync(projectPath, initializeWorkspace);
+
+                            if (tab != null)
+                            {
+                                tabs.Add(tab);
+                                Log.ForContext<App>().Debug("Created tab {Index}/{Total}: {Path} (Initialized: {Init})",
+                                    i + 1, openProjects.Count, projectPath, initializeWorkspace);
                             }
                             else
                             {
-                                Log.ForContext<App>().Warning("Project file not found: {Path}", projectPath);
+                                Log.ForContext<App>().Warning("Failed to create tab for: {Path}", projectPath);
                             }
                         }
 
+                        // ДОБАВЛЯЕМ ВСЕ ВКЛАДКИ В КОЛЛЕКЦИЮ
+                        foreach (var tab in tabs)
+                        {
+                            tabCollection.Add(tab);
+                        }
+
+                        // АКТИВИРУЕМ ПЕРВУЮ ВКЛАДКУ
                         if (tabCollection.Tabs.Count > 0)
                         {
                             tabCollection.ActiveTab = tabCollection.Tabs[0];
+                            Log.ForContext<App>().Debug("Activated first tab: {Title}", tabCollection.Tabs[0].Title);
                         }
                         else
                         {
+                            // Если не удалось создать ни одну вкладку - показываем Welcome
                             await ShowWelcomeScreen(mainWindow);
                         }
                     }
                     else
                     {
+                        // Нет сохранённых проектов - показываем Welcome
                         await ShowWelcomeScreen(mainWindow);
                     }
                 };

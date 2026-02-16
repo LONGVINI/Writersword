@@ -22,6 +22,11 @@ namespace Writersword.Core.Models.Settings
         public string Version { get; set; } = "1.0";
 
         /// <summary>
+        /// Для отладки - имя проекта, к которому относится эта конфигурация
+        /// </summary>
+        public string ProjectName { get; set; } = "";
+
+        /// <summary>
         /// Список WorkMode с их конфигурациями
         /// Включает:
         /// - order (порядок кнопок)

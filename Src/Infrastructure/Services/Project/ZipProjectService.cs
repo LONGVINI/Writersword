@@ -106,7 +106,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
                         {
                             foreach (var workMode in project.WorkModes)
                             {
-                                var slot = workMode.ModuleSlots.FirstOrDefault(s => s.ModuleId == moduleId && !string.IsNullOrEmpty(s.InstanceId));
+                                var slot = workMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleId && !string.IsNullOrEmpty(s.InstanceId));
                                 if (slot != null)
                                 {
                                     instanceId = slot.InstanceId;

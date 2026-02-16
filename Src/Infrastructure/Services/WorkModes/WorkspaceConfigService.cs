@@ -72,7 +72,19 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             {
                 _logger.LogDebug("Saving workspace.json to ZIP");
 
-                var json = JsonConvert.SerializeObject(config, Formatting.Indented);
+                var settings = new JsonSerializerSettings
+                {
+                    Formatting = Formatting.Indented,
+                    NullValueHandling = NullValueHandling.Ignore,
+                    ContractResolver = new Newtonsoft.Json.Serialization.DefaultContractResolver
+                    {
+                        IgnoreSerializableInterface = true,
+                        IgnoreSerializableAttribute = true
+                    },
+                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+                };
+
+                var json = JsonConvert.SerializeObject(config, settings);
                 var data = Encoding.UTF8.GetBytes(json);
 
                 fileStorage.WriteFile(ConfigFileName, data);

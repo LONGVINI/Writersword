@@ -32,44 +32,38 @@ namespace Writersword.Src.WorkModes.Characters
                 IsCloseable = IsCloseable,
 
                 ModuleSlots = new List<ModuleSlot>
-                {
-                    new ModuleSlot
-                    {
-                        ModuleId = "Characters",
-                        ContainerId = "Main",
-                        IsFloating = false,
-                        TabOrder = 0,
-                        IsActiveTab = true,
-                        IsCloseable = false,
-                        MinWidth = 400,
-                        MinHeight = 400,
-                        PreferredPosition = PreferredDockPosition.RightAsTab
-                    },
+        {
+            new ModuleSlot
+            {
+                ModuleType = "Characters",
+                Path = null,
+                IsFloating = false,
+                TabOrder = 0,
+                IsActiveTab = true,
+                IsCloseable = false,
+                IsCurrentlyOpen = true,
+                MinWidth = 400,
+                MinHeight = 400,
+                PreferredPosition = PreferredDockPosition.RightAsTab,
+                Category = ModuleCategory.Required
+            },
+            new ModuleSlot
+            {
+                ModuleType = "Relationships",
+                Path = null,
+                IsFloating = false,
+                TabOrder = 1,
+                IsActiveTab = false,
+                IsCloseable = true,
+                IsCurrentlyOpen = true,
+                MinWidth = 400,
+                MinHeight = 400,
+                PreferredPosition = PreferredDockPosition.RightAsTab,
+                Category = ModuleCategory.Optional
+            }
+        },
 
-                    new ModuleSlot
-                    {
-                        ModuleId = "Relationships",
-                        ContainerId = "Main",
-                        IsFloating = false,
-                        TabOrder = 1,
-                        IsActiveTab = false,
-                        IsCloseable = true,
-                        MinWidth = 400,
-                        MinHeight = 400,
-                        PreferredPosition = PreferredDockPosition.RightAsTab
-                    }
-                },
-
-                Containers = new List<SplitContainer>
-                {
-                    new SplitContainer
-                    {
-                        Id = "Main",
-                        Proportion = 1.0,
-                        Orientation = null,
-                        Children = null
-                    }
-                }
+                LayoutTree = null
             };
         }
     }

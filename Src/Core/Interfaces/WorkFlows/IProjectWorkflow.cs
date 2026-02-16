@@ -12,9 +12,12 @@ namespace Writersword.Src.Core.Interfaces.WorkFlows
     /// </summary>
     public interface IProjectWorkflow
     {
-        /// <summary>Открыть документ (новый или существующий)</summary>
-        /// <param name="filePath">Путь к файлу или null для нового проекта</param>
-        Task<DocumentTabViewModel?> OpenDocumentAsync(string? filePath = null);
+        /// <summary>
+        /// Открыть документ
+        /// </summary>
+        /// <param name="filePath">Путь к файлу (null для диалога)</param>
+        /// <param name="initializeWorkspace">Инициализировать workspace сразу (false для lazy loading)</param>
+        Task<DocumentTabViewModel?> OpenDocumentAsync(string? filePath = null, bool initializeWorkspace = true);
 
         /// <summary>Сохранить документ</summary>
         Task<bool> SaveDocumentAsync(DocumentTabViewModel tab);
@@ -49,6 +52,12 @@ namespace Writersword.Src.Core.Interfaces.WorkFlows
 
         /// <summary>Зарегистрировать FileStorage для проекта</summary>
         void RegisterStorage(string filePath, DocumentTabViewModel tab);
+
+        /// <summary>
+        /// Инициализировать workspace для ленивой вкладки
+        /// Вызывается при первом переключении на вкладку
+        /// </summary>
+        Task<bool> EnsureWorkspaceInitialized(DocumentTabViewModel tab);
         /// <summary>Обновить FileStorage для проекта</summary>
         void UpdateStorageForProject(string filePath, IProjectFileStorage newStorage);
     }

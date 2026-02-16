@@ -3,11 +3,11 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.WorkModes.Common;
 
 namespace Writersword.Src.Infrastructure.Services.WorkModes
@@ -115,8 +115,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 {
                     new ModuleSlot
                     {
-                        ModuleId = "TextEditor",
-                        ContainerId = "Main",
+                        ModuleType = "TextEditor",
                         IsFloating = false,
                         TabOrder = 0,
                         IsActiveTab = true,
@@ -125,16 +124,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                         MinHeight = 300
                     }
                 },
-                Containers = new List<SplitContainer>
-                {
-                    new SplitContainer
-                    {
-                        Id = "Main",
-                        Proportion = 1.0,
-                        Orientation = null,
-                        Children = null
-                    }
-                }
             };
 
             workModes.Add(editorMode);
@@ -214,22 +203,23 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
             foreach (var workMode in workModes)
             {
-                // Если WorkMode пустой - восстанавливаем дефолтную конфигурацию
-                if (workMode.ModuleSlots == null || workMode.ModuleSlots.Count == 0)
+                bool isEmptyOrCorrupted = workMode.ModuleSlots == null
+                    || workMode.ModuleSlots.Count == 0
+                    || workMode.ModuleSlots.All(s => string.IsNullOrEmpty(s.ModuleType));
+
+                if (isEmptyOrCorrupted)
                 {
-                    _logger.LogDebug("WorkMode '{Title}' is empty, restoring defaults", workMode.Title);
+                    _logger.LogDebug("WorkMode '{Title}' is empty or corrupted, restoring defaults", workMode.Title);
 
                     var registeredWorkMode = workModeRegistry.GetWorkMode(workMode.WorkModeId);
 
                     if (registeredWorkMode != null)
                     {
                         var defaultConfig = registeredWorkMode.GetDefaultConfig();
-
-                        // Восстанавливаем ModuleSlots и Containers
                         workMode.ModuleSlots = new List<ModuleSlot>(defaultConfig.ModuleSlots);
-                        workMode.Containers = new List<SplitContainer>(defaultConfig.Containers);
 
-                        _logger.LogDebug("Restored {SlotsCount} slots and {ContainersCount} containers for '{Title}'", workMode.ModuleSlots.Count, workMode.Containers.Count, workMode.Title);
+                        _logger.LogDebug("Restored {SlotsCount} slots for '{Title}'",
+                            workMode.ModuleSlots.Count, workMode.Title);
                     }
                     else
                     {
@@ -241,7 +231,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
         /// <summary>
         /// Восстановить метаданные модулей из дефолтной конфигурации
-        /// Заполняет IsCloseable, MinWidth, MinHeight, PreferredPosition
+        /// Заполняет IsCloseable, MinWidth, MinHeight, PreferredPosition, Category
         /// Вызывается после десериализации из workspace.json
         /// </summary>
         private void RestoreModuleMetadata(List<WorkMode> workModes)
@@ -262,25 +252,52 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 // Получаем дефолтную конфигурацию
                 var defaultConfig = registeredWorkMode.GetDefaultConfig();
 
+                // Восстанавливаем ModuleCategories (не сохраняются в JSON)
+                workMode.ModuleCategories = new Dictionary<string, ModuleCategory>(defaultConfig.ModuleCategories);
+
+                _logger.LogDebug("Restored {Count} module categories for WorkMode: {Title}",
+                    workMode.ModuleCategories.Count, workMode.Title);
+
                 // Восстанавливаем метаданные для каждого модуля
                 foreach (var slot in workMode.ModuleSlots)
                 {
+                    // Определяем категорию
+                    ModuleCategory category;
+
+                    if (workMode.ModuleCategories.TryGetValue(slot.ModuleType, out var explicitCategory))
+                    {
+                        category = explicitCategory;
+                    }
+                    else
+                    {
+                        // Если не указан явно - по умолчанию Optional
+                        category = ModuleCategory.Optional;
+                    }
+
+                    slot.Category = category;
+
+                    // Определяем IsCloseable по категории
+                    slot.IsCloseable = category != ModuleCategory.Required;
+
+                    // Ищем дефолтный слот для восстановления размеров и позиции
                     var defaultSlot = defaultConfig.ModuleSlots
-                        .FirstOrDefault(s => s.ModuleId == slot.ModuleId);
+                        .FirstOrDefault(s => s.ModuleType == slot.ModuleType);
 
                     if (defaultSlot != null)
                     {
                         // Восстанавливаем метаданные (помеченные [JsonIgnore])
-                        slot.IsCloseable = defaultSlot.IsCloseable;
                         slot.MinWidth = defaultSlot.MinWidth;
                         slot.MinHeight = defaultSlot.MinHeight;
                         slot.PreferredPosition = defaultSlot.PreferredPosition;
 
-                        _logger.LogDebug("Restored metadata for {ModuleId}: IsCloseable={IsCloseable}", slot.ModuleId, slot.IsCloseable);
+                        _logger.LogDebug("Restored metadata for {ModuleId}: Category={Category}, IsCloseable={IsCloseable}",
+                            slot.ModuleType, category, slot.IsCloseable);
                     }
                     else
                     {
-                        _logger.LogWarning("No default config for module: {ModuleId}", slot.ModuleId);
+                        // Если нет в дефолтной конфигурации - используем дефолты из ModuleSlot
+                        _logger.LogDebug("No default config for module {ModuleId}, using ModuleSlot defaults. Category={Category}",
+                            slot.ModuleType, category);
                     }
                 }
             }
@@ -303,7 +320,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
             }
 
             // Ищем модуль в слотах
-            var moduleSlot = workMode.ModuleSlots.FirstOrDefault(ms => ms.ModuleId == moduleId);
+            var moduleSlot = workMode.ModuleSlots.FirstOrDefault(ms => ms.ModuleType == moduleId);
             if (moduleSlot == null)
             {
                 _logger.LogDebug("Module not found in WorkMode: {ModuleId}", moduleId);

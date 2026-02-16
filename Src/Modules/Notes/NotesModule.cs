@@ -1,6 +1,7 @@
 ﻿using Avalonia.Controls;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json.Linq;
 using ReactiveUI;
 using System;
 using System.Reactive.Linq;
@@ -38,7 +39,7 @@ namespace Writersword.Modules.Notes
         public override string ModuleId => "Notes";
 
         /// <summary>Заголовок модуля</summary>
-        public override string Title { get; set; } = "Заметки";
+        public override string Title { get; set; } = "Notes";
 
         /// <summary>ViewModel модуля</summary>
         public override object? ViewModel => _viewModel;
@@ -52,7 +53,21 @@ namespace Writersword.Modules.Notes
         /// </summary>
         public override void Initialize()
         {
+            _logger.LogDebug("Initialize START (ID: {InstanceId})", InstanceId);
+
             _viewModel = new NotesViewModel();
+
+            CreateSubscription();
+
+            _logger.LogDebug("Initialized (ID: {InstanceId})", InstanceId);
+        }
+
+        /// <summary>
+        /// Создать подписку на изменения текста
+        /// </summary>
+        private void CreateSubscription()
+        {
+            _notesSubscription?.Dispose();
 
             _notesSubscription = _viewModel.WhenAnyValue(x => x.NoteText)
                 .Throttle(TimeSpan.FromSeconds(0.5))
@@ -60,8 +75,6 @@ namespace Writersword.Modules.Notes
                 {
                     _logger.LogDebug("Notes updated: {Length} chars (ID: {InstanceId})", text?.Length ?? 0, InstanceId);
                 });
-
-            _logger.LogDebug("Initialized (ID: {InstanceId})", InstanceId);
         }
 
         /// <summary>
@@ -110,16 +123,36 @@ namespace Writersword.Modules.Notes
                 return;
             }
 
-            if (data is string notes && notes.Length > 0)
+            _notesSubscription?.Dispose();
+
+            if (data != null)
             {
-                _viewModel.NoteText = notes;
-                _logger.LogDebug("Loaded {Length} characters (ID: {InstanceId})", notes.Length, InstanceId);
+                string text = "";
+
+                if (data is string str)
+                {
+                    text = str;
+                }
+                else if (data is JValue jValue)
+                {
+                    text = jValue.Value?.ToString() ?? "";
+                }
+                else
+                {
+                    text = data.ToString() ?? "";
+                }
+
+                _viewModel.LoadNotes(text);
+                _logger.LogDebug("Loaded {Length} chars (ID: {InstanceId})", text.Length, InstanceId);
             }
             else
             {
-                _viewModel.NoteText = "";
+                _viewModel.LoadNotes("");
                 _logger.LogDebug("Loaded empty notes (ID: {InstanceId})", InstanceId);
             }
+
+            CreateSubscription();
+            _logger.LogDebug("Subscription recreated after SetCustomData");
         }
 
         /// <summary>

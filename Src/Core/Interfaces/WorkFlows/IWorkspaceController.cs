@@ -93,5 +93,27 @@ namespace Writersword.Src.Core.Interfaces.Workspace
         /// Используется для получения списка WorkModes при сохранении workspace.json
         /// </summary>
         IWorkModeService GetWorkModeService();
+
+        /// <summary>
+        /// Получить список ID всех открытых модулей
+        /// Сканирует основной dock и все float окна
+        /// Используется для синхронизации меню модулей с реальным UI
+        /// </summary>
+        HashSet<string> GetOpenModuleIds();
+
+        /// <summary>
+        /// Активировать workspace (вызывается при возврате на вкладку)
+        /// Полностью пересоздаёт Layout из актуальных данных WorkMode, восстанавливая все Float окна
+        /// Подписывается на события Dock заново
+        /// </summary>
+        void Activate();
+
+        /// <summary>
+        /// Деактивировать workspace (вызывается при смене вкладки)
+        /// Полностью очищает Layout от всех Document и закрывает Float окна
+        /// Отписывается от событий Dock
+        /// Модули остаются IsCurrentlyOpen = true для восстановления при Activate()
+        /// </summary>
+        void Deactivate();
     }
 }

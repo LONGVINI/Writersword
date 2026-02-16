@@ -61,7 +61,7 @@ namespace Writersword.ViewModels.Components
 
             _tabCollection.ActiveTabChanged += OnActiveTabChanged;
 
-            _tabCollection.ActiveTabChanged += _ =>
+            _tabCollection.ActiveTabChanged += (_, __) =>
             {
                 this.RaisePropertyChanged(nameof(HasRecoveryBanner));
             };
@@ -123,6 +123,19 @@ namespace Writersword.ViewModels.Components
         {
             _logger.LogDebug("Closing tab: {TabTitle}", tab.Title);
 
+            if (!string.IsNullOrEmpty(tab.FilePath))
+            {
+                var workflow = App.Services.GetRequiredService<IProjectWorkflow>();
+                var autoSave = workflow.GetAutoSaveServiceForProject(tab.FilePath);
+
+                if (autoSave != null)
+                {
+                    _logger.LogDebug("Saving workspace BEFORE closing tab: {TabTitle}", tab.Title);
+                    await autoSave.SaveNowAsync();
+                    _logger.LogDebug("Workspace saved successfully before close");
+                }
+            }
+
             bool closed = await _projectWorkflow.CloseDocumentAsync(tab);
 
             if (!closed)
@@ -156,13 +169,14 @@ namespace Writersword.ViewModels.Components
         /// Обработчик изменения активной вкладки
         /// Вызывается когда TabCollection.ActiveTab изменилось
         /// </summary>
-        private void OnActiveTabChanged(DocumentTabViewModel? tab)
+        private void OnActiveTabChanged(DocumentTabViewModel? newTab, DocumentTabViewModel? previousTab)
         {
             this.RaisePropertyChanged(nameof(ActiveTab));
 
-            if (tab != null)
+            if (newTab != null)
             {
-                _logger.LogDebug("Active tab changed: {TabTitle}", tab.Title);
+                _logger.LogDebug("Active tab changed: {TabTitle} (previous: {PreviousTitle})",
+                    newTab.Title, previousTab?.Title ?? "none");
             }
         }
 

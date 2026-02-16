@@ -35,6 +35,9 @@ namespace Writersword.ViewModels
         private string _filePath = "";
         private RecoveryBannerViewModel? _recoveryBanner;
 
+        /// <summary>Загружен ли проект полностью (workspace инициализирован)</summary>
+        public bool IsLoaded { get; private set; } = false;
+
         private bool _hasUnsavedChanges = false;
 
         /// <summary>ID вкладки (для UI)</summary>
@@ -163,8 +166,9 @@ namespace Writersword.ViewModels
                 .Subscribe(_ => this.RaisePropertyChanged(nameof(HasRecoveryBanner)));
         }
 
+
         /// <summary>
-        /// Инициализировать WorkspaceController
+        /// Инициализировать WorkspaceController БЕЗ активации
         /// Вызывается из ProjectWorkflow после загрузки WorkModes
         /// </summary>
         public void InitializeWorkspace(List<Core.Models.WorkModes.WorkMode> loadedWorkModes)
@@ -186,7 +190,25 @@ namespace Writersword.ViewModels
                 autoSave
             );
 
-            _logger.LogDebug("WorkspaceController initialized for: {Title}", Title);
+            IsLoaded = true; 
+            _logger.LogDebug("WorkspaceController initialized (not activated yet) for: {Title}", Title);
+        }
+
+        /// <summary>
+        /// Убедиться что Workspace активирован (ленивая инициализация)
+        /// Вызывается при первой активации вкладки
+        /// </summary>
+        public void EnsureWorkspaceActivated()
+        {
+            if (Workspace == null)
+            {
+                _logger.LogWarning("Workspace not initialized, cannot activate");
+                return;
+            }
+
+            _logger.LogDebug("Activating workspace for: {Title}", Title);
+            Workspace.Activate();
+            _logger.LogDebug("Workspace activated for: {Title}", Title);
         }
 
         /// <summary>

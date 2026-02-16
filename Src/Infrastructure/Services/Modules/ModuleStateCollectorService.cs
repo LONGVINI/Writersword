@@ -46,7 +46,7 @@ namespace Writersword.Infrastructure.Services.Modules
                         continue;
                     }
 
-                    customData[module.ModuleId] = data;
+                    customData[module.InstanceId] = data;
                     _logger.LogDebug("Collected CustomData: {ModuleId}", module.ModuleId);
                 }
                 catch (Exception ex)
@@ -108,7 +108,7 @@ namespace Writersword.Infrastructure.Services.Modules
 
                     if (!IsDataEmpty(custom))
                     {
-                        customData[module.ModuleId] = custom;
+                        customData[module.InstanceId] = custom;
                         _logger.LogDebug("Collected CustomData: {ModuleId}", module.ModuleId);
                     }
                     else
@@ -118,7 +118,7 @@ namespace Writersword.Infrastructure.Services.Modules
 
                     if (session != null)
                     {
-                        sessionData[module.ModuleId] = session;
+                        sessionData[module.InstanceId] = session;
                         _logger.LogDebug("Collected SessionData: {ModuleId}", module.ModuleId);
                     }
                 }

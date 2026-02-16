@@ -1,6 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using ReactiveUI;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -14,7 +13,6 @@ using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.Services.UI;
 using Writersword.Src.Core.Interfaces.WorkFlows;
-using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.Infrastructure.Dock;
 using Writersword.Src.Infrastructure.Services.Storage;
 using Writersword.ViewModels;
@@ -61,8 +59,12 @@ namespace Writersword.Src.Infrastructure.Services.Project
             _comparisonService = comparisonService;
         }
 
-        /// <summary>Открыть документ с поддержкой восстановления из кеша</summary>
-        public async Task<DocumentTabViewModel?> OpenDocumentAsync(string? filePath = null)
+        /// <summary>
+        /// Открыть документ с поддержкой восстановления из кеша
+        /// </summary>
+        /// <param name="filePath">Путь к файлу проекта</param>
+        /// <param name="initializeWorkspace">Инициализировать workspace сразу (false для lazy loading)</param>
+        public async Task<DocumentTabViewModel?> OpenDocumentAsync(string? filePath = null, bool initializeWorkspace = true)
         {
             try
             {
@@ -77,13 +79,13 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     }
                 }
 
-                _logger.LogDebug("Opening project: {FilePath}", filePath);
+                _logger.LogDebug("Opening project: {FilePath}, InitializeWorkspace: {Init}", filePath, initializeWorkspace);
 
-                // 2. Проверяем есть ли кеш
+                // 2. Проверяем есть ли кеш (ТОЛЬКО если инициализируем workspace)
                 ProjectFile? project = null;
                 RecoveryDialogResult recoveryChoice = RecoveryDialogResult.None;
 
-                if (_cacheService.HasCache(filePath))
+                if (initializeWorkspace && _cacheService.HasCache(filePath))
                 {
                     var cacheDate = _cacheService.GetCacheDate(filePath);
                     var saveDate = File.GetLastWriteTime(filePath);
@@ -92,7 +94,6 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     {
                         _logger.LogDebug("Cache found - Cache: {CacheDate}, Save: {SaveDate}", cacheDate, saveDate);
 
-                        // СРАВНИВАЕМ данные в кеше и в файле
                         var savedProject = await _projectService.LoadAsync(filePath);
                         var cache = _cacheService.LoadCache(filePath);
 
@@ -100,27 +101,18 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                         if (savedProject != null && cache != null)
                         {
-
-                            // Кеш уже содержит CustomData напрямую
                             dataIsSame = _comparisonService.AreDataEqual(cache, savedProject.ModulesData);
-
                             _logger.LogDebug("Data comparison: {Comparison}", dataIsSame ? "SAME" : "DIFFERENT");
                         }
 
-                        // Если данные ОДИНАКОВЫЕ - НЕ показываем диалог
                         if (dataIsSame)
                         {
                             _logger.LogDebug("Data is identical, skipping Recovery dialog");
-
-                            // НЕ удаляем кеш! Он актуален и будет использоваться CacheUpdateService
-                            // Кеш удалится только при успешном Ctrl+S
-
                             project = savedProject;
                             recoveryChoice = RecoveryDialogResult.None;
                         }
                         else
                         {
-                            // Данные РАЗНЫЕ - показываем Recovery диалог
                             _logger.LogDebug("Data differs, showing Recovery dialog");
 
                             recoveryChoice = await _dialogService.ShowRecoveryDialogAsync(
@@ -130,24 +122,20 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                             _logger.LogDebug("Recovery choice: {Choice}", recoveryChoice);
 
-                            // Обрабатываем выбор пользователя
                             switch (recoveryChoice)
                             {
                                 case RecoveryDialogResult.Restore:
-                                    // Восстановить из кеша
                                     project = await LoadProjectWithCacheData(filePath);
                                     _cacheService.DeleteCache(filePath);
                                     _logger.LogDebug("Restored from cache (cache deleted)");
                                     break;
 
                                 case RecoveryDialogResult.OpenSaved:
-                                    // Открыть сохранённую версию
                                     project = await _projectService.LoadAsync(filePath);
                                     _logger.LogDebug("Opened saved version (cache remains)");
                                     break;
 
                                 case RecoveryDialogResult.Compare:
-                                    // Загрузить кеш для сравнения
                                     project = await LoadProjectWithCacheData(filePath);
                                     _logger.LogDebug("Compare mode - viewing cache");
                                     break;
@@ -176,40 +164,36 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     }
                 }
 
-                // 4. Создаём вкладку с собственным AutoSaveService
-                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
-                var cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
+                // 4. Создаём вкладку
                 var tabVM = new DocumentTabViewModel(project, filePath, onClose: null);
 
-                // Создаём ZipFileStorage для работы с файлами в ZIP
-                ZipFileStorageService? storage = null;
-                if (!string.IsNullOrEmpty(filePath))
+                // 5. Если НЕ инициализируем workspace - возвращаем "пустую" вкладку
+                if (!initializeWorkspace)
                 {
-                    storage = new ZipFileStorageService(filePath);
-                    _openStorages[filePath] = storage;
-                    tabVM.Context.FileStorage = storage;
-                    _logger.LogDebug("ZipFileStorage created for: {FilePath}", filePath);
-
-                    // Загружаем локальную конфигурацию workspace.json из ZIP
-                    var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
-                    var workModes = workModeConfigService.LoadConfiguration(project.Type, storage);
-
-                    // Сохраняем загруженные WorkModes в проект
-                    project.WorkModes = workModes;
-                    _logger.LogDebug("Loaded {Count} WorkModes for project", workModes.Count);
-
-                    // Создаём WorkspaceAutoSaveService для этого проекта
-                    var autoSaveService = App.Services.GetRequiredService<IWorkspaceAutoSaveService>();
-                    _autoSaveServices[filePath] = autoSaveService;
-                    _logger.LogDebug("WorkspaceAutoSave created for: {FilePath}", filePath);
-
-                    // Инициализируем WorkspaceController для вкладки
-                    var dockFactory = App.Services.GetRequiredService<DockFactory>();
-                    tabVM.InitializeWorkspace(workModes);
-                    _logger.LogDebug("WorkspaceController initialized for: {FilePath}", filePath);
+                    _logger.LogDebug("Created LAZY tab (workspace not initialized): {Title}", project.Title);
+                    _settingsService.AddRecentProject(filePath);
+                    return tabVM;
                 }
 
-                // 5. Если режим Compare - создаём RecoveryBanner
+                // 6. Инициализируем workspace (для первой вкладки или при ручном открытии)
+                var storage = new ZipFileStorageService(filePath);
+                _openStorages[filePath] = storage;
+                tabVM.Context.FileStorage = storage;
+                _logger.LogDebug("ZipFileStorage created for: {FilePath}", filePath);
+
+                var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
+                var workModes = workModeConfigService.LoadConfiguration(project.Type, storage);
+                project.WorkModes = workModes;
+                _logger.LogDebug("Loaded {Count} WorkModes for project", workModes.Count);
+
+                var autoSaveService = App.Services.GetRequiredService<IWorkspaceAutoSaveService>();
+                _autoSaveServices[filePath] = autoSaveService;
+                _logger.LogDebug("WorkspaceAutoSave created for: {FilePath}", filePath);
+
+                tabVM.InitializeWorkspace(workModes);
+                _logger.LogDebug("WorkspaceController initialized (NOT activated yet) for: {FilePath}", filePath);
+
+                // 7. Если режим Compare - создаём RecoveryBanner
                 if (recoveryChoice == RecoveryDialogResult.Compare)
                 {
                     var cacheDate = _cacheService.GetCacheDate(filePath);
@@ -217,7 +201,6 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                     if (cacheDate.HasValue)
                     {
-                        // Захватываем локальные копии для замыкания
                         var capturedTab = tabVM;
                         var capturedPath = filePath;
 
@@ -234,7 +217,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                         tabVM.Context.IsInCompareMode = true;
 
-                        // Отключаем автосохранение в Compare mode
+                        var cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
                         cacheUpdateService.Stop();
                         _logger.LogDebug("Compare mode enabled, cache disabled");
                     }
@@ -246,7 +229,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     _logger.LogDebug("No RecoveryBanner (not in Compare mode)");
                 }
 
-                // 6. Добавляем в недавние проекты
+                // 8. Добавляем в недавние проекты
                 _settingsService.AddRecentProject(filePath);
 
                 _logger.LogInformation("Project opened: {Title}", project.Title);
@@ -270,6 +253,66 @@ namespace Writersword.Src.Infrastructure.Services.Project
         }
 
         /// <summary>
+        /// Инициализировать workspace для ленивой вкладки
+        /// Вызывается при первом переключении на вкладку
+        /// </summary>
+        public async Task<bool> EnsureWorkspaceInitialized(DocumentTabViewModel tab)
+        {
+            if (tab.IsLoaded)
+            {
+                _logger.LogDebug("Workspace already loaded for: {Title}", tab.Title);
+                return true;
+            }
+
+            var filePath = tab.FilePath;
+            if (string.IsNullOrEmpty(filePath))
+            {
+                _logger.LogWarning("Cannot initialize workspace - no file path");
+                return false;
+            }
+
+            try
+            {
+                _logger.LogDebug("Lazy loading workspace for: {Title}", tab.Title);
+
+                // Создаём ZipFileStorage
+                var storage = new ZipFileStorageService(filePath);
+                _openStorages[filePath] = storage;
+                tab.Context.FileStorage = storage;
+                _logger.LogDebug("ZipFileStorage created for: {FilePath}", filePath);
+
+                // Загружаем WorkModes
+                var project = tab.GetProject();
+                var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
+                var workModes = workModeConfigService.LoadConfiguration(project.Type, storage);
+                project.WorkModes = workModes;
+                _logger.LogDebug("Loaded {Count} WorkModes for project", workModes.Count);
+
+                // Создаём AutoSaveService
+                var autoSaveService = App.Services.GetRequiredService<IWorkspaceAutoSaveService>();
+                _autoSaveServices[filePath] = autoSaveService;
+                _logger.LogDebug("WorkspaceAutoSave created for: {FilePath}", filePath);
+
+                // Инициализируем Workspace БЕЗ активации
+                tab.InitializeWorkspace(workModes);
+                _logger.LogDebug("WorkspaceController lazy initialized for: {FilePath}", filePath);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during lazy workspace initialization");
+                await _dialogService.ShowMessageAsync(
+                    "Ошибка",
+                    $"Не удалось загрузить проект: {ex.Message}",
+                    MessageBoxType.Error,
+                    MessageBoxButtons.OK
+                );
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Перезагрузить все активные модули из данных проекта
         /// Используется при переключении версий в Compare mode
         /// </summary>
@@ -285,7 +328,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                 foreach (var module in activeModules)
                 {
-                    if (project.ModulesData.TryGetValue(module.ModuleId.ToString(), out var data))
+                    if (project.ModulesData.TryGetValue(module.InstanceId, out var data))
                     {
                         module.SetCustomData(data);
                         _logger.LogDebug("Reloaded module: {ModuleId}", module.ModuleId);
@@ -709,13 +752,6 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                 if (!string.IsNullOrEmpty(filePath))
                 {
-                    // ВАЖНО: Сохраняем workspace ДО dispose
-                    if (tab.Workspace != null)
-                    {
-                        _logger.LogDebug("Saving workspace before closing");
-                        await tab.Workspace.SaveWorkspaceAsync();
-                    }
-
                     if (_autoSaveServices.TryGetValue(filePath, out var autoSaveService))
                     {
                         autoSaveService.Dispose();

@@ -1,23 +1,37 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:converters="using:Writersword.Converters"
+             xmlns:dock="using:Dock.Avalonia.Controls"
              x:Class="Writersword.App"
              RequestedThemeVariant="Dark">
-
-	<Application.Resources>
-		<converters:TabBackgroundConverter x:Key="TabBackgroundConverter"/>
-		<converters:TabForegroundConverter x:Key="TabForegroundConverter"/>
-		<converters:BoolToActiveTagConverter x:Key="BoolToActiveTagConverter"/>
-	</Application.Resources>
-
-	<Application.Styles>
-		<FluentTheme />
-
-		<!-- Fluent тема для Dock -->
-		<StyleInclude Source="avares://Dock.Avalonia.Themes.Fluent/DockFluentTheme.axaml"/>
-
-		<!-- Твои кастомные стили -->
-		<StyleInclude Source="/Styles/DockStyles.axaml"/>
-	</Application.Styles>
-
+    
+    <Application.Resources>
+        <converters:TabBackgroundConverter x:Key="TabBackgroundConverter"/>
+        <converters:TabForegroundConverter x:Key="TabForegroundConverter"/>
+        <converters:BoolToActiveTagConverter x:Key="BoolToActiveTagConverter"/>
+    </Application.Resources>
+    
+    <Application.Styles>
+        <FluentTheme />
+        
+        <!-- Fluent тема для Dock -->
+        <StyleInclude Source="avares://Dock.Avalonia.Themes.Fluent/DockFluentTheme.axaml"/>
+        
+        <!-- Твои кастомные стили -->
+        <StyleInclude Source="/Styles/DockStyles.axaml"/>
+		
+  <!-- 
+        Отключение контекстного меню Dock библиотеки на вкладках модулей.
+        Библиотека Dock.Avalonia по умолчанию показывает контекстное меню с командами 
+        Float, Close, Tab Layout и т.д. при ПКМ на заголовке вкладки.
+        Этот стиль полностью скрывает это меню.
+        
+        НЕ влияет на контекстные меню ВНУТРИ модулей (текстовый редактор, списки и т.д.)
+    -->
+    <Style Selector="DockControl ContextMenu">
+        <Setter Property="IsVisible" Value="False"/>
+    </Style>
+        
+    </Application.Styles>
+    
 </Application>

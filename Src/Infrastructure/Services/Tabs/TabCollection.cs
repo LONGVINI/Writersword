@@ -32,26 +32,32 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
             {
                 if (_activeTab != value)
                 {
-                    // Деактивируем старую вкладку
+                    var previousTab = _activeTab;
+
                     if (_activeTab != null)
                         _activeTab.IsActive = false;
 
                     _activeTab = value;
 
-                    // Активируем новую вкладку
                     if (_activeTab != null)
                         _activeTab.IsActive = true;
 
-                    _logger.LogDebug("Active tab changed: {Title}", _activeTab?.Title ?? "none");
-                    ActiveTabChanged?.Invoke(_activeTab);
+                    _logger.LogDebug("Active tab changed: {NewTitle} (previous: {PreviousTitle})",
+                        _activeTab?.Title ?? "none",
+                        previousTab?.Title ?? "none");
+
+                    ActiveTabChanged?.Invoke(_activeTab, previousTab);
                 }
             }
         }
 
-        /// <summary>Событие изменения активной вкладки</summary>
-        public event Action<DocumentTabViewModel?>? ActiveTabChanged;
+        /// <summary>
+        /// Событие изменения активной вкладки
+        /// Передаёт (newTab, previousTab)
+        /// </summary>
+        public event Action<DocumentTabViewModel?, DocumentTabViewModel?>? ActiveTabChanged;
 
-        /// <summary>Конструктор с dependency injection</summary>
+        /// <summary>Конструктор</summary>
         public TabCollection(ISettingsService settingsService)
         {
             _logger = App.Services.GetService<ILogger<TabCollection>>()!;
@@ -66,7 +72,13 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
                 Tabs.Add(tab);
                 _logger.LogDebug("Added tab: {Title}", tab.Title);
 
-                // Сохраняем обновлённый список в настройки
+                // КРИТИЧЕСКИ ВАЖНО: Установить как активную если это первая вкладка
+                if (Tabs.Count == 1 && ActiveTab == null)
+                {
+                    _logger.LogDebug("First tab added, setting as active: {Title}", tab.Title);
+                    ActiveTab = tab;
+                }
+
                 SaveOpenProjectsToSettings();
             }
         }
@@ -78,13 +90,11 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
             {
                 _logger.LogDebug("Removed tab: {Title}", tab.Title);
 
-                // Если удалили активную вкладку - активируем другую
                 if (ActiveTab == tab)
                 {
                     ActiveTab = Tabs.FirstOrDefault();
                 }
 
-                // Сохраняем обновлённый список в настройки
                 SaveOpenProjectsToSettings();
             }
         }
@@ -102,7 +112,6 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
             ActiveTab = null;
             _logger.LogDebug("Cleared all tabs");
 
-            // Сохраняем пустой список в настройки
             SaveOpenProjectsToSettings();
         }
 
@@ -135,10 +144,7 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
         /// </summary>
         public IProjectFileStorage? GetFileStorageForTab(DocumentTabViewModel tab)
         {
-            // FileStorage хранится в tab или в ProjectWorkflow
-            // Нужно посмотреть где именно у тебя он хранится
-            // ВРЕМЕННО возвращаю null, ты заменишь на реальный код
-            return null; // TODO: вернуть реальный FileStorage
+            return null;
         }
 
         /// <summary>
@@ -146,9 +152,7 @@ namespace Writersword.Src.Infrastructure.Services.Tabs
         /// </summary>
         public ProjectFile? GetProjectForTab(DocumentTabViewModel tab)
         {
-            // ProjectFile должен быть в табе
-            // ВРЕМЕННО возвращаю null, ты заменишь на реальный код
-            return null; // TODO: вернуть реальный Project
+            return null;
         }
     }
 }

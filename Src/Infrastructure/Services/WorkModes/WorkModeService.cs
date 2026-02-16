@@ -133,7 +133,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         {
             var slot = new ModuleSlot
             {
-                ModuleId = moduleId,
+                ModuleType = moduleId,
                 PreferredPosition = PreferredDockPosition.RightAsTab
             };
 
@@ -146,16 +146,16 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         /// <summary>Удалить модуль из режима</summary>
         public bool RemoveModuleFromWorkMode(WorkMode workMode, ModuleSlot moduleSlot)
         {
-            if (!_configService.CanRemoveModule(_currentProjectType, workMode.WorkModeId, moduleSlot.ModuleId))
+            if (!_configService.CanRemoveModule(_currentProjectType, workMode.WorkModeId, moduleSlot.ModuleType))
             {
-                _logger.LogDebug("Cannot remove module {ModuleId} (required)", moduleSlot.ModuleId);
+                _logger.LogDebug("Cannot remove module {ModuleId} (required)", moduleSlot.ModuleType);
                 return false;
             }
 
             var removed = workMode.ModuleSlots.Remove(moduleSlot);
             if (removed)
             {
-                _logger.LogDebug("Removed module {ModuleId} from {WorkModeTitle}", moduleSlot.ModuleId, workMode.Title);
+                _logger.LogDebug("Removed module {ModuleId} from {WorkModeTitle}", moduleSlot.ModuleType, workMode.Title);
             }
 
             return removed;

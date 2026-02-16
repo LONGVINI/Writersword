@@ -11,20 +11,28 @@ namespace Writersword.Src.WorkModes.Editor
     /// </summary>
     public class EditorWorkMode : IWorkMode
     {
-        // ===== МЕТАДАННЫЕ (из IWorkModeMetadata) =====
-
+        /// <summary>Идентификатор WorkMode</summary>
         public string Id => "editor";
+
+        /// <summary>Отображаемое название</summary>
         public string DisplayName => "Редактор";
+
+        /// <summary>Иконка</summary>
         public string Icon => "📝";
+
+        /// <summary>Описание</summary>
         public string Description => "Основной редактор текста";
+
+        /// <summary>Можно ли закрыть этот WorkMode</summary>
         public bool IsCloseable => false;
+
+        /// <summary>Порядок отображения</summary>
         public int Order => 0;
 
-        // ===== DEFAULT КОНФИГУРАЦИЯ =====
-
         /// <summary>
-        /// DEFAULT конфигурация Editor режима
-        /// Возвращает полностью настроенный WorkMode с модулями и структурой layout
+        /// Дефолтная конфигурация Editor режима
+        /// Определяет правила работы с модулями
+        /// Модули НЕ указанные в ModuleCategories = Optional по умолчанию
         /// </summary>
         public WorkMode GetDefaultConfig()
         {
@@ -37,102 +45,64 @@ namespace Writersword.Src.WorkModes.Editor
                 Order = Order,
                 IsCloseable = IsCloseable,
 
-                // Список модулей с расположением
+                ModuleCategories = new Dictionary<string, ModuleCategory>
+                {
+                    { "TextEditor", ModuleCategory.Required },
+                    { "CharacterTracker", ModuleCategory.Unwanted },
+                    { "PlotStructure", ModuleCategory.Unwanted },
+                    { "Timeline", ModuleCategory.Forbidden },
+                    { "GameMechanics", ModuleCategory.Forbidden }
+                },
+
                 ModuleSlots = new List<ModuleSlot>
                 {
-                    // TextEditor - левая панель
                     new ModuleSlot
                     {
-                        ModuleId = "TextEditor",
-                        ContainerId = "LeftPanel",
+                        ModuleType = "TextEditor",
+                        Path = null,
                         IsFloating = false,
                         TabOrder = 0,
                         IsActiveTab = true,
-                        IsCloseable = false,  // Required модуль
+                        IsCloseable = false,
+                        IsCurrentlyOpen = true,
                         MinWidth = 400,
                         MinHeight = 300,
-                        PreferredPosition = PreferredDockPosition.RightAsTab
+                        PreferredPosition = PreferredDockPosition.RightAsTab,
+                        Category = ModuleCategory.Required
                     },
 
-                    // Synonyms - правая верхняя панель
                     new ModuleSlot
                     {
-                        ModuleId = "Synonyms",
-                        ContainerId = "RightTop",
+                        ModuleType = "Synonyms",
+                        Path = null,
                         IsFloating = false,
                         TabOrder = 0,
                         IsActiveTab = true,
                         IsCloseable = true,
+                        IsCurrentlyOpen = true,
                         MinWidth = 250,
                         MinHeight = 200,
-                        PreferredPosition = PreferredDockPosition.RightAsTab
+                        PreferredPosition = PreferredDockPosition.TopRight,
+                        Category = ModuleCategory.Optional
                     },
 
-                    // Timer - правая нижняя панель
                     new ModuleSlot
                     {
-                        ModuleId = "Timer",
-                        ContainerId = "RightBottom",
+                        ModuleType = "Timer",
+                        Path = null,
                         IsFloating = false,
                         TabOrder = 0,
                         IsActiveTab = true,
                         IsCloseable = true,
+                        IsCurrentlyOpen = true,
                         MinWidth = 200,
                         MinHeight = 150,
-                        PreferredPosition = PreferredDockPosition.RightAsTab
+                        PreferredPosition = PreferredDockPosition.BottomRight,
+                        Category = ModuleCategory.Optional
                     }
                 },
 
-                // Структура контейнеров (split панелей)
-                Containers = new List<SplitContainer>
-                {
-                    // Корневой контейнер - горизонтальный split
-                    new SplitContainer
-                    {
-                        Id = "Root",
-                        Proportion = 1.0,
-                        Orientation = "Horizontal",
-                        Children = new List<SplitContainer>
-                        {
-                            // Левая панель (70%)
-                            new SplitContainer
-                            {
-                                Id = "LeftPanel",
-                                Proportion = 0.7,
-                                Orientation = null,  // Конечный узел
-                                Children = null
-                            },
-
-                            // Правая панель (30%) - вертикальный split
-                            new SplitContainer
-                            {
-                                Id = "RightPanel",
-                                Proportion = 0.3,
-                                Orientation = "Vertical",
-                                Children = new List<SplitContainer>
-                                {
-                                    // Правая верхняя (50%)
-                                    new SplitContainer
-                                    {
-                                        Id = "RightTop",
-                                        Proportion = 0.5,
-                                        Orientation = null,
-                                        Children = null
-                                    },
-
-                                    // Правая нижняя (50%)
-                                    new SplitContainer
-                                    {
-                                        Id = "RightBottom",
-                                        Proportion = 0.5,
-                                        Orientation = null,
-                                        Children = null
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                LayoutTree = null
             };
         }
     }

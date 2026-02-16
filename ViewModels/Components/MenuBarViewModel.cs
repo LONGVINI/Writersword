@@ -476,21 +476,24 @@ namespace Writersword.ViewModels.Components
                     return;
                 }
 
-                var mainVM = _mainViewModelProvider?.Invoke();
-                if (mainVM?.DockLayout?.Windows != null)
+                if (activeTab.Workspace != null)
                 {
-                    _logger.LogDebug("Closing {Count} float windows", mainVM.DockLayout.Windows.Count);
-
-                    foreach (var window in mainVM.DockLayout.Windows.ToList())
+                    var currentLayout = activeTab.Workspace.GetCurrentLayout();
+                    if (currentLayout?.Windows != null)
                     {
-                        if (window.Host is Writersword.Src.Infrastructure.Dock.HostWindow hostWindow)
-                        {
-                            hostWindow.Exit();
-                            _logger.LogDebug("Closed float window: {WindowId}", window.Id);
-                        }
-                    }
+                        _logger.LogDebug("Closing {Count} float windows", currentLayout.Windows.Count);
 
-                    mainVM.DockLayout.Windows.Clear();
+                        foreach (var window in currentLayout.Windows.ToList())
+                        {
+                            if (window.Host is Writersword.Src.Infrastructure.Dock.HostWindow hostWindow)
+                            {
+                                hostWindow.Exit();
+                                _logger.LogDebug("Closed float window: {WindowId}", window.Id);
+                            }
+                        }
+
+                        currentLayout.Windows.Clear();
+                    }
                 }
 
                 _workspaceConfigService.DeleteFromZip(fileStorage);
@@ -502,8 +505,7 @@ namespace Writersword.ViewModels.Components
 
                 activeTab.InitializeWorkspace(defaultWorkModes);
 
-                mainVM?.InitializeWorkModesForTab(activeTab);
-
+                var mainVM = _mainViewModelProvider?.Invoke();
                 mainVM?.InitializeWorkModesForTab(activeTab);
 
                 _notificationService.ShowSuccess("Конфигурация сброшена до дефолта");

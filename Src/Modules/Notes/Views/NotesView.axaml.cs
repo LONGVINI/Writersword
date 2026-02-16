@@ -3,12 +3,13 @@
 namespace Writersword.Modules.Notes.Views
 {
     /// <summary>
-    /// Code-behind для View модуля заметок
-    /// Вся логика в ViewModel
+    /// View для модуля заметок
     /// </summary>
     public partial class NotesView : UserControl
     {
-        /// <summary>Конструктор - инициализация компонентов</summary>
+        /// <summary>
+        /// Конструктор View заметок
+        /// </summary>
         public NotesView()
         {
             InitializeComponent();

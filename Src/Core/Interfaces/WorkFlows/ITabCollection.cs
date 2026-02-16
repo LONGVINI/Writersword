@@ -28,7 +28,10 @@ namespace Writersword.Src.Core.Interfaces.WorkFlows
         /// <summary>Очистить все вкладки</summary>
         void Clear();
 
-        /// <summary>Событие изменения активной вкладки</summary>
-        event Action<DocumentTabViewModel?>? ActiveTabChanged;
+        /// <summary>
+        /// Событие изменения активной вкладки
+        /// Передаёт (newTab, previousTab)
+        /// </summary>
+        event Action<DocumentTabViewModel?, DocumentTabViewModel?>? ActiveTabChanged;
     }
 }

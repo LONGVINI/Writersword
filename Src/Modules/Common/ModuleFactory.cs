@@ -10,11 +10,13 @@ namespace Writersword.Modules.Common
     /// <summary>
     /// Фабрика для создания экземпляров модулей
     /// Также предоставляет метаданные всех зарегистрированных типов модулей
+    /// Метаданные кешируются при первом обращении
     /// </summary>
     public class ModuleFactory
     {
         private readonly ILogger<ModuleFactory> _logger;
         private readonly Dictionary<string, Func<string?, IModule>> _moduleCreators = new();
+        private List<IModuleMetadata>? _cachedMetadata;
 
         public ModuleFactory()
         {
@@ -26,6 +28,8 @@ namespace Writersword.Modules.Common
         {
             _moduleCreators[moduleId] = creator;
             _logger.LogDebug("Registered: {ModuleId}", moduleId);
+
+            _cachedMetadata = null;
         }
 
         /// <summary>Создать экземпляр модуля</summary>
@@ -58,25 +62,49 @@ namespace Writersword.Modules.Common
 
         /// <summary>
         /// Получить метаданные ВСЕХ зарегистрированных модулей
-        /// Создаёт временный экземпляр каждого типа для чтения метаданных
+        /// Метаданные кешируются при первом вызове
+        /// НЕ создаёт экземпляры модулей для проектов
         /// Используется для построения меню модулей в UI
         /// </summary>
         public List<IModuleMetadata> GetAllModuleMetadata()
         {
+            if (_cachedMetadata != null)
+            {
+                _logger.LogDebug("Returning cached metadata for {Count} module types", _cachedMetadata.Count);
+                return _cachedMetadata;
+            }
+
+            _logger.LogDebug("Building metadata cache...");
+
             var metadataList = new List<IModuleMetadata>();
 
             foreach (var moduleId in GetRegisteredTypes())
             {
                 var tempModule = Create(moduleId);
+
                 if (tempModule?.Metadata != null)
                 {
                     metadataList.Add(tempModule.Metadata);
+
                     tempModule.Dispose();
+                    _logger.LogDebug("Cached metadata for: {ModuleId}", moduleId);
                 }
             }
 
-            _logger.LogDebug("Loaded metadata for {Count} module types", metadataList.Count);
+            _cachedMetadata = metadataList;
+
+            _logger.LogDebug("Metadata cache built: {Count} module types", metadataList.Count);
             return metadataList;
+        }
+
+        /// <summary>
+        /// Очистить кеш метаданных
+        /// Используется при перерегистрации модулей
+        /// </summary>
+        public void ClearMetadataCache()
+        {
+            _cachedMetadata = null;
+            _logger.LogDebug("Metadata cache cleared");
         }
     }
 }

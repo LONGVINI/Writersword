@@ -5,8 +5,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reactive;
+using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
+using Writersword.Src.Core.Interfaces.WorkFlows;
 
 namespace Writersword.ViewModels.Components
 {
@@ -38,6 +40,12 @@ namespace Writersword.ViewModels.Components
         /// <summary>Функция удаления модуля (передаётся из MainWindowViewModel)</summary>
         private Action<string>? _onModuleRemoved;
 
+        /// <summary>Функция проверки открыт ли модуль (передаётся из MainWindowViewModel)</summary>
+        private Func<string, bool>? _isModuleAlreadyOpen;
+
+        /// <summary>Функция фокусировки модуля (передаётся из MainWindowViewModel)</summary>
+        private Action<string>? _onFocusModule;
+
         public ModulePanelViewModel(ModuleFactory moduleFactory)
         {
             _logger = App.Services.GetService<ILogger<ModulePanelViewModel>>()!;
@@ -60,39 +68,148 @@ namespace Writersword.ViewModels.Components
         }
 
         /// <summary>
-        /// Загрузить список модулей для текущего WorkMode
-        /// Вызывается из MainWindowViewModel при смене WorkMode
+        /// Установить обработчики проверки и фокусировки модулей
+        /// Вызывается из MainWindowViewModel после создания
+        /// </summary>
+        public void SetModuleCheckHandlers(Func<string, bool> isModuleAlreadyOpen, Action<string> onFocusModule)
+        {
+            _isModuleAlreadyOpen = isModuleAlreadyOpen;
+            _onFocusModule = onFocusModule;
+            _logger.LogDebug("Module check handlers set");
+        }
+
+        /// <summary>
+        /// Загрузить модули для WorkMode
+        /// Показывает ВСЕ модули из ModuleCategories (кроме Forbidden)
+        /// Галочки синхронизируются с РЕАЛЬНЫМ UI состоянием
         /// </summary>
         public void LoadModulesForWorkMode(WorkMode workMode)
         {
+            _logger.LogDebug("Loading modules for WorkMode: {Title}", workMode.Title);
+
             _currentWorkMode = workMode;
+            AvailableModules.Clear();
 
-            var allModules = _moduleFactory.GetAllModuleMetadata();
+            var allModuleMetadata = _moduleFactory.GetAllModuleMetadata();
 
-            var moduleItems = new List<ModuleItemViewModel>();
+            var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+            var tabCollection = App.Services.GetRequiredService<ITabCollection>();
+            var activeTab = tabCollection.ActiveTab;
 
-            foreach (var metadata in allModules)
+            HashSet<string> actuallyOpenModules = new HashSet<string>();
+
+            if (activeTab?.Workspace != null)
             {
-                var moduleSlot = workMode.ModuleSlots.FirstOrDefault(ms => ms.ModuleId == metadata.ModuleId);
+                actuallyOpenModules = activeTab.Workspace.GetOpenModuleIds();
+                _logger.LogDebug("Actually open modules from UI: {Count} - {Modules}",
+                    actuallyOpenModules.Count, string.Join(", ", actuallyOpenModules));
+            }
+            else
+            {
+                _logger.LogWarning("No active workspace, cannot get real UI state");
+            }
 
-                var item = new ModuleItemViewModel
+            foreach (var metadata in allModuleMetadata)
+            {
+                ModuleCategory category;
+
+                if (workMode.ModuleCategories.TryGetValue(metadata.ModuleId, out var explicitCategory))
+                {
+                    category = explicitCategory;
+                }
+                else
+                {
+                    category = ModuleCategory.Optional;
+                }
+
+                if (category == ModuleCategory.Forbidden)
+                {
+                    _logger.LogDebug("Skipping forbidden module: {ModuleId}", metadata.ModuleId);
+                    continue;
+                }
+
+                bool isActuallyOpen = actuallyOpenModules.Contains(metadata.ModuleId);
+
+                var panelItem = new ModuleItemViewModel
                 {
                     ModuleId = metadata.ModuleId,
                     DisplayName = metadata.DisplayName,
-                    Description = metadata.Description,
-                    IsActive = moduleSlot != null,
-                    IsRequired = moduleSlot != null && !moduleSlot.IsCloseable
+                    IsActive = isActuallyOpen,
+                    IsRequired = category == ModuleCategory.Required,
+                    Category = category,
+                    Order = GetCategoryOrder(category)
                 };
 
-                moduleItems.Add(item);
+                AvailableModules.Add(panelItem);
+
+                _logger.LogDebug("Added module: {ModuleId}, Category: {Category}, ReallyOpen: {IsOpen}",
+                    metadata.ModuleId, category, isActuallyOpen);
             }
 
-            AvailableModules = moduleItems
-                .OrderByDescending(m => m.IsActive)
+            var sorted = AvailableModules
+                .OrderBy(m => m.Order)
                 .ThenBy(m => m.DisplayName)
                 .ToList();
 
-            _logger.LogDebug("Loaded {Count} modules for WorkMode: {WorkModeTitle}", AvailableModules.Count, workMode.Title);
+            AvailableModules = sorted;
+
+            _logger.LogDebug("Loaded {Count} modules (sorted by category)", AvailableModules.Count);
+        }
+
+        /// <summary>
+        /// Обновить состояние галочек без полной перезагрузки списка
+        /// Вызывается при наведении на меню для синхронизации с UI
+        /// </summary>
+        public void RefreshModuleStates()
+        {
+            if (_currentWorkMode == null)
+            {
+                _logger.LogDebug("No current WorkMode, skipping refresh");
+                return;
+            }
+
+            var tabCollection = App.Services.GetRequiredService<ITabCollection>();
+            var activeTab = tabCollection.ActiveTab;
+
+            if (activeTab?.Workspace == null)
+            {
+                _logger.LogWarning("No active workspace, cannot refresh states");
+                return;
+            }
+
+            var actuallyOpenModules = activeTab.Workspace.GetOpenModuleIds();
+
+            _logger.LogDebug("Refreshing module states, actually open: {Count}", actuallyOpenModules.Count);
+
+            foreach (var moduleItem in AvailableModules)
+            {
+                bool wasActive = moduleItem.IsActive;
+                bool shouldBeActive = actuallyOpenModules.Contains(moduleItem.ModuleId);
+
+                if (wasActive != shouldBeActive)
+                {
+                    _logger.LogDebug("Module {ModuleId} state changed: {Old} -> {New}",
+                        moduleItem.ModuleId, wasActive, shouldBeActive);
+                    moduleItem.IsActive = shouldBeActive;
+                }
+            }
+
+            _logger.LogDebug("Module states refreshed");
+        }
+
+        /// <summary>
+        /// Получить порядок сортировки для категории
+        /// </summary>
+        private int GetCategoryOrder(ModuleCategory category)
+        {
+            return category switch
+            {
+                ModuleCategory.Required => 0,
+                ModuleCategory.Optional => 1,
+                ModuleCategory.Unwanted => 2,
+                ModuleCategory.Forbidden => 3,
+                _ => 4
+            };
         }
 
         /// <summary>
@@ -107,7 +224,7 @@ namespace Writersword.ViewModels.Components
 
         /// <summary>
         /// Открыть модуль (публичный метод для вызова из меню)
-        /// Если уже открыт - ничего не делаем (MainWindow сфокусирует)
+        /// Если уже открыт - фокусирует, если нет - создаёт новый
         /// </summary>
         public void OpenModule(string moduleId)
         {
@@ -121,9 +238,10 @@ namespace Writersword.ViewModels.Components
                 return;
             }
 
-            if (moduleItem.IsActive)
+            if (_isModuleAlreadyOpen?.Invoke(moduleId) == true)
             {
-                _logger.LogDebug("Module already active");
+                _logger.LogDebug("Module already open, focusing");
+                _onFocusModule?.Invoke(moduleId);
                 return;
             }
 
@@ -182,8 +300,16 @@ namespace Writersword.ViewModels.Components
             }
             else
             {
-                _onModuleAdded?.Invoke(module.ModuleId);
-                module.IsActive = true;
+                if (_isModuleAlreadyOpen?.Invoke(module.ModuleId) == true)
+                {
+                    _logger.LogDebug("Module already open, focusing");
+                    _onFocusModule?.Invoke(module.ModuleId);
+                }
+                else
+                {
+                    _onModuleAdded?.Invoke(module.ModuleId);
+                    module.IsActive = true;
+                }
             }
 
             AvailableModules = AvailableModules
@@ -225,5 +351,11 @@ namespace Writersword.ViewModels.Components
 
         /// <summary>Можно ли переключать модуль (не обязательный)</summary>
         public bool CanToggle => !IsRequired;
+
+        /// <summary>Категория модуля в текущем WorkMode</summary>
+        public ModuleCategory Category { get; set; } = ModuleCategory.Optional;
+
+        /// <summary>Порядок сортировки (для UI)</summary>
+        public int Order { get; set; }
     }
 }

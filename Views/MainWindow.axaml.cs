@@ -92,13 +92,7 @@ namespace Writersword.Views
                 return; // НЕ закрывать приложение
             }
 
-            // 1.5. ПРИНУДИТЕЛЬНО сохраняем workspace.json для ВСЕХ открытых вкладок
-            _logger.LogDebug("Saving workspace configurations for all tabs");
-            await vm.SaveActiveWorkspaceConfigurationAsync();
-
             // 1.6. ПРИНУДИТЕЛЬНО сохраняем активную вкладку в кеш перед проверкой изменений
-            // Это необходимо потому что CacheUpdateService работает раз в 10 секунд
-            // и может не успеть сохранить изменения если пользователь быстро закрыл приложение
             _logger.LogDebug("Force saving active tab to cache");
             var activeTab = tabCollection.ActiveTab;
             if (activeTab != null && !string.IsNullOrEmpty(activeTab.FilePath))
@@ -108,21 +102,16 @@ namespace Writersword.Views
                     var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
                     var cacheService = App.Services.GetRequiredService<IZipCacheService>();
 
-                    // Получаем активные модули текущего WorkMode
                     var activeModules = vm.GetActiveModules();
 
-                    // Собираем CustomData и SessionData
                     var (customData, sessionData) = stateCollector.CollectAllData(activeModules);
 
                     if (customData.Count > 0)
                     {
-                        // Получаем ProjectId для кеша
                         var project = activeTab.GetProject();
 
-                        // Сохраняем кеш принудительно
                         await cacheService.SaveCacheAsync(activeTab.FilePath, project.Id, customData, sessionData);
 
-                        // Отмечаем вкладку как изменённую (для правильной работы HasUnsavedChanges)
                         activeTab.MarkAsModified();
 
                         _logger.LogDebug("Active tab cached: {Count} modules", customData.Count);
@@ -130,6 +119,13 @@ namespace Writersword.Views
                     else
                     {
                         _logger.LogDebug("Active tab has no data to cache");
+                    }
+
+                    // ДОБАВИТЬ ТУТ:
+                    if (activeTab.Workspace != null)
+                    {
+                        await activeTab.Workspace.SaveWorkspaceAsync();
+                        _logger.LogDebug("Active tab workspace.json saved: {Title}", activeTab.Title);
                     }
                 }
                 catch (Exception ex)

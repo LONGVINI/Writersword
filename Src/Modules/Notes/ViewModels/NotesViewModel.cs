@@ -1,19 +1,27 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ReactiveUI;
 
 namespace Writersword.Modules.Notes.ViewModels
 {
     /// <summary>
     /// ViewModel для модуля заметок
-    /// Управляет текстом заметок
     /// </summary>
     public class NotesViewModel : ReactiveObject
     {
-        /// <summary>Текст заметок</summary>
+        private readonly ILogger<NotesViewModel> _logger;
         private string _noteText = string.Empty;
 
         /// <summary>
-        /// Текст заметок (привязан к TextBox)
-        /// При изменении автоматически уведомляет UI
+        /// Конструктор ViewModel заметок
+        /// </summary>
+        public NotesViewModel()
+        {
+            _logger = App.Services.GetService<ILogger<NotesViewModel>>()!;
+        }
+
+        /// <summary>
+        /// Текст заметки
         /// </summary>
         public string NoteText
         {
@@ -22,11 +30,14 @@ namespace Writersword.Modules.Notes.ViewModels
         }
 
         /// <summary>
-        /// Конструктор - задаём текст по умолчанию
+        /// Загрузить текст заметки
+        /// Используется при загрузке данных из проекта
+        /// НЕ вызывает события изменения для подписчиков
         /// </summary>
-        public NotesViewModel()
+        public void LoadNotes(string text)
         {
-            NoteText = "Быстрые заметки...";
+            _noteText = text ?? string.Empty;
+            _logger.LogDebug("Loaded {Length} characters", _noteText.Length);
         }
     }
 }
