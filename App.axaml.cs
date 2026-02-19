@@ -132,17 +132,17 @@ namespace Writersword
             var moduleFactory = Services.GetRequiredService<ModuleFactory>();
             var assembly = Assembly.GetExecutingAssembly();
 
-            var moduleTypes = assembly.GetTypes()
-                .Where(t => typeof(BaseModule).IsAssignableFrom(t) && !t.IsAbstract);
+            var moduleTypes = assembly.GetTypes().Where(t => typeof(BaseModule).IsAssignableFrom(t) && !t.IsAbstract);
 
             foreach (var moduleType in moduleTypes)
             {
-                var instance = Activator.CreateInstance(moduleType, new object?[] { null }) as BaseModule;
+                var instance = Activator.CreateInstance(moduleType) as BaseModule;
                 if (instance != null)
                 {
-                    moduleFactory.Register(instance.ModuleId, (instanceId) =>
-                        Activator.CreateInstance(moduleType, new object?[] { instanceId }) as BaseModule
-                        ?? throw new InvalidOperationException($"Failed to create module {moduleType.Name}"));
+                    var capturedType = moduleType;
+                    moduleFactory.Register(instance.moduleType, () =>
+                        Activator.CreateInstance(capturedType) as BaseModule
+                        ?? throw new InvalidOperationException($"Failed to create module {capturedType.Name}"));
                 }
             }
 

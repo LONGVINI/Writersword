@@ -31,7 +31,7 @@ namespace Writersword.Core.Models.Settings
     public class FloatWindowConfig
     {
         /// <summary>ID модуля который открыт в плавающем окне</summary>
-        public string ModuleId { get; set; } = "";
+        public string moduleType { get; set; } = "";
 
         /// <summary>Позиция окна X (пиксели от левого края экрана)</summary>
         public int X { get; set; }

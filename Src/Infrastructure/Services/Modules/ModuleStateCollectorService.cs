@@ -42,16 +42,16 @@ namespace Writersword.Infrastructure.Services.Modules
 
                     if (IsDataEmpty(data))
                     {
-                        _logger.LogDebug("Module is empty: {ModuleId}", module.ModuleId);
+                        _logger.LogDebug("Module is empty: {moduleType}", module.moduleType);
                         continue;
                     }
 
-                    customData[module.InstanceId] = data;
-                    _logger.LogDebug("Collected CustomData: {ModuleId}", module.ModuleId);
+                    customData[module.moduleType] = data;
+                    _logger.LogDebug("Collected CustomData: {moduleType}", module.moduleType);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error collecting CustomData from {ModuleId}", module.ModuleId);
+                    _logger.LogError(ex, "Error collecting CustomData from {moduleType}", module.moduleType);
                 }
             }
 
@@ -75,13 +75,13 @@ namespace Writersword.Infrastructure.Services.Modules
 
                     if (data != null)
                     {
-                        sessionData[module.ModuleId] = data;
-                        _logger.LogDebug("Collected SessionData: {ModuleId}", module.ModuleId);
+                        sessionData[module.moduleType] = data;
+                        _logger.LogDebug("Collected SessionData: {moduleType}", module.moduleType);
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error collecting SessionData from {ModuleId}", module.ModuleId);
+                    _logger.LogError(ex, "Error collecting SessionData from {moduleType}", module.moduleType);
                 }
             }
 
@@ -108,23 +108,23 @@ namespace Writersword.Infrastructure.Services.Modules
 
                     if (!IsDataEmpty(custom))
                     {
-                        customData[module.InstanceId] = custom;
-                        _logger.LogDebug("Collected CustomData: {ModuleId}", module.ModuleId);
+                        customData[module.moduleType] = custom;
+                        _logger.LogDebug("Collected CustomData: {moduleType}", module.moduleType);
                     }
                     else
                     {
-                        _logger.LogDebug("Module is empty: {ModuleId}", module.ModuleId);
+                        _logger.LogDebug("Module is empty: {moduleType}", module.moduleType);
                     }
 
                     if (session != null)
                     {
-                        sessionData[module.InstanceId] = session;
-                        _logger.LogDebug("Collected SessionData: {ModuleId}", module.ModuleId);
+                        sessionData[module.moduleType] = session;
+                        _logger.LogDebug("Collected SessionData: {moduleType}", module.moduleType);
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error collecting data from {ModuleId}", module.ModuleId);
+                    _logger.LogError(ex, "Error collecting data from {moduleType}", module.moduleType);
                 }
             }
 

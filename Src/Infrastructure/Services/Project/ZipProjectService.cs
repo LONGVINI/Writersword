@@ -14,9 +14,10 @@ namespace Writersword.Src.Infrastructure.Services.Project
 {
     /// <summary>
     /// Сервис для работы с проектами в формате ZIP
-    /// НЕ использует временные папки - работает с ZIP напрямую
-    /// Отвечает ТОЛЬКО за project.json и modules/*.json
+    /// Не использует временные папки — работает с ZIP напрямую
+    /// Отвечает только за project.json и modules/*.json
     /// workspace.json управляется через IWorkspaceConfigService
+    /// Ключ данных модуля — moduleType (строка), не InstanceId
     /// </summary>
     public class ZipProjectService
     {
@@ -39,9 +40,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                 var directory = Path.GetDirectoryName(filePath);
                 if (!string.IsNullOrEmpty(directory))
-                {
                     Directory.CreateDirectory(directory);
-                }
 
                 bool fileExists = File.Exists(filePath);
                 ZipArchiveMode mode = fileExists ? ZipArchiveMode.Update : ZipArchiveMode.Create;
@@ -55,25 +54,17 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     if (mode == ZipArchiveMode.Update)
                     {
                         var projectEntry = archive.GetEntry("project.json");
-                        if (projectEntry != null)
-                        {
-                            projectEntry.Delete();
-                            _logger.LogDebug("Deleted old project.json");
-                        }
+                        projectEntry?.Delete();
 
                         var oldModules = archive.Entries
                             .Where(e => e.FullName.StartsWith("modules/"))
                             .ToList();
 
                         foreach (var entry in oldModules)
-                        {
                             entry.Delete();
-                        }
 
                         if (oldModules.Count > 0)
-                        {
                             _logger.LogDebug("Deleted {Count} old module entries", oldModules.Count);
-                        }
                     }
 
                     var projectMeta = new
@@ -97,56 +88,36 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                     foreach (var moduleEntry in project.ModulesData)
                     {
-                        var moduleId = moduleEntry.Key;
+                        var moduleType = moduleEntry.Key;
                         var customData = moduleEntry.Value;
 
-                        // Ищем InstanceId для этого модуля из WorkModes
-                        string? instanceId = null;
-                        if (project.WorkModes != null)
-                        {
-                            foreach (var workMode in project.WorkModes)
-                            {
-                                var slot = workMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleId && !string.IsNullOrEmpty(s.InstanceId));
-                                if (slot != null)
-                                {
-                                    instanceId = slot.InstanceId;
-                                    break;
-                                }
-                            }
-                        }
-
-                        // Создаем Metadata.json с InstanceId
-                        var metadataEntry = archive.CreateEntry($"modules/{moduleId}/Metadata.json", CompressionLevel.Optimal);
+                        var metadataEntry = archive.CreateEntry(
+                            $"modules/{moduleType}/Metadata.json", CompressionLevel.Optimal);
                         using (var writer = new StreamWriter(metadataEntry.Open()))
                         {
-                            var metadata = new
-                            {
-                                ModuleId = moduleId,
-                                InstanceId = instanceId
-                            };
-                            var metadataJson = JsonHelper.Serialize(metadata);
-                            await writer.WriteAsync(metadataJson);
+                            var metadata = new { moduleType };
+                            await writer.WriteAsync(JsonHelper.Serialize(metadata));
                         }
 
-                        _logger.LogDebug("Saved Metadata for: {ModuleId}, InstanceId: {InstanceId}", moduleId, instanceId ?? "null");
+                        _logger.LogDebug("Saved Metadata for: {moduleType}", moduleType);
 
-                        // CustomData сохраняем как раньше
                         if (customData != null && !(customData is string str && string.IsNullOrWhiteSpace(str)))
                         {
                             var customDataJson = JsonHelper.Serialize(customData);
-                            var customDataEntry = archive.CreateEntry($"modules/{moduleId}/CustomData.json", CompressionLevel.Optimal);
+                            var customDataEntry = archive.CreateEntry(
+                                $"modules/{moduleType}/CustomData.json", CompressionLevel.Optimal);
                             using (var writer = new StreamWriter(customDataEntry.Open()))
                             {
                                 await writer.WriteAsync(customDataJson);
                             }
 
-                            _logger.LogDebug("Saved CustomData for: {ModuleId}", moduleId);
+                            _logger.LogDebug("Saved CustomData for: {moduleType}", moduleType);
                         }
                     }
                 }
 
                 var fileSize = new FileInfo(filePath).Length / 1024;
-                _logger.LogDebug("ZIP saved successfully: {FilePath} ({FileSize} KB)", filePath, fileSize);
+                _logger.LogDebug("ZIP saved: {FilePath} ({FileSize} KB)", filePath, fileSize);
 
                 return true;
             }
@@ -199,29 +170,26 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     _logger.LogDebug("Loaded project.json: {Title}", project.Title);
 
                     var moduleIds = archive.Entries
-                        .Where(e => e.FullName.StartsWith("modules/") && e.FullName.EndsWith("/CustomData.json"))  // ? Заглавная!
+                        .Where(e => e.FullName.StartsWith("modules/") && e.FullName.EndsWith("/CustomData.json"))
                         .Select(e => e.FullName.Split('/')[1])
                         .Distinct()
                         .ToList();
 
-                    foreach (var moduleId in moduleIds)
+                    foreach (var moduleType in moduleIds)
                     {
-                        var customDataEntry = archive.GetEntry($"modules/{moduleId}/CustomData.json");
+                        var customDataEntry = archive.GetEntry($"modules/{moduleType}/CustomData.json");
                         if (customDataEntry != null)
                         {
                             using (var reader = new StreamReader(customDataEntry.Open()))
                             {
                                 var customDataJson = await reader.ReadToEndAsync();
-                                var customData = JsonConvert.DeserializeObject<object>(customDataJson);
-
-                                project.ModulesData[moduleId] = customData;
-                                _logger.LogDebug("Loaded module: {ModuleId}", moduleId);
+                                project.ModulesData[moduleType] = JsonConvert.DeserializeObject<object>(customDataJson);
+                                _logger.LogDebug("Loaded module: {moduleType}", moduleType);
                             }
                         }
                     }
 
-                    _logger.LogDebug("Project loaded successfully");
-                    _logger.LogDebug("Modules: {Count}", project.ModulesData.Count);
+                    _logger.LogDebug("Project loaded: {Title}, {Count} modules", project.Title, project.ModulesData.Count);
                     return project;
                 }
             }

@@ -22,9 +22,7 @@ namespace Writersword.ViewModels
 {
     /// <summary>
     /// ViewModel для одной вкладки документа
-    /// Теперь работает напрямую с ProjectFile и управляет 
-    /// Каждая вкладка имеет свой RecoveryBanner (если есть кеш)
-    /// ИЗОЛЯЦИЯ: каждая вкладка имеет свой WorkspaceController
+    /// Каждая вкладка имеет свой изолированный WorkspaceController и ProjectModuleContext
     /// </summary>
     public class DocumentTabViewModel : ViewModelBase
     {
@@ -44,27 +42,23 @@ namespace Writersword.ViewModels
         public string Id { get; }
 
         /// <summary>
-        /// Контекст документа - передаётся модулям для управления состоянием
-        /// Содержит информацию о проекте и режиме просмотра
+        /// Контекст документа — передаётся модулям для управления состоянием
         /// </summary>
         public DocumentContext Context { get; }
 
         /// <summary>
         /// Изолированный контейнер модулей для этого проекта
-        /// Каждый проект имеет свой собственный набор модулей
         /// При закрытии проекта все модули автоматически уничтожаются
         /// </summary>
         public ProjectModuleContext ModuleContext { get; }
 
         /// <summary>
         /// Контроллер рабочего пространства (WorkModes, Layout, Float окна)
-        /// Полностью изолирован для этой вкладки
         /// </summary>
         public IWorkspaceController? Workspace { get; private set; }
 
         /// <summary>
         /// Баннер восстановления версий (null если нет кеша)
-        /// Каждая вкладка имеет свой баннер
         /// </summary>
         public RecoveryBannerViewModel? RecoveryBanner
         {
@@ -72,7 +66,7 @@ namespace Writersword.ViewModels
             set => this.RaiseAndSetIfChanged(ref _recoveryBanner, value);
         }
 
-        /// <summary>Есть ли баннер восстановления (для привязки в UI)</summary>
+        /// <summary>Есть ли баннер восстановления</summary>
         public bool HasRecoveryBanner => RecoveryBanner != null;
 
         /// <summary>Заголовок вкладки</summary>
@@ -131,9 +125,9 @@ namespace Writersword.ViewModels
         public ReactiveCommand<Unit, Unit> CloseCommand { get; }
 
         public DocumentTabViewModel(
-                ProjectFile project,
-                string filePath = "",
-                Func<DocumentTabViewModel, Task>? onClose = null)
+            ProjectFile project,
+            string filePath = "",
+            Func<DocumentTabViewModel, Task>? onClose = null)
         {
             _logger = App.Services.GetService<ILogger<DocumentTabViewModel>>()!;
             _project = project;
@@ -151,24 +145,17 @@ namespace Writersword.ViewModels
             {
                 _logger.LogDebug("CloseCommand executed");
                 if (_onClose != null)
-                {
-                    _logger.LogDebug("Calling onClose callback");
                     await _onClose(this);
-                    _logger.LogDebug("onClose callback completed");
-                }
                 else
-                {
                     _logger.LogError("onClose callback is null");
-                }
             });
 
             this.WhenAnyValue(x => x.RecoveryBanner)
                 .Subscribe(_ => this.RaisePropertyChanged(nameof(HasRecoveryBanner)));
         }
 
-
         /// <summary>
-        /// Инициализировать WorkspaceController БЕЗ активации
+        /// Инициализировать WorkspaceController без активации
         /// Вызывается из ProjectWorkflow после загрузки WorkModes
         /// </summary>
         public void InitializeWorkspace(List<Core.Models.WorkModes.WorkMode> loadedWorkModes)
@@ -190,13 +177,12 @@ namespace Writersword.ViewModels
                 autoSave
             );
 
-            IsLoaded = true; 
-            _logger.LogDebug("WorkspaceController initialized (not activated yet) for: {Title}", Title);
+            IsLoaded = true;
+            _logger.LogDebug("WorkspaceController initialized for: {Title}", Title);
         }
 
         /// <summary>
-        /// Убедиться что Workspace активирован (ленивая инициализация)
-        /// Вызывается при первой активации вкладки
+        /// Активировать Workspace при первом переходе на вкладку
         /// </summary>
         public void EnsureWorkspaceActivated()
         {
@@ -206,15 +192,14 @@ namespace Writersword.ViewModels
                 return;
             }
 
-            _logger.LogDebug("Activating workspace for: {Title}", Title);
             Workspace.Activate();
             _logger.LogDebug("Workspace activated for: {Title}", Title);
         }
 
         /// <summary>
         /// Сохранить в кеш асинхронно
-        /// Используется при переключении вкладок
-        /// ВСЕГДА создаёт .wsasd для быстрого восстановления из ZIP
+        /// Сохраняет только если данные отличаются от сохранённого ZIP файла
+        /// Ключ — moduleType
         /// </summary>
         public async Task SaveToCacheAsync(Func<IEnumerable<IModule>> getActiveModules)
         {
@@ -226,62 +211,50 @@ namespace Writersword.ViewModels
 
                 var activeModules = getActiveModules().ToList();
 
-                if (activeModules.Count > 0)
+                if (activeModules.Count == 0)
+                    return;
+
+                var (customData, sessionData) = stateCollector.CollectAllData(activeModules);
+
+                if (customData.Count == 0)
+                    return;
+
+                var savedProject = await projectService.LoadAsync(FilePath);
+
+                if (savedProject != null)
                 {
-                    var (customData, sessionData) = stateCollector.CollectAllData(activeModules);
+                    bool dataChanged = customData.Count != savedProject.ModulesData.Count;
 
-                    if (customData.Count > 0)
+                    if (!dataChanged)
                     {
-                        var savedProject = await projectService.LoadAsync(FilePath);
-
-                        if (savedProject != null)
+                        foreach (var kvp in customData)
                         {
-                            bool dataChanged = false;
-
-                            if (customData.Count != savedProject.ModulesData.Count)
+                            if (!savedProject.ModulesData.TryGetValue(kvp.Key, out var savedData))
                             {
                                 dataChanged = true;
-                                _logger.LogDebug("Module count differs");
-                            }
-                            else
-                            {
-                                foreach (var kvp in customData)
-                                {
-                                    if (!savedProject.ModulesData.TryGetValue(kvp.Key, out var savedData))
-                                    {
-                                        dataChanged = true;
-                                        _logger.LogDebug("New module: {ModuleKey}", kvp.Key);
-                                        break;
-                                    }
-
-                                    if (kvp.Value is string currentStr && savedData is string savedStr)
-                                    {
-                                        if (currentStr != savedStr)
-                                        {
-                                            dataChanged = true;
-                                            _logger.LogDebug("Data changed: {ModuleKey}", kvp.Key);
-                                            break;
-                                        }
-                                    }
-                                    else if (!Equals(kvp.Value, savedData))
-                                    {
-                                        dataChanged = true;
-                                        _logger.LogDebug("Data changed: {ModuleKey}", kvp.Key);
-                                        break;
-                                    }
-                                }
+                                break;
                             }
 
-                            if (dataChanged)
+                            if (kvp.Value is string currentStr && savedData is string savedStr)
                             {
-                                await cacheService.SaveCacheAsync(FilePath, _project.Id, customData, sessionData);
-                                _logger.LogDebug("Cache saved (differs from ZIP)");
+                                if (currentStr != savedStr) { dataChanged = true; break; }
                             }
-                            else
+                            else if (!Equals(kvp.Value, savedData))
                             {
-                                _logger.LogDebug("No changes, cache not needed");
+                                dataChanged = true;
+                                break;
                             }
                         }
+                    }
+
+                    if (dataChanged)
+                    {
+                        await cacheService.SaveCacheAsync(FilePath, _project.Id, customData, sessionData);
+                        _logger.LogDebug("Cache saved (differs from ZIP)");
+                    }
+                    else
+                    {
+                        _logger.LogDebug("No changes, cache not needed");
                     }
                 }
             }
@@ -291,55 +264,45 @@ namespace Writersword.ViewModels
             }
         }
 
-        /// <summary>Обновить данные проекта (используется при переключении версий)</summary>
+        /// <summary>
+        /// Обновить данные проекта (используется при переключении версий)
+        /// </summary>
         public void UpdateProject(ProjectFile newProject)
         {
             _project.ModulesData.Clear();
             foreach (var kvp in newProject.ModulesData)
-            {
                 _project.ModulesData[kvp.Key] = kvp.Value;
-            }
 
             _project.LastModified = newProject.LastModified;
 
             this.RaisePropertyChanged(nameof(Content));
 
-            _logger.LogDebug("Project data updated, ModulesData count: {Count}", _project.ModulesData.Count);
+            _logger.LogDebug("Project data updated: {Count} modules", _project.ModulesData.Count);
         }
 
         /// <summary>Получить проект</summary>
         public ProjectFile GetProject() => _project;
 
-        /// <summary>
-        /// Отметить что есть несохранённые изменения
-        /// Вызывается при реальном изменении данных в модулях
-        /// </summary>
+        /// <summary>Отметить что есть несохранённые изменения</summary>
         public void MarkAsModified()
         {
             _hasUnsavedChanges = true;
             _logger.LogDebug("Marked as modified: {Title}", Title);
         }
 
-        /// <summary>
-        /// Сбросить флаг изменений (после успешного сохранения)
-        /// </summary>
+        /// <summary>Сбросить флаг изменений после успешного сохранения</summary>
         public void MarkAsSaved()
         {
             _hasUnsavedChanges = false;
             _logger.LogDebug("Marked as saved: {Title}", Title);
         }
 
-        /// <summary>
-        /// Проверить есть ли несохранённые изменения
-        /// </summary>
-        public bool HasUnsavedChanges()
-        {
-            return _hasUnsavedChanges;
-        }
+        /// <summary>Проверить есть ли несохранённые изменения</summary>
+        public bool HasUnsavedChanges() => _hasUnsavedChanges;
 
         /// <summary>
         /// Очистка ресурсов
-        /// Уничтожает все модули проекта и WorkspaceController
+        /// Уничтожает WorkspaceController и все модули проекта
         /// </summary>
         public void Dispose()
         {
@@ -347,10 +310,10 @@ namespace Writersword.ViewModels
 
             Workspace?.Dispose();
             Workspace = null;
-            _logger.LogDebug("WorkspaceController disposed");
 
             ModuleContext?.Dispose();
-            _logger.LogDebug("All modules disposed for: {Title}", Title);
+
+            _logger.LogDebug("Disposed: {Title}", Title);
         }
     }
 }

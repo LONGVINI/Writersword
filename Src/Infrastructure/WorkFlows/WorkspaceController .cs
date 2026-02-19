@@ -1,19 +1,16 @@
-﻿using Avalonia;
+﻿using Avalonia.Threading;
 using Dock.Model.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
-using DynamicData.Binding;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
-using System.Collections.Specialized;
-using System.ComponentModel;
 using System.Linq;
-using System.Reactive.Disposables;
 using System.Threading.Tasks;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
+using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
 using Writersword.Src.Core.Interfaces.Services;
@@ -26,6 +23,12 @@ using Writersword.ViewModels;
 
 namespace Writersword.Src.Infrastructure.Workspace
 {
+    /// <summary>
+    /// Контроллер workspace для вкладки документа
+    /// Управляет WorkModes, модулями и Dock layout
+    /// Модули создаются исключительно в DockFactory при построении layout
+    /// Dock.Avalonia управляет своим состоянием самостоятельно
+    /// </summary>
     public class WorkspaceController : IWorkspaceController
     {
         private readonly ILogger<WorkspaceController> _logger;
@@ -33,15 +36,12 @@ namespace Writersword.Src.Infrastructure.Workspace
         private readonly string _projectPath;
         private readonly DockFactory _dockFactory;
         private readonly IWorkspaceAutoSaveService _autoSave;
-        private readonly ContainerPathBuilder _pathBuilder;
+        private readonly IWorkModeService _workModeService;
 
         private WorkMode _activeWorkMode;
         private IRootDock _dockLayout = null!;
         private List<WorkMode> _availableWorkModes;
-        private readonly List<IDisposable> _subscriptions;
-        private readonly IWorkModeService _workModeService;
 
-        private bool _isCleaningUp = false;
         private bool _isDeactivating = false;
 
         public event EventHandler? WorkspaceChanged;
@@ -49,11 +49,11 @@ namespace Writersword.Src.Infrastructure.Workspace
         public IWorkModeService GetWorkModeService() => _workModeService;
 
         public WorkspaceController(
-    DocumentTabViewModel tab,
-    string projectPath,
-    List<WorkMode> loadedWorkModes,
-    DockFactory dockFactory,
-    IWorkspaceAutoSaveService autoSave)
+            DocumentTabViewModel tab,
+            string projectPath,
+            List<WorkMode> loadedWorkModes,
+            DockFactory dockFactory,
+            IWorkspaceAutoSaveService autoSave)
         {
             _logger = App.Services.GetService<ILogger<WorkspaceController>>()!;
             _tab = tab;
@@ -61,8 +61,6 @@ namespace Writersword.Src.Infrastructure.Workspace
             _dockFactory = dockFactory;
             _autoSave = autoSave;
             _availableWorkModes = loadedWorkModes;
-            _subscriptions = new List<IDisposable>();
-            _pathBuilder = new ContainerPathBuilder();
 
             var configService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
             _workModeService = new WorkModeService(configService);
@@ -72,7 +70,8 @@ namespace Writersword.Src.Infrastructure.Workspace
                               ?? loadedWorkModes.First();
 
             _logger.LogDebug("Created for: {TabTitle}", tab.Title);
-            _logger.LogDebug("Total WorkModes: {TotalCount}, Active: {ActiveTitle}", _availableWorkModes.Count, _activeWorkMode.Title);
+            _logger.LogDebug("Total WorkModes: {TotalCount}, Active: {ActiveTitle}",
+                _availableWorkModes.Count, _activeWorkMode.Title);
         }
 
         public IRootDock GetCurrentLayout() => _dockLayout;
@@ -81,6 +80,10 @@ namespace Writersword.Src.Infrastructure.Workspace
 
         public WorkMode GetActiveWorkMode() => _activeWorkMode;
 
+        /// <summary>
+        /// Получить список активных модулей текущего WorkMode
+        /// Сканирует реальный UI (dock + float окна)
+        /// </summary>
         public List<IModule> GetActiveModules()
         {
             var allModules = _tab.ModuleContext.GetAllModules();
@@ -95,42 +98,63 @@ namespace Writersword.Src.Infrastructure.Workspace
                     foreach (var window in _dockLayout.Windows)
                     {
                         if (window.Layout != null)
-                        {
                             CollectDocumentIds(window.Layout, realDocumentIds);
-                        }
                     }
                 }
 
                 var filteredModules = allModules
-                    .Where(m => realDocumentIds.Contains($"Module_{m.Metadata.ModuleId}"))
+                    .Where(m => realDocumentIds.Contains($"Module_{m.moduleType}"))
                     .ToList();
 
-                _logger.LogDebug("Returned {FilteredCount}/{TotalCount} modules for WorkMode: {WorkModeTitle} (from real UI)",
+                _logger.LogDebug("Returned {FilteredCount}/{TotalCount} modules for WorkMode: {WorkModeTitle}",
                     filteredModules.Count, allModules.Count, _activeWorkMode.Title);
                 return filteredModules;
             }
 
-            _logger.LogDebug("No ActiveWorkMode, returning all {Count} modules", allModules.Count);
             return allModules;
         }
 
+        /// <summary>
+        /// Обновить все модули из контекста
+        /// </summary>
         public void RefreshModulesFromContext()
         {
             var modules = GetActiveModules();
             foreach (var module in modules)
-            {
                 module.RefreshFromContext();
-            }
-            _logger.LogDebug("Refreshed {Count} modules from context", modules.Count());
+
+            _logger.LogDebug("Refreshed {Count} modules from context", modules.Count);
         }
 
+        /// <summary>
+        /// Переключить WorkMode
+        /// 1. Сериализуем текущий layout
+        /// 2. Закрываем float окна
+        /// 3. Переключаем флаги IsActive
+        /// 4. Очищаем модули старого WorkMode из контекста
+        /// 5. Сбрасываем внутреннее состояние Factory (ClearCurrentLayout)
+        /// 6. Создаём новый layout (DockFactory создаст нужные модули сам)
+        /// </summary>
         public void SwitchWorkMode(WorkMode newMode)
         {
             _logger.LogDebug("Switching WorkMode: {OldTitle} -> {NewTitle}", _activeWorkMode.Title, newMode.Title);
 
-            _autoSave.NotifyChange();
+            if (_dockLayout != null)
+            {
+                var (serializedLayout, updatedSlots) = _dockFactory.SerializeCurrentLayout(
+                    _dockLayout, _activeWorkMode, _tab.ModuleContext);
 
-            CloseCurrentModules();
+                if (serializedLayout != null)
+                {
+                    _activeWorkMode.SerializedDockLayout = serializedLayout;
+                    _activeWorkMode.ModuleSlots = updatedSlots;
+                    _logger.LogDebug("Serialized layout for WorkMode: {Title}", _activeWorkMode.Title);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to serialize layout for WorkMode: {Title}", _activeWorkMode.Title);
+                }
+            }
 
             CloseAllFloatWindows();
 
@@ -138,12 +162,17 @@ namespace Writersword.Src.Infrastructure.Workspace
             newMode.IsActive = true;
             _activeWorkMode = newMode;
 
-            UnsubscribeFromDockEvents();
+            _dockFactory.DetachViewsFromLayout(_dockLayout);
+            ClearModulesNotInNewWorkMode(newMode);
 
             _dockLayout = _dockFactory.CreateLayout(newMode, _tab);
 
-            SubscribeToDockEvents(_dockLayout);
+            _dockFactory.OnModuleClosed = (moduleType) =>
+            {
+                Dispatcher.UIThread.Post(() => HandleModuleClosedInDock(moduleType));
+            };
 
+            _autoSave.NotifyChange();
             WorkspaceChanged?.Invoke(this, EventArgs.Empty);
 
             _logger.LogDebug("WorkMode switched successfully");
@@ -151,11 +180,10 @@ namespace Writersword.Src.Infrastructure.Workspace
 
         /// <summary>
         /// Добавить модуль в текущий WorkMode
-        /// Создаёт новый слот и размещает модуль по PreferredPosition
         /// </summary>
-        public void AddModule(string moduleId)
+        public void AddModule(string moduleType)
         {
-            _logger.LogDebug("Adding module: {ModuleId}", moduleId);
+            _logger.LogDebug("Adding module: {moduleType}", moduleType);
 
             if (_activeWorkMode == null || _dockLayout == null)
             {
@@ -163,118 +191,74 @@ namespace Writersword.Src.Infrastructure.Workspace
                 return;
             }
 
-            string documentId = $"Module_{moduleId}";
+            string documentId = $"Module_{moduleType}";
             bool isInDock = FindDocumentInLayout(_dockLayout, documentId);
             bool isInFloat = IsDocumentInFloatWindows(documentId);
 
             if (isInDock || isInFloat)
             {
-                _logger.LogError("Module {ModuleId} already exists in UI", moduleId);
+                _logger.LogError("Module {moduleType} already exists in UI", moduleType);
                 return;
             }
 
-            ModuleCategory category;
-
-            if (_activeWorkMode.ModuleCategories.TryGetValue(moduleId, out var explicitCategory))
-            {
-                category = explicitCategory;
-            }
-            else
-            {
-                category = ModuleCategory.Optional;
-            }
+            ModuleCategory category = _activeWorkMode.ModuleCategories.TryGetValue(moduleType, out var explicitCategory)
+                ? explicitCategory
+                : ModuleCategory.Optional;
 
             if (category == ModuleCategory.Forbidden)
             {
-                _logger.LogError("Cannot add Forbidden module: {ModuleId}", moduleId);
+                _logger.LogError("Cannot add Forbidden module: {moduleType}", moduleType);
                 return;
             }
 
-            var existingSlot = _activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleId);
+            var existingSlot = _activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleType);
 
             if (existingSlot == null)
             {
-                var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
-
-                string? existingInstanceId = FindExistingInstanceIdInWorkModes(moduleId);
-
-                if (existingInstanceId == null)
-                {
-                    existingInstanceId = Guid.NewGuid().ToString();
-                    _logger.LogDebug("Generated new InstanceId: {InstanceId}", existingInstanceId);
-                }
-                else
-                {
-                    _logger.LogDebug("Reusing existing InstanceId: {InstanceId}", existingInstanceId);
-                }
-
-                bool isCloseable = category != ModuleCategory.Required;
-
-                _logger.LogDebug("Module {ModuleId} Category={Category}, IsCloseable={IsCloseable}",
-                    moduleId, category, isCloseable);
-
                 var moduleMetadata = App.Services.GetRequiredService<ModuleFactory>()
                     .GetAllModuleMetadata()
-                    .FirstOrDefault(m => m.ModuleId == moduleId);
+                    .FirstOrDefault(m => m.ModuleType == moduleType);
 
                 if (moduleMetadata == null)
                 {
-                    _logger.LogError("Module metadata not found: {ModuleId}", moduleId);
+                    _logger.LogError("Module metadata not found: {moduleType}", moduleType);
                     return;
                 }
 
                 var newSlot = new ModuleSlot
                 {
-                    ModuleType = moduleId,
-                    InstanceId = existingInstanceId,
-                    Path = null,
-                    IsCloseable = isCloseable,
-                    IsCurrentlyOpen = true,
-                    IsFloating = false,
-                    MinWidth = 200,
-                    MinHeight = 150,
+                    ModuleType = moduleType,
                     PreferredPosition = PreferredDockPosition.RightAsTab,
                     Category = category
                 };
-
-                _logger.LogDebug("Created new slot: ModuleId={ModuleId}, InstanceId={InstanceId}, Category={Category}, IsCloseable={IsCloseable}",
-                    moduleId, existingInstanceId, category, isCloseable);
 
                 _activeWorkMode.ModuleSlots.Add(newSlot);
                 existingSlot = newSlot;
             }
             else
             {
-                if (existingSlot.IsCurrentlyOpen)
-                {
-                    _logger.LogDebug("Module slot marked as open but not in UI: {ModuleId}, reopening", moduleId);
-                }
-
-                existingSlot.IsCurrentlyOpen = true;
                 existingSlot.Category = category;
-
-                _logger.LogDebug("Reopening existing slot: ModuleId={ModuleId}, InstanceId={InstanceId}, Category={Category}",
-                    moduleId, existingSlot.InstanceId, category);
             }
 
-            var hasVisibleModules = _activeWorkMode.ModuleSlots.Any(s => s.ModuleType != moduleId && s.IsCurrentlyOpen);
+            var openModuleIds = GetOpenModuleIds();
+            bool hasVisibleModules = openModuleIds.Any(id => id != moduleType);
 
             if (!hasVisibleModules)
             {
-                _logger.LogDebug("No visible modules - recreating layout");
-                var newLayout = _dockFactory.CreateLayout(_activeWorkMode);
-                UnsubscribeFromDockEvents();
-                _dockLayout = newLayout;
-                SubscribeToDockEvents(_dockLayout);
+                _dockLayout = _dockFactory.CreateLayout(_activeWorkMode, _tab);
+
+                _dockFactory.OnModuleClosed = (mt) =>
+                {
+                    Dispatcher.UIThread.Post(() => HandleModuleClosedInDock(mt));
+                };
             }
             else
             {
-                _logger.LogDebug("Adding module dynamically with Category={Category}", existingSlot.Category);
                 _dockFactory.InsertModuleByPreference(_dockLayout, existingSlot);
             }
 
+            _autoSave.NotifyChange();
             WorkspaceChanged?.Invoke(this, EventArgs.Empty);
-            _autoSave.SaveNowAsync().ConfigureAwait(false);
 
             _logger.LogDebug("Module added successfully");
         }
@@ -282,38 +266,42 @@ namespace Writersword.Src.Infrastructure.Workspace
         /// <summary>
         /// Удалить модуль из текущего WorkMode
         /// </summary>
-        public void RemoveModule(string moduleId)
+        public void RemoveModule(string moduleType)
         {
-            _logger.LogDebug("Removing module: {ModuleId}", moduleId);
+            _logger.LogDebug("Removing module: {moduleType}", moduleType);
 
             if (_activeWorkMode == null || _dockLayout == null) return;
 
-            var slot = _activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleId);
+            var slot = _activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleType);
             if (slot != null)
             {
-                RemoveModuleFromLayout(_dockLayout, moduleId);
+                RemoveModuleFromLayout(_dockLayout, moduleType);
+                _tab.ModuleContext.RemoveModule(moduleType);
                 _autoSave.NotifyChange();
                 WorkspaceChanged?.Invoke(this, EventArgs.Empty);
             }
         }
 
-        public void ReturnRequiredModuleToDock(string moduleId)
+        /// <summary>
+        /// Вернуть Required модуль обратно в dock
+        /// </summary>
+        public void ReturnRequiredModuleToDock(string moduleType)
         {
-            _logger.LogDebug("Returning required module to dock: {ModuleId}", moduleId);
+            _logger.LogDebug("Returning required module to dock: {moduleType}", moduleType);
 
-            var slot = _activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleId);
+            var slot = _activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleType);
             if (slot == null)
             {
-                _logger.LogWarning("Module slot not found: {ModuleId}", moduleId);
+                _logger.LogWarning("Module slot not found: {moduleType}", moduleType);
                 return;
             }
 
-            slot.IsFloating = false;
-            _logger.LogDebug("Reset IsFloating for: {ModuleId}", moduleId);
-
-            UnsubscribeFromDockEvents();
             _dockLayout = _dockFactory.CreateLayout(_activeWorkMode, _tab);
-            SubscribeToDockEvents(_dockLayout);
+
+            _dockFactory.OnModuleClosed = (mt) =>
+            {
+                Dispatcher.UIThread.Post(() => HandleModuleClosedInDock(mt));
+            };
 
             _autoSave.NotifyChange();
             WorkspaceChanged?.Invoke(this, EventArgs.Empty);
@@ -322,673 +310,108 @@ namespace Writersword.Src.Infrastructure.Workspace
         }
 
         /// <summary>
-        /// Обработчик закрытия модуля пользователем через крестик в Dock
-        /// Помечает модуль как закрытый и очищает пустые контейнеры
+        /// Обработчик реального закрытия модуля — вызывается из DockFactory.CloseDockable
         /// </summary>
-        public void HandleModuleClosedInDock(string moduleId)
+        public void HandleModuleClosedInDock(string moduleType)
         {
-            if (_isDeactivating)
-            {
-                _logger.LogDebug("Ignoring close during tab switch");
-                return;
-            }
+            if (_isDeactivating) return;
 
-            _logger.LogDebug("Module closed in dock: {ModuleId}", moduleId);
+            _logger.LogDebug("Module closed in dock: {moduleType}", moduleType);
 
             if (_activeWorkMode == null) return;
 
-            var slot = _activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleId);
+            var slot = _activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleType);
 
             if (slot != null && slot.Category == ModuleCategory.Required)
             {
-                _logger.LogError("ATTEMPT TO CLOSE REQUIRED MODULE: {ModuleId}, returning to dock", moduleId);
-
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                {
-                    ReturnRequiredModuleToDock(moduleId);
-                });
-
+                _logger.LogError("Attempt to close Required module: {moduleType}", moduleType);
+                Dispatcher.UIThread.Post(() => ReturnRequiredModuleToDock(moduleType));
                 return;
             }
 
-            if (slot != null)
-            {
-                slot.IsCurrentlyOpen = false;
-                slot.Path = null;
-                slot.IsFloating = false;
+            _tab.ModuleContext.RemoveModule(moduleType);
+            _dockFactory.CleanupEmptyContainersInLayout(_dockLayout);
 
-                _logger.LogDebug("Marked module as closed, ViewModel kept in Context: ModuleId={ModuleId}, InstanceId={InstanceId}",
-                    moduleId, slot.InstanceId);
-            }
-
-            if (_dockLayout != null)
-            {
-                var dockFactory = App.Services.GetRequiredService<DockFactory>();
-
-                _isCleaningUp = true;
-                dockFactory.CleanupEmptyContainers(_dockLayout);
-                _isCleaningUp = false;
-            }
-
+            _autoSave.NotifyChange();
             WorkspaceChanged?.Invoke(this, EventArgs.Empty);
-            _autoSave.SaveNowAsync().ConfigureAwait(false);
         }
 
         /// <summary>
         /// Получить список всех открытых модулей в текущем WorkMode
-        /// Сканирует основной dock и все float окна
-        /// Используется для синхронизации меню модулей с реальным UI
         /// </summary>
         public HashSet<string> GetOpenModuleIds()
         {
             var result = new HashSet<string>();
 
             if (_dockLayout == null)
-            {
-                _logger.LogDebug("GetOpenModuleIds: no layout");
                 return result;
-            }
 
             CollectModuleIdsRecursive(_dockLayout, result);
 
-            if (_dockLayout.Windows != null && _dockLayout.Windows.Count > 0)
+            if (_dockLayout.Windows != null)
             {
-                _logger.LogDebug("Scanning {Count} float windows", _dockLayout.Windows.Count);
-
                 foreach (var window in _dockLayout.Windows)
                 {
                     if (window.Layout != null)
-                    {
                         CollectModuleIdsRecursive(window.Layout, result);
-                    }
                 }
             }
 
-            _logger.LogDebug("Found {Count} open modules: {Modules}", result.Count, string.Join(", ", result));
+            _logger.LogDebug("Found {Count} open modules: {Modules}",
+                result.Count, string.Join(", ", result));
             return result;
         }
 
-        /// <summary>
-        /// Рекурсивно собрать ID всех открытых модулей из layout
-        /// </summary>
         private void CollectModuleIdsRecursive(IDockable dockable, HashSet<string> result)
         {
             if (dockable is Document document && document.Id != null)
-            {
-                var moduleId = document.Id.Replace("Module_", "");
-                result.Add(moduleId);
-            }
+                result.Add(document.Id.Replace("Module_", ""));
 
             if (dockable is IDock dock && dock.VisibleDockables != null)
             {
                 foreach (var child in dock.VisibleDockables)
-                {
                     CollectModuleIdsRecursive(child, result);
-                }
             }
         }
 
+        /// <summary>
+        /// Сохранить workspace асинхронно
+        /// </summary>
         public async Task SaveWorkspaceAsync()
         {
             _logger.LogDebug("Saving workspace");
             await _autoSave.SaveNowAsync();
         }
 
-        public void Dispose()
-        {
-            _logger.LogDebug("Disposing");
-
-            _autoSave.Stop();
-
-            CloseAllFloatWindows();
-
-            DisposeAllModules();
-
-            UnsubscribeFromDockEvents();
-
-            _subscriptions.ForEach(s => s.Dispose());
-            _subscriptions.Clear();
-
-            _logger.LogDebug("Disposed");
-        }
-
-        private void CloseCurrentModules()
-        {
-            _logger.LogDebug("Closing current modules");
-
-            foreach (var slot in _activeWorkMode.ModuleSlots)
-            {
-                if (!string.IsNullOrEmpty(slot.InstanceId) && slot.IsCurrentlyOpen)
-                {
-                    _tab.ModuleContext.RemoveModule(slot.InstanceId);
-                    slot.IsCurrentlyOpen = false;
-                    _logger.LogDebug("Closed module: ModuleId={ModuleId}, InstanceId preserved: {InstanceId}",
-                        slot.ModuleType, slot.InstanceId);
-                }
-            }
-        }
-
-        private void DisposeAllModules()
-        {
-            _logger.LogDebug("Disposing all modules");
-
-            foreach (var workMode in _availableWorkModes)
-            {
-                foreach (var slot in workMode.ModuleSlots)
-                {
-                    if (!string.IsNullOrEmpty(slot.InstanceId))
-                    {
-                        _tab.ModuleContext.RemoveModule(slot.InstanceId);
-                        _logger.LogDebug("Disposed module: ModuleId={ModuleId}, InstanceId={InstanceId}",
-                            slot.ModuleType, slot.InstanceId);
-                    }
-                }
-            }
-        }
-
-        private void ClearAllModulesFromContext()
-        {
-            _logger.LogDebug("Clearing ALL modules from ProjectModuleContext");
-
-            var allModules = _tab.ModuleContext.GetAllModules().ToList();
-
-            foreach (var module in allModules)
-            {
-                _tab.ModuleContext.RemoveModule(module.InstanceId);
-                _logger.LogDebug("Removed module from Context: {ModuleId}, InstanceId: {InstanceId}",
-                    module.Metadata.ModuleId, module.InstanceId);
-            }
-
-            _logger.LogDebug("Cleared {Count} modules from Context", allModules.Count);
-        }
-
-        private void CloseAllFloatWindows()
-        {
-            _logger.LogDebug("Closing float windows...");
-            _logger.LogDebug("Float windows before close: {Count}", _dockLayout?.Windows?.Count ?? 0);
-
-            if (_dockLayout?.Windows == null || _dockLayout.Windows.Count == 0)
-            {
-                _logger.LogDebug("No float windows to close");
-                return;
-            }
-
-            var windowsToClose = _dockLayout.Windows.ToList();
-
-            foreach (var window in windowsToClose)
-            {
-                if (window.Host is HostWindow hostWindow)
-                {
-                    _logger.LogDebug("Closing float window: {WindowId}", window.Id);
-                    hostWindow.Exit();
-                }
-            }
-
-            _dockLayout.Windows.Clear();
-
-            _logger.LogDebug("Float windows closed, checking if any remain...");
-            _logger.LogDebug("Remaining windows count: {Count}", _dockLayout.Windows.Count);
-        }
-
-        private void RemoveModuleFromLayout(IRootDock rootDock, string moduleId)
-        {
-            string documentId = $"Module_{moduleId}";
-            _logger.LogDebug("Searching for: {DocumentId}", documentId);
-            RemoveDocumentRecursive(rootDock, documentId);
-        }
-
-        private bool RemoveDocumentRecursive(IDockable dockable, string documentId)
-        {
-            if (dockable is IDock dock && dock.VisibleDockables != null)
-            {
-                var document = dock.VisibleDockables.FirstOrDefault(d => d.Id == documentId);
-                if (document != null)
-                {
-                    _logger.LogDebug("Found document, removing from {DockId}", dock.Id);
-                    dock.VisibleDockables.Remove(document);
-
-                    if (dock.ActiveDockable == document)
-                    {
-                        dock.ActiveDockable = dock.VisibleDockables.FirstOrDefault();
-                    }
-
-                    return true;
-                }
-
-                foreach (var child in dock.VisibleDockables.ToList())
-                {
-                    if (RemoveDocumentRecursive(child, documentId))
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
         /// <summary>
-        /// Подписаться на события Dock для отслеживания изменений
-        /// Обновляет Path при drag-and-drop
+        /// Активировать workspace
+        /// Конфиг уже загружен и передан в конструктор — повторная загрузка не нужна
+        /// Перед созданием layout сбрасывает испорченный serializedDockLayout
+        /// (все слоты ведут в центр при наличии нескольких модулей)
         /// </summary>
-        private void SubscribeToDockEvents(IDockable dockable)
-        {
-            _logger.LogDebug("Subscribing to events: {DockableId}", dockable.Id);
-
-            if (dockable is IRootDock rootDock && rootDock.Windows is INotifyCollectionChanged windowsObservable)
-            {
-                NotifyCollectionChangedEventHandler windowsHandler = (s, e) =>
-                {
-                    if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
-                    {
-                        _logger.LogDebug("Float window created");
-
-                        foreach (var item in e.NewItems)
-                        {
-                            if (item is IDockWindow dockWindow && dockWindow.Layout != null)
-                            {
-                                SubscribeToFloatWindowEvents(dockWindow);
-                            }
-                        }
-
-                        _autoSave.NotifyChange();
-                    }
-
-                    if (e.Action == NotifyCollectionChangedAction.Remove && e.OldItems != null)
-                    {
-                        foreach (var item in e.OldItems)
-                        {
-                            if (item is Document document && document.Id != null)
-                            {
-                                var moduleId = document.Id.Replace("Module_", "");
-
-                                bool isStillInLayout = FindDocumentInLayout(_dockLayout, document.Id);
-                                bool isBeingAdded = _dockFactory.IsModuleBeingAdded(moduleId);
-                                bool isInFloatWindow = IsDocumentInFloatWindows(document.Id);
-
-                                _logger.LogDebug("RootDock.Windows Remove: {ModuleId}, InLayout={InLayout}, BeingAdded={BeingAdded}, InFloat={InFloat}",
-                                    moduleId, isStillInLayout, isBeingAdded, isInFloatWindow);
-
-                                if (!isStillInLayout && !isBeingAdded && !isInFloatWindow)
-                                {
-                                    _logger.LogDebug("Document really closed: {ModuleId}", moduleId);
-                                    HandleModuleClosedInDock(moduleId);
-                                }
-                                else
-                                {
-                                    if (isBeingAdded)
-                                    {
-                                        _logger.LogDebug("Document being added: {ModuleId}", moduleId);
-                                    }
-                                    else if (isInFloatWindow)
-                                    {
-                                        _logger.LogDebug("Document still in float window: {ModuleId}", moduleId);
-                                    }
-                                    else
-                                    {
-                                        _logger.LogDebug("Document moved, not closed: {ModuleId}", moduleId);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                };
-
-                windowsObservable.CollectionChanged += windowsHandler;
-
-                var subscription = Disposable.Create(() =>
-                {
-                    windowsObservable.CollectionChanged -= windowsHandler;
-                });
-
-                _subscriptions.Add(subscription);
-
-                if (rootDock.Windows != null)
-                {
-                    foreach (var window in rootDock.Windows)
-                    {
-                        SubscribeToFloatWindowEvents(window);
-                    }
-                }
-            }
-
-            if (dockable is INotifyPropertyChanged notifyProperty)
-            {
-                PropertyChangedEventHandler handler = (sender, e) =>
-                {
-                    _logger.LogDebug("PropertyChanged: {PropertyName} for {DockId}", e.PropertyName, dockable.Id);
-
-                    if (e.PropertyName == "Proportion" || e.PropertyName == nameof(IDock.ActiveDockable))
-                    {
-                        _autoSave.NotifyChange();
-                    }
-                };
-
-                notifyProperty.PropertyChanged += handler;
-
-                var subscription = Disposable.Create(() =>
-                {
-                    notifyProperty.PropertyChanged -= handler;
-                });
-
-                _subscriptions.Add(subscription);
-            }
-
-            if (dockable is IDock dock && dock.VisibleDockables is INotifyCollectionChanged observable)
-            {
-                NotifyCollectionChangedEventHandler handler = (s, e) =>
-                {
-                    if (_isCleaningUp)
-                        return;
-
-                    _autoSave.NotifyChange();
-
-                    if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null)
-                    {
-                        foreach (var item in e.NewItems)
-                        {
-                            if (item is IDockable newDockable)
-                            {
-                                SubscribeToDockEvents(newDockable);
-                            }
-                        }
-                    }
-
-                    if (e.Action == NotifyCollectionChangedAction.Remove && e.OldItems != null)
-                    {
-                        foreach (var item in e.OldItems)
-                        {
-                            if (item is Document document && document.Id != null)
-                            {
-                                var moduleId = document.Id.Replace("Module_", "");
-
-                                _logger.LogDebug("VisibleDockables Remove: {ModuleId} from Dock={DockId}", moduleId, dock.Id);
-
-                                bool isStillInLayout = FindDocumentInLayout(_dockLayout, document.Id);
-                                bool isBeingAdded = _dockFactory.IsModuleBeingAdded(moduleId);
-                                bool isInFloatWindow = IsDocumentInFloatWindows(document.Id);
-
-                                _logger.LogDebug("Remove checks: {ModuleId}, InLayout={InLayout}, BeingAdded={BeingAdded}, InFloat={InFloat}",
-                                    moduleId, isStillInLayout, isBeingAdded, isInFloatWindow);
-
-                                if (!isStillInLayout && !isBeingAdded && !isInFloatWindow)
-                                {
-                                    _logger.LogDebug("Document really closed: {ModuleId}", moduleId);
-                                    HandleModuleClosedInDock(moduleId);
-                                }
-                                else
-                                {
-                                    if (isInFloatWindow)
-                                    {
-                                        _logger.LogDebug("Document moved to float window: {ModuleId}", moduleId);
-                                        var slot = _activeWorkMode.ModuleSlots.FirstOrDefault(sl => sl.ModuleType == moduleId);
-                                        if (slot != null)
-                                        {
-                                            slot.IsFloating = true;
-                                            _logger.LogDebug("Set IsFloating=true for: {ModuleId}", moduleId);
-                                            _autoSave.SaveNowAsync().ConfigureAwait(false);
-                                        }
-                                    }
-                                    else if (isBeingAdded)
-                                    {
-                                        _logger.LogDebug("Document being added: {ModuleId}", moduleId);
-                                    }
-                                    else
-                                    {
-                                        _logger.LogDebug("Document moved, not closed: {ModuleId}", moduleId);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                };
-
-                observable.CollectionChanged += handler;
-
-                var subscription = Disposable.Create(() =>
-                {
-                    observable.CollectionChanged -= handler;
-                });
-
-                _subscriptions.Add(subscription);
-            }
-
-            if (dockable is IDock dockWithChildren && dockWithChildren.VisibleDockables != null)
-            {
-                foreach (var child in dockWithChildren.VisibleDockables)
-                {
-                    SubscribeToDockEvents(child);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Подписаться на события float окна для автоматического закрытия пустых окон
-        /// </summary>
-        private void SubscribeToFloatWindowEvents(IDockWindow dockWindow)
-        {
-            if (dockWindow.Layout == null)
-                return;
-
-            var floatDock = FindDocumentDockInFloatWindow(dockWindow.Layout);
-            if (floatDock?.VisibleDockables is INotifyCollectionChanged floatObservable)
-            {
-                NotifyCollectionChangedEventHandler handler = (s, e) =>
-                {
-                    if (_isCleaningUp)
-                        return;
-
-                    if (e.Action == NotifyCollectionChangedAction.Remove ||
-                        e.Action == NotifyCollectionChangedAction.Replace ||
-                        e.Action == NotifyCollectionChangedAction.Reset)
-                    {
-                        var remainingDocuments = floatDock.VisibleDockables?
-                            .OfType<Document>()
-                            .Count() ?? 0;
-
-                        _logger.LogDebug("Float window {WindowId} documents count: {Count}", dockWindow.Id, remainingDocuments);
-
-                        if (remainingDocuments == 0)
-                        {
-                            _logger.LogDebug("Float window {WindowId} is empty, closing", dockWindow.Id);
-
-                            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                            {
-                                if (dockWindow.Host is HostWindow hostWindow)
-                                {
-                                    hostWindow.Exit();
-                                }
-
-                                if (_dockLayout?.Windows != null && _dockLayout.Windows.Contains(dockWindow))
-                                {
-                                    _dockLayout.Windows.Remove(dockWindow);
-                                    _logger.LogDebug("Float window {WindowId} removed from collection", dockWindow.Id);
-                                }
-                            });
-                        }
-                    }
-                };
-
-                floatObservable.CollectionChanged += handler;
-
-                var subscription = Disposable.Create(() =>
-                {
-                    floatObservable.CollectionChanged -= handler;
-                });
-
-                _subscriptions.Add(subscription);
-
-                _logger.LogDebug("Subscribed to float window events: {WindowId}", dockWindow.Id);
-            }
-        }
-
-        /// <summary>
-        /// Найти DocumentDock в float окне
-        /// </summary>
-        private DocumentDock? FindDocumentDockInFloatWindow(IDock? layout)
-        {
-            if (layout == null) return null;
-
-            if (layout is DocumentDock dd)
-                return dd;
-
-            if (layout is IRootDock rootDock && rootDock.VisibleDockables != null)
-            {
-                foreach (var child in rootDock.VisibleDockables)
-                {
-                    if (child is DocumentDock docDock)
-                        return docDock;
-                }
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        /// Найти контейнер в котором находится документ
-        /// </summary>
-        private IDock? FindContainerForDocument(IDockable dockable, string documentId)
-        {
-            if (dockable is IDock dock && dock.VisibleDockables != null)
-            {
-                if (dock.VisibleDockables.Any(d => d.Id == documentId))
-                {
-                    return dock;
-                }
-
-                foreach (var child in dock.VisibleDockables)
-                {
-                    var found = FindContainerForDocument(child, documentId);
-                    if (found != null)
-                        return found;
-                }
-            }
-
-            return null;
-        }
-
-        private bool IsDocumentInFloatWindows(string documentId)
-        {
-            if (_dockLayout?.Windows == null) return false;
-
-            foreach (var window in _dockLayout.Windows)
-            {
-                if (window.Layout != null && FindDocumentInLayout(window.Layout, documentId))
-                {
-                    _logger.LogDebug("Found document in float window: {DocumentId}", documentId);
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private bool FindDocumentInLayout(IDockable dockable, string documentId)
-        {
-            if (dockable is IDock dock && dock.VisibleDockables != null)
-            {
-                if (dock.VisibleDockables.Any(d => d.Id == documentId))
-                {
-                    return true;
-                }
-
-                foreach (var child in dock.VisibleDockables)
-                {
-                    if (FindDocumentInLayout(child, documentId))
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        private void UnsubscribeFromDockEvents()
-        {
-            _logger.LogDebug("Unsubscribing from events");
-            _subscriptions.ForEach(s => s.Dispose());
-            _subscriptions.Clear();
-        }
-
-        private string? FindExistingInstanceIdInWorkModes(string moduleId)
-        {
-            _logger.LogDebug("Searching for existing InstanceId for module: {ModuleId}", moduleId);
-
-            foreach (var workMode in _availableWorkModes)
-            {
-                var slot = workMode.ModuleSlots?.FirstOrDefault(s => s.ModuleType == moduleId);
-                if (slot?.InstanceId != null)
-                {
-                    _logger.LogDebug("Found InstanceId in WorkMode '{WorkMode}': {InstanceId}",
-                        workMode.Title, slot.InstanceId);
-                    return slot.InstanceId;
-                }
-            }
-
-            _logger.LogDebug("No existing InstanceId found, will create new");
-            return null;
-        }
-
         public void Activate()
         {
             _logger.LogDebug("Activating workspace");
 
-            UnsubscribeFromDockEvents();
-
-            if (!string.IsNullOrEmpty(_projectPath))
-            {
-                var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
-                var fileStorage = projectWorkflow.GetFileStorageForProject(_projectPath);
-
-                if (fileStorage != null)
-                {
-                    var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
-                    var loadedWorkModes = workModeConfigService.LoadConfiguration(_tab.GetProject().Type, fileStorage);
-
-                    if (loadedWorkModes != null && loadedWorkModes.Count > 0)
-                    {
-                        _availableWorkModes = loadedWorkModes;
-                        _activeWorkMode = loadedWorkModes.FirstOrDefault(w => w.IsActive) ?? loadedWorkModes.First();
-                        _workModeService.InitializeWorkModes(_tab.GetProject().Type, loadedWorkModes);
-                        _logger.LogDebug("Reloaded WorkModes from workspace.json: {Count} WorkModes", loadedWorkModes.Count);
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Failed to reload WorkModes, using existing");
-                    }
-                }
-            }
-
-            EnsureAllModulesCreated();
+            ResetDegenerateSerializedLayoutIfNeeded(_activeWorkMode);
 
             _dockLayout = _dockFactory.CreateLayout(_activeWorkMode, _tab);
 
-            _logger.LogDebug("Layout created, checking float windows...");
-            if (_dockLayout?.Windows != null && _dockLayout.Windows.Count > 0)
+            _dockFactory.OnModuleClosed = (moduleType) =>
             {
-                _logger.LogDebug("Float windows created: {Count}", _dockLayout.Windows.Count);
-                foreach (var window in _dockLayout.Windows)
-                {
-                    _logger.LogDebug("Float window: {Id}, HasHost: {HasHost}", window.Id, window.Host != null);
-                }
-            }
-            else
-            {
-                _logger.LogDebug("No float windows in new layout");
-            }
-
-            SubscribeToDockEvents(_dockLayout!);
+                Dispatcher.UIThread.Post(() => HandleModuleClosedInDock(moduleType));
+            };
 
             if (!string.IsNullOrEmpty(_projectPath))
-            {
                 _autoSave.Start(_projectPath, _tab.GetProject());
-                _logger.LogDebug("AutoSave started for: {ProjectPath}", _projectPath);
-            }
 
-            _logger.LogDebug("Workspace activated - Layout created from saved configuration");
+            _logger.LogDebug("Workspace activated");
         }
 
+        /// <summary>
+        /// Деактивировать workspace
+        /// Сохраняет, закрывает float окна, очищает модули и layout
+        /// </summary>
         public void Deactivate()
         {
             _logger.LogDebug("Deactivating workspace");
@@ -997,38 +420,24 @@ namespace Writersword.Src.Infrastructure.Workspace
 
             try
             {
-                _logger.LogDebug("Saving workspace.json BEFORE stopping AutoSave");
-
                 try
                 {
                     _autoSave.SaveNowAsync().Wait();
-                    _logger.LogDebug("Workspace saved successfully");
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to save workspace during deactivation");
                 }
 
-                _logger.LogDebug("NOW stopping AutoSave");
                 _autoSave.Stop();
 
-                _logger.LogDebug("Now closing float windows...");
-                if (_dockLayout?.Windows != null)
-                {
-                    _logger.LogDebug("Float windows before close: {Count}", _dockLayout.Windows.Count);
-                }
-
                 CloseAllFloatWindows();
-
-                _logger.LogDebug("Float windows closed successfully");
-
+                _dockFactory.DetachViewsFromLayout(_dockLayout);
                 ClearAllModulesFromContext();
 
-                UnsubscribeFromDockEvents();
+                _dockFactory.OnModuleClosed = null;
 
                 _dockLayout = null!;
-
-                _logger.LogDebug("Layout cleared");
             }
             catch (Exception ex)
             {
@@ -1043,38 +452,202 @@ namespace Writersword.Src.Infrastructure.Workspace
             _logger.LogDebug("Workspace deactivated");
         }
 
-        private void ClearLayoutRecursive(IDockable dockable)
+        /// <summary>
+        /// Освободить ресурсы
+        /// </summary>
+        public void Dispose()
         {
-            if (dockable is IDock dock && dock.VisibleDockables != null)
+            _logger.LogDebug("Disposing");
+
+            _autoSave.Stop();
+            CloseAllFloatWindows();
+            ClearAllModulesFromContext();
+
+            _logger.LogDebug("Disposed");
+        }
+
+        /// <summary>
+        /// Сбросить WorkMode до конфигурации по умолчанию
+        /// </summary>
+        public void ResetWorkModeToDefault(WorkMode workMode, WorkMode defaultConfig)
+        {
+            workMode.SerializedDockLayout = null;
+
+            workMode.ModuleSlots = defaultConfig.ModuleSlots
+                .Select(s => new ModuleSlot
+                {
+                    ModuleType = s.ModuleType,
+                    PreferredPosition = s.PreferredPosition,
+                    Category = s.Category
+                })
+                .ToList();
+
+            workMode.ModuleCategories = new Dictionary<string, ModuleCategory>(defaultConfig.ModuleCategories);
+
+            // Деактивируем — сохраняет, детачит Views, очищает модули
+            Deactivate();
+
+            // Активируем заново — точно как при первом открытии вкладки
+            Activate();
+
+            _autoSave.NotifyChange();
+            WorkspaceChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// Сбросить serializedDockLayout если все слоты WorkMode ведут в центр
+        /// при наличии более одного слота — такой layout вырожден:
+        /// все модули оказываются вкладками в одном DocumentDock
+        /// </summary>
+        private void ResetDegenerateSerializedLayoutIfNeeded(WorkMode workMode)
+        {
+            if (string.IsNullOrEmpty(workMode.SerializedDockLayout))
+                return;
+
+            if (workMode.ModuleSlots.Count <= 1)
+                return;
+
+            bool allAreCenter = workMode.ModuleSlots.All(s =>
+                s.PreferredPosition is PreferredDockPosition.RightAsTab
+                    or PreferredDockPosition.LeftAsTab
+                    or PreferredDockPosition.TopAsTab
+                    or PreferredDockPosition.BottomAsTab
+                    or PreferredDockPosition.TopRightAsTab
+                    or PreferredDockPosition.TopLeftAsTab
+                    or PreferredDockPosition.BottomRightAsTab
+                    or PreferredDockPosition.BottomLeftAsTab);
+
+            if (allAreCenter)
             {
-                var documents = dock.VisibleDockables.OfType<Document>().ToList();
+                _logger.LogWarning(
+                    "WorkMode '{Title}' has {Count} slots all mapped to center — serialized layout reset",
+                    workMode.Title, workMode.ModuleSlots.Count);
 
-                foreach (var doc in documents)
-                {
-                    dock.VisibleDockables.Remove(doc);
-                    _logger.LogDebug("Removed document from layout: {DocumentId}", doc.Id);
-                }
-
-                if (dock.VisibleDockables.Count == 0)
-                {
-                    dock.ActiveDockable = null!;
-                }
-                else
-                {
-                    dock.ActiveDockable = dock.VisibleDockables.FirstOrDefault();
-                }
-
-                foreach (var child in dock.VisibleDockables.ToList())
-                {
-                    ClearLayoutRecursive(child);
-                }
+                workMode.SerializedDockLayout = null;
             }
         }
 
         /// <summary>
-        /// Рекурсивно собрать ID всех документов из Dock структуры
-        /// Поддерживает обход как обычных Dock, так и Float окон
+        /// Очистить все модули из контекста
         /// </summary>
+        private void ClearAllModulesFromContext()
+        {
+            var allModules = _tab.ModuleContext.GetAllModules().ToList();
+            foreach (var module in allModules)
+                _tab.ModuleContext.RemoveModule(module.moduleType);
+
+            _logger.LogDebug("Cleared {Count} modules from Context", allModules.Count);
+        }
+
+        /// <summary>
+        /// Очистить из контекста модули которых НЕТ в новом WorkMode
+        /// Позволяет переиспользовать общие модули (например Timer) между WorkMode
+        /// </summary>
+        private void ClearModulesNotInNewWorkMode(WorkMode newWorkMode)
+        {
+            var targetModuleTypes = new HashSet<string>(
+                newWorkMode.ModuleSlots.Select(s => s.ModuleType)
+            );
+
+            var allModules = _tab.ModuleContext.GetAllModules().ToList();
+            int cleared = 0;
+
+            foreach (var module in allModules)
+            {
+                if (!targetModuleTypes.Contains(module.moduleType))
+                {
+                    _tab.ModuleContext.RemoveModule(module.moduleType);
+                    cleared++;
+                }
+            }
+
+            _logger.LogDebug("Cleared {Count} modules not in new WorkMode: {Title}",
+                cleared, newWorkMode.Title);
+        }
+
+        private void CloseAllFloatWindows()
+        {
+            if (_dockLayout?.Windows == null || _dockLayout.Windows.Count == 0)
+                return;
+
+            foreach (var window in _dockLayout.Windows.ToList())
+            {
+                if (window.Host is HostWindow hostWindow)
+                    hostWindow.Exit();
+            }
+
+            _dockLayout.Windows.Clear();
+
+            _logger.LogDebug("Float windows closed");
+        }
+
+        private void RemoveModuleFromLayout(IRootDock rootDock, string moduleType)
+        {
+            string documentId = $"Module_{moduleType}";
+            RemoveDocumentRecursive(rootDock, documentId);
+        }
+
+        private bool RemoveDocumentRecursive(IDockable dockable, string documentId)
+        {
+            if (dockable is IDock dock && dock.VisibleDockables != null)
+            {
+                var document = dock.VisibleDockables.FirstOrDefault(d => d.Id == documentId);
+                if (document != null)
+                {
+                    dock.VisibleDockables.Remove(document);
+
+                    if (dock.ActiveDockable == document)
+                        dock.ActiveDockable = dock.VisibleDockables.FirstOrDefault();
+
+                    return true;
+                }
+
+                foreach (var child in dock.VisibleDockables.ToList())
+                {
+                    if (RemoveDocumentRecursive(child, documentId))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsDocumentInFloatWindows(string documentId)
+        {
+            if (_dockLayout?.Windows == null) return false;
+
+            foreach (var window in _dockLayout.Windows)
+            {
+                if (window.Layout != null && FindDocumentInLayout(window.Layout, documentId))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool FindDocumentInLayout(IDockable dockable, string documentId)
+        {
+            if (dockable is IDock dock)
+            {
+                if (dock.ActiveDockable?.Id == documentId)
+                    return true;
+
+                if (dock.VisibleDockables != null)
+                {
+                    if (dock.VisibleDockables.Any(d => d.Id == documentId))
+                        return true;
+
+                    foreach (var child in dock.VisibleDockables)
+                    {
+                        if (FindDocumentInLayout(child, documentId))
+                            return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         private void CollectDocumentIds(IDockable dockable, HashSet<string> documentIds)
         {
             if (dockable is IDock dock && dock.VisibleDockables != null)
@@ -1082,58 +655,11 @@ namespace Writersword.Src.Infrastructure.Workspace
                 foreach (var item in dock.VisibleDockables)
                 {
                     if (item is Document doc && doc.Id != null)
-                    {
                         documentIds.Add(doc.Id);
-                    }
 
                     CollectDocumentIds(item, documentIds);
                 }
             }
-        }
-
-        /// <summary>
-        /// Создать ВСЕ модули из workspace.json ПЕРЕД построением UI
-        /// Гарантирует что все модули существуют в Context
-        /// </summary>
-        private void EnsureAllModulesCreated()
-        {
-            _logger.LogDebug("EnsureAllModulesCreated: Starting...");
-
-            var openSlots = _activeWorkMode.ModuleSlots
-                .Where(s => s.IsCurrentlyOpen)
-                .ToList();
-
-            _logger.LogDebug("Found {Count} open modules in workspace.json", openSlots.Count);
-
-            foreach (var slot in openSlots)
-            {
-                // Проверяем что модуль УЖЕ создан
-                var exists = _tab.ModuleContext.GetModule(slot.InstanceId);
-                if (exists != null)
-                {
-                    _logger.LogDebug("Module already exists: {ModuleId}, InstanceId: {InstanceId}",
-                        slot.ModuleType, slot.InstanceId);
-                    continue;
-                }
-
-                // Создаём модуль
-                _logger.LogDebug("Creating module: {ModuleId}, InstanceId: {InstanceId}",
-                    slot.ModuleType, slot.InstanceId);
-
-                var module = _tab.ModuleContext.CreateModule(slot.ModuleType, slot.InstanceId);
-
-                if (module != null)
-                {
-                    module.Context = _tab.Context;
-                    _logger.LogDebug("Created and assigned context: {ModuleId}", slot.ModuleType);
-                }
-                else
-                {
-                    _logger.LogError("Failed to create module: {ModuleId}", slot.ModuleType);
-                }
-            }
-
-            _logger.LogDebug("EnsureAllModulesCreated: Complete");
         }
     }
 }

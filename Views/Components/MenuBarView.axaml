@@ -143,7 +143,7 @@
 					<DataTemplate>
 						<MenuItem Header="{Binding Name}"
 								  Command="{Binding #MenuBarViewRoot.DataContext.ToggleModuleCommand}"
-								  CommandParameter="{Binding ModuleId}"
+								  CommandParameter="{Binding ModuleType}"
 								  IsEnabled="{Binding IsEnabled}">
 							<MenuItem.Icon>
 								<StackPanel Orientation="Horizontal" Spacing="5">

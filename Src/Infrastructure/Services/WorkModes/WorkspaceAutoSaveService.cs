@@ -12,7 +12,6 @@ using Writersword.Core.Models.Settings;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.WorkFlows;
-using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.Infrastructure.Dock;
 using Writersword.ViewModels;
 
@@ -21,6 +20,8 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
     /// <summary>
     /// Сервис автоматического сохранения локальной конфигурации workspace
     /// Сохраняет изменения в workspace.json внутри ZIP спустя 5 секунд после последнего изменения
+    /// Ключ данных модуля — moduleType, не InstanceId
+    /// Валидация: проверяет только уникальность moduleType в WorkMode и ProjectId соответствие
     /// </summary>
     public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
     {
@@ -36,8 +37,6 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         {
             _logger = App.Services.GetService<ILogger<WorkspaceAutoSaveService>>()!;
         }
-
-
 
         /// <summary>
         /// Запустить автосохранение для проекта
@@ -67,15 +66,12 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         }
 
         /// <summary>
-        /// Уведомить сервис об изменении конфигурации
-        /// Запускает таймер debounce - сохранение произойдёт через 5 секунд
+        /// Уведомить об изменении конфигурации — запускает debounce таймер
         /// </summary>
         public void NotifyChange()
         {
             if (_isDisposed || _currentProject == null || _currentProjectPath == null)
-            {
                 return;
-            }
 
             _debounceSubscription?.Dispose();
 
@@ -84,25 +80,67 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 .ObserveOn(RxApp.MainThreadScheduler)
                 .Subscribe(_ => SaveConfiguration());
 
-            _logger.LogDebug("Change detected, will save in 5 seconds...");
+            _logger.LogDebug("Change detected, will save in {Seconds} seconds", _debounceDelay.TotalSeconds);
         }
 
         /// <summary>
-        /// Сохранить конфигурацию в workspace.json внутри ZIP
-        /// Вызывается из UI потока через Dispatcher
+        /// Сохранить конфигурацию немедленно
+        /// </summary>
+        public async Task SaveNowAsync()
+        {
+            if (_isDisposed || _currentProject == null || _currentProjectPath == null)
+                return;
+
+            try
+            {
+                _logger.LogDebug("Force saving workspace.json");
+
+                _debounceSubscription?.Dispose();
+                _debounceSubscription = null;
+
+                var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
+                var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
+
+                if (fileStorage == null)
+                {
+                    _logger.LogWarning("FileStorage not found for SaveNowAsync");
+                    return;
+                }
+
+                var currentConfig = await CollectCurrentConfigurationAsync();
+
+                if (currentConfig == null)
+                {
+                    _logger.LogWarning("CollectCurrentConfigurationAsync returned null");
+                    return;
+                }
+
+                if (!ValidateConfiguration(currentConfig))
+                {
+                    _logger.LogError("Validation failed in SaveNowAsync, refusing to save");
+                    return;
+                }
+
+                var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
+                workspaceConfigService.SaveToZip(fileStorage, currentConfig);
+                _logger.LogDebug("Force save successful");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in SaveNowAsync");
+            }
+        }
+
+        /// <summary>
+        /// Debounce-обработчик сохранения
         /// </summary>
         private async void SaveConfiguration()
         {
             if (_isDisposed || _currentProject == null || _currentProjectPath == null)
-            {
                 return;
-            }
 
             try
             {
-                _logger.LogDebug("Saving workspace.json");
-
-                // ЗДЕСЬ НУЖЕН InvokeAsync, т.к. вызывается из таймера (фоновый поток)
                 await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
                 {
                     try
@@ -126,7 +164,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
                         if (!ValidateConfiguration(currentConfig))
                         {
-                            _logger.LogError("CRITICAL: Configuration validation FAILED! REFUSING to save corrupted data!");
+                            _logger.LogError("Configuration validation failed, refusing to save");
                             return;
                         }
 
@@ -134,9 +172,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                         var success = workspaceConfigService.SaveToZip(fileStorage, currentConfig);
 
                         if (success)
-                        {
                             _logger.LogDebug("workspace.json saved successfully");
-                        }
                     }
                     catch (Exception ex)
                     {
@@ -151,8 +187,9 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         }
 
         /// <summary>
-        /// Собрать текущую конфигурацию из UI
-        /// Сохраняет ВСЕ WorkModes, но детали (модули) только для активного
+        /// Собрать текущую конфигурацию из активного workspace
+        /// Активный WorkMode — сериализуется из реального layout
+        /// Неактивные — берутся как есть из ModuleSlots (без фильтрации по InstanceId)
         /// </summary>
         private async Task<WorkspaceLocalConfig?> CollectCurrentConfigurationAsync()
         {
@@ -178,7 +215,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
                 if (activeTab?.Workspace == null)
                 {
-                    _logger.LogWarning("No workspace for project");
+                    _logger.LogWarning("No workspace for project: {Path}", _currentProjectPath);
                     return null;
                 }
 
@@ -192,66 +229,52 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 }
 
                 var dockFactory = App.Services.GetRequiredService<DockFactory>();
-
                 var activeWorkMode = allWorkModes.FirstOrDefault(wm => wm.IsActive);
 
-                _logger.LogDebug("CollectCurrentConfiguration:");
-                _logger.LogDebug("Total WorkModes: {TotalCount}", allWorkModes.Count);
-                _logger.LogDebug("ActiveWorkMode: {ActiveTitle}", activeWorkMode?.Title ?? "NULL");
+                _logger.LogDebug("Collecting config: {Total} WorkModes, active: {ActiveTitle}",
+                    allWorkModes.Count, activeWorkMode?.Title ?? "NULL");
 
                 var workModesToSave = new List<WorkMode>();
 
                 foreach (var wm in allWorkModes)
                 {
-                    _logger.LogDebug("Processing WorkMode: {Title}, IsActive={IsActive}", wm.Title, wm.IsActive);
-
                     if (wm == activeWorkMode)
                     {
                         var currentLayout = activeTab.Workspace.GetCurrentLayout();
 
-                        if (currentLayout != null)
-                        {
-                            _logger.LogDebug("Saving as ACTIVE with full data");
-
-                            var (layoutTree, updatedSlots) = dockFactory.SerializeCurrentLayout(currentLayout, wm, activeTab.ModuleContext);
-
-                            var activeToSave = new WorkMode
-                            {
-                                Id = wm.Id,
-                                WorkModeId = wm.WorkModeId,
-                                Title = wm.Title,
-                                Icon = wm.Icon,
-                                IsActive = true,
-                                Order = wm.Order,
-                                IsCloseable = wm.IsCloseable,
-                                ModuleSlots = updatedSlots,
-                                LayoutTree = layoutTree
-                            };
-
-                            _logger.LogDebug("Saved ACTIVE WorkMode: {Title} ({SlotsCount} slots, {OpenCount} open)",
-                                wm.Title,
-                                updatedSlots.Count,
-                                updatedSlots.Count(s => s.IsCurrentlyOpen));
-
-                            workModesToSave.Add(activeToSave);
-                        }
-                        else
+                        if (currentLayout == null)
                         {
                             _logger.LogWarning("No layout for active WorkMode {Title}, skipping", wm.Title);
-                        }
-                    }
-                    else
-                    {
-                        var hasInstanceIds = wm.ModuleSlots.Any(s => !string.IsNullOrEmpty(s.InstanceId));
-
-                        if (!hasInstanceIds)
-                        {
-                            _logger.LogDebug("WorkMode {Title} was never used (no InstanceIds), skipping save", wm.Title);
                             continue;
                         }
 
-                        _logger.LogDebug("Saving as INACTIVE (has {Count} modules with InstanceId)",
-                            wm.ModuleSlots.Count(s => !string.IsNullOrEmpty(s.InstanceId)));
+                        var (serializedLayout, updatedSlots) = dockFactory.SerializeCurrentLayout(
+                            currentLayout, wm, activeTab.ModuleContext);
+
+                        var activeToSave = new WorkMode
+                        {
+                            Id = wm.Id,
+                            WorkModeId = wm.WorkModeId,
+                            Title = wm.Title,
+                            Icon = wm.Icon,
+                            IsActive = true,
+                            Order = wm.Order,
+                            IsCloseable = wm.IsCloseable,
+                            ModuleSlots = updatedSlots,
+                            SerializedDockLayout = serializedLayout
+                        };
+
+                        workModesToSave.Add(activeToSave);
+
+                        _logger.LogDebug("Active WorkMode: {Title} ({SlotsCount} slots)", wm.Title, updatedSlots.Count);
+                    }
+                    else
+                    {
+                        if (wm.ModuleSlots.Count == 0)
+                        {
+                            _logger.LogDebug("WorkMode {Title} has no slots, skipping", wm.Title);
+                            continue;
+                        }
 
                         var inactiveToSave = new WorkMode
                         {
@@ -263,28 +286,19 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                             Order = wm.Order,
                             IsCloseable = wm.IsCloseable,
                             ModuleSlots = wm.ModuleSlots
-                                .Where(s => !string.IsNullOrEmpty(s.InstanceId))
                                 .Select(s => new ModuleSlot
                                 {
                                     ModuleType = s.ModuleType,
-                                    InstanceId = s.InstanceId,
-                                    Path = s.Path,
-                                    IsFloating = s.IsFloating,
-                                    TabOrder = s.TabOrder,
-                                    IsActiveTab = s.IsActiveTab,
-                                    IsCurrentlyOpen = false,
-                                    FloatX = s.FloatX,
-                                    FloatY = s.FloatY,
-                                    FloatWidth = s.FloatWidth,
-                                    FloatHeight = s.FloatHeight
-                                }).ToList(),
-                            LayoutTree = wm.LayoutTree
+                                    PreferredPosition = s.PreferredPosition,
+                                    Category = s.Category
+                                })
+                                .ToList(),
+                            SerializedDockLayout = wm.SerializedDockLayout
                         };
 
-                        _logger.LogDebug("Saved INACTIVE WorkMode: {Title} ({SlotsCount} slots with InstanceId)",
-                            wm.Title, inactiveToSave.ModuleSlots.Count);
-
                         workModesToSave.Add(inactiveToSave);
+
+                        _logger.LogDebug("Inactive WorkMode: {Title} ({SlotsCount} slots)", wm.Title, wm.ModuleSlots.Count);
                     }
                 }
 
@@ -294,7 +308,7 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                     WorkModes = workModesToSave
                 };
 
-                _logger.LogDebug("Collected configuration: {Count} WorkModes", config.WorkModes.Count);
+                _logger.LogDebug("Configuration collected: {Count} WorkModes", config.WorkModes.Count);
                 return config;
             }
             catch (Exception ex)
@@ -305,59 +319,8 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         }
 
         /// <summary>
-        /// Принудительно сохранить конфигурацию СЕЙЧАС
-        /// </summary>
-        public async Task SaveNowAsync()
-        {
-            if (_isDisposed || _currentProject == null || _currentProjectPath == null)
-            {
-                return;
-            }
-
-            try
-            {
-                _logger.LogDebug("Force saving NOW");
-
-                var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
-                var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
-
-                if (fileStorage == null)
-                {
-                    _logger.LogWarning("FileStorage not found for SaveNowAsync");
-                    return;
-                }
-
-                _debounceSubscription?.Dispose();
-
-                // УБРАЛИ Dispatcher.UIThread.InvokeAsync - МЫ УЖЕ В UI ПОТОКЕ!
-                var currentConfig = await CollectCurrentConfigurationAsync();
-
-                if (currentConfig != null)
-                {
-                    if (!ValidateConfiguration(currentConfig))
-                    {
-                        _logger.LogError("CRITICAL: Validation failed in SaveNowAsync! REFUSING to save!");
-                        return;
-                    }
-
-                    var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
-                    workspaceConfigService.SaveToZip(fileStorage, currentConfig);
-                    _logger.LogDebug("Force save successful");
-                }
-                else
-                {
-                    _logger.LogWarning("CollectCurrentConfigurationAsync returned null");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in force save");
-            }
-        }
-
-        /// <summary>
         /// Валидация конфигурации перед сохранением
-        /// Проверяет что все InstanceId принадлежат текущему проекту
+        /// Проверяет уникальность moduleType в каждом WorkMode
         /// </summary>
         private bool ValidateConfiguration(WorkspaceLocalConfig config)
         {
@@ -368,42 +331,43 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
 
                 if (activeTab == null)
                 {
-                    _logger.LogError("Validation failed: No active tab for project");
+                    _logger.LogError("Validation failed: no tab for project {Path}", _currentProjectPath);
                     return false;
+                }
+
+                if (_currentProject != null)
+                {
+                    if (activeTab.GetProject()?.Id != _currentProject.Id)
+                    {
+                        _logger.LogError("Validation failed: ProjectId mismatch. Expected {Expected}, got {Actual}",
+                            _currentProject.Id, activeTab.GetProject()?.Id);
+                        return false;
+                    }
                 }
 
                 foreach (var workMode in config.WorkModes)
                 {
-                    foreach (var slot in workMode.ModuleSlots.Where(s => s.IsCurrentlyOpen))
+                    var seenModuleTypes = new HashSet<string>();
+
+                    foreach (var slot in workMode.ModuleSlots)
                     {
-                        if (string.IsNullOrEmpty(slot.InstanceId))
+                        if (string.IsNullOrEmpty(slot.ModuleType))
                         {
-                            _logger.LogError("Validation failed: Open module {ModuleId} has no InstanceId",
-                                slot.ModuleType);
+                            _logger.LogError("Validation failed: empty ModuleType in WorkMode {WorkMode}",
+                                workMode.Title);
                             return false;
                         }
 
-                        var module = activeTab.ModuleContext.GetModule(slot.InstanceId);
-
-                        if (module == null)
+                        if (!seenModuleTypes.Add(slot.ModuleType))
                         {
-                            _logger.LogError("Validation failed: InstanceId {InstanceId} for {ModuleId} " +
-                                            "NOT FOUND in project context! Cross-project contamination detected!",
-                                slot.InstanceId, slot.ModuleType);
-                            return false;
-                        }
-
-                        if (module.ModuleId != slot.ModuleType)
-                        {
-                            _logger.LogError("Validation failed: InstanceId {InstanceId} belongs to {ActualModule}, " +
-                                            "but slot expects {ExpectedModule}. Cross-project contamination!",
-                                slot.InstanceId, module.ModuleId, slot.ModuleType);
+                            _logger.LogError("Validation failed: duplicate ModuleType {ModuleType} in WorkMode {WorkMode}",
+                                slot.ModuleType, workMode.Title);
                             return false;
                         }
                     }
                 }
 
-                _logger.LogDebug("Configuration validation PASSED");
+                _logger.LogDebug("Configuration validation passed");
                 return true;
             }
             catch (Exception ex)

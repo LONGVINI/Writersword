@@ -68,7 +68,7 @@ namespace Writersword.Core.Models.WorkModes
 
         /// <summary>
         /// Категории модулей для этого WorkMode
-        /// Словарь: ModuleId -> ModuleCategory
+        /// Словарь: moduleType -> ModuleCategory
         /// Определяет какие модули доступны для добавления и их статус:
         /// - Required: обязательный, создаётся автоматически, нельзя удалить
         /// - Optional: можно добавить/удалить по желанию
@@ -88,12 +88,12 @@ namespace Writersword.Core.Models.WorkModes
         public List<ModuleSlot> ModuleSlots { get; set; } = new();
 
         /// <summary>
-        /// Иерархическая структура layout (дерево контейнеров)
-        /// Определяет как панели разделены и где находятся модули
-        /// Сохраняется в workspace.json для точного восстановления структуры
+        /// Сериализованная структура Dock layout (JSON строка от Dock.Serializer)
+        /// Содержит информацию о панелях, сплиттерах, float окнах
+        /// Сохраняется в workspace.json для точного восстановления UI
         /// При создании дефолтной конфигурации может быть null (создаётся динамически из PreferredPosition)
         /// </summary>
-        [JsonProperty("LayoutTree")]
-        public LayoutNode? LayoutTree { get; set; }
+        [JsonProperty("serializedDockLayout")]
+        public string? SerializedDockLayout { get; set; }
     }
 }

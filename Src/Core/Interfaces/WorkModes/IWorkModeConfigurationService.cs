@@ -33,8 +33,8 @@ namespace Writersword.Src.Core.Interfaces.Services
         /// </summary>
         /// <param name="projectType">Тип проекта (Novel, Translation, и т.д.)</param>
         /// <param name="workModeId">ID режима работы (editor, timeline, и т.д.)</param>
-        /// <param name="moduleId">ID модуля (TextEditor, Notes, и т.д.)</param>
+        /// <param name="moduleType">ID модуля (TextEditor, Notes, и т.д.)</param>
         /// <returns>true если можно удалить, false если нельзя</returns>
-        bool CanRemoveModule(string projectType, string workModeId, string moduleId);
+        bool CanRemoveModule(string projectType, string workModeId, string moduleType);
     }
 }

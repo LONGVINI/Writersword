@@ -57,18 +57,18 @@ namespace Writersword.Src.Core.Interfaces.Workspace
         /// <summary>
         /// Добавить модуль динамически в активный WorkMode
         /// </summary>
-        void AddModule(string moduleId);
+        void AddModule(string moduleType);
 
         /// <summary>
         /// Удалить модуль из активного WorkMode
         /// </summary>
-        void RemoveModule(string moduleId);
+        void RemoveModule(string moduleType);
 
         /// <summary>
         /// Вернуть обязательный модуль из Float окна обратно в Dock
         /// Восстанавливает позицию из workspace.json
         /// </summary>
-        void ReturnRequiredModuleToDock(string moduleId);
+        void ReturnRequiredModuleToDock(string moduleType);
 
         /// <summary>
         /// Сохранить workspace.json
@@ -86,7 +86,7 @@ namespace Writersword.Src.Core.Interfaces.Workspace
         /// Обработчик закрытия модуля в Dock
         /// Вызывается из DockFactory когда модуль закрыт пользователем
         /// </summary>
-        void HandleModuleClosedInDock(string moduleId);
+        void HandleModuleClosedInDock(string moduleType);
 
         /// <summary>
         /// Получить WorkModeService этого проекта
@@ -115,5 +115,11 @@ namespace Writersword.Src.Core.Interfaces.Workspace
         /// Модули остаются IsCurrentlyOpen = true для восстановления при Activate()
         /// </summary>
         void Deactivate();
+
+        /// <summary>
+        /// Сбросить активный WorkMode до дефолтной конфигурации
+        /// Не сериализует текущий layout перед сбросом
+        /// </summary>
+        void ResetWorkModeToDefault(WorkMode workMode, WorkMode defaultConfig);
     }
 }

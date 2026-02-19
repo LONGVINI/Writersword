@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Linq;
-using Writersword.ViewModels;
 using Writersword.Views;
 
 namespace Writersword.Src.Infrastructure.Dock
@@ -14,6 +13,8 @@ namespace Writersword.Src.Infrastructure.Dock
     /// <summary>
     /// Реализация IHostWindow для Float окон
     /// Управляет жизненным циклом плавающих окон модулей
+    /// Dock.Avalonia сам управляет регистрацией DockWindow в rootDock.Windows —
+    /// ручное добавление не требуется и приводит к дублированию окон
     /// </summary>
     public class HostWindow : IHostWindow
     {
@@ -38,18 +39,16 @@ namespace Writersword.Src.Infrastructure.Dock
 
         /// <summary>
         /// Показать Float окно
+        /// Dock.Avalonia самостоятельно регистрирует DockWindow в rootDock.Windows
         /// </summary>
         public void Present(bool isDialog)
         {
-            _logger.LogDebug("Present() START, _pendingLayout={HasLayout}, Factory={HasFactory}",
-                _pendingLayout != null, _pendingLayout?.Factory != null);
+            _logger.LogDebug("Present() called, hasLayout={HasLayout}", _pendingLayout != null);
 
             _window = new FloatingWindow();
 
             if (_pendingPosition.HasValue)
-            {
                 _window.Position = _pendingPosition.Value;
-            }
 
             if (_pendingLayout != null)
             {
@@ -58,11 +57,11 @@ namespace Writersword.Src.Infrastructure.Dock
                 {
                     _window.Layout = rootDock;
                     _window.Factory = _pendingLayout.Factory;
-                    _logger.LogDebug("Set window layout and factory");
+                    _logger.LogDebug("Window layout and factory set");
                 }
                 else
                 {
-                    _logger.LogWarning("FindRootDock returned null!");
+                    _logger.LogWarning("FindRootDock returned null");
                 }
             }
 
@@ -70,47 +69,7 @@ namespace Writersword.Src.Infrastructure.Dock
             _window.Show();
             _pendingPosition = null;
 
-            _logger.LogDebug("Checking if should create DockWindow: layout={HasLayout}, factory={HasFactory}, rootDock={RootFound}",
-                _pendingLayout != null,
-                _pendingLayout?.Factory != null,
-                _pendingLayout != null ? FindRootDock(_pendingLayout) != null : false);
-
-            if (_pendingLayout != null && _pendingLayout.Factory != null)
-            {
-                var rootDock = FindRootDock(_pendingLayout);
-                _logger.LogDebug("RootDock found: {Found}, has Windows: {HasWindows}",
-                    rootDock != null, rootDock?.Windows != null);
-
-                if (rootDock != null && rootDock.Windows != null)
-                {
-                    _logger.LogDebug("Creating DockWindow via Factory.CreateDockWindow()");
-                    var dockWindow = _pendingLayout.Factory.CreateDockWindow();
-                    dockWindow.Host = this;
-
-                    var rootDockForWindow = FindRootDock(_pendingLayout);
-                    if (rootDockForWindow != null)
-                    {
-                        dockWindow.Layout = rootDockForWindow;
-                    }
-
-                    dockWindow.Id = "Float_" + (_pendingLayout as IDockable)?.Id;
-
-                    rootDock.Windows.Add(dockWindow);
-                    _logger.LogDebug("Added window to RootDock.Windows: {WindowId}", dockWindow.Id);
-                }
-                else
-                {
-                    _logger.LogWarning("Cannot create DockWindow: rootDock={RootNull}, Windows={WindowsNull}",
-                        rootDock == null, rootDock?.Windows == null);
-                }
-            }
-            else
-            {
-                _logger.LogWarning("Cannot create DockWindow: layout={LayoutNull}, factory={FactoryNull}",
-                    _pendingLayout == null, _pendingLayout?.Factory == null);
-            }
-
-            _logger.LogDebug("Present() END");
+            _logger.LogDebug("Present() complete");
         }
 
         /// <summary>
@@ -127,7 +86,7 @@ namespace Writersword.Src.Infrastructure.Dock
         /// </summary>
         public void SetPosition(double x, double y)
         {
-            _pendingPosition = new Avalonia.PixelPoint((int)x, (int)y);
+            _pendingPosition = new PixelPoint((int)x, (int)y);
         }
 
         /// <summary>
@@ -211,28 +170,27 @@ namespace Writersword.Src.Infrastructure.Dock
 
         /// <summary>
         /// Обработчик закрытия Float окна
-        /// Закрывает ВСЕ модули в окне (помечает IsCurrentlyOpen=false)
+        /// Уведомляет WorkspaceController о закрытии каждого модуля в окне
+        /// Удаляет DockWindow из rootDock.Windows — это единственное место где мы чистим коллекцию
         /// </summary>
         private void OnWindowClosed(object? sender, EventArgs e)
         {
             _logger.LogDebug("Float window closed");
 
             if (_window != null)
-            {
                 _window.Closed -= OnWindowClosed;
-            }
 
             if (_pendingLayout == null)
             {
-                _logger.LogDebug("No pending layout, nothing to close");
+                _logger.LogDebug("No pending layout, nothing to clean up");
                 _window = null;
                 return;
             }
 
             var floatDock = FindDocumentDockInLayout(_pendingLayout);
-            if (floatDock == null || floatDock.VisibleDockables == null)
+            if (floatDock?.VisibleDockables == null)
             {
-                _logger.LogDebug("No DocumentDock or VisibleDockables in float window");
+                _logger.LogDebug("No DocumentDock in float window");
                 _window = null;
                 return;
             }
@@ -243,44 +201,36 @@ namespace Writersword.Src.Infrastructure.Dock
 
             _logger.LogDebug("Closing {Count} modules from float window", documentsToClose.Count);
 
-            var mainVM = App.Services.GetRequiredService<MainWindowViewModel>();
+            var tabCollection = App.Services.GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>();
+            var activeTab = tabCollection.ActiveTab;
 
             foreach (var document in documentsToClose)
             {
-                if (string.IsNullOrWhiteSpace(document.Id))
+                if (string.IsNullOrWhiteSpace(document.Id) || !document.Id.StartsWith("Module_"))
                 {
-                    _logger.LogWarning("Document has no Id, skipping");
+                    _logger.LogWarning("Invalid document Id: '{DocumentId}', skipping", document.Id);
                     continue;
                 }
 
-                if (!document.Id.StartsWith("Module_"))
-                {
-                    _logger.LogWarning("Invalid document Id format: '{DocumentId}', skipping", document.Id);
-                    continue;
-                }
+                string moduleType = document.Id.Replace("Module_", "");
 
-                string moduleId = document.Id.Replace("Module_", "");
-
-                if (string.IsNullOrWhiteSpace(moduleId))
+                if (string.IsNullOrWhiteSpace(moduleType))
                 {
-                    _logger.LogWarning("Invalid moduleId after parsing: '{DocumentId}'", document.Id);
+                    _logger.LogWarning("Empty moduleType after parsing '{DocumentId}', skipping", document.Id);
                     continue;
                 }
 
                 if (!document.CanClose)
                 {
-                    _logger.LogDebug("Module {ModuleId} is required - returning to dock", moduleId);
-                    ReturnRequiredModuleToDock(moduleId);
+                    _logger.LogDebug("Module {moduleType} is required, returning to dock", moduleType);
+                    ReturnRequiredModuleToDock(moduleType);
                 }
                 else
                 {
-                    _logger.LogDebug("Module {ModuleId} closed with float window", moduleId);
-                    mainVM.HandleModuleClosedInDock(moduleId);
+                    _logger.LogDebug("Module {moduleType} closed with float window", moduleType);
+                    activeTab?.Workspace?.HandleModuleClosedInDock(moduleType);
                 }
             }
-
-            var tabCollection = App.Services.GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>();
-            var activeTab = tabCollection.ActiveTab;
 
             if (activeTab?.Workspace != null)
             {
@@ -293,11 +243,11 @@ namespace Writersword.Src.Infrastructure.Dock
                     if (windowToRemove != null)
                     {
                         mainRootDock.Windows.Remove(windowToRemove);
-                        _logger.LogDebug("Removed float window from rootDock.Windows: {WindowId}", windowToRemove.Id);
+                        _logger.LogDebug("Removed DockWindow from rootDock.Windows: {WindowId}", windowToRemove.Id);
                     }
                     else
                     {
-                        _logger.LogWarning("Could not find this HostWindow in rootDock.Windows collection");
+                        _logger.LogWarning("DockWindow not found in rootDock.Windows");
                     }
                 }
             }
@@ -308,30 +258,21 @@ namespace Writersword.Src.Infrastructure.Dock
 
         /// <summary>
         /// Вернуть обязательный модуль из Float окна обратно в Dock
-        /// Делегирует в 
-        /// 
-        /// активной вкладки
         /// </summary>
-        private void ReturnRequiredModuleToDock(string moduleId)
+        private void ReturnRequiredModuleToDock(string moduleType)
         {
-            _logger.LogDebug("Returning required module to dock: {ModuleId}", moduleId);
+            _logger.LogDebug("Returning required module to dock: {moduleType}", moduleType);
 
             var tabCollection = App.Services.GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>();
-            if (tabCollection.ActiveTab == null)
+            if (tabCollection.ActiveTab?.Workspace == null)
             {
-                _logger.LogWarning("No active tab");
+                _logger.LogWarning("No active tab or Workspace");
                 return;
             }
 
-            if (tabCollection.ActiveTab.Workspace == null)
-            {
-                _logger.LogWarning("No Workspace in active tab");
-                return;
-            }
+            tabCollection.ActiveTab.Workspace.ReturnRequiredModuleToDock(moduleType);
 
-            tabCollection.ActiveTab.Workspace.ReturnRequiredModuleToDock(moduleId);
-
-            _logger.LogDebug("Module {ModuleId} returned successfully", moduleId);
+            _logger.LogDebug("Module {moduleType} returned to dock", moduleType);
         }
 
         /// <summary>
@@ -341,8 +282,7 @@ namespace Writersword.Src.Infrastructure.Dock
         {
             if (layout == null) return null;
 
-            if (layout is DocumentDock dd)
-                return dd;
+            if (layout is DocumentDock dd) return dd;
 
             if (layout is IRootDock rootDock && rootDock.VisibleDockables != null)
             {
@@ -390,7 +330,7 @@ namespace Writersword.Src.Infrastructure.Dock
         }
 
         /// <summary>
-        /// Получить окно
+        /// Получить FloatingWindow (для фокусировки из MainWindowViewModel)
         /// </summary>
         public FloatingWindow? GetWindow()
         {

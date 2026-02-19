@@ -129,16 +129,16 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         }
 
         /// <summary>Добавить модуль в режим</summary>
-        public ModuleSlot AddModuleToWorkMode(WorkMode workMode, string moduleId)
+        public ModuleSlot AddModuleToWorkMode(WorkMode workMode, string moduleType)
         {
             var slot = new ModuleSlot
             {
-                ModuleType = moduleId,
+                ModuleType = moduleType,
                 PreferredPosition = PreferredDockPosition.RightAsTab
             };
 
             workMode.ModuleSlots.Add(slot);
-            _logger.LogDebug("Added module {ModuleId} to {WorkModeTitle}", moduleId, workMode.Title);
+            _logger.LogDebug("Added module {moduleType} to {WorkModeTitle}", moduleType, workMode.Title);
 
             return slot;
         }
@@ -148,14 +148,14 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
         {
             if (!_configService.CanRemoveModule(_currentProjectType, workMode.WorkModeId, moduleSlot.ModuleType))
             {
-                _logger.LogDebug("Cannot remove module {ModuleId} (required)", moduleSlot.ModuleType);
+                _logger.LogDebug("Cannot remove module {moduleType} (required)", moduleSlot.ModuleType);
                 return false;
             }
 
             var removed = workMode.ModuleSlots.Remove(moduleSlot);
             if (removed)
             {
-                _logger.LogDebug("Removed module {ModuleId} from {WorkModeTitle}", moduleSlot.ModuleType, workMode.Title);
+                _logger.LogDebug("Removed module {moduleType} from {WorkModeTitle}", moduleSlot.ModuleType, workMode.Title);
             }
 
             return removed;

@@ -25,7 +25,7 @@ namespace Writersword.Views
     public partial class MainWindow : Window
     {
         private readonly ILogger<MainWindow> _logger;
-        private bool _isClosing = false; // Флаг защиты от рекурсии
+        private bool _isClosing = false;
 
         public MainWindow()
         {
@@ -36,34 +36,26 @@ namespace Writersword.Views
             this.Opened += (s, e) =>
             {
                 _logger.LogDebug("MainWindow opened - DataContext: {DataContextType}", DataContext?.GetType().Name);
-
-                if (DataContext is MainWindowViewModel vm)
-                {
-                    _logger.LogDebug("MenuBar: {MenuBarType}", vm.MenuBar?.GetType().Name);
-                }
             };
 
-            // Один обработчик для всей логики закрытия
             Closing += OnClosing;
-
             KeyDown += OnKeyDown;
         }
 
         /// <summary>
-        /// Обработчик попытки закрытия главного окна.
-        /// Проверяет несохранённые изменения в каждой вкладке и предлагает сохранить.
+        /// Обработчик попытки закрытия главного окна
+        /// Проверяет несохранённые изменения в каждой вкладке и предлагает сохранить
         /// </summary>
         private async void OnClosing(object? sender, CancelEventArgs e)
         {
-            // Защита от рекурсии
             if (_isClosing)
             {
-                e.Cancel = false; // Разрешаем закрытие
+                e.Cancel = false;
                 return;
             }
 
-            e.Cancel = true; // Останавливаем стандартное закрытие
-            _isClosing = true; // Устанавливаем флаг
+            e.Cancel = true;
+            _isClosing = true;
 
             _logger.LogDebug("OnClosing started");
 
@@ -83,17 +75,14 @@ namespace Writersword.Views
 
             _logger.LogDebug("Open tabs count: {Count}", tabCollection.Tabs.Count);
 
-            // 1. Если нет вкладок - показываем Welcome
             if (tabCollection.Tabs.Count == 0)
             {
                 _logger.LogDebug("No tabs, showing welcome");
-                _isClosing = false; // Сбрасываем флаг
+                _isClosing = false;
                 await App.ShowWelcomeScreen(this);
-                return; // НЕ закрывать приложение
+                return;
             }
 
-            // 1.6. ПРИНУДИТЕЛЬНО сохраняем активную вкладку в кеш перед проверкой изменений
-            _logger.LogDebug("Force saving active tab to cache");
             var activeTab = tabCollection.ActiveTab;
             if (activeTab != null && !string.IsNullOrEmpty(activeTab.FilePath))
             {
@@ -103,29 +92,20 @@ namespace Writersword.Views
                     var cacheService = App.Services.GetRequiredService<IZipCacheService>();
 
                     var activeModules = vm.GetActiveModules();
-
                     var (customData, sessionData) = stateCollector.CollectAllData(activeModules);
 
                     if (customData.Count > 0)
                     {
                         var project = activeTab.GetProject();
-
                         await cacheService.SaveCacheAsync(activeTab.FilePath, project.Id, customData, sessionData);
-
                         activeTab.MarkAsModified();
-
                         _logger.LogDebug("Active tab cached: {Count} modules", customData.Count);
                     }
-                    else
-                    {
-                        _logger.LogDebug("Active tab has no data to cache");
-                    }
 
-                    // ДОБАВИТЬ ТУТ:
                     if (activeTab.Workspace != null)
                     {
                         await activeTab.Workspace.SaveWorkspaceAsync();
-                        _logger.LogDebug("Active tab workspace.json saved: {Title}", activeTab.Title);
+                        _logger.LogDebug("Workspace saved for: {Title}", activeTab.Title);
                     }
                 }
                 catch (Exception ex)
@@ -134,7 +114,6 @@ namespace Writersword.Views
                 }
             }
 
-            // 2. Сохраняем список открытых проектов (для восстановления при следующем запуске)
             var settingsService = App.Services.GetRequiredService<ISettingsService>();
             var openPaths = tabCollection.Tabs
                 .Select(t => t.FilePath)
@@ -144,12 +123,10 @@ namespace Writersword.Views
             settingsService.SaveOpenProjects(openPaths!);
             _logger.LogDebug("Saved {Count} open projects", openPaths.Count);
 
-            // 3. Проверяем каждую вкладку на несохранённые изменения
-            var tabs = tabCollection.Tabs.ToList(); // Копия списка
+            var tabs = tabCollection.Tabs.ToList();
 
             foreach (var tab in tabs)
             {
-                // Пропускаем вкладки без изменений
                 if (!await projectWorkflow.HasUnsavedChanges(tab))
                 {
                     _logger.LogDebug("Tab {Title} - no changes", tab.Title);
@@ -158,7 +135,6 @@ namespace Writersword.Views
 
                 _logger.LogDebug("Tab {Title} has unsaved changes", tab.Title);
 
-                // Показываем диалог для КАЖДОЙ несохранённой вкладки
                 var result = await dialogService.ShowMessageAsync(
                     "Несохранённые изменения",
                     $"Документ \"{tab.Title}\" содержит несохранённые изменения.\n\nСохранить перед закрытием?",
@@ -171,41 +147,34 @@ namespace Writersword.Views
                 if (result == MessageBoxResult.Cancel)
                 {
                     _logger.LogDebug("Closing cancelled by user");
-                    _isClosing = false; // Сбрасываем флаг
-                    return; // STOP - не закрываем приложение
+                    _isClosing = false;
+                    return;
                 }
 
                 if (result == MessageBoxResult.Yes)
                 {
-                    // Сохраняем вкладку
-                    _logger.LogDebug("Saving tab: {Title}", tab.Title);
                     bool saved = await projectWorkflow.SaveDocumentAsync(tab);
-
                     if (!saved)
                     {
                         _logger.LogWarning("Save failed for {Title}", tab.Title);
-                        _isClosing = false; // Сбрасываем флаг
-                        return; // STOP - не закрываем приложение
+                        _isClosing = false;
+                        return;
                     }
-
                     _logger.LogDebug("Tab saved: {Title}", tab.Title);
                 }
                 else if (result == MessageBoxResult.No)
                 {
-                    // Пользователь выбрал "НЕ СОХРАНЯТЬ" - удаляем кеш
                     if (!string.IsNullOrEmpty(tab.FilePath))
                     {
                         var cacheService = App.Services.GetRequiredService<IZipCacheService>();
                         cacheService.DeleteCache(tab.FilePath);
-                        _logger.LogDebug("Cache deleted for {Title}", tab.Title);
+                        _logger.LogDebug("Cache deleted for: {Title}", tab.Title);
                     }
                 }
             }
 
             _logger.LogInformation("OnClosing finished - shutting down");
 
-            // 5. Закрываем приложение
-            // Флаг уже установлен, Shutdown() вызовет OnClosing снова, но мы выйдем сразу
             if (Application.Current?.ApplicationLifetime
                 is IClassicDesktopStyleApplicationLifetime desktop)
             {
@@ -222,9 +191,7 @@ namespace Writersword.Views
             var gesture = new KeyGesture(e.Key, e.KeyModifiers);
 
             if (hotKeyService.HandleKeyPress(gesture))
-            {
                 e.Handled = true;
-            }
         }
     }
 }

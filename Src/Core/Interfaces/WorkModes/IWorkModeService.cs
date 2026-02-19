@@ -19,7 +19,7 @@ namespace Writersword.Src.Core.Interfaces.WorkModes
         bool RemoveWorkMode(WorkMode workMode);
 
         /// <summary>Добавить модуль в режим</summary>
-        ModuleSlot AddModuleToWorkMode(WorkMode workMode, string moduleId);
+        ModuleSlot AddModuleToWorkMode(WorkMode workMode, string moduleType);
 
         /// <summary>Удалить модуль из режима</summary>
         bool RemoveModuleFromWorkMode(WorkMode workMode, ModuleSlot moduleSlot);

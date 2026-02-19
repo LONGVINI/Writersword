@@ -16,14 +16,11 @@ namespace Writersword.Modules.Common
     {
         private DocumentContext? _context;
 
-        /// <summary>Уникальный ID экземпляра модуля</summary>
-        public string InstanceId { get; private set; }
-
         /// <summary>
         /// Идентификатор типа модуля (строка)
         /// Должен быть уникальным для каждого типа модуля
         /// </summary>
-        public abstract string ModuleId { get; }
+        public abstract string moduleType { get; }
 
         /// <summary>Заголовок модуля</summary>
         public virtual string Title { get; set; } = "Module";
@@ -51,13 +48,10 @@ namespace Writersword.Modules.Common
             }
         }
 
-        /// <summary>
-        /// Конструктор базового модуля
-        /// </summary>
-        /// <param name="instanceId">ID экземпляра модуля (если null - генерируется новый)</param>
-        protected BaseModule(string? instanceId = null)
+        /// <summary> Конструктор базового модуля </summary>
+        protected BaseModule()
         {
-            InstanceId = instanceId ?? Guid.NewGuid().ToString();
+            
         }
 
         /// <summary>
@@ -68,7 +62,7 @@ namespace Writersword.Modules.Common
         public void RefreshFromContext()
         {
             OnContextChanged(Context);
-            Console.WriteLine($"[{ModuleId}] Context refreshed");
+            Console.WriteLine($"[{moduleType}] Context refreshed");
         }
 
         /// <summary>
@@ -172,7 +166,7 @@ namespace Writersword.Modules.Common
         public virtual Dictionary<string, object?>? GetChangedParts(object? current, object? saved)
         {
             throw new NotImplementedException(
-                $"Module {ModuleId} does not support delta comparison. " +
+                $"Module {moduleType} does not support delta comparison. " +
                 $"Override SupportsDeltaComparison and GetChangedParts to enable delta mode.");
         }
     }

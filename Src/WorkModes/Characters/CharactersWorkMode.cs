@@ -1,7 +1,7 @@
-﻿using Writersword.Core.Enums;
+﻿using System.Collections.Generic;
+using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Src.WorkModes.Common;
-using System.Collections.Generic;
 
 namespace Writersword.Src.WorkModes.Characters
 {
@@ -11,7 +11,6 @@ namespace Writersword.Src.WorkModes.Characters
     /// </summary>
     public class CharactersWorkMode : IWorkMode
     {
-        // ===== МЕТАДАННЫЕ (из IWorkModeMetadata) =====
         public string Id => "characters";
         public string DisplayName => "Персонажи";
         public string Icon => "👥";
@@ -19,7 +18,6 @@ namespace Writersword.Src.WorkModes.Characters
         public bool IsCloseable => true;
         public int Order => 2;
 
-        // ===== DEFAULT КОНФИГУРАЦИЯ =====
         public WorkMode GetDefaultConfig()
         {
             return new WorkMode
@@ -30,40 +28,32 @@ namespace Writersword.Src.WorkModes.Characters
                 IsActive = false,
                 Order = Order,
                 IsCloseable = IsCloseable,
-
+                ModuleCategories = new Dictionary<string, ModuleCategory>
+                {
+                    { "TextEditor", ModuleCategory.Required }
+                },
                 ModuleSlots = new List<ModuleSlot>
-        {
-            new ModuleSlot
-            {
-                ModuleType = "Characters",
-                Path = null,
-                IsFloating = false,
-                TabOrder = 0,
-                IsActiveTab = true,
-                IsCloseable = false,
-                IsCurrentlyOpen = true,
-                MinWidth = 400,
-                MinHeight = 400,
-                PreferredPosition = PreferredDockPosition.RightAsTab,
-                Category = ModuleCategory.Required
-            },
-            new ModuleSlot
-            {
-                ModuleType = "Relationships",
-                Path = null,
-                IsFloating = false,
-                TabOrder = 1,
-                IsActiveTab = false,
-                IsCloseable = true,
-                IsCurrentlyOpen = true,
-                MinWidth = 400,
-                MinHeight = 400,
-                PreferredPosition = PreferredDockPosition.RightAsTab,
-                Category = ModuleCategory.Optional
-            }
-        },
-
-                LayoutTree = null
+                {
+                    new ModuleSlot
+                    {
+                        ModuleType = "TextEditor",
+                        PreferredPosition = PreferredDockPosition.RightAsTab,
+                        Category = ModuleCategory.Required
+                    },
+                    new ModuleSlot
+                    {
+                        ModuleType = "Synonyms",
+                        PreferredPosition = PreferredDockPosition.TopRight,
+                        Category = ModuleCategory.Optional
+                    },
+                    new ModuleSlot
+                    {
+                        ModuleType = "Notes",
+                        PreferredPosition = PreferredDockPosition.BottomRight,
+                        Category = ModuleCategory.Optional
+                    }
+                },
+                SerializedDockLayout = null
             };
         }
     }

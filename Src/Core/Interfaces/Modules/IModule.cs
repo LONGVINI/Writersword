@@ -13,14 +13,11 @@ namespace Writersword.Core.Interfaces.Modules
     /// </summary>
     public interface IModule : IDisposable
     {
-        /// <summary>Уникальный ID экземпляра модуля (GUID)</summary>
-        string InstanceId { get; }
-
         /// <summary>
         /// Идентификатор типа модуля (строка)
         /// Примеры: "TextEditor", "Timer", "Synonyms"
         /// </summary>
-        string ModuleId { get; }
+        string moduleType { get; }
 
         /// <summary>Заголовок модуля (отображается в UI)</summary>
         string Title { get; set; }

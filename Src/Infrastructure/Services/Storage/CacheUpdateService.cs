@@ -14,9 +14,9 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 {
     /// <summary>
     /// Сервис фонового кеширования состояния модулей
-    /// Периодически сохраняет SessionData модулей в .wsasd файл (ZIP архив)
-    /// Используется для recovery и переключения вкладок/WorkMode
-    /// Использует debounce для оптимизации (сохраняет только после паузы)
+    /// Периодически сохраняет данные модулей в .wsasd файл (ZIP архив)
+    /// Сохраняет только если данные отличаются от сохранённого ZIP файла
+    /// Ключ данных модуля — moduleType, не InstanceId
     /// </summary>
     public class CacheUpdateService : ICacheUpdateService
     {
@@ -30,7 +30,6 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         private string? _currentProjectPath;
         private Func<IEnumerable<IModule>>? _getActiveModules;
 
-        /// <summary>Событие завершения кеширования</summary>
         public event EventHandler? CacheSaved;
 
         public CacheUpdateService(
@@ -47,8 +46,6 @@ namespace Writersword.Src.Infrastructure.Services.Storage
         /// <summary>
         /// Запустить фоновое кеширование для проекта
         /// </summary>
-        /// <param name="projectPath">Путь к проекту</param>
-        /// <param name="getActiveModules">Функция получения активных модулей</param>
         public void Start(string projectPath, Func<IEnumerable<IModule>> getActiveModules)
         {
             Stop();
@@ -63,30 +60,34 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             _logger.LogDebug("Started for: {ProjectPath}", projectPath);
         }
 
-        /// <summary>Остановить фоновое кеширование</summary>
+        /// <summary>
+        /// Остановить фоновое кеширование
+        /// </summary>
         public void Stop()
         {
-            // Останавливаем таймеры
             _cacheUpdateSubscription?.Dispose();
             _cacheUpdateSubscription = null;
 
             _debounceTimer?.Dispose();
             _debounceTimer = null;
 
-            // Обнуляем переменные
             _currentProjectPath = null;
             _getActiveModules = null;
 
             _logger.LogDebug("Stopped");
         }
 
-        /// <summary>Принудительно сохранить в кеш СЕЙЧАС</summary>
+        /// <summary>
+        /// Принудительно сохранить в кеш немедленно
+        /// </summary>
         public void SaveToCache()
         {
             _ = PerformCacheUpdateAsync();
         }
 
-        /// <summary>Установить интервал кеширования</summary>
+        /// <summary>
+        /// Установить интервал кеширования
+        /// </summary>
         public void SetInterval(TimeSpan interval)
         {
             _interval = interval;
@@ -95,13 +96,10 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
         /// <summary>
         /// Выполнить обновление кеша
-        /// Сохраняет ТОЛЬКО если данные отличаются от сохранённого ZIP файла
-        /// Использует хеширование для быстрой проверки изменений
-        /// Читает ZIP БЕЗ блокировки для оптимизации
+        /// Сохраняет только если данные отличаются от сохранённого ZIP файла
         /// </summary>
         private async Task PerformCacheUpdateAsync()
         {
-            // Сохраняем путь и callback в локальные переменные для защиты от изменения во время выполнения
             var projectPath = _currentProjectPath;
             var getModulesCallback = _getActiveModules;
 
@@ -113,20 +111,15 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
             try
             {
-                // Получаем активные модули из UI потока
                 var activeModules = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    return getModulesCallback();
-                });
+                    getModulesCallback());
 
-                // Проверяем что сервис не остановился во время выполнения
                 if (_getActiveModules == null)
                 {
                     _logger.LogDebug("Skipped: service stopped during execution");
                     return;
                 }
 
-                // Собираем CustomData и SessionData всех модулей
                 var (customData, sessionData) = _stateCollector.CollectAllData(activeModules);
 
                 if (customData.Count == 0)
@@ -135,21 +128,13 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     return;
                 }
 
-                // Проверяем есть ли реальные данные в модулях
                 bool hasAnyRealData = false;
-
                 foreach (var kvp in customData)
                 {
-                    if (kvp.Value == null)
-                        continue;
-
+                    if (kvp.Value == null) continue;
                     if (kvp.Value is string str)
                     {
-                        if (!string.IsNullOrWhiteSpace(str))
-                        {
-                            hasAnyRealData = true;
-                            break;
-                        }
+                        if (!string.IsNullOrWhiteSpace(str)) { hasAnyRealData = true; break; }
                     }
                     else
                     {
@@ -161,32 +146,22 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                 if (!hasAnyRealData)
                 {
                     _logger.LogDebug("No real data, skipping");
-
-                    // Удаляем устаревший кеш если он есть
                     if (_cacheService.HasCache(projectPath))
                     {
                         _cacheService.DeleteCache(projectPath);
                         _logger.LogDebug("Deleted outdated cache");
                     }
-
                     return;
                 }
 
-                // Читаем данные из ZIP БЕЗ блокировки файла
                 var savedProjectData = _cacheService.ReadProjectDataWithoutLock(projectPath);
 
                 if (savedProjectData != null)
                 {
-                    bool dataChanged = false;
+                    bool dataChanged = customData.Count != savedProjectData.Count;
 
-                    // Быстрая проверка: разное количество модулей = изменения есть
-                    if (customData.Count != savedProjectData.Count)
+                    if (!dataChanged)
                     {
-                        dataChanged = true;
-                    }
-                    else
-                    {
-                        // Сравниваем данные каждого модуля
                         foreach (var kvp in customData)
                         {
                             if (!savedProjectData.TryGetValue(kvp.Key, out var savedData))
@@ -195,14 +170,9 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                                 break;
                             }
 
-                            // Оптимизированное сравнение для строк
                             if (kvp.Value is string currentStr && savedData is string savedStr)
                             {
-                                if (currentStr != savedStr)
-                                {
-                                    dataChanged = true;
-                                    break;
-                                }
+                                if (currentStr != savedStr) { dataChanged = true; break; }
                             }
                             else if (!Equals(kvp.Value, savedData))
                             {
@@ -219,13 +189,14 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                     }
                 }
 
-                // Получаем ProjectId из проекта для ZIP кеша
-                // Читаем project.json БЕЗ блокировки с FileShare.ReadWrite
                 ProjectFile? project = null;
                 try
                 {
-                    using (var stream = new System.IO.FileStream(projectPath, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite))
-                    using (var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read))
+                    using (var stream = new System.IO.FileStream(
+                        projectPath, System.IO.FileMode.Open,
+                        System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite))
+                    using (var archive = new System.IO.Compression.ZipArchive(
+                        stream, System.IO.Compression.ZipArchiveMode.Read))
                     {
                         var entry = archive.GetEntry("project.json");
                         if (entry != null)
@@ -246,12 +217,12 @@ namespace Writersword.Src.Infrastructure.Services.Storage
 
                 if (project == null)
                 {
-                    _logger.LogError("Cannot get ProjectId");
+                    _logger.LogError("Cannot get ProjectId, aborting cache update");
                     return;
                 }
 
-                // Сохраняем кеш только если данные отличаются от ZIP
                 await _cacheService.SaveCacheAsync(projectPath, project.Id, customData, sessionData);
+
                 CacheSaved?.Invoke(this, EventArgs.Empty);
                 _logger.LogDebug("Cache updated: {Count} modules", customData.Count);
             }

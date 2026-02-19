@@ -36,7 +36,7 @@ namespace Writersword.Core.Models.Cache
 
         /// <summary>
         /// Метаданные модулей (хеши, размеры, даты изменений)
-        /// Ключ: ModuleId (например "TextEditor", "Timer")
+        /// Ключ: moduleType (например "TextEditor", "Timer")
         /// Значение: метаданные модуля
         /// </summary>
         public Dictionary<string, ModuleHashMetadata> Modules { get; set; } = new();

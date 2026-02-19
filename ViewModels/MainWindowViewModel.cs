@@ -5,7 +5,6 @@ using Avalonia.Xaml.Interactivity;
 using Dock.Model.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
-using HarfBuzzSharp;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
@@ -39,41 +38,16 @@ namespace Writersword.ViewModels
     /// <summary>
     /// ViewModel главного окна приложения
     /// Координирует компоненты UI и делегирует управление в WorkspaceController
-    /// 
-    /// АРХИТЕКТУРА:
-    /// - MenuBar: управление файлами (New, Open, Save)
-    /// - TabBar: управление вкладками документов
-    /// - WorkModeBar: переключение режимов работы
-    /// - ModulePanel: добавление/удаление модулей
-    /// - NotificationService: всплывающие уведомления
-    /// 
-    /// ИЗОЛЯЦИЯ:
-    /// - Вся логика управления WorkModes/Layout/Float окнами находится в WorkspaceController
-    /// - MainWindowViewModel только отображает UI активной вкладки
+    /// Не управляет DockLayout напрямую — только реагирует на событие WorkspaceChanged
     /// </summary>
     public class MainWindowViewModel : ViewModelBase
     {
         private readonly ILogger<MainWindowViewModel> _logger;
 
-        // ========================================
-        // КОМПОНЕНТЫ UI
-        // ========================================
-
-        /// <summary>Компонент главного меню</summary>
         public MenuBarViewModel MenuBar { get; }
-
-        /// <summary>Компонент панели вкладок</summary>
         public TabBarViewModel TabBar { get; }
-
-        /// <summary>Компонент панели режимов работы</summary>
         public WorkModeBarViewModel WorkModeBar { get; }
-
-        /// <summary>Компонент панели модулей</summary>
         public ModulePanelViewModel ModulePanel { get; }
-
-        // ========================================
-        // СЕРВИСЫ
-        // ========================================
 
         private readonly IProjectWorkflow _projectWorkflow;
         private readonly ITabCollection _tabCollection;
@@ -86,42 +60,23 @@ namespace Writersword.ViewModels
         private readonly IZipCacheService _cacheService;
         private readonly ICacheUpdateService _cacheUpdateService;
 
-        // ========================================
-        // СОСТОЯНИЕ
-        // ========================================
-
         private string _title = "Writersword";
         private IRootDock? _dockLayout;
 
-        /// <summary>Словарь для отслеживания флоат-модулей каждой вкладки (tabId -> List moduleId)</summary>
-        private readonly Dictionary<string, List<string>> _tabFloatModules = new();
-
-        /// <summary>Подписки на изменения в слотах модулей</summary>
-        private readonly CompositeDisposable _moduleSlotSubscriptions = new CompositeDisposable();
-
-        /// <summary>Список всех доступных типов модулей с их метаданными</summary>
         public ObservableCollection<ModuleMenuItem> AllModules { get; } = new();
-
-        /// <summary>Список всех доступных WorkMode типов с их метаданными</summary>
         public ObservableCollection<WorkModeMenuItem> AllWorkModes { get; } = new();
 
-        /// <summary>Заголовок окна</summary>
         public string Title
         {
             get => _title;
             set => this.RaiseAndSetIfChanged(ref _title, value);
         }
 
-        /// <summary>Layout для Dock системы</summary>
         public IRootDock? DockLayout
         {
             get => _dockLayout;
             set => this.RaiseAndSetIfChanged(ref _dockLayout, value);
         }
-
-        // ========================================
-        // КОМАНДЫ (для горячих клавиш)
-        // ========================================
 
         public ReactiveCommand<Unit, Unit> NewProjectCommand { get; }
         public ReactiveCommand<Unit, Unit> OpenProjectCommand { get; }
@@ -131,10 +86,6 @@ namespace Writersword.ViewModels
         public ReactiveCommand<Unit, Unit> CreateNewTabCommand { get; }
         public ReactiveCommand<string, Unit> ToggleWorkModeCommand { get; }
         public ReactiveCommand<string, Unit> ToggleModuleCommand { get; }
-
-        // ========================================
-        // КОНСТРУКТОР
-        // ========================================
 
         public MainWindowViewModel(
             MenuBarViewModel menuBar,
@@ -175,8 +126,8 @@ namespace Writersword.ViewModels
             WorkModeBar.SetWorkModesReorderedHandler(OnWorkModesReordered);
             ModulePanel.SetModuleHandlers(OnModuleAdded, OnModuleRemoved);
             ModulePanel.SetModuleCheckHandlers(
-                moduleId => FindModuleInstance(moduleId).module != null,
-                moduleId => FocusModule(moduleId)
+                moduleType => FindModuleInstance(moduleType).module != null,
+                moduleType => FocusModule(moduleType)
             );
 
             NewProjectCommand = MenuBar.NewProjectCommand;
@@ -196,7 +147,7 @@ namespace Writersword.ViewModels
             _tabCollection.ActiveTabChanged += (newTab, previousTab) =>
             {
                 if (newTab != null)
-                    OnTabActivated(newTab, previousTab);
+                    _ = OnTabActivatedAsync(newTab, previousTab);
 
                 MenuBar.UpdateHasActiveTab();
             };
@@ -209,101 +160,90 @@ namespace Writersword.ViewModels
             _logger.LogDebug("MainWindowViewModel initialized");
         }
 
-        // ========================================
-        // ОБРАБОТЧИКИ СОБЫТИЙ КОМПОНЕНТОВ
-        // ========================================
-
         /// <summary>
-        /// Обработчик активации вкладки (из TabBar)
-        /// Сохраняет предыдущую вкладку, деактивирует её workspace, активирует новую
+        /// Обработчик активации вкладки
+        /// Сохраняет и деактивирует предыдущую, инициализирует и активирует новую
+        /// DockLayout обновляется только здесь и в OnWorkspaceChanged
         /// </summary>
-        public async void OnTabActivated(DocumentTabViewModel tab, DocumentTabViewModel? previousTab)
+        public async Task OnTabActivatedAsync(DocumentTabViewModel tab, DocumentTabViewModel? previousTab)
         {
-            _logger.LogDebug("Tab activated: {Title}, previous: {PreviousTitle}",
-                tab.Title, previousTab?.Title ?? "none");
-
-            // 1. Сохраняем и деактивируем предыдущую вкладку
-            if (previousTab != null && previousTab != tab && previousTab.Workspace != null)
+            try
             {
-                _logger.LogDebug("Deactivating previous tab workspace: {Title}", previousTab.Title);
+                _logger.LogDebug("Tab activated: {Title}, previous: {PreviousTitle}",
+                    tab.Title, previousTab?.Title ?? "none");
 
-                // Сохраняем workspace.json
-                await previousTab.Workspace.SaveWorkspaceAsync();
-                _logger.LogDebug("Previous workspace saved");
-
-                // Деактивируем
-                previousTab.Workspace.Deactivate();
-                _logger.LogDebug("Previous tab deactivated successfully");
-            }
-
-            // 2. ЛЕНИВАЯ ИНИЦИАЛИЗАЦИЯ: если workspace не загружен - загружаем
-            if (!tab.IsLoaded)
-            {
-                _logger.LogDebug("Tab not loaded, initializing workspace: {Title}", tab.Title);
-
-                var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
-                bool success = await projectWorkflow.EnsureWorkspaceInitialized(tab);
-
-                if (!success)
+                if (previousTab != null && previousTab != tab && previousTab.Workspace != null)
                 {
-                    _logger.LogError("Failed to initialize workspace for: {Title}", tab.Title);
+                    _logger.LogDebug("Deactivating previous tab: {Title}", previousTab.Title);
+
+                    await previousTab.Workspace.SaveWorkspaceAsync();
+                    previousTab.Workspace.Deactivate();
+
+                    _logger.LogDebug("Previous tab deactivated");
+                }
+
+                if (!tab.IsLoaded)
+                {
+                    _logger.LogDebug("Initializing workspace for: {Title}", tab.Title);
+
+                    bool success = await _projectWorkflow.EnsureWorkspaceInitialized(tab);
+
+                    if (!success)
+                    {
+                        _logger.LogError("Failed to initialize workspace for: {Title}", tab.Title);
+                        return;
+                    }
+                }
+
+                DockLayout = null;
+                _logger.LogDebug("DockLayout cleared before activation");
+
+                if (tab.Workspace == null)
+                {
+                    _logger.LogWarning("Workspace still null after initialization: {Title}", tab.Title);
                     return;
                 }
 
-                _logger.LogDebug("Workspace initialized successfully: {Title}", tab.Title);
+                tab.EnsureWorkspaceActivated();
+
+                DockLayout = tab.Workspace.GetCurrentLayout();
+                _logger.LogDebug("DockLayout assigned for tab: {Title}", tab.Title);
+
+                WorkModeBar.LoadWorkModes(tab.Workspace.GetAvailableWorkModes());
+
+                var activeWorkMode = tab.Workspace.GetActiveWorkMode();
+                if (activeWorkMode != null)
+                    ModulePanel.LoadModulesForWorkMode(activeWorkMode);
+
+                UpdateWorkModeMenuItems();
+                UpdateModuleMenuItems();
+
+                tab.Workspace.WorkspaceChanged -= OnWorkspaceChanged;
+                tab.Workspace.WorkspaceChanged += OnWorkspaceChanged;
+
+                if (tab.Context.IsInCompareMode)
+                {
+                    _cacheUpdateService.Stop();
+                    tab.Workspace.RefreshModulesFromContext();
+                    _logger.LogDebug("Compare mode active — cache disabled, modules read-only");
+                }
+                else if (!string.IsNullOrEmpty(tab.FilePath))
+                {
+                    _cacheUpdateService.Stop();
+                    _cacheUpdateService.Start(tab.FilePath, () => tab.Workspace.GetActiveModules());
+                }
+
+                _logger.LogDebug("Tab UI updated: {Title}", tab.Title);
             }
-
-            // 3. Очищаем текущий layout
-            DockLayout = null!;
-            _logger.LogDebug("DockLayout cleared in MainWindow");
-
-            if (tab.Workspace == null)
+            catch (Exception ex)
             {
-                _logger.LogWarning("Workspace still null after initialization for tab: {Title}", tab.Title);
-                return;
+                _logger.LogError(ex, "Error activating tab: {Title}", tab.Title);
             }
-
-            // 4. Активируем workspace
-            _logger.LogDebug("Ensuring workspace is activated: {Title}", tab.Title);
-            tab.EnsureWorkspaceActivated();
-            _logger.LogDebug("Workspace activation complete: {Title}", tab.Title);
-
-            // 5. Получаем layout ПОСЛЕ активации
-            DockLayout = tab.Workspace.GetCurrentLayout();
-            _logger.LogDebug("DockLayout set to new tab");
-
-            var workModes = tab.Workspace.GetAvailableWorkModes();
-            WorkModeBar.LoadWorkModes(workModes);
-
-            var activeWorkMode = tab.Workspace.GetActiveWorkMode();
-            if (activeWorkMode != null)
-            {
-                ModulePanel.LoadModulesForWorkMode(activeWorkMode);
-            }
-
-            UpdateWorkModeMenuItems();
-            UpdateModuleMenuItems();
-
-            tab.Workspace.WorkspaceChanged -= OnWorkspaceChanged;
-            tab.Workspace.WorkspaceChanged += OnWorkspaceChanged;
-
-            if (tab.Context.IsInCompareMode)
-            {
-                _cacheUpdateService.Stop();
-                tab.Workspace.RefreshModulesFromContext();
-                _logger.LogDebug("Compare mode - cache disabled, modules read-only");
-            }
-            else if (!string.IsNullOrEmpty(tab.FilePath))
-            {
-                _cacheUpdateService.Stop();
-                _cacheUpdateService.Start(tab.FilePath, () => tab.Workspace.GetActiveModules());
-            }
-
-            _logger.LogDebug("Tab UI updated");
         }
 
         /// <summary>
         /// Обработчик изменений Workspace
+        /// Единственное место где DockLayout обновляется после начальной активации
         /// </summary>
         private void OnWorkspaceChanged(object? sender, EventArgs e)
         {
@@ -312,423 +252,230 @@ namespace Writersword.ViewModels
             var activeTab = TabBar.ActiveTab;
             if (activeTab?.Workspace == null) return;
 
+            var newLayout = activeTab.Workspace.GetCurrentLayout();
+
+            DockLayout = null;
+            DockLayout = newLayout;
+            _logger.LogDebug("DockLayout updated from WorkspaceChanged");
+
             var activeWorkMode = activeTab.Workspace.GetActiveWorkMode();
             if (activeWorkMode != null)
             {
                 ModulePanel.LoadModulesForWorkMode(activeWorkMode);
+                WorkModeBar.LoadWorkModes(activeTab.Workspace.GetAvailableWorkModes());
             }
 
+            UpdateWorkModeMenuItems();
             UpdateModuleMenuItems();
         }
 
         /// <summary>
-        /// Обработчик переключения WorkMode (из WorkModeBar)
-        /// Делегирует в WorkspaceController активной вкладки
+        /// Обработчик переключения WorkMode
+        /// Делегирует в WorkspaceController, DockLayout обновляется через WorkspaceChanged
         /// </summary>
         private async Task OnWorkModeSwitched(WorkMode newWorkMode)
         {
             _logger.LogDebug("WorkMode switch requested: {Title}", newWorkMode.Title);
 
             var activeTab = TabBar.ActiveTab;
-            if (activeTab?.Workspace == null)
-            {
-                _logger.LogDebug("No active tab with Workspace");
-                return;
-            }
+            if (activeTab?.Workspace == null) return;
 
             activeTab.Workspace.SwitchWorkMode(newWorkMode);
 
-            DockLayout = activeTab.Workspace.GetCurrentLayout();
             ModulePanel.LoadModulesForWorkMode(newWorkMode);
-
             UpdateWorkModeMenuItems();
             UpdateModuleMenuItems();
-
-            _logger.LogDebug("WorkMode switched in UI");
 
             await Task.CompletedTask;
         }
 
         /// <summary>
-        /// Обработчик сохранения порядка WorkModes после drag-and-drop (из WorkModeBar)
-        /// Делегирует в WorkspaceController активной вкладки для сохранения в workspace.json
+        /// Обработчик сохранения порядка WorkModes после drag-and-drop
         /// </summary>
         private void OnWorkModesReordered()
         {
             _logger.LogDebug("WorkModes reordered, saving workspace");
 
             var activeTab = TabBar.ActiveTab;
-            if (activeTab?.Workspace == null)
-            {
-                _logger.LogDebug("No active tab with Workspace");
-                return;
-            }
+            if (activeTab?.Workspace == null) return;
 
-            activeTab.Workspace.SaveWorkspaceAsync();
-
-            _logger.LogDebug("WorkModes order saved for: {Title}", activeTab.Title);
+            _ = activeTab.Workspace.SaveWorkspaceAsync();
         }
 
         /// <summary>
-        /// Обработчик добавления модуля (из ModulePanel)
-        /// Делегирует в WorkspaceController активной вкладки
+        /// Обработчик добавления модуля
         /// </summary>
-        private void OnModuleAdded(string moduleId)
+        private void OnModuleAdded(string moduleType)
         {
-            _logger.LogDebug("Module add requested: {ModuleId}", moduleId);
+            _logger.LogDebug("Module add requested: {moduleType}", moduleType);
 
             var activeTab = TabBar.ActiveTab;
-            if (activeTab?.Workspace == null)
-            {
-                _logger.LogDebug("No active tab with Workspace");
-                return;
-            }
+            if (activeTab?.Workspace == null) return;
 
-            activeTab.Workspace.AddModule(moduleId);
+            activeTab.Workspace.AddModule(moduleType);
 
-            DockLayout = activeTab.Workspace.GetCurrentLayout();
-
-            var moduleItem = ModulePanel.AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
+            var moduleItem = ModulePanel.AvailableModules.FirstOrDefault(m => m.moduleType == moduleType);
             if (moduleItem != null)
-            {
                 moduleItem.IsActive = true;
-            }
 
             UpdateModuleMenuItems();
-            FocusModule(moduleId);
-
-            _logger.LogDebug("Module added in UI");
+            FocusModule(moduleType);
         }
 
         /// <summary>
-        /// Обработчик удаления модуля (из ModulePanel)
-        /// Делегирует в WorkspaceController активной вкладки
+        /// Обработчик удаления модуля
         /// </summary>
-        private void OnModuleRemoved(string moduleId)
+        private void OnModuleRemoved(string moduleType)
         {
-            _logger.LogDebug("Module remove requested: {ModuleId}", moduleId);
+            _logger.LogDebug("Module remove requested: {moduleType}", moduleType);
 
             var activeTab = TabBar.ActiveTab;
-            if (activeTab?.Workspace == null)
-            {
-                _logger.LogDebug("No active tab with Workspace");
-                return;
-            }
+            if (activeTab?.Workspace == null) return;
 
-            activeTab.Workspace.RemoveModule(moduleId);
+            activeTab.Workspace.RemoveModule(moduleType);
 
-            var moduleItem = ModulePanel.AvailableModules.FirstOrDefault(m => m.ModuleId == moduleId);
+            var moduleItem = ModulePanel.AvailableModules.FirstOrDefault(m => m.moduleType == moduleType);
             if (moduleItem != null)
-            {
                 moduleItem.IsActive = false;
-                _logger.LogDebug("Set IsActive=false for {ModuleId}", moduleId);
-            }
 
             UpdateModuleMenuItems();
-
-            _logger.LogDebug("Module removed in UI");
         }
 
-        // ========================================
-        // ОБРАБОТЧИКИ СОБЫТИЙ СЕРВИСОВ
-        // ========================================
-
-        /// <summary>Обработчик открытия проекта</summary>
+        /// <summary>
+        /// Обработчик открытия проекта
+        /// </summary>
         private void OnProjectOpened(DocumentTabViewModel tab)
         {
             _logger.LogInformation("Project opened: {Title}", tab.Title);
         }
 
-        /// <summary>Обработчик сохранения проекта</summary>
+        /// <summary>
+        /// Обработчик сохранения проекта
+        /// </summary>
         private void OnProjectSaved(DocumentTabViewModel tab)
         {
             _logger.LogInformation("Project saved: {Title}", tab.Title);
         }
 
-        /// <summary>Обработчик закрытия проекта</summary>
+        /// <summary>
+        /// Обработчик закрытия проекта
+        /// SaveWorkspaceAsync вызывается асинхронно — без блокирующего .Wait() на UI потоке
+        /// </summary>
         private void OnProjectClosed(DocumentTabViewModel tab)
         {
             _logger.LogDebug("Project closed: {Title}", tab.Title);
 
             if (!string.IsNullOrEmpty(tab.FilePath) && tab.Workspace != null)
             {
-                _logger.LogDebug("Saving workspace before closing project");
-                tab.Workspace.SaveWorkspaceAsync().Wait();
-                _logger.LogDebug("Workspace saved for: {Title}", tab.Title);
+                _ = tab.Workspace.SaveWorkspaceAsync();
             }
-
-            _tabFloatModules.Remove(tab.Id);
 
             _cacheUpdateService.Stop();
         }
 
         /// <summary>
         /// Очистить UI когда не осталось вкладок
-        /// Вызывается из TabBarViewModel после удаления последней вкладки
         /// </summary>
         public void ClearUIWhenNoTabs()
         {
             _logger.LogDebug("ClearUIWhenNoTabs called");
 
-            _moduleSlotSubscriptions.Clear();
-
             _cacheUpdateService.Stop();
-            _logger.LogDebug("Caching stopped (no tabs)");
 
             DockLayout = null;
-
             WorkModeBar.LoadWorkModes(new List<WorkMode>());
-
             ModulePanel.Clear();
 
-            _tabFloatModules.Clear();
-
-            _logger.LogDebug("UI completely cleared");
+            _logger.LogDebug("UI cleared");
         }
 
-        // ========================================
-        // ИНИЦИАЛИЗАЦИЯ WORKMODES
-        // ========================================
-
         /// <summary>
-        /// Инициализировать WorkModes для вкладки
-        /// Теперь только обновляет UI, вся логика в WorkspaceController
+        /// Инициализировать WorkModes для вкладки (обновляет только UI)
         /// </summary>
         public void InitializeWorkModesForTab(DocumentTabViewModel tab)
         {
             if (tab.Workspace == null)
             {
-                _logger.LogWarning("Workspace not initialized");
+                _logger.LogWarning("Workspace not initialized for tab: {Title}", tab.Title);
                 return;
             }
-
-            _logger.LogDebug("Updating UI for tab: {Title}", tab.Title);
 
             AllWorkModes.Clear();
 
-            OnTabActivated(tab, null);
+            _ = OnTabActivatedAsync(tab, null);
         }
-
-        // ========================================
-        // РАБОТА С ФЛОАТ-ОКНАМИ И МОДУЛЯМИ
-        // ========================================
-
-        /// <summary>
-        /// Получить ВСЕ открытые модули текущей вкладки (дочерние + флоат)
-        /// </summary>
-        private List<IModule> GetAllOpenModules()
-        {
-            var activeTab = TabBar.ActiveTab;
-            if (activeTab?.Workspace == null)
-            {
-                return new List<IModule>();
-            }
-
-            var allModules = new List<IModule>();
-
-            allModules.AddRange(activeTab.Workspace.GetActiveModules());
-
-            if (DockLayout?.Windows != null)
-            {
-                foreach (var window in DockLayout.Windows)
-                {
-                    var floatModules = GetModulesFromFloatWindow(window);
-                    allModules.AddRange(floatModules);
-                }
-            }
-
-            _logger.LogDebug("Total open modules: {Count} (docked + float)", allModules.Count);
-            return allModules;
-        }
-
-        /// <summary>
-        /// Получить модули из флоат-окна
-        /// </summary>
-        private List<IModule> GetModulesFromFloatWindow(IDockWindow window)
-        {
-            var modules = new List<IModule>();
-
-            if (window.Layout is IDock floatLayout)
-            {
-                CollectModulesRecursive(floatLayout, modules);
-            }
-
-            return modules;
-        }
-
-        /// <summary>
-        /// Рекурсивно собрать модули из Dock структуры
-        /// </summary>
-        private void CollectModulesRecursive(IDockable dockable, List<IModule> result)
-        {
-            if (dockable is Document document && document.Content is Avalonia.Controls.Control control)
-            {
-                if (control.DataContext is object viewModel)
-                {
-                    var activeTab = TabBar.ActiveTab;
-                    if (activeTab != null)
-                    {
-                        var allModules = activeTab.ModuleContext.GetAllModules();
-                        var module = allModules.FirstOrDefault(m => m.ViewModel == viewModel);
-                        if (module != null)
-                        {
-                            result.Add(module);
-                        }
-                    }
-                }
-            }
-
-            if (dockable is IDock dock && dock.VisibleDockables != null)
-            {
-                foreach (var child in dock.VisibleDockables)
-                {
-                    CollectModulesRecursive(child, result);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Найти модуль по ModuleId (в дочерних или флоат-окнах)
-        /// Возвращает найденный модуль и флаг isFloat
-        /// </summary>
-        private (IModule? module, bool isFloat) FindModuleInstance(string moduleId)
-        {
-            _logger.LogDebug("FindModuleInstance called for: {ModuleId}", moduleId);
-
-            var activeTab = TabBar.ActiveTab;
-            if (activeTab?.Workspace == null)
-            {
-                _logger.LogDebug("No active tab, returning null");
-                return (null, false);
-            }
-
-            var allOpenModules = GetAllOpenModules();
-            _logger.LogDebug("AllOpenModules count: {Count}", allOpenModules.Count);
-
-            var foundModule = allOpenModules.FirstOrDefault(m => m.Metadata.ModuleId == moduleId);
-
-            if (foundModule == null)
-            {
-                _logger.LogDebug("Module {ModuleId} not found in open modules", moduleId);
-                return (null, false);
-            }
-
-            _logger.LogDebug("Found module {ModuleId}, checking if float...", moduleId);
-
-            if (DockLayout?.Windows != null)
-            {
-                foreach (var window in DockLayout.Windows)
-                {
-                    var floatModules = GetModulesFromFloatWindow(window);
-                    if (floatModules.Any(m => m.InstanceId == foundModule.InstanceId))
-                    {
-                        _logger.LogDebug("Module {ModuleId} is in float window", moduleId);
-                        return (foundModule, true);
-                    }
-                }
-            }
-
-            _logger.LogDebug("Module {ModuleId} is in dock", moduleId);
-            return (foundModule, false);
-        }
-
-        /// <summary>
-        /// Закрыть все флоат-окна текущей вкладки
-        /// </summary>
-        private void CloseAllFloatWindows()
-        {
-            if (DockLayout?.Windows == null || DockLayout.Windows.Count == 0)
-            {
-                return;
-            }
-
-            _logger.LogDebug("Closing {Count} float windows", DockLayout.Windows.Count);
-
-            foreach (var window in DockLayout.Windows.ToList())
-            {
-                if (window.Host is HostWindow hostWindow)
-                {
-                    hostWindow.Exit();
-                    _logger.LogDebug("Closed float window: {WindowId}", window.Id);
-                }
-            }
-
-            DockLayout.Windows.Clear();
-            _logger.LogDebug("All float windows closed");
-        }
-
-        /// <summary>
-        /// Восстановить флоат-окна для вкладки из workspace.json
-        /// </summary>
-        private void RestoreFloatWindows(DocumentTabViewModel tab)
-        {
-            if (DockLayout == null || tab.Workspace == null)
-            {
-                return;
-            }
-
-            var activeWorkMode = tab.Workspace.GetActiveWorkMode();
-            if (activeWorkMode == null)
-            {
-                return;
-            }
-
-            var floatingSlots = activeWorkMode.ModuleSlots.Where(s => s.IsFloating).ToList();
-
-            if (floatingSlots.Count == 0)
-            {
-                _logger.LogDebug("No floating modules to restore");
-                return;
-            }
-
-            _logger.LogDebug("Restoring {Count} float windows", floatingSlots.Count);
-
-            _dockFactory.CreateFloatingWindows(DockLayout, activeWorkMode);
-
-            _logger.LogDebug("Float windows restored");
-        }
-
-        // ========================================
-        // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
-        // ========================================
 
         /// <summary>
         /// Получить список активных модулей текущей вкладки
-        /// Делегирует в WorkspaceController
         /// </summary>
         public List<IModule> GetActiveModules()
         {
             var activeTab = TabBar.ActiveTab;
             if (activeTab?.Workspace == null)
-            {
-                _logger.LogDebug("No active tab with Workspace");
                 return new List<IModule>();
-            }
 
             return activeTab.Workspace.GetActiveModules();
         }
 
-        /// <summary>Получить проект для вкладки</summary>
-        private ProjectFile? GetProjectForTab(DocumentTabViewModel tab)
+        /// <summary>
+        /// Найти модуль по moduleType (dock + float)
+        /// Использует ProjectModuleContext — не сканирует View иерархию
+        /// </summary>
+        private (IModule? module, bool isFloat) FindModuleInstance(string moduleType)
         {
-            var filePath = tab.FilePath;
-            if (string.IsNullOrEmpty(filePath)) return null;
+            var activeTab = TabBar.ActiveTab;
+            if (activeTab?.Workspace == null)
+                return (null, false);
 
-            return _projectService.GetProjectByPath(filePath);
+            var openIds = activeTab.Workspace.GetOpenModuleIds();
+            if (!openIds.Contains(moduleType))
+                return (null, false);
+
+            var module = activeTab.ModuleContext.GetModule(moduleType);
+            if (module == null)
+                return (null, false);
+
+            bool isFloat = IsModuleInFloatWindow(moduleType);
+
+            return (module, isFloat);
         }
 
-        /// <summary>Инициализировать Dock фабрику</summary>
+        private bool IsModuleInFloatWindow(string moduleType)
+        {
+            if (DockLayout?.Windows == null) return false;
+
+            string documentId = $"Module_{moduleType}";
+
+            foreach (var window in DockLayout.Windows)
+            {
+                if (window.Layout is IDock floatLayout && FindDocumentRecursive(floatLayout, documentId))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Получить проект для вкладки
+        /// </summary>
+        private ProjectFile? GetProjectForTab(DocumentTabViewModel tab)
+        {
+            if (string.IsNullOrEmpty(tab.FilePath)) return null;
+            return _projectService.GetProjectByPath(tab.FilePath);
+        }
+
+        /// <summary>
+        /// Инициализировать Dock фабрику
+        /// </summary>
         private void InitializeDockFactory()
         {
             _dockFactory.Initialize();
             _logger.LogDebug("Dock factory initialized");
         }
 
-        // ========================================
-        // ГОРЯЧИЕ КЛАВИШИ
-        // ========================================
-
-        /// <summary>Регистрация горячих клавиш</summary>
+        /// <summary>
+        /// Регистрация горячих клавиш
+        /// </summary>
         private void RegisterHotKeys()
         {
             _hotKeyService.Register("file.new", new HotKey
@@ -774,13 +521,8 @@ namespace Writersword.ViewModels
             _logger.LogDebug("Hot keys registered");
         }
 
-        // ========================================
-        // ПУБЛИЧНЫЕ МЕТОДЫ (для App.axaml.cs)
-        // ========================================
-
         /// <summary>
         /// Загрузить проект при старте приложения
-        /// Вызывается из App.axaml.cs при восстановлении сессии
         /// </summary>
         public async void LoadProject(string filePath)
         {
@@ -789,7 +531,6 @@ namespace Writersword.ViewModels
             var existingTab = _tabCollection.FindByPath(filePath);
             if (existingTab != null)
             {
-                _logger.LogDebug("Project already open");
                 _tabCollection.ActiveTab = existingTab;
                 return;
             }
@@ -803,25 +544,332 @@ namespace Writersword.ViewModels
             }
         }
 
-        /// <summary>Элемент меню для модуля</summary>
+        /// <summary>
+        /// Инициализировать элементы меню для модулей и WorkMode
+        /// </summary>
+        private void InitializeMenuItems()
+        {
+            var moduleFactory = App.Services.GetRequiredService<ModuleFactory>();
+            var workModeRegistry = App.Services.GetRequiredService<Src.WorkModes.Common.WorkModeRegistry>();
+
+            foreach (var metadata in moduleFactory.GetAllModuleMetadata())
+            {
+                AllModules.Add(new ModuleMenuItem
+                {
+                    ModuleType = metadata.ModuleType,
+                    Name = metadata.DisplayName,
+                    IsEnabled = false,
+                    IsChecked = false
+                });
+            }
+
+            foreach (var workMode in workModeRegistry.GetAll())
+            {
+                AllWorkModes.Add(new WorkModeMenuItem
+                {
+                    WorkModeId = workMode.Id,
+                    Name = workMode.DisplayName,
+                    Icon = workMode.Icon,
+                    IsChecked = false
+                });
+            }
+
+            _logger.LogDebug("Menu items initialized: {ModulesCount} modules, {WorkModesCount} WorkModes",
+                AllModules.Count, AllWorkModes.Count);
+        }
+
+        /// <summary>
+        /// Открыть/переключить WorkMode через меню
+        /// </summary>
+        private void ToggleWorkMode(string workModeId)
+        {
+            _logger.LogDebug("Toggling WorkMode: {WorkModeId}", workModeId);
+
+            var activeTab = TabBar.ActiveTab;
+            if (activeTab?.Workspace == null) return;
+
+            var existingWorkMode = WorkModeBar.WorkModes.FirstOrDefault(wm => wm.WorkModeId == workModeId);
+
+            if (existingWorkMode != null)
+            {
+                WorkModeBar.SwitchWorkModeCommand.Execute(existingWorkMode).Subscribe();
+            }
+            else
+            {
+                var project = GetProjectForTab(activeTab);
+                if (project == null) return;
+
+                var workModeRegistry = App.Services.GetRequiredService<Writersword.Src.WorkModes.Common.WorkModeRegistry>();
+                var workModeInstance = workModeRegistry.GetWorkMode(workModeId);
+
+                if (workModeInstance == null)
+                {
+                    _logger.LogWarning("WorkMode not found in registry: {WorkModeId}", workModeId);
+                    return;
+                }
+
+                var workModeService = activeTab.Workspace.GetWorkModeService();
+                if (workModeService == null) return;
+
+                var newWorkMode = workModeService.AddWorkMode(
+                    workModeId,
+                    workModeInstance.DisplayName,
+                    workModeInstance.Icon
+                );
+
+                newWorkMode.IsCloseable = workModeInstance.IsCloseable;
+                newWorkMode.Order = workModeInstance.Order;
+
+                WorkModeBar.LoadWorkModes(workModeService.GetAllWorkModes());
+                WorkModeBar.SwitchWorkModeCommand.Execute(newWorkMode).Subscribe();
+
+                _logger.LogInformation("Created and switched to WorkMode: {Title}", newWorkMode.Title);
+            }
+
+            UpdateWorkModeMenuItems();
+        }
+
+        /// <summary>
+        /// Открыть модуль через меню
+        /// Если уже открыт — фокусирует, если нет — создаёт
+        /// </summary>
+        private void ToggleModule(string moduleType)
+        {
+            _logger.LogDebug("Toggle module: {moduleType}", moduleType);
+
+            var activeTab = TabBar.ActiveTab;
+            if (activeTab?.Workspace == null) return;
+
+            var (existingModule, _) = FindModuleInstance(moduleType);
+
+            if (existingModule != null)
+            {
+                FocusModule(moduleType);
+                return;
+            }
+
+            ModulePanel.OpenModule(moduleType);
+            FocusModule(moduleType);
+            UpdateModuleMenuItems();
+        }
+
+        /// <summary>
+        /// Найти и активировать вкладку модуля в UI (dock + float)
+        /// </summary>
+        private void FocusModule(string moduleType)
+        {
+            if (DockLayout == null) return;
+
+            string documentId = $"Module_{moduleType}";
+
+            if (FocusDocumentInFloatWindow(DockLayout, documentId))
+            {
+                _logger.LogDebug("Module focused in float window: {moduleType}", moduleType);
+                return;
+            }
+
+            if (FocusDocumentRecursive(DockLayout, documentId))
+            {
+                _logger.LogDebug("Module focused in dock: {moduleType}", moduleType);
+                return;
+            }
+
+            _logger.LogWarning("Module not found in UI: {moduleType}", moduleType);
+        }
+
+        /// <summary>
+        /// Попытаться найти и активировать документ во Float окне
+        /// </summary>
+        private bool FocusDocumentInFloatWindow(IRootDock rootDock, string documentId)
+        {
+            if (rootDock.Windows == null || rootDock.Windows.Count == 0)
+                return false;
+
+            foreach (var window in rootDock.Windows)
+            {
+                if (window.Layout is IDock floatLayout && FocusDocumentRecursive(floatLayout, documentId))
+                {
+                    if (window.Host is HostWindow hostWindow)
+                    {
+                        try
+                        {
+                            if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+                            {
+                                hostWindow.GetWindow()?.Activate();
+                            }
+                            else
+                            {
+                                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                                    hostWindow.GetWindow()?.Activate());
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error activating float window");
+                        }
+                    }
+
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Рекурсивно найти Document и установить его как ActiveDockable
+        /// </summary>
+        private bool FocusDocumentRecursive(IDockable dockable, string documentId)
+        {
+            if (dockable is IDock dock && dock.VisibleDockables != null)
+            {
+                var document = dock.VisibleDockables.FirstOrDefault(d => d.Id == documentId);
+                if (document != null)
+                {
+                    dock.ActiveDockable = document;
+                    return true;
+                }
+
+                foreach (var child in dock.VisibleDockables)
+                {
+                    if (FocusDocumentRecursive(child, documentId))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Рекурсивно найти Document (без фокусировки)
+        /// </summary>
+        private bool FindDocumentRecursive(IDockable dockable, string documentId)
+        {
+            if (dockable is IDock dock && dock.VisibleDockables != null)
+            {
+                if (dock.VisibleDockables.Any(d => d.Id == documentId))
+                    return true;
+
+                foreach (var child in dock.VisibleDockables)
+                {
+                    if (FindDocumentRecursive(child, documentId))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Обновить состояние элементов меню WorkMode
+        /// </summary>
+        public void UpdateWorkModeMenuItems()
+        {
+            var workModes = WorkModeBar.WorkModes;
+
+            foreach (var menuItem in AllWorkModes)
+                menuItem.IsChecked = workModes.Any(wm => wm.WorkModeId == menuItem.WorkModeId);
+
+            var sorted = AllWorkModes
+                .OrderBy(wm => workModes.FirstOrDefault(w => w.WorkModeId == wm.WorkModeId)?.Order ?? int.MaxValue)
+                .ToList();
+
+            AllWorkModes.Clear();
+            foreach (var item in sorted)
+                AllWorkModes.Add(item);
+        }
+
+        /// <summary>
+        /// Обновить состояние элементов меню модулей
+        /// </summary>
+        public void UpdateModuleMenuItems()
+        {
+            var activeTab = TabBar.ActiveTab;
+            if (activeTab?.Workspace == null)
+            {
+                foreach (var menuItem in AllModules)
+                {
+                    menuItem.IsEnabled = false;
+                    menuItem.IsChecked = false;
+                }
+                return;
+            }
+
+            var activeWorkMode = activeTab.Workspace.GetActiveWorkMode();
+            if (activeWorkMode == null)
+            {
+                foreach (var menuItem in AllModules)
+                {
+                    menuItem.IsEnabled = false;
+                    menuItem.IsChecked = false;
+                }
+                return;
+            }
+
+            ModulePanel.RefreshModuleStates();
+            UpdateModuleMenuItemsInternal();
+        }
+
+        /// <summary>
+        /// Внутренний метод обновления меню модулей
+        /// </summary>
+        private void UpdateModuleMenuItemsInternal()
+        {
+            var activeTab = TabBar.ActiveTab;
+            if (activeTab?.Workspace == null) return;
+
+            var activeWorkMode = activeTab.Workspace.GetActiveWorkMode();
+            if (activeWorkMode == null) return;
+
+            var openModuleIds = activeTab.Workspace.GetOpenModuleIds();
+
+            foreach (var menuItem in AllModules)
+            {
+                ModuleCategory category = activeWorkMode.ModuleCategories.TryGetValue(menuItem.ModuleType, out var explicitCategory)
+                    ? explicitCategory
+                    : ModuleCategory.Optional;
+
+                var slot = activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == menuItem.ModuleType);
+
+                switch (category)
+                {
+                    case ModuleCategory.Required:
+                        menuItem.IsEnabled = true;
+                        menuItem.IsChecked = true;
+                        break;
+
+                    case ModuleCategory.Optional:
+                    case ModuleCategory.Unwanted:
+                        menuItem.IsEnabled = true;
+                        menuItem.IsChecked = slot != null && openModuleIds.Contains(menuItem.ModuleType);
+                        break;
+
+                    case ModuleCategory.Forbidden:
+                    default:
+                        menuItem.IsEnabled = false;
+                        menuItem.IsChecked = false;
+                        break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Элемент меню для модуля
+        /// </summary>
         public class ModuleMenuItem : ReactiveObject
         {
             private bool _isEnabled;
             private bool _isChecked;
 
-            public string ModuleId { get; set; } = "";
+            public string ModuleType { get; set; } = "";
             public string Name { get; set; } = "";
-            public string Icon { get; set; } = "";
-            public bool IsUniversal { get; set; }
 
-            /// <summary>Доступен ли модуль для текущего WorkMode</summary>
             public bool IsEnabled
             {
                 get => _isEnabled;
                 set => this.RaiseAndSetIfChanged(ref _isEnabled, value);
             }
 
-            /// <summary>Включен ли модуль в текущем WorkMode</summary>
             public bool IsChecked
             {
                 get => _isChecked;
@@ -829,7 +877,9 @@ namespace Writersword.ViewModels
             }
         }
 
-        /// <summary>Элемент меню для WorkMode</summary>
+        /// <summary>
+        /// Элемент меню для WorkMode
+        /// </summary>
         public class WorkModeMenuItem : ReactiveObject
         {
             private bool _isChecked;
@@ -843,431 +893,6 @@ namespace Writersword.ViewModels
                 get => _isChecked;
                 set => this.RaiseAndSetIfChanged(ref _isChecked, value);
             }
-        }
-
-        /// <summary>
-        /// Инициализировать элементы меню для модулей и WorkMode
-        /// </summary>
-        private void InitializeMenuItems()
-        {
-            var moduleFactory = App.Services.GetRequiredService<ModuleFactory>();
-            var workModeRegistry = App.Services.GetRequiredService<Src.WorkModes.Common.WorkModeRegistry>();
-
-            var allModuleMetadata = moduleFactory.GetAllModuleMetadata();
-
-            foreach (var metadata in allModuleMetadata)
-            {
-                AllModules.Add(new ModuleMenuItem
-                {
-                    ModuleId = metadata.ModuleId,
-                    Name = metadata.DisplayName,
-                    IsUniversal = metadata.IsUniversal,
-                    IsEnabled = false,
-                    IsChecked = false
-                });
-            }
-
-            _logger.LogDebug("Loaded {Count} modules from metadata", AllModules.Count);
-
-            var allWorkModes = workModeRegistry.GetAll();
-
-            foreach (var workMode in allWorkModes)
-            {
-                AllWorkModes.Add(new WorkModeMenuItem
-                {
-                    WorkModeId = workMode.Id,
-                    Name = workMode.DisplayName,
-                    Icon = workMode.Icon,
-                    IsChecked = false
-                });
-            }
-
-            _logger.LogDebug("Loaded {Count} WorkModes from registry", AllWorkModes.Count);
-        }
-
-        /// <summary>Открыть/переключить WorkMode</summary>
-        private void ToggleWorkMode(string workModeId)
-        {
-            _logger.LogDebug("Toggling WorkMode: {WorkModeId}", workModeId);
-
-            var activeTab = TabBar.ActiveTab;
-            if (activeTab?.Workspace == null)
-            {
-                _logger.LogDebug("No active tab with Workspace");
-                return;
-            }
-
-            var workModeBar = WorkModeBar;
-            var existingWorkMode = workModeBar.WorkModes.FirstOrDefault(wm => wm.WorkModeId == workModeId);
-
-            if (existingWorkMode != null)
-            {
-                _logger.LogDebug("WorkMode exists, switching to it");
-                workModeBar.SwitchWorkModeCommand.Execute(existingWorkMode).Subscribe();
-            }
-            else
-            {
-                _logger.LogDebug("WorkMode not found, creating new");
-
-                var project = GetProjectForTab(activeTab);
-                if (project == null)
-                {
-                    _logger.LogDebug("No active project");
-                    return;
-                }
-
-                var workModeRegistry = App.Services.GetRequiredService<Writersword.Src.WorkModes.Common.WorkModeRegistry>();
-                var workModeInstance = workModeRegistry.GetWorkMode(workModeId);
-
-                if (workModeInstance == null)
-                {
-                    _logger.LogWarning("WorkMode not found in registry: {WorkModeId}", workModeId);
-                    return;
-                }
-
-                var workModeService = activeTab.Workspace.GetWorkModeService();
-                if (workModeService == null)
-                {
-                    _logger.LogWarning("No WorkModeService available");
-                    return;
-                }
-
-                var newWorkMode = workModeService.AddWorkMode(
-                    workModeId,
-                    workModeInstance.DisplayName,
-                    workModeInstance.Icon
-                );
-
-                newWorkMode.IsCloseable = workModeInstance.IsCloseable;
-                newWorkMode.Order = workModeInstance.Order;
-
-                WorkModeBar.LoadWorkModes(workModeService.GetAllWorkModes());
-                workModeBar.SwitchWorkModeCommand.Execute(newWorkMode).Subscribe();
-
-                _logger.LogInformation("Created and switched to WorkMode: {Title}", newWorkMode.Title);
-            }
-
-            UpdateWorkModeMenuItems();
-        }
-
-        /// <summary>
-        /// Открыть модуль через меню
-        /// Если модуль уже открыт - фокусирует его окно
-        /// Если не открыт - создаёт новый
-        /// </summary>
-        private void ToggleModule(string moduleId)
-        {
-            _logger.LogDebug("Menu clicked for module: {ModuleId}", moduleId);
-
-            var activeTab = TabBar.ActiveTab;
-            if (activeTab?.Workspace == null)
-            {
-                _logger.LogDebug("No active tab with Workspace");
-                return;
-            }
-
-            var (existingModule, isFloat) = FindModuleInstance(moduleId);
-
-            if (existingModule != null)
-            {
-                _logger.LogDebug("Module already open (float={IsFloat}), focusing", isFloat);
-                FocusModule(moduleId);
-                return;
-            }
-
-            _logger.LogDebug("Module not open, creating new");
-            ModulePanel.OpenModule(moduleId);
-            FocusModule(moduleId);
-            UpdateModuleMenuItems();
-        }
-
-        /// <summary>
-        /// Найти и активировать вкладку модуля в UI
-        /// Поддерживает поиск как в Dock панелях, так и в Float окнах
-        /// </summary>
-        private void FocusModule(string moduleId)
-        {
-            if (DockLayout == null) return;
-
-            string documentId = $"Module_{moduleId}";
-
-            if (FocusDocumentInFloatWindow(DockLayout, documentId))
-            {
-                _logger.LogDebug("Module found and focused in float window: {ModuleId}", moduleId);
-                return;
-            }
-
-            if (FocusDocumentRecursive(DockLayout, documentId))
-            {
-                _logger.LogDebug("Module found and focused in dock: {ModuleId}", moduleId);
-                return;
-            }
-
-            _logger.LogWarning("Module not found in UI: {ModuleId}", moduleId);
-        }
-
-        /// <summary>
-        /// Попытаться найти и активировать документ во Float окне
-        /// </summary>
-        private bool FocusDocumentInFloatWindow(IRootDock rootDock, string documentId)
-        {
-            if (rootDock.Windows == null || rootDock.Windows.Count == 0)
-                return false;
-
-            foreach (var window in rootDock.Windows)
-            {
-                if (window.Layout is IDock floatLayout)
-                {
-                    if (FocusDocumentRecursive(floatLayout, documentId))
-                    {
-                        if (window.Host is HostWindow hostWindow)
-                        {
-                            try
-                            {
-                                if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
-                                {
-                                    if (hostWindow.GetWindow() is FloatingWindow floatWindow)
-                                    {
-                                        floatWindow.Activate();
-                                    }
-                                }
-                                else
-                                {
-                                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                                    {
-                                        if (hostWindow.GetWindow() is FloatingWindow floatWindow)
-                                        {
-                                            floatWindow.Activate();
-                                        }
-                                    });
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Error activating float window");
-                            }
-                        }
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Рекурсивно найти и активировать Document
-        /// </summary>
-        private bool FocusDocumentRecursive(IDockable dockable, string documentId)
-        {
-            if (dockable is IDock dock && dock.VisibleDockables != null)
-            {
-                var document = dock.VisibleDockables.FirstOrDefault(d => d.Id == documentId);
-                if (document != null)
-                {
-                    _logger.LogDebug("Found and focusing document: {DocumentId}", documentId);
-                    dock.ActiveDockable = document;
-                    return true;
-                }
-
-                foreach (var child in dock.VisibleDockables)
-                {
-                    if (FocusDocumentRecursive(child, documentId))
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        /// <summary>Обновить состояние элементов меню WorkMode</summary>
-        private void UpdateWorkModeMenuItems()
-        {
-            var workModes = WorkModeBar.WorkModes;
-
-            foreach (var menuItem in AllWorkModes)
-            {
-                menuItem.IsChecked = workModes.Any(wm => wm.WorkModeId == menuItem.WorkModeId);
-            }
-
-            // Сортируем WorkModes по Order
-            var sorted = AllWorkModes
-                .OrderBy(wm => workModes.FirstOrDefault(w => w.WorkModeId == wm.WorkModeId)?.Order ?? int.MaxValue)
-                .ToList();
-
-            AllWorkModes.Clear();
-            foreach (var item in sorted)
-            {
-                AllWorkModes.Add(item);
-            }
-        }
-
-        /// <summary>
-        /// Обновить состояние элементов меню модулей
-        /// Подписывается на изменения IsCurrentlyOpen в слотах для автоматического обновления
-        /// </summary>
-        private void UpdateModuleMenuItems()
-        {
-            var activeTab = TabBar.ActiveTab;
-            if (activeTab?.Workspace == null)
-            {
-                _logger.LogDebug("No active WorkMode - all module menu items disabled");
-                foreach (var menuItem in AllModules)
-                {
-                    menuItem.IsEnabled = false;
-                    menuItem.IsChecked = false;
-                }
-                return;
-            }
-
-            var activeWorkMode = activeTab.Workspace.GetActiveWorkMode();
-            if (activeWorkMode == null)
-            {
-                _logger.LogDebug("No active WorkMode - all module menu items disabled");
-                foreach (var menuItem in AllModules)
-                {
-                    menuItem.IsEnabled = false;
-                    menuItem.IsChecked = false;
-                }
-                return;
-            }
-
-            _logger.LogDebug("Updating module menu items for WorkMode: {Title}", activeWorkMode.Title);
-
-            ModulePanel.RefreshModuleStates();
-
-            _moduleSlotSubscriptions.Clear();
-
-            foreach (var slot in activeWorkMode.ModuleSlots)
-            {
-
-                var subscription = slot.WhenAnyValue(x => x.IsCurrentlyOpen)
-                    .Subscribe(_ =>
-                    {
-                        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                        {
-                            UpdateModuleMenuItemsInternal();
-                        });
-                    });
-
-                _moduleSlotSubscriptions.Add(subscription);
-            }
-
-            UpdateModuleMenuItemsInternal();
-        }
-
-        /// <summary>
-        /// Внутренний метод обновления меню модулей
-        /// Читает состояние напрямую из слотов (single source of truth)
-        /// Учитывает категории модулей (Required, Optional, Unwanted, Forbidden)
-        /// </summary>
-        private void UpdateModuleMenuItemsInternal()
-        {
-            _logger.LogDebug("AllModules count: {Count}", AllModules.Count);
-            _logger.LogDebug("ModulePanel.AvailableModules count: {Count}", ModulePanel.AvailableModules.Count);
-
-            var activeTab = TabBar.ActiveTab;
-            if (activeTab?.Workspace == null) return;
-
-            var activeWorkMode = activeTab.Workspace.GetActiveWorkMode();
-            if (activeWorkMode == null) return;
-
-            _logger.LogDebug("UpdateModuleMenuItemsInternal for WorkMode: {Title}", activeWorkMode.Title);
-
-            foreach (var menuItem in AllModules)
-            {
-                // Определяем категорию модуля
-                ModuleCategory category;
-
-                if (activeWorkMode.ModuleCategories.TryGetValue(menuItem.ModuleId, out var explicitCategory))
-                {
-                    category = explicitCategory;
-                }
-                else
-                {
-                    // Если не указан явно - по умолчанию Optional
-                    category = ModuleCategory.Optional;
-                }
-
-                // Ищем слот модуля
-                var slot = activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == menuItem.ModuleId);
-
-                switch (category)
-                {
-                    case ModuleCategory.Required:
-                        // Обязательный - всегда включён, нельзя выключить
-                        menuItem.IsEnabled = true;
-                        menuItem.IsChecked = true;
-                        _logger.LogDebug("Module {ModuleId}: Required (always enabled)", menuItem.ModuleId);
-                        break;
-
-                    case ModuleCategory.Optional:
-                        // Обычный - можно включить/выключить
-                        menuItem.IsEnabled = true;
-                        menuItem.IsChecked = slot != null && slot.IsCurrentlyOpen;
-                        _logger.LogDebug("Module {ModuleId}: Optional, Checked={IsChecked}",
-                            menuItem.ModuleId, menuItem.IsChecked);
-                        break;
-
-                    case ModuleCategory.Unwanted:
-                        // Не рекомендуется - можно включить, но показываем предупреждение
-                        menuItem.IsEnabled = true;
-                        menuItem.IsChecked = slot != null && slot.IsCurrentlyOpen;
-                        _logger.LogDebug("Module {ModuleId}: Unwanted, Checked={IsChecked}",
-                            menuItem.ModuleId, menuItem.IsChecked);
-                        break;
-
-                    case ModuleCategory.Forbidden:
-                        // Запрещён - заблокирован
-                        menuItem.IsEnabled = false;
-                        menuItem.IsChecked = false;
-                        _logger.LogDebug("Module {ModuleId}: Forbidden (disabled)", menuItem.ModuleId);
-                        break;
-
-                    default:
-                        // На всякий случай
-                        menuItem.IsEnabled = false;
-                        menuItem.IsChecked = false;
-                        break;
-                }
-            }
-        }
-
-        /// <summary>
-        /// Обработчик закрытия модуля пользователем через крестик
-        /// Делегирует в WorkspaceController активной вкладки
-        /// </summary>
-        public void HandleModuleClosedInDock(string moduleId)
-        {
-            if (string.IsNullOrWhiteSpace(moduleId))
-            {
-                _logger.LogWarning("HandleModuleClosedInDock: moduleId is null or empty, ignoring");
-                return;
-            }
-
-            if (moduleId.Contains("IDockWindow") ||
-                moduleId.Contains("Float_") ||
-                moduleId.StartsWith("Module_") ||
-                moduleId.Contains("Splitter"))
-            {
-                _logger.LogWarning("HandleModuleClosedInDock: Invalid moduleId '{ModuleId}', ignoring", moduleId);
-                return;
-            }
-
-            _logger.LogDebug("Module closed in dock: {ModuleId}", moduleId);
-
-            var activeTab = TabBar.ActiveTab;
-            if (activeTab?.Workspace == null)
-            {
-                _logger.LogDebug("No active tab with Workspace");
-                return;
-            }
-
-            activeTab.Workspace.HandleModuleClosedInDock(moduleId);
-
-            UpdateModuleMenuItems();
         }
     }
 }

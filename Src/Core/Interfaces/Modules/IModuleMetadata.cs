@@ -7,15 +7,12 @@
     public interface IModuleMetadata
     {
         /// <summary>Уникальный идентификатор модуля (например: "TextEditor", "Timer")</summary>
-        string ModuleId { get; }
+        string ModuleType { get; }
 
         /// <summary>Отображаемое название модуля</summary>
         string DisplayName { get; }
 
         /// <summary>Описание модуля</summary>
         string Description { get; }
-
-        /// <summary>Универсальный ли модуль (доступен во всех WorkModes)</summary>
-        bool IsUniversal { get; }
     }
 }

@@ -13,43 +13,37 @@
         WindowState="Maximized"
         Background="#1E1E1E"
         RequestedThemeVariant="Dark">
-
 	<DockPanel>
-
-		<!-- ===== МЕНЮ (КОМПОНЕНТ) ===== -->
+		<!-- Меню -->
 		<components:MenuBarView DockPanel.Dock="Top"
-		                        DataContext="{Binding MenuBar}"/>
-
-		<!-- ===== ПАНЕЛЬ ВКЛАДОК (КОМПОНЕНТ) ===== -->
+                                DataContext="{Binding MenuBar}"/>
+		<!-- Панель вкладок -->
 		<components:TabBarView DockPanel.Dock="Top"
-		                       DataContext="{Binding TabBar}"/>
-
-		<!-- ===== ПАНЕЛЬ WORKMODES (КОМПОНЕНТ) ===== -->
+                               DataContext="{Binding TabBar}"/>
+		<!-- Панель WorkModes -->
 		<components:WorkModeBarView DockPanel.Dock="Top"
-		                            DataContext="{Binding WorkModeBar}"/>
-
-		<!-- ===== БАННЕР ВОССТАНОВЛЕНИЯ ===== -->
+                                    DataContext="{Binding WorkModeBar}"/>
+		<!-- Баннер восстановления -->
 		<ContentControl DockPanel.Dock="Top"
-		                Content="{Binding TabBar.ActiveTab.RecoveryBanner, FallbackValue={x:Null}}"
-		                IsVisible="{Binding TabBar.ActiveTab.HasRecoveryBanner}">
+                        Content="{Binding TabBar.ActiveTab.RecoveryBanner, FallbackValue={x:Null}}"
+                        IsVisible="{Binding TabBar.ActiveTab.HasRecoveryBanner}">
 			<ContentControl.ContentTemplate>
 				<DataTemplate>
 					<components:RecoveryBanner/>
 				</DataTemplate>
 			</ContentControl.ContentTemplate>
 		</ContentControl>
-
-		<!-- ===== DOCK КОНТРОЛ (ГЛАВНАЯ ОБЛАСТЬ С МОДУЛЯМИ) ===== -->
-		<dock:DockControl Layout="{Binding DockLayout}"
-		                  Background="#252526"/>
-
-		<!-- Контейнер для уведомлений -->
-		<Panel Name="NotificationContainer"
-		       ZIndex="1000"
-		       HorizontalAlignment="Stretch"
-		       VerticalAlignment="Stretch"
-		       IsHitTestVisible="False"/>
-
+		
+		<!-- Главная область: DockControl заполняет всё оставшееся пространство -->
+		<!-- NotificationContainer поверх как прозрачный overlay -->
+		<Panel>
+			<dock:DockControl Layout="{Binding DockLayout}"
+                              Background="#252526"/>
+			<Panel Name="NotificationContainer"
+                   ZIndex="1000"
+                   HorizontalAlignment="Stretch"
+                   VerticalAlignment="Stretch"
+                   IsHitTestVisible="False"/>
+		</Panel>
 	</DockPanel>
-
 </Window>

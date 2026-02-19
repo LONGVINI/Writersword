@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
+using Writersword.Core.Models.Settings;
 using Writersword.Resources.Localization;
 using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.Services.Storage;
@@ -328,15 +329,15 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                 foreach (var module in activeModules)
                 {
-                    if (project.ModulesData.TryGetValue(module.InstanceId, out var data))
+                    if (project.ModulesData.TryGetValue(module.moduleType, out var data))
                     {
                         module.SetCustomData(data);
-                        _logger.LogDebug("Reloaded module: {ModuleId}", module.ModuleId);
+                        _logger.LogDebug("Reloaded module: {moduleType}", module.moduleType);
                     }
                     else
                     {
                         module.SetCustomData(null);
-                        _logger.LogDebug("Cleared module (no data): {ModuleId}", module.ModuleId);
+                        _logger.LogDebug("Cleared module (no data): {moduleType}", module.moduleType);
                     }
                 }
 
@@ -1025,14 +1026,16 @@ namespace Writersword.Src.Infrastructure.Services.Project
             var project = tab.GetProject();
 
             var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
-            var workModes = workModeConfigService.LoadConfiguration(project.Type, storage);
+            var workModes = workModeConfigService.LoadDefaultConfiguration(project.Type);
             project.WorkModes = workModes;
 
             var autoSaveService = App.Services.GetRequiredService<IWorkspaceAutoSaveService>();
             _autoSaveServices[filePath] = autoSaveService;
 
-            var dockFactory = App.Services.GetRequiredService<DockFactory>();
             tab.InitializeWorkspace(workModes);
+
+            var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
+            workspaceConfigService.SaveToZip(storage, new WorkspaceLocalConfig { WorkModes = workModes });
 
             _logger.LogDebug("Storage registered for: {FilePath}", filePath);
         }

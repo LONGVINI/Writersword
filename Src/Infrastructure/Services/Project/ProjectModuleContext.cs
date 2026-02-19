@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Writersword.Core.Interfaces.Modules;
-using Writersword.Infrastructure.Services.Modules;
 using Writersword.Modules.Common;
 
 namespace Writersword.Core.Services
@@ -13,9 +12,9 @@ namespace Writersword.Core.Services
     /// Изолированный контейнер модулей для одного проекта
     /// Каждый проект имеет свой собственный экземпляр ProjectModuleContext
     /// При закрытии проекта все его модули автоматически уничтожаются
-    /// - Модули хранятся по InstanceId (GUID), а не по ModuleId
-    /// - Один проект может иметь несколько экземпляров одного типа модуля (например 2 TextEditor)
-    /// - Модули изолированы - проект А не видит модули проекта Б
+    /// - Модули хранятся по moduleType, так как один тип модуля может быть
+    ///   только один раз в рамках одного проекта
+    /// - Модули изолированы — проект А не видит модули проекта Б
     /// </summary>
     public class ProjectModuleContext : IDisposable
     {
@@ -27,7 +26,7 @@ namespace Writersword.Core.Services
         /// <summary>
         /// Конструктор контейнера модулей проекта
         /// </summary>
-        /// <param name="projectId">ID проекта (GUID)</param>
+        /// <param name="projectId">ID проекта (GUID) — используется для верификации данных при загрузке</param>
         /// <param name="factory">Фабрика для создания модулей</param>
         public ProjectModuleContext(string projectId, ModuleFactory factory)
         {
@@ -41,52 +40,53 @@ namespace Writersword.Core.Services
 
         /// <summary>
         /// Создать и зарегистрировать модуль
-        /// Модуль создается через фабрику и добавляется в контейнер проекта
+        /// Если модуль такого типа уже существует — возвращает существующий
+        /// Два модуля одного типа в одном проекте недопустимы
         /// </summary>
-        /// <param name="moduleId">Тип модуля (TextEditor, Notes, Timer...)</param>
-        /// <param name="instanceId">ID экземпляра (GUID). Если null - генерируется новый</param>
-        /// <returns>Созданный модуль или null если не удалось создать</returns>
-        public IModule? CreateModule(string moduleId, string? instanceId = null)
+        /// <param name="moduleType">Тип модуля (TextEditor, Notes, Timer...)</param>
+        /// <returns>Созданный или существующий модуль, null если не удалось создать</returns>
+        public IModule? CreateModule(string moduleType)
         {
-            var module = _factory.Create(moduleId, instanceId);
+            if (_modules.TryGetValue(moduleType, out var existing))
+            {
+                _logger.LogDebug("Module already exists, returning existing: {moduleType}", moduleType);
+                return existing;
+            }
+
+            var module = _factory.Create(moduleType);
 
             if (module != null)
             {
-                // Регистрируем модуль по его InstanceId (GUID)
-                _modules[module.InstanceId] = module;
+                _modules[moduleType] = module;
 
-                // Инициализируем модуль
                 module.Initialize();
 
-                // Подписываемся на события
                 module.RequestClose += OnModuleRequestClose;
                 module.RequestDetach += OnModuleRequestDetach;
 
-                _logger.LogDebug("Module created: {ModuleId} (Instance: {InstanceId})", moduleId, module.InstanceId);
+                _logger.LogDebug("Module created: {moduleType}", moduleType);
             }
             else
             {
-                _logger.LogError("Failed to create module: {ModuleId}", moduleId);
+                _logger.LogError("Failed to create module: {moduleType}", moduleType);
             }
 
             return module;
         }
 
         /// <summary>
-        /// Получить модуль по InstanceId (GUID)
+        /// Получить модуль по moduleType
         /// </summary>
-        /// <param name="instanceId">Уникальный ID экземпляра модуля</param>
+        /// <param name="moduleType">Тип модуля</param>
         /// <returns>Модуль или null если не найден</returns>
-        public IModule? GetModule(string instanceId)
+        public IModule? GetModule(string moduleType)
         {
-            return _modules.TryGetValue(instanceId, out var module) ? module : null;
+            return _modules.TryGetValue(moduleType, out var module) ? module : null;
         }
 
         /// <summary>
         /// Получить все модули этого проекта
-        /// Возвращает список всех зарегистрированных модулей
         /// </summary>
-        /// <returns>Список всех модулей проекта</returns>
         public List<IModule> GetAllModules()
         {
             return _modules.Values.ToList();
@@ -96,70 +96,66 @@ namespace Writersword.Core.Services
         /// Удалить модуль из контейнера
         /// Отписывается от событий и вызывает Dispose
         /// </summary>
-        /// <param name="instanceId">ID экземпляра модуля для удаления</param>
-        public void RemoveModule(string instanceId)
+        /// <param name="moduleType">Тип модуля для удаления</param>
+        public void RemoveModule(string moduleType)
         {
-            if (_modules.TryGetValue(instanceId, out var module))
+            if (_modules.TryGetValue(moduleType, out var module))
             {
-                // Отписываемся от событий
                 module.RequestClose -= OnModuleRequestClose;
                 module.RequestDetach -= OnModuleRequestDetach;
 
-                // Уничтожаем модуль
                 module.Dispose();
 
-                // Удаляем из контейнера
-                _modules.Remove(instanceId);
+                _modules.Remove(moduleType);
 
-                _logger.LogDebug("Module removed: {InstanceId}", instanceId);
+                _logger.LogDebug("Module removed: {moduleType}", moduleType);
             }
         }
 
         /// <summary>
         /// Уничтожить ВСЕ модули проекта
         /// Вызывается при закрытии проекта
-        /// Гарантирует полную очистку ресурсов
         /// </summary>
         public void Dispose()
         {
             _logger.LogDebug("Disposing all modules for project: {ProjectId}", _projectId);
 
-            // Копируем список модулей (чтобы избежать изменения коллекции во время итерации)
             var modulesToDispose = _modules.Values.ToList();
 
             foreach (var module in modulesToDispose)
             {
                 try
                 {
-                    // Отписываемся от событий
                     module.RequestClose -= OnModuleRequestClose;
                     module.RequestDetach -= OnModuleRequestDetach;
 
-                    // Уничтожаем модуль
                     module.Dispose();
 
-                    _logger.LogDebug("Disposed module: {ModuleId} (Instance: {InstanceId})", module.ModuleId, module.InstanceId);
+                    _logger.LogDebug("Disposed module: {moduleType}", module.moduleType);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error disposing module {InstanceId}", module.InstanceId);
+                    _logger.LogError(ex, "Error disposing module {moduleType}", module.moduleType);
                 }
             }
 
-            // Очищаем контейнер
             _modules.Clear();
 
             _logger.LogDebug("All modules disposed for project: {ProjectId}", _projectId);
         }
 
         /// <summary>
+        /// Количество модулей в контейнере (для диагностики)
+        /// </summary>
+        public int Count => _modules.Count;
+
+        /// <summary>
         /// Обработчик запроса на закрытие модуля
-        /// Вызывается когда модуль сам хочет закрыться (например кнопка Close)
         /// </summary>
         private void OnModuleRequestClose(IModule module)
         {
-            _logger.LogDebug("Module requests close: {InstanceId}", module.InstanceId);
-            RemoveModule(module.InstanceId);
+            _logger.LogDebug("Module requests close: {moduleType}", module.moduleType);
+            RemoveModule(module.moduleType);
         }
 
         /// <summary>
@@ -167,14 +163,7 @@ namespace Writersword.Core.Services
         /// </summary>
         private void OnModuleRequestDetach(IModule module)
         {
-            _logger.LogDebug("Module requests detach: {InstanceId}", module.InstanceId);
-            // Обработка открепления (уже реализована в DockFactory)
+            _logger.LogDebug("Module requests detach: {moduleType}", module.moduleType);
         }
-
-        /// <summary>
-        /// Получить количество модулей в контейнере
-        /// Используется для диагностики
-        /// </summary>
-        public int Count => _modules.Count;
     }
 }

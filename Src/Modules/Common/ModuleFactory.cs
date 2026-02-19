@@ -8,14 +8,13 @@ using Writersword.Core.Interfaces.Modules;
 namespace Writersword.Modules.Common
 {
     /// <summary>
-    /// Фабрика для создания экземпляров модулей
-    /// Также предоставляет метаданные всех зарегистрированных типов модулей
-    /// Метаданные кешируются при первом обращении
+    /// Фабрика для создания экземпляров модулей и получения их метаданных.
+    /// Метаданные кешируются и сбрасываются при перерегистрации.
     /// </summary>
     public class ModuleFactory
     {
         private readonly ILogger<ModuleFactory> _logger;
-        private readonly Dictionary<string, Func<string?, IModule>> _moduleCreators = new();
+        private readonly Dictionary<string, Func<IModule>> _moduleCreators = new();
         private List<IModuleMetadata>? _cachedMetadata;
 
         public ModuleFactory()
@@ -24,47 +23,38 @@ namespace Writersword.Modules.Common
         }
 
         /// <summary>Зарегистрировать создатель модуля</summary>
-        public void Register(string moduleId, Func<string?, IModule> creator)
+        public void Register(string moduleType, Func<IModule> creator)
         {
-            _moduleCreators[moduleId] = creator;
-            _logger.LogDebug("Registered: {ModuleId}", moduleId);
-
+            _moduleCreators[moduleType] = creator;
             _cachedMetadata = null;
+            _logger.LogDebug("Registered: {moduleType}", moduleType);
         }
 
-        /// <summary>Создать экземпляр модуля</summary>
-        /// <param name="moduleId">Тип модуля</param>
-        /// <param name="instanceId">ID экземпляра (если null - генерируется новый)</param>
-        public IModule? Create(string moduleId, string? instanceId = null)
+        /// <summary>Создать новый экземпляр модуля. Возвращает null если тип не зарегистрирован</summary>
+        public IModule? Create(string moduleType)
         {
-            if (_moduleCreators.TryGetValue(moduleId, out var creator))
+            if (_moduleCreators.TryGetValue(moduleType, out var creator))
             {
-                var module = creator(instanceId);
-                _logger.LogDebug("Created: {ModuleId} (ID: {InstanceId})", moduleId, module.InstanceId);
+                var module = creator();
+                _logger.LogDebug("Created: {moduleType}", moduleType);
                 return module;
             }
 
-            _logger.LogError("Module not registered: {ModuleId}", moduleId);
+            _logger.LogError("Module not registered: {moduleType}", moduleType);
             return null;
         }
 
-        /// <summary>Проверить зарегистрирован ли модуль</summary>
-        public bool IsRegistered(string moduleId)
-        {
-            return _moduleCreators.ContainsKey(moduleId);
-        }
+        /// <summary>Проверить зарегистрирован ли тип модуля</summary>
+        public bool IsRegistered(string moduleType) =>
+            _moduleCreators.ContainsKey(moduleType);
 
-        /// <summary>Получить все зарегистрированные типы</summary>
-        public IEnumerable<string> GetRegisteredTypes()
-        {
-            return _moduleCreators.Keys;
-        }
+        /// <summary>Получить все зарегистрированные ключи</summary>
+        public IEnumerable<string> GetRegisteredTypes() =>
+            _moduleCreators.Keys;
 
         /// <summary>
-        /// Получить метаданные ВСЕХ зарегистрированных модулей
-        /// Метаданные кешируются при первом вызове
-        /// НЕ создаёт экземпляры модулей для проектов
-        /// Используется для построения меню модулей в UI
+        /// Получить метаданные всех модулей для построения UI.
+        /// Создаёт временные экземпляры только для чтения Metadata, сразу их уничтожает.
         /// </summary>
         public List<IModuleMetadata> GetAllModuleMetadata()
         {
@@ -75,32 +65,29 @@ namespace Writersword.Modules.Common
             }
 
             _logger.LogDebug("Building metadata cache...");
-
             var metadataList = new List<IModuleMetadata>();
 
-            foreach (var moduleId in GetRegisteredTypes())
+            foreach (var moduleType in GetRegisteredTypes())
             {
-                var tempModule = Create(moduleId);
-
+                var tempModule = Create(moduleType);
                 if (tempModule?.Metadata != null)
                 {
                     metadataList.Add(tempModule.Metadata);
-
                     tempModule.Dispose();
-                    _logger.LogDebug("Cached metadata for: {ModuleId}", moduleId);
+                    _logger.LogDebug("Cached metadata for: {moduleType}", moduleType);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to get metadata for: {moduleType}", moduleType);
                 }
             }
 
             _cachedMetadata = metadataList;
-
             _logger.LogDebug("Metadata cache built: {Count} module types", metadataList.Count);
             return metadataList;
         }
 
-        /// <summary>
-        /// Очистить кеш метаданных
-        /// Используется при перерегистрации модулей
-        /// </summary>
+        /// <summary>Сбросить кеш метаданных</summary>
         public void ClearMetadataCache()
         {
             _cachedMetadata = null;

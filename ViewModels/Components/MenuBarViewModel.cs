@@ -10,12 +10,14 @@ using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
 using Writersword.Core.Models.Settings;
+using Writersword.Core.Models.WorkModes;
 using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.Services.UI;
 using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.ProjectTypes.Common;
+using Writersword.Src.WorkModes.Common;
 using Writersword.Views;
 
 namespace Writersword.ViewModels.Components
@@ -437,7 +439,7 @@ namespace Writersword.ViewModels.Components
 
         /// <summary>
         /// Сбросить конфигурацию до дефолтной
-        /// Удаляет workspace.json из ZIP и загружает hardcoded дефолт
+        /// Вся логика сброса слотов и пересоздания layout делегируется WorkspaceController
         /// </summary>
         private async Task ResetWorkspaceToDefault()
         {
@@ -454,12 +456,10 @@ namespace Writersword.ViewModels.Components
             {
                 var result = await _dialogService.ShowMessageAsync(
                     "Сбросить до дефолта?",
-                    "Все настройки рабочего пространства будут сброшены. Продолжить?",
+                    "Текущий WorkMode будет сброшен до настроек по умолчанию. Продолжить?",
                     MessageBoxType.Warning,
                     MessageBoxButtons.YesNo
                 );
-
-                _logger.LogDebug("User choice: {Result}", result);
 
                 if (result != MessageBoxResult.Yes)
                 {
@@ -467,48 +467,39 @@ namespace Writersword.ViewModels.Components
                     return;
                 }
 
-                var project = activeTab.GetProject();
-                var fileStorage = activeTab.Context.FileStorage;
-
-                if (fileStorage == null)
+                if (activeTab.Workspace == null)
                 {
-                    _logger.LogWarning("No FileStorage");
+                    _logger.LogWarning("No Workspace");
                     return;
                 }
 
-                if (activeTab.Workspace != null)
+                var activeWorkMode = activeTab.Workspace.GetActiveWorkMode();
+                if (activeWorkMode == null)
                 {
-                    var currentLayout = activeTab.Workspace.GetCurrentLayout();
-                    if (currentLayout?.Windows != null)
-                    {
-                        _logger.LogDebug("Closing {Count} float windows", currentLayout.Windows.Count);
-
-                        foreach (var window in currentLayout.Windows.ToList())
-                        {
-                            if (window.Host is Writersword.Src.Infrastructure.Dock.HostWindow hostWindow)
-                            {
-                                hostWindow.Exit();
-                                _logger.LogDebug("Closed float window: {WindowId}", window.Id);
-                            }
-                        }
-
-                        currentLayout.Windows.Clear();
-                    }
+                    _logger.LogWarning("No active WorkMode");
+                    return;
                 }
 
-                _workspaceConfigService.DeleteFromZip(fileStorage);
+                var workModeRegistry = App.Services.GetRequiredService<WorkModeRegistry>();
+                var registeredWorkMode = workModeRegistry.GetWorkMode(activeWorkMode.WorkModeId);
 
-                var defaultWorkModes = _workModeConfigService.LoadConfiguration(project.Type, fileStorage);
-                project.WorkModes = defaultWorkModes;
+                if (registeredWorkMode == null)
+                {
+                    _logger.LogWarning("WorkMode not found in registry: {WorkModeId}", activeWorkMode.WorkModeId);
+                    return;
+                }
 
-                _logger.LogDebug("Loaded {Count} default WorkModes", defaultWorkModes.Count);
+                var defaultConfig = registeredWorkMode.GetDefaultConfig();
 
-                activeTab.InitializeWorkspace(defaultWorkModes);
+                // Сброс слотов, очистка контекста и пересоздание layout — всё в контроллере
+                // DockLayout обновится автоматически через WorkspaceChanged event
+                activeTab.Workspace.ResetWorkModeToDefault(activeWorkMode, defaultConfig);
 
+                // Только обновляем ModulePanel — остальное сделает OnWorkspaceChanged
                 var mainVM = _mainViewModelProvider?.Invoke();
-                mainVM?.InitializeWorkModesForTab(activeTab);
+                mainVM?.ModulePanel.LoadModulesForWorkMode(activeWorkMode);
 
-                _notificationService.ShowSuccess("Конфигурация сброшена до дефолта");
+                _notificationService.ShowSuccess($"WorkMode '{activeWorkMode.Title}' сброшен до дефолта");
                 _logger.LogDebug("Reset to default complete");
             }
             catch (Exception ex)
@@ -518,10 +509,10 @@ namespace Writersword.ViewModels.Components
         }
     }
 
-    /// <summary>
-    /// Элемент списка недавних проектов
-    /// </summary>
-    public class RecentProjectItem
+        /// <summary>
+        /// Элемент списка недавних проектов
+        /// </summary>
+        public class RecentProjectItem
     {
         /// <summary>Полный путь к файлу проекта</summary>
         public string FilePath { get; set; } = "";

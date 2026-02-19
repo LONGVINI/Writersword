@@ -12,20 +12,20 @@ namespace Writersword.Core.Interfaces.Services
         /// <summary>
         /// Собрать ТОЛЬКО CustomData из всех модулей
         /// Используется при сохранении в .writersword файл (Ctrl+S)
-        /// Возвращает словарь: ModuleId → CustomData
+        /// Возвращает словарь: moduleType → CustomData
         /// Модули без данных НЕ включаются в результат
         /// </summary>
         /// <param name="modules">Список модулей для обработки</param>
-        /// <returns>Словарь ModuleId → CustomData (только непустые)</returns>
+        /// <returns>Словарь moduleType → CustomData (только непустые)</returns>
         Dictionary<string, object?> CollectCustomData(IEnumerable<IModule> modules);
 
         /// <summary>
         /// Собрать ТОЛЬКО SessionData из всех модулей
         /// Используется редко, в основном для отладки
-        /// Возвращает словарь: ModuleId → SessionData
+        /// Возвращает словарь: moduleType → SessionData
         /// </summary>
         /// <param name="modules">Список модулей для обработки</param>
-        /// <returns>Словарь ModuleId → SessionData</returns>
+        /// <returns>Словарь moduleType → SessionData</returns>
         Dictionary<string, object?> CollectSessionData(IEnumerable<IModule> modules);
 
         /// <summary>
