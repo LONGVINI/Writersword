@@ -5,10 +5,6 @@ using Writersword.Src.WorkModes.Common;
 
 namespace Writersword.Src.WorkModes.Characters
 {
-    /// <summary>
-    /// WorkMode "Персонажи" - управление персонажами
-    /// Необязательный режим (можно закрыть)
-    /// </summary>
     public class CharactersWorkMode : IWorkMode
     {
         public string Id => "characters";
@@ -37,19 +33,19 @@ namespace Writersword.Src.WorkModes.Characters
                     new ModuleSlot
                     {
                         ModuleType = "TextEditor",
-                        PreferredPosition = PreferredDockPosition.RightAsTab,
+                        PreferredPosition = PreferredDockPosition.Left,
                         Category = ModuleCategory.Required
                     },
                     new ModuleSlot
                     {
                         ModuleType = "Synonyms",
-                        PreferredPosition = PreferredDockPosition.TopRight,
+                        PreferredPosition = PreferredDockPosition.RightAsTab,
                         Category = ModuleCategory.Optional
                     },
                     new ModuleSlot
                     {
                         ModuleType = "Notes",
-                        PreferredPosition = PreferredDockPosition.BottomRight,
+                        PreferredPosition = PreferredDockPosition.RightAsTab,
                         Category = ModuleCategory.Optional
                     }
                 },
