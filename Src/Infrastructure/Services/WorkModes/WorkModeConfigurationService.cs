@@ -97,6 +97,10 @@ namespace Writersword.Src.Infrastructure.Services.WorkModes
                 }
 
                 _logger.LogDebug("Loading global config: {Count} modes", workspaceConfig.WorkModes.Count);
+
+                RestoreModuleMetadata(workspaceConfig.WorkModes);
+                RestoreEmptyWorkModes(workspaceConfig.WorkModes);
+
                 return workspaceConfig.WorkModes;
             }
             catch (Exception ex)

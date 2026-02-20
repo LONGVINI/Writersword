@@ -344,8 +344,13 @@ namespace Writersword.ViewModels.Components
                     return;
                 }
 
-                var workModeService = App.Services.GetRequiredService<IWorkModeService>();
-                var currentWorkModes = workModeService.GetAllWorkModes();
+                if (activeTab.Workspace == null)
+                {
+                    _logger.LogWarning("No Workspace on active tab");
+                    return;
+                }
+
+                var currentWorkModes = activeTab.Workspace.GetAvailableWorkModes();
 
                 var config = new WorkspaceConfig
                 {
@@ -393,40 +398,25 @@ namespace Writersword.ViewModels.Components
                     return;
                 }
 
-                var project = activeTab.GetProject();
-                var fileStorage = activeTab.Context.FileStorage;
-
-                if (fileStorage == null)
+                if (activeTab.Workspace == null)
                 {
-                    _logger.LogWarning("No FileStorage available");
+                    _logger.LogWarning("No Workspace on active tab");
                     return;
                 }
 
-                var mainVM = _mainViewModelProvider?.Invoke();
-                if (mainVM?.DockLayout?.Windows != null)
-                {
-                    _logger.LogDebug("Closing {Count} float windows", mainVM.DockLayout.Windows.Count);
+                var project = activeTab.GetProject();
+                var fileStorage = activeTab.Context.FileStorage;
 
-                    foreach (var window in mainVM.DockLayout.Windows.ToList())
-                    {
-                        if (window.Host is Writersword.Src.Infrastructure.Dock.HostWindow hostWindow)
-                        {
-                            hostWindow.Exit();
-                            _logger.LogDebug("Closed float window: {WindowId}", window.Id);
-                        }
-                    }
-
-                    mainVM.DockLayout.Windows.Clear();
-                }
-
-                _workspaceConfigService.DeleteFromZip(fileStorage);
+                if (fileStorage != null)
+                    _workspaceConfigService.DeleteFromZip(fileStorage);
 
                 var globalWorkModes = _workModeConfigService.LoadConfiguration(project.Type, null);
 
-                var workModeService = App.Services.GetRequiredService<IWorkModeService>();
-                workModeService.InitializeWorkModes(project.Type, globalWorkModes);
+                activeTab.Workspace.ReloadFromGlobalConfig(globalWorkModes);
 
-                mainVM?.InitializeWorkModesForTab(activeTab);
+                var mainVM = _mainViewModelProvider?.Invoke();
+                var activeWorkMode = activeTab.Workspace.GetActiveWorkMode();
+                mainVM?.ModulePanel.LoadModulesForWorkMode(activeWorkMode);
 
                 _notificationService.ShowSuccess("Конфигурация восстановлена из глобальных настроек");
                 _logger.LogDebug("Workspace reset to global");

@@ -121,5 +121,11 @@ namespace Writersword.Src.Core.Interfaces.Workspace
         /// Не сериализует текущий layout перед сбросом
         /// </summary>
         void ResetWorkModeToDefault(WorkMode workMode, WorkMode defaultConfig);
+
+        /// <summary>
+        /// Перезагрузить workspace из переданного списка WorkModes
+        /// Используется при сбросе до глобальной конфигурации
+        /// </summary>
+        void ReloadFromGlobalConfig(List<WorkMode> workModes);
     }
 }

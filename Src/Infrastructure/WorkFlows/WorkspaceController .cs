@@ -661,5 +661,49 @@ namespace Writersword.Src.Infrastructure.Workspace
                 }
             }
         }
+
+        public void ReloadFromGlobalConfig(List<WorkMode> workModes)
+        {
+            _logger.LogDebug("Reloading workspace from global config: {Count} modes", workModes.Count);
+
+            _isDeactivating = true;
+
+            try
+            {
+                _autoSave.Stop();
+                CloseAllFloatWindows();
+                _dockFactory.DetachViewsFromLayout(_dockLayout);
+                ClearAllModulesFromContext();
+                _dockFactory.OnModuleClosed = null;
+            }
+            finally
+            {
+                _isDeactivating = false;
+            }
+
+            _availableWorkModes = workModes;
+            _workModeService.InitializeWorkModes(_tab.GetProject().Type, workModes);
+
+            _activeWorkMode = workModes.FirstOrDefault(w => w.IsActive)
+                             ?? workModes.First();
+
+            ResetDegenerateSerializedLayoutIfNeeded(_activeWorkMode);
+
+            _dockLayout = _dockFactory.CreateLayout(_activeWorkMode, _tab);
+
+            _dockFactory.OnModuleClosed = (moduleType) =>
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(
+                    () => HandleModuleClosedInDock(moduleType));
+            };
+
+            if (!string.IsNullOrEmpty(_tab.FilePath))
+                _autoSave.Start(_tab.FilePath, _tab.GetProject());
+
+            _autoSave.NotifyChange();
+            WorkspaceChanged?.Invoke(this, EventArgs.Empty);
+
+            _logger.LogDebug("Workspace reloaded from global config");
+        }
     }
 }
