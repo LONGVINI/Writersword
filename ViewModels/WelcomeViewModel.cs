@@ -12,6 +12,7 @@ using Writersword.Resources.Localization;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.Services.UI;
 using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Src.ProjectTypes.Common;
 using Writersword.Views;
 
 namespace Writersword.ViewModels
@@ -37,6 +38,9 @@ namespace Writersword.ViewModels
             get => _selectedProjectType;
             set => this.RaiseAndSetIfChanged(ref _selectedProjectType, value);
         }
+
+        /// <summary>Список доступных типов проектов</summary>
+        public ObservableCollection<ProjectTypeItem> ProjectTypes { get; } = new();
 
         /// <summary>Список недавних проектов</summary>
         public ObservableCollection<RecentProject> RecentProjects { get; }
@@ -83,7 +87,37 @@ namespace Writersword.ViewModels
             );
 
             RecentProjects = new ObservableCollection<RecentProject>();
+
+            LoadProjectTypes();
             LoadRecentProjects();
+        }
+
+        /// <summary>Загрузить типы проектов из реестра</summary>
+        private void LoadProjectTypes()
+        {
+            var registry = App.Services.GetRequiredService<ProjectTypeRegistry>();
+
+            foreach (var type in registry.GetAll())
+            {
+                var item = new ProjectTypeItem
+                {
+                    Id = type.Id,
+                    DisplayName = type.DisplayName,
+                    Icon = type.Icon,
+                    IsSelected = type.Id == _selectedProjectType
+                };
+
+                item.WhenAnyValue(x => x.IsSelected)
+                    .Subscribe(selected =>
+                    {
+                        if (selected)
+                            SelectedProjectType = item.Id;
+                    });
+
+                ProjectTypes.Add(item);
+            }
+
+            _logger.LogDebug("Loaded {Count} project types", ProjectTypes.Count);
         }
 
         /// <summary>Создать новый проект</summary>
@@ -96,7 +130,6 @@ namespace Writersword.ViewModels
             var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
             var tabCollection = App.Services.GetRequiredService<ITabCollection>();
 
-            // Проверяем не открыт ли уже проект с таким путём
             var existingTab = tabCollection.FindByPath(savePath);
             if (existingTab != null)
             {
@@ -106,26 +139,20 @@ namespace Writersword.ViewModels
                 return;
             }
 
-            // Создаём новый проект
             var projectName = Path.GetFileNameWithoutExtension(savePath);
             var project = _projectService.CreateNew(projectName, SelectedProjectType);
 
-            // Сохраняем его
             await _projectService.SaveAsync(project, savePath);
 
-            // Создаём вкладку
             var tabVM = new DocumentTabViewModel(project, savePath);
 
-            // Регистрируем хранилище
             _projectWorkflow.RegisterStorage(savePath, tabVM);
 
-            // Добавляем вкладку в коллекцию и делаем её активной
             tabCollection.Add(tabVM);
             tabCollection.ActiveTab = tabVM;
 
             mainViewModel.InitializeWorkModesForTab(tabVM);
 
-            // Добавляем в недавние
             _settingsService.AddRecentProject(savePath);
 
             LoadRecentProjects();
@@ -145,7 +172,6 @@ namespace Writersword.ViewModels
             var tabCollection = App.Services.GetRequiredService<ITabCollection>();
             var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
 
-            // Проверяем не открыт ли уже
             var existingTab = tabCollection.FindByPath(path);
             if (existingTab != null)
             {
@@ -155,7 +181,6 @@ namespace Writersword.ViewModels
                 return;
             }
 
-            // Открываем через ProjectWorkflow
             var tab = await _projectWorkflow.OpenDocumentAsync(path);
             if (tab != null)
             {
@@ -192,7 +217,6 @@ namespace Writersword.ViewModels
             {
                 _logger.LogDebug("Opening recent project: {Name}", recent.Name);
 
-                // Проверяем существует ли файл
                 if (!System.IO.File.Exists(recent.Path))
                 {
                     _logger.LogWarning("Recent project file not found: {Path}", recent.Path);
@@ -213,7 +237,6 @@ namespace Writersword.ViewModels
                 var tabCollection = App.Services.GetRequiredService<ITabCollection>();
                 var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
 
-                // Проверяем не открыт ли уже
                 var existingTab = tabCollection.FindByPath(recent.Path);
                 if (existingTab != null)
                 {
@@ -223,7 +246,6 @@ namespace Writersword.ViewModels
                     return;
                 }
 
-                // Открываем через ProjectWorkflow
                 var tab = await _projectWorkflow.OpenDocumentAsync(recent.Path);
                 if (tab != null)
                 {
@@ -233,7 +255,7 @@ namespace Writersword.ViewModels
 
                     _logger.LogInformation("Opened recent project: {Name}", recent.Name);
 
-                    LoadRecentProjects(); // Обновляем список в UI
+                    LoadRecentProjects();
 
                     ProjectSelected?.Invoke();
                 }
@@ -266,6 +288,30 @@ namespace Writersword.ViewModels
             }
 
             _logger.LogDebug("Loaded {Count} recent projects", RecentProjects.Count);
+        }
+    }
+
+    /// <summary>
+    /// Элемент списка типов проектов для WelcomeView
+    /// </summary>
+    public class ProjectTypeItem : ReactiveObject
+    {
+        private bool _isSelected;
+
+        /// <summary>Уникальный идентификатор типа проекта</summary>
+        public string Id { get; set; } = "";
+
+        /// <summary>Локализованное название</summary>
+        public string DisplayName { get; set; } = "";
+
+        /// <summary>Иконка</summary>
+        public string Icon { get; set; } = "";
+
+        /// <summary>Выбран ли этот тип</summary>
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set => this.RaiseAndSetIfChanged(ref _isSelected, value);
         }
     }
 }
