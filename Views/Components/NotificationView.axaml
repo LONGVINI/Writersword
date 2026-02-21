@@ -4,13 +4,13 @@
              x:Class="Writersword.Views.Components.NotificationView"
              x:DataType="vm:NotificationViewModel">
 
-    <!-- Êîíòåéíåð äëÿ óâåäîìëåíèÿ (â ïðàâîì íèæíåì óãëó) -->
+    <!-- ÐšÐ¾Ð½Ñ‚ÐµÐ¹Ð½ÐµÑ€ Ð´Ð»Ñ ÑƒÐ²ÐµÐ´Ð¾Ð¼Ð»ÐµÐ½Ð¸Ñ (Ð² Ð¿Ñ€Ð°Ð²Ð¾Ð¼ Ð½Ð¸Ð¶Ð½ÐµÐ¼ ÑƒÐ³Ð»Ñƒ) -->
     <Panel HorizontalAlignment="Right"
            VerticalAlignment="Bottom"
            Margin="20"
            IsVisible="{Binding IsVisible}">
 
-        <!-- Ñàìî óâåäîìëåíèå -->
+        <!-- Ð¡Ð°Ð¼Ð¾ ÑƒÐ²ÐµÐ´Ð¾Ð¼Ð»ÐµÐ½Ð¸Ðµ -->
         <Border Background="{Binding BackgroundColor}"
                 CornerRadius="8"
                 Padding="16,12"
@@ -20,7 +20,7 @@
 
             <Grid ColumnDefinitions="Auto,*,Auto">
 
-                <!-- Èêîíêà -->
+                <!-- Ð˜ÐºÐ¾Ð½ÐºÐ° -->
                 <TextBlock Grid.Column="0"
                            Text="{Binding Icon}"
                            FontSize="24"
@@ -28,7 +28,7 @@
                            VerticalAlignment="Center"
                            Margin="0,0,12,0"/>
 
-                <!-- Òåêñò ñîîáùåíèÿ -->
+                <!-- Ð¢ÐµÐºÑÑ‚ ÑÐ¾Ð¾Ð±Ñ‰ÐµÐ½Ð¸Ñ -->
                 <TextBlock Grid.Column="1"
                            Text="{Binding Message}"
                            FontSize="14"
@@ -36,7 +36,7 @@
                            TextWrapping="Wrap"
                            VerticalAlignment="Center"/>
 
-                <!-- Êíîïêà çàêðûòèÿ -->
+                <!-- ÐšÐ½Ð¾Ð¿ÐºÐ° Ð·Ð°ÐºÑ€Ñ‹Ñ‚Ð¸Ñ -->
                 <Button Grid.Column="2"
                         Content="?"
                         FontSize="20"
@@ -51,7 +51,7 @@
                         Cursor="Hand"
                         Command="{Binding CloseCommand}">
                     
-                    <!-- Hover ýôôåêò äëÿ êíîïêè çàêðûòèÿ -->
+                    <!-- Hover ÑÑ„Ñ„ÐµÐºÑ‚ Ð´Ð»Ñ ÐºÐ½Ð¾Ð¿ÐºÐ¸ Ð·Ð°ÐºÑ€Ñ‹Ñ‚Ð¸Ñ -->
                     <Button.Styles>
                         <Style Selector="Button:pointerover">
                             <Setter Property="Foreground" Value="#FFFFFF"/>
@@ -63,7 +63,7 @@
 
         </Border>
 
-        <!-- Àíèìàöèÿ ïîÿâëåíèÿ/èñ÷åçíîâåíèÿ -->
+        <!-- ÐÐ½Ð¸Ð¼Ð°Ñ†Ð¸Ñ Ð¿Ð¾ÑÐ²Ð»ÐµÐ½Ð¸Ñ/Ð¸ÑÑ‡ÐµÐ·Ð½Ð¾Ð²ÐµÐ½Ð¸Ñ -->
         <Panel.Transitions>
             <Transitions>
                 <DoubleTransition Property="Opacity" Duration="0:0:0.3"/>

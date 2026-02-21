@@ -110,6 +110,19 @@ namespace Writersword.ViewModels.Components
         /// <summary>Команда сброса до дефолтной конфигурации</summary>
         public ReactiveCommand<Unit, Unit> ResetWorkspaceToDefaultCommand { get; }
 
+        /// <summary>Команда сохранения всех открытых проектов</summary>
+        public ReactiveCommand<Unit, Unit> SaveAllProjectsCommand { get; }
+
+        /// <summary>Команда закрытия активной вкладки</summary>
+        public ReactiveCommand<Unit, Unit> CloseTabCommand { get; }
+
+        /// <summary>Команда закрытия всех вкладок</summary>
+        public ReactiveCommand<Unit, Unit> CloseAllTabsCommand { get; }
+
+        /// <summary>Команда закрытия всех вкладок кроме активной</summary>
+        public ReactiveCommand<Unit, Unit> CloseOtherTabsCommand { get; }
+
+
         private bool _hasActiveTab;
 
         /// <summary>Есть ли активная вкладка (для IsEnabled кнопок)</summary>
@@ -157,6 +170,10 @@ namespace Writersword.ViewModels.Components
             SaveWorkspaceGlobalCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceGlobal);
             ResetWorkspaceToGlobalCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToGlobal);
             ResetWorkspaceToDefaultCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToDefault);
+            SaveAllProjectsCommand = ReactiveCommand.CreateFromTask(SaveAllProjects);
+            CloseTabCommand = ReactiveCommand.CreateFromTask(CloseTab);
+            CloseAllTabsCommand = ReactiveCommand.CreateFromTask(CloseAllTabs);
+            CloseOtherTabsCommand = ReactiveCommand.CreateFromTask(CloseOtherTabs);
 
             LoadRecentProjects();
 
@@ -209,14 +226,26 @@ namespace Writersword.ViewModels.Components
         }
 
         /// <summary>Открыть существующий проект (показывает Welcome окно)</summary>
+        /// <summary>Открыть существующий проект через файловый диалог</summary>
         private async Task OpenProject()
         {
             _logger.LogDebug("OpenProject clicked");
 
-            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
-                && desktop.MainWindow != null)
+            var tab = await _projectWorkflow.OpenDocumentAsync();
+            if (tab != null)
             {
-                await App.ShowWelcomeScreen(desktop.MainWindow);
+                var existingTab = _tabCollection.FindByPath(tab.FilePath);
+                if (existingTab != null)
+                {
+                    _logger.LogDebug("Project already open, activating tab");
+                    _tabCollection.ActiveTab = existingTab;
+                    return;
+                }
+
+                _tabCollection.Add(tab);
+                _tabCollection.ActiveTab = tab;
+
+                LoadRecentProjects();
             }
         }
 
@@ -287,6 +316,167 @@ namespace Writersword.ViewModels.Components
             await _projectWorkflow.SaveAsDocumentAsync(activeTab);
 
             LoadRecentProjects();
+        }
+
+        /// <summary>Сохранить все открытые проекты у которых есть несохранённые изменения</summary>
+        private async Task SaveAllProjects()
+        {
+            _logger.LogDebug("SaveAllProjects called");
+
+            var allTabs = _tabCollection.Tabs;
+            if (!allTabs.Any())
+            {
+                _logger.LogDebug("SaveAllProjects: no open tabs");
+                return;
+            }
+
+            int saved = 0;
+            int failed = 0;
+
+            foreach (var tab in allTabs.ToList())
+            {
+                try
+                {
+                    bool hasChanges = await _projectWorkflow.HasUnsavedChanges(tab);
+                    if (!hasChanges)
+                    {
+                        _logger.LogDebug("No changes in tab: {Title}", tab.Title);
+                        continue;
+                    }
+
+                    _logger.LogDebug("Saving tab: {Title}", tab.Title);
+                    bool success = await _projectWorkflow.SaveDocumentAsync(tab);
+
+                    if (success)
+                        saved++;
+                    else
+                        failed++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error saving tab: {Title}", tab.Title);
+                    failed++;
+                }
+            }
+
+            if (failed > 0)
+                _notificationService.ShowError($"Сохранено: {saved}, ошибок: {failed}");
+            else if (saved > 0)
+                _notificationService.ShowSuccess($"Сохранено проектов: {saved}");
+            else
+                _logger.LogDebug("SaveAllProjects: nothing to save");
+        }
+
+        /// <summary>Закрыть активную вкладку</summary>
+        private async Task CloseTab()
+        {
+            var activeTab = _getActiveTab?.Invoke();
+            if (activeTab == null)
+            {
+                _logger.LogDebug("CloseTab: no active tab");
+                return;
+            }
+
+            _logger.LogDebug("CloseTab: {Title}", activeTab.Title);
+
+            await SaveWorkspaceBeforeClose(activeTab);
+
+            bool closed = await _projectWorkflow.CloseDocumentAsync(activeTab);
+            if (!closed)
+            {
+                _logger.LogDebug("CloseTab cancelled by user");
+                return;
+            }
+
+            activeTab.RecoveryBanner = null;
+            _tabCollection.Remove(activeTab);
+            await HandleNoTabsLeft();
+        }
+
+        /// <summary>Закрыть все вкладки</summary>
+        private async Task CloseAllTabs()
+        {
+            _logger.LogDebug("CloseAllTabs called");
+
+            foreach (var tab in _tabCollection.Tabs.ToList())
+            {
+                await SaveWorkspaceBeforeClose(tab);
+
+                bool closed = await _projectWorkflow.CloseDocumentAsync(tab);
+                if (!closed)
+                {
+                    _logger.LogDebug("CloseAllTabs: close cancelled on tab {Title}", tab.Title);
+                    continue;
+                }
+
+                tab.RecoveryBanner = null;
+                _tabCollection.Remove(tab);
+            }
+
+            await HandleNoTabsLeft();
+        }
+
+
+        /// <summary>Закрыть все вкладки кроме активной</summary>
+        private async Task CloseOtherTabs()
+        {
+            var activeTab = _getActiveTab?.Invoke();
+            if (activeTab == null)
+            {
+                _logger.LogDebug("CloseOtherTabs: no active tab");
+                return;
+            }
+
+            _logger.LogDebug("CloseOtherTabs: keeping {Title}", activeTab.Title);
+
+            foreach (var tab in _tabCollection.Tabs.Where(t => t != activeTab).ToList())
+            {
+                await SaveWorkspaceBeforeClose(tab);
+
+                bool closed = await _projectWorkflow.CloseDocumentAsync(tab);
+                if (!closed)
+                {
+                    _logger.LogDebug("CloseOtherTabs: close cancelled on tab {Title}", tab.Title);
+                    continue;
+                }
+
+                tab.RecoveryBanner = null;
+                _tabCollection.Remove(tab);
+            }
+        }
+
+        /// <summary>
+        /// Сохраняет workspace.json перед закрытием вкладки через AutoSaveService.
+        /// Вызывается перед CloseDocumentAsync чтобы не потерять расположение панелей.
+        /// </summary>
+        private async Task SaveWorkspaceBeforeClose(DocumentTabViewModel tab)
+        {
+            if (string.IsNullOrEmpty(tab.FilePath)) return;
+
+            var autoSave = _projectWorkflow.GetAutoSaveServiceForProject(tab.FilePath);
+            if (autoSave != null)
+            {
+                _logger.LogDebug("Saving workspace before close: {Title}", tab.Title);
+                await autoSave.SaveNowAsync();
+            }
+        }
+
+        /// <summary>
+        /// Вызывается после закрытия вкладок.
+        /// Если вкладок не осталось — очищает UI и показывает Welcome Screen.
+        /// </summary>
+        private async Task HandleNoTabsLeft()
+        {
+            if (_tabCollection.Tabs.Count > 0) return;
+
+            var mainVM = _mainViewModelProvider?.Invoke();
+            mainVM?.ClearUIWhenNoTabs();
+
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
+                && desktop.MainWindow != null)
+            {
+                await App.ShowWelcomeScreen(desktop.MainWindow);
+            }
         }
 
         /// <summary>Выход из приложения</summary>

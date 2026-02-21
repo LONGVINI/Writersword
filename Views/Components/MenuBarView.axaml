@@ -7,7 +7,7 @@
              x:Name="MenuBarViewRoot">
 
 	<!-- Главное меню -->
-	<Menu Background="#2D2D30" Padding="5,3">
+	<Menu x:Name="MainMenu" Background="#2D2D30" Padding="5,3">
 
 		<!-- FILE -->
 		<MenuItem Header="{x:Static loc:Strings.Menu_File}"
@@ -23,14 +23,14 @@
 			          Command="{Binding OpenProjectCommand}"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_RecentProjects}"
-			          ItemsSource="{Binding RecentProjects}">
-				<MenuItem.ItemTemplate>
-					<DataTemplate>
-						<MenuItem Header="{Binding ProjectName}"
-						          Command="{Binding $parent[UserControl].DataContext.OpenRecentProjectCommand}"
-						          CommandParameter="{Binding FilePath}"/>
-					</DataTemplate>
-				</MenuItem.ItemTemplate>
+					  ItemsSource="{Binding RecentProjects}">
+				<MenuItem.Styles>
+					<Style Selector="MenuItem > MenuItem">
+						<Setter Property="Header" Value="{Binding ProjectName}"/>
+						<Setter Property="Command" Value="{Binding #MenuBarViewRoot.DataContext.OpenRecentProjectCommand}"/>
+						<Setter Property="CommandParameter" Value="{Binding FilePath}"/>
+					</Style>
+				</MenuItem.Styles>
 			</MenuItem>
 
 			<Separator/>
@@ -44,16 +44,20 @@
 			          Command="{Binding SaveAsProjectCommand}"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_SaveAll}"
-			          InputGesture="Ctrl+Alt+S"/>
+					  InputGesture="Ctrl+Alt+S"
+					  Command="{Binding SaveAllProjectsCommand}"/>
 
 			<Separator/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_CloseTab}"
-			          InputGesture="Ctrl+W"/>
+					  InputGesture="Ctrl+W"
+					  Command="{Binding CloseTabCommand}"/>
 
-			<MenuItem Header="{x:Static loc:Strings.Menu_File_CloseAllTabs}"/>
+			<MenuItem Header="{x:Static loc:Strings.Menu_File_CloseAllTabs}"
+					  Command="{Binding CloseAllTabsCommand}"/>
 
-			<MenuItem Header="{x:Static loc:Strings.Menu_File_CloseOtherTabs}"/>
+			<MenuItem Header="{x:Static loc:Strings.Menu_File_CloseOtherTabs}"
+					  Command="{Binding CloseOtherTabsCommand}"/>
 
 			<Separator/>
 

@@ -10,22 +10,25 @@
         WindowStartupLocation="CenterOwner"
         CanResize="False"
         SystemDecorations="None"
-        TransparencyLevelHint="AcrylicBlur"
+        TransparencyLevelHint="Transparent"
         Background="Transparent">
 
 	<Window.Resources>
 		<converters:StringToBooleanConverter x:Key="StringToBooleanConverter"/>
 	</Window.Resources>
 
-	<!-- Затемнённый фон -->
-	<Border Background="#DD000000"
-            CornerRadius="12">
+	<Grid>
 
-		<!-- Контент окна -->
+		<!-- Подложка -->
+		<Border Background="#0D0D0D"
+		        CornerRadius="14"
+		        Margin="2"/>
+
+		<!-- Основной контент -->
 		<Border Background="#1E1E1E"
-                CornerRadius="12"
-                Margin="4"
-                Padding="40">
+		        CornerRadius="12"
+		        Margin="8"
+		        Padding="40">
 
 			<Grid>
 				<Grid.RowDefinitions>
@@ -35,18 +38,18 @@
 
 				<!-- Кнопка закрытия (в верхнем правом углу) -->
 				<Button Grid.Row="0"
-                        Content="✕"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Top"
-                        Width="32"
-                        Height="32"
-                        Margin="0,-20,-20,0"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        Foreground="#858585"
-                        FontSize="18"
-                        Cursor="Hand"
-                        Click="CloseButton_Click">
+		                Content="✕"
+		                HorizontalAlignment="Right"
+		                VerticalAlignment="Top"
+		                Width="32"
+		                Height="32"
+		                Margin="0,-20,-20,0"
+		                Background="Transparent"
+		                BorderThickness="0"
+		                Foreground="#858585"
+		                FontSize="18"
+		                Cursor="Hand"
+		                Click="CloseButton_Click">
 					<Button.Styles>
 						<Style Selector="Button:pointerover">
 							<Setter Property="Foreground" Value="White" />
@@ -58,15 +61,15 @@
 				<!-- Заголовок -->
 				<StackPanel Grid.Row="0" Margin="0,0,0,30">
 					<TextBlock Text="Writersword"
-                               FontSize="36"
-                               FontWeight="Bold"
-                               Foreground="White"
-                               HorizontalAlignment="Center" />
+		                       FontSize="36"
+		                       FontWeight="Bold"
+		                       Foreground="White"
+		                       HorizontalAlignment="Center" />
 					<TextBlock Text="Choose how to start"
-                               FontSize="14"
-                               Foreground="#999"
-                               HorizontalAlignment="Center"
-                               Margin="0,5,0,0" />
+		                       FontSize="14"
+		                       Foreground="#999"
+		                       HorizontalAlignment="Center"
+		                       Margin="0,5,0,0" />
 				</StackPanel>
 
 				<!-- Основной контент -->
@@ -79,17 +82,16 @@
 
 					<!-- Левая колонка: Новый проект -->
 					<Border Grid.Column="0"
-                            Background="#252526"
-                            CornerRadius="8"
-                            Padding="20">
+		                    Background="#252526"
+		                    CornerRadius="8"
+		                    Padding="20">
 						<StackPanel>
 							<TextBlock Text="📝 New Project"
-                                       FontSize="18"
-                                       FontWeight="SemiBold"
-                                       Foreground="White"
-                                       Margin="0,0,0,15" />
+		                               FontSize="18"
+		                               FontWeight="SemiBold"
+		                               Foreground="White"
+		                               Margin="0,0,0,15" />
 
-							<!-- Выбор типа проекта -->
 							<StackPanel Spacing="10">
 								<RadioButton Content="📖 Novel / Book"
 											 GroupName="ProjectType"
@@ -122,18 +124,16 @@
 											 FontSize="14" />
 							</StackPanel>
 
-							<!-- Кнопка создать -->
 							<Button Content="Create Project"
-                                    Command="{Binding NewProjectCommand}"
-                                    Background="#007ACC"
-                                    Foreground="White"
-                                    Padding="20,12"
-                                    Margin="0,20,0,0"
-                                    HorizontalAlignment="Stretch"
-                                    FontSize="14"
-                                    Cursor="Hand" />
+		                            Command="{Binding NewProjectCommand}"
+		                            Background="#007ACC"
+		                            Foreground="White"
+		                            Padding="20,12"
+		                            Margin="0,20,0,0"
+		                            HorizontalAlignment="Stretch"
+		                            FontSize="14"
+		                            Cursor="Hand" />
 
-							<!-- OR разделитель -->
 							<Grid Margin="0,15,0,15">
 								<Grid.ColumnDefinitions>
 									<ColumnDefinition Width="*" />
@@ -160,46 +160,45 @@
 								        Margin="10,0,0,0" />
 							</Grid>
 
-							<!-- Кнопка открыть -->
 							<Button Content="Browse for Project..."
-                                    Command="{Binding OpenProjectCommand}"
-                                    Background="#007ACC"
-                                    Foreground="White"
-                                    Padding="20,12"
-                                    HorizontalAlignment="Stretch"
-                                    FontSize="14"
-                                    Cursor="Hand" />
+		                            Command="{Binding OpenProjectCommand}"
+		                            Background="#007ACC"
+		                            Foreground="White"
+		                            Padding="20,12"
+		                            HorizontalAlignment="Stretch"
+		                            FontSize="14"
+		                            Cursor="Hand" />
 						</StackPanel>
 					</Border>
 
 					<!-- Правая колонка: Открыть проект -->
 					<Border Grid.Column="2"
-                            Background="#252526"
-                            CornerRadius="8"
-                            Padding="20">
+		                    Background="#252526"
+		                    CornerRadius="8"
+		                    Padding="20">
 						<StackPanel>
 							<TextBlock Text="📂 Open Project"
-                                       FontSize="18"
-                                       FontWeight="SemiBold"
-                                       Foreground="White"
-                                       Margin="0,0,0,15" />
+		                               FontSize="18"
+		                               FontWeight="SemiBold"
+		                               Foreground="White"
+		                               Margin="0,0,0,15" />
 
 							<TextBlock Text="Recent Projects:"
-                                       FontSize="12"
-                                       Foreground="#999"
-                                       Margin="0,0,0,10" />
+		                               FontSize="12"
+		                               Foreground="#999"
+		                               Margin="0,0,0,10" />
 
 							<ItemsControl ItemsSource="{Binding RecentProjects}">
 								<ItemsControl.ItemTemplate>
 									<DataTemplate>
 										<Border Background="#2D2D30"
-                                                CornerRadius="4"
-                                                Padding="8,5"
-                                                Cursor="Hand"
-                                                BorderThickness="1"
-                                                BorderBrush="Transparent"
-                                                Margin="0,0,0,5"
-                                                PointerPressed="RecentProject_Click">
+		                                        CornerRadius="4"
+		                                        Padding="8,5"
+		                                        Cursor="Hand"
+		                                        BorderThickness="1"
+		                                        BorderBrush="Transparent"
+		                                        Margin="0,0,0,5"
+		                                        PointerPressed="RecentProject_Click">
 											<Border.Styles>
 												<Style Selector="Border:pointerover">
 													<Setter Property="Background" Value="#3A3A3C" />
@@ -208,14 +207,14 @@
 											</Border.Styles>
 											<StackPanel>
 												<TextBlock Text="{Binding Name}"
-                                                           Foreground="White"
-                                                           FontSize="11"
-                                                           TextTrimming="CharacterEllipsis" />
+		                                                   Foreground="White"
+		                                                   FontSize="11"
+		                                                   TextTrimming="CharacterEllipsis" />
 												<TextBlock Text="{Binding Path}"
-                                                           Foreground="#666"
-                                                           FontSize="9"
-                                                           Margin="0,2,0,0"
-                                                           TextTrimming="CharacterEllipsis" />
+		                                                   Foreground="#666"
+		                                                   FontSize="9"
+		                                                   Margin="0,2,0,0"
+		                                                   TextTrimming="CharacterEllipsis" />
 											</StackPanel>
 										</Border>
 									</DataTemplate>
@@ -228,6 +227,6 @@
 			</Grid>
 
 		</Border>
-	</Border>
+	</Grid>
 
 </Window>

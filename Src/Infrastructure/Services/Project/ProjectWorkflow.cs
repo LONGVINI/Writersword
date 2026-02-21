@@ -667,7 +667,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
             try
             {
                 // Показываем диалог выбора места сохранения
-                var filePath = await _dialogService.SaveFileAsync();
+                var filePath = await _dialogService.SaveFileAsync(tab.Title);
                 if (string.IsNullOrEmpty(filePath))
                 {
                     _logger.LogDebug("SaveAs cancelled by user");

@@ -85,7 +85,7 @@ namespace Tests.Helpers
         /// Диалог сохранения файла
         /// Возвращает NextSaveFilePath
         /// </summary>
-        public Task<string?> SaveFileAsync()
+        public Task<string?> SaveFileAsync(string? defaultFileName = null)
         {
             SaveFileCallCount++;
             Console.WriteLine($"[MockDialogService] SaveFileAsync called (count: {SaveFileCallCount})");

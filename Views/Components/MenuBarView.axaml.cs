@@ -1,15 +1,13 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
+using Writersword.ViewModels.Components;
 
 namespace Writersword.Views.Components
 {
-    /// <summary>
-    /// Code-behind для MenuBarView
-    /// Главное меню приложения (File, Edit, View)
-    /// </summary>
     public partial class MenuBarView : UserControl
     {
         private readonly ILogger<MenuBarView> _logger;
@@ -20,7 +18,20 @@ namespace Writersword.Views.Components
 
             InitializeComponent();
 
+            DataContextChanged += OnDataContextChanged;
+
             _logger.LogDebug("MenuBarView created");
+        }
+
+        private void OnDataContextChanged(object? sender, EventArgs e)
+        {
+            if (DataContext is MenuBarViewModel vm)
+            {
+                vm.OpenRecentProjectCommand.Subscribe(_ =>
+                {
+                    Dispatcher.UIThread.Post(() => MainMenu.Close());
+                });
+            }
         }
     }
 }

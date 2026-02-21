@@ -47,7 +47,7 @@ namespace Writersword.Src.Infrastructure.Services.UI
             return files.Count > 0 ? files[0].Path.LocalPath : null;
         }
 
-        public async Task<string?> SaveFileAsync()
+        public async Task<string?> SaveFileAsync(string? defaultFileName = null)
         {
             if (_mainWindow == null) return null;
 
@@ -55,14 +55,14 @@ namespace Writersword.Src.Infrastructure.Services.UI
             {
                 Title = "Save Project",
                 DefaultExtension = "writersword",
-                SuggestedFileName = "Untitled",
+                SuggestedFileName = defaultFileName ?? "Untitled",
                 FileTypeChoices = new[]
                 {
-                    new FilePickerFileType("Writersword Project")
-                    {
-                        Patterns = new[] { "*.writersword" }
-                    }
-                }
+            new FilePickerFileType("Writersword Project")
+            {
+                Patterns = new[] { "*.writersword" }
+            }
+        }
             });
 
             return file?.Path.LocalPath;

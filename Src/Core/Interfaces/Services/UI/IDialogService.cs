@@ -14,7 +14,7 @@ namespace Writersword.Src.Core.Interfaces.Services.UI
         Task<string?> OpenFileAsync();
 
         /// <summary>Диалог сохранения файла</summary>
-        Task<string?> SaveFileAsync();
+        Task<string?> SaveFileAsync(string? defaultFileName = null);
 
         /// <summary>Показать сообщение</summary>
         Task ShowMessageAsync(string title, string message);
