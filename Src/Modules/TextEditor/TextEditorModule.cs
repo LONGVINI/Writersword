@@ -37,7 +37,7 @@ namespace Writersword.Modules.TextEditor
         public override object? ViewModel => _viewModel;
         public override IModuleMetadata Metadata => new TextEditorMetadata();
 
-        public string SettingsTitle => "Text Editor";
+        public string SettingsTitle => TextEditorStrings.DisplayName;
         public Type SettingsType => typeof(TextEditorSettings);
 
         public override void Initialize()

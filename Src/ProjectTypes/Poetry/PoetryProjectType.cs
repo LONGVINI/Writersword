@@ -10,9 +10,9 @@ namespace Writersword.Src.ProjectTypes.Poetry
     {
         public override string Id => "Poetry";
 
-        public override string DisplayName => Resources.Strings.DisplayName;
+        public override string DisplayName => Resources.PoetryStrings.DisplayName;
 
-        public override string Icon => Resources.Strings.Icon;
+        public override string Icon => Resources.PoetryStrings.Icon;
 
         public override List<string> WorkModes => new() { "editor" };
     }

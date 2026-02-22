@@ -519,4 +519,37 @@
   <data name="Dialog_ResetToGlobalMessage" xml:space="preserve">
     <value>Ваша локальная конфигурация будет заменена глобальной. Продолжить?</value>
   </data>
+  <data name="Settings_Tab_General" xml:space="preserve">
+    <value>Основные</value>
+  </data>
+  <data name="Settings_Tab_Project" xml:space="preserve">
+    <value>Проект</value>
+  </data>
+  <data name="Settings_Tab_Keybindings" xml:space="preserve">
+    <value>Горячие клавиши</value>
+  </data>
+  <data name="Settings_Section_GlobalModuleSettings" xml:space="preserve">
+    <value>ГЛОБАЛЬНЫЕ НАСТРОЙКИ МОДУЛЕЙ</value>
+  </data>
+  <data name="Settings_Section_ThisProjectSettings" xml:space="preserve">
+    <value>НАСТРОЙКИ ПРОЕКТА</value>
+  </data>
+  <data name="Settings_Banner_Global" xml:space="preserve">
+    <value>Изменения применяются ко всем проектам глобально и перекрывают настройки проекта</value>
+  </data>
+  <data name="Settings_Banner_Project" xml:space="preserve">
+    <value>Изменения применяются только к этому проекту и сохраняются внутри файла проекта</value>
+  </data>
+  <data name="Settings_NoProjectOpen" xml:space="preserve">
+    <value>Проект не открыт</value>
+  </data>
+  <data name="Settings_General_Language" xml:space="preserve">
+    <value>Язык</value>
+  </data>
+  <data name="Settings_General_RestartRequired" xml:space="preserve">
+    <value>Для применения языка необходим перезапуск</value>
+  </data>
+  <data name="Settings_General_RestartNow" xml:space="preserve">
+    <value>Перезапустить сейчас</value>
+  </data>
 </root>

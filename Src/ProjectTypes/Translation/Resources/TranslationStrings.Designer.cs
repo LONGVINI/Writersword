@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Writersword.Src.ProjectTypes.Novel.Resources {
+namespace Writersword.Src.ProjectTypes.Translation.Resources {
     using System;
     
     
@@ -22,14 +22,14 @@ namespace Writersword.Src.ProjectTypes.Novel.Resources {
     [global::System.CodeDom.Compiler.GeneratedCodeAttribute("System.Resources.Tools.StronglyTypedResourceBuilder", "18.0.0.0")]
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
-    internal class Strings {
+    internal class TranslationStrings {
         
         private static global::System.Resources.ResourceManager resourceMan;
         
         private static global::System.Globalization.CultureInfo resourceCulture;
         
         [global::System.Diagnostics.CodeAnalysis.SuppressMessageAttribute("Microsoft.Performance", "CA1811:AvoidUncalledPrivateCode")]
-        internal Strings() {
+        internal TranslationStrings() {
         }
         
         /// <summary>
@@ -39,7 +39,7 @@ namespace Writersword.Src.ProjectTypes.Novel.Resources {
         internal static global::System.Resources.ResourceManager ResourceManager {
             get {
                 if (object.ReferenceEquals(resourceMan, null)) {
-                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("Writersword.Src.ProjectTypes.Novel.Resources.Strings", typeof(Strings).Assembly);
+                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("Writersword.Src.ProjectTypes.Translation.Resources.TranslationStrings", typeof(TranslationStrings).Assembly);
                     resourceMan = temp;
                 }
                 return resourceMan;
@@ -61,7 +61,7 @@ namespace Writersword.Src.ProjectTypes.Novel.Resources {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на Novel.
+        ///   Ищет локализованную строку, похожую на Translation.
         /// </summary>
         internal static string DisplayName {
             get {
@@ -70,7 +70,7 @@ namespace Writersword.Src.ProjectTypes.Novel.Resources {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на 📖.
+        ///   Ищет локализованную строку, похожую на 🌐.
         /// </summary>
         internal static string Icon {
             get {

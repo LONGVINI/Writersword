@@ -10,9 +10,9 @@ namespace Writersword.Src.ProjectTypes.Screenplay
     {
         public override string Id => "Screenplay";
 
-        public override string DisplayName => Resources.Strings.DisplayName;
+        public override string DisplayName => Resources.ScreenplayStrings.DisplayName;
 
-        public override string Icon => Resources.Strings.Icon;
+        public override string Icon => Resources.ScreenplayStrings.Icon;
 
         public override List<string> WorkModes => new() { "editor", "timeline" };
     }

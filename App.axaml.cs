@@ -174,6 +174,9 @@ namespace Writersword
                 var settingsService = Services.GetRequiredService<ISettingsService>();
                 settingsService.Load();
 
+                var localizationService = Services.GetRequiredService<ILocalizationService>();
+                localizationService.SetLanguage(settingsService.Language);
+
                 var mainViewModel = Services.GetRequiredService<MainWindowViewModel>();
                 var mainWindow = new MainWindow
                 {
@@ -200,7 +203,6 @@ namespace Writersword
 
                         Log.ForContext<App>().Debug("Restoring {Count} projects from last session", openProjects.Count);
 
-                        // СОЗДАЁМ ВСЕ ВКЛАДКИ
                         var tabs = new List<DocumentTabViewModel>();
 
                         for (int i = 0; i < openProjects.Count; i++)
@@ -213,7 +215,6 @@ namespace Writersword
                                 continue;
                             }
 
-                            // Первую вкладку инициализируем полностью, остальные - lazy
                             bool initializeWorkspace = (i == 0);
 
                             var tab = await projectWorkflow.OpenDocumentAsync(projectPath, initializeWorkspace);
@@ -230,13 +231,11 @@ namespace Writersword
                             }
                         }
 
-                        // ДОБАВЛЯЕМ ВСЕ ВКЛАДКИ В КОЛЛЕКЦИЮ
                         foreach (var tab in tabs)
                         {
                             tabCollection.Add(tab);
                         }
 
-                        // АКТИВИРУЕМ ПЕРВУЮ ВКЛАДКУ
                         if (tabCollection.Tabs.Count > 0)
                         {
                             tabCollection.ActiveTab = tabCollection.Tabs[0];
@@ -244,13 +243,11 @@ namespace Writersword
                         }
                         else
                         {
-                            // Если не удалось создать ни одну вкладку - показываем Welcome
                             await ShowWelcomeScreen(mainWindow);
                         }
                     }
                     else
                     {
-                        // Нет сохранённых проектов - показываем Welcome
                         await ShowWelcomeScreen(mainWindow);
                     }
                 };

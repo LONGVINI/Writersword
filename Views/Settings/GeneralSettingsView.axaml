@@ -1,0 +1,86 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.ViewModels.Settings"
+             xmlns:loc="using:Writersword.Resources.Localization"
+             x:Class="Writersword.Views.Settings.GeneralSettingsView"
+             x:DataType="vm:GeneralSettingsViewModel">
+
+	<StackPanel Spacing="24">
+
+		<StackPanel Spacing="10">
+			<TextBlock Text="{x:Static loc:Strings.Settings_General_Language}"
+                       FontSize="13"
+                       FontWeight="SemiBold"
+                       Foreground="#CCCCCC"/>
+
+			<ComboBox ItemsSource="{Binding AvailableLanguages}"
+                      SelectedItem="{Binding SelectedLanguage}"
+                      MinWidth="200"
+                      HorizontalAlignment="Left"
+                      Background="#2D2D30"
+                      Foreground="#CCCCCC"
+                      BorderBrush="#3F3F46"
+                      BorderThickness="1">
+				<ComboBox.ItemTemplate>
+					<DataTemplate x:DataType="vm:LanguageOption">
+						<TextBlock Text="{Binding DisplayName}"
+                                   FontSize="13"
+                                   Foreground="#CCCCCC"
+                                   Padding="4,2"/>
+					</DataTemplate>
+				</ComboBox.ItemTemplate>
+			</ComboBox>
+		</StackPanel>
+
+		<Border Background="#2A1F00"
+                Padding="14,10"
+                CornerRadius="6"
+                IsVisible="{Binding RestartRequired}">
+			<Grid>
+				<Grid.ColumnDefinitions>
+					<ColumnDefinition Width="*"/>
+					<ColumnDefinition Width="Auto"/>
+				</Grid.ColumnDefinitions>
+
+				<StackPanel Grid.Column="0"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center">
+					<TextBlock Text="!"
+                               FontSize="13"
+                               FontWeight="Bold"
+                               Foreground="#F0A030"
+                               VerticalAlignment="Center"/>
+					<TextBlock Text="{x:Static loc:Strings.Settings_General_RestartRequired}"
+                               FontSize="12"
+                               Foreground="#C8881A"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"/>
+				</StackPanel>
+
+				<Button Grid.Column="1"
+                        Content="{x:Static loc:Strings.Settings_General_RestartNow}"
+                        Command="{Binding RestartNowCommand}"
+                        Margin="12,0,0,0"
+                        Padding="12,6"
+                        FontSize="12"
+                        FontWeight="SemiBold"
+                        Foreground="#F0A030"
+                        Background="#3D2E00"
+                        BorderBrush="#F0A030"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Cursor="Hand"
+                        VerticalAlignment="Center">
+					<Button.Styles>
+						<Style Selector="Button:pointerover /template/ ContentPresenter">
+							<Setter Property="Background" Value="#4D3A00"/>
+						</Style>
+					</Button.Styles>
+				</Button>
+
+			</Grid>
+		</Border>
+
+	</StackPanel>
+</UserControl>

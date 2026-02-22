@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Writersword.Src.ProjectTypes.GameDesign.Resources {
+namespace Writersword.Src.ProjectTypes.Novel.Resources {
     using System;
     
     
@@ -22,14 +22,14 @@ namespace Writersword.Src.ProjectTypes.GameDesign.Resources {
     [global::System.CodeDom.Compiler.GeneratedCodeAttribute("System.Resources.Tools.StronglyTypedResourceBuilder", "18.0.0.0")]
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
-    internal class Strings {
+    internal class NovelStrings {
         
         private static global::System.Resources.ResourceManager resourceMan;
         
         private static global::System.Globalization.CultureInfo resourceCulture;
         
         [global::System.Diagnostics.CodeAnalysis.SuppressMessageAttribute("Microsoft.Performance", "CA1811:AvoidUncalledPrivateCode")]
-        internal Strings() {
+        internal NovelStrings() {
         }
         
         /// <summary>
@@ -39,7 +39,7 @@ namespace Writersword.Src.ProjectTypes.GameDesign.Resources {
         internal static global::System.Resources.ResourceManager ResourceManager {
             get {
                 if (object.ReferenceEquals(resourceMan, null)) {
-                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("Writersword.Src.ProjectTypes.GameDesign.Resources.Strings", typeof(Strings).Assembly);
+                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("Writersword.Src.ProjectTypes.Novel.Resources.NovelStrings", typeof(NovelStrings).Assembly);
                     resourceMan = temp;
                 }
                 return resourceMan;
@@ -61,7 +61,7 @@ namespace Writersword.Src.ProjectTypes.GameDesign.Resources {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на Game Design.
+        ///   Ищет локализованную строку, похожую на Novel.
         /// </summary>
         internal static string DisplayName {
             get {
@@ -70,7 +70,7 @@ namespace Writersword.Src.ProjectTypes.GameDesign.Resources {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на 🎮.
+        ///   Ищет локализованную строку, похожую на 📖.
         /// </summary>
         internal static string Icon {
             get {

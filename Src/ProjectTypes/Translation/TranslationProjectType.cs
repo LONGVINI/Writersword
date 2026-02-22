@@ -10,9 +10,9 @@ namespace Writersword.Src.ProjectTypes.Translation
     {
         public override string Id => "Translation";
 
-        public override string DisplayName => Resources.Strings.DisplayName;
+        public override string DisplayName => Resources.TranslationStrings.DisplayName;
 
-        public override string Icon => Resources.Strings.Icon;
+        public override string Icon => Resources.TranslationStrings.Icon;
 
         public override List<string> WorkModes => new() { "editor" };
     }

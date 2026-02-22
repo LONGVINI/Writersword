@@ -1159,11 +1159,110 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Changes apply to all projects globally and override project-level settings.
+        /// </summary>
+        public static string Settings_Banner_Global {
+            get {
+                return ResourceManager.GetString("Settings_Banner_Global", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Changes apply to this project only and are saved inside the project file.
+        /// </summary>
+        public static string Settings_Banner_Project {
+            get {
+                return ResourceManager.GetString("Settings_Banner_Project", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Language.
+        /// </summary>
+        public static string Settings_General_Language {
+            get {
+                return ResourceManager.GetString("Settings_General_Language", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Restart now.
+        /// </summary>
+        public static string Settings_General_RestartNow {
+            get {
+                return ResourceManager.GetString("Settings_General_RestartNow", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Restart required to apply language changes.
+        /// </summary>
+        public static string Settings_General_RestartRequired {
+            get {
+                return ResourceManager.GetString("Settings_General_RestartRequired", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Language:.
         /// </summary>
         public static string Settings_Language {
             get {
                 return ResourceManager.GetString("Settings_Language", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на No project is open.
+        /// </summary>
+        public static string Settings_NoProjectOpen {
+            get {
+                return ResourceManager.GetString("Settings_NoProjectOpen", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на GLOBAL MODULE SETTINGS.
+        /// </summary>
+        public static string Settings_Section_GlobalModuleSettings {
+            get {
+                return ResourceManager.GetString("Settings_Section_GlobalModuleSettings", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на THIS PROJECT SETTINGS.
+        /// </summary>
+        public static string Settings_Section_ThisProjectSettings {
+            get {
+                return ResourceManager.GetString("Settings_Section_ThisProjectSettings", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на General.
+        /// </summary>
+        public static string Settings_Tab_General {
+            get {
+                return ResourceManager.GetString("Settings_Tab_General", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Keybindings.
+        /// </summary>
+        public static string Settings_Tab_Keybindings {
+            get {
+                return ResourceManager.GetString("Settings_Tab_Keybindings", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Project.
+        /// </summary>
+        public static string Settings_Tab_Project {
+            get {
+                return ResourceManager.GetString("Settings_Tab_Project", resourceCulture);
             }
         }
         

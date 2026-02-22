@@ -35,7 +35,7 @@ namespace Writersword.Modules.Timer
         public override object? ViewModel => _viewModel;
         public override IModuleMetadata Metadata => new TimerMetadata();
 
-        public string SettingsTitle => "Timer";
+        public string SettingsTitle => TimerStrings.DisplayName;
         public Type SettingsType => typeof(TimerSettings);
 
         public override void Initialize()

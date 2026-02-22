@@ -649,4 +649,48 @@
     <value>Your local configuration will be replaced with the global one. Continue?</value>
     <comment>Warning message for global reset</comment>
   </data>
+  <data name="Settings_Tab_General" xml:space="preserve">
+    <value>General</value>
+    <comment>General settings tab name</comment>
+  </data>
+  <data name="Settings_Tab_Project" xml:space="preserve">
+    <value>Project</value>
+    <comment>Project settings tab name</comment>
+  </data>
+  <data name="Settings_Tab_Keybindings" xml:space="preserve">
+    <value>Keybindings</value>
+    <comment>Keybindings settings tab name</comment>
+  </data>
+  <data name="Settings_Section_GlobalModuleSettings" xml:space="preserve">
+    <value>GLOBAL MODULE SETTINGS</value>
+    <comment>Header for global module settings section in sidebar</comment>
+  </data>
+  <data name="Settings_Section_ThisProjectSettings" xml:space="preserve">
+    <value>THIS PROJECT SETTINGS</value>
+    <comment>Header for per-project module settings section in sidebar</comment>
+  </data>
+  <data name="Settings_Banner_Global" xml:space="preserve">
+    <value>Changes apply to all projects globally and override project-level settings</value>
+    <comment>Banner text shown when a global module settings tab is selected</comment>
+  </data>
+  <data name="Settings_Banner_Project" xml:space="preserve">
+    <value>Changes apply to this project only and are saved inside the project file</value>
+    <comment>Banner text shown when a project module settings tab is selected</comment>
+  </data>
+  <data name="Settings_NoProjectOpen" xml:space="preserve">
+    <value>No project is open</value>
+    <comment>Placeholder shown when no project is open in project settings tab</comment>
+  </data>
+  <data name="Settings_General_Language" xml:space="preserve">
+    <value>Language</value>
+    <comment>Section title for language selection</comment>
+  </data>
+  <data name="Settings_General_RestartRequired" xml:space="preserve">
+    <value>Restart required to apply language changes</value>
+    <comment>Warning shown after language is changed</comment>
+  </data>
+  <data name="Settings_General_RestartNow" xml:space="preserve">
+    <value>Restart now</value>
+    <comment>Button to restart the application immediately</comment>
+  </data>
 </root>

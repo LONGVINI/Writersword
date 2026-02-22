@@ -18,7 +18,9 @@ using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.ProjectTypes.Common;
 using Writersword.Src.WorkModes.Common;
+using Writersword.ViewModels.Settings;
 using Writersword.Views;
+using Writersword.Views.Settings;
 
 namespace Writersword.ViewModels.Components
 {

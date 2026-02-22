@@ -2,9 +2,9 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Writersword.ViewModels;
+using Writersword.ViewModels.Settings;
 
-namespace Writersword.Views
+namespace Writersword.Views.Settings
 {
     /// <summary>
     /// Окно настроек приложения
@@ -40,6 +40,17 @@ namespace Writersword.Views
                 DataContext is SettingsViewModel vm)
             {
                 vm.SelectTab(tab);
+            }
+        }
+
+        /// <summary>Обработчик клика по заголовку секции — сворачивает или разворачивает секцию</summary>
+        private void SectionHeader_PointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (sender is Border border &&
+                border.DataContext is SettingsTabItem tab &&
+                DataContext is SettingsViewModel vm)
+            {
+                vm.ToggleSection(tab);
             }
         }
     }

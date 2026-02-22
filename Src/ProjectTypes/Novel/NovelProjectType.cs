@@ -10,9 +10,9 @@ namespace Writersword.Src.ProjectTypes.Novel
     {
         public override string Id => "Novel";
 
-        public override string DisplayName => Resources.Strings.DisplayName;
+        public override string DisplayName => Resources.NovelStrings.DisplayName;
 
-        public override string Icon => Resources.Strings.Icon;
+        public override string Icon => Resources.NovelStrings.Icon;
 
         public override List<string> WorkModes => new() { "editor", "timeline", "characters" };
     }
