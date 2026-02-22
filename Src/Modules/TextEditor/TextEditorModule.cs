@@ -1,27 +1,31 @@
 ﻿using Avalonia.Controls;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using ReactiveUI;
 using System;
+using System.Text;
 using System.Reactive.Linq;
-using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.ViewModels;
-using Writersword.Resources.Localization;
+using Writersword.Modules.TextEditor.Views;
+using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Services;
+using Writersword.Src.Modules.TextEditor.Models;
 using Writersword.Src.Modules.TextEditor.Resources;
-using Writersword.ViewModels;
 
 namespace Writersword.Modules.TextEditor
 {
-    public class TextEditorModule : BaseModule
+    public class TextEditorModule : BaseModule, IConfigurableModule
     {
         private readonly ILogger<TextEditorModule> _logger;
         private TextEditorViewModel? _viewModel;
         private IDisposable? _textSubscription;
+
+        private const string LocalSettingsPath = "TextEditor/settings.json";
 
         public TextEditorModule() : base()
         {
@@ -33,23 +37,74 @@ namespace Writersword.Modules.TextEditor
         public override object? ViewModel => _viewModel;
         public override IModuleMetadata Metadata => new TextEditorMetadata();
 
+        public string SettingsTitle => "Text Editor";
+        public Type SettingsType => typeof(TextEditorSettings);
+
         public override void Initialize()
         {
             _logger.LogDebug("Initialize START (moduleType: {moduleType})", moduleType);
             _viewModel = new TextEditorViewModel();
+
+            var settingsService = App.Services.GetRequiredService<ISettingsService>();
+            var globalSettings = settingsService.GetModuleSettings<TextEditorSettings>(moduleType)
+                                 ?? new TextEditorSettings();
+
+            _viewModel.ApplySettings(globalSettings);
+
             CreateSubscription();
             _logger.LogDebug("Initialized (moduleType: {moduleType})", moduleType);
         }
 
-        private void CreateSubscription()
+        /// <summary>
+        /// Загрузить локальные настройки из ZIP проекта и применить поверх глобальных
+        /// Вызывается после установки Context
+        /// </summary>
+        private void LoadAndApplyLocalSettings()
         {
-            _textSubscription?.Dispose();
-            _textSubscription = _viewModel.WhenAnyValue(x => x.PlainText)
-                .Throttle(TimeSpan.FromSeconds(0.5))
-                .Subscribe(text =>
+            if (Context?.FileStorage == null) return;
+
+            var data = Context.FileStorage.ReadFile(LocalSettingsPath);
+            if (data == null) return;
+
+            try
+            {
+                var json = Encoding.UTF8.GetString(data);
+                var local = JsonConvert.DeserializeObject<TextEditorSettings>(json);
+                if (local != null)
                 {
-                    _logger.LogDebug("Text updated: {Length} chars", text?.Length ?? 0);
-                });
+                    _viewModel?.ApplySettings(local);
+                    _logger.LogDebug("Local settings applied: FontSize={FontSize}, FontFamily={FontFamily}",
+                        local.FontSize, local.FontFamily);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading local settings");
+            }
+        }
+
+        /// <summary>
+        /// Сохранить локальные настройки в ZIP проекта
+        /// </summary>
+        private void SaveLocalSettings(TextEditorSettings settings)
+        {
+            if (Context?.FileStorage == null)
+            {
+                _logger.LogWarning("Cannot save local settings — FileStorage is null");
+                return;
+            }
+
+            try
+            {
+                var json = JsonConvert.SerializeObject(settings, Formatting.Indented);
+                var data = Encoding.UTF8.GetBytes(json);
+                Context.FileStorage.WriteFile(LocalSettingsPath, data);
+                _logger.LogDebug("Local settings saved to ZIP");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving local settings");
+            }
         }
 
         protected override void OnContextChanged(DocumentContext? context)
@@ -58,7 +113,118 @@ namespace Writersword.Modules.TextEditor
             {
                 _viewModel.IsReadOnly = context.IsInCompareMode;
                 _logger.LogDebug("Context changed - IsReadOnly: {IsReadOnly}", _viewModel.IsReadOnly);
+                LoadAndApplyLocalSettings();
             }
+        }
+
+        public object GetSettings()
+        {
+            var settingsService = App.Services.GetRequiredService<ISettingsService>();
+            return settingsService.GetModuleSettings<TextEditorSettings>(moduleType)
+                   ?? new TextEditorSettings();
+        }
+
+        public void ApplySettings(object settings)
+        {
+            if (settings is not TextEditorSettings typed) return;
+
+            var settingsService = App.Services.GetRequiredService<ISettingsService>();
+            settingsService.SaveModuleSettings(moduleType, typed);
+
+            _viewModel?.ApplySettings(typed);
+            _logger.LogDebug("Global settings applied: FontSize={FontSize}, FontFamily={FontFamily}",
+                typed.FontSize, typed.FontFamily);
+        }
+
+        public object GetLocalSettings()
+        {
+            if (Context?.FileStorage == null)
+                return GetSettings();
+
+            var data = Context.FileStorage.ReadFile(LocalSettingsPath);
+            if (data == null)
+                return GetSettings();
+
+            try
+            {
+                var json = Encoding.UTF8.GetString(data);
+                return JsonConvert.DeserializeObject<TextEditorSettings>(json) ?? GetSettings();
+            }
+            catch
+            {
+                return GetSettings();
+            }
+        }
+
+        public void ApplyLocalSettings(object settings)
+        {
+            if (settings is not TextEditorSettings typed) return;
+
+            SaveLocalSettings(typed);
+            _viewModel?.ApplySettings(typed);
+            _logger.LogDebug("Local settings applied and saved: FontSize={FontSize}, FontFamily={FontFamily}",
+                typed.FontSize, typed.FontFamily);
+        }
+
+        public Control CreateSettingsView()
+        {
+            var settingsService = App.Services.GetRequiredService<ISettingsService>();
+            var settings = settingsService.GetModuleSettings<TextEditorSettings>(moduleType)
+                           ?? new TextEditorSettings();
+
+            var vm = new TextEditorSettingsViewModel
+            {
+                FontSize = settings.FontSize,
+                FontFamily = settings.FontFamily
+            };
+
+            vm.WhenAnyValue(x => x.FontSize, x => x.FontFamily)
+                .Skip(1)
+                .Subscribe(tuple =>
+                {
+                    ApplySettings(new TextEditorSettings
+                    {
+                        FontSize = tuple.Item1,
+                        FontFamily = tuple.Item2
+                    });
+                });
+
+            return new TextEditorSettingsView { DataContext = vm };
+        }
+
+        public Control CreateLocalSettingsView()
+        {
+            var local = GetLocalSettings() as TextEditorSettings ?? new TextEditorSettings();
+
+            var vm = new TextEditorSettingsViewModel
+            {
+                FontSize = local.FontSize,
+                FontFamily = local.FontFamily
+            };
+
+            vm.WhenAnyValue(x => x.FontSize, x => x.FontFamily)
+                .Skip(1)
+                .Subscribe(tuple =>
+                {
+                    ApplyLocalSettings(new TextEditorSettings
+                    {
+                        FontSize = tuple.Item1,
+                        FontFamily = tuple.Item2
+                    });
+                });
+
+            return new TextEditorSettingsView { DataContext = vm };
+        }
+
+        private void CreateSubscription()
+        {
+            _textSubscription?.Dispose();
+            _textSubscription = _viewModel!.WhenAnyValue(x => x.PlainText)
+                .Throttle(TimeSpan.FromSeconds(0.5))
+                .Subscribe(text =>
+                {
+                    _logger.LogDebug("Text updated: {Length} chars", text?.Length ?? 0);
+                });
         }
 
         public override object? GetCustomData()
@@ -113,7 +279,7 @@ namespace Writersword.Modules.TextEditor
 
         public override Control? CreateView()
         {
-            return new Views.TextEditorView { DataContext = ViewModel };
+            return new TextEditorView { DataContext = ViewModel };
         }
     }
 

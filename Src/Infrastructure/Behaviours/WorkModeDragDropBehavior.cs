@@ -33,13 +33,17 @@ namespace Writersword.Behaviors
         private double _currentOffsetX = 0;
         private bool _isDragging = false;
         private bool _isSwapping = false;
+
+        // Храним WorkMode объект — он не меняется при перестройке ItemsControl
+        private WorkMode? _draggedWorkMode = null;
+
+        // _draggedButton обновляется каждый кадр через _draggedWorkMode
         private Button? _draggedButton = null;
         private ContentPresenter? _draggedPresenter = null;
+
         private int _originalIndex = -1;
         private int _currentVisualIndex = -1;
-
         private double _draggedWidth = 0;
-
         private double[] _buttonWidths = Array.Empty<double>();
 
         private Dictionary<TranslateTransform, CancellationTokenSource> _activeAnimations = new();
@@ -79,10 +83,11 @@ namespace Writersword.Behaviors
             var button = FindWorkModeButton(e.Source);
             if (button == null) return;
 
-            _dragStartPoint = e.GetPosition(AssociatedObject);
-            _currentOffsetX = 0;
+            _draggedWorkMode = button.DataContext as WorkMode;
             _draggedButton = button;
             _draggedPresenter = button.FindAncestorOfType<ContentPresenter>();
+            _dragStartPoint = e.GetPosition(AssociatedObject);
+            _currentOffsetX = 0;
             _originalIndex = GetWorkModeIndex(button);
             _currentVisualIndex = _originalIndex;
             _isDragging = false;
@@ -92,12 +97,15 @@ namespace Writersword.Behaviors
             button.Classes.Add("dragging");
             _logger?.LogDebug("Added class 'dragging'");
 
+            // Активируем WorkMode сразу при нажатии
+            // После этого LoadWorkModes может пересоздать кнопки —
+            // в UpdateDraggedButton мы найдём актуальную кнопку по _draggedWorkMode
             ActivateWorkModeImmediately();
         }
 
         private void OnPointerMoved(object? sender, PointerEventArgs e)
         {
-            if (_draggedButton == null || AssociatedObject == null) return;
+            if (_draggedWorkMode == null || AssociatedObject == null) return;
 
             var currentPoint = e.GetPosition(AssociatedObject);
             var rawOffsetX = currentPoint.X - _dragStartPoint.X;
@@ -125,19 +133,23 @@ namespace Writersword.Behaviors
 
         private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
-            if (_draggedButton != null)
+            // Убираем класс dragging с актуальной кнопки
+            var currentButton = GetCurrentDraggedButton();
+            if (currentButton != null)
             {
-                _draggedButton.Classes.Remove("dragging");
+                currentButton.Classes.Remove("dragging");
                 _logger?.LogDebug("Removed class 'dragging'");
             }
 
             if (!_isDragging)
             {
+                // Просто клик без drag — WorkMode уже активирован в OnPointerPressed
                 ResetState();
                 return;
             }
 
-            _logger?.LogDebug("Pointer released - Original: {Original}, Visual: {Visual}, Offset: {Offset:F1}px", _originalIndex, _currentVisualIndex, _currentOffsetX);
+            _logger?.LogDebug("Pointer released - Original: {Original}, Visual: {Visual}, Offset: {Offset:F1}px",
+                _originalIndex, _currentVisualIndex, _currentOffsetX);
 
             _isDragging = false;
             _isSwapping = true;
@@ -201,14 +213,16 @@ namespace Writersword.Behaviors
 
         private void ResetState()
         {
-            if (_draggedButton != null)
+            var currentButton = GetCurrentDraggedButton();
+            if (currentButton != null)
             {
-                _draggedButton.Classes.Remove("dragging");
+                currentButton.Classes.Remove("dragging");
                 _logger?.LogDebug("ResetState: Removed class 'dragging'");
             }
 
             _isDragging = false;
             IsDragging = false;
+            _draggedWorkMode = null;
             _draggedButton = null;
             _draggedPresenter = null;
             _originalIndex = -1;
@@ -222,15 +236,26 @@ namespace Writersword.Behaviors
         {
             _isDragging = true;
             IsDragging = true;
-            if (_draggedButton == null) return;
 
             foreach (var cts in _activeAnimations.Values) cts.Cancel();
             _activeAnimations.Clear();
             _targetPositions.Clear();
 
+            // Находим актуальную кнопку — LoadWorkModes мог пересоздать ItemsControl
+            var current = GetCurrentDraggedButton();
+            if (current != null)
+            {
+                _draggedButton = current;
+                _draggedPresenter = current.FindAncestorOfType<ContentPresenter>();
+                _originalIndex = GetWorkModeIndex(current);
+                _currentVisualIndex = _originalIndex;
+            }
+
             var allButtons = GetAllButtons();
             _buttonWidths = allButtons.Select(b => b.Bounds.Width).ToArray();
-            _draggedWidth = _originalIndex < _buttonWidths.Length ? _buttonWidths[_originalIndex] : 0;
+            _draggedWidth = _originalIndex >= 0 && _originalIndex < _buttonWidths.Length
+                ? _buttonWidths[_originalIndex]
+                : 0;
 
             _logger?.LogDebug("Start dragging - Widths: [{Widths}], Dragged: {DraggedWidth:F0}",
                 string.Join(", ", _buttonWidths.Select(w => $"{w:F0}")), _draggedWidth);
@@ -238,7 +263,8 @@ namespace Writersword.Behaviors
             if (_draggedPresenter != null)
                 _draggedPresenter.ZIndex = 1000;
 
-            _draggedButton.Transitions = null;
+            if (_draggedButton != null)
+                _draggedButton.Transitions = null;
         }
 
         private void StopDragging()
@@ -251,19 +277,32 @@ namespace Writersword.Behaviors
             {
                 var presenter = button.FindAncestorOfType<ContentPresenter>();
                 if (presenter != null) presenter.ZIndex = 0;
-            }
 
-            foreach (var button in allButtons)
-            {
                 var t = button.RenderTransform as TranslateTransform;
                 if (t != null) { t.X = 0; t.Y = 0; }
                 button.Transitions = null;
             }
         }
 
+        /// <summary>
+        /// Найти актуальную кнопку по _draggedWorkMode.
+        /// ItemsControl мог пересоздать кнопки после LoadWorkModes —
+        /// поэтому ищем каждый раз заново, не полагаемся на сохранённую ссылку.
+        /// </summary>
+        private Button? GetCurrentDraggedButton()
+        {
+            if (_draggedWorkMode == null) return null;
+            return GetAllButtons().FirstOrDefault(b => b.DataContext == _draggedWorkMode);
+        }
+
         private void UpdateDraggedButton()
         {
-            if (_draggedButton == null) return;
+            // Обновляем ссылку на актуальную кнопку каждый кадр
+            var current = GetCurrentDraggedButton();
+            if (current == null) return;
+
+            _draggedButton = current;
+
             var transform = GetOrCreateTransform(_draggedButton);
             transform.X = _currentOffsetX;
             transform.Y = 0;
@@ -283,7 +322,8 @@ namespace Writersword.Behaviors
 
             if (newVisualIndex != _currentVisualIndex)
             {
-                _logger?.LogDebug("Visual index: {Old} -> {New}, Offset: {Offset:F1}px", _currentVisualIndex, newVisualIndex, _currentOffsetX);
+                _logger?.LogDebug("Visual index: {Old} -> {New}, Offset: {Offset:F1}px",
+                    _currentVisualIndex, newVisualIndex, _currentOffsetX);
                 _currentVisualIndex = newVisualIndex;
             }
 
@@ -309,7 +349,8 @@ namespace Writersword.Behaviors
                 if (!_targetPositions.ContainsKey(transform) || Math.Abs(_targetPositions[transform] - targetOffset) > 0.1)
                 {
                     _logger?.LogDebug("Button {Index}: {Old:F1} -> {New:F1}", i,
-                        _targetPositions.ContainsKey(transform) ? _targetPositions[transform] : transform.X, targetOffset);
+                        _targetPositions.ContainsKey(transform) ? _targetPositions[transform] : transform.X,
+                        targetOffset);
                     _targetPositions[transform] = targetOffset;
                     AnimateTransform(transform, targetOffset);
                 }
@@ -420,25 +461,20 @@ namespace Writersword.Behaviors
 
         private void ActivateWorkModeImmediately()
         {
-            if (_draggedButton == null || AssociatedObject == null) return;
+            if (_draggedWorkMode == null || AssociatedObject == null) return;
 
             var viewModel = AssociatedObject.DataContext as WorkModeBarViewModel;
             if (viewModel == null) return;
 
-            var workMode = _draggedButton.DataContext as WorkMode;
-            if (workMode == null) return;
-
-            _logger?.LogDebug("Activating WorkMode: {Title}", workMode.Title);
+            _logger?.LogDebug("Activating WorkMode: {Title}", _draggedWorkMode.Title);
 
             foreach (var wm in viewModel.WorkModes)
-            {
                 wm.IsActive = false;
-            }
 
-            workMode.IsActive = true;
+            _draggedWorkMode.IsActive = true;
 
             _logger?.LogDebug("Executing SwitchWorkModeCommand");
-            viewModel.SwitchWorkModeCommand.Execute(workMode).Subscribe();
+            viewModel.SwitchWorkModeCommand.Execute(_draggedWorkMode).Subscribe();
         }
 
         private Button? FindWorkModeButton(object? source)

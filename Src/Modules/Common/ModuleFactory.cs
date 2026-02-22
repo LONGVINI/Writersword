@@ -93,5 +93,31 @@ namespace Writersword.Modules.Common
             _cachedMetadata = null;
             _logger.LogDebug("Metadata cache cleared");
         }
+
+        /// <summary>
+        /// Получить все модули у которых есть настройки (реализуют IConfigurableModule)
+        /// Создаёт временные экземпляры только для проверки интерфейса
+        /// </summary>
+        public List<(string moduleType, IConfigurableModule configurable)> GetConfigurableModules()
+        {
+            var result = new List<(string, IConfigurableModule)>();
+
+            foreach (var moduleType in GetRegisteredTypes())
+            {
+                var temp = Create(moduleType);
+                if (temp is IConfigurableModule configurable)
+                {
+                    result.Add((moduleType, configurable));
+                    _logger.LogDebug("Configurable module found: {moduleType}", moduleType);
+                }
+                else
+                {
+                    temp?.Dispose();
+                }
+            }
+
+            _logger.LogDebug("Found {Count} configurable modules", result.Count);
+            return result;
+        }
     }
 }

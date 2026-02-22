@@ -1,5 +1,4 @@
-﻿using Avalonia;
-using Dock.Model.Avalonia;
+﻿using Dock.Model.Avalonia;
 using Dock.Model.Avalonia.Controls;
 using Dock.Model.Avalonia.Core;
 using Dock.Model.Controls;
@@ -10,18 +9,12 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using Writersword.Core.Enums;
-using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Core.Services;
-using Writersword.Modules.Common;
-using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.WorkFlows;
-using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.ViewModels;
-using Writersword.Views;
 
 namespace Writersword.Src.Infrastructure.Dock
 {
@@ -95,9 +88,13 @@ namespace Writersword.Src.Infrastructure.Dock
                     return;
                 }
 
+                _logger.LogDebug("CloseDockable called: {moduleType}, _isMoving={IsMoving}, CanClose={CanClose}",
+    moduleType, _isMoving, doc.CanClose);
+
                 doc.Content = null;
                 base.CloseDockable(dockable);
                 OnModuleClosed?.Invoke(moduleType);
+
             }
             else
             {
@@ -443,197 +440,197 @@ namespace Writersword.Src.Infrastructure.Dock
         /// Создать Layout из PreferredPosition модулей
         /// </summary>
         private IRootDock CreateLayoutFromPreferredPositions(WorkMode workMode, DocumentTabViewModel? ownerTab)
-{
-    _logger.LogDebug("Building layout manually from PreferredPositions");
-
-    var slotsToPlace = workMode.ModuleSlots
-        .OrderBy(s => s.Category)
-        .ToList();
-
-    _logger.LogDebug("Slots to place: {Count}", slotsToPlace.Count);
-
-    var documents = new List<(ModuleSlot Slot, Document Doc)>();
-    foreach (var slot in slotsToPlace)
-    {
-        if (CreateModuleDocument(slot, ownerTab) is Document doc)
-            documents.Add((slot, doc));
-        else
-            _logger.LogWarning("Failed to create document for: {ModuleType}", slot.ModuleType);
-    }
-
-    if (documents.Count == 0)
-    {
-        _logger.LogWarning("No documents created, returning empty layout");
-        var empty = new RootDock
         {
-            Id = "Root",
-            Title = "Root",
-            Context = workMode.Id,
-            VisibleDockables = new List<IDockable>()
-        };
-        InitLayout(empty);
-        return empty;
-    }
+            _logger.LogDebug("Building layout manually from PreferredPositions");
 
-    var centerDocs = documents.Where(d => IsCenter(d.Slot.PreferredPosition)).ToList();
-    var leftDocs = documents.Where(d => IsLeft(d.Slot.PreferredPosition)).ToList();
-    var rightDocs = documents.Where(d => IsRight(d.Slot.PreferredPosition)).ToList();
-    var topDocs = documents.Where(d => IsTop(d.Slot.PreferredPosition)).ToList();
-    var bottomDocs = documents.Where(d => IsBottom(d.Slot.PreferredPosition)).ToList();
+            var slotsToPlace = workMode.ModuleSlots
+                .OrderBy(s => s.Category)
+                .ToList();
 
-    _logger.LogDebug("Groups: center={C} left={L} right={R} top={T} bottom={B}",
-        centerDocs.Count, leftDocs.Count, rightDocs.Count, topDocs.Count, bottomDocs.Count);
+            _logger.LogDebug("Slots to place: {Count}", slotsToPlace.Count);
 
-    foreach (var d in documents)
-        _logger.LogDebug("  Slot: {ModuleType} pos={Pos}({PosInt}) -> center={C} left={L} right={R}",
-            d.Slot.ModuleType, d.Slot.PreferredPosition, (int)d.Slot.PreferredPosition,
-            IsCenter(d.Slot.PreferredPosition), IsLeft(d.Slot.PreferredPosition), IsRight(d.Slot.PreferredPosition));
-
-    if (centerDocs.Count == 0 && documents.Count > 0)
-    {
-        var first = documents.First();
-        centerDocs.Add(first);
-        leftDocs.Remove(first);
-        rightDocs.Remove(first);
-        topDocs.Remove(first);
-        bottomDocs.Remove(first);
-    }
-
-    var centerDocDock = BuildDocumentDock("Root.Center", "Center", centerDocs, double.NaN);
-
-    var horizontalChildren = new List<IDockable>();
-
-    foreach (var group in leftDocs)
-    {
-        horizontalChildren.Add(BuildDocumentDock(
-            $"Root.Left_{group.Slot.ModuleType}", group.Slot.ModuleType,
-            new[] { group }, double.NaN));
-        horizontalChildren.Add(NewSplitter());
-    }
-
-    horizontalChildren.Add(centerDocDock);
-
-    if (rightDocs.Count == 1)
-    {
-        var (slot, _) = rightDocs[0];
-        horizontalChildren.Add(NewSplitter());
-        horizontalChildren.Add(BuildDocumentDock(
-            $"Root.Right_{slot.ModuleType}", slot.ModuleType, rightDocs, double.NaN));
-    }
-    else if (rightDocs.Count > 1)
-    {
-        horizontalChildren.Add(NewSplitter());
-        horizontalChildren.Add(BuildVerticalStack(rightDocs));
-    }
-
-    List<IDockable> topLevelChildren;
-    Orientation topLevelOrientation;
-
-    if (topDocs.Count > 0 || bottomDocs.Count > 0)
-    {
-        var horizontal = new ProportionalDock
-        {
-            Id = Guid.NewGuid().ToString(),
-            Title = "Horizontal",
-            Orientation = Orientation.Horizontal,
-            Proportion = double.NaN,
-            VisibleDockables = horizontalChildren
-        };
-
-        topLevelChildren = new List<IDockable>();
-        topLevelOrientation = Orientation.Vertical;
-
-        if (topDocs.Count > 0)
-        {
-            topLevelChildren.Add(BuildDocumentDock("Root.Top", "Top", topDocs, double.NaN));
-            topLevelChildren.Add(NewSplitter());
-        }
-
-        topLevelChildren.Add(horizontal);
-
-        if (bottomDocs.Count > 0)
-        {
-            topLevelChildren.Add(NewSplitter());
-            topLevelChildren.Add(BuildDocumentDock("Root.Bottom", "Bottom", bottomDocs, double.NaN));
-        }
-    }
-    else
-    {
-        topLevelChildren = horizontalChildren;
-        topLevelOrientation = Orientation.Horizontal;
-    }
-
-    var mainProportional = new ProportionalDock
-    {
-        Id = Guid.NewGuid().ToString(),
-        Title = "Main",
-        Orientation = topLevelOrientation,
-        Proportion = double.NaN,
-        VisibleDockables = topLevelChildren
-    };
-
-    DistributeProportions(mainProportional);
-
-    var rootDock = new RootDock
-    {
-        Id = "Root",
-        Title = "Root",
-        Context = workMode.Id,
-        IsFocusableRoot = true,
-        VisibleDockables = new List<IDockable> { mainProportional },
-        ActiveDockable = mainProportional,
-        DefaultDockable = mainProportional,
-        FocusedDockable = mainProportional
-    };
-
-    InitLayout(rootDock);
-    ValidateAndRemoveDuplicates(rootDock);
-
-    try
-    {
-        var serializer = GetSerializer();
-        string json;
-
-        using (var writeStream = new System.IO.MemoryStream())
-        {
-            serializer.Save(writeStream, rootDock);
-            json = System.Text.Encoding.UTF8.GetString(writeStream.ToArray());
-        }
-
-        if (!string.IsNullOrEmpty(json))
-        {
-            IRootDock? sanitized = null;
-            using (var readStream = new System.IO.MemoryStream(
-                System.Text.Encoding.UTF8.GetBytes(json)))
+            var documents = new List<(ModuleSlot Slot, Document Doc)>();
+            foreach (var slot in slotsToPlace)
             {
-                sanitized = serializer.Load<RootDock>(readStream);
+                if (CreateModuleDocument(slot, ownerTab) is Document doc)
+                    documents.Add((slot, doc));
+                else
+                    _logger.LogWarning("Failed to create document for: {ModuleType}", slot.ModuleType);
             }
 
-            if (sanitized != null)
+            if (documents.Count == 0)
             {
-                FixRootDockActiveState(sanitized);
-                DetachViewsFromLayout(rootDock);
-                int count = RestoreModulesInLayout(sanitized, workMode, ownerTab);
-                NormalizeProportionsRecursive(sanitized);
-                sanitized.Factory = this;
-                InitLayout(sanitized);
-                ValidateAndRemoveDuplicates(sanitized);
-
-                _logger.LogDebug("Layout sanitized via serializer: {Count} modules", count);
-                _currentRootDock = sanitized;
-                return sanitized;
+                _logger.LogWarning("No documents created, returning empty layout");
+                var empty = new RootDock
+                {
+                    Id = "Root",
+                    Title = "Root",
+                    Context = workMode.Id,
+                    VisibleDockables = new List<IDockable>()
+                };
+                InitLayout(empty);
+                return empty;
             }
-        }
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Failed to sanitize layout, using raw version");
+
+            var centerDocs = documents.Where(d => IsCenter(d.Slot.PreferredPosition)).ToList();
+            var leftDocs = documents.Where(d => IsLeft(d.Slot.PreferredPosition)).ToList();
+            var rightDocs = documents.Where(d => IsRight(d.Slot.PreferredPosition)).ToList();
+            var topDocs = documents.Where(d => IsTop(d.Slot.PreferredPosition)).ToList();
+            var bottomDocs = documents.Where(d => IsBottom(d.Slot.PreferredPosition)).ToList();
+
+            _logger.LogDebug("Groups: center={C} left={L} right={R} top={T} bottom={B}",
+                centerDocs.Count, leftDocs.Count, rightDocs.Count, topDocs.Count, bottomDocs.Count);
+
+            foreach (var d in documents)
+                _logger.LogDebug("  Slot: {ModuleType} pos={Pos}({PosInt}) -> center={C} left={L} right={R}",
+                    d.Slot.ModuleType, d.Slot.PreferredPosition, (int)d.Slot.PreferredPosition,
+                    IsCenter(d.Slot.PreferredPosition), IsLeft(d.Slot.PreferredPosition), IsRight(d.Slot.PreferredPosition));
+
+            if (centerDocs.Count == 0 && documents.Count > 0)
+            {
+                var first = documents.First();
+                centerDocs.Add(first);
+                leftDocs.Remove(first);
+                rightDocs.Remove(first);
+                topDocs.Remove(first);
+                bottomDocs.Remove(first);
+            }
+
+            var centerDocDock = BuildDocumentDock("Root.Center", "Center", centerDocs, double.NaN);
+
+            var horizontalChildren = new List<IDockable>();
+
+            foreach (var group in leftDocs)
+            {
+                horizontalChildren.Add(BuildDocumentDock(
+                    $"Root.Left_{group.Slot.ModuleType}", group.Slot.ModuleType,
+                    new[] { group }, double.NaN));
+                horizontalChildren.Add(NewSplitter());
+            }
+
+            horizontalChildren.Add(centerDocDock);
+
+            if (rightDocs.Count == 1)
+            {
+                var (slot, _) = rightDocs[0];
+                horizontalChildren.Add(NewSplitter());
+                horizontalChildren.Add(BuildDocumentDock(
+                    $"Root.Right_{slot.ModuleType}", slot.ModuleType, rightDocs, double.NaN));
+            }
+            else if (rightDocs.Count > 1)
+            {
+                horizontalChildren.Add(NewSplitter());
+                horizontalChildren.Add(BuildVerticalStack(rightDocs));
+            }
+
+            List<IDockable> topLevelChildren;
+            Orientation topLevelOrientation;
+
+            if (topDocs.Count > 0 || bottomDocs.Count > 0)
+            {
+                var horizontal = new ProportionalDock
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    Title = "Horizontal",
+                    Orientation = Orientation.Horizontal,
+                    Proportion = double.NaN,
+                    VisibleDockables = horizontalChildren
+                };
+
+                topLevelChildren = new List<IDockable>();
+                topLevelOrientation = Orientation.Vertical;
+
+                if (topDocs.Count > 0)
+                {
+                    topLevelChildren.Add(BuildDocumentDock("Root.Top", "Top", topDocs, double.NaN));
+                    topLevelChildren.Add(NewSplitter());
+                }
+
+                topLevelChildren.Add(horizontal);
+
+                if (bottomDocs.Count > 0)
+                {
+                    topLevelChildren.Add(NewSplitter());
+                    topLevelChildren.Add(BuildDocumentDock("Root.Bottom", "Bottom", bottomDocs, double.NaN));
+                }
+            }
+            else
+            {
+                topLevelChildren = horizontalChildren;
+                topLevelOrientation = Orientation.Horizontal;
+            }
+
+            var mainProportional = new ProportionalDock
+            {
+                Id = Guid.NewGuid().ToString(),
+                Title = "Main",
+                Orientation = topLevelOrientation,
+                Proportion = double.NaN,
+                VisibleDockables = topLevelChildren
+            };
+
+            DistributeProportions(mainProportional);
+
+            var rootDock = new RootDock
+            {
+                Id = "Root",
+                Title = "Root",
+                Context = workMode.Id,
+                IsFocusableRoot = true,
+                VisibleDockables = new List<IDockable> { mainProportional },
+                ActiveDockable = mainProportional,
+                DefaultDockable = mainProportional,
+                FocusedDockable = mainProportional
+            };
+
+            InitLayout(rootDock);
+            ValidateAndRemoveDuplicates(rootDock);
+
+            try
+            {
+                var serializer = GetSerializer();
+                string json;
+
+                using (var writeStream = new System.IO.MemoryStream())
+                {
+                    serializer.Save(writeStream, rootDock);
+                    json = System.Text.Encoding.UTF8.GetString(writeStream.ToArray());
+                }
+
+                if (!string.IsNullOrEmpty(json))
+                {
+                    IRootDock? sanitized = null;
+                    using (var readStream = new System.IO.MemoryStream(
+                        System.Text.Encoding.UTF8.GetBytes(json)))
+                    {
+                        sanitized = serializer.Load<RootDock>(readStream);
+                    }
+
+                    if (sanitized != null)
+                    {
+                        FixRootDockActiveState(sanitized);
+                        DetachViewsFromLayout(rootDock);
+                        int count = RestoreModulesInLayout(sanitized, workMode, ownerTab);
+                        NormalizeProportionsRecursive(sanitized);
+                        sanitized.Factory = this;
+                        InitLayout(sanitized);
+                        ValidateAndRemoveDuplicates(sanitized);
+
+                        _logger.LogDebug("Layout sanitized via serializer: {Count} modules", count);
+                        _currentRootDock = sanitized;
+                        return sanitized;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to sanitize layout, using raw version");
             }
 
             _logger.LogDebug("Layout built manually with {Count} documents", documents.Count);
             _currentRootDock = rootDock;
             return rootDock;
-}
+        }
 
         private static DocumentDock BuildDocumentDock(
             string id,
@@ -870,6 +867,9 @@ namespace Writersword.Src.Infrastructure.Dock
                     targetDock.VisibleDockables.Add(doc);
                     targetDock.ActiveDockable = doc;
 
+                    doc.Factory = this;
+                    doc.Owner = targetDock;
+
                     _logger.LogDebug("Module {ModuleType} inserted as tab", slot.ModuleType);
                 }
                 else
@@ -880,9 +880,13 @@ namespace Writersword.Src.Infrastructure.Dock
                         Title = slot.ModuleType,
                         Proportion = 0.25,
                         CanCreateDocument = false,
+                        Factory = this,
                         VisibleDockables = new List<IDockable> { doc },
                         ActiveDockable = doc
                     };
+
+                    doc.Factory = this;
+                    doc.Owner = newDocDock;
 
                     var topProportional = FindTopLevelProportionalDock(rootDock);
                     if (topProportional == null)
@@ -891,6 +895,7 @@ namespace Writersword.Src.Infrastructure.Dock
                         return;
                     }
 
+                    newDocDock.Owner = topProportional;
                     topProportional.VisibleDockables ??= new List<IDockable>();
 
                     if (IsLeft(position))

@@ -122,6 +122,9 @@ namespace Writersword.ViewModels.Components
         /// <summary>Команда закрытия всех вкладок кроме активной</summary>
         public ReactiveCommand<Unit, Unit> CloseOtherTabsCommand { get; }
 
+        /// <summary>Команда открытия окна настроек</summary>
+        public ReactiveCommand<Unit, Unit> OpenSettingsCommand { get; }
+
 
         private bool _hasActiveTab;
 
@@ -174,6 +177,7 @@ namespace Writersword.ViewModels.Components
             CloseTabCommand = ReactiveCommand.CreateFromTask(CloseTab);
             CloseAllTabsCommand = ReactiveCommand.CreateFromTask(CloseAllTabs);
             CloseOtherTabsCommand = ReactiveCommand.CreateFromTask(CloseOtherTabs);
+            OpenSettingsCommand = ReactiveCommand.CreateFromTask(OpenSettings);
 
             LoadRecentProjects();
 
@@ -687,12 +691,26 @@ namespace Writersword.ViewModels.Components
                 _logger.LogError(ex, "Error resetting to default");
             }
         }
+
+        /// <summary>Открыть окно настроек</summary>
+        private async Task OpenSettings()
+        {
+            _logger.LogDebug("OpenSettings called");
+
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
+                && desktop.MainWindow != null)
+            {
+                var settingsVM = new SettingsViewModel();
+                var settingsView = new SettingsView { DataContext = settingsVM };
+                await settingsView.ShowDialog(desktop.MainWindow);
+            }
+        }
     }
 
-        /// <summary>
-        /// Элемент списка недавних проектов
-        /// </summary>
-        public class RecentProjectItem
+    /// <summary>
+    /// Элемент списка недавних проектов
+    /// </summary>
+    public class RecentProjectItem
     {
         /// <summary>Полный путь к файлу проекта</summary>
         public string FilePath { get; set; } = "";

@@ -308,5 +308,52 @@ namespace Writersword.Src.Infrastructure.Services.Storage
             _logger.LogDebug("GetAllWorkspaceConfigs: {Count} configs", _settings.WorkspaceConfigs.Count);
             return _settings.WorkspaceConfigs;
         }
+
+        /// <summary>
+        /// Получить настройки модуля с десериализацией в нужный тип
+        /// </summary>
+        public T? GetModuleSettings<T>(string moduleType) where T : class
+        {
+            if (!_settings.ModuleSettings.TryGetValue(moduleType, out var raw) || raw == null)
+            {
+                _logger.LogDebug("GetModuleSettings({ModuleType}): not found", moduleType);
+                return null;
+            }
+
+            try
+            {
+                var json = JsonConvert.SerializeObject(raw);
+                var result = JsonConvert.DeserializeObject<T>(json);
+                _logger.LogDebug("GetModuleSettings({ModuleType}): found and deserialized", moduleType);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deserializing module settings for {ModuleType}", moduleType);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Сохранить настройки модуля
+        /// </summary>
+        public void SaveModuleSettings(string moduleType, object settings)
+        {
+            _settings.ModuleSettings[moduleType] = settings;
+            _logger.LogDebug("SaveModuleSettings({ModuleType})", moduleType);
+            Save();
+        }
+
+        /// <summary>
+        /// Удалить настройки модуля
+        /// </summary>
+        public void DeleteModuleSettings(string moduleType)
+        {
+            if (_settings.ModuleSettings.Remove(moduleType))
+            {
+                _logger.LogDebug("DeleteModuleSettings({ModuleType})", moduleType);
+                Save();
+            }
+        }
     }
 }

@@ -1,0 +1,58 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Writersword.Modules.TextEditor.Views.TextEditorSettingsView">
+
+	<StackPanel Spacing="16" Margin="8">
+
+		<!-- Размер шрифта -->
+		<StackPanel Spacing="6">
+			<TextBlock Text="Font Size"
+                       Foreground="#CCC"
+                       FontSize="13"/>
+			<NumericUpDown Value="{Binding FontSize}"
+                           Minimum="8"
+                           Maximum="72"
+                           Increment="1"
+                           FormatString="0"
+                           Background="#2D2D30"
+                           Foreground="White"
+                           BorderBrush="#3E3E42"
+                           BorderThickness="1"
+                           Width="120"
+                           HorizontalAlignment="Left"/>
+		</StackPanel>
+
+		<!-- Шрифт -->
+		<StackPanel Spacing="6">
+			<TextBlock Text="Font Family"
+                       Foreground="#CCC"
+                       FontSize="13"/>
+			<ComboBox ItemsSource="{Binding AvailableFonts}"
+                      SelectedItem="{Binding FontFamily}"
+                      Background="#2D2D30"
+                      Foreground="White"
+                      BorderBrush="#3E3E42"
+                      BorderThickness="1"
+                      Width="240"
+                      HorizontalAlignment="Left"/>
+		</StackPanel>
+
+		<!-- Предпросмотр -->
+		<StackPanel Spacing="6">
+			<TextBlock Text="Preview"
+                       Foreground="#CCC"
+                       FontSize="13"/>
+			<Border Background="White"
+                    CornerRadius="4"
+                    Padding="12,8">
+				<TextBlock Text="The quick brown fox jumps over the lazy dog"
+                           FontSize="{Binding FontSize}"
+                           FontFamily="{Binding FontFamily}"
+                           Foreground="#000000"
+                           TextWrapping="Wrap"/>
+			</Border>
+		</StackPanel>
+
+	</StackPanel>
+
+</UserControl>

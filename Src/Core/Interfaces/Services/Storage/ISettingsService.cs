@@ -15,45 +15,37 @@ namespace Writersword.Src.Core.Interfaces.Services.Storage
     {
         /// <summary>Загрузить настройки из файла</summary>
         void Load();
-
         /// <summary>Сохранить настройки в файл</summary>
         void Save();
-
         /// <summary>Тема приложения (Dark, Light, Sepia)</summary>
         string Theme { get; set; }
-
         /// <summary>Язык интерфейса (ru, uk, en)</summary>
         string Language { get; set; }
-
         /// <summary>Последний открытый проект</summary>
         string? LastOpenedProject { get; set; }
-
         /// <summary>Папка для проектов по умолчанию</summary>
         string DefaultProjectsFolder { get; set; }
-
         /// <summary>Последний использованный путь (для диалога Save/Open)</summary>
         string? LastUsedPath { get; set; }
-
         /// <summary>Получает или задает список недавно использованных проектов</summary>
         List<RecentProject> RecentProjects { get; }
-
         /// <summary>Добавляет проект в список недавно использованных</summary>
         void AddRecentProject(string filePath);
-
         List<string> OpenProjectPaths { get; set; }
-
         void SaveOpenProjects(List<string> projectPaths);
-
         /// <summary>Получить глобальную конфигурацию рабочего пространства для типа проекта</summary>
         WorkspaceConfig? GetWorkspaceConfig(string projectType);
-
         /// <summary>Сохранить глобальную конфигурацию рабочего пространства</summary>
         void SaveWorkspaceConfig(string projectType, WorkspaceConfig config);
-
         /// <summary>Удалить глобальную конфигурацию рабочего пространства</summary>
         void DeleteWorkspaceConfig(string projectType);
-
         /// <summary>Получить все сохранённые конфигурации</summary>
         Dictionary<string, WorkspaceConfig> GetAllWorkspaceConfigs();
+        /// <summary>Получить настройки модуля</summary>
+        T? GetModuleSettings<T>(string moduleType) where T : class;
+        /// <summary>Сохранить настройки модуля</summary>
+        void SaveModuleSettings(string moduleType, object settings);
+        /// <summary>Удалить настройки модуля</summary>
+        void DeleteModuleSettings(string moduleType);
     }
 }

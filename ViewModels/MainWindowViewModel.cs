@@ -254,9 +254,16 @@ namespace Writersword.ViewModels
 
             var newLayout = activeTab.Workspace.GetCurrentLayout();
 
-            DockLayout = null;
-            DockLayout = newLayout;
-            _logger.LogDebug("DockLayout updated from WorkspaceChanged");
+            if (DockLayout != newLayout)
+            {
+                DockLayout = null;
+                DockLayout = newLayout;
+                _logger.LogDebug("DockLayout updated from WorkspaceChanged (new layout object)");
+            }
+            else
+            {
+                _logger.LogDebug("DockLayout unchanged (same object), skipping reassign");
+            }
 
             var activeWorkMode = activeTab.Workspace.GetActiveWorkMode();
             if (activeWorkMode != null)

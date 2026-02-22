@@ -1,6 +1,7 @@
 using ReactiveUI;
 using System.Collections.Generic;
 using Writersword.Modules.TextEditor.Models;
+using Writersword.Src.Modules.TextEditor.Models;
 
 namespace Writersword.Modules.TextEditor.ViewModels
 {
@@ -13,6 +14,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private EditorDocument _document;
         private string _plainText = string.Empty;
         private bool _isReadOnly = false;
+        private double _fontSize = 14;
+        private string _fontFamily = "Times New Roman";
 
         /// <summary>Простой текст для отображения в TextBox</summary>
         public string PlainText
@@ -25,14 +28,25 @@ namespace Writersword.Modules.TextEditor.ViewModels
             }
         }
 
-        /// <summary>
-        /// Режим только для чтения (блокирует редактирование)
-        /// Используется при просмотре версий из кеша
-        /// </summary>
+        /// <summary>Режим только для чтения</summary>
         public bool IsReadOnly
         {
             get => _isReadOnly;
             set => this.RaiseAndSetIfChanged(ref _isReadOnly, value);
+        }
+
+        /// <summary>Размер шрифта</summary>
+        public double FontSize
+        {
+            get => _fontSize;
+            set => this.RaiseAndSetIfChanged(ref _fontSize, value);
+        }
+
+        /// <summary>Семейство шрифта</summary>
+        public string FontFamily
+        {
+            get => _fontFamily;
+            set => this.RaiseAndSetIfChanged(ref _fontFamily, value);
         }
 
         /// <summary>Название документа</summary>
@@ -62,10 +76,16 @@ namespace Writersword.Modules.TextEditor.ViewModels
             PlainText = content;
         }
 
+        /// <summary>Применить настройки к редактору</summary>
+        public void ApplySettings(TextEditorSettings settings)
+        {
+            FontSize = settings.FontSize;
+            FontFamily = settings.FontFamily;
+        }
+
         /// <summary>Получить модель документа для сохранения</summary>
         public EditorDocument GetDocument()
         {
-            // Пока храним как простой текст в одном параграфе
             _document.Paragraphs.Clear();
             _document.Paragraphs.Add(new Paragraph
             {
@@ -74,7 +94,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     new TextFragment { Text = PlainText }
                 }
             });
-
             return _document;
         }
     }

@@ -232,6 +232,8 @@ namespace Writersword.Src.Infrastructure.Workspace
                     Category = category
                 };
 
+                _logger.LogDebug("Created new slot for {moduleType}: Category={Category}, IsCloseable={IsCloseable}", moduleType, newSlot.Category, newSlot.IsCloseable);
+
                 _activeWorkMode.ModuleSlots.Add(newSlot);
                 existingSlot = newSlot;
             }
@@ -321,6 +323,13 @@ namespace Writersword.Src.Infrastructure.Workspace
             if (_activeWorkMode == null) return;
 
             var slot = _activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleType);
+
+
+            _logger.LogDebug("HandleModuleClosed: {moduleType}, slot={SlotFound}, category={Category}, isCloseable={IsCloseable}",
+                moduleType,
+                slot != null ? "found" : "NULL",
+                slot?.Category.ToString() ?? "N/A",
+                slot?.IsCloseable.ToString() ?? "N/A");
 
             if (slot != null && slot.Category == ModuleCategory.Required)
             {
@@ -413,44 +422,46 @@ namespace Writersword.Src.Infrastructure.Workspace
         /// Сохраняет, закрывает float окна, очищает модули и layout
         /// </summary>
         public void Deactivate()
+{
+    _logger.LogDebug("Deactivating workspace");
+    _isDeactivating = true;
+
+    try
+    {
+        // Сериализуем текущий layout в память ПЕРЕД остановкой
+        // чтобы при следующей Activate() использовался актуальный layout
+        if (_dockLayout != null)
         {
-            _logger.LogDebug("Deactivating workspace");
+            var (serializedLayout, updatedSlots) = _dockFactory.SerializeCurrentLayout(
+                _dockLayout, _activeWorkMode, _tab.ModuleContext);
 
-            _isDeactivating = true;
-
-            try
+            if (serializedLayout != null)
             {
-                try
-                {
-                    _autoSave.SaveNowAsync().Wait();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to save workspace during deactivation");
-                }
-
-                _autoSave.Stop();
-
-                CloseAllFloatWindows();
-                _dockFactory.DetachViewsFromLayout(_dockLayout);
-                ClearAllModulesFromContext();
-
-                _dockFactory.OnModuleClosed = null;
-
-                _dockLayout = null!;
+                _activeWorkMode.SerializedDockLayout = serializedLayout;
+                _activeWorkMode.ModuleSlots = updatedSlots;
+                _logger.LogDebug("Serialized layout saved to memory for WorkMode: {Title}", _activeWorkMode.Title);
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error during deactivation");
-                throw;
-            }
-            finally
-            {
-                _isDeactivating = false;
-            }
-
-            _logger.LogDebug("Workspace deactivated");
         }
+
+        _autoSave.Stop();
+        CloseAllFloatWindows();
+        _dockFactory.DetachViewsFromLayout(_dockLayout);
+        ClearAllModulesFromContext();
+        _dockFactory.OnModuleClosed = null;
+        _dockLayout = null!;
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Error during deactivation");
+        throw;
+    }
+    finally
+    {
+        _isDeactivating = false;
+    }
+
+    _logger.LogDebug("Workspace deactivated");
+}
 
         /// <summary>
         /// Освободить ресурсы

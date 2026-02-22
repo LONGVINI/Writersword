@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Writersword.Modules.Timer.Views.TimerSettingsView">
+
+    <StackPanel Spacing="16" Margin="8">
+
+        <!-- Режим -->
+        <StackPanel Spacing="6">
+            <TextBlock Text="Mode"
+                       Foreground="#CCC"
+                       FontSize="13"/>
+            <CheckBox Content="Countdown mode"
+                      IsChecked="{Binding IsCountdown}"
+                      Foreground="#CCC"
+                      FontSize="13"/>
+        </StackPanel>
+
+        <!-- Дефолтное время -->
+        <StackPanel Spacing="6">
+            <TextBlock Text="Default time"
+                       Foreground="#CCC"
+                       FontSize="13"/>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Minutes"
+                               Foreground="#999"
+                               FontSize="11"/>
+                    <NumericUpDown Value="{Binding DefaultMinutes}"
+                                   Minimum="0"
+                                   Maximum="999"
+                                   Increment="1"
+                                   FormatString="0"
+                                   Background="#2D2D30"
+                                   Foreground="White"
+                                   BorderBrush="#3E3E42"
+                                   BorderThickness="1"
+                                   Width="100"/>
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Seconds"
+                               Foreground="#999"
+                               FontSize="11"/>
+                    <NumericUpDown Value="{Binding DefaultSeconds}"
+                                   Minimum="0"
+                                   Maximum="59"
+                                   Increment="1"
+                                   FormatString="0"
+                                   Background="#2D2D30"
+                                   Foreground="White"
+                                   BorderBrush="#3E3E42"
+                                   BorderThickness="1"
+                                   Width="100"/>
+                </StackPanel>
+            </StackPanel>
+        </StackPanel>
+
+    </StackPanel>
+
+</UserControl>

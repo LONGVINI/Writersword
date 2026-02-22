@@ -62,7 +62,8 @@
 			<Separator/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_Settings}"
-			          InputGesture="Ctrl+,"/>
+					  InputGesture="Ctrl+,"
+					  Command="{Binding OpenSettingsCommand}"/>
 
 			<Separator/>
 

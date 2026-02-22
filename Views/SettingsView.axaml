@@ -1,0 +1,156 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Writersword.ViewModels"
+        x:Class="Writersword.Views.SettingsView"
+        x:DataType="vm:SettingsViewModel"
+        Title="Settings"
+        Width="740"
+        Height="520"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        SystemDecorations="None"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent">
+
+	<Grid>
+
+		<!-- Подложка -->
+		<Border Background="#0D0D0D"
+                CornerRadius="14"
+                Margin="2"/>
+
+		<!-- Основной контент -->
+		<Border Background="#1E1E1E"
+                CornerRadius="12"
+                Margin="8">
+
+			<Grid>
+				<Grid.RowDefinitions>
+					<RowDefinition Height="48"/>
+					<RowDefinition Height="*"/>
+				</Grid.RowDefinitions>
+
+				<!-- Шапка -->
+				<Grid Grid.Row="0" Margin="20,0">
+					<TextBlock Text="Settings"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               Foreground="White"
+                               VerticalAlignment="Center"/>
+					<Button HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Width="28"
+                            Height="28"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Foreground="#858585"
+                            FontSize="14"
+                            Cursor="Hand"
+                            Command="{Binding CloseCommand}">
+						<TextBlock Text="✕"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+						<Button.Styles>
+							<Style Selector="Button:pointerover /template/ ContentPresenter">
+								<Setter Property="Background" Value="#3A3A3C"/>
+								<Setter Property="CornerRadius" Value="4"/>
+							</Style>
+							<Style Selector="Button:pointerover">
+								<Setter Property="Foreground" Value="White"/>
+							</Style>
+						</Button.Styles>
+					</Button>
+				</Grid>
+
+				<!-- Разделитель шапки -->
+				<Border Grid.Row="0"
+                        Height="1"
+                        Background="#2D2D30"
+                        VerticalAlignment="Bottom"/>
+
+				<!-- Контент -->
+				<Grid Grid.Row="1">
+					<Grid.ColumnDefinitions>
+						<ColumnDefinition Width="180"/>
+						<ColumnDefinition Width="*"/>
+					</Grid.ColumnDefinitions>
+
+					<!-- Левая панель -->
+					<Border Grid.Column="0"
+                            Background="#252526"
+                            CornerRadius="0,0,0,12">
+						<ItemsControl ItemsSource="{Binding Tabs}"
+                                      Margin="0,8">
+							<ItemsControl.ItemTemplate>
+								<DataTemplate x:DataType="vm:SettingsTabItem">
+									<Panel>
+
+										<!-- Заголовок секции верхнего уровня (MODULES) -->
+										<TextBlock Text="{Binding Title}"
+                                                   FontSize="10"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#555"
+                                                   Margin="16,10,16,2"
+                                                   IsVisible="{Binding IsHeader}"/>
+
+										<!-- Заголовок модуля -->
+										<TextBlock Text="{Binding Title}"
+                                                   FontSize="11"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#777"
+                                                   Margin="16,8,16,2"
+                                                   IsVisible="{Binding IsModuleHeader}"/>
+
+										<!-- Кликабельная активная вкладка -->
+										<Border Padding="{Binding Indent}"
+                                                Cursor="Hand"
+                                                IsVisible="{Binding IsClickable}"
+                                                PointerPressed="Tab_PointerPressed"
+                                                Tag="{Binding IsSelected}">
+											<Border.Styles>
+												<Style Selector="Border[Tag=False]:pointerover">
+													<Setter Property="Background" Value="#2A2A2C"/>
+												</Style>
+												<Style Selector="Border[Tag=True]">
+													<Setter Property="Background" Value="#37373A"/>
+												</Style>
+											</Border.Styles>
+											<TextBlock Text="{Binding Title}"
+                                                       FontSize="13"
+                                                       Foreground="#CCCCCC"
+                                                       VerticalAlignment="Center"/>
+										</Border>
+
+										<!-- Недоступная вкладка (нет проекта или модуль не запущен) -->
+										<Border Padding="{Binding Indent}"
+                                                IsVisible="{Binding IsDisabled}">
+											<TextBlock Text="{Binding Title}"
+                                                       FontSize="13"
+                                                       Foreground="#444"
+                                                       VerticalAlignment="Center"/>
+										</Border>
+
+									</Panel>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
+					</Border>
+
+					<!-- Разделитель панелей -->
+					<Border Grid.Column="0"
+                            Width="1"
+                            Background="#2D2D30"
+                            HorizontalAlignment="Right"/>
+
+					<!-- Правая панель -->
+					<ScrollViewer Grid.Column="1"
+                                  Padding="20"
+                                  VerticalScrollBarVisibility="Auto">
+						<ContentControl Content="{Binding SelectedTab.Content}"/>
+					</ScrollViewer>
+
+				</Grid>
+			</Grid>
+		</Border>
+	</Grid>
+</Window>

@@ -3,30 +3,24 @@ using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using System;
 using System.Reactive;
+using Writersword.Src.Modules.Timer.Models;
 
 namespace Writersword.Modules.Timer.ViewModels
 {
     /// <summary>
     /// ViewModel для модуля таймера
-    /// Управляет отсчётом времени, запуском/остановкой таймера
+    /// Поддерживает прямой счёт и обратный отсчёт
     /// </summary>
     public class TimerViewModel : ReactiveObject, IDisposable
     {
         private readonly ILogger<TimerViewModel> _logger;
 
-        /// <summary>Сколько секунд прошло</summary>
         private int _elapsedSeconds = 0;
-
-        /// <summary>Работает ли таймер сейчас</summary>
+        private int _targetSeconds = 60;
         private bool _isRunning = false;
-
-        /// <summary>Системный таймер для подсчёта секунд</summary>
+        private bool _isCountdown = false;
         private System.Timers.Timer? _timer;
 
-        /// <summary>
-        /// Количество прошедших секунд
-        /// При изменении обновляется DisplayTime
-        /// </summary>
         public int ElapsedSeconds
         {
             get => _elapsedSeconds;
@@ -34,45 +28,58 @@ namespace Writersword.Modules.Timer.ViewModels
             {
                 this.RaiseAndSetIfChanged(ref _elapsedSeconds, value);
                 this.RaisePropertyChanged(nameof(DisplayTime));
+                this.RaisePropertyChanged(nameof(IsFinished));
             }
         }
 
-        /// <summary>
-        /// Работает ли таймер
-        /// </summary>
+        public int TargetSeconds
+        {
+            get => _targetSeconds;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _targetSeconds, value);
+                this.RaisePropertyChanged(nameof(DisplayTime));
+            }
+        }
+
         public bool IsRunning
         {
             get => _isRunning;
             set => this.RaiseAndSetIfChanged(ref _isRunning, value);
         }
 
-        /// <summary>
-        /// Отформатированное время для отображения (ЧЧ:ММ:СС)
-        /// Автоматически пересчитывается при изменении ElapsedSeconds
-        /// </summary>
+        public bool IsCountdown
+        {
+            get => _isCountdown;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _isCountdown, value);
+                this.RaisePropertyChanged(nameof(DisplayTime));
+            }
+        }
+
+        /// <summary>Обратный отсчёт завершён</summary>
+        public bool IsFinished => IsCountdown && ElapsedSeconds >= TargetSeconds;
+
         public string DisplayTime
         {
             get
             {
-                var hours = _elapsedSeconds / 3600;
-                var minutes = (_elapsedSeconds % 3600) / 60;
-                var seconds = _elapsedSeconds % 60;
-                return $"{hours:D2}:{minutes:D2}:{seconds:D2}";
+                int seconds = IsCountdown
+                    ? Math.Max(0, TargetSeconds - ElapsedSeconds)
+                    : ElapsedSeconds;
+
+                var hours = seconds / 3600;
+                var minutes = (seconds % 3600) / 60;
+                var secs = seconds % 60;
+                return $"{hours:D2}:{minutes:D2}:{secs:D2}";
             }
         }
 
-        /// <summary>Команда запуска таймера</summary>
         public ReactiveCommand<Unit, Unit> StartCommand { get; }
-
-        /// <summary>Команда остановки таймера</summary>
         public ReactiveCommand<Unit, Unit> StopCommand { get; }
-
-        /// <summary>Команда сброса таймера</summary>
         public ReactiveCommand<Unit, Unit> ResetCommand { get; }
 
-        /// <summary>
-        /// Конструктор - создаём команды и запускаем системный таймер
-        /// </summary>
         public TimerViewModel()
         {
             _logger = App.Services.GetService<ILogger<TimerViewModel>>()!;
@@ -84,35 +91,43 @@ namespace Writersword.Modules.Timer.ViewModels
             _timer = new System.Timers.Timer(1000);
             _timer.Elapsed += (s, e) =>
             {
-                if (_isRunning)
+                if (!_isRunning) return;
+
+                if (IsCountdown && ElapsedSeconds >= TargetSeconds)
                 {
-                    ElapsedSeconds++;
+                    IsRunning = false;
+                    _logger.LogDebug("Countdown finished");
+                    return;
                 }
+
+                ElapsedSeconds++;
             };
             _timer.Start();
         }
 
-        /// <summary>
-        /// Запустить таймер
-        /// </summary>
+        public void ApplySettings(TimerSettings settings)
+        {
+            IsCountdown = settings.IsCountdown;
+            TargetSeconds = settings.DefaultMinutes * 60 + settings.DefaultSeconds;
+            ElapsedSeconds = 0;
+            IsRunning = false;
+            _logger.LogDebug("Settings applied: Countdown={IsCountdown}, Target={Target}s",
+                settings.IsCountdown, TargetSeconds);
+        }
+
         private void Start()
         {
+            if (IsFinished) return;
             IsRunning = true;
             _logger.LogDebug("Timer started");
         }
 
-        /// <summary>
-        /// Остановить таймер (пауза)
-        /// </summary>
         private void Stop()
         {
             IsRunning = false;
             _logger.LogDebug("Timer stopped");
         }
 
-        /// <summary>
-        /// Сбросить таймер на 00:00:00
-        /// </summary>
         private void Reset()
         {
             IsRunning = false;
@@ -120,10 +135,6 @@ namespace Writersword.Modules.Timer.ViewModels
             _logger.LogDebug("Timer reset");
         }
 
-        /// <summary>
-        /// Освободить ресурсы - остановить и удалить системный таймер
-        /// Без этого будет утечка памяти
-        /// </summary>
         public void Dispose()
         {
             _timer?.Stop();
