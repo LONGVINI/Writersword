@@ -1204,6 +1204,42 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Theme.
+        /// </summary>
+        public static string Settings_General_Theme {
+            get {
+                return ResourceManager.GetString("Settings_General_Theme", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Dark.
+        /// </summary>
+        public static string Settings_General_Theme_Dark {
+            get {
+                return ResourceManager.GetString("Settings_General_Theme_Dark", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Light.
+        /// </summary>
+        public static string Settings_General_Theme_Light {
+            get {
+                return ResourceManager.GetString("Settings_General_Theme_Light", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Sepia.
+        /// </summary>
+        public static string Settings_General_Theme_Sepia {
+            get {
+                return ResourceManager.GetString("Settings_General_Theme_Sepia", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Language:.
         /// </summary>
         public static string Settings_Language {

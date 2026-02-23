@@ -17,11 +17,13 @@
 
     <Grid>
 
-        <Border Background="#0D0D0D"
+        <!-- Подложка -->
+        <Border Background="{DynamicResource BgBaseBrush}"
                 CornerRadius="14"
                 Margin="2"/>
 
-        <Border Background="#1E1E1E"
+        <!-- Основной контент -->
+        <Border Background="{DynamicResource BgAppBrush}"
                 CornerRadius="12"
                 Margin="8">
 
@@ -31,11 +33,12 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
+                <!-- Заголовок окна -->
                 <Grid Grid.Row="0" Margin="20,0">
                     <TextBlock Text="{x:Static loc:Strings.Settings_Title}"
                                FontSize="16"
                                FontWeight="SemiBold"
-                               Foreground="White"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
                                VerticalAlignment="Center"/>
                     <Button HorizontalAlignment="Right"
                             VerticalAlignment="Center"
@@ -43,7 +46,7 @@
                             Height="28"
                             Background="Transparent"
                             BorderThickness="0"
-                            Foreground="#858585"
+                            Foreground="{DynamicResource TextMutedBrush}"
                             FontSize="14"
                             Cursor="Hand"
                             Command="{Binding CloseCommand}">
@@ -52,19 +55,20 @@
                                    VerticalAlignment="Center"/>
                         <Button.Styles>
                             <Style Selector="Button:pointerover /template/ ContentPresenter">
-                                <Setter Property="Background" Value="#3A3A3C"/>
+                                <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
                                 <Setter Property="CornerRadius" Value="4"/>
                             </Style>
                             <Style Selector="Button:pointerover">
-                                <Setter Property="Foreground" Value="White"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
                             </Style>
                         </Button.Styles>
                     </Button>
                 </Grid>
 
+                <!-- Разделитель под заголовком -->
                 <Border Grid.Row="0"
                         Height="1"
-                        Background="#2D2D30"
+                        Background="{DynamicResource BorderSubtleBrush}"
                         VerticalAlignment="Bottom"/>
 
                 <Grid Grid.Row="1">
@@ -73,8 +77,9 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
+                    <!-- Левая панель навигации -->
                     <Border Grid.Column="0"
-                            Background="#252526"
+                            Background="{DynamicResource BgSurfaceBrush}"
                             CornerRadius="0,0,0,12">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding Tabs}"
@@ -85,72 +90,117 @@
                                         <Panel HorizontalAlignment="Stretch"
                                                IsVisible="{Binding IsVisibleInList}">
 
+                                            <!-- Заголовок группы (не кликабельный) -->
                                             <TextBlock Text="{Binding Title}"
                                                        FontSize="10"
                                                        FontWeight="SemiBold"
-                                                       Foreground="#555"
+                                                       Foreground="{DynamicResource TextDisabledBrush}"
                                                        Margin="16,10,16,2"
                                                        IsVisible="{Binding IsHeader}"/>
 
+                                            <!-- Заголовок секции модулей (сворачиваемый) -->
+                                            <!-- Цвета семантические — меняются с темой через токены -->
                                             <Border IsVisible="{Binding IsSectionHeader}"
+                                                    Classes.global="{Binding IsGlobalSection}"
                                                     Padding="12,7,16,7"
                                                     Margin="0,6,0,0"
                                                     HorizontalAlignment="Stretch"
-                                                    Background="{Binding SectionHeaderBackground}"
                                                     Cursor="Hand"
                                                     PointerPressed="SectionHeader_PointerPressed">
+                                                <Border.Styles>
+                                                    <!-- Global секция -->
+                                                    <Style Selector="Border.global">
+                                                        <Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
+                                                    </Style>
+                                                    <!-- Project секция -->
+                                                    <Style Selector="Border:not(.global)">
+                                                        <Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
+                                                    </Style>
+                                                </Border.Styles>
                                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                                     <TextBlock Text="{Binding ExpandArrow}"
-                                                               FontSize="14"
-                                                               Foreground="{Binding SectionHeaderForeground}"
-                                                               VerticalAlignment="Center"/>
+                                                               FontSize="16"
+                                                               VerticalAlignment="Center">
+                                                        <TextBlock.Styles>
+                                                            <Style Selector="Border.global TextBlock">
+                                                                <Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
+                                                            </Style>
+                                                            <Style Selector="TextBlock">
+                                                                <Setter Property="Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
+                                                            </Style>
+                                                        </TextBlock.Styles>
+                                                    </TextBlock>
                                                     <TextBlock Text="{Binding Title}"
                                                                FontSize="10"
                                                                FontWeight="Bold"
-                                                               Foreground="{Binding SectionHeaderForeground}"
                                                                LetterSpacing="1"
-                                                               VerticalAlignment="Center"/>
+                                                               VerticalAlignment="Center">
+                                                        <TextBlock.Styles>
+                                                            <Style Selector="Border.global TextBlock">
+                                                                <Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
+                                                            </Style>
+                                                            <Style Selector="TextBlock">
+                                                                <Setter Property="Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
+                                                            </Style>
+                                                        </TextBlock.Styles>
+                                                    </TextBlock>
                                                 </StackPanel>
                                             </Border>
 
+                                            <!-- Заголовок модуля -->
                                             <TextBlock Text="{Binding Title}"
                                                        FontSize="11"
                                                        FontWeight="SemiBold"
-                                                       Foreground="#666"
+                                                       Foreground="{DynamicResource TextDisabledBrush}"
                                                        Margin="16,6,16,2"
                                                        IsVisible="{Binding IsModuleHeader}"/>
 
-                                            <Grid IsVisible="{Binding IsClickable}"
-                                                  HorizontalAlignment="Stretch">
-                                                <Border Background="{Binding TabSelectedBackground}"
-                                                        IsHitTestVisible="False"
-                                                        HorizontalAlignment="Stretch"
-                                                        VerticalAlignment="Stretch"/>
-                                                <Border HorizontalAlignment="Stretch"
-                                                        VerticalAlignment="Stretch"
-                                                        Background="Transparent"
-                                                        Padding="{Binding Indent}"
-                                                        Cursor="Hand"
-                                                        PointerPressed="Tab_PointerPressed">
-                                                    <Border.Styles>
-                                                        <Style Selector="Border:pointerover">
-                                                            <Setter Property="Background" Value="#2A2A2C"/>
+                                            <!-- Кликабельная вкладка -->
+                                            <Border IsVisible="{Binding IsClickable}"
+                                                    Classes.selected="{Binding IsSelected}"
+                                                    HorizontalAlignment="Stretch"
+                                                    Cursor="Hand"
+                                                    Padding="{Binding Indent}"
+                                                    PointerPressed="Tab_PointerPressed">
+                                                <Border.Styles>
+                                                    <!-- Выбранная вкладка -->
+                                                    <Style Selector="Border.selected">
+                                                        <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+                                                    </Style>
+                                                    <!-- Hover -->
+                                                    <Style Selector="Border:pointerover">
+                                                        <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+                                                    </Style>
+                                                    <!-- Дефолт -->
+                                                    <Style Selector="Border">
+                                                        <Setter Property="Background" Value="Transparent"/>
+                                                    </Style>
+                                                </Border.Styles>
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontSize="13"
+                                                           VerticalAlignment="Center">
+                                                    <TextBlock.Styles>
+                                                        <!-- Выбранная — основной цвет -->
+                                                        <Style Selector="Border.selected TextBlock">
+                                                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                                                            <Setter Property="FontWeight" Value="SemiBold"/>
                                                         </Style>
-                                                    </Border.Styles>
-                                                    <TextBlock Text="{Binding Title}"
-                                                               FontSize="13"
-                                                               Foreground="{Binding TabForeground}"
-                                                               VerticalAlignment="Center"/>
-                                                </Border>
-                                            </Grid>
+                                                        <!-- Обычная — приглушённый -->
+                                                        <Style Selector="TextBlock">
+                                                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+                                                        </Style>
+                                                    </TextBlock.Styles>
+                                                </TextBlock>
+                                            </Border>
 
+                                            <!-- Недоступная вкладка -->
                                             <Border HorizontalAlignment="Stretch"
                                                     Background="Transparent"
                                                     Padding="{Binding Indent}"
                                                     IsVisible="{Binding IsDisabled}">
                                                 <TextBlock Text="{Binding Title}"
                                                            FontSize="13"
-                                                           Foreground="#444"
+                                                           Foreground="{DynamicResource TextDisabledBrush}"
                                                            VerticalAlignment="Center"/>
                                             </Border>
 
@@ -161,68 +211,74 @@
                         </ScrollViewer>
                     </Border>
 
+                    <!-- Разделитель между навигацией и контентом -->
                     <Border Grid.Column="0"
                             Width="1"
-                            Background="#2D2D30"
+                            Background="{DynamicResource BorderSubtleBrush}"
                             HorizontalAlignment="Right"/>
 
+                    <!-- Правая область контента -->
                     <Grid Grid.Column="1">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
+                        <!-- Синий баннер глобальных настроек модулей -->
                         <Border Grid.Row="0"
-                                Background="#001A2E"
+                                Background="{DynamicResource SectionGlobalBgBrush}"
                                 Padding="20,9"
                                 IsVisible="{Binding ShowGlobalBanner}">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <TextBlock Text="!"
                                            FontSize="13"
                                            FontWeight="Bold"
-                                           Foreground="#3A8FD9"
+                                           Foreground="{DynamicResource SectionGlobalFgBrush}"
                                            VerticalAlignment="Center"/>
                                 <TextBlock Text="{x:Static loc:Strings.Settings_Banner_Global}"
                                            FontSize="12"
-                                           Foreground="#3A8FD9"
+                                           Foreground="{DynamicResource SectionGlobalFgBrush}"
                                            VerticalAlignment="Center"/>
                             </StackPanel>
                         </Border>
 
                         <Border Grid.Row="0"
                                 Height="1"
-                                Background="#003A6E"
+                                Background="{DynamicResource SectionGlobalFgBrush}"
                                 VerticalAlignment="Bottom"
                                 IsVisible="{Binding ShowGlobalBanner}"/>
 
+                        <!-- Янтарный баннер настроек проекта -->
                         <Border Grid.Row="0"
-                                Background="#2A1F00"
+                                Background="{DynamicResource SectionProjectBgBrush}"
                                 Padding="20,9"
                                 IsVisible="{Binding ShowProjectBanner}">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <TextBlock Text="!"
                                            FontSize="13"
                                            FontWeight="Bold"
-                                           Foreground="#F0A030"
+                                           Foreground="{DynamicResource SectionProjectFgBrush}"
                                            VerticalAlignment="Center"/>
                                 <TextBlock Text="{x:Static loc:Strings.Settings_Banner_Project}"
                                            FontSize="12"
-                                           Foreground="#C8881A"
+                                           Foreground="{DynamicResource SectionProjectFgBrush}"
                                            VerticalAlignment="Center"/>
                             </StackPanel>
                         </Border>
 
                         <Border Grid.Row="0"
                                 Height="1"
-                                Background="#3D2E00"
+                                Background="{DynamicResource SectionProjectFgBrush}"
                                 VerticalAlignment="Bottom"
                                 IsVisible="{Binding ShowProjectBanner}"/>
 
+                        <!-- Контент выбранной вкладки -->
                         <ScrollViewer Grid.Row="1"
                                       Padding="24,20"
                                       VerticalScrollBarVisibility="Auto">
                             <ContentControl Content="{Binding SelectedTab.Content}"/>
                         </ScrollViewer>
+
                     </Grid>
 
                 </Grid>

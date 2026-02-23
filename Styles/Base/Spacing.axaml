@@ -1,2 +1,21 @@
-<UserControl xmlns="https://github.com/avaloniaui">
-</UserControl>
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:system="using:System">
+
+	<system:Double x:Key="SpacingXXS">2</system:Double>
+	<system:Double x:Key="SpacingXS">4</system:Double>
+	<system:Double x:Key="SpacingS">8</system:Double>
+	<system:Double x:Key="SpacingM">12</system:Double>
+	<system:Double x:Key="SpacingL">16</system:Double>
+	<system:Double x:Key="SpacingXL">24</system:Double>
+	<system:Double x:Key="SpacingXXL">32</system:Double>
+	<system:Double x:Key="SpacingXXXL">40</system:Double>
+
+	<Thickness x:Key="PaddingXS">4</Thickness>
+	<Thickness x:Key="PaddingS">8</Thickness>
+	<Thickness x:Key="PaddingM">12</Thickness>
+	<Thickness x:Key="PaddingL">16</Thickness>
+	<Thickness x:Key="PaddingXL">24</Thickness>
+	<Thickness x:Key="PaddingXXL">40</Thickness>
+
+</ResourceDictionary>

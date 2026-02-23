@@ -91,6 +91,7 @@ namespace Writersword
             services.AddSingleton<IProjectService, ProjectService>();
             services.AddSingleton<ZipProjectService>();
             services.AddSingleton<ILocalizationService, LocalizationService>();
+            services.AddSingleton<IThemeService, ThemeService>();
             services.AddSingleton<IHotKeyService, HotKeyService>();
             services.AddSingleton<IWorkModeConfigurationService, WorkModeConfigurationService>();
             services.AddTransient<IWorkspaceAutoSaveService, WorkspaceAutoSaveService>();
@@ -176,6 +177,9 @@ namespace Writersword
 
                 var localizationService = Services.GetRequiredService<ILocalizationService>();
                 localizationService.SetLanguage(settingsService.Language);
+
+                var themeService = Services.GetRequiredService<IThemeService>();
+                themeService.SetTheme(settingsService.Theme);
 
                 var mainViewModel = Services.GetRequiredService<MainWindowViewModel>();
                 var mainWindow = new MainWindow

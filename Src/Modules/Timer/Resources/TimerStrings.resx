@@ -125,4 +125,40 @@
     <value>Timer</value>
     <comment>Module name in menu</comment>
   </data>
+  <data name="Settings_CountdownMode" xml:space="preserve">
+    <value>Countdown mode</value>
+    <comment>Checkbox label for countdown mode</comment>
+  </data>
+  <data name="Settings_DefaultTime" xml:space="preserve">
+    <value>Default time</value>
+    <comment>Label for default time section in settings</comment>
+  </data>
+  <data name="Settings_Minutes" xml:space="preserve">
+    <value>Minutes</value>
+    <comment>Label for minutes input in settings</comment>
+  </data>
+  <data name="Settings_Mode" xml:space="preserve">
+    <value>Mode</value>
+    <comment>Label for timer mode section in settings</comment>
+  </data>
+  <data name="Settings_Seconds" xml:space="preserve">
+    <value>Seconds</value>
+    <comment>Label for seconds input in settings</comment>
+  </data>
+  <data name="Title" xml:space="preserve">
+    <value>Work timer</value>
+    <comment>Title shown in timer module header</comment>
+  </data>
+  <data name="Tooltip_Reset" xml:space="preserve">
+    <value>Reset timer</value>
+    <comment>Tooltip for reset button</comment>
+  </data>
+  <data name="Tooltip_Start" xml:space="preserve">
+    <value>Start timer</value>
+    <comment>Tooltip for start button</comment>
+  </data>
+  <data name="Tooltip_Stop" xml:space="preserve">
+    <value>Stop timer</value>
+    <comment>Tooltip for stop button</comment>
+  </data>
 </root>

@@ -4,7 +4,6 @@ using ReactiveUI;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reactive;
-using System.Reflection;
 using Writersword.Resources.Localization;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.Services.UI;
@@ -13,15 +12,17 @@ namespace Writersword.ViewModels.Settings
 {
     /// <summary>
     /// ViewModel общих настроек приложения
-    /// Управляет выбором языка интерфейса
+    /// Управляет выбором языка и темы интерфейса
     /// </summary>
     public class GeneralSettingsViewModel : ReactiveObject
     {
         private readonly ILogger<GeneralSettingsViewModel> _logger;
         private readonly ISettingsService _settingsService;
         private readonly ILocalizationService _localizationService;
+        private readonly IThemeService _themeService;
         private readonly string _initialLanguage;
         private LanguageOption _selectedLanguage;
+        private ThemeOption _selectedTheme;
         private bool _restartRequired;
 
         /// <summary>Доступные языки интерфейса — название на родном языке и код</summary>
@@ -30,6 +31,14 @@ namespace Writersword.ViewModels.Settings
             new LanguageOption("English", "en"),
             new LanguageOption("Русский", "ru"),
             new LanguageOption("Українська", "uk")
+        };
+
+        /// <summary>Доступные темы оформления</summary>
+        public List<ThemeOption> AvailableThemes { get; } = new()
+        {
+            new ThemeOption(Strings.Settings_General_Theme_Dark, "Dark"),
+            new ThemeOption(Strings.Settings_General_Theme_Light, "Light"),
+            new ThemeOption(Strings.Settings_General_Theme_Sepia, "Sepia")
         };
 
         /// <summary>Текущий выбранный язык</summary>
@@ -41,6 +50,18 @@ namespace Writersword.ViewModels.Settings
                 if (_selectedLanguage == value) return;
                 this.RaiseAndSetIfChanged(ref _selectedLanguage, value);
                 ApplyLanguage(value.Code);
+            }
+        }
+
+        /// <summary>Текущая выбранная тема</summary>
+        public ThemeOption SelectedTheme
+        {
+            get => _selectedTheme;
+            set
+            {
+                if (_selectedTheme == value) return;
+                this.RaiseAndSetIfChanged(ref _selectedTheme, value);
+                ApplyTheme(value.Code);
             }
         }
 
@@ -59,12 +80,17 @@ namespace Writersword.ViewModels.Settings
             _logger = App.Services.GetService<ILogger<GeneralSettingsViewModel>>()!;
             _settingsService = App.Services.GetRequiredService<ISettingsService>();
             _localizationService = App.Services.GetRequiredService<ILocalizationService>();
+            _themeService = App.Services.GetRequiredService<IThemeService>();
 
             _initialLanguage = _localizationService.CurrentLanguage;
 
-            var currentCode = _settingsService.Language;
-            _selectedLanguage = AvailableLanguages.Find(l => l.Code == currentCode)
+            var currentLanguageCode = _settingsService.Language;
+            _selectedLanguage = AvailableLanguages.Find(l => l.Code == currentLanguageCode)
                                 ?? AvailableLanguages[0];
+
+            var currentThemeCode = _settingsService.Theme;
+            _selectedTheme = AvailableThemes.Find(t => t.Code == currentThemeCode)
+                             ?? AvailableThemes[0];
 
             _restartRequired = false;
 
@@ -77,6 +103,14 @@ namespace Writersword.ViewModels.Settings
             _settingsService.Language = languageCode;
             RestartRequired = languageCode != _initialLanguage;
             _logger.LogDebug("Language selected: {Language}, restart required: {RestartRequired}", languageCode, RestartRequired);
+        }
+
+        /// <summary>Применить выбранную тему — сменить сразу без перезапуска</summary>
+        private void ApplyTheme(string themeCode)
+        {
+            _settingsService.Theme = themeCode;
+            _themeService.SetTheme(themeCode);
+            _logger.LogDebug("Theme changed to: {Theme}", themeCode);
         }
 
         /// <summary>Перезапустить приложение — запустить новый процесс и завершить текущий</summary>
@@ -111,6 +145,24 @@ namespace Writersword.ViewModels.Settings
         public string Code { get; }
 
         public LanguageOption(string displayName, string code)
+        {
+            DisplayName = displayName;
+            Code = code;
+        }
+    }
+
+    /// <summary>
+    /// Опция темы оформления
+    /// </summary>
+    public class ThemeOption
+    {
+        /// <summary>Название темы</summary>
+        public string DisplayName { get; }
+
+        /// <summary>Код темы (Dark, Light, Sepia)</summary>
+        public string Code { get; }
+
+        public ThemeOption(string displayName, string code)
         {
             DisplayName = displayName;
             Code = code;

@@ -22,7 +22,7 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
     [global::System.CodeDom.Compiler.GeneratedCodeAttribute("System.Resources.Tools.StronglyTypedResourceBuilder", "18.0.0.0")]
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
-    internal class TextEditorStrings {
+    public class TextEditorStrings {
         
         private static global::System.Resources.ResourceManager resourceMan;
         
@@ -36,7 +36,7 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         ///   Возвращает кэшированный экземпляр ResourceManager, использованный этим классом.
         /// </summary>
         [global::System.ComponentModel.EditorBrowsableAttribute(global::System.ComponentModel.EditorBrowsableState.Advanced)]
-        internal static global::System.Resources.ResourceManager ResourceManager {
+        public static global::System.Resources.ResourceManager ResourceManager {
             get {
                 if (object.ReferenceEquals(resourceMan, null)) {
                     global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("Writersword.Src.Modules.TextEditor.Resources.TextEditorStrings", typeof(TextEditorStrings).Assembly);
@@ -51,7 +51,7 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         ///   обращений к ресурсу с помощью этого класса ресурса со строгой типизацией.
         /// </summary>
         [global::System.ComponentModel.EditorBrowsableAttribute(global::System.ComponentModel.EditorBrowsableState.Advanced)]
-        internal static global::System.Globalization.CultureInfo Culture {
+        public static global::System.Globalization.CultureInfo Culture {
             get {
                 return resourceCulture;
             }
@@ -63,7 +63,7 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         /// <summary>
         ///   Ищет локализованную строку, похожую на Main text editing workspace.
         /// </summary>
-        internal static string Description {
+        public static string Description {
             get {
                 return ResourceManager.GetString("Description", resourceCulture);
             }
@@ -72,9 +72,45 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         /// <summary>
         ///   Ищет локализованную строку, похожую на Text Editor.
         /// </summary>
-        internal static string DisplayName {
+        public static string DisplayName {
             get {
                 return ResourceManager.GetString("DisplayName", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Font Family.
+        /// </summary>
+        public static string Settings_FontFamily {
+            get {
+                return ResourceManager.GetString("Settings_FontFamily", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Font Size.
+        /// </summary>
+        public static string Settings_FontSize {
+            get {
+                return ResourceManager.GetString("Settings_FontSize", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Preview.
+        /// </summary>
+        public static string Settings_Preview {
+            get {
+                return ResourceManager.GetString("Settings_Preview", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на The quick brown fox jumps over the lazy dog.
+        /// </summary>
+        public static string Settings_PreviewText {
+            get {
+                return ResourceManager.GetString("Settings_PreviewText", resourceCulture);
             }
         }
     }

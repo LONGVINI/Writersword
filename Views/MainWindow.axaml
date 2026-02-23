@@ -11,8 +11,8 @@
         Width="1400"
         Height="900"
         WindowState="Maximized"
-        Background="#1E1E1E"
-        RequestedThemeVariant="Dark">
+        Background="{DynamicResource BgAppBrush}">
+
 	<DockPanel>
 		<!-- Меню -->
 		<components:MenuBarView DockPanel.Dock="Top"
@@ -33,12 +33,12 @@
 				</DataTemplate>
 			</ContentControl.ContentTemplate>
 		</ContentControl>
-		
+
 		<!-- Главная область: DockControl заполняет всё оставшееся пространство -->
 		<!-- NotificationContainer поверх как прозрачный overlay -->
 		<Panel>
 			<dock:DockControl Layout="{Binding DockLayout}"
-                              Background="#252526"/>
+                              Background="{DynamicResource BgSurfaceBrush}"/>
 			<Panel Name="NotificationContainer"
                    ZIndex="1000"
                    HorizontalAlignment="Stretch"
@@ -46,4 +46,5 @@
                    IsHitTestVisible="False"/>
 		</Panel>
 	</DockPanel>
+
 </Window>

@@ -1,20 +1,14 @@
 ﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.ViewModels.Components"
-             xmlns:converters="using:Writersword.Converters"
              xmlns:i="clr-namespace:Avalonia.Xaml.Interactivity;assembly=Avalonia.Xaml.Interactivity"
              xmlns:behaviors="using:Writersword.Behaviors"
              x:Class="Writersword.Views.Components.TabBarView"
              x:DataType="vm:TabBarViewModel"
              x:Name="TabBarViewRoot">
 
-	<UserControl.Resources>
-		<converters:TabBackgroundConverter x:Key="TabBackgroundConverter"/>
-		<converters:TabForegroundConverter x:Key="TabForegroundConverter"/>
-	</UserControl.Resources>
-
-	<Border Background="#2D2D30"
-            BorderBrush="#3F3F46"
+	<Border Background="{DynamicResource BgPanelBrush}"
+            BorderBrush="{DynamicResource BorderDefaultBrush}"
             BorderThickness="0,0,0,1"
             Padding="5,0,5,0">
 
@@ -24,7 +18,7 @@
 			<StackPanel Orientation="Horizontal" Spacing="4">
 
 				<ItemsControl ItemsSource="{Binding Tabs}"
-				              x:Name="TabsItemsControl">
+                              x:Name="TabsItemsControl">
 
 					<i:Interaction.Behaviors>
 						<behaviors:TabDragDropBehavior />
@@ -38,71 +32,102 @@
 
 					<ItemsControl.ItemTemplate>
 						<DataTemplate>
-							<Button Classes="TabButton"
-								    Background="{Binding IsActive, Converter={StaticResource TabBackgroundConverter}}"
-									CornerRadius="8,8,0,0"
-									Padding="12,6,8,6"
-									Width="180"
-									Height="32"
-									BorderThickness="0"
-									HorizontalContentAlignment="Stretch"
-									VerticalContentAlignment="Center"
-									Command="{Binding #TabBarViewRoot.DataContext.ActivateTabCommand}"
-									CommandParameter="{Binding}">
+							<Button Classes.active="{Binding IsActive}"
+                                    CornerRadius="8,8,0,0"
+                                    Padding="12,6,8,6"
+                                    Width="180"
+                                    Height="32"
+                                    BorderThickness="0"
+                                    HorizontalContentAlignment="Stretch"
+                                    VerticalContentAlignment="Center"
+                                    Command="{Binding #TabBarViewRoot.DataContext.ActivateTabCommand}"
+                                    CommandParameter="{Binding}">
 
 								<Button.Effect>
 									<DropShadowEffect BlurRadius="0" OffsetX="0" OffsetY="0" Opacity="0" Color="Transparent"/>
 								</Button.Effect>
 
 								<Button.RenderTransform>
-									<TranslateTransform X="0" Y="0" />
+									<TranslateTransform X="0" Y="0"/>
 								</Button.RenderTransform>
 
+								<Button.Template>
+									<ControlTemplate>
+										<Border x:Name="PART_Border"
+                                                Background="{DynamicResource BgPanelBrush}"
+                                                CornerRadius="8,8,0,0"
+                                                Padding="{TemplateBinding Padding}">
+											<ContentPresenter Content="{TemplateBinding Content}"
+                                                              HorizontalAlignment="Stretch"
+                                                              VerticalAlignment="Center"/>
+										</Border>
+									</ControlTemplate>
+								</Button.Template>
+
 								<Button.Styles>
-									<Style Selector="Button:pointerover">
-										<Setter Property="Background" Value="#2A2D2E"/>
+									<!-- Активная вкладка -->
+									<Style Selector="Button.active /template/ Border#PART_Border">
+										<Setter Property="Background" Value="{DynamicResource BgAppBrush}"/>
+									</Style>
+									<!-- Hover на неактивной -->
+									<Style Selector="Button:pointerover /template/ Border#PART_Border">
+										<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+									</Style>
+									<!-- Hover на активной -->
+									<Style Selector="Button.active:pointerover /template/ Border#PART_Border">
+										<Setter Property="Background" Value="{DynamicResource BgAppBrush}"/>
 									</Style>
 								</Button.Styles>
 
 								<Grid ColumnDefinitions="*,Auto">
-									<TextBlock Grid.Column="0"
-											   Text="{Binding Title}"
-											   Foreground="{Binding IsActive, Converter={StaticResource TabForegroundConverter}}"
-											   FontSize="12"
-											   VerticalAlignment="Center"
-											   IsHitTestVisible="False"
-											   TextTrimming="CharacterEllipsis"
-											   Margin="0,0,8,0"/>
 
+									<!-- Название вкладки -->
+									<TextBlock Grid.Column="0"
+                                               x:Name="TabTitle"
+                                               Text="{Binding Title}"
+                                               FontSize="12"
+                                               VerticalAlignment="Center"
+                                               IsHitTestVisible="False"
+                                               TextTrimming="CharacterEllipsis"
+                                               Margin="0,0,8,0">
+										<TextBlock.Styles>
+											<Style Selector="Button.active TextBlock#TabTitle">
+												<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+											</Style>
+											<Style Selector="Button TextBlock#TabTitle">
+												<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+											</Style>
+										</TextBlock.Styles>
+									</TextBlock>
+
+									<!-- Кнопка закрытия вкладки -->
 									<Button Grid.Column="1"
-											Command="{Binding #TabBarViewRoot.DataContext.CloseTabCommand}"
-											CommandParameter="{Binding}"
-											Background="Transparent"
-											BorderThickness="0"
-											Width="18"
-											Height="18"
-											Padding="0"
-											CornerRadius="3"
-											VerticalAlignment="Center"
-											HorizontalAlignment="Center"
-											Margin="4,0,0,0">
+                                            Command="{Binding #TabBarViewRoot.DataContext.CloseTabCommand}"
+                                            CommandParameter="{Binding}"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Width="18"
+                                            Height="18"
+                                            Padding="0"
+                                            CornerRadius="3"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Center"
+                                            Margin="4,0,0,0">
 										<Viewbox Width="10" Height="10">
 											<TextBlock Text="✕"
-													   Foreground="#858585"
-													   FontSize="16"
-													   HorizontalAlignment="Center"
-													   VerticalAlignment="Center"
-													   IsHitTestVisible="False"/>
+                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                       FontSize="16"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       IsHitTestVisible="False"/>
 										</Viewbox>
 										<Button.Styles>
-											<Style Selector="Button:pointerover /template/ TextBlock">
-												<Setter Property="Foreground" Value="White"/>
-											</Style>
-											<Style Selector="Button:pointerover">
-												<Setter Property="Background" Value="#4A4A4A"/>
+											<Style Selector="Button:pointerover /template/ ContentPresenter">
+												<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
 											</Style>
 										</Button.Styles>
 									</Button>
+
 								</Grid>
 
 							</Button>
@@ -110,23 +135,24 @@
 					</ItemsControl.ItemTemplate>
 				</ItemsControl>
 
+				<!-- Кнопка создания новой вкладки -->
 				<Button Content="+"
-						Command="{Binding CreateNewTabCommand}"
-						Background="Transparent"
-						Foreground="#858585"
-						FontSize="16"
-						Width="30"
-						Height="28"
-						Padding="0"
-						BorderThickness="0"
-						CornerRadius="4"
-						HorizontalContentAlignment="Center"
-						VerticalContentAlignment="Center"
-						Margin="4,0,0,0">
+                        Command="{Binding CreateNewTabCommand}"
+                        Background="Transparent"
+                        Foreground="{DynamicResource TextMutedBrush}"
+                        FontSize="16"
+                        Width="30"
+                        Height="28"
+                        Padding="0"
+                        BorderThickness="0"
+                        CornerRadius="4"
+                        HorizontalContentAlignment="Center"
+                        VerticalContentAlignment="Center"
+                        Margin="4,0,0,0">
 					<Button.Styles>
 						<Style Selector="Button:pointerover">
-							<Setter Property="Background" Value="#3A3A3C"/>
-							<Setter Property="Foreground" Value="White"/>
+							<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+							<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
 						</Style>
 					</Button.Styles>
 				</Button>

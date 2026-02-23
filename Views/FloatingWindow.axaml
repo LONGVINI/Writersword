@@ -7,8 +7,11 @@
         Height="600"
         MinWidth="300"
         MinHeight="200"
-        Background="#1E1E1E"
+        Background="{DynamicResource BgAppBrush}"
         RequestedThemeVariant="Dark"
         ShowInTaskbar="True">
-	<dock:DockControl x:Name="DockControlHost" />
+
+	<!-- Dock контейнер для плавающего модуля -->
+	<dock:DockControl x:Name="DockControlHost"/>
+
 </Window>

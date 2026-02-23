@@ -7,23 +7,25 @@
              x:Name="MenuBarViewRoot">
 
 	<!-- Главное меню -->
-	<Menu x:Name="MainMenu" Background="#2D2D30" Padding="5,3">
+	<Menu x:Name="MainMenu"
+          Background="{DynamicResource BgPanelBrush}"
+          Padding="5,3">
 
 		<!-- FILE -->
 		<MenuItem Header="{x:Static loc:Strings.Menu_File}"
-		          Foreground="#F0F0F0"
-		          FontSize="13">
+                  Foreground="{DynamicResource TextPrimaryBrush}"
+                  FontSize="13">
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_NewProject}"
-			          InputGesture="Ctrl+N"
-			          Command="{Binding NewProjectCommand}"/>
+                      InputGesture="Ctrl+N"
+                      Command="{Binding NewProjectCommand}"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_OpenProject}"
-			          InputGesture="Ctrl+O"
-			          Command="{Binding OpenProjectCommand}"/>
+                      InputGesture="Ctrl+O"
+                      Command="{Binding OpenProjectCommand}"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_RecentProjects}"
-					  ItemsSource="{Binding RecentProjects}">
+                      ItemsSource="{Binding RecentProjects}">
 				<MenuItem.Styles>
 					<Style Selector="MenuItem > MenuItem">
 						<Setter Property="Header" Value="{Binding ProjectName}"/>
@@ -36,101 +38,101 @@
 			<Separator/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_Save}"
-			          InputGesture="Ctrl+S"
-			          Command="{Binding SaveProjectCommand}"/>
+                      InputGesture="Ctrl+S"
+                      Command="{Binding SaveProjectCommand}"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_SaveAs}"
-			          InputGesture="Ctrl+Shift+S"
-			          Command="{Binding SaveAsProjectCommand}"/>
+                      InputGesture="Ctrl+Shift+S"
+                      Command="{Binding SaveAsProjectCommand}"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_SaveAll}"
-					  InputGesture="Ctrl+Alt+S"
-					  Command="{Binding SaveAllProjectsCommand}"/>
+                      InputGesture="Ctrl+Alt+S"
+                      Command="{Binding SaveAllProjectsCommand}"/>
 
 			<Separator/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_CloseTab}"
-					  InputGesture="Ctrl+W"
-					  Command="{Binding CloseTabCommand}"/>
+                      InputGesture="Ctrl+W"
+                      Command="{Binding CloseTabCommand}"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_CloseAllTabs}"
-					  Command="{Binding CloseAllTabsCommand}"/>
+                      Command="{Binding CloseAllTabsCommand}"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_CloseOtherTabs}"
-					  Command="{Binding CloseOtherTabsCommand}"/>
+                      Command="{Binding CloseOtherTabsCommand}"/>
 
 			<Separator/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_Settings}"
-					  InputGesture="Ctrl+,"
-					  Command="{Binding OpenSettingsCommand}"/>
+                      InputGesture="Ctrl+,"
+                      Command="{Binding OpenSettingsCommand}"/>
 
 			<Separator/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_Exit}"
-			          Command="{Binding ExitCommand}"/>
+                      Command="{Binding ExitCommand}"/>
 		</MenuItem>
 
 		<!-- EDIT -->
 		<MenuItem Header="{x:Static loc:Strings.Menu_Edit}"
-		          Foreground="#F0F0F0"
-		          FontSize="13">
+                  Foreground="{DynamicResource TextPrimaryBrush}"
+                  FontSize="13">
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_Undo}"
-			          InputGesture="Ctrl+Z"
-			          IsEnabled="False"/>
+                      InputGesture="Ctrl+Z"
+                      IsEnabled="False"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_Redo}"
-			          InputGesture="Ctrl+Y"
-			          IsEnabled="False"/>
+                      InputGesture="Ctrl+Y"
+                      IsEnabled="False"/>
 
 			<Separator/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_Cut}"
-			          InputGesture="Ctrl+X"
-			          IsEnabled="False"/>
+                      InputGesture="Ctrl+X"
+                      IsEnabled="False"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_Copy}"
-			          InputGesture="Ctrl+C"
-			          IsEnabled="False"/>
+                      InputGesture="Ctrl+C"
+                      IsEnabled="False"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_Paste}"
-			          InputGesture="Ctrl+V"
-			          IsEnabled="False"/>
+                      InputGesture="Ctrl+V"
+                      IsEnabled="False"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_SelectAll}"
-			          InputGesture="Ctrl+A"
-			          IsEnabled="False"/>
+                      InputGesture="Ctrl+A"
+                      IsEnabled="False"/>
 
 			<Separator/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_Find}"
-			          InputGesture="Ctrl+F"
-			          IsEnabled="False"/>
+                      InputGesture="Ctrl+F"
+                      IsEnabled="False"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_Edit_FindReplace}"
-			          InputGesture="Ctrl+H"
-			          IsEnabled="False"/>
+                      InputGesture="Ctrl+H"
+                      IsEnabled="False"/>
 		</MenuItem>
 
 		<!-- VIEW -->
 		<MenuItem Header="{x:Static loc:Strings.Menu_View}"
-		          Foreground="#F0F0F0"
-		          FontSize="13">
+                  Foreground="{DynamicResource TextPrimaryBrush}"
+                  FontSize="13">
 
 			<!-- WorkModes -->
 			<MenuItem Header="{x:Static loc:Strings.Menu_View_WorkModes}"
-			          ItemsSource="{Binding AllWorkModes}">
+                      ItemsSource="{Binding AllWorkModes}">
 				<MenuItem.ItemTemplate>
 					<DataTemplate>
 						<MenuItem Command="{Binding $parent[UserControl].DataContext.ToggleWorkModeCommand}"
-						          CommandParameter="{Binding WorkModeId}">
+                                  CommandParameter="{Binding WorkModeId}">
 							<MenuItem.Header>
 								<StackPanel Orientation="Horizontal" Spacing="5">
 									<TextBlock Text="✓"
-									           IsVisible="{Binding IsChecked}"
-									           FontWeight="Bold"
-									           Width="15"/>
+                                               IsVisible="{Binding IsChecked}"
+                                               FontWeight="Bold"
+                                               Width="15"/>
 									<TextBlock Text="{Binding Icon}"/>
 									<TextBlock Text="{Binding Name}"/>
 								</StackPanel>
@@ -142,19 +144,19 @@
 
 			<!-- Modules -->
 			<MenuItem Header="{x:Static loc:Strings.Menu_View_Modules}"
-					  ItemsSource="{Binding AllModules}"
-					  x:Name="ModulesMenuItem">
+                      ItemsSource="{Binding AllModules}"
+                      x:Name="ModulesMenuItem">
 				<MenuItem.ItemTemplate>
 					<DataTemplate>
 						<MenuItem Header="{Binding Name}"
-								  Command="{Binding #MenuBarViewRoot.DataContext.ToggleModuleCommand}"
-								  CommandParameter="{Binding ModuleType}"
-								  IsEnabled="{Binding IsEnabled}">
+                                  Command="{Binding #MenuBarViewRoot.DataContext.ToggleModuleCommand}"
+                                  CommandParameter="{Binding ModuleType}"
+                                  IsEnabled="{Binding IsEnabled}">
 							<MenuItem.Icon>
 								<StackPanel Orientation="Horizontal" Spacing="5">
 									<TextBlock Text="✓"
-											   IsVisible="{Binding IsChecked}"
-											   FontWeight="Bold"/>
+                                               IsVisible="{Binding IsChecked}"
+                                               FontWeight="Bold"/>
 									<TextBlock Text="{Binding Icon}"/>
 								</StackPanel>
 							</MenuItem.Icon>
@@ -166,52 +168,52 @@
 
 		<!-- WORKSPACE -->
 		<MenuItem Header="{x:Static loc:Strings.Menu_Workspace}"
-				  Foreground="#F0F0F0"
-				  FontSize="13">
-	
+                  Foreground="{DynamicResource TextPrimaryBrush}"
+                  FontSize="13">
+
 			<!-- Сохранить для типа проекта (глобальная конфигурация) -->
 			<MenuItem Header="{x:Static loc:Strings.Menu_Workspace_SaveForType}"
-					  Command="{Binding SaveWorkspaceGlobalCommand}"
-					  IsEnabled="{Binding HasActiveTab}"/>
-	
-			<Separator Background="#3F3F46" Height="1" Margin="0,2"/>
-	
+                      Command="{Binding SaveWorkspaceGlobalCommand}"
+                      IsEnabled="{Binding HasActiveTab}"/>
+
+			<Separator Background="{DynamicResource BorderDefaultBrush}" Height="1" Margin="0,2"/>
+
 			<!-- Сбросить до глобальной конфигурации -->
 			<MenuItem Header="{x:Static loc:Strings.Menu_Workspace_ResetToGlobal}"
-					  Command="{Binding ResetWorkspaceToGlobalCommand}"
-					  IsEnabled="{Binding HasActiveTab}"/>
-	
+                      Command="{Binding ResetWorkspaceToGlobalCommand}"
+                      IsEnabled="{Binding HasActiveTab}"/>
+
 			<!-- Сбросить до дефолтной конфигурации -->
 			<MenuItem Header="{x:Static loc:Strings.Menu_Workspace_ResetToDefault}"
-					  Command="{Binding ResetWorkspaceToDefaultCommand}"
-					  IsEnabled="{Binding HasActiveTab}"/>
+                      Command="{Binding ResetWorkspaceToDefaultCommand}"
+                      IsEnabled="{Binding HasActiveTab}"/>
 		</MenuItem>
 
 		<!-- TOOLS -->
 		<MenuItem Header="{x:Static loc:Strings.Menu_Tools}"
-		          Foreground="#F0F0F0"
-		          FontSize="13">
+                  Foreground="{DynamicResource TextPrimaryBrush}"
+                  FontSize="13">
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_Tools_Statistics}"
-			          IsEnabled="False"/>
+                      IsEnabled="False"/>
 		</MenuItem>
 
 		<!-- HELP -->
 		<MenuItem Header="{x:Static loc:Strings.Menu_Help}"
-		          Foreground="#F0F0F0"
-		          FontSize="13">
+                  Foreground="{DynamicResource TextPrimaryBrush}"
+                  FontSize="13">
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_Help_Documentation}"
-			          InputGesture="F1"
-			          IsEnabled="False"/>
+                      InputGesture="F1"
+                      IsEnabled="False"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_Help_CheckUpdates}"
-			          IsEnabled="False"/>
+                      IsEnabled="False"/>
 
 			<Separator/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_Help_About}"
-			          IsEnabled="False"/>
+                      IsEnabled="False"/>
 		</MenuItem>
 
 	</Menu>

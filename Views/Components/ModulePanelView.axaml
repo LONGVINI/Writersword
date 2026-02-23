@@ -6,29 +6,27 @@
              x:Name="ModulePanelViewRoot">
 
 	<!-- Панель модулей -->
-	<Border Background="#1E1E1E"
-            BorderBrush="#3E3E42"
+	<Border Background="{DynamicResource BgAppBrush}"
+            BorderBrush="{DynamicResource BorderDefaultBrush}"
             BorderThickness="1,0,0,0"
             Width="250">
-
 		<DockPanel>
 
 			<!-- Заголовок панели -->
 			<Border DockPanel.Dock="Top"
-                    Background="#2D2D30"
+                    Background="{DynamicResource BgPanelBrush}"
                     Padding="12,8"
-                    BorderBrush="#3E3E42"
+                    BorderBrush="{DynamicResource BorderDefaultBrush}"
                     BorderThickness="0,0,0,1">
 				<TextBlock Text="Modules"
                            FontSize="13"
                            FontWeight="SemiBold"
-                           Foreground="#CCCCCC"/>
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
 			</Border>
 
 			<!-- Список модулей -->
 			<ScrollViewer VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
-
 				<ItemsControl ItemsSource="{Binding AvailableModules}"
                               Margin="0,8,0,0">
 					<ItemsControl.ItemsPanel>
@@ -36,9 +34,9 @@
 							<StackPanel Orientation="Vertical" Spacing="2"/>
 						</ItemsPanelTemplate>
 					</ItemsControl.ItemsPanel>
-
 					<ItemsControl.ItemTemplate>
 						<DataTemplate>
+
 							<!-- Элемент модуля как Button -->
 							<Button Background="Transparent"
                                     Padding="8,6"
@@ -47,14 +45,13 @@
                                     Command="{Binding #ModulePanelViewRoot.DataContext.ToggleModuleCommand}"
                                     CommandParameter="{Binding}"
                                     ToolTip.Tip="{Binding Description}">
-
 								<Grid ColumnDefinitions="Auto,*,Auto">
 
 									<!-- Иконка модуля -->
 									<TextBlock Grid.Column="0"
                                                Text="{Binding Icon}"
                                                FontSize="16"
-                                               Foreground="#CCCCCC"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
                                                VerticalAlignment="Center"
                                                Margin="0,0,8,0"/>
 
@@ -62,7 +59,7 @@
 									<TextBlock Grid.Column="1"
                                                Text="{Binding DisplayName}"
                                                FontSize="12"
-                                               Foreground="#CCCCCC"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
                                                VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis"/>
 
@@ -71,25 +68,22 @@
                                               IsChecked="{Binding IsActive}"
                                               IsEnabled="{Binding CanToggle}"
                                               VerticalAlignment="Center"/>
-
 								</Grid>
 
 								<!-- Hover эффект -->
 								<Button.Styles>
 									<Style Selector="Button:pointerover">
-										<Setter Property="Background" Value="#2D2D30"/>
+										<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
 									</Style>
 								</Button.Styles>
-
 							</Button>
+
 						</DataTemplate>
 					</ItemsControl.ItemTemplate>
 				</ItemsControl>
-
 			</ScrollViewer>
 
 		</DockPanel>
-
 	</Border>
 
 </UserControl>

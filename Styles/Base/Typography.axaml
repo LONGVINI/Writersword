@@ -1,2 +1,14 @@
-<UserControl xmlns="https://github.com/avaloniaui">
-</UserControl>
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:system="using:System">
+
+	<system:Double x:Key="FontSizeXXS">8</system:Double>
+	<system:Double x:Key="FontSizeXS">10</system:Double>
+	<system:Double x:Key="FontSizeS">12</system:Double>
+	<system:Double x:Key="FontSizeM">14</system:Double>
+	<system:Double x:Key="FontSizeL">16</system:Double>
+	<system:Double x:Key="FontSizeXL">20</system:Double>
+	<system:Double x:Key="FontSizeXXL">24</system:Double>
+	<system:Double x:Key="FontSizeXXXL">32</system:Double>
+
+</ResourceDictionary>

@@ -1,12 +1,14 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="Writersword.Modules.TextEditor.Views.TextEditorSettingsView">
+             xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels"
+             xmlns:loc="using:Writersword.Src.Modules.TextEditor.Resources"
+             x:Class="Writersword.Modules.TextEditor.Views.TextEditorSettingsView"
+             x:DataType="vm:TextEditorSettingsViewModel">
 
 	<StackPanel Spacing="16" Margin="8">
 
-		<!-- Размер шрифта -->
 		<StackPanel Spacing="6">
-			<TextBlock Text="Font Size"
+			<TextBlock Text="{x:Static loc:TextEditorStrings.Settings_FontSize}"
                        Foreground="#CCC"
                        FontSize="13"/>
 			<NumericUpDown Value="{Binding FontSize}"
@@ -22,9 +24,8 @@
                            HorizontalAlignment="Left"/>
 		</StackPanel>
 
-		<!-- Шрифт -->
 		<StackPanel Spacing="6">
-			<TextBlock Text="Font Family"
+			<TextBlock Text="{x:Static loc:TextEditorStrings.Settings_FontFamily}"
                        Foreground="#CCC"
                        FontSize="13"/>
 			<ComboBox ItemsSource="{Binding AvailableFonts}"
@@ -37,15 +38,14 @@
                       HorizontalAlignment="Left"/>
 		</StackPanel>
 
-		<!-- Предпросмотр -->
 		<StackPanel Spacing="6">
-			<TextBlock Text="Preview"
+			<TextBlock Text="{x:Static loc:TextEditorStrings.Settings_Preview}"
                        Foreground="#CCC"
                        FontSize="13"/>
 			<Border Background="White"
                     CornerRadius="4"
                     Padding="12,8">
-				<TextBlock Text="The quick brown fox jumps over the lazy dog"
+				<TextBlock Text="{x:Static loc:TextEditorStrings.Settings_PreviewText}"
                            FontSize="{Binding FontSize}"
                            FontFamily="{Binding FontFamily}"
                            Foreground="#000000"
@@ -54,5 +54,4 @@
 		</StackPanel>
 
 	</StackPanel>
-
 </UserControl>

@@ -125,4 +125,20 @@
     <value>Text Editor</value>
     <comment>Module name in menu</comment>
   </data>
+  <data name="Settings_FontFamily" xml:space="preserve">
+    <value>Font Family</value>
+    <comment>Label for font family selector in settings</comment>
+  </data>
+  <data name="Settings_FontSize" xml:space="preserve">
+    <value>Font Size</value>
+    <comment>Label for font size input in settings</comment>
+  </data>
+  <data name="Settings_Preview" xml:space="preserve">
+    <value>Preview</value>
+    <comment>Label for font preview section in settings</comment>
+  </data>
+  <data name="Settings_PreviewText" xml:space="preserve">
+    <value>The quick brown fox jumps over the lazy dog</value>
+    <comment>Sample text shown in font preview</comment>
+  </data>
 </root>

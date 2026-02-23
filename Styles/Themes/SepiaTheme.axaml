@@ -1,2 +1,61 @@
-<UserControl xmlns="https://github.com/avaloniaui">
-</UserControl>
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+	<!-- Фоны -->
+	<SolidColorBrush x:Key="BgBaseBrush">#1C1410</SolidColorBrush>
+	<SolidColorBrush x:Key="BgAppBrush">#2C2420</SolidColorBrush>
+	<SolidColorBrush x:Key="BgSurfaceBrush">#2A2420</SolidColorBrush>
+	<SolidColorBrush x:Key="BgPanelBrush">#3C3430</SolidColorBrush>
+	<SolidColorBrush x:Key="BgHoverBrush">#4A4240</SolidColorBrush>
+
+	<!-- Текст -->
+	<SolidColorBrush x:Key="TextPrimaryBrush">#F4ECD8</SolidColorBrush>
+	<SolidColorBrush x:Key="TextSecondaryBrush">#D4C4A8</SolidColorBrush>
+	<SolidColorBrush x:Key="TextMutedBrush">#A09080</SolidColorBrush>
+	<SolidColorBrush x:Key="TextDisabledBrush">#6A5A50</SolidColorBrush>
+
+	<!-- Акцент -->
+	<SolidColorBrush x:Key="AccentDefaultBrush">#C8863C</SolidColorBrush>
+	<SolidColorBrush x:Key="AccentHoverBrush">#D89848</SolidColorBrush>
+	<SolidColorBrush x:Key="AccentPressedBrush">#A86E2C</SolidColorBrush>
+
+	<!-- Границы -->
+	<SolidColorBrush x:Key="BorderDefaultBrush">#5A4A40</SolidColorBrush>
+	<SolidColorBrush x:Key="BorderSubtleBrush">#3C3430</SolidColorBrush>
+
+	<!-- Семантические цвета секций настроек -->
+	<SolidColorBrush x:Key="SectionGlobalBgBrush">#1C2030</SolidColorBrush>
+	<SolidColorBrush x:Key="SectionGlobalFgBrush">#7A9FCC</SolidColorBrush>
+	<SolidColorBrush x:Key="SectionProjectBgBrush">#2C1E00</SolidColorBrush>
+	<SolidColorBrush x:Key="SectionProjectFgBrush">#D4960A</SolidColorBrush>
+
+	<!-- Переопределение токенов FluentTheme для ComboBox -->
+	<SolidColorBrush x:Key="ComboBoxBackground">#4A3828</SolidColorBrush>
+	<SolidColorBrush x:Key="ComboBoxBackgroundPointerOver">#574030</SolidColorBrush>
+	<SolidColorBrush x:Key="ComboBoxBackgroundPressed">#3A2C20</SolidColorBrush>
+	<SolidColorBrush x:Key="ComboBoxDropDownBackground">#3A2C20</SolidColorBrush>
+	<SolidColorBrush x:Key="ComboBoxItemThemeBackground">Transparent</SolidColorBrush>
+	<SolidColorBrush x:Key="ComboBoxItemThemeBackgroundPointerOver">#4A4240</SolidColorBrush>
+	<SolidColorBrush x:Key="ComboBoxForeground">#F4ECD8</SolidColorBrush>
+	<SolidColorBrush x:Key="ComboBoxItemForeground">#F4ECD8</SolidColorBrush>
+	<SolidColorBrush x:Key="ComboBoxPlaceHolderForeground">#A09080</SolidColorBrush>
+	<SolidColorBrush x:Key="ComboBoxBorderBrush">#5A4A40</SolidColorBrush>
+	<SolidColorBrush x:Key="ComboBoxDropDownBorderBrush">#5A4A40</SolidColorBrush>
+
+	<!-- Переопределение токенов FluentTheme для Menu и MenuItem -->
+	<SolidColorBrush x:Key="MenuFlyoutBackground">#2A2420</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuFlyoutBorderBrush">#5A4A40</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuFlyoutItemBackground">Transparent</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver">#C8863C</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuFlyoutItemBackgroundPressed">#A86E2C</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuFlyoutItemForeground">#F4ECD8</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuFlyoutItemForegroundPointerOver">#F4ECD8</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuFlyoutItemForegroundDisabled">#6A5A50</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuBarBackground">#3C3430</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuBarItemBackground">Transparent</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuBarItemBackgroundPointerOver">#C8863C</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuBarItemBackgroundPressed">#A86E2C</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuBarItemForeground">#F4ECD8</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuBarItemForegroundPointerOver">#F4ECD8</SolidColorBrush>
+
+</ResourceDictionary>

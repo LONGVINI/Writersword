@@ -22,7 +22,7 @@ namespace Writersword.Src.Modules.Timer.Resources {
     [global::System.CodeDom.Compiler.GeneratedCodeAttribute("System.Resources.Tools.StronglyTypedResourceBuilder", "18.0.0.0")]
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
-    internal class TimerStrings {
+    public class TimerStrings {
         
         private static global::System.Resources.ResourceManager resourceMan;
         
@@ -36,7 +36,7 @@ namespace Writersword.Src.Modules.Timer.Resources {
         ///   Возвращает кэшированный экземпляр ResourceManager, использованный этим классом.
         /// </summary>
         [global::System.ComponentModel.EditorBrowsableAttribute(global::System.ComponentModel.EditorBrowsableState.Advanced)]
-        internal static global::System.Resources.ResourceManager ResourceManager {
+        public static global::System.Resources.ResourceManager ResourceManager {
             get {
                 if (object.ReferenceEquals(resourceMan, null)) {
                     global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("Writersword.Src.Modules.Timer.Resources.TimerStrings", typeof(TimerStrings).Assembly);
@@ -51,7 +51,7 @@ namespace Writersword.Src.Modules.Timer.Resources {
         ///   обращений к ресурсу с помощью этого класса ресурса со строгой типизацией.
         /// </summary>
         [global::System.ComponentModel.EditorBrowsableAttribute(global::System.ComponentModel.EditorBrowsableState.Advanced)]
-        internal static global::System.Globalization.CultureInfo Culture {
+        public static global::System.Globalization.CultureInfo Culture {
             get {
                 return resourceCulture;
             }
@@ -63,7 +63,7 @@ namespace Writersword.Src.Modules.Timer.Resources {
         /// <summary>
         ///   Ищет локализованную строку, похожую на Work and rest timer.
         /// </summary>
-        internal static string Description {
+        public static string Description {
             get {
                 return ResourceManager.GetString("Description", resourceCulture);
             }
@@ -72,9 +72,90 @@ namespace Writersword.Src.Modules.Timer.Resources {
         /// <summary>
         ///   Ищет локализованную строку, похожую на Timer.
         /// </summary>
-        internal static string DisplayName {
+        public static string DisplayName {
             get {
                 return ResourceManager.GetString("DisplayName", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Countdown mode.
+        /// </summary>
+        public static string Settings_CountdownMode {
+            get {
+                return ResourceManager.GetString("Settings_CountdownMode", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Default time.
+        /// </summary>
+        public static string Settings_DefaultTime {
+            get {
+                return ResourceManager.GetString("Settings_DefaultTime", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Minutes.
+        /// </summary>
+        public static string Settings_Minutes {
+            get {
+                return ResourceManager.GetString("Settings_Minutes", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Mode.
+        /// </summary>
+        public static string Settings_Mode {
+            get {
+                return ResourceManager.GetString("Settings_Mode", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Seconds.
+        /// </summary>
+        public static string Settings_Seconds {
+            get {
+                return ResourceManager.GetString("Settings_Seconds", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Work timer.
+        /// </summary>
+        public static string Title {
+            get {
+                return ResourceManager.GetString("Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset timer.
+        /// </summary>
+        public static string Tooltip_Reset {
+            get {
+                return ResourceManager.GetString("Tooltip_Reset", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Start timer.
+        /// </summary>
+        public static string Tooltip_Start {
+            get {
+                return ResourceManager.GetString("Tooltip_Start", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Stop timer.
+        /// </summary>
+        public static string Tooltip_Stop {
+            get {
+                return ResourceManager.GetString("Tooltip_Stop", resourceCulture);
             }
         }
     }

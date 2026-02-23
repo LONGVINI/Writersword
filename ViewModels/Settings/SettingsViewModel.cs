@@ -68,10 +68,7 @@ namespace Writersword.ViewModels.Settings
             Tabs.Add(new SettingsTabItem
             {
                 Title = Strings.Settings_Tab_General,
-                Content = new GeneralSettingsView
-                {
-                    DataContext = new GeneralSettingsViewModel()
-                },
+                Content = new GeneralSettingsView { DataContext = new GeneralSettingsViewModel() },
                 IsHeader = false,
                 IsModuleTab = false
             });
@@ -232,7 +229,7 @@ namespace Writersword.ViewModels.Settings
             };
         }
 
-        /// <summary>Переключить свёрнутость секции модулей и обновить видимость дочерних вкладок</summary>
+        /// <summary>Переключить свёрнутость секции и обновить видимость дочерних вкладок</summary>
         public void ToggleSection(SettingsTabItem sectionHeader)
         {
             if (!sectionHeader.IsSectionHeader) return;
@@ -246,9 +243,7 @@ namespace Writersword.ViewModels.Settings
             }
 
             if (SelectedTab?.SectionKey == sectionHeader.SectionKey && !sectionHeader.IsExpanded)
-            {
                 SelectedTab = null;
-            }
         }
 
         /// <summary>Выбрать вкладку</summary>
@@ -266,6 +261,7 @@ namespace Writersword.ViewModels.Settings
 
     /// <summary>
     /// Элемент вкладки в окне настроек
+    /// Не содержит цветов — все цвета определены в SettingsView.axaml через DynamicResource
     /// </summary>
     public class SettingsTabItem : ReactiveObject
     {
@@ -331,47 +327,10 @@ namespace Writersword.ViewModels.Settings
         /// <summary>Видим ли элемент в списке — заголовки секций всегда видимы, остальные управляются через IsVisible</summary>
         public bool IsVisibleInList => IsSectionHeader || IsHeader || IsVisible;
 
-        /// <summary>
-        /// Цвет фона выделенной вкладки
-        /// Используется отдельным слоем под hover-слоем чтобы не конфликтовать с pointerover стилем
-        /// </summary>
-        public IBrush TabSelectedBackground => IsSelected
-            ? new SolidColorBrush(Color.Parse("#37373A"))
-            : new SolidColorBrush(Colors.Transparent);
-
-        /// <summary>
-        /// Цвет текста кликабельной вкладки
-        /// Выбранная — белая, остальные приглушённые
-        /// </summary>
-        public IBrush TabForeground => IsSelected
-            ? new SolidColorBrush(Colors.White)
-            : new SolidColorBrush(Color.Parse("#CCCCCC"));
-
-        /// <summary>
-        /// Цвет фона заголовка секции модулей
-        /// Global — нейтральный тёмно-синий, This Project — янтарный
-        /// </summary>
-        public IBrush SectionHeaderBackground => IsGlobalSection
-            ? new SolidColorBrush(Color.Parse("#1A1A2E"))
-            : new SolidColorBrush(Color.Parse("#2A1F00"));
-
-        /// <summary>
-        /// Цвет текста заголовка секции модулей
-        /// Global — синеватый, This Project — янтарный
-        /// </summary>
-        public IBrush SectionHeaderForeground => IsGlobalSection
-            ? new SolidColorBrush(Color.Parse("#5B8DD9"))
-            : new SolidColorBrush(Color.Parse("#C8881A"));
-
-        /// <summary>
-        /// Символ стрелки для заголовка секции
-        /// Меняется в зависимости от IsExpanded
-        /// </summary>
+        /// <summary>Символ стрелки для заголовка секции — меняется в зависимости от IsExpanded</summary>
         public string ExpandArrow => IsExpanded ? "▾" : "▸";
 
-        /// <summary>
-        /// Отступ вкладки — для модульных вкладок добавляет левый отступ
-        /// </summary>
+        /// <summary>Отступ вкладки — для модульных вкладок добавляет левый отступ</summary>
         public Thickness Indent => IsModuleTab
             ? new Thickness(28, 7, 16, 7)
             : new Thickness(16, 7, 16, 7);
@@ -380,12 +339,7 @@ namespace Writersword.ViewModels.Settings
         public bool IsSelected
         {
             get => _isSelected;
-            set
-            {
-                this.RaiseAndSetIfChanged(ref _isSelected, value);
-                this.RaisePropertyChanged(nameof(TabSelectedBackground));
-                this.RaisePropertyChanged(nameof(TabForeground));
-            }
+            set => this.RaiseAndSetIfChanged(ref _isSelected, value);
         }
     }
 }

@@ -8,83 +8,88 @@
         SystemDecorations="None"
         TransparencyLevelHint="Transparent"
         Background="Transparent">
+
 	<Panel>
 		<Grid>
+
 			<!-- Подложка -->
-			<Border Background="#0D0D0D"
-			        CornerRadius="20"
-			        Margin="-2"/>
+			<Border Background="{DynamicResource BgBaseBrush}"
+                    CornerRadius="20"
+                    Margin="-2"/>
 
 			<!-- Основной контент -->
-			<Border Background="#1E1E1E"
-			        CornerRadius="12"
-			        Padding="30"
-			        BorderBrush="#3E3E42"
-			        BorderThickness="1"
-			        ClipToBounds="True"
-			        Margin="2">
+			<Border Background="{DynamicResource BgAppBrush}"
+                    CornerRadius="12"
+                    Padding="30"
+                    BorderBrush="{DynamicResource BorderDefaultBrush}"
+                    BorderThickness="1"
+                    ClipToBounds="True"
+                    Margin="2">
+
 				<Grid>
 					<Grid.RowDefinitions>
-						<RowDefinition Height="Auto" />
-						<RowDefinition Height="*" />
-						<RowDefinition Height="Auto" />
-						<RowDefinition Height="Auto" />
+						<RowDefinition Height="Auto"/>
+						<RowDefinition Height="*"/>
+						<RowDefinition Height="Auto"/>
+						<RowDefinition Height="Auto"/>
 					</Grid.RowDefinitions>
 
 					<!-- Заголовок с иконкой -->
 					<StackPanel Grid.Row="0"
-					            Orientation="Horizontal"
-					            HorizontalAlignment="Center"
-					            Margin="0,0,0,20">
+                                Orientation="Horizontal"
+                                HorizontalAlignment="Center"
+                                Margin="0,0,0,20">
 						<TextBlock x:Name="IconText"
-						           FontSize="24"
-						           Margin="0,0,10,0"
-						           VerticalAlignment="Center" />
+                                   FontSize="24"
+                                   Margin="0,0,10,0"
+                                   VerticalAlignment="Center"/>
 						<TextBlock x:Name="TitleText"
-						           FontSize="20"
-						           FontWeight="Bold"
-						           Foreground="White"
-						           VerticalAlignment="Center" />
+                                   FontSize="20"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   VerticalAlignment="Center"/>
 					</StackPanel>
 
 					<!-- Текст сообщения -->
 					<TextBlock Grid.Row="1"
-					           x:Name="MessageText"
-					           FontSize="14"
-					           Foreground="#CCC"
-					           TextWrapping="Wrap"
-					           HorizontalAlignment="Center"
-					           VerticalAlignment="Center"
-					           TextAlignment="Center"
-					           MaxWidth="500"
-					           Margin="0,0,0,20" />
+                               x:Name="MessageText"
+                               FontSize="14"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               TextAlignment="Center"
+                               MaxWidth="500"
+                               Margin="0,0,0,20"/>
 
 					<!-- Панель с датами (видна только для Recovery диалога) -->
 					<StackPanel Grid.Row="2"
-					            x:Name="DatesPanel"
-					            Orientation="Vertical"
-					            HorizontalAlignment="Center"
-					            Spacing="8"
-					            Margin="0,0,0,20"
-					            IsVisible="False">
+                                x:Name="DatesPanel"
+                                Orientation="Vertical"
+                                HorizontalAlignment="Center"
+                                Spacing="8"
+                                Margin="0,0,0,20"
+                                IsVisible="False">
 						<TextBlock x:Name="CacheDateText"
-						           FontSize="13"
-						           Foreground="#FFA500"
-						           HorizontalAlignment="Center" />
+                                   FontSize="13"
+                                   Foreground="#FFA500"
+                                   HorizontalAlignment="Center"/>
 						<TextBlock x:Name="SaveDateText"
-						           FontSize="13"
-						           Foreground="#4CAF50"
-						           HorizontalAlignment="Center" />
+                                   FontSize="13"
+                                   Foreground="#4CAF50"
+                                   HorizontalAlignment="Center"/>
 					</StackPanel>
 
 					<!-- Панель кнопок -->
 					<StackPanel Grid.Row="3"
-					            x:Name="ButtonsPanel"
-					            Orientation="Horizontal"
-					            HorizontalAlignment="Center"
-					            Spacing="10" />
+                                x:Name="ButtonsPanel"
+                                Orientation="Horizontal"
+                                HorizontalAlignment="Center"
+                                Spacing="10"/>
+
 				</Grid>
 			</Border>
 		</Grid>
 	</Panel>
+
 </Window>

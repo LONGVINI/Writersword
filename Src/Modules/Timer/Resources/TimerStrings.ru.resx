@@ -123,4 +123,31 @@
   <data name="DisplayName" xml:space="preserve">
     <value>Таймер</value>
   </data>
+  <data name="Settings_CountdownMode" xml:space="preserve">
+    <value>Режим обратного отсчёта</value>
+  </data>
+  <data name="Settings_DefaultTime" xml:space="preserve">
+    <value>Время по умолчанию</value>
+  </data>
+  <data name="Settings_Minutes" xml:space="preserve">
+    <value>Минуты</value>
+  </data>
+  <data name="Settings_Mode" xml:space="preserve">
+    <value>Режим</value>
+  </data>
+  <data name="Settings_Seconds" xml:space="preserve">
+    <value>Секунды</value>
+  </data>
+  <data name="Title" xml:space="preserve">
+    <value>Таймер работы</value>
+  </data>
+  <data name="Tooltip_Reset" xml:space="preserve">
+    <value>Сбросить таймер</value>
+  </data>
+  <data name="Tooltip_Start" xml:space="preserve">
+    <value>Запустить таймер</value>
+  </data>
+  <data name="Tooltip_Stop" xml:space="preserve">
+    <value>Остановить таймер</value>
+  </data>
 </root>

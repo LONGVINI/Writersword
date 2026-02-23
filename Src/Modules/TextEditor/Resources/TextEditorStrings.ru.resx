@@ -123,4 +123,16 @@
   <data name="DisplayName" xml:space="preserve">
     <value>Текстовый редактор</value>
   </data>
+  <data name="Settings_FontFamily" xml:space="preserve">
+    <value>Семейство шрифта</value>
+  </data>
+  <data name="Settings_FontSize" xml:space="preserve">
+    <value>Размер шрифта</value>
+  </data>
+  <data name="Settings_Preview" xml:space="preserve">
+    <value>Предпросмотр</value>
+  </data>
+  <data name="Settings_PreviewText" xml:space="preserve">
+    <value>Съешь же ещё этих мягких французских булок да выпей чаю</value>
+  </data>
 </root>

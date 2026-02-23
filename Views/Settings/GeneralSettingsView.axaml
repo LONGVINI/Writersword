@@ -7,31 +7,59 @@
 
 	<StackPanel Spacing="24">
 
+		<!-- Язык -->
 		<StackPanel Spacing="10">
 			<TextBlock Text="{x:Static loc:Strings.Settings_General_Language}"
                        FontSize="13"
                        FontWeight="SemiBold"
-                       Foreground="#CCCCCC"/>
+                       Foreground="{DynamicResource TextSecondaryBrush}"/>
 
 			<ComboBox ItemsSource="{Binding AvailableLanguages}"
                       SelectedItem="{Binding SelectedLanguage}"
                       MinWidth="200"
                       HorizontalAlignment="Left"
-                      Background="#2D2D30"
-                      Foreground="#CCCCCC"
-                      BorderBrush="#3F3F46"
+                      Background="{DynamicResource BgPanelBrush}"
+                      Foreground="{DynamicResource TextSecondaryBrush}"
+                      BorderBrush="{DynamicResource BorderDefaultBrush}"
                       BorderThickness="1">
 				<ComboBox.ItemTemplate>
 					<DataTemplate x:DataType="vm:LanguageOption">
 						<TextBlock Text="{Binding DisplayName}"
                                    FontSize="13"
-                                   Foreground="#CCCCCC"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                    Padding="4,2"/>
 					</DataTemplate>
 				</ComboBox.ItemTemplate>
 			</ComboBox>
 		</StackPanel>
 
+		<!-- Тема -->
+		<StackPanel Spacing="10">
+			<TextBlock Text="{x:Static loc:Strings.Settings_General_Theme}"
+                       FontSize="13"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+			<ComboBox ItemsSource="{Binding AvailableThemes}"
+                      SelectedItem="{Binding SelectedTheme}"
+                      MinWidth="200"
+                      HorizontalAlignment="Left"
+                      Background="{DynamicResource BgPanelBrush}"
+                      Foreground="{DynamicResource TextSecondaryBrush}"
+                      BorderBrush="{DynamicResource BorderDefaultBrush}"
+                      BorderThickness="1">
+				<ComboBox.ItemTemplate>
+					<DataTemplate x:DataType="vm:ThemeOption">
+						<TextBlock Text="{Binding DisplayName}"
+                                   FontSize="13"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   Padding="4,2"/>
+					</DataTemplate>
+				</ComboBox.ItemTemplate>
+			</ComboBox>
+		</StackPanel>
+
+		<!-- Предупреждение о перезапуске -->
 		<Border Background="#2A1F00"
                 Padding="14,10"
                 CornerRadius="6"
