@@ -709,4 +709,16 @@
     <value>Sepia</value>
     <comment>Sepia theme option</comment>
   </data>
+  <data name="Dialog_UnsavedChanges_Document" xml:space="preserve">
+    <value>Document</value>
+    <comment>Word 'Document' before document title in unsaved changes dialog</comment>
+  </data>
+  <data name="Dialog_UnsavedChanges_HasUnsaved" xml:space="preserve">
+    <value>contains unsaved changes.</value>
+    <comment>Text after document title in unsaved changes dialog</comment>
+  </data>
+  <data name="Panel_Modules_Title" xml:space="preserve">
+    <value>Modules</value>
+    <comment>Title of the modules side panel</comment>
+  </data>
 </root>

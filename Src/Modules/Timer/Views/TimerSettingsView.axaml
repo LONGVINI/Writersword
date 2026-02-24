@@ -4,56 +4,54 @@
              xmlns:loc="using:Writersword.Src.Modules.Timer.Resources"
              x:Class="Writersword.Modules.Timer.Views.TimerSettingsView"
              x:DataType="vm:TimerSettingsViewModel">
-
 	<StackPanel Spacing="16" Margin="8">
-
 		<StackPanel Spacing="6">
 			<TextBlock Text="{x:Static loc:TimerStrings.Settings_Mode}"
-                       Foreground="#CCC"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
                        FontSize="13"/>
 			<CheckBox Content="{x:Static loc:TimerStrings.Settings_CountdownMode}"
                       IsChecked="{Binding IsCountdown}"
-                      Foreground="#CCC"
+                      Foreground="{DynamicResource TextSecondaryBrush}"
                       FontSize="13"/>
 		</StackPanel>
-
 		<StackPanel Spacing="6">
 			<TextBlock Text="{x:Static loc:TimerStrings.Settings_DefaultTime}"
-                       Foreground="#CCC"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
                        FontSize="13"/>
 			<StackPanel Orientation="Horizontal" Spacing="8">
 				<StackPanel Spacing="4">
 					<TextBlock Text="{x:Static loc:TimerStrings.Settings_Minutes}"
-                               Foreground="#999"
+                               Foreground="{DynamicResource TextMutedBrush}"
                                FontSize="11"/>
 					<NumericUpDown Value="{Binding DefaultMinutes}"
                                    Minimum="0"
                                    Maximum="999"
                                    Increment="1"
                                    FormatString="0"
-                                   Background="#2D2D30"
-                                   Foreground="White"
-                                   BorderBrush="#3E3E42"
+                                   ClipValueToMinMax="True"
+                                   Background="{DynamicResource BgPanelBrush}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   BorderBrush="{DynamicResource BorderDefaultBrush}"
                                    BorderThickness="1"
                                    Width="100"/>
 				</StackPanel>
 				<StackPanel Spacing="4">
 					<TextBlock Text="{x:Static loc:TimerStrings.Settings_Seconds}"
-                               Foreground="#999"
+                               Foreground="{DynamicResource TextMutedBrush}"
                                FontSize="11"/>
 					<NumericUpDown Value="{Binding DefaultSeconds}"
                                    Minimum="0"
                                    Maximum="59"
                                    Increment="1"
                                    FormatString="0"
-                                   Background="#2D2D30"
-                                   Foreground="White"
-                                   BorderBrush="#3E3E42"
+                                   ClipValueToMinMax="True"
+                                   Background="{DynamicResource BgPanelBrush}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   BorderBrush="{DynamicResource BorderDefaultBrush}"
                                    BorderThickness="1"
                                    Width="100"/>
 				</StackPanel>
 			</StackPanel>
 		</StackPanel>
-
 	</StackPanel>
 </UserControl>

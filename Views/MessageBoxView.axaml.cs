@@ -1,4 +1,5 @@
-﻿using Avalonia.Controls;
+﻿using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Media;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -184,27 +185,25 @@ namespace Writersword.Views
             }
         }
 
-        /// <summary>Создать кнопку</summary>
+        /// <summary>Создать кнопку с цветами из текущей темы</summary>
         private Button CreateButton(string content, MessageBoxResult result, bool isPrimary)
         {
             var button = new Button
             {
                 Content = content,
-                Padding = new Avalonia.Thickness(30, 10),
+                Padding = new Thickness(30, 10),
                 FontSize = 14,
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand)
             };
 
-            if (isPrimary)
-            {
-                button.Background = new SolidColorBrush(Color.Parse("#007ACC"));
-                button.Foreground = Brushes.White;
-            }
-            else
-            {
-                button.Background = new SolidColorBrush(Color.Parse("#3E3E42"));
-                button.Foreground = new SolidColorBrush(Color.Parse("#CCC"));
-            }
+            var bgKey = isPrimary ? "AccentDefaultBrush" : "BgPanelBrush";
+            var fgKey = isPrimary ? "TextPrimaryBrush" : "TextSecondaryBrush";
+
+            if (Application.Current?.TryGetResource(bgKey, null, out var bg) == true && bg is IBrush bgBrush)
+                button.Background = bgBrush;
+
+            if (Application.Current?.TryGetResource(fgKey, null, out var fg) == true && fg is IBrush fgBrush)
+                button.Foreground = fgBrush;
 
             button.Click += (s, e) =>
             {

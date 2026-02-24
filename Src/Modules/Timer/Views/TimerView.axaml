@@ -4,25 +4,20 @@
              xmlns:loc="using:Writersword.Src.Modules.Timer.Resources"
              x:Class="Writersword.Modules.Timer.Views.TimerView"
              x:DataType="vm:TimerViewModel"
-             Background="#2D2D30">
-
+             Background="{DynamicResource BgSurfaceBrush}">
 	<Border Padding="10">
 		<StackPanel Spacing="10" HorizontalAlignment="Center">
-
 			<TextBlock Text="{x:Static loc:TimerStrings.Title}"
                        FontSize="12"
                        FontWeight="Bold"
-                       Foreground="White"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
                        HorizontalAlignment="Center"/>
-
 			<TextBlock Text="{Binding DisplayTime}"
                        FontSize="24"
                        FontWeight="Bold"
-                       Foreground="#007ACC"
+                       Foreground="{DynamicResource AccentDefaultBrush}"
                        HorizontalAlignment="Center"/>
-
 			<StackPanel Orientation="Horizontal" Spacing="5" HorizontalAlignment="Center">
-
 				<Button Content="▶"
                         Command="{Binding StartCommand}"
                         Background="#28A745"
@@ -31,7 +26,6 @@
                         Height="30"
                         FontSize="14"
                         ToolTip.Tip="{x:Static loc:TimerStrings.Tooltip_Start}"/>
-
 				<Button Content="⏸"
                         Command="{Binding StopCommand}"
                         Background="#FFC107"
@@ -40,7 +34,6 @@
                         Height="30"
                         FontSize="14"
                         ToolTip.Tip="{x:Static loc:TimerStrings.Tooltip_Stop}"/>
-
 				<Button Content="⏹"
                         Command="{Binding ResetCommand}"
                         Background="#DC3545"
@@ -49,10 +42,7 @@
                         Height="30"
                         FontSize="14"
                         ToolTip.Tip="{x:Static loc:TimerStrings.Tooltip_Reset}"/>
-
 			</StackPanel>
-
 		</StackPanel>
 	</Border>
-
 </UserControl>

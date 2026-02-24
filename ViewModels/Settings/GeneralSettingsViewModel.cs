@@ -30,7 +30,8 @@ namespace Writersword.ViewModels.Settings
         {
             new LanguageOption("English", "en"),
             new LanguageOption("Русский", "ru"),
-            new LanguageOption("Українська", "uk")
+            new LanguageOption("Українська", "uk"),
+            new LanguageOption("Հայերեն", "hy")
         };
 
         /// <summary>Доступные темы оформления</summary>

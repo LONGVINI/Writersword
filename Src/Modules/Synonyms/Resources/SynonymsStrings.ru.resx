@@ -123,4 +123,7 @@
   <data name="DisplayName" xml:space="preserve">
     <value>Синонимы</value>
   </data>
+  <data name="SearchWatermark" xml:space="preserve">
+    <value>Введите слово...</value>
+  </data>
 </root>

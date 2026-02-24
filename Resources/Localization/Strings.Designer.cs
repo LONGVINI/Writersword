@@ -367,6 +367,24 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Document.
+        /// </summary>
+        public static string Dialog_UnsavedChanges_Document {
+            get {
+                return ResourceManager.GetString("Dialog_UnsavedChanges_Document", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на contains unsaved changes..
+        /// </summary>
+        public static string Dialog_UnsavedChanges_HasUnsaved {
+            get {
+                return ResourceManager.GetString("Dialog_UnsavedChanges_HasUnsaved", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Save changes before closing?.
         /// </summary>
         public static string Dialog_UnsavedChanges_Message {
@@ -1074,6 +1092,15 @@ namespace Writersword.Resources.Localization {
         public static string Notification_WorkspaceSavedProject {
             get {
                 return ResourceManager.GetString("Notification_WorkspaceSavedProject", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Modules.
+        /// </summary>
+        public static string Panel_Modules_Title {
+            get {
+                return ResourceManager.GetString("Panel_Modules_Title", resourceCulture);
             }
         }
         

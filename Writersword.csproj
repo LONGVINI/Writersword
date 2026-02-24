@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
 	<!-- ========================================
-       🔧 НАСТРОЙКИ ПРОЕКТА
+       НАСТРОЙКИ ПРОЕКТА
        ======================================== -->
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
@@ -21,7 +21,7 @@
 	</PropertyGroup>
 
 	<!-- ========================================
-       ⚙️ КОНФИГУРАЦИОННЫЕ ФАЙЛЫ
+       КОНФИГУРАЦИОННЫЕ ФАЙЛЫ
        ======================================== -->
 	<ItemGroup>
 		<None Update="appsettings.json">
@@ -30,7 +30,7 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       📦 AVALONIA UI + DOCK СИСТЕМА
+       AVALONIA UI + DOCK СИСТЕМА
        ======================================== -->
 	<ItemGroup>
 		<!-- Основные пакеты Avalonia (версия 11.3.10) -->
@@ -58,7 +58,7 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       🏗️ MVVM + DEPENDENCY INJECTION
+       MVVM + DEPENDENCY INJECTION
        ======================================== -->
 	<ItemGroup>
 		<PackageReference Include="ReactiveUI" Version="20.1.1" />
@@ -67,7 +67,7 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       🌍 ЛОКАЛИЗАЦИЯ + JSON
+       ЛОКАЛИЗАЦИЯ + JSON
        ======================================== -->
 	<ItemGroup>
 		<PackageReference Include="System.Resources.Extensions" Version="8.0.0" />
@@ -75,7 +75,7 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       📁 РЕСУРСЫ (картинки, стили)
+       РЕСУРСЫ (картинки, стили)
        ======================================== -->
 	<ItemGroup>
 		<!-- Включаем все ресурсы КРОМЕ локализации -->
@@ -83,9 +83,9 @@
 	</ItemGroup>
 
 	<!-- ========================================
-     🎨 СТИЛИ И ТЕМЫ
-     Явное перечисление для надёжного включения в сборку
-     ======================================== -->
+       СТИЛИ И ТЕМЫ
+       Явное перечисление для надёжного включения в сборку
+       ======================================== -->
 	<ItemGroup>
 		<!-- Стили Dock -->
 		<AvaloniaResource Include="Styles\DockStyles.axaml">
@@ -104,7 +104,7 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       🌐 ЛОКАЛИЗАЦИЯ (resx файлы)
+       ЛОКАЛИЗАЦИЯ (resx файлы)
        Включаем вручную, т.к. отключили автоматическое
        ======================================== -->
 	<ItemGroup>
@@ -114,21 +114,23 @@
 			<LastGenOutput>Strings.Designer.cs</LastGenOutput>
 		</EmbeddedResource>
 
-		<!-- Русская локализация (зависит от основного файла) -->
+		<!-- Русская локализация -->
 		<EmbeddedResource Include="Resources\Localization\Strings.ru.resx">
 			<DependentUpon>Strings.resx</DependentUpon>
 		</EmbeddedResource>
 
+		<!-- Армянская локализация -->
+
 		<!-- Модуль Notes -->
 		<EmbeddedResource Include="Src\Modules\Notes\Resources\NotesStrings.resx">
-			<Generator>ResXFileCodeGenerator</Generator>
+			<Generator>PublicResXFileCodeGenerator</Generator>
 			<LastGenOutput>NotesStrings.Designer.cs</LastGenOutput>
 		</EmbeddedResource>
 		<EmbeddedResource Include="Src\Modules\Notes\Resources\NotesStrings.ru.resx" />
 
 		<!-- Модуль Synonyms -->
 		<EmbeddedResource Include="Src\Modules\Synonyms\Resources\SynonymsStrings.resx">
-			<Generator>ResXFileCodeGenerator</Generator>
+			<Generator>PublicResXFileCodeGenerator</Generator>
 			<LastGenOutput>SynonymsStrings.Designer.cs</LastGenOutput>
 		</EmbeddedResource>
 		<EmbeddedResource Include="Src\Modules\Synonyms\Resources\SynonymsStrings.ru.resx" />
@@ -191,7 +193,7 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       🚫 ИСКЛЮЧЕНИЯ (папки не участвующие в сборке)
+       ИСКЛЮЧЕНИЯ (папки не участвующие в сборке)
        ======================================== -->
 	<ItemGroup>
 		<AvaloniaXaml Remove="Docs\AI_GUIDE V2.0\**" />
@@ -209,14 +211,14 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       📄 ПРОЧИЕ ФАЙЛЫ
+       ПРОЧИЕ ФАЙЛЫ
        ======================================== -->
 	<ItemGroup>
 		<Content Include="Docs\AI_GUIDE V3.0\Configuration_text.txt" />
 	</ItemGroup>
 
 	<!-- ========================================
-       📂 ПУСТЫЕ ПАПКИ (для структуры проекта)
+       ПУСТЫЕ ПАПКИ (для структуры проекта)
        ======================================== -->
 	<ItemGroup>
 		<Folder Include="Docs\Architecture\" />
@@ -235,7 +237,7 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       🔧 ЗАВИСИМОСТИ АВТО-ГЕНЕРИРУЕМЫХ ФАЙЛОВ
+       ЗАВИСИМОСТИ АВТО-ГЕНЕРИРУЕМЫХ ФАЙЛОВ
        ======================================== -->
 	<ItemGroup>
 		<Compile Update="Src\Modules\Notes\Resources\NotesStrings.Designer.cs">

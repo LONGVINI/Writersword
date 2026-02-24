@@ -1,6 +1,7 @@
 ﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Writersword.ViewModels"
+        xmlns:loc="using:Writersword.Resources.Localization"
         x:Class="Writersword.Views.WelcomeView"
         x:DataType="vm:WelcomeViewModel"
         Title="Welcome to Writersword"
@@ -55,12 +56,12 @@
 
 				<!-- Заголовок -->
 				<StackPanel Grid.Row="0" Margin="0,0,0,30">
-					<TextBlock Text="Writersword"
+					<TextBlock Text="{x:Static loc:Strings.Welcome_Title}"
                                FontSize="36"
                                FontWeight="Bold"
                                Foreground="{DynamicResource TextPrimaryBrush}"
                                HorizontalAlignment="Center"/>
-					<TextBlock Text="Choose how to start"
+					<TextBlock Text="{x:Static loc:Strings.Welcome_Subtitle}"
                                FontSize="14"
                                Foreground="{DynamicResource TextMutedBrush}"
                                HorizontalAlignment="Center"
@@ -81,7 +82,7 @@
                             CornerRadius="8"
                             Padding="20">
 						<StackPanel>
-							<TextBlock Text="📝 New Project"
+							<TextBlock Text="{x:Static loc:Strings.Welcome_NewProject}"
                                        FontSize="18"
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextPrimaryBrush}"
@@ -105,7 +106,7 @@
 								</ItemsControl.ItemTemplate>
 							</ItemsControl>
 
-							<Button Content="Create Project"
+							<Button Content="{x:Static loc:Strings.Welcome_CreateButton}"
                                     Command="{Binding NewProjectCommand}"
                                     Background="{DynamicResource AccentDefaultBrush}"
                                     Foreground="White"
@@ -142,7 +143,7 @@
                                         Margin="10,0,0,0"/>
 							</Grid>
 
-							<Button Content="Browse for Project..."
+							<Button Content="{x:Static loc:Strings.Welcome_BrowseButton}"
                                     Command="{Binding OpenProjectCommand}"
                                     Background="{DynamicResource AccentDefaultBrush}"
                                     Foreground="White"
@@ -159,13 +160,13 @@
                             CornerRadius="8"
                             Padding="20">
 						<StackPanel>
-							<TextBlock Text="📂 Open Project"
+							<TextBlock Text="{x:Static loc:Strings.Welcome_OpenProject}"
                                        FontSize="18"
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextPrimaryBrush}"
                                        Margin="0,0,0,15"/>
 
-							<TextBlock Text="Recent Projects:"
+							<TextBlock Text="{x:Static loc:Strings.Welcome_RecentProjects}"
                                        FontSize="12"
                                        Foreground="{DynamicResource TextMutedBrush}"
                                        Margin="0,0,0,10"/>

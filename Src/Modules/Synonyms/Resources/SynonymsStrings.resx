@@ -125,4 +125,8 @@
     <value>Synonyms</value>
     <comment>Module name in menu</comment>
   </data>
+  <data name="SearchWatermark" xml:space="preserve">
+    <value>Enter a word...</value>
+    <comment>Placeholder text in search field</comment>
+  </data>
 </root>

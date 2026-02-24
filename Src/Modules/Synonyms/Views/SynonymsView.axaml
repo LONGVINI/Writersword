@@ -1,55 +1,56 @@
 ﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Synonyms.ViewModels"
+			 xmlns:loc="using:Writersword.Src.Modules.Synonyms.Resources"
              x:Class="Writersword.Modules.Synonyms.Views.SynonymsView"
-             x:DataType="vm:SynonymsViewModel"
-             Background="#2D2D30">
-    
-    <Border Padding="10">
-        <StackPanel Spacing="10">
-            
-            <!-- Заголовок модуля -->
-            <TextBlock Text="📚 Синонимы" 
-                       FontSize="14" 
-                       FontWeight="Bold" 
-                       Foreground="White" />
-            
-            <!-- Поле поиска -->
-            <TextBox Text="{Binding SearchText}" 
-                     Watermark="Введите слово..."
-                     Background="#3E3E42"
-                     Foreground="White"
-                     BorderBrush="#007ACC"
-                     BorderThickness="1" />
-            
-            <!-- Список синонимов (прокручиваемый) -->
-            <ScrollViewer Height="200" VerticalScrollBarVisibility="Auto">
-                <ItemsControl ItemsSource="{Binding Synonyms}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <!-- Каждый синоним в отдельной плашке -->
-                            <Border Background="#3E3E42" 
-                                    Padding="8,4" 
+             x:DataType="vm:SynonymsViewModel">
+
+	<Border Padding="10"
+            Background="{DynamicResource BgSurfaceBrush}">
+		<StackPanel Spacing="10">
+
+			<!-- Заголовок модуля -->
+			<TextBlock Text="{x:Static loc:SynonymsStrings.DisplayName}"
+                       FontSize="14"
+                       FontWeight="Bold"
+                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+			<!-- Поле поиска -->
+			<TextBox Text="{Binding SearchText}"
+                     Watermark="{x:Static loc:SynonymsStrings.SearchWatermark}"
+                     Background="{DynamicResource BgPanelBrush}"
+                     Foreground="{DynamicResource TextPrimaryBrush}"
+                     BorderBrush="{DynamicResource AccentDefaultBrush}"
+                     BorderThickness="1"/>
+
+			<!-- Список синонимов (прокручиваемый) -->
+			<ScrollViewer Height="200" VerticalScrollBarVisibility="Auto">
+				<ItemsControl ItemsSource="{Binding Synonyms}">
+					<ItemsControl.ItemTemplate>
+						<DataTemplate>
+							<!-- Каждый синоним в отдельной плашке -->
+							<Border Background="{DynamicResource BgPanelBrush}"
+                                    Padding="8,4"
                                     Margin="0,2"
                                     CornerRadius="3"
                                     Cursor="Hand">
-                                <TextBlock Text="{Binding}" 
-                                           Foreground="#CCC" 
-                                           FontSize="12" />
-                                
-                                <!-- Эффект при наведении -->
-                                <Border.Styles>
-                                    <Style Selector="Border:pointerover">
-                                        <Setter Property="Background" Value="#4A4A4C" />
-                                    </Style>
-                                </Border.Styles>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
-            
-        </StackPanel>
-    </Border>
-    
+								<TextBlock Text="{Binding}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="12"/>
+
+								<!-- Эффект при наведении -->
+								<Border.Styles>
+									<Style Selector="Border:pointerover">
+										<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+									</Style>
+								</Border.Styles>
+							</Border>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+			</ScrollViewer>
+
+		</StackPanel>
+	</Border>
+
 </UserControl>

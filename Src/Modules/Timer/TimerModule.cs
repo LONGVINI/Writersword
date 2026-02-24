@@ -180,8 +180,8 @@ namespace Writersword.Modules.Timer
                 {
                     ApplySettings(new TimerSettings
                     {
-                        DefaultMinutes = tuple.Item1,
-                        DefaultSeconds = tuple.Item2,
+                        DefaultMinutes = (int)(tuple.Item1 ?? 0),
+                        DefaultSeconds = (int)(tuple.Item2 ?? 0),
                         IsCountdown = tuple.Item3
                     });
                 });
@@ -206,8 +206,8 @@ namespace Writersword.Modules.Timer
                 {
                     ApplyLocalSettings(new TimerSettings
                     {
-                        DefaultMinutes = tuple.Item1,
-                        DefaultSeconds = tuple.Item2,
+                        DefaultMinutes = (int)(tuple.Item1 ?? 0),
+                        DefaultSeconds = (int)(tuple.Item2 ?? 0),
                         IsCountdown = tuple.Item3
                     });
                 });

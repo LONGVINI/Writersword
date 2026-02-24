@@ -4,43 +4,39 @@
              xmlns:loc="using:Writersword.Src.Modules.TextEditor.Resources"
              x:Class="Writersword.Modules.TextEditor.Views.TextEditorSettingsView"
              x:DataType="vm:TextEditorSettingsViewModel">
-
 	<StackPanel Spacing="16" Margin="8">
-
 		<StackPanel Spacing="6">
 			<TextBlock Text="{x:Static loc:TextEditorStrings.Settings_FontSize}"
-                       Foreground="#CCC"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
                        FontSize="13"/>
 			<NumericUpDown Value="{Binding FontSize}"
                            Minimum="8"
                            Maximum="72"
                            Increment="1"
                            FormatString="0"
-                           Background="#2D2D30"
-                           Foreground="White"
-                           BorderBrush="#3E3E42"
+                           Background="{DynamicResource BgPanelBrush}"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           BorderBrush="{DynamicResource BorderDefaultBrush}"
                            BorderThickness="1"
                            Width="120"
                            HorizontalAlignment="Left"/>
 		</StackPanel>
-
 		<StackPanel Spacing="6">
 			<TextBlock Text="{x:Static loc:TextEditorStrings.Settings_FontFamily}"
-                       Foreground="#CCC"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
                        FontSize="13"/>
 			<ComboBox ItemsSource="{Binding AvailableFonts}"
                       SelectedItem="{Binding FontFamily}"
-                      Background="#2D2D30"
-                      Foreground="White"
-                      BorderBrush="#3E3E42"
+                      Background="{DynamicResource BgPanelBrush}"
+                      Foreground="{DynamicResource TextPrimaryBrush}"
+                      BorderBrush="{DynamicResource BorderDefaultBrush}"
                       BorderThickness="1"
                       Width="240"
                       HorizontalAlignment="Left"/>
 		</StackPanel>
-
 		<StackPanel Spacing="6">
 			<TextBlock Text="{x:Static loc:TextEditorStrings.Settings_Preview}"
-                       Foreground="#CCC"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
                        FontSize="13"/>
 			<Border Background="White"
                     CornerRadius="4"
@@ -52,6 +48,5 @@
                            TextWrapping="Wrap"/>
 			</Border>
 		</StackPanel>
-
 	</StackPanel>
 </UserControl>

@@ -22,7 +22,7 @@ namespace Writersword.Src.Modules.Synonyms.Resources {
     [global::System.CodeDom.Compiler.GeneratedCodeAttribute("System.Resources.Tools.StronglyTypedResourceBuilder", "18.0.0.0")]
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
-    internal class SynonymsStrings {
+    public class SynonymsStrings {
         
         private static global::System.Resources.ResourceManager resourceMan;
         
@@ -36,7 +36,7 @@ namespace Writersword.Src.Modules.Synonyms.Resources {
         ///   Возвращает кэшированный экземпляр ResourceManager, использованный этим классом.
         /// </summary>
         [global::System.ComponentModel.EditorBrowsableAttribute(global::System.ComponentModel.EditorBrowsableState.Advanced)]
-        internal static global::System.Resources.ResourceManager ResourceManager {
+        public static global::System.Resources.ResourceManager ResourceManager {
             get {
                 if (object.ReferenceEquals(resourceMan, null)) {
                     global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("Writersword.Src.Modules.Synonyms.Resources.SynonymsStrings", typeof(SynonymsStrings).Assembly);
@@ -51,7 +51,7 @@ namespace Writersword.Src.Modules.Synonyms.Resources {
         ///   обращений к ресурсу с помощью этого класса ресурса со строгой типизацией.
         /// </summary>
         [global::System.ComponentModel.EditorBrowsableAttribute(global::System.ComponentModel.EditorBrowsableState.Advanced)]
-        internal static global::System.Globalization.CultureInfo Culture {
+        public static global::System.Globalization.CultureInfo Culture {
             get {
                 return resourceCulture;
             }
@@ -63,7 +63,7 @@ namespace Writersword.Src.Modules.Synonyms.Resources {
         /// <summary>
         ///   Ищет локализованную строку, похожую на Find synonyms and similar words.
         /// </summary>
-        internal static string Description {
+        public static string Description {
             get {
                 return ResourceManager.GetString("Description", resourceCulture);
             }
@@ -72,9 +72,18 @@ namespace Writersword.Src.Modules.Synonyms.Resources {
         /// <summary>
         ///   Ищет локализованную строку, похожую на Synonyms.
         /// </summary>
-        internal static string DisplayName {
+        public static string DisplayName {
             get {
                 return ResourceManager.GetString("DisplayName", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Enter a word....
+        /// </summary>
+        public static string SearchWatermark {
+            get {
+                return ResourceManager.GetString("SearchWatermark", resourceCulture);
             }
         }
     }

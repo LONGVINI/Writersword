@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.Project;
-using Writersword.Core.Models.Modules;
 using Writersword.Modules.TextEditor;
 using Writersword.Modules.TextEditor.ViewModels;
 

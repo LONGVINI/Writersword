@@ -3,8 +3,8 @@
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels"
              x:Class="Writersword.Modules.TextEditor.Views.TextEditorView"
              x:DataType="vm:TextEditorViewModel"
-             Background="#252526">
-	<Border Background="#252526" Padding="40">
+             Background="{DynamicResource BgAppBrush}">
+	<Border Background="{DynamicResource BgAppBrush}" Padding="40">
 		<Border Background="White"
                 MinWidth="850"
                 MaxWidth="850"

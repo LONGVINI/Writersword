@@ -564,4 +564,13 @@
   <data name="Settings_General_Theme_Sepia" xml:space="preserve">
     <value>Сепия</value>
   </data>
+  <data name="Dialog_UnsavedChanges_Document" xml:space="preserve">
+    <value>Документ</value>
+  </data>
+  <data name="Dialog_UnsavedChanges_HasUnsaved" xml:space="preserve">
+    <value>содержит несохранённые изменения.</value>
+  </data>
+  <data name="Panel_Modules_Title" xml:space="preserve">
+    <value>Модули</value>
+  </data>
 </root>

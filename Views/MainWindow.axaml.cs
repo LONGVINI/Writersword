@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using Writersword.Core.Interfaces.Services;
+using Writersword.Resources.Localization;
 using Writersword.Src.Core.Interfaces.Services.Input;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.Services.UI;
@@ -136,8 +137,8 @@ namespace Writersword.Views
                 _logger.LogDebug("Tab {Title} has unsaved changes", tab.Title);
 
                 var result = await dialogService.ShowMessageAsync(
-                    "Несохранённые изменения",
-                    $"Документ \"{tab.Title}\" содержит несохранённые изменения.\n\nСохранить перед закрытием?",
+                    Strings.Dialog_UnsavedChanges_Title,
+                    $"{Strings.Dialog_UnsavedChanges_Document} \"{tab.Title}\" {Strings.Dialog_UnsavedChanges_HasUnsaved}\n\n{Strings.Dialog_UnsavedChanges_Message}",
                     MessageBoxType.Question,
                     MessageBoxButtons.YesNoCancel
                 );

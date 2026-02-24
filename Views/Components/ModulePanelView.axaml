@@ -1,29 +1,27 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.ViewModels.Components"
+             xmlns:loc="using:Writersword.Resources.Localization"
              x:Class="Writersword.Views.Components.ModulePanelView"
              x:DataType="vm:ModulePanelViewModel"
              x:Name="ModulePanelViewRoot">
-
 	<!-- Панель модулей -->
 	<Border Background="{DynamicResource BgAppBrush}"
             BorderBrush="{DynamicResource BorderDefaultBrush}"
             BorderThickness="1,0,0,0"
             Width="250">
 		<DockPanel>
-
 			<!-- Заголовок панели -->
 			<Border DockPanel.Dock="Top"
                     Background="{DynamicResource BgPanelBrush}"
                     Padding="12,8"
                     BorderBrush="{DynamicResource BorderDefaultBrush}"
                     BorderThickness="0,0,0,1">
-				<TextBlock Text="Modules"
+				<TextBlock Text="{x:Static loc:Strings.Panel_Modules_Title}"
                            FontSize="13"
                            FontWeight="SemiBold"
                            Foreground="{DynamicResource TextSecondaryBrush}"/>
 			</Border>
-
 			<!-- Список модулей -->
 			<ScrollViewer VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
@@ -36,7 +34,6 @@
 					</ItemsControl.ItemsPanel>
 					<ItemsControl.ItemTemplate>
 						<DataTemplate>
-
 							<!-- Элемент модуля как Button -->
 							<Button Background="Transparent"
                                     Padding="8,6"
@@ -46,7 +43,6 @@
                                     CommandParameter="{Binding}"
                                     ToolTip.Tip="{Binding Description}">
 								<Grid ColumnDefinitions="Auto,*,Auto">
-
 									<!-- Иконка модуля -->
 									<TextBlock Grid.Column="0"
                                                Text="{Binding Icon}"
@@ -54,7 +50,6 @@
                                                Foreground="{DynamicResource TextSecondaryBrush}"
                                                VerticalAlignment="Center"
                                                Margin="0,0,8,0"/>
-
 									<!-- Название модуля -->
 									<TextBlock Grid.Column="1"
                                                Text="{Binding DisplayName}"
@@ -62,14 +57,12 @@
                                                Foreground="{DynamicResource TextSecondaryBrush}"
                                                VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis"/>
-
 									<!-- Чекбокс (активен/неактивен) -->
 									<CheckBox Grid.Column="2"
                                               IsChecked="{Binding IsActive}"
                                               IsEnabled="{Binding CanToggle}"
                                               VerticalAlignment="Center"/>
 								</Grid>
-
 								<!-- Hover эффект -->
 								<Button.Styles>
 									<Style Selector="Button:pointerover">
@@ -77,13 +70,10 @@
 									</Style>
 								</Button.Styles>
 							</Button>
-
 						</DataTemplate>
 					</ItemsControl.ItemTemplate>
 				</ItemsControl>
 			</ScrollViewer>
-
 		</DockPanel>
 	</Border>
-
 </UserControl>
