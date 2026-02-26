@@ -84,7 +84,7 @@ namespace Writersword.ViewModels.Settings
             Tabs.Add(new SettingsTabItem
             {
                 Title = Strings.Settings_Tab_Keybindings,
-                Content = new UserControl(),
+                Content = new HotKeySettingsView { DataContext = new HotKeySettingsViewModel() },
                 IsHeader = false,
                 IsModuleTab = false
             });

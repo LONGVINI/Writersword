@@ -3,19 +3,15 @@
              xmlns:vm="using:Writersword.Modules.Notes.ViewModels"
              xmlns:loc="using:Writersword.Src.Modules.Notes.Resources"
              x:Class="Writersword.Modules.Notes.Views.NotesView"
-             x:DataType="vm:NotesViewModel">
-
+             x:DataType="vm:NotesViewModel"
+             Tag="Notes">
 	<Border Padding="10"
             Background="{DynamicResource BgSurfaceBrush}">
 		<StackPanel Spacing="5">
-
-			<!-- Заголовок модуля -->
 			<TextBlock Text="{x:Static loc:NotesStrings.Title}"
                        FontSize="12"
                        FontWeight="Bold"
                        Foreground="{DynamicResource TextPrimaryBrush}"/>
-
-			<!-- Поле для ввода заметок (многострочное) -->
 			<TextBox Text="{Binding NoteText}"
                      AcceptsReturn="True"
                      TextWrapping="Wrap"
@@ -24,8 +20,6 @@
                      Foreground="{DynamicResource TextPrimaryBrush}"
                      BorderBrush="{DynamicResource AccentDefaultBrush}"
                      BorderThickness="1"/>
-
 		</StackPanel>
 	</Border>
-
 </UserControl>

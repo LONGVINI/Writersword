@@ -3,7 +3,8 @@
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels"
              x:Class="Writersword.Modules.TextEditor.Views.TextEditorView"
              x:DataType="vm:TextEditorViewModel"
-             Background="{DynamicResource BgAppBrush}">
+             Background="{DynamicResource BgAppBrush}"
+             Tag="TextEditor">
 	<Border Background="{DynamicResource BgAppBrush}" Padding="40">
 		<Border Background="White"
                 MinWidth="850"
@@ -29,15 +30,15 @@
                      Focusable="True">
 				<TextBox.Styles>
 					<Style Selector="TextBox">
-						<Setter Property="Background" Value="White" />
+						<Setter Property="Background" Value="White"/>
 					</Style>
 					<Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
-						<Setter Property="Background" Value="White" />
-						<Setter Property="BorderBrush" Value="Transparent" />
+						<Setter Property="Background" Value="White"/>
+						<Setter Property="BorderBrush" Value="Transparent"/>
 					</Style>
 					<Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
-						<Setter Property="Background" Value="White" />
-						<Setter Property="BorderBrush" Value="Transparent" />
+						<Setter Property="Background" Value="White"/>
+						<Setter Property="BorderBrush" Value="Transparent"/>
 					</Style>
 				</TextBox.Styles>
 			</TextBox>

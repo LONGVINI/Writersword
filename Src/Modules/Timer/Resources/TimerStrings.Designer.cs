@@ -79,6 +79,33 @@ namespace Writersword.Src.Modules.Timer.Resources {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset Timer.
+        /// </summary>
+        public static string HotKey_Timer_Reset {
+            get {
+                return ResourceManager.GetString("HotKey_Timer_Reset", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Start Timer.
+        /// </summary>
+        public static string HotKey_Timer_Start {
+            get {
+                return ResourceManager.GetString("HotKey_Timer_Start", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Stop Timer.
+        /// </summary>
+        public static string HotKey_Timer_Stop {
+            get {
+                return ResourceManager.GetString("HotKey_Timer_Stop", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Countdown mode.
         /// </summary>
         public static string Settings_CountdownMode {

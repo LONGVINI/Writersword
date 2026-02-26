@@ -1,27 +1,35 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+	<!-- Горячие клавиши конфликты -->
+	<SolidColorBrush x:Key="HotKeyConflictCriticalBrush">#C0392B</SolidColorBrush>
+	<SolidColorBrush x:Key="HotKeyConflictCriticalRowBrush">#FDECEA</SolidColorBrush>
+	<SolidColorBrush x:Key="HotKeyConflictWarningBrush">#E67E22</SolidColorBrush>
+	<SolidColorBrush x:Key="HotKeyConflictWarningRowBrush">#FEF6E4</SolidColorBrush>
+	<SolidColorBrush x:Key="AccentSubtleBrush">#E3F0FB</SolidColorBrush>
+
 	<!-- Фоны -->
 	<SolidColorBrush x:Key="BgBaseBrush">#D0D0D0</SolidColorBrush>
 	<SolidColorBrush x:Key="BgAppBrush">#F5F5F5</SolidColorBrush>
 	<SolidColorBrush x:Key="BgSurfaceBrush">#EBEBEB</SolidColorBrush>
 	<SolidColorBrush x:Key="BgPanelBrush">#E0E0E0</SolidColorBrush>
 	<SolidColorBrush x:Key="BgHoverBrush">#D4D4D4</SolidColorBrush>
-	
+
 	<!-- Текст -->
 	<SolidColorBrush x:Key="TextPrimaryBrush">#1A1A1A</SolidColorBrush>
 	<SolidColorBrush x:Key="TextSecondaryBrush">#3A3A3A</SolidColorBrush>
 	<SolidColorBrush x:Key="TextMutedBrush">#6A6A6A</SolidColorBrush>
 	<SolidColorBrush x:Key="TextDisabledBrush">#AAAAAA</SolidColorBrush>
-	
+
 	<!-- Акцент -->
 	<SolidColorBrush x:Key="AccentDefaultBrush">#007ACC</SolidColorBrush>
 	<SolidColorBrush x:Key="AccentHoverBrush">#1C86C8</SolidColorBrush>
 	<SolidColorBrush x:Key="AccentPressedBrush">#005A9E</SolidColorBrush>
-	
+
 	<!-- Границы -->
 	<SolidColorBrush x:Key="BorderDefaultBrush">#C0C0C4</SolidColorBrush>
 	<SolidColorBrush x:Key="BorderSubtleBrush">#DCDCDC</SolidColorBrush>
-	
+
 	<!-- Семантические цвета секций настроек -->
 	<SolidColorBrush x:Key="SectionGlobalBgBrush">#D0E4F7</SolidColorBrush>
 	<SolidColorBrush x:Key="SectionGlobalFgBrush">#1A5FA8</SolidColorBrush>
@@ -43,5 +51,5 @@
 	<SolidColorBrush x:Key="MenuBarItemBackgroundPressed">#005A9E</SolidColorBrush>
 	<SolidColorBrush x:Key="MenuBarItemForeground">#1A1A1A</SolidColorBrush>
 	<SolidColorBrush x:Key="MenuBarItemForegroundPointerOver">#FFFFFF</SolidColorBrush>
-	
+
 </ResourceDictionary>

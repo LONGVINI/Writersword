@@ -1,0 +1,470 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.ViewModels.Settings"
+             xmlns:loc="using:Writersword.Resources.Localization"
+             x:Class="Writersword.Views.Settings.HotKeySettingsView"
+             x:DataType="vm:HotKeySettingsViewModel"
+             Focusable="True">
+
+	<UserControl.Styles>
+		<Style Selector="Button.compact">
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid ColumnDefinitions="200,1,*">
+
+		<!-- Левая панель навигации по секциям -->
+		<DockPanel Grid.Column="0">
+
+			<TextBlock DockPanel.Dock="Top"
+                       Text="{x:Static loc:Strings.HotKey_Col_Scope}"
+                       FontSize="11"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextDisabledBrush}"
+                       TextWrapping="Wrap"
+                       Margin="12,12,12,6"/>
+
+			<ScrollViewer VerticalScrollBarVisibility="Auto">
+				<ItemsControl ItemsSource="{Binding Sections}">
+					<ItemsControl.ItemTemplate>
+						<DataTemplate x:DataType="vm:HotKeySectionViewModel">
+							<Button Margin="4,1"
+                                    Padding="10,6"
+                                    HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Left"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    CornerRadius="4"
+                                    Cursor="Hand"
+                                    Classes.selected="{Binding IsSelected}"
+                                    Command="{Binding $parent[UserControl].DataContext.SelectSectionCommand}"
+                                    CommandParameter="{Binding}">
+								<Button.Styles>
+									<Style Selector="Button">
+										<Setter Property="Background" Value="Transparent"/>
+									</Style>
+									<Style Selector="Button:pointerover /template/ ContentPresenter">
+										<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+									</Style>
+									<Style Selector="Button.selected /template/ ContentPresenter">
+										<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+									</Style>
+								</Button.Styles>
+
+								<StackPanel Orientation="Horizontal" Spacing="8">
+									<Border Width="6" Height="6"
+                                            CornerRadius="3"
+                                            VerticalAlignment="Center"
+                                            Classes.global="{Binding IsGlobal}"
+                                            Classes.module="{Binding !IsGlobal}">
+										<Border.Styles>
+											<Style Selector="Border.global">
+												<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+											</Style>
+											<Style Selector="Border.module">
+												<Setter Property="Background" Value="{DynamicResource TextMutedBrush}"/>
+											</Style>
+										</Border.Styles>
+									</Border>
+
+									<TextBlock Text="{Binding Title}"
+                                               FontSize="13"
+                                               TextWrapping="Wrap"
+                                               VerticalAlignment="Center"
+                                               Classes.selected="{Binding IsSelected}">
+										<TextBlock.Styles>
+											<Style Selector="TextBlock.selected">
+												<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+												<Setter Property="FontWeight" Value="SemiBold"/>
+											</Style>
+											<Style Selector="TextBlock">
+												<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+											</Style>
+										</TextBlock.Styles>
+									</TextBlock>
+								</StackPanel>
+							</Button>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+			</ScrollViewer>
+		</DockPanel>
+
+		<!-- Разделитель -->
+		<Border Grid.Column="1"
+                Background="{DynamicResource BorderSubtleBrush}"/>
+
+		<!-- Правая панель -->
+		<DockPanel Grid.Column="2" Margin="16,12,16,12">
+
+			<!-- Поиск + кнопка сброса всех -->
+			<DockPanel DockPanel.Dock="Top"
+                       LastChildFill="True"
+                       Margin="0,0,0,10">
+				<Button DockPanel.Dock="Right"
+                        Classes="compact"
+                        Command="{Binding ResetAllCommand}"
+                        Padding="12,6"
+                        Margin="8,0,0,0"
+                        FontSize="12"
+                        Background="{DynamicResource BgPanelBrush}"
+                        Foreground="{DynamicResource TextSecondaryBrush}"
+                        BorderBrush="{DynamicResource BorderDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Cursor="Hand">
+					<Button.Styles>
+						<Style Selector="Button:pointerover /template/ ContentPresenter">
+							<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+						</Style>
+					</Button.Styles>
+					<TextBlock Text="{x:Static loc:Strings.HotKey_ResetAll}"
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"/>
+				</Button>
+
+				<TextBox Text="{Binding FilterText}"
+                         Watermark="{x:Static loc:Strings.HotKey_Filter_Watermark}"
+                         Background="{DynamicResource BgPanelBrush}"
+                         Foreground="{DynamicResource TextPrimaryBrush}"
+                         BorderBrush="{DynamicResource BorderDefaultBrush}"
+                         BorderThickness="1"
+                         CornerRadius="4"
+                         Padding="8,6"
+                         FontSize="13"/>
+			</DockPanel>
+
+			<!-- Легенда конфликтов -->
+			<WrapPanel DockPanel.Dock="Top"
+                       Orientation="Horizontal"
+                       Margin="0,0,0,8">
+				<StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4">
+					<Border Width="10" Height="10" CornerRadius="2"
+                            Background="{DynamicResource HotKeyConflictCriticalBrush}"
+                            VerticalAlignment="Top"
+                            Margin="0,2,0,0"/>
+					<TextBlock Text="{x:Static loc:Strings.HotKey_Legend_Critical}"
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextMutedBrush}"/>
+				</StackPanel>
+				<StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4">
+					<Border Width="10" Height="10" CornerRadius="2"
+                            Background="{DynamicResource HotKeyConflictWarningBrush}"
+                            VerticalAlignment="Top"
+                            Margin="0,2,0,0"/>
+					<TextBlock Text="{x:Static loc:Strings.HotKey_Legend_Warning}"
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextMutedBrush}"/>
+				</StackPanel>
+				<StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,4">
+					<Border Width="10" Height="10" CornerRadius="2"
+                            Background="{DynamicResource TextDisabledBrush}"
+                            VerticalAlignment="Top"
+                            Margin="0,2,0,0"/>
+					<TextBlock Text="{x:Static loc:Strings.HotKey_IsPrefix}"
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextMutedBrush}"/>
+				</StackPanel>
+			</WrapPanel>
+
+			<!-- Заголовки таблицы -->
+			<Grid DockPanel.Dock="Top" Margin="0,0,0,4">
+				<Grid.ColumnDefinitions>
+					<ColumnDefinition Width="2*"/>
+					<ColumnDefinition Width="*"/>
+					<ColumnDefinition Width="2*"/>
+					<ColumnDefinition Width="36"/>
+				</Grid.ColumnDefinitions>
+
+				<TextBlock Grid.Column="0"
+                           Text="{x:Static loc:Strings.HotKey_Col_Action}"
+                           FontSize="11" FontWeight="SemiBold"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextDisabledBrush}"
+                           Margin="4,0"/>
+				<TextBlock Grid.Column="1"
+                           Text="{x:Static loc:Strings.HotKey_Col_Default}"
+                           FontSize="11" FontWeight="SemiBold"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextDisabledBrush}"
+                           Margin="4,0"/>
+				<TextBlock Grid.Column="2"
+                           Text="{x:Static loc:Strings.HotKey_Col_Current}"
+                           FontSize="11" FontWeight="SemiBold"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextDisabledBrush}"
+                           Margin="4,0"/>
+			</Grid>
+
+			<Border DockPanel.Dock="Top"
+                    Height="1"
+                    Background="{DynamicResource BorderSubtleBrush}"
+                    Margin="0,0,0,2"/>
+
+			<!-- Live input индикатор -->
+			<Border DockPanel.Dock="Top"
+                    IsVisible="{Binding IsLiveInputActive}"
+                    Background="{DynamicResource AccentSubtleBrush}"
+                    BorderBrush="{DynamicResource AccentDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="10,6"
+                    Margin="0,0,0,6">
+				<StackPanel Orientation="Horizontal" Spacing="8">
+					<TextBlock Text="{x:Static loc:Strings.HotKey_PressKey}"
+                               FontSize="12"
+                               Foreground="{DynamicResource AccentDefaultBrush}"
+                               FontStyle="Italic"
+                               VerticalAlignment="Center"/>
+					<TextBlock Text="{Binding LiveInputDisplay}"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               FontFamily="Consolas,Monospace"
+                               Foreground="{DynamicResource AccentDefaultBrush}"
+                               VerticalAlignment="Center"/>
+				</StackPanel>
+			</Border>
+
+			<!-- Список строк -->
+			<ScrollViewer VerticalScrollBarVisibility="Auto">
+				<ItemsControl ItemsSource="{Binding FilteredRows}">
+					<ItemsControl.ItemTemplate>
+						<DataTemplate x:DataType="vm:HotKeyRowViewModel">
+							<Border Margin="0,1"
+                                    CornerRadius="4"
+                                    Padding="2"
+                                    Classes.critical="{Binding IsCritical}"
+                                    Classes.warning="{Binding IsWarning}">
+								<Border.Styles>
+									<Style Selector="Border.critical">
+										<Setter Property="Background" Value="{DynamicResource HotKeyConflictCriticalRowBrush}"/>
+									</Style>
+									<Style Selector="Border.warning">
+										<Setter Property="Background" Value="{DynamicResource HotKeyConflictWarningRowBrush}"/>
+									</Style>
+									<Style Selector="Border">
+										<Setter Property="Background" Value="Transparent"/>
+									</Style>
+								</Border.Styles>
+
+								<Grid MinHeight="32">
+									<Grid.ColumnDefinitions>
+										<ColumnDefinition Width="2*"/>
+										<ColumnDefinition Width="*"/>
+										<ColumnDefinition Width="2*"/>
+										<ColumnDefinition Width="36"/>
+									</Grid.ColumnDefinitions>
+
+									<!-- Название команды -->
+									<StackPanel Grid.Column="0"
+                                                Orientation="Horizontal"
+                                                Spacing="6"
+                                                Margin="4,6"
+                                                VerticalAlignment="Center">
+
+										<Border Width="7" Height="7"
+                                                CornerRadius="4"
+                                                VerticalAlignment="Center"
+                                                IsVisible="{Binding HasConflict}"
+                                                ToolTip.Tip="{Binding ConflictTooltip}"
+                                                Classes.critical="{Binding IsCritical}"
+                                                Classes.warning="{Binding IsWarning}">
+											<Border.Styles>
+												<Style Selector="Border.critical">
+													<Setter Property="Background" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+												</Style>
+												<Style Selector="Border.warning">
+													<Setter Property="Background" Value="{DynamicResource HotKeyConflictWarningBrush}"/>
+												</Style>
+											</Border.Styles>
+										</Border>
+
+										<Border Width="7" Height="7"
+                                                CornerRadius="4"
+                                                VerticalAlignment="Center"
+                                                Background="{DynamicResource TextDisabledBrush}"
+                                                IsVisible="{Binding IsPrefix}"
+                                                ToolTip.Tip="{x:Static loc:Strings.HotKey_IsPrefix}"/>
+
+										<StackPanel Spacing="1">
+											<TextBlock Text="{Binding DisplayName}"
+                                                       FontSize="13"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                                       VerticalAlignment="Center"/>
+											<TextBlock Text="{x:Static loc:Strings.HotKey_ModuleInactive}"
+                                                       FontSize="10"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextDisabledBrush}"
+                                                       IsVisible="{Binding !IsExecutorBound}"
+                                                       VerticalAlignment="Center"/>
+										</StackPanel>
+									</StackPanel>
+
+									<!-- Жест по умолчанию -->
+									<TextBlock Grid.Column="1"
+                                               Text="{Binding DefaultGesturesDisplay}"
+                                               FontSize="12"
+                                               FontFamily="Consolas,Monospace"
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextMutedBrush}"
+                                               VerticalAlignment="Center"
+                                               Margin="4,0"/>
+
+									<!-- Текущие биндинги -->
+									<StackPanel Grid.Column="2"
+                                                Margin="4,4"
+                                                Spacing="3"
+                                                VerticalAlignment="Center">
+
+										<ItemsControl ItemsSource="{Binding Bindings}">
+											<ItemsControl.ItemTemplate>
+												<DataTemplate x:DataType="vm:HotKeyBindingViewModel">
+													<Grid Margin="0,1" ColumnDefinitions="*,22">
+
+														<!-- Кнопка редактирования биндинга -->
+														<Button Grid.Column="0"
+                                                                IsVisible="{Binding !IsEditing}"
+                                                                HorizontalAlignment="Stretch"
+                                                                HorizontalContentAlignment="Left"
+                                                                Padding="7,3"
+                                                                Background="{DynamicResource BgPanelBrush}"
+                                                                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                                                BorderThickness="1"
+                                                                CornerRadius="4"
+                                                                Cursor="Hand"
+                                                                ToolTip.Tip="{x:Static loc:Strings.HotKey_Edit}"
+                                                                Command="{Binding $parent[UserControl].DataContext.StartEditBindingCommand}"
+                                                                CommandParameter="{Binding}">
+															<Button.Styles>
+																<Style Selector="Button:pointerover /template/ ContentPresenter">
+																	<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+																	<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+																</Style>
+															</Button.Styles>
+															<TextBlock Text="{Binding GestureDisplay}"
+                                                                       FontSize="12"
+                                                                       FontFamily="Consolas,Monospace"
+                                                                       TextWrapping="Wrap"
+                                                                       Classes.custom="{Binding IsCustom}">
+																<TextBlock.Styles>
+																	<Style Selector="TextBlock.custom">
+																		<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+																		<Setter Property="FontWeight" Value="SemiBold"/>
+																	</Style>
+																	<Style Selector="TextBlock">
+																		<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+																	</Style>
+																</TextBlock.Styles>
+															</TextBlock>
+														</Button>
+
+														<!-- Режим ожидания нажатия -->
+														<Border Grid.Column="0"
+                                                                IsVisible="{Binding IsEditing}"
+                                                                Background="{DynamicResource AccentSubtleBrush}"
+                                                                BorderBrush="{DynamicResource AccentDefaultBrush}"
+                                                                BorderThickness="1"
+                                                                CornerRadius="4"
+                                                                Padding="7,3">
+															<TextBlock Text="{x:Static loc:Strings.HotKey_PressKey}"
+                                                                       FontSize="12"
+                                                                       TextWrapping="Wrap"
+                                                                       Foreground="{DynamicResource AccentDefaultBrush}"
+                                                                       FontStyle="Italic"/>
+														</Border>
+
+														<!-- Кнопка удалить биндинг -->
+														<Button Grid.Column="1"
+                                                                IsVisible="{Binding IsCustom}"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Width="18" Height="18"
+                                                                Padding="0"
+                                                                Background="Transparent"
+                                                                BorderThickness="0"
+                                                                Cursor="Hand"
+                                                                ToolTip.Tip="{x:Static loc:Strings.HotKey_RemoveBinding}"
+                                                                Command="{Binding $parent[UserControl].DataContext.RemoveBindingCommand}"
+                                                                CommandParameter="{Binding}">
+															<Button.Styles>
+																<Style Selector="Button:pointerover /template/ ContentPresenter">
+																	<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+																</Style>
+															</Button.Styles>
+															<TextBlock Text="&#10005;"
+                                                                       FontSize="9"
+                                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                                       HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center"/>
+														</Button>
+
+													</Grid>
+												</DataTemplate>
+											</ItemsControl.ItemTemplate>
+										</ItemsControl>
+
+										<!-- Кнопка добавить биндинг -->
+										<Button Padding="6,2"
+                                                Background="Transparent"
+                                                BorderThickness="1"
+                                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                                CornerRadius="4"
+                                                Cursor="Hand"
+                                                HorizontalAlignment="Left"
+                                                ToolTip.Tip="{x:Static loc:Strings.HotKey_AddBinding}"
+                                                Command="{Binding $parent[UserControl].DataContext.AddBindingCommand}"
+                                                CommandParameter="{Binding}">
+											<Button.Styles>
+												<Style Selector="Button:pointerover /template/ ContentPresenter">
+													<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+												</Style>
+											</Button.Styles>
+											<TextBlock Text="+"
+                                                       FontSize="13"
+                                                       Foreground="{DynamicResource TextMutedBrush}"/>
+										</Button>
+
+									</StackPanel>
+
+									<!-- Кнопка сброса строки -->
+									<StackPanel Grid.Column="3"
+                                                Margin="2,4"
+                                                VerticalAlignment="Center">
+										<Button Width="28" Height="24"
+                                                Padding="0"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Cursor="Hand"
+                                                IsVisible="{Binding HasCustomBindings}"
+                                                ToolTip.Tip="{x:Static loc:Strings.HotKey_Reset}"
+                                                Command="{Binding $parent[UserControl].DataContext.ResetRowCommand}"
+                                                CommandParameter="{Binding}">
+											<Button.Styles>
+												<Style Selector="Button:pointerover /template/ ContentPresenter">
+													<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+												</Style>
+											</Button.Styles>
+											<TextBlock Text="&#8634;"
+                                                       FontSize="15"
+                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"/>
+										</Button>
+									</StackPanel>
+
+								</Grid>
+							</Border>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+			</ScrollViewer>
+
+		</DockPanel>
+	</Grid>
+</UserControl>

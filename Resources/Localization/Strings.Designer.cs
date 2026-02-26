@@ -403,6 +403,105 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Add binding.
+        /// </summary>
+        public static string HotKey_AddBinding {
+            get {
+                return ResourceManager.GetString("HotKey_AddBinding", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Cancel.
+        /// </summary>
+        public static string HotKey_Cancel {
+            get {
+                return ResourceManager.GetString("HotKey_Cancel", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Action.
+        /// </summary>
+        public static string HotKey_Col_Action {
+            get {
+                return ResourceManager.GetString("HotKey_Col_Action", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Current.
+        /// </summary>
+        public static string HotKey_Col_Current {
+            get {
+                return ResourceManager.GetString("HotKey_Col_Current", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Default.
+        /// </summary>
+        public static string HotKey_Col_Default {
+            get {
+                return ResourceManager.GetString("HotKey_Col_Default", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Scope.
+        /// </summary>
+        public static string HotKey_Col_Scope {
+            get {
+                return ResourceManager.GetString("HotKey_Col_Scope", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Critical conflict.
+        /// </summary>
+        public static string HotKey_Conflict_Critical {
+            get {
+                return ResourceManager.GetString("HotKey_Conflict_Critical", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Warning.
+        /// </summary>
+        public static string HotKey_Conflict_Warning {
+            get {
+                return ResourceManager.GetString("HotKey_Conflict_Warning", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Edit.
+        /// </summary>
+        public static string HotKey_Edit {
+            get {
+                return ResourceManager.GetString("HotKey_Edit", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Delete — clear binding.
+        /// </summary>
+        public static string HotKey_EditHint_Delete {
+            get {
+                return ResourceManager.GetString("HotKey_EditHint_Delete", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Escape — cancel editing.
+        /// </summary>
+        public static string HotKey_EditHint_Escape {
+            get {
+                return ResourceManager.GetString("HotKey_EditHint_Escape", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Close Tab.
         /// </summary>
         public static string HotKey_File_CloseTab {
@@ -453,6 +552,105 @@ namespace Writersword.Resources.Localization {
         public static string HotKey_File_SaveAs {
             get {
                 return ResourceManager.GetString("HotKey_File_SaveAs", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Search commands....
+        /// </summary>
+        public static string HotKey_Filter_Watermark {
+            get {
+                return ResourceManager.GetString("HotKey_Filter_Watermark", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reserved as prefix.
+        /// </summary>
+        public static string HotKey_IsPrefix {
+            get {
+                return ResourceManager.GetString("HotKey_IsPrefix", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Critical conflict — always intercepts.
+        /// </summary>
+        public static string HotKey_Legend_Critical {
+            get {
+                return ResourceManager.GetString("HotKey_Legend_Critical", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Warning — conflict between focused modules.
+        /// </summary>
+        public static string HotKey_Legend_Warning {
+            get {
+                return ResourceManager.GetString("HotKey_Legend_Warning", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Module is not running.
+        /// </summary>
+        public static string HotKey_ModuleInactive {
+            get {
+                return ResourceManager.GetString("HotKey_ModuleInactive", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Not assigned.
+        /// </summary>
+        public static string HotKey_NotAssigned {
+            get {
+                return ResourceManager.GetString("HotKey_NotAssigned", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Press a key....
+        /// </summary>
+        public static string HotKey_PressKey {
+            get {
+                return ResourceManager.GetString("HotKey_PressKey", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Remove binding.
+        /// </summary>
+        public static string HotKey_RemoveBinding {
+            get {
+                return ResourceManager.GetString("HotKey_RemoveBinding", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset to default.
+        /// </summary>
+        public static string HotKey_Reset {
+            get {
+                return ResourceManager.GetString("HotKey_Reset", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset all.
+        /// </summary>
+        public static string HotKey_ResetAll {
+            get {
+                return ResourceManager.GetString("HotKey_ResetAll", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Global.
+        /// </summary>
+        public static string HotKey_Section_Global {
+            get {
+                return ResourceManager.GetString("HotKey_Section_Global", resourceCulture);
             }
         }
         

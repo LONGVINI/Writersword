@@ -573,4 +573,70 @@
   <data name="Panel_Modules_Title" xml:space="preserve">
     <value>Модули</value>
   </data>
+  <data name="HotKey_NotAssigned" xml:space="preserve">
+    <value>Не назначено</value>
+  </data>
+  <data name="HotKey_Filter_Watermark" xml:space="preserve">
+    <value>Поиск команд...</value>
+  </data>
+  <data name="HotKey_ResetAll" xml:space="preserve">
+    <value>Сбросить всё</value>
+  </data>
+  <data name="HotKey_Col_Action" xml:space="preserve">
+    <value>Действие</value>
+  </data>
+  <data name="HotKey_Col_Scope" xml:space="preserve">
+    <value>Область</value>
+  </data>
+  <data name="HotKey_Col_Default" xml:space="preserve">
+    <value>По умолчанию</value>
+  </data>
+  <data name="HotKey_Col_Current" xml:space="preserve">
+    <value>Текущая</value>
+  </data>
+  <data name="HotKey_PressKey" xml:space="preserve">
+    <value>Нажмите клавишу...</value>
+  </data>
+  <data name="HotKey_Edit" xml:space="preserve">
+    <value>Изменить</value>
+  </data>
+  <data name="HotKey_Cancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="HotKey_Reset" xml:space="preserve">
+    <value>Сбросить к умолчанию</value>
+  </data>
+  <data name="HotKey_Conflict_Critical" xml:space="preserve">
+    <value>Критический конфликт</value>
+  </data>
+  <data name="HotKey_Conflict_Warning" xml:space="preserve">
+    <value>Предупреждение</value>
+  </data>
+  <data name="HotKey_Legend_Critical" xml:space="preserve">
+    <value>Критический конфликт — всегда перехватывается</value>
+  </data>
+  <data name="HotKey_Legend_Warning" xml:space="preserve">
+    <value>Предупреждение — конфликт между фокусными модулями</value>
+  </data>
+  <data name="HotKey_EditHint_Escape" xml:space="preserve">
+    <value>Escape — отменить редактирование</value>
+  </data>
+  <data name="HotKey_EditHint_Delete" xml:space="preserve">
+    <value>Delete — убрать назначение</value>
+  </data>
+  <data name="HotKey_Section_Global" xml:space="preserve">
+    <value>Глобальные</value>
+  </data>
+  <data name="HotKey_AddBinding" xml:space="preserve">
+    <value>Добавить вариант</value>
+  </data>
+  <data name="HotKey_RemoveBinding" xml:space="preserve">
+    <value>Удалить вариант</value>
+  </data>
+  <data name="HotKey_ModuleInactive" xml:space="preserve">
+    <value>Модуль не запущен</value>
+  </data>
+  <data name="HotKey_IsPrefix" xml:space="preserve">
+    <value>Зарезервирован как префикс</value>
+  </data>
 </root>

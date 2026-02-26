@@ -13,7 +13,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
-using System.Reactive.Disposables;
 using System.Threading.Tasks;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
@@ -22,6 +21,7 @@ using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Settings;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
+using Writersword.Resources.Localization;
 using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.Services.Input;
 using Writersword.Src.Core.Interfaces.Services.Storage;
@@ -481,38 +481,49 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>
-        /// Регистрация горячих клавиш
+        /// Регистрация глобальных горячих клавиш приложения
+        /// Клавиши модулей регистрируются через RegisterModule при их инициализации
         /// </summary>
         private void RegisterHotKeys()
         {
             _hotKeyService.Register("file.new", new HotKey
             {
-                DisplayNameKey = "HotKey_File_New",
-                DefaultGesture = new KeyGesture(Key.N, KeyModifiers.Control)
+                DisplayNameKey = Strings.HotKey_File_New,
+                Category = HotKeyCategory.File,
+                Scope = HotKeyScope.Global,
+                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.N, KeyModifiers.Control))
             }, NewProjectCommand);
 
             _hotKeyService.Register("file.open", new HotKey
             {
-                DisplayNameKey = "HotKey_File_Open",
-                DefaultGesture = new KeyGesture(Key.O, KeyModifiers.Control)
+                DisplayNameKey = Strings.HotKey_File_Open,
+                Category = HotKeyCategory.File,
+                Scope = HotKeyScope.Global,
+                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.O, KeyModifiers.Control))
             }, OpenProjectCommand);
 
             _hotKeyService.Register("file.save", new HotKey
             {
-                DisplayNameKey = "HotKey_File_Save",
-                DefaultGesture = new KeyGesture(Key.S, KeyModifiers.Control)
+                DisplayNameKey = Strings.HotKey_File_Save,
+                Category = HotKeyCategory.File,
+                Scope = HotKeyScope.Global,
+                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.S, KeyModifiers.Control))
             }, SaveProjectCommand);
 
             _hotKeyService.Register("file.saveas", new HotKey
             {
-                DisplayNameKey = "HotKey_File_SaveAs",
-                DefaultGesture = new KeyGesture(Key.S, KeyModifiers.Control | KeyModifiers.Shift)
+                DisplayNameKey = Strings.HotKey_File_SaveAs,
+                Category = HotKeyCategory.File,
+                Scope = HotKeyScope.Global,
+                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.S, KeyModifiers.Control | KeyModifiers.Shift))
             }, SaveAsProjectCommand);
 
             _hotKeyService.Register("file.closetab", new HotKey
             {
-                DisplayNameKey = "HotKey_File_CloseTab",
-                DefaultGesture = new KeyGesture(Key.W, KeyModifiers.Control)
+                DisplayNameKey = Strings.HotKey_File_CloseTab,
+                Category = HotKeyCategory.File,
+                Scope = HotKeyScope.Global,
+                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.W, KeyModifiers.Control))
             }, ReactiveCommand.CreateFromTask(async () =>
             {
                 if (TabBar.ActiveTab != null)
@@ -521,11 +532,19 @@ namespace Writersword.ViewModels
 
             _hotKeyService.Register("file.newtab", new HotKey
             {
-                DisplayNameKey = "HotKey_File_NewTab",
-                DefaultGesture = new KeyGesture(Key.T, KeyModifiers.Control)
+                DisplayNameKey = Strings.HotKey_File_NewTab,
+                Category = HotKeyCategory.File,
+                Scope = HotKeyScope.Global,
+                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.T, KeyModifiers.Control))
             }, CreateNewTabCommand);
 
-            _logger.LogDebug("Hot keys registered");
+
+            _hotKeyService.LoadSettings();
+
+            var moduleFactory = App.Services.GetRequiredService<ModuleFactory>();
+            moduleFactory.RegisterAllHotKeys();
+
+            _logger.LogDebug("Global hotkeys registered");
         }
 
         /// <summary>

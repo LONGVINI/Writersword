@@ -4,12 +4,15 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Writersword.Core.Interfaces.Modules;
+using Writersword.Src.Core.Interfaces.Services.Input;
 
 namespace Writersword.Modules.Common
 {
     /// <summary>
     /// Фабрика для создания экземпляров модулей и получения их метаданных.
     /// Метаданные кешируются и сбрасываются при перерегистрации.
+    /// При вызове RegisterAllHotKeys читает IHotKeyDescriptor из метаданных
+    /// и регистрирует определения клавиш в HotKeyService без создания живых модулей.
     /// </summary>
     public class ModuleFactory
     {
@@ -87,6 +90,33 @@ namespace Writersword.Modules.Common
             return metadataList;
         }
 
+        /// <summary>
+        /// Зарегистрировать горячие клавиши всех модулей в HotKeyService.
+        /// Читает IHotKeyDescriptor из метаданных каждого модуля.
+        /// Не создаёт живые экземпляры модулей — только читает метаданные.
+        /// Вызывается один раз при старте приложения после регистрации глобальных клавиш.
+        /// </summary>
+        public void RegisterAllHotKeys()
+        {
+            var hotKeyService = App.Services.GetRequiredService<IHotKeyService>();
+            var metadata = GetAllModuleMetadata();
+            int registeredCount = 0;
+
+            foreach (var meta in metadata)
+            {
+                if (meta is IHotKeyDescriptor descriptor)
+                {
+                    hotKeyService.RegisterFromDescriptor(descriptor);
+                    var keys = descriptor.GetHotKeys();
+                    registeredCount += keys.Count;
+                    _logger.LogDebug("Registered {Count} hotkeys from descriptor: {ModuleType}",
+                        keys.Count, meta.ModuleType);
+                }
+            }
+
+            _logger.LogDebug("RegisterAllHotKeys complete: {Count} total hotkeys registered", registeredCount);
+        }
+
         /// <summary>Сбросить кеш метаданных</summary>
         public void ClearMetadataCache()
         {
@@ -95,8 +125,8 @@ namespace Writersword.Modules.Common
         }
 
         /// <summary>
-        /// Получить все модули у которых есть настройки (реализуют IConfigurableModule)
-        /// Создаёт временные экземпляры только для проверки интерфейса
+        /// Получить все модули у которых есть настройки (реализуют IConfigurableModule).
+        /// Создаёт временные экземпляры только для проверки интерфейса.
         /// </summary>
         public List<(string moduleType, IConfigurableModule configurable)> GetConfigurableModules()
         {

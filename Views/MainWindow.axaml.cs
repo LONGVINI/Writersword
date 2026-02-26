@@ -184,15 +184,37 @@ namespace Writersword.Views
         }
 
         /// <summary>
-        /// Обработчик нажатия клавиш для горячих клавиш
+        /// Обработчик нажатия клавиш
+        /// Определяет moduleType модуля в фокусе и передаёт в HotKeyService
         /// </summary>
         private void OnKeyDown(object? sender, KeyEventArgs e)
         {
             var hotKeyService = App.Services.GetRequiredService<IHotKeyService>();
             var gesture = new KeyGesture(e.Key, e.KeyModifiers);
 
-            if (hotKeyService.HandleKeyPress(gesture))
+            var focusedModuleType = GetFocusedModuleType();
+
+            if (hotKeyService.HandleKeyPress(gesture, focusedModuleType))
                 e.Handled = true;
+        }
+
+        /// <summary>
+        /// Определить moduleType модуля который сейчас в фокусе
+        /// Поднимается по дереву фокуса до Control у которого Tag содержит moduleType
+        /// </summary>
+        private string? GetFocusedModuleType()
+        {
+            var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Control;
+
+            while (focused != null)
+            {
+                if (focused.Tag is string moduleType && !string.IsNullOrEmpty(moduleType))
+                    return moduleType;
+
+                focused = focused.Parent as Control;
+            }
+
+            return null;
         }
     }
 }

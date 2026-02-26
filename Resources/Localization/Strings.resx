@@ -721,4 +721,92 @@
     <value>Modules</value>
     <comment>Title of the modules side panel</comment>
   </data>
+  <data name="HotKey_NotAssigned" xml:space="preserve">
+    <value>Not assigned</value>
+    <comment>Shown when hotkey has no gesture assigned</comment>
+  </data>
+  <data name="HotKey_Filter_Watermark" xml:space="preserve">
+    <value>Search commands...</value>
+    <comment>Watermark in hotkey filter textbox</comment>
+  </data>
+  <data name="HotKey_ResetAll" xml:space="preserve">
+    <value>Reset all</value>
+    <comment>Button to reset all hotkeys to defaults</comment>
+  </data>
+  <data name="HotKey_Col_Action" xml:space="preserve">
+    <value>Action</value>
+    <comment>Column header: command name</comment>
+  </data>
+  <data name="HotKey_Col_Scope" xml:space="preserve">
+    <value>Scope</value>
+    <comment>Column header: hotkey scope</comment>
+  </data>
+  <data name="HotKey_Col_Default" xml:space="preserve">
+    <value>Default</value>
+    <comment>Column header: default gesture</comment>
+  </data>
+  <data name="HotKey_Col_Current" xml:space="preserve">
+    <value>Current</value>
+    <comment>Column header: current gesture</comment>
+  </data>
+  <data name="HotKey_PressKey" xml:space="preserve">
+    <value>Press a key...</value>
+    <comment>Shown in hotkey cell when waiting for key press</comment>
+  </data>
+  <data name="HotKey_Edit" xml:space="preserve">
+    <value>Edit</value>
+    <comment>Tooltip for edit hotkey button</comment>
+  </data>
+  <data name="HotKey_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+    <comment>Tooltip for cancel editing button</comment>
+  </data>
+  <data name="HotKey_Reset" xml:space="preserve">
+    <value>Reset to default</value>
+    <comment>Tooltip for reset single hotkey button</comment>
+  </data>
+  <data name="HotKey_Conflict_Critical" xml:space="preserve">
+    <value>Critical conflict</value>
+    <comment>Conflict type label: critical</comment>
+  </data>
+  <data name="HotKey_Conflict_Warning" xml:space="preserve">
+    <value>Warning</value>
+    <comment>Conflict type label: warning</comment>
+  </data>
+  <data name="HotKey_Legend_Critical" xml:space="preserve">
+    <value>Critical conflict — always intercepts</value>
+    <comment>Legend label for critical conflict color</comment>
+  </data>
+  <data name="HotKey_Legend_Warning" xml:space="preserve">
+    <value>Warning — conflict between focused modules</value>
+    <comment>Legend label for warning conflict color</comment>
+  </data>
+  <data name="HotKey_EditHint_Escape" xml:space="preserve">
+    <value>Escape — cancel editing</value>
+    <comment>Hint text shown above hotkey table, describes Escape key action in edit mode</comment>
+  </data>
+  <data name="HotKey_EditHint_Delete" xml:space="preserve">
+    <value>Delete — clear binding</value>
+    <comment>Hint text shown above hotkey table, describes Delete key action in edit mode</comment>
+  </data>
+  <data name="HotKey_Section_Global" xml:space="preserve">
+    <value>Global</value>
+    <comment>Left panel section title for global hotkeys</comment>
+  </data>
+  <data name="HotKey_AddBinding" xml:space="preserve">
+    <value>Add binding</value>
+    <comment>Tooltip for add binding button</comment>
+  </data>
+  <data name="HotKey_RemoveBinding" xml:space="preserve">
+    <value>Remove binding</value>
+    <comment>Tooltip for remove binding button</comment>
+  </data>
+  <data name="HotKey_ModuleInactive" xml:space="preserve">
+    <value>Module is not running</value>
+    <comment>Tooltip shown when module executor is not bound</comment>
+  </data>
+  <data name="HotKey_IsPrefix" xml:space="preserve">
+    <value>Reserved as prefix</value>
+    <comment>Tooltip shown when gesture is a sequence prefix</comment>
+  </data>
 </root>

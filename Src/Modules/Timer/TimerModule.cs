@@ -4,10 +4,14 @@ using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using ReactiveUI;
 using System;
+using System.Collections.Generic;
+using System.Reactive;
 using System.Reactive.Linq;
 using System.Text;
+using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
+using Writersword.Core.Models.Settings;
 using Writersword.Modules.Common;
 using Writersword.Modules.Timer.ViewModels;
 using Writersword.Modules.Timer.Views;
@@ -18,7 +22,7 @@ using Writersword.Src.Modules.Timer.Resources;
 
 namespace Writersword.Modules.Timer
 {
-    public class TimerModule : BaseModule, IConfigurableModule
+    public class TimerModule : BaseModule, IConfigurableModule, IHotKeyProvider
     {
         private readonly ILogger<TimerModule> _logger;
         private TimerViewModel? _viewModel;
@@ -48,12 +52,50 @@ namespace Writersword.Modules.Timer
 
             _viewModel.ApplySettings(globalSettings);
 
+            base.Initialize();
+
             _logger.LogDebug("Initialized (moduleType: {moduleType})", moduleType);
         }
 
         /// <summary>
-        /// Загрузить локальные настройки из ZIP проекта и применить поверх глобальных
-        /// Вызывается после установки Context
+        /// Получить список горячих клавиш модуля.
+        /// Реализация IHotKeyProvider — делегирует в TimerMetadata.
+        /// </summary>
+        public IReadOnlyList<HotKey> GetHotKeys() => new TimerMetadata().GetHotKeys();
+
+        /// <summary>
+        /// Выполнить действие по ID горячей клавиши
+        /// </summary>
+        public void ExecuteHotKey(string id)
+        {
+            if (_viewModel == null) return;
+
+            switch (id)
+            {
+                case "timer.start":
+                    _viewModel.StartCommand.Execute(Unit.Default).Subscribe();
+                    _logger.LogDebug("HotKey executed: timer.start");
+                    break;
+
+                case "timer.stop":
+                    _viewModel.StopCommand.Execute(Unit.Default).Subscribe();
+                    _logger.LogDebug("HotKey executed: timer.stop");
+                    break;
+
+                case "timer.reset":
+                    _viewModel.ResetCommand.Execute(Unit.Default).Subscribe();
+                    _logger.LogDebug("HotKey executed: timer.reset");
+                    break;
+
+                default:
+                    _logger.LogWarning("Unknown hotkey id: {Id}", id);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Загрузить локальные настройки из ZIP проекта и применить поверх глобальных.
+        /// Вызывается после установки Context.
         /// </summary>
         private void LoadAndApplyLocalSettings()
         {
@@ -224,10 +266,51 @@ namespace Writersword.Modules.Timer
         }
     }
 
-    internal class TimerMetadata : IModuleMetadata
+    /// <summary>
+    /// Метаданные модуля таймера.
+    /// Реализует IHotKeyDescriptor — предоставляет статический список горячих клавиш
+    /// без необходимости создавать живой экземпляр TimerModule.
+    /// </summary>
+    internal class TimerMetadata : IModuleMetadata, IHotKeyDescriptor
     {
         public string ModuleType => "Timer";
         public string DisplayName => TimerStrings.DisplayName;
         public string Description => TimerStrings.Description;
+
+        /// <summary>
+        /// Статический список горячих клавиш таймера.
+        /// Вызывается ModuleFactory при старте приложения.
+        /// DefaultGesture null — пользователь назначает сам.
+        /// </summary>
+        public IReadOnlyList<HotKey> GetHotKeys() => new[]
+        {
+            new HotKey
+            {
+                Id = "timer.start",
+                DisplayNameKey = TimerStrings.HotKey_Timer_Start,
+                Category = HotKeyCategory.Tools,
+                Scope = HotKeyScope.Background,
+                ModuleType = ModuleType,
+                DefaultGesture = null
+            },
+            new HotKey
+            {
+                Id = "timer.stop",
+                DisplayNameKey = TimerStrings.HotKey_Timer_Stop,
+                Category = HotKeyCategory.Tools,
+                Scope = HotKeyScope.Background,
+                ModuleType = ModuleType,
+                DefaultGesture = null
+            },
+            new HotKey
+            {
+                Id = "timer.reset",
+                DisplayNameKey = TimerStrings.HotKey_Timer_Reset,
+                Category = HotKeyCategory.Tools,
+                Scope = HotKeyScope.Background,
+                ModuleType = ModuleType,
+                DefaultGesture = null
+            }
+        };
     }
 }

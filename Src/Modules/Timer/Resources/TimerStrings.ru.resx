@@ -123,6 +123,15 @@
   <data name="DisplayName" xml:space="preserve">
     <value>Таймер</value>
   </data>
+  <data name="HotKey_Timer_Reset" xml:space="preserve">
+    <value>Сбросить таймер</value>
+  </data>
+  <data name="HotKey_Timer_Start" xml:space="preserve">
+    <value>Запустить таймер</value>
+  </data>
+  <data name="HotKey_Timer_Stop" xml:space="preserve">
+    <value>Остановить таймер</value>
+  </data>
   <data name="Settings_CountdownMode" xml:space="preserve">
     <value>Режим обратного отсчёта</value>
   </data>

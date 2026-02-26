@@ -4,7 +4,8 @@
              xmlns:loc="using:Writersword.Src.Modules.Timer.Resources"
              x:Class="Writersword.Modules.Timer.Views.TimerView"
              x:DataType="vm:TimerViewModel"
-             Background="{DynamicResource BgSurfaceBrush}">
+             Background="{DynamicResource BgSurfaceBrush}"
+             Tag="Timer">
 	<Border Padding="10">
 		<StackPanel Spacing="10" HorizontalAlignment="Center">
 			<TextBlock Text="{x:Static loc:TimerStrings.Title}"

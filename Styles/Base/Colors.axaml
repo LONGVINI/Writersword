@@ -1,44 +1,55 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-	<!-- Фоны -->
-	<Color x:Key="BgBase">#0D0D0D</Color>
-	<Color x:Key="BgApp">#1E1E1E</Color>
-	<Color x:Key="BgSurface">#252526</Color>
-	<Color x:Key="BgPanel">#2D2D30</Color>
-	<Color x:Key="BgHover">#3A3A3C</Color>
+	<!-- Горячие клавиши конфликты -->
+	<SolidColorBrush x:Key="HotKeyConflictCriticalBrush">#C0392B</SolidColorBrush>
+	<SolidColorBrush x:Key="HotKeyConflictCriticalRowBrush">#FDECEA</SolidColorBrush>
+	<SolidColorBrush x:Key="HotKeyConflictWarningBrush">#E67E22</SolidColorBrush>
+	<SolidColorBrush x:Key="HotKeyConflictWarningRowBrush">#FEF6E4</SolidColorBrush>
+	<SolidColorBrush x:Key="AccentSubtleBrush">#E3F0FB</SolidColorBrush>
 
-	<SolidColorBrush x:Key="BgBaseBrush" Color="{StaticResource BgBase}"/>
-	<SolidColorBrush x:Key="BgAppBrush" Color="{StaticResource BgApp}"/>
-	<SolidColorBrush x:Key="BgSurfaceBrush" Color="{StaticResource BgSurface}"/>
-	<SolidColorBrush x:Key="BgPanelBrush" Color="{StaticResource BgPanel}"/>
-	<SolidColorBrush x:Key="BgHoverBrush" Color="{StaticResource BgHover}"/>
+	<!-- Фоны -->
+	<SolidColorBrush x:Key="BgBaseBrush">#D0D0D0</SolidColorBrush>
+	<SolidColorBrush x:Key="BgAppBrush">#F5F5F5</SolidColorBrush>
+	<SolidColorBrush x:Key="BgSurfaceBrush">#EBEBEB</SolidColorBrush>
+	<SolidColorBrush x:Key="BgPanelBrush">#E0E0E0</SolidColorBrush>
+	<SolidColorBrush x:Key="BgHoverBrush">#D4D4D4</SolidColorBrush>
 
 	<!-- Текст -->
-	<Color x:Key="TextPrimary">#FFFFFF</Color>
-	<Color x:Key="TextSecondary">#CCCCCC</Color>
-	<Color x:Key="TextMuted">#999999</Color>
-	<Color x:Key="TextDisabled">#555555</Color>
-
-	<SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimary}"/>
-	<SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}"/>
-	<SolidColorBrush x:Key="TextMutedBrush" Color="{StaticResource TextMuted}"/>
-	<SolidColorBrush x:Key="TextDisabledBrush" Color="{StaticResource TextDisabled}"/>
+	<SolidColorBrush x:Key="TextPrimaryBrush">#1A1A1A</SolidColorBrush>
+	<SolidColorBrush x:Key="TextSecondaryBrush">#3A3A3A</SolidColorBrush>
+	<SolidColorBrush x:Key="TextMutedBrush">#6A6A6A</SolidColorBrush>
+	<SolidColorBrush x:Key="TextDisabledBrush">#AAAAAA</SolidColorBrush>
 
 	<!-- Акцент -->
-	<Color x:Key="AccentDefault">#007ACC</Color>
-	<Color x:Key="AccentHover">#1C86C8</Color>
-	<Color x:Key="AccentPressed">#005A9E</Color>
-
-	<SolidColorBrush x:Key="AccentDefaultBrush" Color="{StaticResource AccentDefault}"/>
-	<SolidColorBrush x:Key="AccentHoverBrush" Color="{StaticResource AccentHover}"/>
-	<SolidColorBrush x:Key="AccentPressedBrush" Color="{StaticResource AccentPressed}"/>
+	<SolidColorBrush x:Key="AccentDefaultBrush">#007ACC</SolidColorBrush>
+	<SolidColorBrush x:Key="AccentHoverBrush">#1C86C8</SolidColorBrush>
+	<SolidColorBrush x:Key="AccentPressedBrush">#005A9E</SolidColorBrush>
 
 	<!-- Границы -->
-	<Color x:Key="BorderDefault">#3E3E42</Color>
-	<Color x:Key="BorderSubtle">#2D2D30</Color>
+	<SolidColorBrush x:Key="BorderDefaultBrush">#C0C0C4</SolidColorBrush>
+	<SolidColorBrush x:Key="BorderSubtleBrush">#DCDCDC</SolidColorBrush>
 
-	<SolidColorBrush x:Key="BorderDefaultBrush" Color="{StaticResource BorderDefault}"/>
-	<SolidColorBrush x:Key="BorderSubtleBrush" Color="{StaticResource BorderSubtle}"/>
+	<!-- Семантические цвета секций настроек -->
+	<SolidColorBrush x:Key="SectionGlobalBgBrush">#D0E4F7</SolidColorBrush>
+	<SolidColorBrush x:Key="SectionGlobalFgBrush">#1A5FA8</SolidColorBrush>
+	<SolidColorBrush x:Key="SectionProjectBgBrush">#FFF3CD</SolidColorBrush>
+	<SolidColorBrush x:Key="SectionProjectFgBrush">#8A5A00</SolidColorBrush>
+
+	<!-- Переопределение токенов FluentTheme для Menu и MenuItem -->
+	<SolidColorBrush x:Key="MenuFlyoutBackground">#EBEBEB</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuFlyoutBorderBrush">#C0C0C4</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuFlyoutItemBackground">Transparent</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver">#007ACC</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuFlyoutItemBackgroundPressed">#005A9E</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuFlyoutItemForeground">#1A1A1A</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuFlyoutItemForegroundPointerOver">#FFFFFF</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuFlyoutItemForegroundDisabled">#AAAAAA</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuBarBackground">#E0E0E0</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuBarItemBackground">Transparent</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuBarItemBackgroundPointerOver">#007ACC</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuBarItemBackgroundPressed">#005A9E</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuBarItemForeground">#1A1A1A</SolidColorBrush>
+	<SolidColorBrush x:Key="MenuBarItemForegroundPointerOver">#FFFFFF</SolidColorBrush>
 
 </ResourceDictionary>

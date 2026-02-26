@@ -15,6 +15,7 @@
 		<Company>Writersword Team</Company>
 		<Copyright>Copyright © 2025</Copyright>
 		<Description>Multi-modal writing application for writers, poets, screenwriters, and game developers</Description>
+		<ApplicationIcon>Resources\Images\icon.ico</ApplicationIcon>
 
 		<!-- Отключаем автоматическое включение .resx (будем управлять вручную) -->
 		<EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>

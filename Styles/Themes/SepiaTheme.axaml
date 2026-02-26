@@ -1,6 +1,13 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+	<!-- Горячие клавиши конфликты -->
+	<SolidColorBrush x:Key="HotKeyConflictCriticalBrush">#B03A2E</SolidColorBrush>
+	<SolidColorBrush x:Key="HotKeyConflictCriticalRowBrush">#2A1410</SolidColorBrush>
+	<SolidColorBrush x:Key="HotKeyConflictWarningBrush">#A04000</SolidColorBrush>
+	<SolidColorBrush x:Key="HotKeyConflictWarningRowBrush">#241808</SolidColorBrush>
+	<SolidColorBrush x:Key="AccentSubtleBrush">#2E2218</SolidColorBrush>
+
 	<!-- Фоны -->
 	<SolidColorBrush x:Key="BgBaseBrush">#1C1410</SolidColorBrush>
 	<SolidColorBrush x:Key="BgAppBrush">#2C2420</SolidColorBrush>

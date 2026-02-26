@@ -125,6 +125,18 @@
     <value>Timer</value>
     <comment>Module name in menu</comment>
   </data>
+  <data name="HotKey_Timer_Reset" xml:space="preserve">
+    <value>Reset Timer</value>
+    <comment>Hotkey display name: reset timer</comment>
+  </data>
+  <data name="HotKey_Timer_Start" xml:space="preserve">
+    <value>Start Timer</value>
+    <comment>Hotkey display name: start timer</comment>
+  </data>
+  <data name="HotKey_Timer_Stop" xml:space="preserve">
+    <value>Stop Timer</value>
+    <comment>Hotkey display name: stop timer</comment>
+  </data>
   <data name="Settings_CountdownMode" xml:space="preserve">
     <value>Countdown mode</value>
     <comment>Checkbox label for countdown mode</comment>
