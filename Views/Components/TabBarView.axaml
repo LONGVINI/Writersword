@@ -7,6 +7,15 @@
              x:DataType="vm:TabBarViewModel"
              x:Name="TabBarViewRoot">
 
+	<!-- Сброс базового стиля Button чтобы не конфликтовал с кастомным шаблоном -->
+	<UserControl.Styles>
+		<Style Selector="Button">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+		</Style>
+	</UserControl.Styles>
+
 	<Border Background="{DynamicResource BgPanelBrush}"
             BorderBrush="{DynamicResource BorderDefaultBrush}"
             BorderThickness="0,0,0,1"
@@ -51,6 +60,7 @@
 									<TranslateTransform X="0" Y="0"/>
 								</Button.RenderTransform>
 
+								<!-- Кастомный шаблон вкладки без Fluent оформления -->
 								<Button.Template>
 									<ControlTemplate>
 										<Border x:Name="PART_Border"
@@ -114,7 +124,7 @@
                                             HorizontalAlignment="Center"
                                             Margin="4,0,0,0">
 										<Viewbox Width="10" Height="10">
-											<TextBlock Text="✕"
+											<TextBlock Text="&#10005;"
                                                        Foreground="{DynamicResource TextMutedBrush}"
                                                        FontSize="16"
                                                        HorizontalAlignment="Center"

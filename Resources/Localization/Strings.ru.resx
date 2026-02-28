@@ -151,19 +151,19 @@
     <value>🎮 Гейм-Дизайн Документ</value>
   </data>
   <data name="Menu_File" xml:space="preserve">
-    <value>_Файл</value>
+    <value>Файл</value>
   </data>
   <data name="Menu_Edit" xml:space="preserve">
-    <value>_Правка</value>
+    <value>Правка</value>
   </data>
   <data name="Menu_View" xml:space="preserve">
-    <value>_Вид</value>
+    <value>Вид</value>
   </data>
   <data name="Menu_Tools" xml:space="preserve">
-    <value>_Инструменты</value>
+    <value>Инструменты</value>
   </data>
   <data name="Menu_Help" xml:space="preserve">
-    <value>_Справка</value>
+    <value>Справка</value>
   </data>
   <data name="Menu_File_NewProject" xml:space="preserve">
     <value>Новый Проект</value>
@@ -638,5 +638,95 @@
   </data>
   <data name="HotKey_IsPrefix" xml:space="preserve">
     <value>Зарезервирован как префикс</value>
+  </data>
+  <data name="HotKey_Category_File" xml:space="preserve">
+    <value>Файл</value>
+  </data>
+  <data name="HotKey_Category_Edit" xml:space="preserve">
+    <value>Правка</value>
+  </data>
+  <data name="HotKey_Category_View" xml:space="preserve">
+    <value>Вид</value>
+  </data>
+  <data name="HotKey_Category_Navigation" xml:space="preserve">
+    <value>Навигация</value>
+  </data>
+  <data name="HotKey_Category_Formatting" xml:space="preserve">
+    <value>Форматирование</value>
+  </data>
+  <data name="HotKey_Category_Tools" xml:space="preserve">
+    <value>Инструменты</value>
+  </data>
+  <data name="HotKey_Category_Help" xml:space="preserve">
+    <value>Справка</value>
+  </data>
+  <data name="HotKey_File_SaveAll" xml:space="preserve">
+    <value>Сохранить все</value>
+  </data>
+  <data name="HotKey_File_CloseAllTabs" xml:space="preserve">
+    <value>Закрыть все вкладки</value>
+  </data>
+  <data name="HotKey_File_CloseOtherTabs" xml:space="preserve">
+    <value>Закрыть остальные вкладки</value>
+  </data>
+  <data name="HotKey_File_Settings" xml:space="preserve">
+    <value>Настройки</value>
+  </data>
+  <data name="HotKey_File_Exit" xml:space="preserve">
+    <value>Выход</value>
+  </data>
+  <data name="HotKey_Tab_Bindings" xml:space="preserve">
+    <value>Привязки</value>
+  </data>
+  <data name="HotKey_Tab_Prefixes" xml:space="preserve">
+    <value>Префиксы</value>
+  </data>
+  <data name="HotKey_Prefix_Col_Gesture" xml:space="preserve">
+    <value>Жест</value>
+  </data>
+  <data name="HotKey_Prefix_Col_Comment" xml:space="preserve">
+    <value>Комментарий</value>
+  </data>
+  <data name="HotKey_Prefix_Col_UsedBy" xml:space="preserve">
+    <value>Используется</value>
+  </data>
+  <data name="HotKey_Prefix_Add" xml:space="preserve">
+    <value>Добавить префикс</value>
+  </data>
+  <data name="HotKey_Prefix_Remove" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="HotKey_Prefix_PressKey" xml:space="preserve">
+    <value>Нажмите комбинацию...</value>
+  </data>
+  <data name="HotKey_Prefix_CommentPlaceholder" xml:space="preserve">
+    <value>Комментарий (необязательно)</value>
+  </data>
+  <data name="HotKey_Prefix_Error_BlockedByHotKey" xml:space="preserve">
+    <value>Этот жест уже используется как горячая клавиша</value>
+  </data>
+  <data name="HotKey_Prefix_Error_AlreadyExists" xml:space="preserve">
+    <value>Этот префикс уже зарегистрирован</value>
+  </data>
+  <data name="HotKey_Prefix_Error_InUse" xml:space="preserve">
+    <value>Нельзя удалить — горячие клавиши используют этот префикс</value>
+  </data>
+  <data name="HotKey_Prefix_UsedByNone" xml:space="preserve">
+    <value>Не используется</value>
+  </data>
+  <data name="HotKey_Prefix_AutoDerived" xml:space="preserve">
+    <value>Авто</value>
+  </data>
+  <data name="HotKey_Col_Prefix" xml:space="preserve">
+    <value>Префикс</value>
+  </data>
+  <data name="HotKey_Prefix_PickTooltip" xml:space="preserve">
+    <value>Выбрать префикс для последовательности</value>
+  </data>
+  <data name="HotKey_Error_BlockedByPrefix" xml:space="preserve">
+    <value>Эта комбинация зарезервирована как префикс</value>
+  </data>
+  <data name="HotKey_Error_Conflict" xml:space="preserve">
+    <value>Эта комбинация конфликтует с другой горячей клавишей</value>
   </data>
 </root>

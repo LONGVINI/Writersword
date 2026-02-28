@@ -17,16 +17,11 @@
 			<ComboBox ItemsSource="{Binding AvailableLanguages}"
                       SelectedItem="{Binding SelectedLanguage}"
                       MinWidth="200"
-                      HorizontalAlignment="Left"
-                      Background="{DynamicResource BgPanelBrush}"
-                      Foreground="{DynamicResource TextSecondaryBrush}"
-                      BorderBrush="{DynamicResource BorderDefaultBrush}"
-                      BorderThickness="1">
+                      HorizontalAlignment="Left">
 				<ComboBox.ItemTemplate>
 					<DataTemplate x:DataType="vm:LanguageOption">
 						<TextBlock Text="{Binding DisplayName}"
                                    FontSize="13"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                    Padding="4,2"/>
 					</DataTemplate>
 				</ComboBox.ItemTemplate>
@@ -43,16 +38,11 @@
 			<ComboBox ItemsSource="{Binding AvailableThemes}"
                       SelectedItem="{Binding SelectedTheme}"
                       MinWidth="200"
-                      HorizontalAlignment="Left"
-                      Background="{DynamicResource BgPanelBrush}"
-                      Foreground="{DynamicResource TextSecondaryBrush}"
-                      BorderBrush="{DynamicResource BorderDefaultBrush}"
-                      BorderThickness="1">
+                      HorizontalAlignment="Left">
 				<ComboBox.ItemTemplate>
 					<DataTemplate x:DataType="vm:ThemeOption">
 						<TextBlock Text="{Binding DisplayName}"
                                    FontSize="13"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                    Padding="4,2"/>
 					</DataTemplate>
 				</ComboBox.ItemTemplate>

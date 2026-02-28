@@ -486,7 +486,7 @@ namespace Writersword.ViewModels
         /// </summary>
         private void RegisterHotKeys()
         {
-            _hotKeyService.Register("file.new", new HotKey
+            _hotKeyService.Register("HotKey_File_New", new HotKey
             {
                 DisplayNameKey = Strings.HotKey_File_New,
                 Category = HotKeyCategory.File,
@@ -494,7 +494,7 @@ namespace Writersword.ViewModels
                 DefaultGesture = new HotKeyGesture(new KeyGesture(Key.N, KeyModifiers.Control))
             }, NewProjectCommand);
 
-            _hotKeyService.Register("file.open", new HotKey
+            _hotKeyService.Register("HotKey_File_Open", new HotKey
             {
                 DisplayNameKey = Strings.HotKey_File_Open,
                 Category = HotKeyCategory.File,
@@ -502,7 +502,7 @@ namespace Writersword.ViewModels
                 DefaultGesture = new HotKeyGesture(new KeyGesture(Key.O, KeyModifiers.Control))
             }, OpenProjectCommand);
 
-            _hotKeyService.Register("file.save", new HotKey
+            _hotKeyService.Register("HotKey_File_Save", new HotKey
             {
                 DisplayNameKey = Strings.HotKey_File_Save,
                 Category = HotKeyCategory.File,
@@ -510,7 +510,7 @@ namespace Writersword.ViewModels
                 DefaultGesture = new HotKeyGesture(new KeyGesture(Key.S, KeyModifiers.Control))
             }, SaveProjectCommand);
 
-            _hotKeyService.Register("file.saveas", new HotKey
+            _hotKeyService.Register("HotKey_File_SaveAs", new HotKey
             {
                 DisplayNameKey = Strings.HotKey_File_SaveAs,
                 Category = HotKeyCategory.File,
@@ -518,7 +518,15 @@ namespace Writersword.ViewModels
                 DefaultGesture = new HotKeyGesture(new KeyGesture(Key.S, KeyModifiers.Control | KeyModifiers.Shift))
             }, SaveAsProjectCommand);
 
-            _hotKeyService.Register("file.closetab", new HotKey
+            _hotKeyService.Register("HotKey_File_SaveAll", new HotKey
+            {
+                DisplayNameKey = Strings.HotKey_File_SaveAll,
+                Category = HotKeyCategory.File,
+                Scope = HotKeyScope.Global,
+                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.S, KeyModifiers.Control | KeyModifiers.Alt))
+            }, MenuBar.SaveAllProjectsCommand);
+
+            _hotKeyService.Register("HotKey_File_CloseTab", new HotKey
             {
                 DisplayNameKey = Strings.HotKey_File_CloseTab,
                 Category = HotKeyCategory.File,
@@ -530,14 +538,45 @@ namespace Writersword.ViewModels
                     await _projectWorkflow.CloseDocumentAsync(TabBar.ActiveTab);
             }));
 
-            _hotKeyService.Register("file.newtab", new HotKey
+            _hotKeyService.Register("HotKey_File_CloseAllTabs", new HotKey
+            {
+                DisplayNameKey = Strings.HotKey_File_CloseAllTabs,
+                Category = HotKeyCategory.File,
+                Scope = HotKeyScope.Global,
+                DefaultGesture = null
+            }, MenuBar.CloseAllTabsCommand);
+
+            _hotKeyService.Register("HotKey_File_CloseOtherTabs", new HotKey
+            {
+                DisplayNameKey = Strings.HotKey_File_CloseOtherTabs,
+                Category = HotKeyCategory.File,
+                Scope = HotKeyScope.Global,
+                DefaultGesture = null
+            }, MenuBar.CloseOtherTabsCommand);
+
+            _hotKeyService.Register("HotKey_File_Settings", new HotKey
+            {
+                DisplayNameKey = Strings.HotKey_File_Settings,
+                Category = HotKeyCategory.File,
+                Scope = HotKeyScope.Global,
+                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.OemComma, KeyModifiers.Control))
+            }, MenuBar.OpenSettingsCommand);
+
+            _hotKeyService.Register("HotKey_File_NewTab", new HotKey
             {
                 DisplayNameKey = Strings.HotKey_File_NewTab,
-                Category = HotKeyCategory.File,
+                Category = HotKeyCategory.Navigation,
                 Scope = HotKeyScope.Global,
                 DefaultGesture = new HotKeyGesture(new KeyGesture(Key.T, KeyModifiers.Control))
             }, CreateNewTabCommand);
 
+            _hotKeyService.Register("HotKey_File_Exit", new HotKey
+            {
+                DisplayNameKey = Strings.HotKey_File_Exit,
+                Category = HotKeyCategory.File,
+                Scope = HotKeyScope.Global,
+                DefaultGesture = null
+            }, MenuBar.ExitCommand);
 
             _hotKeyService.LoadSettings();
 

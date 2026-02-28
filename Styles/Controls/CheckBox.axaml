@@ -1,0 +1,37 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+	<Style Selector="CheckBox">
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="FontSize" Value="{DynamicResource FontSizeS}"/>
+		<Setter Property="Padding" Value="6,0,0,0"/>
+	</Style>
+
+	<Style Selector="CheckBox:pointerover /template/ ContentPresenter">
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+	</Style>
+
+	<Style Selector="CheckBox:disabled">
+		<Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
+	</Style>
+
+	<Style Selector="CheckBox /template/ Border#NormalRectangle">
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+		<Setter Property="CornerRadius" Value="3"/>
+		<Setter Property="BorderThickness" Value="1"/>
+	</Style>
+
+	<Style Selector="CheckBox:checked /template/ Border#NormalRectangle">
+		<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+
+	<Style Selector="CheckBox:pointerover /template/ Border#NormalRectangle">
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+
+	<Style Selector="CheckBox:checked:pointerover /template/ Border#NormalRectangle">
+		<Setter Property="Background" Value="{DynamicResource AccentHoverBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}"/>
+	</Style>
+</Styles>

@@ -1,0 +1,43 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+	<Style Selector="ComboBox">
+		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="CornerRadius" Value="4"/>
+		<Setter Property="FontSize" Value="{DynamicResource FontSizeS}"/>
+		<Setter Property="Padding" Value="{DynamicResource PaddingXS}"/>
+		<Setter Property="MinHeight" Value="28"/>
+	</Style>
+
+	<Style Selector="ComboBox:pointerover">
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+
+	<Style Selector="ComboBox:focus">
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+
+	<Style Selector="ComboBox:disabled">
+		<Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
+		<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+	</Style>
+
+	<Style Selector="ComboBoxItem">
+		<Setter Property="Background" Value="Transparent"/>
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="FontSize" Value="{DynamicResource FontSizeS}"/>
+		<Setter Property="Padding" Value="{DynamicResource PaddingXS}"/>
+	</Style>
+
+	<Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="TextElement.Foreground" Value="White"/>
+	</Style>
+
+	<Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+	</Style>
+</Styles>

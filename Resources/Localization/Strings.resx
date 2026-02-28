@@ -162,23 +162,23 @@
     <comment>Project type: Game design doc</comment>
   </data>
   <data name="Menu_File" xml:space="preserve">
-    <value>_File</value>
+    <value>File</value>
     <comment>Main menu: File</comment>
   </data>
   <data name="Menu_Edit" xml:space="preserve">
-    <value>_Edit</value>
+    <value>Edit</value>
     <comment>Main menu: Edit</comment>
   </data>
   <data name="Menu_View" xml:space="preserve">
-    <value>_View</value>
+    <value>View</value>
     <comment>Main menu: View</comment>
   </data>
   <data name="Menu_Tools" xml:space="preserve">
-    <value>_Tools</value>
+    <value>Tools</value>
     <comment>Main menu: Tools</comment>
   </data>
   <data name="Menu_Help" xml:space="preserve">
-    <value>_Help</value>
+    <value>Help</value>
     <comment>Main menu: Help</comment>
   </data>
   <data name="Menu_File_NewProject" xml:space="preserve">
@@ -808,5 +808,125 @@
   <data name="HotKey_IsPrefix" xml:space="preserve">
     <value>Reserved as prefix</value>
     <comment>Tooltip shown when gesture is a sequence prefix</comment>
+  </data>
+  <data name="HotKey_Category_File" xml:space="preserve">
+    <value>File</value>
+    <comment>Category name: file commands</comment>
+  </data>
+  <data name="HotKey_Category_Edit" xml:space="preserve">
+    <value>Edit</value>
+    <comment>Category name: edit commands</comment>
+  </data>
+  <data name="HotKey_Category_View" xml:space="preserve">
+    <value>View</value>
+    <comment>Category name: view commands</comment>
+  </data>
+  <data name="HotKey_Category_Navigation" xml:space="preserve">
+    <value>Navigation</value>
+    <comment>Category name: navigation commands</comment>
+  </data>
+  <data name="HotKey_Category_Formatting" xml:space="preserve">
+    <value>Formatting</value>
+    <comment>Category name: formatting commands</comment>
+  </data>
+  <data name="HotKey_Category_Tools" xml:space="preserve">
+    <value>Tools</value>
+    <comment>Category name: tools commands</comment>
+  </data>
+  <data name="HotKey_Category_Help" xml:space="preserve">
+    <value>Help</value>
+    <comment>Category name: help commands</comment>
+  </data>
+  <data name="HotKey_File_SaveAll" xml:space="preserve">
+    <value>Save All</value>
+    <comment>Menu hotkey: save all open projects</comment>
+  </data>
+  <data name="HotKey_File_CloseAllTabs" xml:space="preserve">
+    <value>Close All Tabs</value>
+    <comment>Menu hotkey: close all tabs</comment>
+  </data>
+  <data name="HotKey_File_CloseOtherTabs" xml:space="preserve">
+    <value>Close Other Tabs</value>
+    <comment>Menu hotkey: close other tabs</comment>
+  </data>
+  <data name="HotKey_File_Settings" xml:space="preserve">
+    <value>Settings</value>
+    <comment>Menu hotkey: open settings window</comment>
+  </data>
+  <data name="HotKey_File_Exit" xml:space="preserve">
+    <value>Exit</value>
+    <comment>Menu hotkey: exit application</comment>
+  </data>
+  <data name="HotKey_Tab_Bindings" xml:space="preserve">
+    <value>Bindings</value>
+    <comment>Tab title: hotkey bindings list</comment>
+  </data>
+  <data name="HotKey_Tab_Prefixes" xml:space="preserve">
+    <value>Prefixes</value>
+    <comment>Tab title: prefix management</comment>
+  </data>
+  <data name="HotKey_Prefix_Col_Gesture" xml:space="preserve">
+    <value>Gesture</value>
+    <comment>Column header: prefix gesture</comment>
+  </data>
+  <data name="HotKey_Prefix_Col_Comment" xml:space="preserve">
+    <value>Comment</value>
+    <comment>Column header: user comment</comment>
+  </data>
+  <data name="HotKey_Prefix_Col_UsedBy" xml:space="preserve">
+    <value>Used by</value>
+    <comment>Column header: hotkeys using this prefix</comment>
+  </data>
+  <data name="HotKey_Prefix_Add" xml:space="preserve">
+    <value>Add prefix</value>
+    <comment>Button to add new prefix</comment>
+  </data>
+  <data name="HotKey_Prefix_Remove" xml:space="preserve">
+    <value>Remove</value>
+    <comment>Tooltip for remove prefix button</comment>
+  </data>
+  <data name="HotKey_Prefix_PressKey" xml:space="preserve">
+    <value>Press key combination...</value>
+    <comment>Placeholder when entering prefix gesture</comment>
+  </data>
+  <data name="HotKey_Prefix_CommentPlaceholder" xml:space="preserve">
+    <value>Comment (optional)</value>
+    <comment>Placeholder for comment input field</comment>
+  </data>
+  <data name="HotKey_Prefix_Error_BlockedByHotKey" xml:space="preserve">
+    <value>This gesture is already used as a hotkey</value>
+    <comment>Error: prefix gesture conflicts with existing hotkey</comment>
+  </data>
+  <data name="HotKey_Prefix_Error_AlreadyExists" xml:space="preserve">
+    <value>This prefix is already registered</value>
+    <comment>Error: duplicate prefix registration attempt</comment>
+  </data>
+  <data name="HotKey_Prefix_Error_InUse" xml:space="preserve">
+    <value>Cannot remove — hotkeys use this prefix</value>
+    <comment>Error: prefix is used by hotkeys, cannot delete</comment>
+  </data>
+  <data name="HotKey_Prefix_UsedByNone" xml:space="preserve">
+    <value>Not used</value>
+    <comment>Shown when prefix has no associated hotkeys</comment>
+  </data>
+  <data name="HotKey_Prefix_AutoDerived" xml:space="preserve">
+    <value>Auto</value>
+    <comment>Label for auto-derived prefixes from default sequences</comment>
+  </data>
+  <data name="HotKey_Col_Prefix" xml:space="preserve">
+    <value>Prefix</value>
+    <comment>Column header for prefix picker in hotkey bindings table</comment>
+  </data>
+  <data name="HotKey_Prefix_PickTooltip" xml:space="preserve">
+    <value>Click to pick prefix for sequence</value>
+    <comment>Tooltip on the prefix picker button in hotkey row</comment>
+  </data>
+  <data name="HotKey_Error_BlockedByPrefix" xml:space="preserve">
+    <value>This combination is reserved as a prefix</value>
+    <comment>Error when binding key conflicts with registered prefix</comment>
+  </data>
+  <data name="HotKey_Error_Conflict" xml:space="preserve">
+    <value>This combination conflicts with another hotkey</value>
+    <comment>Error when binding key conflicts with another hotkey</comment>
   </data>
 </root>

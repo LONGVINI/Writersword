@@ -14,35 +14,22 @@ using Writersword.Src.Core.Interfaces.Services.Storage;
 
 namespace Writersword.Src.Infrastructure.Services.Input
 {
-    /// <summary>
-    /// Реализация сервиса горячих клавиш.
-    /// Поддерживает одиночные комбинации и последовательности (Ctrl+K -> Ctrl+C).
-    /// Поддерживает несколько жестов на одно действие (мульти-бинд).
-    /// Хранит определения клавиш отдельно от executor'ов:
-    ///   _definitions    — все известные клавиши, регистрируются при старте из метаданных
-    ///   _globalCommands — ICommand для глобальных клавиш
-    ///   _executors      — IHotKeyProvider для модульных клавиш, только когда модуль живой
-    /// </summary>
     public class HotKeyService : IHotKeyService
     {
         private readonly ILogger<HotKeyService> _logger;
 
-        /// <summary>Все определения клавиш — id -> HotKey</summary>
         private readonly Dictionary<string, HotKey> _definitions = new();
-
-        /// <summary>Команды глобальных клавиш — id -> ICommand</summary>
         private readonly Dictionary<string, ICommand> _globalCommands = new();
-
-        /// <summary>Executor'ы модулей — moduleType -> IHotKeyProvider</summary>
         private readonly Dictionary<string, IHotKeyProvider> _executors = new();
 
-        /// <summary>Накопленная последовательность нажатий</summary>
+        /// <summary>
+        /// Пользовательские префиксы с комментариями.
+        /// Ключ — строковое представление жеста для быстрого поиска.
+        /// </summary>
+        private readonly List<HotKeyPrefix> _userPrefixes = new();
+
         private readonly List<KeyGesture> _pendingSequence = new();
-
-        /// <summary>Таймер сброса последовательности</summary>
         private Timer? _sequenceTimer;
-
-        /// <summary>Таймаут ожидания следующего шага последовательности (мс)</summary>
         private const int SequenceTimeoutMs = 1500;
 
         public event Action? HotKeysChanged;
@@ -52,9 +39,6 @@ namespace Writersword.Src.Infrastructure.Services.Input
             _logger = App.Services.GetService<ILogger<HotKeyService>>()!;
         }
 
-        /// <summary>
-        /// Зарегистрировать глобальную команду с горячей клавишей
-        /// </summary>
         public void Register(string id, HotKey hotKey, ICommand command)
         {
             if (string.IsNullOrWhiteSpace(id))
@@ -65,16 +49,10 @@ namespace Writersword.Src.Infrastructure.Services.Input
             _definitions[id] = hotKey;
             _globalCommands[id] = command;
 
-            _logger.LogDebug("Registered global: {Id} -> {Gestures}", id,
-                string.Join(", ", hotKey.ActiveGestures.Select(g => g.ToString())));
+            _logger.LogDebug("Registered global: {Id}", id);
             HotKeysChanged?.Invoke();
         }
 
-        /// <summary>
-        /// Зарегистрировать определения горячих клавиш из дескриптора.
-        /// Не привязывает executor — только сохраняет описание клавиш.
-        /// Вызывается при старте приложения через ModuleFactory.
-        /// </summary>
         public void RegisterFromDescriptor(IHotKeyDescriptor descriptor)
         {
             var hotKeys = descriptor.GetHotKeys();
@@ -91,23 +69,13 @@ namespace Writersword.Src.Infrastructure.Services.Input
                 if (!_definitions.ContainsKey(hotKey.Id))
                 {
                     _definitions[hotKey.Id] = hotKey;
-                    _logger.LogDebug("Registered from descriptor: {Id} (Scope: {Scope})",
-                        hotKey.Id, hotKey.Scope);
-                }
-                else
-                {
-                    _logger.LogDebug("Definition already exists, skipping: {Id}", hotKey.Id);
+                    _logger.LogDebug("Registered from descriptor: {Id}", hotKey.Id);
                 }
             }
 
             HotKeysChanged?.Invoke();
         }
 
-        /// <summary>
-        /// Зарегистрировать горячие клавиши модуля реализующего IHotKeyProvider.
-        /// Если определения уже есть — только привязывает executor.
-        /// Если определений нет — регистрирует и привязывает.
-        /// </summary>
         public void RegisterModule(IHotKeyProvider provider)
         {
             var hotKeys = provider.GetHotKeys();
@@ -126,8 +94,7 @@ namespace Writersword.Src.Infrastructure.Services.Input
                 if (!_definitions.ContainsKey(hotKey.Id))
                 {
                     _definitions[hotKey.Id] = hotKey;
-                    _logger.LogDebug("Registered module definition: {Id} (Scope: {Scope})",
-                        hotKey.Id, hotKey.Scope);
+                    _logger.LogDebug("Registered module definition: {Id}", hotKey.Id);
                 }
 
                 moduleType ??= hotKey.ModuleType;
@@ -142,30 +109,18 @@ namespace Writersword.Src.Infrastructure.Services.Input
             HotKeysChanged?.Invoke();
         }
 
-        /// <summary>
-        /// Привязать executor к уже зарегистрированным определениям модуля.
-        /// Вызывается из BaseModule.Initialize().
-        /// </summary>
         public void BindExecutor(string moduleType, IHotKeyProvider provider)
         {
             _executors[moduleType] = provider;
             _logger.LogDebug("Executor bound: {ModuleType}", moduleType);
         }
 
-        /// <summary>
-        /// Отвязать executor модуля не удаляя определения клавиш.
-        /// Вызывается из BaseModule.Dispose().
-        /// </summary>
         public void UnbindExecutor(string moduleType)
         {
             if (_executors.Remove(moduleType))
                 _logger.LogDebug("Executor unbound: {ModuleType}", moduleType);
         }
 
-        /// <summary>
-        /// Отменить регистрацию горячих клавиш модуля полностью.
-        /// Удаляет и определения и executor.
-        /// </summary>
         public void UnregisterModule(string moduleType)
         {
             _executors.Remove(moduleType);
@@ -180,17 +135,12 @@ namespace Writersword.Src.Infrastructure.Services.Input
 
             if (toRemove.Count > 0)
             {
-                _logger.LogDebug("Unregistered {Count} hotkeys for module: {ModuleType}",
+                _logger.LogDebug("Unregistered {Count} hotkeys for: {ModuleType}",
                     toRemove.Count, moduleType);
                 HotKeysChanged?.Invoke();
             }
         }
 
-        /// <summary>
-        /// Обработать нажатие клавиши.
-        /// Накапливает последовательность и выполняет команду при совпадении.
-        /// Проверяет все ActiveGestures каждой клавиши — поддержка мульти-биндов.
-        /// </summary>
         public bool HandleKeyPress(KeyGesture gesture, string? focusedModuleType = null)
         {
             _pendingSequence.Add(gesture);
@@ -198,9 +148,9 @@ namespace Writersword.Src.Infrastructure.Services.Input
 
             var allEntries = GetAllEntries().ToList();
 
-            // Проверяем полное совпадение по любому из ActiveGestures
             var matched = allEntries.FirstOrDefault(entry =>
-                entry.hotKey.ActiveGestures.Any(g => g.Matches(_pendingSequence)));
+                entry.hotKey.ActiveGesture != null &&
+                entry.hotKey.ActiveGesture.Matches(_pendingSequence));
 
             if (matched.hotKey != null)
             {
@@ -221,155 +171,163 @@ namespace Writersword.Src.Infrastructure.Services.Input
                 }
             }
 
-            // Проверяем является ли текущая последовательность префиксом любого жеста
             bool isPrefix = allEntries.Any(entry =>
-                entry.hotKey.ActiveGestures.Any(g => g.IsPrefix(_pendingSequence)));
+                entry.hotKey.ActiveGesture != null &&
+                entry.hotKey.ActiveGesture.IsPrefix(_pendingSequence));
 
             if (isPrefix)
             {
-                _logger.LogDebug("Sequence prefix matched, waiting for next key: {Steps}",
-                    string.Join(" -> ", _pendingSequence.Select(g => g.ToString())));
+                _logger.LogDebug("Prefix matched, waiting for next key");
                 return true;
             }
 
-            _logger.LogDebug("No match for sequence, clearing");
+            _logger.LogDebug("No match, clearing sequence");
             ClearSequence();
             return false;
         }
 
-        /// <summary>
-        /// Получить все зарегистрированные горячие клавиши
-        /// </summary>
-        public IReadOnlyList<HotKey> GetAllHotKeys()
-        {
-            return _definitions.Values.ToList();
-        }
+        public IReadOnlyList<HotKey> GetAllHotKeys() => _definitions.Values.ToList();
 
-        /// <summary>
-        /// Получить горячую клавишу по ID
-        /// </summary>
-        public HotKey? GetHotKey(string id)
-        {
-            return _definitions.TryGetValue(id, out var hotKey) ? hotKey : null;
-        }
+        public HotKey? GetHotKey(string id) =>
+            _definitions.TryGetValue(id, out var hk) ? hk : null;
 
-        /// <summary>
-        /// Получить команду по ID (только для глобальных клавиш)
-        /// </summary>
-        public ICommand? GetCommand(string id)
-        {
-            return _globalCommands.TryGetValue(id, out var command) ? command : null;
-        }
+        public ICommand? GetCommand(string id) =>
+            _globalCommands.TryGetValue(id, out var cmd) ? cmd : null;
 
-        /// <summary>
-        /// Установить одиночный пользовательский жест заменяя все существующие.
-        /// Обратная совместимость — используется в базовом редакторе хоткеев.
-        /// </summary>
-        public bool SetCustomGesture(string id, KeyGesture? gesture)
+        public GestureAssignResult SetCustomGesture(string id, KeyGesture? gesture)
         {
             var hotKey = GetHotKey(id);
-            if (hotKey == null) return false;
+            if (hotKey == null) return GestureAssignResult.HotKeyNotFound;
+
+            if (gesture != null && IsReservedPrefix(gesture))
+            {
+                _logger.LogDebug("SetCustomGesture blocked — reserved prefix: {Gesture}", gesture);
+                return GestureAssignResult.BlockedByPrefix;
+            }
 
             hotKey.CustomGestures.Clear();
             if (gesture != null)
                 hotKey.CustomGestures.Add(new HotKeyGesture(gesture));
 
             _logger.LogDebug("Custom gesture set: {Id} -> {Gesture}", id, gesture);
-
             HotKeysChanged?.Invoke();
             SaveSettings();
-            return true;
+            return GestureAssignResult.Ok;
         }
 
-        /// <summary>
-        /// Установить одиночный пользовательский жест-последовательность заменяя все существующие.
-        /// Обратная совместимость.
-        /// </summary>
-        public bool SetCustomGestureSequence(string id, HotKeyGesture? gesture)
+        public GestureAssignResult SetCustomGestureSequence(string id, HotKeyGesture? gesture)
         {
             var hotKey = GetHotKey(id);
-            if (hotKey == null) return false;
+            if (hotKey == null) return GestureAssignResult.HotKeyNotFound;
+
+            if (gesture != null)
+            {
+                if (gesture.IsSequence && !IsReservedPrefix(gesture.FirstStep))
+                {
+                    _logger.LogDebug("SetCustomGestureSequence blocked — first step not a prefix: {Gesture}",
+                        gesture.FirstStep);
+                    return GestureAssignResult.PrefixNotRegistered;
+                }
+
+                if (gesture.IsSingle && IsReservedPrefix(gesture.FirstStep))
+                {
+                    _logger.LogDebug("SetCustomGestureSequence blocked — reserved prefix: {Gesture}",
+                        gesture.FirstStep);
+                    return GestureAssignResult.BlockedByPrefix;
+                }
+            }
 
             hotKey.CustomGestures.Clear();
             if (gesture != null)
                 hotKey.CustomGestures.Add(gesture);
 
             _logger.LogDebug("Custom gesture sequence set: {Id} -> {Gesture}", id, gesture);
-
             HotKeysChanged?.Invoke();
             SaveSettings();
-            return true;
+            return GestureAssignResult.Ok;
         }
 
         /// <summary>
-        /// Добавить дополнительный пользовательский жест не заменяя существующие.
-        /// Используется при добавлении второго/третьего варианта нажатия.
+        /// Добавить новый пользовательский жест к хоткею не заменяя существующие.
+        /// Блокирует если одиночный жест зарезервирован как префикс.
+        /// Блокирует если последовательность — первый шаг не зарегистрирован как префикс.
+        /// Возвращает false если хоткей не найден или жест заблокирован.
         /// </summary>
         public bool AddCustomGesture(string id, HotKeyGesture gesture)
         {
             var hotKey = GetHotKey(id);
             if (hotKey == null) return false;
 
-            // Если пользовательских нет — сначала копируем дефолтные
-            if (hotKey.CustomGestures.Count == 0 && hotKey.DefaultGestures.Count > 0)
+            if (gesture.IsSingle && IsReservedPrefix(gesture.FirstStep))
             {
-                foreach (var dg in hotKey.DefaultGestures)
-                    hotKey.CustomGestures.Add(dg);
+                _logger.LogDebug("AddCustomGesture blocked — reserved prefix: {Gesture}", gesture.FirstStep);
+                return false;
             }
 
-            hotKey.AddCustomGesture(gesture);
+            if (gesture.IsSequence && !IsReservedPrefix(gesture.FirstStep))
+            {
+                _logger.LogDebug("AddCustomGesture blocked — first step not a prefix: {Gesture}", gesture.FirstStep);
+                return false;
+            }
+
+            hotKey.CustomGestures.Add(gesture);
             _logger.LogDebug("Custom gesture added: {Id} -> {Gesture}", id, gesture);
-
             HotKeysChanged?.Invoke();
             SaveSettings();
             return true;
         }
 
         /// <summary>
-        /// Удалить пользовательский жест по индексу.
+        /// Удалить пользовательский жест по индексу из списка CustomGestures.
+        /// Не делает ничего если хоткей не найден или индекс вне диапазона.
+        /// Сохраняет настройки после удаления.
         /// </summary>
-        public bool RemoveCustomGesture(string id, int index)
+        public void RemoveCustomGesture(string id, int index)
         {
             var hotKey = GetHotKey(id);
-            if (hotKey == null) return false;
+            if (hotKey == null) return;
 
-            if (index < 0 || index >= hotKey.CustomGestures.Count) return false;
+            if (index < 0 || index >= hotKey.CustomGestures.Count) return;
 
-            hotKey.RemoveCustomGesture(index);
-            _logger.LogDebug("Custom gesture removed: {Id}[{Index}]", id, index);
-
+            hotKey.CustomGestures.RemoveAt(index);
+            _logger.LogDebug("Custom gesture removed: {Id} index {Index}", id, index);
             HotKeysChanged?.Invoke();
             SaveSettings();
-            return true;
         }
 
         /// <summary>
-        /// Заменить пользовательский жест по индексу.
+        /// Заменить пользовательский жест по индексу новым.
+        /// Блокирует если новый жест зарезервирован как префикс — возвращает BlockedByPrefix.
+        /// Блокирует если последовательность — первый шаг не зарегистрирован как префикс — возвращает PrefixNotRegistered.
+        /// Возвращает HotKeyNotFound если хоткей не найден или индекс вне диапазона.
         /// </summary>
-        public bool ReplaceCustomGesture(string id, int index, HotKeyGesture gesture)
+        public GestureAssignResult ReplaceCustomGesture(string id, int index, HotKeyGesture gesture)
         {
             var hotKey = GetHotKey(id);
-            if (hotKey == null) return false;
+            if (hotKey == null) return GestureAssignResult.HotKeyNotFound;
 
-            // Если пользовательских нет — сначала копируем дефолтные
-            if (hotKey.CustomGestures.Count == 0 && hotKey.DefaultGestures.Count > 0)
+            if (index < 0 || index >= hotKey.CustomGestures.Count)
+                return GestureAssignResult.HotKeyNotFound;
+
+            if (gesture.IsSingle && IsReservedPrefix(gesture.FirstStep))
             {
-                foreach (var dg in hotKey.DefaultGestures)
-                    hotKey.CustomGestures.Add(dg);
+                _logger.LogDebug("ReplaceCustomGesture blocked — reserved prefix: {Gesture}", gesture.FirstStep);
+                return GestureAssignResult.BlockedByPrefix;
             }
 
-            hotKey.ReplaceCustomGesture(index, gesture);
-            _logger.LogDebug("Custom gesture replaced: {Id}[{Index}] -> {Gesture}", id, index, gesture);
+            if (gesture.IsSequence && !IsReservedPrefix(gesture.FirstStep))
+            {
+                _logger.LogDebug("ReplaceCustomGesture blocked — first step not a prefix: {Gesture}", gesture.FirstStep);
+                return GestureAssignResult.PrefixNotRegistered;
+            }
 
+            hotKey.CustomGestures[index] = gesture;
+            _logger.LogDebug("Custom gesture replaced: {Id} index {Index} -> {Gesture}", id, index, gesture);
             HotKeysChanged?.Invoke();
             SaveSettings();
-            return true;
+            return GestureAssignResult.Ok;
         }
 
-        /// <summary>
-        /// Сбросить горячую клавишу к значению по умолчанию.
-        /// Очищает все пользовательские жесты.
-        /// </summary>
         public void ResetToDefault(string id)
         {
             var hotKey = GetHotKey(id);
@@ -377,14 +335,10 @@ namespace Writersword.Src.Infrastructure.Services.Input
 
             hotKey.ClearCustomGestures();
             _logger.LogDebug("Reset to default: {Id}", id);
-
             HotKeysChanged?.Invoke();
             SaveSettings();
         }
 
-        /// <summary>
-        /// Сбросить все горячие клавиши к значениям по умолчанию
-        /// </summary>
         public void ResetAllToDefaults()
         {
             foreach (var hotKey in _definitions.Values)
@@ -395,18 +349,9 @@ namespace Writersword.Src.Infrastructure.Services.Input
             SaveSettings();
         }
 
-        /// <summary>
-        /// Проверить наличие конфликта для одиночного жеста
-        /// </summary>
-        public bool HasConflict(KeyGesture gesture, string? excludeId = null)
-        {
-            return GetConflicts(gesture, excludeId).Count > 0;
-        }
+        public bool HasConflict(KeyGesture gesture, string? excludeId = null) =>
+            GetConflicts(gesture, excludeId).Count > 0;
 
-        /// <summary>
-        /// Получить список ID конфликтующих клавиш для одиночного жеста.
-        /// Проверяет все ActiveGestures каждой клавиши.
-        /// </summary>
         public IReadOnlyList<string> GetConflicts(KeyGesture gesture, string? excludeId = null)
         {
             var conflicts = new List<string>();
@@ -414,105 +359,162 @@ namespace Writersword.Src.Infrastructure.Services.Input
             foreach (var hotKey in GetAllHotKeys())
             {
                 if (hotKey.Id == excludeId) continue;
+                if (hotKey.ActiveGesture == null) continue;
 
-                foreach (var activeGesture in hotKey.ActiveGestures)
+                if (hotKey.ActiveGesture.Matches(new[] { gesture }) ||
+                    hotKey.ActiveGesture.HasPrefix(gesture))
                 {
-                    if (activeGesture.Matches(new[] { gesture }) ||
-                        activeGesture.HasPrefix(gesture))
-                    {
-                        conflicts.Add(hotKey.Id);
-                        break;
-                    }
+                    conflicts.Add(hotKey.Id);
                 }
             }
 
             return conflicts;
         }
 
-        /// <summary>
-        /// Определить тип конфликта между двумя клавишами.
-        /// Проверяет все комбинации ActiveGestures обеих клавиш.
-        ///
-        /// Правила:
-        /// Global   vs *            -> Critical
-        /// Background vs Background -> Critical
-        /// Background vs Focused    -> Critical
-        /// Focused  vs Focused      -> Warning
-        /// Prefix   vs Single       -> Critical
-        /// </summary>
         public HotKeyConflictType GetConflictType(string idA, string idB)
         {
             var hotKeyA = GetHotKey(idA);
             var hotKeyB = GetHotKey(idB);
 
-            if (hotKeyA == null || hotKeyB == null)
+            if (hotKeyA?.ActiveGesture == null || hotKeyB?.ActiveGesture == null)
                 return HotKeyConflictType.None;
 
-            if (hotKeyA.ActiveGestures.Count == 0 || hotKeyB.ActiveGestures.Count == 0)
-                return HotKeyConflictType.None;
+            var gestureA = hotKeyA.ActiveGesture;
+            var gestureB = hotKeyB.ActiveGesture;
 
-            bool gesturesConflict = false;
+            bool conflict =
+                gestureA.Matches(gestureB.Steps) ||
+                gestureA.IsPrefix(gestureB.Steps) ||
+                gestureB.IsPrefix(gestureA.Steps);
 
-            foreach (var gestureA in hotKeyA.ActiveGestures)
-            {
-                foreach (var gestureB in hotKeyB.ActiveGestures)
-                {
-                    if (gestureA.Matches(gestureB.Steps) ||
-                        gestureA.IsPrefix(gestureB.Steps) ||
-                        gestureB.IsPrefix(gestureA.Steps))
-                    {
-                        gesturesConflict = true;
-                        break;
-                    }
-                }
+            if (!conflict) return HotKeyConflictType.None;
 
-                if (gesturesConflict) break;
-            }
-
-            if (!gesturesConflict)
-                return HotKeyConflictType.None;
-
-            var scopeA = hotKeyA.Scope;
-            var scopeB = hotKeyB.Scope;
-
-            if (scopeA == HotKeyScope.Focused && scopeB == HotKeyScope.Focused)
+            if (hotKeyA.Scope == HotKeyScope.Focused && hotKeyB.Scope == HotKeyScope.Focused)
                 return HotKeyConflictType.Warning;
 
             return HotKeyConflictType.Critical;
         }
 
-        /// <summary>
-        /// Получить все зарезервированные префиксы.
-        /// Клавиши которые являются первым шагом любой последовательности
-        /// из любого ActiveGesture любой клавиши.
-        /// </summary>
+        public bool IsExecutorBound(string moduleType) => _executors.ContainsKey(moduleType);
+
+        // -----------------------------------------------------------------------
+        // Префиксы
+        // -----------------------------------------------------------------------
+
+        public GestureAssignResult RegisterPrefix(KeyGesture gesture, string comment = "")
+        {
+            if (_userPrefixes.Any(p => GesturesEqual(p.Gesture, gesture)))
+            {
+                _logger.LogDebug("RegisterPrefix: already exists: {Gesture}", gesture);
+                return GestureAssignResult.PrefixAlreadyExists;
+            }
+
+            bool usedAsHotKey = _definitions.Values.Any(hk =>
+            {
+                var allGestures = hk.CustomGestures.Count > 0
+                    ? hk.CustomGestures
+                    : hk.DefaultGestures;
+
+                return allGestures.Any(g =>
+                    g.IsSingle && GesturesEqual(g.FirstStep, gesture));
+            });
+
+            if (usedAsHotKey)
+            {
+                _logger.LogDebug("RegisterPrefix blocked — used as hotkey: {Gesture}", gesture);
+                return GestureAssignResult.BlockedByHotKey;
+            }
+
+            _userPrefixes.Add(new HotKeyPrefix(gesture, comment));
+            _logger.LogDebug("Prefix registered: {Gesture}", gesture);
+            HotKeysChanged?.Invoke();
+            SaveSettings();
+            return GestureAssignResult.Ok;
+        }
+
+        public GestureAssignResult UnregisterPrefix(KeyGesture gesture)
+        {
+            var existing = _userPrefixes.FirstOrDefault(p => GesturesEqual(p.Gesture, gesture));
+            if (existing == null)
+            {
+                _logger.LogDebug("UnregisterPrefix: not found: {Gesture}", gesture);
+                return GestureAssignResult.HotKeyNotFound;
+            }
+
+            var inUse = GetHotKeysUsingPrefix(gesture);
+            if (inUse.Count > 0)
+            {
+                _logger.LogDebug("UnregisterPrefix blocked — used by {Count} hotkeys", inUse.Count);
+                return GestureAssignResult.PrefixInUse;
+            }
+
+            _userPrefixes.Remove(existing);
+            _logger.LogDebug("Prefix unregistered: {Gesture}", gesture);
+            HotKeysChanged?.Invoke();
+            SaveSettings();
+            return GestureAssignResult.Ok;
+        }
+
+        public bool UpdatePrefixComment(KeyGesture gesture, string comment)
+        {
+            var existing = _userPrefixes.FirstOrDefault(p => GesturesEqual(p.Gesture, gesture));
+            if (existing == null) return false;
+
+            existing.Comment = comment;
+            _logger.LogDebug("Prefix comment updated: {Gesture}", gesture);
+            SaveSettings();
+            return true;
+        }
+
+        public IReadOnlyList<HotKeyPrefix> GetUserPrefixes() => _userPrefixes.AsReadOnly();
+
         public IReadOnlyList<KeyGesture> GetReservedPrefixes()
         {
-            var prefixes = new List<KeyGesture>();
+            var result = _userPrefixes.Select(p => p.Gesture).ToList();
 
-            foreach (var hotKey in GetAllHotKeys())
+            foreach (var hotKey in _definitions.Values)
             {
-                foreach (var gesture in hotKey.ActiveGestures)
+                var allGestures = hotKey.CustomGestures.Count > 0
+                    ? hotKey.CustomGestures
+                    : hotKey.DefaultGestures;
+
+                foreach (var gesture in allGestures)
                 {
-                    if (gesture.IsSequence)
-                        prefixes.Add(gesture.FirstStep);
+                    if (gesture.IsSequence &&
+                        !result.Any(p => GesturesEqual(p, gesture.FirstStep)))
+                    {
+                        result.Add(gesture.FirstStep);
+                    }
                 }
             }
 
-            return prefixes.Distinct(new KeyGestureComparer()).ToList();
+            return result;
         }
 
-        /// <summary>
-        /// Проверить активен ли executor для указанного moduleType
-        /// </summary>
-        public bool IsExecutorBound(string moduleType)
+        public bool IsReservedPrefix(KeyGesture gesture) =>
+            GetReservedPrefixes().Any(p => GesturesEqual(p, gesture));
+
+        public IReadOnlyList<string> GetHotKeysUsingPrefix(KeyGesture prefix)
         {
-            return _executors.ContainsKey(moduleType);
+            return _definitions.Values
+                .Where(hk =>
+                    hk.ActiveGesture != null &&
+                    hk.ActiveGesture.IsSequence &&
+                    GesturesEqual(hk.ActiveGesture.FirstStep, prefix))
+                .Select(hk => hk.Id)
+                .ToList();
         }
 
+        // -----------------------------------------------------------------------
+        // Сохранение / загрузка
+        // -----------------------------------------------------------------------
+
         /// <summary>
-        /// Загрузить пользовательские настройки.
-        /// Формат: id -> "Ctrl+S" или "Ctrl+K -> Ctrl+C" или "Ctrl+S|Ctrl+K -> Ctrl+C" для мульти-биндов.
+        /// Формат хоткеев: id -> "Ctrl+K -> Ctrl+C" или "Ctrl+S".
+        /// Префиксы под ключом "__prefixes__" -> JSON-подобный список:
+        /// "Ctrl+K:Команды редактора|Ctrl+E:Навигация"
+        /// Разделитель жеста и комментария — первое вхождение ':'.
+        /// Разделитель между префиксами — '|'.
         /// </summary>
         public void LoadSettings()
         {
@@ -524,34 +526,29 @@ namespace Writersword.Src.Infrastructure.Services.Input
 
                 foreach (var kvp in saved)
                 {
+                    if (kvp.Key == "__prefixes__")
+                    {
+                        LoadPrefixesFromString(kvp.Value);
+                        continue;
+                    }
+
                     var hotKey = GetHotKey(kvp.Key);
                     if (hotKey == null) continue;
 
                     hotKey.CustomGestures.Clear();
+                    if (string.IsNullOrEmpty(kvp.Value)) continue;
 
-                    if (string.IsNullOrEmpty(kvp.Value))
-                        continue;
-
-                    // Разбиваем по "|" — разделитель между вариантами мульти-бинда
-                    var variants = kvp.Value.Split('|');
-
-                    foreach (var variant in variants)
+                    try
                     {
-                        var trimmed = variant.Trim();
-                        if (string.IsNullOrEmpty(trimmed)) continue;
-
-                        try
-                        {
-                            // Разбиваем по " -> " — разделитель шагов последовательности
-                            var parts = trimmed.Split(new[] { " -> " }, StringSplitOptions.RemoveEmptyEntries);
-                            var steps = parts.Select(p => KeyGesture.Parse(p.Trim())).ToList();
-                            hotKey.CustomGestures.Add(new HotKeyGesture(steps));
-                        }
-                        catch
-                        {
-                            _logger.LogWarning("Could not parse saved gesture for {Id}: {Value}",
-                                kvp.Key, trimmed);
-                        }
+                        var parts = kvp.Value.Split(
+                            new[] { " -> " }, StringSplitOptions.RemoveEmptyEntries);
+                        var steps = parts.Select(p => KeyGesture.Parse(p.Trim())).ToList();
+                        hotKey.CustomGestures.Add(new HotKeyGesture(steps));
+                    }
+                    catch
+                    {
+                        _logger.LogWarning("Could not parse saved gesture for {Id}: {Value}",
+                            kvp.Key, kvp.Value);
                     }
                 }
 
@@ -563,10 +560,6 @@ namespace Writersword.Src.Infrastructure.Services.Input
             }
         }
 
-        /// <summary>
-        /// Сохранить пользовательские настройки.
-        /// Формат: id -> "Ctrl+S" или "Ctrl+S|Ctrl+K -> Ctrl+C" для мульти-биндов.
-        /// </summary>
         public void SaveSettings()
         {
             try
@@ -577,9 +570,20 @@ namespace Writersword.Src.Infrastructure.Services.Input
                 foreach (var hotKey in GetAllHotKeys())
                 {
                     if (hotKey.CustomGestures.Count == 0) continue;
+                    toSave[hotKey.Id] = hotKey.CustomGestures[0].ToString();
+                }
 
-                    var variants = hotKey.CustomGestures.Select(g => g.ToString());
-                    toSave[hotKey.Id] = string.Join("|", variants);
+                if (_userPrefixes.Count > 0)
+                {
+                    toSave["__prefixes__"] = string.Join("|",
+                        _userPrefixes.Select(p =>
+                        {
+                            var gestureStr = p.Gesture.ToString();
+                            var comment = p.Comment.Replace("|", "").Replace(":", "");
+                            return string.IsNullOrEmpty(comment)
+                                ? gestureStr
+                                : $"{gestureStr}:{comment}";
+                        }));
                 }
 
                 settingsService.SaveModuleSettings("hotkeys", toSave);
@@ -591,9 +595,50 @@ namespace Writersword.Src.Infrastructure.Services.Input
             }
         }
 
-        /// <summary>
-        /// Запустить или перезапустить таймер сброса последовательности
-        /// </summary>
+        private void LoadPrefixesFromString(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return;
+
+            _userPrefixes.Clear();
+
+            foreach (var part in value.Split('|'))
+            {
+                var trimmed = part.Trim();
+                if (string.IsNullOrEmpty(trimmed)) continue;
+
+                try
+                {
+                    // Разделяем жест и комментарий по первому ':'
+                    var colonIndex = trimmed.IndexOf(':');
+                    string gestureStr;
+                    string comment = string.Empty;
+
+                    if (colonIndex > 0)
+                    {
+                        gestureStr = trimmed[..colonIndex].Trim();
+                        comment = trimmed[(colonIndex + 1)..].Trim();
+                    }
+                    else
+                    {
+                        gestureStr = trimmed;
+                    }
+
+                    var gesture = KeyGesture.Parse(gestureStr);
+                    _userPrefixes.Add(new HotKeyPrefix(gesture, comment));
+                }
+                catch
+                {
+                    _logger.LogWarning("Could not parse saved prefix: {Value}", trimmed);
+                }
+            }
+
+            _logger.LogDebug("Loaded {Count} user prefixes", _userPrefixes.Count);
+        }
+
+        // -----------------------------------------------------------------------
+        // Вспомогательные методы
+        // -----------------------------------------------------------------------
+
         private void ResetSequenceTimer()
         {
             _sequenceTimer?.Dispose();
@@ -604,9 +649,6 @@ namespace Writersword.Src.Infrastructure.Services.Input
             }, null, SequenceTimeoutMs, Timeout.Infinite);
         }
 
-        /// <summary>
-        /// Сбросить накопленную последовательность
-        /// </summary>
         private void ClearSequence()
         {
             _pendingSequence.Clear();
@@ -614,10 +656,8 @@ namespace Writersword.Src.Infrastructure.Services.Input
             _sequenceTimer = null;
         }
 
-        /// <summary>
-        /// Выполнить команду горячей клавиши
-        /// </summary>
-        private void ExecuteEntry((HotKey hotKey, ICommand? command, IHotKeyProvider? executor) entry)
+        private void ExecuteEntry(
+            (HotKey hotKey, ICommand? command, IHotKeyProvider? executor) entry)
         {
             if (entry.command != null)
             {
@@ -630,15 +670,12 @@ namespace Writersword.Src.Infrastructure.Services.Input
             }
             else
             {
-                _logger.LogDebug("No executor bound for: {Id} (module: {ModuleType})",
-                    entry.hotKey.Id, entry.hotKey.ModuleType);
+                _logger.LogDebug("No executor bound for: {Id}", entry.hotKey.Id);
             }
         }
 
-        /// <summary>
-        /// Получить все определения с привязанными executor'ами и командами
-        /// </summary>
-        private IEnumerable<(HotKey hotKey, ICommand? command, IHotKeyProvider? executor)> GetAllEntries()
+        private IEnumerable<(HotKey hotKey, ICommand? command, IHotKeyProvider? executor)>
+            GetAllEntries()
         {
             foreach (var kvp in _definitions)
             {
@@ -661,22 +698,7 @@ namespace Writersword.Src.Infrastructure.Services.Input
             }
         }
 
-        /// <summary>
-        /// Компаратор для KeyGesture — используется в Distinct() для GetReservedPrefixes
-        /// </summary>
-        private sealed class KeyGestureComparer : IEqualityComparer<KeyGesture>
-        {
-            public bool Equals(KeyGesture? x, KeyGesture? y)
-            {
-                if (x == null && y == null) return true;
-                if (x == null || y == null) return false;
-                return x.Key == y.Key && x.KeyModifiers == y.KeyModifiers;
-            }
-
-            public int GetHashCode(KeyGesture obj)
-            {
-                return HashCode.Combine(obj.Key, obj.KeyModifiers);
-            }
-        }
+        private static bool GesturesEqual(KeyGesture a, KeyGesture b) =>
+            a.Key == b.Key && a.KeyModifiers == b.KeyModifiers;
     }
 }

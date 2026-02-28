@@ -1,0 +1,34 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+	<Style Selector="TextBox">
+		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="CornerRadius" Value="4"/>
+		<Setter Property="FontSize" Value="{DynamicResource FontSizeS}"/>
+		<Setter Property="Padding" Value="{DynamicResource PaddingXS}"/>
+		<Setter Property="MinHeight" Value="28"/>
+		<Setter Property="CaretBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="SelectionBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="SelectionForegroundBrush" Value="White"/>
+	</Style>
+
+	<Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+
+	<Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+	</Style>
+
+	<Style Selector="TextBox:disabled">
+		<Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
+		<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+	</Style>
+
+	<Style Selector="TextBox:disabled /template/ Border#PART_BorderElement">
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+	</Style>
+</Styles>

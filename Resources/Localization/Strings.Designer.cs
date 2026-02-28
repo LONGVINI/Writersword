@@ -421,6 +421,69 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Edit.
+        /// </summary>
+        public static string HotKey_Category_Edit {
+            get {
+                return ResourceManager.GetString("HotKey_Category_Edit", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на File.
+        /// </summary>
+        public static string HotKey_Category_File {
+            get {
+                return ResourceManager.GetString("HotKey_Category_File", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Formatting.
+        /// </summary>
+        public static string HotKey_Category_Formatting {
+            get {
+                return ResourceManager.GetString("HotKey_Category_Formatting", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Help.
+        /// </summary>
+        public static string HotKey_Category_Help {
+            get {
+                return ResourceManager.GetString("HotKey_Category_Help", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Navigation.
+        /// </summary>
+        public static string HotKey_Category_Navigation {
+            get {
+                return ResourceManager.GetString("HotKey_Category_Navigation", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Tools.
+        /// </summary>
+        public static string HotKey_Category_Tools {
+            get {
+                return ResourceManager.GetString("HotKey_Category_Tools", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на View.
+        /// </summary>
+        public static string HotKey_Category_View {
+            get {
+                return ResourceManager.GetString("HotKey_Category_View", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Action.
         /// </summary>
         public static string HotKey_Col_Action {
@@ -444,6 +507,15 @@ namespace Writersword.Resources.Localization {
         public static string HotKey_Col_Default {
             get {
                 return ResourceManager.GetString("HotKey_Col_Default", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Prefix.
+        /// </summary>
+        public static string HotKey_Col_Prefix {
+            get {
+                return ResourceManager.GetString("HotKey_Col_Prefix", resourceCulture);
             }
         }
         
@@ -502,11 +574,56 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на This combination is reserved as a prefix.
+        /// </summary>
+        public static string HotKey_Error_BlockedByPrefix {
+            get {
+                return ResourceManager.GetString("HotKey_Error_BlockedByPrefix", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на This combination conflicts with another hotkey.
+        /// </summary>
+        public static string HotKey_Error_Conflict {
+            get {
+                return ResourceManager.GetString("HotKey_Error_Conflict", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Close All Tabs.
+        /// </summary>
+        public static string HotKey_File_CloseAllTabs {
+            get {
+                return ResourceManager.GetString("HotKey_File_CloseAllTabs", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Close Other Tabs.
+        /// </summary>
+        public static string HotKey_File_CloseOtherTabs {
+            get {
+                return ResourceManager.GetString("HotKey_File_CloseOtherTabs", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Close Tab.
         /// </summary>
         public static string HotKey_File_CloseTab {
             get {
                 return ResourceManager.GetString("HotKey_File_CloseTab", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Exit.
+        /// </summary>
+        public static string HotKey_File_Exit {
+            get {
+                return ResourceManager.GetString("HotKey_File_Exit", resourceCulture);
             }
         }
         
@@ -547,11 +664,29 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Save All.
+        /// </summary>
+        public static string HotKey_File_SaveAll {
+            get {
+                return ResourceManager.GetString("HotKey_File_SaveAll", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Save Project As.
         /// </summary>
         public static string HotKey_File_SaveAs {
             get {
                 return ResourceManager.GetString("HotKey_File_SaveAs", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Settings.
+        /// </summary>
+        public static string HotKey_File_Settings {
+            get {
+                return ResourceManager.GetString("HotKey_File_Settings", resourceCulture);
             }
         }
         
@@ -610,6 +745,123 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Add prefix.
+        /// </summary>
+        public static string HotKey_Prefix_Add {
+            get {
+                return ResourceManager.GetString("HotKey_Prefix_Add", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Auto.
+        /// </summary>
+        public static string HotKey_Prefix_AutoDerived {
+            get {
+                return ResourceManager.GetString("HotKey_Prefix_AutoDerived", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Comment.
+        /// </summary>
+        public static string HotKey_Prefix_Col_Comment {
+            get {
+                return ResourceManager.GetString("HotKey_Prefix_Col_Comment", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Gesture.
+        /// </summary>
+        public static string HotKey_Prefix_Col_Gesture {
+            get {
+                return ResourceManager.GetString("HotKey_Prefix_Col_Gesture", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Used by.
+        /// </summary>
+        public static string HotKey_Prefix_Col_UsedBy {
+            get {
+                return ResourceManager.GetString("HotKey_Prefix_Col_UsedBy", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Comment (optional).
+        /// </summary>
+        public static string HotKey_Prefix_CommentPlaceholder {
+            get {
+                return ResourceManager.GetString("HotKey_Prefix_CommentPlaceholder", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на This prefix is already registered.
+        /// </summary>
+        public static string HotKey_Prefix_Error_AlreadyExists {
+            get {
+                return ResourceManager.GetString("HotKey_Prefix_Error_AlreadyExists", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на This gesture is already used as a hotkey.
+        /// </summary>
+        public static string HotKey_Prefix_Error_BlockedByHotKey {
+            get {
+                return ResourceManager.GetString("HotKey_Prefix_Error_BlockedByHotKey", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Cannot remove — hotkeys use this prefix.
+        /// </summary>
+        public static string HotKey_Prefix_Error_InUse {
+            get {
+                return ResourceManager.GetString("HotKey_Prefix_Error_InUse", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Click to pick prefix for sequence.
+        /// </summary>
+        public static string HotKey_Prefix_PickTooltip {
+            get {
+                return ResourceManager.GetString("HotKey_Prefix_PickTooltip", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Press key combination....
+        /// </summary>
+        public static string HotKey_Prefix_PressKey {
+            get {
+                return ResourceManager.GetString("HotKey_Prefix_PressKey", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Remove.
+        /// </summary>
+        public static string HotKey_Prefix_Remove {
+            get {
+                return ResourceManager.GetString("HotKey_Prefix_Remove", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Not used.
+        /// </summary>
+        public static string HotKey_Prefix_UsedByNone {
+            get {
+                return ResourceManager.GetString("HotKey_Prefix_UsedByNone", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Press a key....
         /// </summary>
         public static string HotKey_PressKey {
@@ -655,7 +907,25 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на _Edit.
+        ///   Ищет локализованную строку, похожую на Bindings.
+        /// </summary>
+        public static string HotKey_Tab_Bindings {
+            get {
+                return ResourceManager.GetString("HotKey_Tab_Bindings", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Prefixes.
+        /// </summary>
+        public static string HotKey_Tab_Prefixes {
+            get {
+                return ResourceManager.GetString("HotKey_Tab_Prefixes", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Edit.
         /// </summary>
         public static string Menu_Edit {
             get {
@@ -736,7 +1006,7 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на _File.
+        ///   Ищет локализованную строку, похожую на File.
         /// </summary>
         public static string Menu_File {
             get {
@@ -844,7 +1114,7 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на _Help.
+        ///   Ищет локализованную строку, похожую на Help.
         /// </summary>
         public static string Menu_Help {
             get {
@@ -880,7 +1150,7 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на _Tools.
+        ///   Ищет локализованную строку, похожую на Tools.
         /// </summary>
         public static string Menu_Tools {
             get {
@@ -898,7 +1168,7 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на _View.
+        ///   Ищет локализованную строку, похожую на View.
         /// </summary>
         public static string Menu_View {
             get {

@@ -1,0 +1,81 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+	<Style Selector="Button">
+		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="CornerRadius" Value="4"/>
+		<Setter Property="FontSize" Value="{DynamicResource FontSizeS}"/>
+		<Setter Property="Padding" Value="12,4"/>
+		<Setter Property="MinHeight" Value="28"/>
+		<Setter Property="Cursor" Value="Hand"/>
+	</Style>
+
+	<Style Selector="Button /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="CornerRadius" Value="4"/>
+	</Style>
+
+	<Style Selector="Button:pointerover /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+
+	<Style Selector="Button:pressed /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+
+	<Style Selector="Button:disabled /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+		<Setter Property="TextElement.Foreground" Value="{DynamicResource TextDisabledBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+	</Style>
+
+	<Style Selector="Button.primary">
+		<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="Foreground" Value="White"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+
+	<Style Selector="Button.primary /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+
+	<Style Selector="Button.primary:pointerover /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource AccentHoverBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}"/>
+	</Style>
+
+	<Style Selector="Button.primary:pressed /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentPressedBrush}"/>
+	</Style>
+
+	<Style Selector="Button.ghost">
+		<Setter Property="Background" Value="Transparent"/>
+		<Setter Property="BorderBrush" Value="Transparent"/>
+		<Setter Property="BorderThickness" Value="0"/>
+	</Style>
+
+	<Style Selector="Button.ghost /template/ ContentPresenter">
+		<Setter Property="Background" Value="Transparent"/>
+		<Setter Property="BorderBrush" Value="Transparent"/>
+		<Setter Property="BorderThickness" Value="0"/>
+	</Style>
+
+	<Style Selector="Button.ghost:pointerover /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		<Setter Property="BorderBrush" Value="Transparent"/>
+	</Style>
+
+	<Style Selector="Button.ghost:pressed /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
+		<Setter Property="BorderBrush" Value="Transparent"/>
+	</Style>
+</Styles>

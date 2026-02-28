@@ -9,6 +9,8 @@
 				<!-- Тема грузится только через ThemeService при старте -->
 				<ResourceInclude Source="avares://Writersword/Styles/Base/Typography.axaml"/>
 				<ResourceInclude Source="avares://Writersword/Styles/Base/Spacing.axaml"/>
+				<ResourceInclude Source="avares://Writersword/Styles/Base/Spacing.axaml"/>
+				
 			</ResourceDictionary.MergedDictionaries>
 		</ResourceDictionary>
 	</Application.Resources>
