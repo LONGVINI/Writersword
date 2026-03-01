@@ -10,41 +10,158 @@
         Title="{Binding Title}"
         Width="1400"
         Height="900"
-        WindowState="Maximized"
-        Background="{DynamicResource BgAppBrush}">
+        Background="{DynamicResource BgAppBrush}"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="-1">
 
-	<DockPanel>
-		<!-- Меню -->
-		<components:MenuBarView DockPanel.Dock="Top"
-                                DataContext="{Binding MenuBar}"/>
-		<!-- Панель вкладок -->
-		<components:TabBarView DockPanel.Dock="Top"
+    <DockPanel>
+
+        <!-- Строка заголовка: иконка + меню + кнопки управления окном -->
+        <Grid DockPanel.Dock="Top"
+              x:Name="TitleBarGrid"
+              Height="32"
+              ColumnDefinitions="Auto,*,Auto"
+              Background="{DynamicResource BgPanelBrush}"
+              UseLayoutRounding="True">
+
+            <!-- Иконка приложения -->
+            <Image Grid.Column="0"
+                   Source="avares://Writersword/Resources/Images/icon.ico"
+                   Width="16"
+                   Height="16"
+                   Margin="10,0,8,0"
+                   VerticalAlignment="Center"
+                   RenderOptions.BitmapInterpolationMode="HighQuality"/>
+
+            <!-- Меню -->
+            <components:MenuBarView Grid.Column="1"
+                                    DataContext="{Binding MenuBar}"
+                                    VerticalAlignment="Center"/>
+
+            <!-- Кнопки управления окном -->
+            <StackPanel Grid.Column="2"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Stretch">
+
+                <Button x:Name="MinimizeButton"
+                        Width="46"
+                        Height="32"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        CornerRadius="0"
+                        Padding="0"
+                        Classes="TitleBarWindowButton"
+                        ToolTip.Tip="Свернуть">
+                    <Canvas Width="10" Height="1"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+                        <Line StartPoint="0,0.5"
+                              EndPoint="10,0.5"
+                              Stroke="{DynamicResource TextPrimaryBrush}"
+                              StrokeThickness="1"/>
+                    </Canvas>
+                </Button>
+
+               <Button x:Name="MaximizeButton"
+                        Width="46"
+                        Height="32"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        CornerRadius="0"
+                        Padding="0"
+                        Classes="TitleBarWindowButton"
+                        ToolTip.Tip="Развернуть">
+                    <Panel Width="10" Height="10"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center">
+
+                        <!-- Иконка "развернуть" — один прямоугольник -->
+                        <Rectangle x:Name="MaximizeIcon"
+                                   Width="10" Height="10"
+                                   Stroke="{DynamicResource TextPrimaryBrush}"
+                                   StrokeThickness="1"
+                                   Fill="Transparent"/>
+
+                        <!-- Иконка "восстановить" — задний квадрат сверху-справа -->
+                        <Canvas x:Name="RestoreIcon"
+                                Width="10" Height="10"
+                                IsVisible="False">
+                            <Rectangle Width="8" Height="8"
+                                       Stroke="{DynamicResource TextPrimaryBrush}"
+                                       StrokeThickness="1"
+                                       Fill="Transparent"
+                                       Canvas.Left="2"
+                                       Canvas.Top="0"/>
+                            <!-- Передний квадрат закрашивает линии заднего в зоне перекрытия -->
+                            <Rectangle x:Name="RestoreFrontRect"
+                                       Width="8" Height="8"
+                                       Stroke="{DynamicResource TextPrimaryBrush}"
+                                       StrokeThickness="1"
+                                       Fill="{DynamicResource BgPanelBrush}"
+                                       Canvas.Left="0"
+                                       Canvas.Top="2"/>
+                        </Canvas>
+
+                    </Panel>
+                </Button>
+
+                <Button x:Name="CloseButton"
+                        Width="46"
+                        Height="32"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        CornerRadius="0"
+                        Padding="0"
+                        Classes="TitleBarWindowButton TitleBarCloseButton"
+                        ToolTip.Tip="Закрыть">
+                    <Canvas Width="10" Height="10"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+                        <Line StartPoint="0,0"
+                              EndPoint="10,10"
+                              Stroke="{DynamicResource TextPrimaryBrush}"
+                              StrokeThickness="1"/>
+                        <Line StartPoint="10,0"
+                              EndPoint="0,10"
+                              Stroke="{DynamicResource TextPrimaryBrush}"
+                              StrokeThickness="1"/>
+                    </Canvas>
+                </Button>
+
+            </StackPanel>
+        </Grid>
+
+        <!-- Панель вкладок -->
+        <components:TabBarView DockPanel.Dock="Top"
                                DataContext="{Binding TabBar}"/>
-		<!-- Панель WorkModes -->
-		<components:WorkModeBarView DockPanel.Dock="Top"
+
+        <!-- Панель WorkModes -->
+        <components:WorkModeBarView DockPanel.Dock="Top"
                                     DataContext="{Binding WorkModeBar}"/>
-		<!-- Баннер восстановления -->
-		<ContentControl DockPanel.Dock="Top"
+
+        <!-- Баннер восстановления -->
+        <ContentControl DockPanel.Dock="Top"
                         Content="{Binding TabBar.ActiveTab.RecoveryBanner, FallbackValue={x:Null}}"
                         IsVisible="{Binding TabBar.ActiveTab.HasRecoveryBanner}">
-			<ContentControl.ContentTemplate>
-				<DataTemplate>
-					<components:RecoveryBanner/>
-				</DataTemplate>
-			</ContentControl.ContentTemplate>
-		</ContentControl>
+            <ContentControl.ContentTemplate>
+                <DataTemplate>
+                    <components:RecoveryBanner/>
+                </DataTemplate>
+            </ContentControl.ContentTemplate>
+        </ContentControl>
 
-		<!-- Главная область: DockControl заполняет всё оставшееся пространство -->
-		<!-- NotificationContainer поверх как прозрачный overlay -->
-		<Panel>
-			<dock:DockControl Layout="{Binding DockLayout}"
+        <!-- Главная область: DockControl заполняет всё оставшееся пространство -->
+        <!-- NotificationContainer поверх как прозрачный overlay -->
+        <Panel>
+            <dock:DockControl Layout="{Binding DockLayout}"
                               Background="{DynamicResource BgSurfaceBrush}"/>
-			<Panel Name="NotificationContainer"
+            <Panel Name="NotificationContainer"
                    ZIndex="1000"
                    HorizontalAlignment="Stretch"
                    VerticalAlignment="Stretch"
                    IsHitTestVisible="False"/>
-		</Panel>
-	</DockPanel>
+        </Panel>
 
+    </DockPanel>
 </Window>

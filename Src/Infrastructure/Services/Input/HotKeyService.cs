@@ -541,7 +541,8 @@ namespace Writersword.Src.Infrastructure.Services.Input
                     try
                     {
                         var parts = kvp.Value.Split(
-                            new[] { " -> " }, StringSplitOptions.RemoveEmptyEntries);
+                            new[] { " -> ", " \u2192 ", "\u2192" },
+                            StringSplitOptions.RemoveEmptyEntries);
                         var steps = parts.Select(p => KeyGesture.Parse(p.Trim())).ToList();
                         hotKey.CustomGestures.Add(new HotKeyGesture(steps));
                     }

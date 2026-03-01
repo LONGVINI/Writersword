@@ -1,12 +1,12 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Shapes;
 using Avalonia.Input;
-using Avalonia.Interactivity;
+using Avalonia.Media;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using Writersword.Core.Interfaces.Services;
@@ -15,7 +15,6 @@ using Writersword.Src.Core.Interfaces.Services.Input;
 using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.Services.UI;
 using Writersword.Src.Core.Interfaces.WorkFlows;
-using Writersword.Src.Infrastructure.Dock;
 using Writersword.ViewModels;
 
 namespace Writersword.Views
@@ -37,10 +36,91 @@ namespace Writersword.Views
             this.Opened += (s, e) =>
             {
                 _logger.LogDebug("MainWindow opened - DataContext: {DataContextType}", DataContext?.GetType().Name);
+                WindowState = WindowState.Maximized;
             };
 
             Closing += OnClosing;
             KeyDown += OnKeyDown;
+
+            InitializeTitleBar();
+        }
+
+        /// <summary>
+        /// Инициализация кнопок и перетаскивания кастомного заголовка окна
+        /// </summary>
+        private void InitializeTitleBar()
+        {
+            // Вешаем на само Window через tunnel — срабатывает раньше любого дочернего контрола
+            this.AddHandler(
+                InputElement.PointerPressedEvent,
+                OnTitleBarPointerPressed,
+                Avalonia.Interactivity.RoutingStrategies.Tunnel
+            );
+
+            var minimizeButton = this.FindControl<Button>("MinimizeButton");
+            if (minimizeButton != null)
+                minimizeButton.Click += (_, _) => WindowState = WindowState.Minimized;
+
+            var maximizeButton = this.FindControl<Button>("MaximizeButton");
+            if (maximizeButton != null)
+                maximizeButton.Click += (_, _) => ToggleMaximize();
+
+            var closeButton = this.FindControl<Button>("CloseButton");
+            if (closeButton != null)
+                closeButton.Click += (_, _) => Close();
+
+            PropertyChanged += OnWindowPropertyChanged;
+        }
+
+        /// <summary>
+        /// Перетаскивание окна — срабатывает на Grid заголовка,
+        /// игнорирует клики по кнопкам и элементам меню
+        /// </summary>
+        private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+
+            // Проверяем что клик в пределах высоты заголовка (32px)
+            var pos = e.GetCurrentPoint(this).Position;
+            if (pos.Y > 32) return;
+
+            // Игнорируем клики по кнопкам окна
+            var source = e.Source as Control;
+            while (source != null)
+            {
+                if (source is Button) return;
+                source = source.Parent as Control;
+            }
+
+            BeginMoveDrag(e);
+        }
+
+        private void ToggleMaximize()
+        {
+            WindowState = WindowState == WindowState.Maximized
+                ? WindowState.Normal
+                : WindowState.Maximized;
+        }
+
+        /// <summary>
+        /// Обновляет иконку кнопки максимизации при изменении состояния окна
+        /// </summary>
+        private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+        {
+            if (e.Property != WindowStateProperty) return;
+
+            Padding = WindowState == WindowState.Maximized
+                ? new Thickness(8)
+                : new Thickness(0);
+
+            var maximizeIcon = this.FindControl<Rectangle>("MaximizeIcon");
+            var restoreIcon = this.FindControl<Canvas>("RestoreIcon");
+
+            if (maximizeIcon != null)
+                maximizeIcon.IsVisible = WindowState != WindowState.Maximized;
+
+            if (restoreIcon != null)
+                restoreIcon.IsVisible = WindowState == WindowState.Maximized;
         }
 
         /// <summary>
