@@ -7,8 +7,8 @@
              x:Name="MenuBarViewRoot">
 
 	<Menu x:Name="MainMenu"
-          Background="{DynamicResource BgPanelBrush}"
-          Padding="5,3">
+		  Background="{DynamicResource BgPanelBrush}"
+		  Padding="5,11,5,3">
 
 		<!-- FILE -->
 		<MenuItem Foreground="{DynamicResource TextPrimaryBrush}"
@@ -295,23 +295,23 @@
 
 		<!-- VIEW -->
 		<MenuItem Foreground="{DynamicResource TextPrimaryBrush}"
-                  FontSize="13">
+				  FontSize="13">
 			<MenuItem.Header>
 				<TextBlock Text="{x:Static loc:Strings.Menu_View}"/>
 			</MenuItem.Header>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_View_WorkModes}"
-                      ItemsSource="{Binding AllWorkModes}">
+					  ItemsSource="{Binding AllWorkModes}">
 				<MenuItem.ItemTemplate>
 					<DataTemplate>
 						<MenuItem Command="{Binding $parent[UserControl].DataContext.ToggleWorkModeCommand}"
-                                  CommandParameter="{Binding WorkModeId}">
+								  CommandParameter="{Binding WorkModeId}">
 							<MenuItem.Header>
 								<StackPanel Orientation="Horizontal" Spacing="5">
 									<TextBlock Text="&#10003;"
-                                               IsVisible="{Binding IsChecked}"
-                                               FontWeight="Bold"
-                                               Width="15"/>
+											   IsVisible="{Binding IsChecked}"
+											   FontWeight="Bold"
+											   Width="15"/>
 									<TextBlock Text="{Binding Icon}"/>
 									<TextBlock Text="{Binding Name}"/>
 								</StackPanel>
@@ -322,25 +322,47 @@
 			</MenuItem>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_View_Modules}"
-                      ItemsSource="{Binding AllModules}"
-                      x:Name="ModulesMenuItem">
+					  ItemsSource="{Binding AllModules}"
+					  x:Name="ModulesMenuItem">
 				<MenuItem.ItemTemplate>
 					<DataTemplate>
 						<MenuItem Header="{Binding Name}"
-                                  Command="{Binding #MenuBarViewRoot.DataContext.ToggleModuleCommand}"
-                                  CommandParameter="{Binding ModuleType}"
-                                  IsEnabled="{Binding IsEnabled}">
+								  Command="{Binding #MenuBarViewRoot.DataContext.ToggleModuleCommand}"
+								  CommandParameter="{Binding ModuleType}"
+								  IsEnabled="{Binding IsEnabled}">
 							<MenuItem.Icon>
 								<StackPanel Orientation="Horizontal" Spacing="5">
 									<TextBlock Text="&#10003;"
-                                               IsVisible="{Binding IsChecked}"
-                                               FontWeight="Bold"/>
+											   IsVisible="{Binding IsChecked}"
+											   FontWeight="Bold"/>
 									<TextBlock Text="{Binding Icon}"/>
 								</StackPanel>
 							</MenuItem.Icon>
 						</MenuItem>
 					</DataTemplate>
 				</MenuItem.ItemTemplate>
+			</MenuItem>
+
+			<Separator/>
+
+			<MenuItem x:Name="HotKey_View_Fullscreen"
+					  Command="{Binding ToggleFullscreenCommand}">
+				<MenuItem.Header>
+					<Grid ColumnDefinitions="*,Auto">
+						<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5">
+							<TextBlock Text="&#10003;"
+									   IsVisible="{Binding IsFullscreen}"
+									   FontWeight="Bold"
+									   Width="15"/>
+							<TextBlock Text="{x:Static loc:Strings.Menu_View_Fullscreen}"/>
+						</StackPanel>
+						<TextBlock Grid.Column="1" x:Name="GestureHint_View_Fullscreen"
+								   FontSize="11"
+								   Foreground="{DynamicResource TextMutedBrush}"
+								   Margin="24,0,0,0"
+								   VerticalAlignment="Center"/>
+					</Grid>
+				</MenuItem.Header>
 			</MenuItem>
 		</MenuItem>
 

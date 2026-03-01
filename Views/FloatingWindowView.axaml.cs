@@ -13,29 +13,29 @@ namespace Writersword.Views
     /// Плавающее окно для отображения модулей в Float режиме.
     /// Независимое окно, не привязанное к главному окну приложения.
     /// </summary>
-    public partial class FloatingWindow : Window, IDockWindow
+    public partial class FloatingWindowView : Window, IDockWindow
     {
-        private readonly ILogger<FloatingWindow> _logger;
+        private readonly ILogger<FloatingWindowView> _logger;
 
-        public FloatingWindow()
+        public FloatingWindowView()
         {
-            _logger = App.Services.GetService<ILogger<FloatingWindow>>()!;
+            _logger = App.Services.GetService<ILogger<FloatingWindowView>>()!;
 
             InitializeComponent();
             Id = Guid.NewGuid().ToString();
 
-            _logger.LogDebug("FloatingWindow created, ID: {Id}", Id);
+            _logger.LogDebug("FloatingWindowView created, ID: {Id}", Id);
 
             // Логирование активации окна
             Activated += (s, e) =>
             {
-                _logger.LogDebug("FloatingWindow activated: {Title}", Title);
+                _logger.LogDebug("FloatingWindowView activated: {Title}", Title);
             };
 
             // Логирование деактивации окна
             Deactivated += (s, e) =>
             {
-                _logger.LogDebug("FloatingWindow deactivated: {Title}", Title);
+                _logger.LogDebug("FloatingWindowView deactivated: {Title}", Title);
             };
 
             // Отслеживание изменений свойств окна
@@ -54,7 +54,7 @@ namespace Writersword.Views
             // Обработка закрытия окна
             Closing += (s, e) =>
             {
-                _logger.LogDebug("FloatingWindow closing: {Title}", Title);
+                _logger.LogDebug("FloatingWindowView closing: {Title}", Title);
 
                 // Проверяем можно ли закрыть окно
                 bool canClose = OnClose();
@@ -73,7 +73,7 @@ namespace Writersword.Views
 
             Closed += (s, e) =>
             {
-                _logger.LogDebug("FloatingWindow closed: {Title}", Title);
+                _logger.LogDebug("FloatingWindowView closed: {Title}", Title);
             };
         }
 

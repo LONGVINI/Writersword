@@ -182,7 +182,7 @@ namespace Writersword
                 themeService.SetTheme(settingsService.Theme);
 
                 var mainViewModel = Services.GetRequiredService<MainWindowViewModel>();
-                var mainWindow = new MainWindow
+                var mainWindow = new MainWindowView
                 {
                     DataContext = mainViewModel
                 };

@@ -5,17 +5,18 @@
         xmlns:converters="using:Writersword.Converters"
         xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
         xmlns:components="using:Writersword.Views.Components"
-        x:Class="Writersword.Views.MainWindow"
+        x:Class="Writersword.Views.MainWindowView"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding Title}"
         Width="1400"
         Height="900"
-        Background="{DynamicResource BgAppBrush}"
+        WindowState="Maximized"
+        Background="Transparent"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaChromeHints="NoChrome"
         ExtendClientAreaTitleBarHeightHint="-1">
 
-    <DockPanel>
+    <DockPanel Background="{DynamicResource BgAppBrush}">
 
         <!-- Строка заголовка: иконка + меню + кнопки управления окном -->
         <Grid DockPanel.Dock="Top"
@@ -37,7 +38,9 @@
             <!-- Меню -->
             <components:MenuBarView Grid.Column="1"
                                     DataContext="{Binding MenuBar}"
-                                    VerticalAlignment="Center"/>
+                                    VerticalAlignment="Center"
+                                    Margin="0,-8,0,0"
+                                    ClipToBounds="False"/>
 
             <!-- Кнопки управления окном -->
             <StackPanel Grid.Column="2"
@@ -46,11 +49,12 @@
 
                 <Button x:Name="MinimizeButton"
                         Width="46"
-                        Height="32"
+                        Height="40"
+                        Margin="0,-8,0,0"
+                        Padding="0,8,0,0"
                         Background="Transparent"
                         BorderThickness="0"
                         CornerRadius="0"
-                        Padding="0"
                         Classes="TitleBarWindowButton"
                         ToolTip.Tip="Свернуть">
                     <Canvas Width="10" Height="1"
@@ -63,27 +67,24 @@
                     </Canvas>
                 </Button>
 
-               <Button x:Name="MaximizeButton"
+                <Button x:Name="MaximizeButton"
                         Width="46"
-                        Height="32"
+                        Height="40"
+                        Margin="0,-8,0,0"
+                        Padding="0,8,0,0"
                         Background="Transparent"
                         BorderThickness="0"
                         CornerRadius="0"
-                        Padding="0"
                         Classes="TitleBarWindowButton"
                         ToolTip.Tip="Развернуть">
                     <Panel Width="10" Height="10"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center">
-
-                        <!-- Иконка "развернуть" — один прямоугольник -->
                         <Rectangle x:Name="MaximizeIcon"
                                    Width="10" Height="10"
                                    Stroke="{DynamicResource TextPrimaryBrush}"
                                    StrokeThickness="1"
                                    Fill="Transparent"/>
-
-                        <!-- Иконка "восстановить" — задний квадрат сверху-справа -->
                         <Canvas x:Name="RestoreIcon"
                                 Width="10" Height="10"
                                 IsVisible="False">
@@ -93,7 +94,6 @@
                                        Fill="Transparent"
                                        Canvas.Left="2"
                                        Canvas.Top="0"/>
-                            <!-- Передний квадрат закрашивает линии заднего в зоне перекрытия -->
                             <Rectangle x:Name="RestoreFrontRect"
                                        Width="8" Height="8"
                                        Stroke="{DynamicResource TextPrimaryBrush}"
@@ -102,17 +102,17 @@
                                        Canvas.Left="0"
                                        Canvas.Top="2"/>
                         </Canvas>
-
                     </Panel>
                 </Button>
 
                 <Button x:Name="CloseButton"
                         Width="46"
-                        Height="32"
+                        Height="40"
+                        Margin="0,-8,0,0"
+                        Padding="0,8,0,0"
                         Background="Transparent"
                         BorderThickness="0"
                         CornerRadius="0"
-                        Padding="0"
                         Classes="TitleBarWindowButton TitleBarCloseButton"
                         ToolTip.Tip="Закрыть">
                     <Canvas Width="10" Height="10"
@@ -145,8 +145,8 @@
                         Content="{Binding TabBar.ActiveTab.RecoveryBanner, FallbackValue={x:Null}}"
                         IsVisible="{Binding TabBar.ActiveTab.HasRecoveryBanner}">
             <ContentControl.ContentTemplate>
-                <DataTemplate>
-                    <components:RecoveryBanner/>
+                <DataTemplate DataType="vm:RecoveryBannerViewModel">
+                    <components:RecoveryBannerView/>
                 </DataTemplate>
             </ContentControl.ContentTemplate>
         </ContentControl>

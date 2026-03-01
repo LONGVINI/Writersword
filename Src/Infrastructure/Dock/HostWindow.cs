@@ -19,7 +19,7 @@ namespace Writersword.Src.Infrastructure.Dock
     public class HostWindow : IHostWindow
     {
         private readonly ILogger<HostWindow> _logger;
-        private FloatingWindow? _window;
+        private FloatingWindowView? _window;
         private IDock? _pendingLayout;
         private PixelPoint? _pendingPosition;
 
@@ -29,7 +29,7 @@ namespace Writersword.Src.Infrastructure.Dock
         public IDockWindow? Window
         {
             get => _window;
-            set => _window = value as FloatingWindow;
+            set => _window = value as FloatingWindowView;
         }
 
         public HostWindow()
@@ -45,7 +45,7 @@ namespace Writersword.Src.Infrastructure.Dock
         {
             _logger.LogDebug("Present() called, hasLayout={HasLayout}", _pendingLayout != null);
 
-            _window = new FloatingWindow();
+            _window = new FloatingWindowView();
 
             if (_pendingPosition.HasValue)
                 _window.Position = _pendingPosition.Value;
@@ -330,9 +330,9 @@ namespace Writersword.Src.Infrastructure.Dock
         }
 
         /// <summary>
-        /// Получить FloatingWindow (для фокусировки из MainWindowViewModel)
+        /// Получить FloatingWindowView (для фокусировки из MainWindowViewModel)
         /// </summary>
-        public FloatingWindow? GetWindow()
+        public FloatingWindowView? GetWindow()
         {
             return _window;
         }

@@ -925,6 +925,15 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Fullscreen.
+        /// </summary>
+        public static string HotKey_View_Fullscreen {
+            get {
+                return ResourceManager.GetString("HotKey_View_Fullscreen", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Edit.
         /// </summary>
         public static string Menu_Edit {
@@ -1173,6 +1182,15 @@ namespace Writersword.Resources.Localization {
         public static string Menu_View {
             get {
                 return ResourceManager.GetString("Menu_View", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Fullscreen.
+        /// </summary>
+        public static string Menu_View_Fullscreen {
+            get {
+                return ResourceManager.GetString("Menu_View_Fullscreen", resourceCulture);
             }
         }
         

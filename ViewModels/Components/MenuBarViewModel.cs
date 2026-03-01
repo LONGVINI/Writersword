@@ -1,4 +1,5 @@
 ﻿using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -41,6 +42,9 @@ namespace Writersword.ViewModels.Components
         private readonly ProjectTypeRegistry _projectTypeRegistry;
 
         private Func<MainWindowViewModel>? _mainViewModelProvider;
+
+        private bool _hasActiveTab;
+        private bool _isFullscreen;
 
         /// <summary>Список недавних проектов</summary>
         public ObservableCollection<RecentProjectItem> RecentProjects { get; } = new();
@@ -127,14 +131,22 @@ namespace Writersword.ViewModels.Components
         /// <summary>Команда открытия окна настроек</summary>
         public ReactiveCommand<Unit, Unit> OpenSettingsCommand { get; }
 
+        /// <summary>Команда переключения полноэкранного режима (F11)</summary>
+        public ReactiveCommand<Unit, Unit> ToggleFullscreenCommand { get; }
 
-        private bool _hasActiveTab;
 
         /// <summary>Есть ли активная вкладка (для IsEnabled кнопок)</summary>
         public bool HasActiveTab
         {
             get => _hasActiveTab;
             private set => this.RaiseAndSetIfChanged(ref _hasActiveTab, value);
+        }
+
+        /// <summary>Полноэкранный режим активен</summary>
+        public bool IsFullscreen
+        {
+            get => _isFullscreen;
+            private set => this.RaiseAndSetIfChanged(ref _isFullscreen, value);
         }
 
         /// <summary>Обновить состояние HasActiveTab</summary>
@@ -180,6 +192,7 @@ namespace Writersword.ViewModels.Components
             CloseAllTabsCommand = ReactiveCommand.CreateFromTask(CloseAllTabs);
             CloseOtherTabsCommand = ReactiveCommand.CreateFromTask(CloseOtherTabs);
             OpenSettingsCommand = ReactiveCommand.CreateFromTask(OpenSettings);
+            ToggleFullscreenCommand = ReactiveCommand.Create(ToggleFullscreen);
 
             LoadRecentProjects();
 
@@ -705,6 +718,28 @@ namespace Writersword.ViewModels.Components
                 var settingsVM = new SettingsViewModel();
                 var settingsView = new SettingsView { DataContext = settingsVM };
                 await settingsView.ShowDialog(desktop.MainWindow);
+            }
+        }
+
+        /// <summary>Переключить полноэкранный режим</summary>
+        private void ToggleFullscreen()
+        {
+            if (Application.Current?.ApplicationLifetime
+                is IClassicDesktopStyleApplicationLifetime desktop
+                && desktop.MainWindow != null)
+            {
+                if (desktop.MainWindow.WindowState == WindowState.FullScreen)
+                {
+                    desktop.MainWindow.WindowState = WindowState.Maximized;
+                    IsFullscreen = false;
+                }
+                else
+                {
+                    desktop.MainWindow.WindowState = WindowState.FullScreen;
+                    IsFullscreen = true;
+                }
+
+                _logger.LogDebug("Fullscreen toggled: {IsFullscreen}", IsFullscreen);
             }
         }
     }

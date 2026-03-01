@@ -578,6 +578,14 @@ namespace Writersword.ViewModels
                 DefaultGesture = null
             }, MenuBar.ExitCommand);
 
+            _hotKeyService.Register("HotKey_View_Fullscreen", new HotKey
+            {
+                DisplayNameKey = Strings.HotKey_View_Fullscreen,
+                Category = HotKeyCategory.View,
+                Scope = HotKeyScope.Global,
+                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.F11))
+            }, MenuBar.ToggleFullscreenCommand);
+
             _hotKeyService.LoadSettings();
 
             var moduleFactory = App.Services.GetRequiredService<ModuleFactory>();

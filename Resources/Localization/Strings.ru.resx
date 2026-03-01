@@ -729,4 +729,10 @@
   <data name="HotKey_Error_Conflict" xml:space="preserve">
     <value>Эта комбинация конфликтует с другой горячей клавишей</value>
   </data>
+  <data name="Menu_View_Fullscreen" xml:space="preserve">
+    <value>Полный экран</value>
+  </data>
+  <data name="HotKey_View_Fullscreen" xml:space="preserve">
+    <value>Полный экран</value>
+  </data>
 </root>

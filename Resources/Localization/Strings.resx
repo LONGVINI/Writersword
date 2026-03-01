@@ -929,4 +929,12 @@
     <value>This combination conflicts with another hotkey</value>
     <comment>Error when binding key conflicts with another hotkey</comment>
   </data>
+  <data name="Menu_View_Fullscreen" xml:space="preserve">
+    <value>Fullscreen</value>
+    <comment>Menu View: toggle fullscreen mode</comment>
+  </data>
+  <data name="HotKey_View_Fullscreen" xml:space="preserve">
+    <value>Fullscreen</value>
+    <comment>Hotkey: toggle fullscreen mode</comment>
+  </data>
 </root>

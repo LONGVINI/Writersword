@@ -8,13 +8,13 @@ namespace Writersword.Views.Components
     /// Баннер восстановления версий проекта
     /// Показывается когда есть несохранённая версия
     /// </summary>
-    public partial class RecoveryBanner : UserControl
+    public partial class RecoveryBannerView : UserControl
     {
-        private readonly ILogger<RecoveryBanner> _logger;
+        private readonly ILogger<RecoveryBannerView> _logger;
 
-        public RecoveryBanner()
+        public RecoveryBannerView()
         {
-            _logger = App.Services.GetService<ILogger<RecoveryBanner>>()!;
+            _logger = App.Services.GetService<ILogger<RecoveryBannerView>>()!;
 
             InitializeComponent();
 

@@ -4,11 +4,13 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Resources.Localization;
 using Writersword.Src.Core.Interfaces.Services.Input;
@@ -22,21 +24,24 @@ namespace Writersword.Views
     /// <summary>
     /// Главное окно приложения
     /// </summary>
-    public partial class MainWindow : Window
+    public partial class MainWindowView : Window
     {
-        private readonly ILogger<MainWindow> _logger;
+        private readonly ILogger<MainWindowView> _logger;
         private bool _isClosing = false;
+        private CancellationTokenSource? _paddingDebounce;
 
-        public MainWindow()
+        public MainWindowView()
         {
-            _logger = App.Services.GetService<ILogger<MainWindow>>()!;
+            _logger = App.Services.GetService<ILogger<MainWindowView>>()!;
 
             InitializeComponent();
 
             this.Opened += (s, e) =>
             {
-                _logger.LogDebug("MainWindow opened - DataContext: {DataContextType}", DataContext?.GetType().Name);
-                WindowState = WindowState.Maximized;
+                _logger.LogDebug("MainWindowView opened - DataContext: {DataContextType}", DataContext?.GetType().Name);
+
+                if (WindowState == WindowState.Maximized)
+                    ScheduleMaximizedPadding();
             };
 
             Closing += OnClosing;
@@ -50,7 +55,6 @@ namespace Writersword.Views
         /// </summary>
         private void InitializeTitleBar()
         {
-            // Вешаем на само Window через tunnel — срабатывает раньше любого дочернего контрола
             this.AddHandler(
                 InputElement.PointerPressedEvent,
                 OnTitleBarPointerPressed,
@@ -70,21 +74,21 @@ namespace Writersword.Views
                 closeButton.Click += (_, _) => Close();
 
             PropertyChanged += OnWindowPropertyChanged;
+            PositionChanged += OnWindowPositionChanged;
         }
 
         /// <summary>
-        /// Перетаскивание окна — срабатывает на Grid заголовка,
-        /// игнорирует клики по кнопкам и элементам меню
+        /// Перетаскивание окна — срабатывает на Window через tunnel,
+        /// игнорирует клики по кнопкам и элементам меню,
+        /// срабатывает только в зоне заголовка (32px сверху)
         /// </summary>
         private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
 
-            // Проверяем что клик в пределах высоты заголовка (32px)
             var pos = e.GetCurrentPoint(this).Position;
             if (pos.Y > 32) return;
 
-            // Игнорируем клики по кнопкам окна
             var source = e.Source as Control;
             while (source != null)
             {
@@ -103,15 +107,96 @@ namespace Writersword.Views
         }
 
         /// <summary>
-        /// Обновляет иконку кнопки максимизации при изменении состояния окна
+        /// Срабатывает при каждом изменении позиции окна.
+        /// Windows при переходе FullScreen → Maximized двигает окно в несколько шагов,
+        /// поэтому откладываем вычисление паддинга до стабилизации позиции.
+        /// </summary>
+        private void OnWindowPositionChanged(object? sender, PixelPointEventArgs e)
+        {
+            if (WindowState == WindowState.Maximized)
+                ScheduleMaximizedPadding();
+        }
+
+        /// <summary>
+        /// Откладывает вычисление паддинга на 150мс после последнего события позиции.
+        /// Если за это время пришло новое событие — предыдущее отменяется.
+        /// Гарантирует что паддинг считается только по финальной позиции окна.
+        /// </summary>
+        private void ScheduleMaximizedPadding()
+        {
+            _paddingDebounce?.Cancel();
+            _paddingDebounce?.Dispose();
+            _paddingDebounce = null;
+
+            var cts = new CancellationTokenSource();
+            _paddingDebounce = cts;
+
+            DispatcherTimer.RunOnce(() =>
+            {
+                if (cts.IsCancellationRequested) return;
+                if (WindowState != WindowState.Maximized) return;
+
+                ApplyMaximizedPadding();
+
+            }, TimeSpan.FromMilliseconds(150));
+        }
+
+        /// <summary>
+        /// Вычисляет и применяет точный padding для максимизированного borderless-окна.
+        /// Windows при максимизации NoChrome-окна намеренно выдвигает его за края экрана
+        /// на величину равную ширине системной рамки. Паддинг вычисляется динамически
+        /// через сравнение реальных Bounds окна с WorkingArea экрана с учётом DPI.
+        /// Фон Window прозрачный, поэтому overflow зона не видна на соседних мониторах.
+        /// </summary>
+        private void ApplyMaximizedPadding()
+        {
+            var screen = Screens.ScreenFromWindow(this);
+            if (screen == null)
+            {
+                _logger.LogWarning("ApplyMaximizedPadding: screen not found, using fallback 8px");
+                Padding = new Thickness(8);
+                return;
+            }
+
+            var windowBounds = Bounds;
+            var workArea = screen.WorkingArea;
+            var scaling = screen.Scaling;
+
+            var workLeft = workArea.X / scaling;
+            var workTop = workArea.Y / scaling;
+            var workRight = (workArea.X + workArea.Width) / scaling;
+            var workBottom = (workArea.Y + workArea.Height) / scaling;
+
+            var windowPosition = Position;
+            var winLeft = windowPosition.X / scaling;
+            var winTop = windowPosition.Y / scaling;
+            var winRight = winLeft + windowBounds.Width;
+            var winBottom = winTop + windowBounds.Height;
+
+            var padLeft = Math.Max(0, workLeft - winLeft);
+            var padTop = Math.Max(0, workTop - winTop);
+            var padRight = Math.Max(0, winRight - workRight);
+            var padBottom = Math.Max(0, winBottom - workBottom);
+
+            var padding = new Thickness(padLeft, padTop, padRight, padBottom);
+            Padding = padding;
+
+            _logger.LogDebug(
+                "ApplyMaximizedPadding: workArea={WorkArea}, window=({WinLeft},{WinTop},{WinRight},{WinBottom}), padding={Padding}",
+                workArea, winLeft, winTop, winRight, winBottom, padding);
+        }
+
+        /// <summary>
+        /// Обновляет padding и иконку кнопки максимизации при изменении состояния окна.
         /// </summary>
         private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
         {
             if (e.Property != WindowStateProperty) return;
 
-            Padding = WindowState == WindowState.Maximized
-                ? new Thickness(8)
-                : new Thickness(0);
+            if (WindowState == WindowState.Maximized)
+                ScheduleMaximizedPadding();
+            else
+                Padding = new Thickness(0);
 
             var maximizeIcon = this.FindControl<Rectangle>("MaximizeIcon");
             var restoreIcon = this.FindControl<Canvas>("RestoreIcon");
@@ -137,6 +222,10 @@ namespace Writersword.Views
 
             e.Cancel = true;
             _isClosing = true;
+
+            _paddingDebounce?.Cancel();
+            _paddingDebounce?.Dispose();
+            _paddingDebounce = null;
 
             _logger.LogDebug("OnClosing started");
 

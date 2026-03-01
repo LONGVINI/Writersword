@@ -257,6 +257,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
         /// Инициализировать workspace для ленивой вкладки
         /// Вызывается при первом переключении на вкладку
         /// </summary>
+        /// <summary>
         public async Task<bool> EnsureWorkspaceInitialized(DocumentTabViewModel tab)
         {
             if (tab.IsLoaded)
@@ -276,27 +277,134 @@ namespace Writersword.Src.Infrastructure.Services.Project
             {
                 _logger.LogDebug("Lazy loading workspace for: {Title}", tab.Title);
 
-                // Создаём ZipFileStorage
+                ProjectFile? project = null;
+                RecoveryDialogResult recoveryChoice = RecoveryDialogResult.None;
+
+                if (_cacheService.HasCache(filePath))
+                {
+                    var cacheDate = _cacheService.GetCacheDate(filePath);
+                    var saveDate = File.GetLastWriteTime(filePath);
+
+                    if (cacheDate.HasValue)
+                    {
+                        _logger.LogDebug("Cache found for lazy tab - Cache: {CacheDate}, Save: {SaveDate}", cacheDate, saveDate);
+
+                        var savedProject = await _projectService.LoadAsync(filePath);
+                        var cache = _cacheService.LoadCache(filePath);
+
+                        bool dataIsSame = false;
+
+                        if (savedProject != null && cache != null)
+                        {
+                            dataIsSame = _comparisonService.AreDataEqual(cache, savedProject.ModulesData);
+                            _logger.LogDebug("Data comparison: {Comparison}", dataIsSame ? "SAME" : "DIFFERENT");
+                        }
+
+                        if (dataIsSame)
+                        {
+                            _logger.LogDebug("Data is identical, skipping Recovery dialog");
+                            project = savedProject;
+                            recoveryChoice = RecoveryDialogResult.None;
+                        }
+                        else
+                        {
+                            _logger.LogDebug("Data differs, showing Recovery dialog");
+
+                            recoveryChoice = await _dialogService.ShowRecoveryDialogAsync(
+                                cacheDate.Value,
+                                saveDate
+                            );
+
+                            _logger.LogDebug("Recovery choice: {Choice}", recoveryChoice);
+
+                            switch (recoveryChoice)
+                            {
+                                case RecoveryDialogResult.Restore:
+                                    project = await LoadProjectWithCacheData(filePath);
+                                    _cacheService.DeleteCache(filePath);
+                                    _logger.LogDebug("Restored from cache (cache deleted)");
+                                    break;
+
+                                case RecoveryDialogResult.OpenSaved:
+                                    project = await _projectService.LoadAsync(filePath);
+                                    _logger.LogDebug("Opened saved version (cache remains)");
+                                    break;
+
+                                case RecoveryDialogResult.Compare:
+                                    project = await LoadProjectWithCacheData(filePath);
+                                    _logger.LogDebug("Compare mode - viewing cache");
+                                    break;
+
+                                case RecoveryDialogResult.Cancel:
+                                    _logger.LogDebug("Open cancelled by user");
+                                    return false;
+                            }
+                        }
+                    }
+                }
+
+                if (project == null)
+                {
+                    project = await _projectService.LoadAsync(filePath);
+                    if (project == null)
+                    {
+                        _logger.LogError("Failed to load project: {FilePath}", filePath);
+                        return false;
+                    }
+                }
+
+                tab.UpdateProject(project);
+
                 var storage = new ZipFileStorageService(filePath);
                 _openStorages[filePath] = storage;
                 tab.Context.FileStorage = storage;
                 _logger.LogDebug("ZipFileStorage created for: {FilePath}", filePath);
 
-                // Загружаем WorkModes
-                var project = tab.GetProject();
                 var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
                 var workModes = workModeConfigService.LoadConfiguration(project.Type, storage);
                 project.WorkModes = workModes;
                 _logger.LogDebug("Loaded {Count} WorkModes for project", workModes.Count);
 
-                // Создаём AutoSaveService
                 var autoSaveService = App.Services.GetRequiredService<IWorkspaceAutoSaveService>();
                 _autoSaveServices[filePath] = autoSaveService;
                 _logger.LogDebug("WorkspaceAutoSave created for: {FilePath}", filePath);
 
-                // Инициализируем Workspace БЕЗ активации
                 tab.InitializeWorkspace(workModes);
                 _logger.LogDebug("WorkspaceController lazy initialized for: {FilePath}", filePath);
+
+                if (recoveryChoice == RecoveryDialogResult.Compare)
+                {
+                    var cacheDate = _cacheService.GetCacheDate(filePath);
+                    var saveDate = File.GetLastWriteTime(filePath);
+
+                    if (cacheDate.HasValue)
+                    {
+                        var capturedTab = tab;
+                        var capturedPath = filePath;
+
+                        capturedTab.RecoveryBanner = new RecoveryBannerViewModel(
+                            onSwitchVersion: async () => await SwitchVersionAsync(capturedTab, capturedPath),
+                            onSave: async () => await SaveAndHideBannerAsync(capturedTab),
+                            onDiscard: async () => await DiscardCacheAsync(capturedTab, capturedPath)
+                        )
+                        {
+                            IsViewingCache = true,
+                            CacheDate = cacheDate.Value,
+                            SaveDate = saveDate
+                        };
+
+                        capturedTab.Context.IsInCompareMode = true;
+
+                        var cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
+                        cacheUpdateService.Stop();
+                        _logger.LogDebug("Compare mode enabled for lazy tab, cache disabled");
+                    }
+                }
+                else
+                {
+                    tab.RecoveryBanner = null;
+                    tab.Context.IsInCompareMode = false;
+                }
 
                 return true;
             }

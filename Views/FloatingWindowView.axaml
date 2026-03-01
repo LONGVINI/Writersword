@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
-        x:Class="Writersword.Views.FloatingWindow"
+        x:Class="Writersword.Views.FloatingWindowView"
         Title="Module"
         Width="800"
         Height="600"

@@ -286,6 +286,15 @@
 			<AutoGen>True</AutoGen>
 			<DependentUpon>TranslationStrings.resx</DependentUpon>
 		</Compile>
+		<Compile Update="Views\Components\RecoveryBannerView.axaml.cs">
+		  <DependentUpon>RecoveryBannerView.axaml</DependentUpon>
+		</Compile>
+		<Compile Update="Views\FloatingWindowView.axaml.cs">
+		  <DependentUpon>FloatingWindowView.axaml</DependentUpon>
+		</Compile>
+		<Compile Update="Views\MainWindowView.axaml.cs">
+		  <DependentUpon>MainWindowView.axaml</DependentUpon>
+		</Compile>
 		<Compile Update="Views\MessageBoxView.axaml.cs">
 			<DependentUpon>MessageBoxView.axaml</DependentUpon>
 		</Compile>

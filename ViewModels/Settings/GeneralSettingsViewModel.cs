@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using System.Collections.Generic;
@@ -114,23 +116,41 @@ namespace Writersword.ViewModels.Settings
             _logger.LogDebug("Theme changed to: {Theme}", themeCode);
         }
 
-        /// <summary>Перезапустить приложение — запустить новый процесс и завершить текущий</summary>
+        /// <summary>
+        /// Перезапустить приложение — сначала запускает новый процесс,
+        /// затем закрывает главное окно через штатный механизм.
+        /// OnClosing сам проверит несохранённые изменения и предложит сохранить.
+        /// Если пользователь отменит закрытие — новый процесс останется висеть,
+        /// поэтому запускаем его только после того как окно начало закрываться.
+        /// </summary>
         private void RestartApplication()
         {
-            _logger.LogDebug("Restarting application for language change");
+            _logger.LogDebug("Restart requested for language change");
 
-            var executablePath = Process.GetCurrentProcess().MainModule?.FileName;
-
-            if (!string.IsNullOrEmpty(executablePath))
+            if (Application.Current?.ApplicationLifetime
+                is IClassicDesktopStyleApplicationLifetime desktop
+                && desktop.MainWindow != null)
             {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = executablePath,
-                    UseShellExecute = true
-                });
-            }
+                // Сохраняем путь до закрытия процесса
+                var executablePath = Process.GetCurrentProcess().MainModule?.FileName;
 
-            System.Environment.Exit(0);
+                // Подписываемся на закрытие окна — новый процесс запустим только когда окно реально закроется
+                desktop.MainWindow.Closed += (_, _) =>
+                {
+                    if (!string.IsNullOrEmpty(executablePath))
+                    {
+                        _logger.LogDebug("Launching new process: {Path}", executablePath);
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = executablePath,
+                            UseShellExecute = true
+                        });
+                    }
+                };
+
+                // Закрываем окно через штатный механизм — OnClosing проверит несохранённые изменения
+                desktop.MainWindow.Close();
+            }
         }
     }
 
