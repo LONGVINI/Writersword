@@ -21,9 +21,6 @@ using Writersword.ViewModels;
 
 namespace Writersword.Views
 {
-    /// <summary>
-    /// Главное окно приложения
-    /// </summary>
     public partial class MainWindowView : Window
     {
         private readonly ILogger<MainWindowView> _logger;
@@ -50,9 +47,7 @@ namespace Writersword.Views
             InitializeTitleBar();
         }
 
-        /// <summary>
-        /// Инициализация кнопок и перетаскивания кастомного заголовка окна
-        /// </summary>
+        /// <summary>Инициализация кнопок и перетаскивания.</summary>
         private void InitializeTitleBar()
         {
             this.AddHandler(
@@ -77,11 +72,7 @@ namespace Writersword.Views
             PositionChanged += OnWindowPositionChanged;
         }
 
-        /// <summary>
-        /// Перетаскивание окна — срабатывает на Window через tunnel,
-        /// игнорирует клики по кнопкам и элементам меню,
-        /// срабатывает только в зоне заголовка (32px сверху)
-        /// </summary>
+        /// <summary>Перетаскивание окна — только в зоне заголовка (первые 32px), не по кнопкам.</summary>
         private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
@@ -106,22 +97,14 @@ namespace Writersword.Views
                 : WindowState.Maximized;
         }
 
-        /// <summary>
-        /// Срабатывает при каждом изменении позиции окна.
-        /// Windows при переходе FullScreen → Maximized двигает окно в несколько шагов,
-        /// поэтому откладываем вычисление паддинга до стабилизации позиции.
-        /// </summary>
+        /// <summary>Windows двигает окно в несколько шагов при максимизации — откладываем расчёт паддинга.</summary>
         private void OnWindowPositionChanged(object? sender, PixelPointEventArgs e)
         {
             if (WindowState == WindowState.Maximized)
                 ScheduleMaximizedPadding();
         }
 
-        /// <summary>
-        /// Откладывает вычисление паддинга на 150мс после последнего события позиции.
-        /// Если за это время пришло новое событие — предыдущее отменяется.
-        /// Гарантирует что паддинг считается только по финальной позиции окна.
-        /// </summary>
+        /// <summary>Debounce 150мс — берём паддинг только по финальной позиции окна.</summary>
         private void ScheduleMaximizedPadding()
         {
             _paddingDebounce?.Cancel();
@@ -142,11 +125,8 @@ namespace Writersword.Views
         }
 
         /// <summary>
-        /// Вычисляет и применяет точный padding для максимизированного borderless-окна.
-        /// Windows при максимизации NoChrome-окна намеренно выдвигает его за края экрана
-        /// на величину равную ширине системной рамки. Паддинг вычисляется динамически
-        /// через сравнение реальных Bounds окна с WorkingArea экрана с учётом DPI.
-        /// Фон Window прозрачный, поэтому overflow зона не видна на соседних мониторах.
+        /// При максимизации NoChrome-окна Windows выдвигает его за края экрана на ширину системной рамки.
+        /// Паддинг компенсирует это через сравнение Bounds окна с WorkingArea экрана с учётом DPI.
         /// </summary>
         private void ApplyMaximizedPadding()
         {
@@ -178,17 +158,13 @@ namespace Writersword.Views
             var padRight = Math.Max(0, winRight - workRight);
             var padBottom = Math.Max(0, winBottom - workBottom);
 
-            var padding = new Thickness(padLeft, padTop, padRight, padBottom);
-            Padding = padding;
+            Padding = new Thickness(padLeft, padTop, padRight, padBottom);
 
             _logger.LogDebug(
                 "ApplyMaximizedPadding: workArea={WorkArea}, window=({WinLeft},{WinTop},{WinRight},{WinBottom}), padding={Padding}",
-                workArea, winLeft, winTop, winRight, winBottom, padding);
+                workArea, winLeft, winTop, winRight, winBottom, Padding);
         }
 
-        /// <summary>
-        /// Обновляет padding и иконку кнопки максимизации при изменении состояния окна.
-        /// </summary>
         private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
         {
             if (e.Property != WindowStateProperty) return;
@@ -208,10 +184,8 @@ namespace Writersword.Views
                 restoreIcon.IsVisible = WindowState == WindowState.Maximized;
         }
 
-        /// <summary>
-        /// Обработчик попытки закрытия главного окна
-        /// Проверяет несохранённые изменения в каждой вкладке и предлагает сохранить
-        /// </summary>
+
+
         private async void OnClosing(object? sender, CancelEventArgs e)
         {
             if (_isClosing)
@@ -352,10 +326,7 @@ namespace Writersword.Views
             }
         }
 
-        /// <summary>
-        /// Обработчик нажатия клавиш
-        /// Определяет moduleType модуля в фокусе и передаёт в HotKeyService
-        /// </summary>
+        /// <summary>Передаёт нажатие клавиш в HotKeyService с учётом модуля в фокусе.</summary>
         private void OnKeyDown(object? sender, KeyEventArgs e)
         {
             var hotKeyService = App.Services.GetRequiredService<IHotKeyService>();
@@ -367,10 +338,7 @@ namespace Writersword.Views
                 e.Handled = true;
         }
 
-        /// <summary>
-        /// Определить moduleType модуля который сейчас в фокусе
-        /// Поднимается по дереву фокуса до Control у которого Tag содержит moduleType
-        /// </summary>
+        /// <summary>Поднимается по дереву фокуса до Control у которого Tag содержит moduleType.</summary>
         private string? GetFocusedModuleType()
         {
             var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Control;

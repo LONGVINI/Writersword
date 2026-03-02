@@ -16,42 +16,42 @@
         ExtendClientAreaChromeHints="NoChrome"
         ExtendClientAreaTitleBarHeightHint="-1">
 
-    <DockPanel Background="{DynamicResource BgAppBrush}">
+    <Grid Background="{DynamicResource BgAppBrush}"
+          RowDefinitions="Auto,Auto,Auto,Auto,*">
 
-        <!-- Строка заголовка: иконка + меню + кнопки управления окном -->
-        <Grid DockPanel.Dock="Top"
+        <!-- Строка заголовка -->
+        <Grid Grid.Row="0"
               x:Name="TitleBarGrid"
-              Height="32"
-              ColumnDefinitions="Auto,*,Auto"
+              RowDefinitions="Auto"
               Background="{DynamicResource BgPanelBrush}"
               UseLayoutRounding="True">
 
-            <!-- Иконка приложения -->
-            <Image Grid.Column="0"
-                   Source="avares://Writersword/Resources/Images/icon.ico"
-                   Width="16"
-                   Height="16"
-                   Margin="10,0,8,0"
-                   VerticalAlignment="Center"
-                   RenderOptions.BitmapInterpolationMode="HighQuality"/>
+            <!-- Иконка + меню. Правый отступ резервирует место под 3 кнопки (3x46=138px) -->
+            <DockPanel Margin="0,0,138,0">
+                <Image DockPanel.Dock="Left"
+                       Source="avares://Writersword/Resources/Images/icon.ico"
+                       Width="16"
+                       Height="16"
+                       Margin="10,0,8,0"
+                       VerticalAlignment="Center"
+                       RenderOptions.BitmapInterpolationMode="HighQuality"/>
 
-            <!-- Меню -->
-            <components:MenuBarView Grid.Column="1"
-                                    DataContext="{Binding MenuBar}"
-                                    VerticalAlignment="Center"
-                                    Margin="0,-8,0,0"
-                                    ClipToBounds="False"/>
+                <components:MenuBarView DataContext="{Binding MenuBar}"/>
+            </DockPanel>
 
-            <!-- Кнопки управления окном -->
-            <StackPanel Grid.Column="2"
+            <!-- Кнопки управления окном — overlay, прибиты к верхнему правому углу.
+                 Margin компенсируется из кода при максимизации чтобы касаться края экрана. -->
+            <StackPanel x:Name="WindowButtonsPanel"
                         Orientation="Horizontal"
-                        VerticalAlignment="Stretch">
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        Height="32"
+                        ZIndex="1">
 
                 <Button x:Name="MinimizeButton"
                         Width="46"
-                        Height="40"
-                        Margin="0,-8,0,0"
-                        Padding="0,8,0,0"
+                        Height="32"
+                        Padding="8,0,8,0"
                         Background="Transparent"
                         BorderThickness="0"
                         CornerRadius="0"
@@ -60,8 +60,7 @@
                     <Canvas Width="10" Height="1"
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center">
-                        <Line StartPoint="0,0.5"
-                              EndPoint="10,0.5"
+                        <Line StartPoint="0,0.5" EndPoint="10,0.5"
                               Stroke="{DynamicResource TextPrimaryBrush}"
                               StrokeThickness="1"/>
                     </Canvas>
@@ -69,9 +68,8 @@
 
                 <Button x:Name="MaximizeButton"
                         Width="46"
-                        Height="40"
-                        Margin="0,-8,0,0"
-                        Padding="0,8,0,0"
+                        Height="32"
+                        Padding="8,0,8,0"
                         Background="Transparent"
                         BorderThickness="0"
                         CornerRadius="0"
@@ -107,9 +105,8 @@
 
                 <Button x:Name="CloseButton"
                         Width="46"
-                        Height="40"
-                        Margin="0,-8,0,0"
-                        Padding="0,8,0,0"
+                        Height="32"
+                        Padding="8,0,8,0"
                         Background="Transparent"
                         BorderThickness="0"
                         CornerRadius="0"
@@ -118,12 +115,10 @@
                     <Canvas Width="10" Height="10"
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center">
-                        <Line StartPoint="0,0"
-                              EndPoint="10,10"
+                        <Line StartPoint="0,0" EndPoint="10,10"
                               Stroke="{DynamicResource TextPrimaryBrush}"
                               StrokeThickness="1"/>
-                        <Line StartPoint="10,0"
-                              EndPoint="0,10"
+                        <Line StartPoint="10,0" EndPoint="0,10"
                               Stroke="{DynamicResource TextPrimaryBrush}"
                               StrokeThickness="1"/>
                     </Canvas>
@@ -133,15 +128,15 @@
         </Grid>
 
         <!-- Панель вкладок -->
-        <components:TabBarView DockPanel.Dock="Top"
+        <components:TabBarView Grid.Row="1"
                                DataContext="{Binding TabBar}"/>
 
         <!-- Панель WorkModes -->
-        <components:WorkModeBarView DockPanel.Dock="Top"
+        <components:WorkModeBarView Grid.Row="2"
                                     DataContext="{Binding WorkModeBar}"/>
 
         <!-- Баннер восстановления -->
-        <ContentControl DockPanel.Dock="Top"
+        <ContentControl Grid.Row="3"
                         Content="{Binding TabBar.ActiveTab.RecoveryBanner, FallbackValue={x:Null}}"
                         IsVisible="{Binding TabBar.ActiveTab.HasRecoveryBanner}">
             <ContentControl.ContentTemplate>
@@ -151,9 +146,8 @@
             </ContentControl.ContentTemplate>
         </ContentControl>
 
-        <!-- Главная область: DockControl заполняет всё оставшееся пространство -->
-        <!-- NotificationContainer поверх как прозрачный overlay -->
-        <Panel>
+        <!-- Главная область -->
+        <Panel Grid.Row="4">
             <dock:DockControl Layout="{Binding DockLayout}"
                               Background="{DynamicResource BgSurfaceBrush}"/>
             <Panel Name="NotificationContainer"
@@ -163,5 +157,5 @@
                    IsHitTestVisible="False"/>
         </Panel>
 
-    </DockPanel>
+    </Grid>
 </Window>

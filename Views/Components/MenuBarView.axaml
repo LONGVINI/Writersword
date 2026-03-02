@@ -4,46 +4,33 @@
              xmlns:loc="using:Writersword.Resources.Localization"
              x:Class="Writersword.Views.Components.MenuBarView"
              x:DataType="vm:MenuBarViewModel"
-             x:Name="MenuBarViewRoot">
+             x:Name="MenuBarViewRoot"
+             HorizontalAlignment="Stretch">
 
 	<Menu x:Name="MainMenu"
 		  Background="{DynamicResource BgPanelBrush}"
-		  Padding="5,11,5,3">
+		  Padding="5,0,5,0"
+		  HorizontalAlignment="Stretch">
+
+		<Menu.ItemsPanel>
+			<ItemsPanelTemplate>
+				<WrapPanel Orientation="Horizontal"/>
+			</ItemsPanelTemplate>
+		</Menu.ItemsPanel>
 
 		<!-- FILE -->
-		<MenuItem Foreground="{DynamicResource TextPrimaryBrush}"
-                  FontSize="13">
-			<MenuItem.Header>
-				<TextBlock Text="{x:Static loc:Strings.Menu_File}"/>
-			</MenuItem.Header>
+		<MenuItem Header="{x:Static loc:Strings.Menu_File}"
+                  Foreground="{DynamicResource TextPrimaryBrush}"
+                  FontSize="13"
+                  Padding="10,6,10,6">
 
 			<MenuItem x:Name="HotKey_File_New"
-                      Command="{Binding NewProjectCommand}">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_File_NewProject}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_File_New"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+                      Header="{x:Static loc:Strings.Menu_File_NewProject}"
+                      Command="{Binding NewProjectCommand}"/>
 
 			<MenuItem x:Name="HotKey_File_Open"
-                      Command="{Binding OpenProjectCommand}">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_File_OpenProject}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_File_Open"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+                      Header="{x:Static loc:Strings.Menu_File_OpenProject}"
+                      Command="{Binding OpenProjectCommand}"/>
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_File_RecentProjects}"
                       ItemsSource="{Binding RecentProjects}">
@@ -59,246 +46,92 @@
 			<Separator/>
 
 			<MenuItem x:Name="HotKey_File_Save"
-                      Command="{Binding SaveProjectCommand}">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_File_Save}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_File_Save"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+                      Header="{x:Static loc:Strings.Menu_File_Save}"
+                      Command="{Binding SaveProjectCommand}"/>
 
 			<MenuItem x:Name="HotKey_File_SaveAs"
-                      Command="{Binding SaveAsProjectCommand}">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_File_SaveAs}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_File_SaveAs"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+                      Header="{x:Static loc:Strings.Menu_File_SaveAs}"
+                      Command="{Binding SaveAsProjectCommand}"/>
 
 			<MenuItem x:Name="HotKey_File_SaveAll"
-                      Command="{Binding SaveAllProjectsCommand}">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_File_SaveAll}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_File_SaveAll"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+                      Header="{x:Static loc:Strings.Menu_File_SaveAll}"
+                      Command="{Binding SaveAllProjectsCommand}"/>
 
 			<Separator/>
 
 			<MenuItem x:Name="HotKey_File_CloseTab"
-                      Command="{Binding CloseTabCommand}">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_File_CloseTab}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_File_CloseTab"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+                      Header="{x:Static loc:Strings.Menu_File_CloseTab}"
+                      Command="{Binding CloseTabCommand}"/>
 
 			<MenuItem x:Name="HotKey_File_CloseAllTabs"
-                      Command="{Binding CloseAllTabsCommand}">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_File_CloseAllTabs}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_File_CloseAllTabs"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+                      Header="{x:Static loc:Strings.Menu_File_CloseAllTabs}"
+                      Command="{Binding CloseAllTabsCommand}"/>
 
 			<MenuItem x:Name="HotKey_File_CloseOtherTabs"
-                      Command="{Binding CloseOtherTabsCommand}">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_File_CloseOtherTabs}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_File_CloseOtherTabs"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+                      Header="{x:Static loc:Strings.Menu_File_CloseOtherTabs}"
+                      Command="{Binding CloseOtherTabsCommand}"/>
 
 			<Separator/>
 
 			<MenuItem x:Name="HotKey_File_Settings"
-                      Command="{Binding OpenSettingsCommand}">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_File_Settings}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_File_Settings"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+                      Header="{x:Static loc:Strings.Menu_File_Settings}"
+                      Command="{Binding OpenSettingsCommand}"/>
 
 			<Separator/>
 
 			<MenuItem x:Name="HotKey_File_Exit"
-                      Command="{Binding ExitCommand}">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_File_Exit}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_File_Exit"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+                      Header="{x:Static loc:Strings.Menu_File_Exit}"
+                      Command="{Binding ExitCommand}"/>
 		</MenuItem>
 
 		<!-- EDIT -->
-		<MenuItem Foreground="{DynamicResource TextPrimaryBrush}"
-                  FontSize="13">
-			<MenuItem.Header>
-				<TextBlock Text="{x:Static loc:Strings.Menu_Edit}"/>
-			</MenuItem.Header>
+		<MenuItem Header="{x:Static loc:Strings.Menu_Edit}"
+                  Foreground="{DynamicResource TextPrimaryBrush}"
+                  FontSize="13"
+                  Padding="10,6,10,6">
 
-			<MenuItem x:Name="HotKey_Edit_Undo" IsEnabled="False">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Edit_Undo}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Edit_Undo"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+			<MenuItem x:Name="HotKey_Edit_Undo"
+                      Header="{x:Static loc:Strings.Menu_Edit_Undo}"
+                      IsEnabled="False"/>
 
-			<MenuItem x:Name="HotKey_Edit_Redo" IsEnabled="False">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Edit_Redo}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Edit_Redo"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+			<MenuItem x:Name="HotKey_Edit_Redo"
+                      Header="{x:Static loc:Strings.Menu_Edit_Redo}"
+                      IsEnabled="False"/>
 
 			<Separator/>
 
-			<MenuItem x:Name="HotKey_Edit_Cut" IsEnabled="False">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Edit_Cut}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Edit_Cut"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+			<MenuItem x:Name="HotKey_Edit_Cut"
+                      Header="{x:Static loc:Strings.Menu_Edit_Cut}"
+                      IsEnabled="False"/>
 
-			<MenuItem x:Name="HotKey_Edit_Copy" IsEnabled="False">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Edit_Copy}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Edit_Copy"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+			<MenuItem x:Name="HotKey_Edit_Copy"
+                      Header="{x:Static loc:Strings.Menu_Edit_Copy}"
+                      IsEnabled="False"/>
 
-			<MenuItem x:Name="HotKey_Edit_Paste" IsEnabled="False">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Edit_Paste}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Edit_Paste"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+			<MenuItem x:Name="HotKey_Edit_Paste"
+                      Header="{x:Static loc:Strings.Menu_Edit_Paste}"
+                      IsEnabled="False"/>
 
-			<MenuItem x:Name="HotKey_Edit_SelectAll" IsEnabled="False">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Edit_SelectAll}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Edit_SelectAll"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+			<MenuItem x:Name="HotKey_Edit_SelectAll"
+                      Header="{x:Static loc:Strings.Menu_Edit_SelectAll}"
+                      IsEnabled="False"/>
 
 			<Separator/>
 
-			<MenuItem x:Name="HotKey_Edit_Find" IsEnabled="False">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Edit_Find}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Edit_Find"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+			<MenuItem x:Name="HotKey_Edit_Find"
+                      Header="{x:Static loc:Strings.Menu_Edit_Find}"
+                      IsEnabled="False"/>
 
-			<MenuItem x:Name="HotKey_Edit_FindReplace" IsEnabled="False">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Edit_FindReplace}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Edit_FindReplace"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+			<MenuItem x:Name="HotKey_Edit_FindReplace"
+                      Header="{x:Static loc:Strings.Menu_Edit_FindReplace}"
+                      IsEnabled="False"/>
 		</MenuItem>
 
 		<!-- VIEW -->
-		<MenuItem Foreground="{DynamicResource TextPrimaryBrush}"
-				  FontSize="13">
-			<MenuItem.Header>
-				<TextBlock Text="{x:Static loc:Strings.Menu_View}"/>
-			</MenuItem.Header>
+		<MenuItem Header="{x:Static loc:Strings.Menu_View}"
+				  Foreground="{DynamicResource TextPrimaryBrush}"
+				  FontSize="13"
+                  Padding="10,6,10,6">
 
 			<MenuItem Header="{x:Static loc:Strings.Menu_View_WorkModes}"
 					  ItemsSource="{Binding AllWorkModes}">
@@ -308,10 +141,7 @@
 								  CommandParameter="{Binding WorkModeId}">
 							<MenuItem.Header>
 								<StackPanel Orientation="Horizontal" Spacing="5">
-									<TextBlock Text="&#10003;"
-											   IsVisible="{Binding IsChecked}"
-											   FontWeight="Bold"
-											   Width="15"/>
+									<TextBlock Text="&#10003;" IsVisible="{Binding IsChecked}" FontWeight="Bold" Width="15"/>
 									<TextBlock Text="{Binding Icon}"/>
 									<TextBlock Text="{Binding Name}"/>
 								</StackPanel>
@@ -332,9 +162,7 @@
 								  IsEnabled="{Binding IsEnabled}">
 							<MenuItem.Icon>
 								<StackPanel Orientation="Horizontal" Spacing="5">
-									<TextBlock Text="&#10003;"
-											   IsVisible="{Binding IsChecked}"
-											   FontWeight="Bold"/>
+									<TextBlock Text="&#10003;" IsVisible="{Binding IsChecked}" FontWeight="Bold"/>
 									<TextBlock Text="{Binding Icon}"/>
 								</StackPanel>
 							</MenuItem.Icon>
@@ -348,147 +176,68 @@
 			<MenuItem x:Name="HotKey_View_Fullscreen"
 					  Command="{Binding ToggleFullscreenCommand}">
 				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5">
-							<TextBlock Text="&#10003;"
-									   IsVisible="{Binding IsFullscreen}"
-									   FontWeight="Bold"
-									   Width="15"/>
-							<TextBlock Text="{x:Static loc:Strings.Menu_View_Fullscreen}"/>
-						</StackPanel>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_View_Fullscreen"
-								   FontSize="11"
-								   Foreground="{DynamicResource TextMutedBrush}"
-								   Margin="24,0,0,0"
-								   VerticalAlignment="Center"/>
-					</Grid>
+					<StackPanel Orientation="Horizontal" Spacing="5">
+						<TextBlock Text="&#10003;" IsVisible="{Binding IsFullscreen}" FontWeight="Bold" Width="15"/>
+						<TextBlock Text="{x:Static loc:Strings.Menu_View_Fullscreen}"/>
+					</StackPanel>
 				</MenuItem.Header>
 			</MenuItem>
 		</MenuItem>
 
 		<!-- WORKSPACE -->
-		<MenuItem Foreground="{DynamicResource TextPrimaryBrush}"
-                  FontSize="13">
-			<MenuItem.Header>
-				<TextBlock Text="{x:Static loc:Strings.Menu_Workspace}"/>
-			</MenuItem.Header>
+		<MenuItem Header="{x:Static loc:Strings.Menu_Workspace}"
+                  Foreground="{DynamicResource TextPrimaryBrush}"
+                  FontSize="13"
+                  Padding="10,6,10,6">
 
 			<MenuItem x:Name="HotKey_Workspace_SaveForType"
+                      Header="{x:Static loc:Strings.Menu_Workspace_SaveForType}"
                       Command="{Binding SaveWorkspaceGlobalCommand}"
-                      IsEnabled="{Binding HasActiveTab}">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Workspace_SaveForType}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Workspace_SaveForType"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+                      IsEnabled="{Binding HasActiveTab}"/>
 
 			<Separator Background="{DynamicResource BorderDefaultBrush}" Height="1" Margin="0,2"/>
 
 			<MenuItem x:Name="HotKey_Workspace_ResetToGlobal"
+                      Header="{x:Static loc:Strings.Menu_Workspace_ResetToGlobal}"
                       Command="{Binding ResetWorkspaceToGlobalCommand}"
-                      IsEnabled="{Binding HasActiveTab}">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Workspace_ResetToGlobal}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Workspace_ResetToGlobal"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+                      IsEnabled="{Binding HasActiveTab}"/>
 
 			<MenuItem x:Name="HotKey_Workspace_ResetToDefault"
+                      Header="{x:Static loc:Strings.Menu_Workspace_ResetToDefault}"
                       Command="{Binding ResetWorkspaceToDefaultCommand}"
-                      IsEnabled="{Binding HasActiveTab}">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Workspace_ResetToDefault}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Workspace_ResetToDefault"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+                      IsEnabled="{Binding HasActiveTab}"/>
 		</MenuItem>
 
 		<!-- TOOLS -->
-		<MenuItem Foreground="{DynamicResource TextPrimaryBrush}"
-                  FontSize="13">
-			<MenuItem.Header>
-				<TextBlock Text="{x:Static loc:Strings.Menu_Tools}"/>
-			</MenuItem.Header>
+		<MenuItem Header="{x:Static loc:Strings.Menu_Tools}"
+                  Foreground="{DynamicResource TextPrimaryBrush}"
+                  FontSize="13"
+                  Padding="10,6,10,6">
 
-			<MenuItem x:Name="HotKey_Tools_Statistics" IsEnabled="False">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Tools_Statistics}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Tools_Statistics"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+			<MenuItem x:Name="HotKey_Tools_Statistics"
+                      Header="{x:Static loc:Strings.Menu_Tools_Statistics}"
+                      IsEnabled="False"/>
 		</MenuItem>
 
 		<!-- HELP -->
-		<MenuItem Foreground="{DynamicResource TextPrimaryBrush}"
-                  FontSize="13">
-			<MenuItem.Header>
-				<TextBlock Text="{x:Static loc:Strings.Menu_Help}"/>
-			</MenuItem.Header>
+		<MenuItem Header="{x:Static loc:Strings.Menu_Help}"
+                  Foreground="{DynamicResource TextPrimaryBrush}"
+                  FontSize="13"
+                  Padding="10,6,10,6">
 
-			<MenuItem x:Name="HotKey_Help_Documentation" IsEnabled="False">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Help_Documentation}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Help_Documentation"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+			<MenuItem x:Name="HotKey_Help_Documentation"
+                      Header="{x:Static loc:Strings.Menu_Help_Documentation}"
+                      IsEnabled="False"/>
 
-			<MenuItem x:Name="HotKey_Help_CheckUpdates" IsEnabled="False">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Help_CheckUpdates}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Help_CheckUpdates"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+			<MenuItem x:Name="HotKey_Help_CheckUpdates"
+                      Header="{x:Static loc:Strings.Menu_Help_CheckUpdates}"
+                      IsEnabled="False"/>
 
 			<Separator/>
 
-			<MenuItem x:Name="HotKey_Help_About" IsEnabled="False">
-				<MenuItem.Header>
-					<Grid ColumnDefinitions="*,Auto">
-						<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.Menu_Help_About}"/>
-						<TextBlock Grid.Column="1" x:Name="GestureHint_Help_About"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   Margin="24,0,0,0"
-                                   VerticalAlignment="Center"/>
-					</Grid>
-				</MenuItem.Header>
-			</MenuItem>
+			<MenuItem x:Name="HotKey_Help_About"
+                      Header="{x:Static loc:Strings.Menu_Help_About}"
+                      IsEnabled="False"/>
 		</MenuItem>
 
 	</Menu>
