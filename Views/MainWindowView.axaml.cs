@@ -3,7 +3,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
-using Avalonia.Media;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -134,7 +133,9 @@ namespace Writersword.Views
             if (screen == null)
             {
                 _logger.LogWarning("ApplyMaximizedPadding: screen not found, using fallback 8px");
-                Padding = new Thickness(8);
+                var fallback = new Thickness(8);
+                Padding = fallback;
+                CompensateButtonsPadding(fallback);
                 return;
             }
 
@@ -158,13 +159,31 @@ namespace Writersword.Views
             var padRight = Math.Max(0, winRight - workRight);
             var padBottom = Math.Max(0, winBottom - workBottom);
 
-            Padding = new Thickness(padLeft, padTop, padRight, padBottom);
+            var padding = new Thickness(padLeft, padTop, padRight, padBottom);
+            Padding = padding;
+            CompensateButtonsPadding(padding);
 
             _logger.LogDebug(
                 "ApplyMaximizedPadding: workArea={WorkArea}, window=({WinLeft},{WinTop},{WinRight},{WinBottom}), padding={Padding}",
-                workArea, winLeft, winTop, winRight, winBottom, Padding);
+                workArea, winLeft, winTop, winRight, winBottom, padding);
         }
 
+        /// <summary>В максимизированном режиме компенсируем правый Window.Padding.
+        private void CompensateButtonsPadding(Thickness padding)
+        {
+            var buttonPanel = this.FindControl<StackPanel>("WindowButtonsPanel");
+            if (buttonPanel == null) return;
+
+            var rightMargin = WindowState == WindowState.Maximized ? -padding.Right + 7 : 0;
+            var margin = new Thickness(0, -1, rightMargin, 0); // -1 Сверху попадание мыши в угол экрана и его срабатывании
+
+            _logger.LogDebug("CompensateButtonsPadding: state={State}, padding={Padding}, margin={Margin}",
+                WindowState, padding, margin);
+
+            buttonPanel.Margin = margin;
+        }
+
+        /// <summary>Обновляет паддинг и иконку кнопки максимизации при смене состояния окна.</summary>
         private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
         {
             if (e.Property != WindowStateProperty) return;
@@ -172,7 +191,10 @@ namespace Writersword.Views
             if (WindowState == WindowState.Maximized)
                 ScheduleMaximizedPadding();
             else
+            {
                 Padding = new Thickness(0);
+                CompensateButtonsPadding(new Thickness(0));
+            }
 
             var maximizeIcon = this.FindControl<Rectangle>("MaximizeIcon");
             var restoreIcon = this.FindControl<Canvas>("RestoreIcon");
@@ -184,8 +206,7 @@ namespace Writersword.Views
                 restoreIcon.IsVisible = WindowState == WindowState.Maximized;
         }
 
-
-
+        /// <summary>Проверяет несохранённые изменения во всех вкладках перед закрытием.</summary>
         private async void OnClosing(object? sender, CancelEventArgs e)
         {
             if (_isClosing)

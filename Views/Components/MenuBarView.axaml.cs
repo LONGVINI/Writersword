@@ -20,6 +20,7 @@ namespace Writersword.Views.Components
         private readonly ILogger<MenuBarView> _logger;
         private readonly IHotKeyService _hotKeyService;
         private WrapPanel? _wrapPanel;
+        private double _baseWrapHeight = -1;
 
         public MenuBarView()
         {
@@ -36,6 +37,7 @@ namespace Writersword.Views.Components
             }
 
             MainMenu.TemplateApplied += OnMenuTemplateApplied;
+            SizeChanged += OnMenuBarViewSizeChanged;
 
             _logger.LogDebug("MenuBarView created");
         }
@@ -49,37 +51,70 @@ namespace Writersword.Views.Components
             {
                 _wrapPanel = itemsPresenter.Panel as WrapPanel;
                 _logger.LogDebug("WrapPanel found: {Found}", _wrapPanel != null);
-
-                if (_wrapPanel != null)
-                {
-                    // Invalidate только при изменении высоты (перенос строк).
-                    // Изменение ширины не трогаем — цикла нет.
-                    _wrapPanel.SizeChanged += (_, ev) =>
-                    {
-                        if (Math.Abs(ev.NewSize.Height - ev.PreviousSize.Height) > 0.5)
-                        {
-                            _logger.LogDebug("WrapPanel height changed: {Old} -> {New}", ev.PreviousSize.Height, ev.NewSize.Height);
-                            InvalidateMeasure();
-                        }
-                    };
-                }
             };
         }
 
-        protected override Size MeasureOverride(Size availableSize)
+        /// <summary>При изменении ширины MenuBarView перемеряем WrapPanel и обновляем высоту Menu.</summary>
+        private void OnMenuBarViewSizeChanged(object? sender, SizeChangedEventArgs e)
         {
-            var result = base.MeasureOverride(availableSize);
+            if (_wrapPanel == null) return;
+            if (!e.WidthChanged) return;
 
-            if (_wrapPanel != null && _wrapPanel.Bounds.Height > 0)
+            var availableWidth = e.NewSize.Width - MainMenu.Padding.Left - MainMenu.Padding.Right;
+            if (availableWidth <= 0) return;
+
+            _wrapPanel.Measure(new Size(availableWidth, double.PositiveInfinity));
+            var desiredH = _wrapPanel.DesiredSize.Height;
+
+            _logger.LogDebug("SizeChanged: width={W}, wrapDesiredH={H}, currentMenuH={MH}",
+                availableWidth, desiredH, MainMenu.Height);
+
+            if (Math.Abs(desiredH - MainMenu.Bounds.Height) > 0.5)
             {
-                var overhead = MainMenu.Padding.Top + MainMenu.Padding.Bottom;
-                var h = _wrapPanel.Bounds.Height + overhead;
-                _logger.LogDebug("MeasureOverride: {W}x{H}", availableSize.Width, h);
-                return new Size(result.Width, h);
+                _logger.LogDebug("Setting MainMenu.Height: {Old} -> {New}", MainMenu.Bounds.Height, desiredH);
+                MainMenu.Height = desiredH;
+            }
+        }
+
+        private void OnWrapPanelLayoutUpdated(object? sender, EventArgs e)
+        {
+            if (_wrapPanel == null || _wrapPanel.Bounds.Width <= 0) return;
+
+            _wrapPanel.Measure(new Size(_wrapPanel.Bounds.Width, double.PositiveInfinity));
+            var desiredH = _wrapPanel.DesiredSize.Height;
+
+            if (_baseWrapHeight < 0)
+            {
+                _baseWrapHeight = desiredH;
+                _logger.LogDebug("Base height captured: {H}", _baseWrapHeight);
             }
 
-            _logger.LogDebug("MeasureOverride: {W}x{H} (base)", availableSize.Width, result.Height);
-            return result;
+            if (Math.Abs(desiredH - MainMenu.Height) > 0.5)
+            {
+                _logger.LogDebug("Setting MainMenu.Height: {Old} -> {New}", MainMenu.Height, desiredH);
+                MainMenu.Height = desiredH;
+            }
+        }
+
+        private void OnWrapPanelSizeChanged(object? sender, SizeChangedEventArgs e)
+        {
+            _logger.LogDebug("WrapPanel SizeChanged: {Old} -> {New}", e.PreviousSize, e.NewSize);
+
+            if (_baseWrapHeight < 0)
+            {
+                _baseWrapHeight = e.NewSize.Height;
+                _logger.LogDebug("WrapPanel base height: {H}", _baseWrapHeight);
+                return;
+            }
+
+            if (Math.Abs(e.NewSize.Height - e.PreviousSize.Height) < 0.5) return;
+
+            var extraRows = Math.Max(0, Math.Round((e.NewSize.Height - _baseWrapHeight) / _baseWrapHeight));
+            var newMenuHeight = 32 + extraRows * 32;
+
+            _logger.LogDebug("Rows changed: extra={R}, newMenuHeight={H}", extraRows, newMenuHeight);
+
+            MainMenu.Height = newMenuHeight;
         }
 
         private void OnDataContextChanged(object? sender, EventArgs e)

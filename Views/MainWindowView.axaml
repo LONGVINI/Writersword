@@ -20,116 +20,58 @@
           RowDefinitions="Auto,Auto,Auto,Auto,*">
 
         <!-- Строка заголовка -->
-        <Grid Grid.Row="0"
+   <Grid Grid.Row="0"
               x:Name="TitleBarGrid"
-              RowDefinitions="Auto"
               Background="{DynamicResource BgPanelBrush}"
               UseLayoutRounding="True">
 
-            <!-- Иконка + меню. Правый отступ резервирует место под 3 кнопки (3x46=138px) -->
-            <DockPanel Margin="0,0,138,0">
+            <DockPanel Margin="0,0,138,0" VerticalAlignment="Top">
                 <Image DockPanel.Dock="Left"
                        Source="avares://Writersword/Resources/Images/icon.ico"
-                       Width="16"
-                       Height="16"
-                       Margin="10,0,8,0"
-                       VerticalAlignment="Center"
+                       Width="16" Height="16"
+                       Margin="10,8,8,0"
+                       VerticalAlignment="Top"
                        RenderOptions.BitmapInterpolationMode="HighQuality"/>
 
-                <components:MenuBarView DataContext="{Binding MenuBar}"/>
+            <components:MenuBarView DataContext="{Binding MenuBar}"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Top"/>
             </DockPanel>
 
-            <!-- Кнопки управления окном — overlay, прибиты к верхнему правому углу.
-                 Margin компенсируется из кода при максимизации чтобы касаться края экрана. -->
             <StackPanel x:Name="WindowButtonsPanel"
                         Orientation="Horizontal"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Top"
                         Height="32"
+                        Margin="0,2,0,0"
                         ZIndex="1">
-
-                <Button x:Name="MinimizeButton"
-                        Width="46"
-                        Height="32"
-                        Padding="8,0,8,0"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        CornerRadius="0"
-                        Classes="TitleBarWindowButton"
-                        ToolTip.Tip="Свернуть">
-                    <Canvas Width="10" Height="1"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center">
-                        <Line StartPoint="0,0.5" EndPoint="10,0.5"
-                              Stroke="{DynamicResource TextPrimaryBrush}"
-                              StrokeThickness="1"/>
+                
+                <Button x:Name="MinimizeButton" Width="46" Height="32" Padding="8,0,8,0" Background="Transparent" BorderThickness="0" CornerRadius="0" Classes="TitleBarWindowButton" ToolTip.Tip="Свернуть">
+                    <Canvas Width="10" Height="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Line StartPoint="0,0.5" EndPoint="10,0.5" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1"/>
                     </Canvas>
                 </Button>
-
-                <Button x:Name="MaximizeButton"
-                        Width="46"
-                        Height="32"
-                        Padding="8,0,8,0"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        CornerRadius="0"
-                        Classes="TitleBarWindowButton"
-                        ToolTip.Tip="Развернуть">
-                    <Panel Width="10" Height="10"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center">
-                        <Rectangle x:Name="MaximizeIcon"
-                                   Width="10" Height="10"
-                                   Stroke="{DynamicResource TextPrimaryBrush}"
-                                   StrokeThickness="1"
-                                   Fill="Transparent"/>
-                        <Canvas x:Name="RestoreIcon"
-                                Width="10" Height="10"
-                                IsVisible="False">
-                            <Rectangle Width="8" Height="8"
-                                       Stroke="{DynamicResource TextPrimaryBrush}"
-                                       StrokeThickness="1"
-                                       Fill="Transparent"
-                                       Canvas.Left="2"
-                                       Canvas.Top="0"/>
-                            <Rectangle x:Name="RestoreFrontRect"
-                                       Width="8" Height="8"
-                                       Stroke="{DynamicResource TextPrimaryBrush}"
-                                       StrokeThickness="1"
-                                       Fill="{DynamicResource BgPanelBrush}"
-                                       Canvas.Left="0"
-                                       Canvas.Top="2"/>
+                <Button x:Name="MaximizeButton" Width="46" Height="32" Padding="8,0,8,0" Background="Transparent" BorderThickness="0" CornerRadius="0" Classes="TitleBarWindowButton" ToolTip.Tip="Развернуть">
+                    <Panel Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Rectangle x:Name="MaximizeIcon" Width="10" Height="10" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1" Fill="Transparent"/>
+                        <Canvas x:Name="RestoreIcon" Width="10" Height="10" IsVisible="False">
+                            <Rectangle Width="8" Height="8" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1" Fill="Transparent" Canvas.Left="2" Canvas.Top="0"/>
+                            <Rectangle x:Name="RestoreFrontRect" Width="8" Height="8" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1" Fill="{DynamicResource BgPanelBrush}" Canvas.Left="0" Canvas.Top="2"/>
                         </Canvas>
                     </Panel>
                 </Button>
-
-                <Button x:Name="CloseButton"
-                        Width="46"
-                        Height="32"
-                        Padding="8,0,8,0"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        CornerRadius="0"
-                        Classes="TitleBarWindowButton TitleBarCloseButton"
-                        ToolTip.Tip="Закрыть">
-                    <Canvas Width="10" Height="10"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center">
-                        <Line StartPoint="0,0" EndPoint="10,10"
-                              Stroke="{DynamicResource TextPrimaryBrush}"
-                              StrokeThickness="1"/>
-                        <Line StartPoint="10,0" EndPoint="0,10"
-                              Stroke="{DynamicResource TextPrimaryBrush}"
-                              StrokeThickness="1"/>
+                <Button x:Name="CloseButton" Width="46" Height="32" Padding="8,0,8,0" Background="Transparent" BorderThickness="0" CornerRadius="0" Classes="TitleBarWindowButton TitleBarCloseButton" ToolTip.Tip="Закрыть">
+                    <Canvas Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Line StartPoint="0,0" EndPoint="10,10" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1"/>
+                        <Line StartPoint="10,0" EndPoint="0,10" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1"/>
                     </Canvas>
                 </Button>
-
             </StackPanel>
         </Grid>
-
         <!-- Панель вкладок -->
         <components:TabBarView Grid.Row="1"
-                               DataContext="{Binding TabBar}"/>
+                       x:Name="TabBarViewRoot"
+                       DataContext="{Binding TabBar}"/>
 
         <!-- Панель WorkModes -->
         <components:WorkModeBarView Grid.Row="2"
@@ -156,6 +98,8 @@
                    VerticalAlignment="Stretch"
                    IsHitTestVisible="False"/>
         </Panel>
+
+    
 
     </Grid>
 </Window>
