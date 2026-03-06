@@ -1,0 +1,50 @@
+<MenuItem xmlns="https://github.com/avaloniaui"
+          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+          xmlns:vm="using:Writersword.ViewModels.Components.MenuBar"
+          xmlns:loc="using:Writersword.Resources.Localization"
+          x:Class="Writersword.Views.Components.MenuBar.Sections.MenuBarEdit"
+          x:DataType="vm:MenuBarViewModel"
+          Header="{x:Static loc:Strings.Menu_Edit}"
+          Foreground="{DynamicResource TextPrimaryBrush}"
+          FontSize="13"
+          Padding="10,6,10,6">
+
+	<MenuItem x:Name="HotKey_Edit_Undo"
+              Header="{x:Static loc:Strings.Menu_Edit_Undo}"
+              Command="{Binding UndoCommand}"
+              IsEnabled="{Binding CanUndo}"/>
+
+	<MenuItem x:Name="HotKey_Edit_Redo"
+              Header="{x:Static loc:Strings.Menu_Edit_Redo}"
+              Command="{Binding RedoCommand}"
+              IsEnabled="{Binding CanRedo}"/>
+
+	<Separator/>
+
+	<MenuItem x:Name="HotKey_Edit_Cut"
+              Header="{x:Static loc:Strings.Menu_Edit_Cut}"
+              IsEnabled="False"/>
+
+	<MenuItem x:Name="HotKey_Edit_Copy"
+              Header="{x:Static loc:Strings.Menu_Edit_Copy}"
+              IsEnabled="False"/>
+
+	<MenuItem x:Name="HotKey_Edit_Paste"
+              Header="{x:Static loc:Strings.Menu_Edit_Paste}"
+              IsEnabled="False"/>
+
+	<MenuItem x:Name="HotKey_Edit_SelectAll"
+              Header="{x:Static loc:Strings.Menu_Edit_SelectAll}"
+              IsEnabled="False"/>
+
+	<Separator/>
+
+	<MenuItem x:Name="HotKey_Edit_Find"
+              Header="{x:Static loc:Strings.Menu_Edit_Find}"
+              IsEnabled="False"/>
+
+	<MenuItem x:Name="HotKey_Edit_FindReplace"
+              Header="{x:Static loc:Strings.Menu_Edit_FindReplace}"
+              IsEnabled="False"/>
+
+</MenuItem>

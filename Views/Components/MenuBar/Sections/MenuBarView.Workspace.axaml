@@ -1,0 +1,29 @@
+<MenuItem xmlns="https://github.com/avaloniaui"
+          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+          xmlns:vm="using:Writersword.ViewModels.Components.MenuBar"
+          xmlns:loc="using:Writersword.Resources.Localization"
+          x:Class="Writersword.Views.Components.MenuBar.Sections.MenuBarWorkspace"
+          x:DataType="vm:MenuBarViewModel"
+          Header="{x:Static loc:Strings.Menu_Workspace}"
+          Foreground="{DynamicResource TextPrimaryBrush}"
+          FontSize="13"
+          Padding="10,6,10,6">
+
+	<MenuItem x:Name="HotKey_Workspace_SaveForType"
+              Header="{x:Static loc:Strings.Menu_Workspace_SaveForType}"
+              Command="{Binding SaveWorkspaceGlobalCommand}"
+              IsEnabled="{Binding HasActiveTab}"/>
+
+	<Separator Background="{DynamicResource BorderDefaultBrush}" Height="1" Margin="0,2"/>
+
+	<MenuItem x:Name="HotKey_Workspace_ResetToGlobal"
+              Header="{x:Static loc:Strings.Menu_Workspace_ResetToGlobal}"
+              Command="{Binding ResetWorkspaceToGlobalCommand}"
+              IsEnabled="{Binding HasActiveTab}"/>
+
+	<MenuItem x:Name="HotKey_Workspace_ResetToDefault"
+              Header="{x:Static loc:Strings.Menu_Workspace_ResetToDefault}"
+              Command="{Binding ResetWorkspaceToDefaultCommand}"
+              IsEnabled="{Binding HasActiveTab}"/>
+
+</MenuItem>

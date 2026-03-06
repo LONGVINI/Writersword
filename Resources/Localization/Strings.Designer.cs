@@ -556,6 +556,24 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Redo.
+        /// </summary>
+        public static string HotKey_Edit_Redo {
+            get {
+                return ResourceManager.GetString("HotKey_Edit_Redo", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Undo.
+        /// </summary>
+        public static string HotKey_Edit_Undo {
+            get {
+                return ResourceManager.GetString("HotKey_Edit_Undo", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Delete — clear binding.
         /// </summary>
         public static string HotKey_EditHint_Delete {

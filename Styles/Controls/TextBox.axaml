@@ -1,5 +1,7 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+	<!-- Базовые стили поля ввода -->
 	<Style Selector="TextBox">
 		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
 		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
@@ -13,22 +15,56 @@
 		<Setter Property="SelectionBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		<Setter Property="SelectionForegroundBrush" Value="White"/>
 	</Style>
-
 	<Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
 		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 	</Style>
-
 	<Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
 		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
 	</Style>
-
 	<Style Selector="TextBox:disabled">
 		<Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
 		<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
 	</Style>
-
 	<Style Selector="TextBox:disabled /template/ Border#PART_BorderElement">
 		<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
 	</Style>
+
+	<!-- Редакторское поле для большого текста (TextEditor, сценарии, поэзия и т.д.) -->
+	<!-- Использование: Classes="editor" на TextBox -->
+	<Style Selector="TextBox.editor">
+		<Setter Property="IsUndoEnabled" Value="False"/>
+		<Setter Property="AcceptsReturn" Value="True"/>
+		<Setter Property="TextWrapping" Value="Wrap"/>
+		<Setter Property="BorderThickness" Value="0"/>
+		<Setter Property="Background" Value="White"/>
+		<Setter Property="Foreground" Value="#000000"/>
+		<Setter Property="CaretBrush" Value="#000000"/>
+		<Setter Property="SelectionBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="SelectionForegroundBrush" Value="White"/>
+		<Setter Property="Padding" Value="60,40"/>
+		<Setter Property="MinHeight" Value="1000"/>
+		<Setter Property="Focusable" Value="True"/>
+	</Style>
+	<Style Selector="TextBox.editor /template/ Border#PART_BorderElement">
+		<Setter Property="Background" Value="White"/>
+		<Setter Property="BorderBrush" Value="Transparent"/>
+	</Style>
+	<Style Selector="TextBox.editor:pointerover /template/ Border#PART_BorderElement">
+		<Setter Property="Background" Value="White"/>
+		<Setter Property="BorderBrush" Value="Transparent"/>
+	</Style>
+	<Style Selector="TextBox.editor:focus /template/ Border#PART_BorderElement">
+		<Setter Property="Background" Value="White"/>
+		<Setter Property="BorderBrush" Value="Transparent"/>
+	</Style>
+	<Style Selector="TextBox.editor:disabled">
+		<Setter Property="Background" Value="White"/>
+		<Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
+	</Style>
+	<Style Selector="TextBox.editor:disabled /template/ Border#PART_BorderElement">
+		<Setter Property="Background" Value="White"/>
+		<Setter Property="BorderBrush" Value="Transparent"/>
+	</Style>
+
 </Styles>

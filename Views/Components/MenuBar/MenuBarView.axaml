@@ -1,0 +1,29 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.ViewModels.Components.MenuBar"
+             xmlns:sections="using:Writersword.Views.Components.MenuBar.Sections"
+            x:Class="Writersword.Views.Components.MenuBar.MenuBarView"
+             x:DataType="vm:MenuBarViewModel"
+             HorizontalAlignment="Stretch">
+
+	<Menu x:Name="MainMenu"
+          Background="{DynamicResource BgPanelBrush}"
+          Padding="5,0,5,0"
+          HorizontalAlignment="Stretch"
+          ClipToBounds="False">
+
+		<Menu.ItemsPanel>
+			<ItemsPanelTemplate>
+				<WrapPanel Orientation="Horizontal"/>
+			</ItemsPanelTemplate>
+		</Menu.ItemsPanel>
+
+		<sections:MenuBarFile        DataContext="{Binding}"/>
+		<sections:MenuBarEdit        DataContext="{Binding}"/>
+		<sections:MenuBarViewSection DataContext="{Binding}"/>
+		<sections:MenuBarWorkspace   DataContext="{Binding}"/>
+		<sections:MenuBarTools       DataContext="{Binding}"/>
+		<sections:MenuBarHelp        DataContext="{Binding}"/>
+
+	</Menu>
+</UserControl>

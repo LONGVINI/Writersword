@@ -31,6 +31,7 @@ using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.Infrastructure.Dock;
 using Writersword.Src.Infrastructure.Services.Tabs;
 using Writersword.ViewModels.Components;
+using Writersword.ViewModels.Components.MenuBar;
 using Writersword.Views;
 
 namespace Writersword.ViewModels
@@ -62,6 +63,8 @@ namespace Writersword.ViewModels
 
         private string _title = "Writersword";
         private IRootDock? _dockLayout;
+
+        private string? _lastFocusedModuleType;
 
         public ObservableCollection<ModuleMenuItem> AllModules { get; } = new();
         public ObservableCollection<WorkModeMenuItem> AllWorkModes { get; } = new();
@@ -425,6 +428,18 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>
+        /// Получить сфокусированный модуль если он поддерживает Undo/Redo
+        /// </summary>
+        public IUndoableModule? GetFocusedUndoableModule()
+        {
+            if (_lastFocusedModuleType == null) return null;
+
+            var activeTab = TabBar.ActiveTab;
+            return activeTab?.ModuleContext.GetModule(_lastFocusedModuleType) as IUndoableModule;
+        }
+
+
+        /// <summary>
         /// Найти модуль по moduleType (dock + float)
         /// Использует ProjectModuleContext — не сканирует View иерархию
         /// </summary>
@@ -477,6 +492,13 @@ namespace Writersword.ViewModels
         private void InitializeDockFactory()
         {
             _dockFactory.Initialize();
+
+            _dockFactory.OnModuleFocused = moduleType =>
+            {
+                _lastFocusedModuleType = moduleType;
+                _logger.LogDebug("Last focused module: {moduleType}", moduleType);
+            };
+
             _logger.LogDebug("Dock factory initialized");
         }
 
@@ -585,6 +607,22 @@ namespace Writersword.ViewModels
                 Scope = HotKeyScope.Global,
                 DefaultGesture = new HotKeyGesture(new KeyGesture(Key.F11))
             }, MenuBar.ToggleFullscreenCommand);
+
+            _hotKeyService.Register("HotKey_Edit_Undo", new HotKey
+            {
+                DisplayNameKey = Strings.HotKey_Edit_Undo,
+                Category = HotKeyCategory.Edit,
+                Scope = HotKeyScope.Global,
+                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.Z, KeyModifiers.Control))
+            }, MenuBar.UndoCommand);
+
+            _hotKeyService.Register("HotKey_Edit_Redo", new HotKey
+            {
+                DisplayNameKey = Strings.HotKey_Edit_Redo,
+                Category = HotKeyCategory.Edit,
+                Scope = HotKeyScope.Global,
+                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.Y, KeyModifiers.Control))
+            }, MenuBar.RedoCommand);
 
             _hotKeyService.LoadSettings();
 

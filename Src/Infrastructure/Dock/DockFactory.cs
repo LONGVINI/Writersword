@@ -39,6 +39,11 @@ namespace Writersword.Src.Infrastructure.Dock
         /// </summary>
         public Action<string>? OnModuleClosed { get; set; }
 
+        /// <summary>
+        /// Callback вызывается когда пользователь переключается на другой модуль в Dock
+        /// </summary>
+        public Action<string>? OnModuleFocused { get; set; }
+
         public DockFactory()
         {
             _logger = App.Services.GetService<ILogger<DockFactory>>()!;
@@ -1214,6 +1219,22 @@ namespace Writersword.Src.Infrastructure.Dock
             var window = new DockWindow { Id = Guid.NewGuid().ToString(), Factory = this };
             _logger.LogDebug("DockWindow created: {Id}", window.Id);
             return window;
+        }
+
+        /// <summary>
+        /// Перехват смены активного документа в Dock
+        /// Вызывается когда пользователь кликает на другую вкладку модуля
+        /// </summary>
+        public override void OnFocusedDockableChanged(IDockable? dockable)
+        {
+            base.OnFocusedDockableChanged(dockable);
+
+            if (dockable is Document doc && doc.Id?.StartsWith("Module_") == true)
+            {
+                var moduleType = doc.Id.Replace("Module_", "");
+                _logger.LogDebug("Module focused: {moduleType}", moduleType);
+                OnModuleFocused?.Invoke(moduleType);
+            }
         }
     }
 }

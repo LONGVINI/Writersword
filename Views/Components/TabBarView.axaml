@@ -7,12 +7,26 @@
              x:DataType="vm:TabBarViewModel"
              x:Name="TabBarViewRoot">
 
-	<!-- Сброс базового стиля Button чтобы не конфликтовал с кастомным шаблоном -->
 	<UserControl.Styles>
 		<Style Selector="Button">
 			<Setter Property="Background" Value="Transparent"/>
 			<Setter Property="BorderThickness" Value="0"/>
 			<Setter Property="Padding" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+		</Style>
+		<Style Selector="Button /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="CornerRadius" Value="0"/>
+		</Style>
+		<Style Selector="Button:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button:pressed /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
 		</Style>
 	</UserControl.Styles>
 
@@ -60,7 +74,6 @@
 									<TranslateTransform X="0" Y="0"/>
 								</Button.RenderTransform>
 
-								<!-- Кастомный шаблон вкладки без Fluent оформления -->
 								<Button.Template>
 									<ControlTemplate>
 										<Border x:Name="PART_Border"
@@ -75,15 +88,12 @@
 								</Button.Template>
 
 								<Button.Styles>
-									<!-- Активная вкладка -->
 									<Style Selector="Button.active /template/ Border#PART_Border">
 										<Setter Property="Background" Value="{DynamicResource BgAppBrush}"/>
 									</Style>
-									<!-- Hover на неактивной -->
 									<Style Selector="Button:pointerover /template/ Border#PART_Border">
 										<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
 									</Style>
-									<!-- Hover на активной -->
 									<Style Selector="Button.active:pointerover /template/ Border#PART_Border">
 										<Setter Property="Background" Value="{DynamicResource BgAppBrush}"/>
 									</Style>
@@ -91,7 +101,6 @@
 
 								<Grid ColumnDefinitions="*,Auto">
 
-									<!-- Название вкладки -->
 									<TextBlock Grid.Column="0"
                                                x:Name="TabTitle"
                                                Text="{Binding Title}"
@@ -110,7 +119,6 @@
 										</TextBlock.Styles>
 									</TextBlock>
 
-									<!-- Кнопка закрытия вкладки -->
 									<Button Grid.Column="1"
                                             Command="{Binding #TabBarViewRoot.DataContext.CloseTabCommand}"
                                             CommandParameter="{Binding}"
@@ -145,7 +153,6 @@
 					</ItemsControl.ItemTemplate>
 				</ItemsControl>
 
-				<!-- Кнопка создания новой вкладки -->
 				<Button Content="+"
                         Command="{Binding CreateNewTabCommand}"
                         Background="Transparent"

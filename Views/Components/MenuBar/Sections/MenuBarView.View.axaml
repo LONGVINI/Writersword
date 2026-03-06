@@ -1,0 +1,62 @@
+<MenuItem xmlns="https://github.com/avaloniaui"
+          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+          xmlns:vm="using:Writersword.ViewModels.Components.MenuBar"
+          xmlns:loc="using:Writersword.Resources.Localization"
+          x:Class="Writersword.Views.Components.MenuBar.Sections.MenuBarViewSection"
+          x:DataType="vm:MenuBarViewModel"
+          x:Name="ViewSectionRoot"
+          Header="{x:Static loc:Strings.Menu_View}"
+          Foreground="{DynamicResource TextPrimaryBrush}"
+          FontSize="13"
+          Padding="10,6,10,6">
+
+	<MenuItem Header="{x:Static loc:Strings.Menu_View_WorkModes}"
+              ItemsSource="{Binding AllWorkModes}">
+		<MenuItem.ItemTemplate>
+			<DataTemplate>
+				<MenuItem Command="{Binding #ViewSectionRoot.DataContext.ToggleWorkModeCommand}"
+                          CommandParameter="{Binding WorkModeId}">
+					<MenuItem.Header>
+						<StackPanel Orientation="Horizontal" Spacing="5">
+							<TextBlock Text="&#10003;" IsVisible="{Binding IsChecked}" FontWeight="Bold" Width="15"/>
+							<TextBlock Text="{Binding Icon}"/>
+							<TextBlock Text="{Binding Name}"/>
+						</StackPanel>
+					</MenuItem.Header>
+				</MenuItem>
+			</DataTemplate>
+		</MenuItem.ItemTemplate>
+	</MenuItem>
+
+	<MenuItem Header="{x:Static loc:Strings.Menu_View_Modules}"
+              ItemsSource="{Binding AllModules}">
+		<MenuItem.ItemTemplate>
+			<DataTemplate>
+				<MenuItem Header="{Binding Name}"
+                          Command="{Binding #ViewSectionRoot.DataContext.ToggleModuleCommand}"
+                          CommandParameter="{Binding ModuleType}"
+                          IsEnabled="{Binding IsEnabled}">
+					<MenuItem.Icon>
+						<StackPanel Orientation="Horizontal" Spacing="5">
+							<TextBlock Text="&#10003;" IsVisible="{Binding IsChecked}" FontWeight="Bold"/>
+							<TextBlock Text="{Binding Icon}"/>
+						</StackPanel>
+					</MenuItem.Icon>
+				</MenuItem>
+			</DataTemplate>
+		</MenuItem.ItemTemplate>
+	</MenuItem>
+
+	<Separator/>
+
+	<MenuItem x:Name="HotKey_View_Fullscreen"
+              Command="{Binding ToggleFullscreenCommand}">
+		<MenuItem.Header>
+			<StackPanel Orientation="Horizontal" Spacing="5">
+				<TextBlock Text="&#10003;" IsVisible="{Binding IsFullscreen}" FontWeight="Bold" Width="15"/>
+				<TextBlock Text="{x:Static loc:Strings.Menu_View_Fullscreen}"/>
+			</StackPanel>
+		</MenuItem.Header>
+	</MenuItem>
+
+</MenuItem>

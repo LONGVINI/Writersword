@@ -143,6 +143,8 @@ namespace Writersword.Src.Infrastructure.Services.Input
 
         public bool HandleKeyPress(KeyGesture gesture, string? focusedModuleType = null)
         {
+            _logger.LogDebug("HandleKeyPress received: {Key} + {Modifiers}", gesture.Key, gesture.KeyModifiers);
+
             _pendingSequence.Add(gesture);
             ResetSequenceTimer();
 

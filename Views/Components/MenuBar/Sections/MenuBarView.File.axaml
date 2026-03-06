@@ -1,0 +1,71 @@
+<MenuItem xmlns="https://github.com/avaloniaui"
+          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+          xmlns:vm="using:Writersword.ViewModels.Components.MenuBar"
+          xmlns:loc="using:Writersword.Resources.Localization"
+          x:Class="Writersword.Views.Components.MenuBar.Sections.MenuBarFile"
+          x:DataType="vm:MenuBarViewModel"
+          Header="{x:Static loc:Strings.Menu_File}"
+          Foreground="{DynamicResource TextPrimaryBrush}"
+          FontSize="13"
+          Padding="10,6,10,6">
+
+	<MenuItem x:Name="HotKey_File_New"
+              Header="{x:Static loc:Strings.Menu_File_NewProject}"
+              Command="{Binding NewProjectCommand}"/>
+
+	<MenuItem x:Name="HotKey_File_Open"
+              Header="{x:Static loc:Strings.Menu_File_OpenProject}"
+              Command="{Binding OpenProjectCommand}"/>
+
+	<MenuItem Header="{x:Static loc:Strings.Menu_File_RecentProjects}"
+              ItemsSource="{Binding RecentProjects}">
+		<MenuItem.Styles>
+			<Style Selector="MenuItem > MenuItem">
+				<Setter Property="Header" Value="{Binding ProjectName}"/>
+				<Setter Property="Command" Value="{Binding $parent[Menu].DataContext.OpenRecentProjectCommand}"/>
+				<Setter Property="CommandParameter" Value="{Binding FilePath}"/>
+			</Style>
+		</MenuItem.Styles>
+	</MenuItem>
+
+	<Separator/>
+
+	<MenuItem x:Name="HotKey_File_Save"
+              Header="{x:Static loc:Strings.Menu_File_Save}"
+              Command="{Binding SaveProjectCommand}"/>
+
+	<MenuItem x:Name="HotKey_File_SaveAs"
+              Header="{x:Static loc:Strings.Menu_File_SaveAs}"
+              Command="{Binding SaveAsProjectCommand}"/>
+
+	<MenuItem x:Name="HotKey_File_SaveAll"
+              Header="{x:Static loc:Strings.Menu_File_SaveAll}"
+              Command="{Binding SaveAllProjectsCommand}"/>
+
+	<Separator/>
+
+	<MenuItem x:Name="HotKey_File_CloseTab"
+              Header="{x:Static loc:Strings.Menu_File_CloseTab}"
+              Command="{Binding CloseTabCommand}"/>
+
+	<MenuItem x:Name="HotKey_File_CloseAllTabs"
+              Header="{x:Static loc:Strings.Menu_File_CloseAllTabs}"
+              Command="{Binding CloseAllTabsCommand}"/>
+
+	<MenuItem x:Name="HotKey_File_CloseOtherTabs"
+              Header="{x:Static loc:Strings.Menu_File_CloseOtherTabs}"
+              Command="{Binding CloseOtherTabsCommand}"/>
+
+	<Separator/>
+
+	<MenuItem x:Name="HotKey_File_Settings"
+              Header="{x:Static loc:Strings.Menu_File_Settings}"
+              Command="{Binding OpenSettingsCommand}"/>
+
+	<Separator/>
+
+	<MenuItem x:Name="HotKey_File_Exit"
+              Header="{x:Static loc:Strings.Menu_File_Exit}"
+              Command="{Binding ExitCommand}"/>
+
+</MenuItem>

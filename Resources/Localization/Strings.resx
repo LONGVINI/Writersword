@@ -937,4 +937,12 @@
     <value>Fullscreen</value>
     <comment>Hotkey: toggle fullscreen mode</comment>
   </data>
+  <data name="HotKey_Edit_Undo" xml:space="preserve">
+    <value>Undo</value>
+    <comment>Hotkey display name for undo action</comment>
+  </data>
+  <data name="HotKey_Edit_Redo" xml:space="preserve">
+    <value>Redo</value>
+    <comment>Hotkey display name for redo action</comment>
+  </data>
 </root>

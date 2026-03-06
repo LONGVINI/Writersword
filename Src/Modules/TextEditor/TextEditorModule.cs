@@ -10,6 +10,7 @@ using System.Reactive.Linq;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
 using Writersword.Modules.Common;
+using Writersword.Modules.TextEditor.Commands;
 using Writersword.Modules.TextEditor.ViewModels;
 using Writersword.Modules.TextEditor.Views;
 using Writersword.Src.Core.Interfaces.Services.Storage;
@@ -19,11 +20,13 @@ using Writersword.Src.Modules.TextEditor.Resources;
 
 namespace Writersword.Modules.TextEditor
 {
-    public class TextEditorModule : BaseModule, IConfigurableModule
+    public class TextEditorModule : BaseModule, IConfigurableModule, IUndoableModule
     {
         private readonly ILogger<TextEditorModule> _logger;
         private TextEditorViewModel? _viewModel;
         private IDisposable? _textSubscription;
+        private readonly UndoRedoStack _undoRedo = new(50);
+        private string? _lastSavedText = null;
 
         private const string LocalSettingsPath = "TextEditor/settings.json";
 
@@ -40,6 +43,21 @@ namespace Writersword.Modules.TextEditor
         public string SettingsTitle => TextEditorStrings.DisplayName;
         public Type SettingsType => typeof(TextEditorSettings);
 
+        // -----------------------------------------------------------------------
+        // IUndoableModule
+        // -----------------------------------------------------------------------
+
+        public bool CanUndo => _undoRedo.CanUndo;
+        public bool CanRedo => _undoRedo.CanRedo;
+        public string? UndoDescription => _undoRedo.UndoDescription;
+        public string? RedoDescription => _undoRedo.RedoDescription;
+
+        public void Undo() => _undoRedo.Undo();
+        public void Redo() => _undoRedo.Redo();
+        public void PushCommand(IUndoableCommand command) => _undoRedo.Push(command);
+
+        // -----------------------------------------------------------------------
+
         public override void Initialize()
         {
             _logger.LogDebug("Initialize START (moduleType: {moduleType})", moduleType);
@@ -55,10 +73,6 @@ namespace Writersword.Modules.TextEditor
             _logger.LogDebug("Initialized (moduleType: {moduleType})", moduleType);
         }
 
-        /// <summary>
-        /// Загрузить локальные настройки из ZIP проекта и применить поверх глобальных
-        /// Вызывается после установки Context
-        /// </summary>
         private void LoadAndApplyLocalSettings()
         {
             if (Context?.FileStorage == null) return;
@@ -83,9 +97,6 @@ namespace Writersword.Modules.TextEditor
             }
         }
 
-        /// <summary>
-        /// Сохранить локальные настройки в ZIP проекта
-        /// </summary>
         private void SaveLocalSettings(TextEditorSettings settings)
         {
             if (Context?.FileStorage == null)
@@ -220,10 +231,20 @@ namespace Writersword.Modules.TextEditor
         {
             _textSubscription?.Dispose();
             _textSubscription = _viewModel!.WhenAnyValue(x => x.PlainText)
-                .Throttle(TimeSpan.FromSeconds(0.5))
-                .Subscribe(text =>
+                .Throttle(TimeSpan.FromMilliseconds(300))
+                .Subscribe(newText =>
                 {
-                    _logger.LogDebug("Text updated: {Length} chars", text?.Length ?? 0);
+                    if (_viewModel!.IsUndoing) return;
+
+                    var prev = _lastSavedText;
+                    _lastSavedText = newText;
+
+                    if (prev == newText) return;
+
+                    var cmd = new TextChangeCommand(_viewModel, prev ?? "", newText ?? "");
+                    _undoRedo.Push(cmd);
+
+                    _logger.LogDebug("Text change pushed to stack: {Length} chars", newText?.Length ?? 0);
                 });
         }
 
@@ -260,6 +281,8 @@ namespace Writersword.Modules.TextEditor
                 _ => ""
             };
 
+            _undoRedo.Clear();
+            _lastSavedText = text;
             _viewModel.LoadDocument(text);
             _logger.LogDebug("Loaded {Length} chars", text.Length);
 

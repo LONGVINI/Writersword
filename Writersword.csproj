@@ -300,6 +300,31 @@
 		</Compile>
 	</ItemGroup>
 
+	<!-- MenuBar Sections -->
+	<ItemGroup>
+		<Compile Update="Views\Components\MenuBar\Sections\MenuBarView.File.axaml.cs">
+			<DependentUpon>MenuBarView.File.axaml</DependentUpon>
+		</Compile>
+		<Compile Update="Views\Components\MenuBar\Sections\MenuBarView.Edit.axaml.cs">
+			<DependentUpon>MenuBarView.Edit.axaml</DependentUpon>
+		</Compile>
+		<Compile Update="Views\Components\MenuBar\Sections\MenuBarView.View.axaml.cs">
+			<DependentUpon>MenuBarView.View.axaml</DependentUpon>
+		</Compile>
+		<Compile Update="Views\Components\MenuBar\Sections\MenuBarView.Workspace.axaml.cs">
+			<DependentUpon>MenuBarView.Workspace.axaml</DependentUpon>
+		</Compile>
+		<Compile Update="Views\Components\MenuBar\Sections\MenuBarView.Tools.axaml.cs">
+			<DependentUpon>MenuBarView.Tools.axaml</DependentUpon>
+		</Compile>
+		<Compile Update="Views\Components\MenuBar\Sections\MenuBarView.Help.axaml.cs">
+			<DependentUpon>MenuBarView.Help.axaml</DependentUpon>
+		</Compile>
+		<Compile Update="Views\Components\MenuBar\MenuBarView.axaml.cs">
+			<DependentUpon>MenuBarView.axaml</DependentUpon>
+		</Compile>
+	</ItemGroup>
+	
 	<ProjectExtensions>
 		<VisualStudio>
 			<UserProperties />

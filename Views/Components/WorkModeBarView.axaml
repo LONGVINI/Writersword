@@ -8,12 +8,26 @@
              x:DataType="vm:WorkModeBarViewModel"
              x:Name="WorkModeBarViewRoot">
 
-	<!-- Сброс базового стиля Button чтобы не конфликтовал с кастомным шаблоном -->
 	<UserControl.Styles>
 		<Style Selector="Button">
 			<Setter Property="Background" Value="Transparent"/>
 			<Setter Property="BorderThickness" Value="0"/>
 			<Setter Property="Padding" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+		</Style>
+		<Style Selector="Button /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="CornerRadius" Value="0"/>
+		</Style>
+		<Style Selector="Button:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button:pressed /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
 		</Style>
 	</UserControl.Styles>
 
@@ -52,7 +66,6 @@
 							<TranslateTransform X="0" Y="0"/>
 						</Button.RenderTransform>
 
-						<!-- Свой Template без Fluent Button -->
 						<Button.Template>
 							<ControlTemplate>
 								<Border x:Name="PART_Border"
@@ -68,31 +81,24 @@
 						</Button.Template>
 
 						<Button.Styles>
-							<!-- Активная кнопка - акцентный фон -->
 							<Style Selector="Button.active /template/ Border#PART_Border">
 								<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
 							</Style>
-							<!-- Hover на неактивной -->
 							<Style Selector="Button:pointerover /template/ Border#PART_Border">
 								<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
 							</Style>
-							<!-- Hover на активной -->
 							<Style Selector="Button.active:pointerover /template/ Border#PART_Border">
 								<Setter Property="Background" Value="{DynamicResource AccentHoverBrush}"/>
 							</Style>
-							<!-- Pressed на неактивной -->
 							<Style Selector="Button:pressed /template/ Border#PART_Border">
 								<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
 							</Style>
-							<!-- Pressed на активной -->
 							<Style Selector="Button.active:pressed /template/ Border#PART_Border">
 								<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
 							</Style>
-							<!-- Dragging на неактивной -->
 							<Style Selector="Button.dragging /template/ Border#PART_Border">
 								<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
 							</Style>
-							<!-- Dragging на активной -->
 							<Style Selector="Button.active.dragging /template/ Border#PART_Border">
 								<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
 							</Style>

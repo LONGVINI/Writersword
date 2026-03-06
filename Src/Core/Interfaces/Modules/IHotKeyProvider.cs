@@ -1,6 +1,4 @@
-﻿using Writersword.Core.Interfaces.Modules;
-
-namespace Writersword.Core.Interfaces.Modules
+﻿namespace Writersword.Core.Interfaces.Modules
 {
     /// <summary>
     /// Интерфейс для модулей которые имеют собственные горячие клавиши.

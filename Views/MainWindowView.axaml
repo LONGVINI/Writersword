@@ -6,6 +6,7 @@
         xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
         xmlns:components="using:Writersword.Views.Components"
         x:Class="Writersword.Views.MainWindowView"
+		xmlns:menubar="using:Writersword.Views.Components.MenuBar"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding Title}"
         Width="1400"
@@ -33,7 +34,7 @@
                        VerticalAlignment="Top"
                        RenderOptions.BitmapInterpolationMode="HighQuality"/>
 
-            <components:MenuBarView DataContext="{Binding MenuBar}"
+		    <menubar:MenuBarView DataContext="{Binding MenuBar}"
                         HorizontalAlignment="Stretch"
                         VerticalAlignment="Top"/>
             </DockPanel>

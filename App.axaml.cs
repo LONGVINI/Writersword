@@ -34,6 +34,7 @@ using Writersword.Src.ProjectTypes.Common;
 using Writersword.Src.WorkModes.Common;
 using Writersword.ViewModels;
 using Writersword.ViewModels.Components;
+using Writersword.ViewModels.Components.MenuBar;
 using Writersword.Views;
 
 namespace Writersword

@@ -735,4 +735,10 @@
   <data name="HotKey_View_Fullscreen" xml:space="preserve">
     <value>Полный экран</value>
   </data>
+  <data name="HotKey_Edit_Undo" xml:space="preserve">
+    <value>Отменить</value>
+  </data>
+  <data name="HotKey_Edit_Redo" xml:space="preserve">
+    <value>Повторить</value>
+  </data>
 </root>

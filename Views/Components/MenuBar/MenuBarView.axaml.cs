@@ -11,36 +11,32 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Linq;
 using Writersword.Src.Core.Interfaces.Services.Input;
-using Writersword.ViewModels.Components;
+using Writersword.ViewModels.Components.MenuBar;
 
-namespace Writersword.Views.Components
+namespace Writersword.Views.Components.MenuBar
 {
     public partial class MenuBarView : UserControl
     {
-        private readonly ILogger<MenuBarView> _logger;
         private readonly IHotKeyService _hotKeyService;
         private WrapPanel? _wrapPanel;
         private double _baseWrapHeight = -1;
 
         public MenuBarView()
         {
-            _logger = App.Services.GetService<ILogger<MenuBarView>>()!;
             _hotKeyService = App.Services.GetRequiredService<IHotKeyService>();
             InitializeComponent();
             DataContextChanged += OnDataContextChanged;
             _hotKeyService.HotKeysChanged += OnHotKeysChanged;
 
             foreach (var item in MainMenu.Items)
-            {
                 if (item is MenuItem topLevel)
                     topLevel.SubmenuOpened += OnTopLevelMenuOpened;
-            }
 
             MainMenu.TemplateApplied += OnMenuTemplateApplied;
             SizeChanged += OnMenuBarViewSizeChanged;
-
-            _logger.LogDebug("MenuBarView created");
         }
+
+        // ── WrapPanel / resize ─────────────────────────────────────────────────
 
         private void OnMenuTemplateApplied(object? sender, TemplateAppliedEventArgs e)
         {
@@ -50,15 +46,12 @@ namespace Writersword.Views.Components
             itemsPresenter.Loaded += (_, _) =>
             {
                 _wrapPanel = itemsPresenter.Panel as WrapPanel;
-                _logger.LogDebug("WrapPanel found: {Found}", _wrapPanel != null);
             };
         }
 
-        /// <summary>При изменении ширины MenuBarView перемеряем WrapPanel и обновляем высоту Menu.</summary>
         private void OnMenuBarViewSizeChanged(object? sender, SizeChangedEventArgs e)
         {
-            if (_wrapPanel == null) return;
-            if (!e.WidthChanged) return;
+            if (_wrapPanel == null || !e.WidthChanged) return;
 
             var availableWidth = e.NewSize.Width - MainMenu.Padding.Left - MainMenu.Padding.Right;
             if (availableWidth <= 0) return;
@@ -66,12 +59,8 @@ namespace Writersword.Views.Components
             _wrapPanel.Measure(new Size(availableWidth, double.PositiveInfinity));
             var desiredH = _wrapPanel.DesiredSize.Height;
 
-            _logger.LogDebug("SizeChanged: width={W}, wrapDesiredH={H}, currentMenuH={MH}",
-                availableWidth, desiredH, MainMenu.Height);
-
             if (Math.Abs(desiredH - MainMenu.Bounds.Height) > 0.5)
             {
-                _logger.LogDebug("Setting MainMenu.Height: {Old} -> {New}", MainMenu.Bounds.Height, desiredH);
                 MainMenu.Height = desiredH;
             }
         }
@@ -86,24 +75,20 @@ namespace Writersword.Views.Components
             if (_baseWrapHeight < 0)
             {
                 _baseWrapHeight = desiredH;
-                _logger.LogDebug("Base height captured: {H}", _baseWrapHeight);
             }
 
             if (Math.Abs(desiredH - MainMenu.Height) > 0.5)
             {
-                _logger.LogDebug("Setting MainMenu.Height: {Old} -> {New}", MainMenu.Height, desiredH);
                 MainMenu.Height = desiredH;
             }
         }
 
         private void OnWrapPanelSizeChanged(object? sender, SizeChangedEventArgs e)
         {
-            _logger.LogDebug("WrapPanel SizeChanged: {Old} -> {New}", e.PreviousSize, e.NewSize);
 
             if (_baseWrapHeight < 0)
             {
                 _baseWrapHeight = e.NewSize.Height;
-                _logger.LogDebug("WrapPanel base height: {H}", _baseWrapHeight);
                 return;
             }
 
@@ -112,37 +97,29 @@ namespace Writersword.Views.Components
             var extraRows = Math.Max(0, Math.Round((e.NewSize.Height - _baseWrapHeight) / _baseWrapHeight));
             var newMenuHeight = 32 + extraRows * 32;
 
-            _logger.LogDebug("Rows changed: extra={R}, newMenuHeight={H}", extraRows, newMenuHeight);
-
             MainMenu.Height = newMenuHeight;
         }
+
+        // ── DataContext / HotKeys ──────────────────────────────────────────────
 
         private void OnDataContextChanged(object? sender, EventArgs e)
         {
             if (DataContext is MenuBarViewModel vm)
-            {
                 vm.OpenRecentProjectCommand.Subscribe(_ =>
-                {
-                    Dispatcher.UIThread.Post(() => MainMenu.Close());
-                });
-            }
+                    Dispatcher.UIThread.Post(() => MainMenu.Close()));
 
             UpdateAllGestures();
         }
 
-        private void OnHotKeysChanged()
-        {
+        private void OnHotKeysChanged() =>
             Dispatcher.UIThread.Post(UpdateAllGestures);
-        }
+
+        // ── Gesture alignment ─────────────────────────────────────────────────
 
         private void OnTopLevelMenuOpened(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         {
             if (sender is not MenuItem topLevel) return;
-
-            Dispatcher.UIThread.Post(() =>
-            {
-                AlignGestureText(topLevel);
-            }, DispatcherPriority.Render);
+            Dispatcher.UIThread.Post(() => AlignGestureText(topLevel), DispatcherPriority.Render);
         }
 
         private void AlignGestureText(MenuItem parent)
@@ -175,10 +152,9 @@ namespace Writersword.Views.Components
             }
         }
 
-        private void UpdateAllGestures()
-        {
-            UpdateGesturesRecursive(MainMenu);
-        }
+        // ── UpdateGestures ────────────────────────────────────────────────────
+
+        private void UpdateAllGestures() => UpdateGesturesRecursive(MainMenu);
 
         private void UpdateGesturesRecursive(ItemsControl parent)
         {
@@ -191,10 +167,7 @@ namespace Writersword.Views.Components
                 {
                     var gestureStr = BuildGestureString(menuItem.Name);
                     if (!string.IsNullOrEmpty(gestureStr))
-                    {
-                        try { menuItem.InputGesture = KeyGesture.Parse(gestureStr); }
-                        catch { }
-                    }
+                        try { menuItem.InputGesture = KeyGesture.Parse(gestureStr); } catch { }
                 }
 
                 if (menuItem.Items.Count > 0)
@@ -205,8 +178,7 @@ namespace Writersword.Views.Components
         private string BuildGestureString(string hotKeyId)
         {
             var hotKey = _hotKeyService.GetHotKey(hotKeyId);
-            if (hotKey == null || hotKey.ActiveGestures.Count == 0)
-                return string.Empty;
+            if (hotKey == null || hotKey.ActiveGestures.Count == 0) return string.Empty;
 
             var first = hotKey.ActiveGestures[0];
             return first.IsSingle ? first.FirstStep.ToString() : string.Join(" -> ", first.Steps);

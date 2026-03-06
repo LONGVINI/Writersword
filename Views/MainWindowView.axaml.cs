@@ -41,7 +41,12 @@ namespace Writersword.Views
             };
 
             Closing += OnClosing;
-            KeyDown += OnKeyDown;
+
+            this.AddHandler(
+                 KeyDownEvent,
+                 OnKeyDown,
+                 Avalonia.Interactivity.RoutingStrategies.Tunnel
+             );
 
             InitializeTitleBar();
         }

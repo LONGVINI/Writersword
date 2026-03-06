@@ -14,34 +14,11 @@
                 BoxShadow="0 2 10 0 #40000000"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Top">
-			<TextBox Text="{Binding PlainText, Mode=TwoWay}"
+			<TextBox Classes="editor"
+                     Text="{Binding PlainText, Mode=TwoWay}"
                      IsReadOnly="{Binding IsReadOnly}"
-                     AcceptsReturn="True"
-                     TextWrapping="Wrap"
-                     Background="White"
-                     Foreground="#000000"
-                     CaretBrush="#000000"
                      FontFamily="{Binding FontFamily}"
-                     FontSize="{Binding FontSize}"
-                     BorderThickness="0"
-                     Padding="60,40"
-                     MinHeight="1000"
-                     VerticalAlignment="Stretch"
-                     Focusable="True">
-				<TextBox.Styles>
-					<Style Selector="TextBox">
-						<Setter Property="Background" Value="White"/>
-					</Style>
-					<Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
-						<Setter Property="Background" Value="White"/>
-						<Setter Property="BorderBrush" Value="Transparent"/>
-					</Style>
-					<Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
-						<Setter Property="Background" Value="White"/>
-						<Setter Property="BorderBrush" Value="Transparent"/>
-					</Style>
-				</TextBox.Styles>
-			</TextBox>
+                     FontSize="{Binding FontSize}"/>
 		</Border>
 	</Border>
 </UserControl>

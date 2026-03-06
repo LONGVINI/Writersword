@@ -1,0 +1,16 @@
+<MenuItem xmlns="https://github.com/avaloniaui"
+          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+          xmlns:vm="using:Writersword.ViewModels.Components.MenuBar"
+          xmlns:loc="using:Writersword.Resources.Localization"
+          x:Class="Writersword.Views.Components.MenuBar.Sections.MenuBarTools"
+          x:DataType="vm:MenuBarViewModel"
+          Header="{x:Static loc:Strings.Menu_Tools}"
+          Foreground="{DynamicResource TextPrimaryBrush}"
+          FontSize="13"
+          Padding="10,6,10,6">
+
+	<MenuItem x:Name="HotKey_Tools_Statistics"
+              Header="{x:Static loc:Strings.Menu_Tools_Statistics}"
+              IsEnabled="False"/>
+
+</MenuItem>
