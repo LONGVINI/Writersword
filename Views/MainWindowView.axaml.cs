@@ -357,11 +357,24 @@ namespace Writersword.Views
         {
             var hotKeyService = App.Services.GetRequiredService<IHotKeyService>();
             var gesture = new KeyGesture(e.Key, e.KeyModifiers);
-
             var focusedModuleType = GetFocusedModuleType();
 
             if (hotKeyService.HandleKeyPress(gesture, focusedModuleType))
+            {
                 e.Handled = true;
+                return;
+            }
+
+            // Блокируем нативные жесты которые модуль объявил своими
+            if (DataContext is MainWindowViewModel vm)
+            {
+                var module = vm.GetFocusedUndoableModule();
+                if (module?.BlockedNativeGestures.Any(g =>
+                    g.Key == e.Key && g.KeyModifiers == e.KeyModifiers) == true)
+                {
+                    e.Handled = true;
+                }
+            }
         }
 
         /// <summary>Поднимается по дереву фокуса до Control у которого Tag содержит moduleType.</summary>

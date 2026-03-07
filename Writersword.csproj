@@ -228,6 +228,7 @@
 		<Folder Include="Resources\Images\" />
 		<Folder Include="Projects\" />
 		<Folder Include="Src\Core\Models\Modules\" />
+		<Folder Include="Src\Modules\TextEditor\Commands\" />
 		<Folder Include="Src\WorkModes\Branching\" />
 		<Folder Include="Src\WorkModes\Dialogues\" />
 		<Folder Include="Src\WorkModes\GameEconomy\" />

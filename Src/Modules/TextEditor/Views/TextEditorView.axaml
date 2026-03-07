@@ -7,14 +7,11 @@
              Tag="TextEditor">
 	<Border Background="{DynamicResource BgAppBrush}" Padding="40">
 		<Border Background="White"
-                MinWidth="850"
-                MaxWidth="850"
-                MinHeight="1100"
-                CornerRadius="2"
-                BoxShadow="0 2 10 0 #40000000"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Top">
-			<TextBox Classes="editor"
+                MinWidth="850" MaxWidth="850" MinHeight="1100"
+                CornerRadius="2" BoxShadow="0 2 10 0 #40000000"
+                HorizontalAlignment="Center" VerticalAlignment="Top">
+			<TextBox Name="EditorTextBox"
+                     Classes="editor"
                      Text="{Binding PlainText, Mode=TwoWay}"
                      IsReadOnly="{Binding IsReadOnly}"
                      FontFamily="{Binding FontFamily}"

@@ -33,7 +33,6 @@
 	<!-- Редакторское поле для большого текста (TextEditor, сценарии, поэзия и т.д.) -->
 	<!-- Использование: Classes="editor" на TextBox -->
 	<Style Selector="TextBox.editor">
-		<Setter Property="IsUndoEnabled" Value="False"/>
 		<Setter Property="AcceptsReturn" Value="True"/>
 		<Setter Property="TextWrapping" Value="Wrap"/>
 		<Setter Property="BorderThickness" Value="0"/>
@@ -45,6 +44,7 @@
 		<Setter Property="Padding" Value="60,40"/>
 		<Setter Property="MinHeight" Value="1000"/>
 		<Setter Property="Focusable" Value="True"/>
+		<Setter Property="UndoLimit" Value="1000"/>
 	</Style>
 	<Style Selector="TextBox.editor /template/ Border#PART_BorderElement">
 		<Setter Property="Background" Value="White"/>

@@ -1,16 +1,17 @@
 ﻿using Avalonia.Controls;
+using Avalonia.Input;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using ReactiveUI;
 using System;
-using System.Text;
+using System.Collections.Generic;
 using System.Reactive.Linq;
+using System.Text;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
 using Writersword.Modules.Common;
-using Writersword.Modules.TextEditor.Commands;
 using Writersword.Modules.TextEditor.ViewModels;
 using Writersword.Modules.TextEditor.Views;
 using Writersword.Src.Core.Interfaces.Services.Storage;
@@ -25,8 +26,6 @@ namespace Writersword.Modules.TextEditor
         private readonly ILogger<TextEditorModule> _logger;
         private TextEditorViewModel? _viewModel;
         private IDisposable? _textSubscription;
-        private readonly UndoRedoStack _undoRedo = new(50);
-        private string? _lastSavedText = null;
 
         private const string LocalSettingsPath = "TextEditor/settings.json";
 
@@ -44,17 +43,25 @@ namespace Writersword.Modules.TextEditor
         public Type SettingsType => typeof(TextEditorSettings);
 
         // -----------------------------------------------------------------------
-        // IUndoableModule
+        // IUndoableModule — делегируем в нативный TextBox через колбэки из View
         // -----------------------------------------------------------------------
 
-        public bool CanUndo => _undoRedo.CanUndo;
-        public bool CanRedo => _undoRedo.CanRedo;
-        public string? UndoDescription => _undoRedo.UndoDescription;
-        public string? RedoDescription => _undoRedo.RedoDescription;
+        public bool CanUndo => true;
+        public bool CanRedo => true;
+        public string? UndoDescription => null;
+        public string? RedoDescription => null;
 
-        public void Undo() => _undoRedo.Undo();
-        public void Redo() => _undoRedo.Redo();
-        public void PushCommand(IUndoableCommand command) => _undoRedo.Push(command);
+        /// <summary>Подключается из TextEditorView — вызывает TextBox.Undo()</summary>
+        public Action? UndoAction { get; set; }
+
+        /// <summary>Подключается из TextEditorView — вызывает TextBox.Redo()</summary>
+        public Action? RedoAction { get; set; }
+
+        public void Undo() => UndoAction?.Invoke();
+        public void Redo() => RedoAction?.Invoke();
+
+        /// <summary>Не используется — стек ведёт сам TextBox</summary>
+        public void PushCommand(IUndoableCommand command) { }
 
         // -----------------------------------------------------------------------
 
@@ -68,8 +75,8 @@ namespace Writersword.Modules.TextEditor
                                  ?? new TextEditorSettings();
 
             _viewModel.ApplySettings(globalSettings);
-
             CreateSubscription();
+
             _logger.LogDebug("Initialized (moduleType: {moduleType})", moduleType);
         }
 
@@ -231,20 +238,10 @@ namespace Writersword.Modules.TextEditor
         {
             _textSubscription?.Dispose();
             _textSubscription = _viewModel!.WhenAnyValue(x => x.PlainText)
-                .Throttle(TimeSpan.FromMilliseconds(300))
-                .Subscribe(newText =>
+                .Throttle(TimeSpan.FromMilliseconds(500))
+                .Subscribe(text =>
                 {
-                    if (_viewModel!.IsUndoing) return;
-
-                    var prev = _lastSavedText;
-                    _lastSavedText = newText;
-
-                    if (prev == newText) return;
-
-                    var cmd = new TextChangeCommand(_viewModel, prev ?? "", newText ?? "");
-                    _undoRedo.Push(cmd);
-
-                    _logger.LogDebug("Text change pushed to stack: {Length} chars", newText?.Length ?? 0);
+                    _logger.LogDebug("Text updated: {Length} chars", text?.Length ?? 0);
                 });
         }
 
@@ -281,8 +278,6 @@ namespace Writersword.Modules.TextEditor
                 _ => ""
             };
 
-            _undoRedo.Clear();
-            _lastSavedText = text;
             _viewModel.LoadDocument(text);
             _logger.LogDebug("Loaded {Length} chars", text.Length);
 
@@ -297,13 +292,25 @@ namespace Writersword.Modules.TextEditor
         public override void Dispose()
         {
             _textSubscription?.Dispose();
+            UndoAction = null;
+            RedoAction = null;
             _logger.LogDebug("Disposed (moduleType: {moduleType})", moduleType);
         }
 
         public override Control? CreateView()
         {
-            return new TextEditorView { DataContext = ViewModel };
+            var view = new TextEditorView();
+            view.DataContext = ViewModel;
+            view.WireModule(this);
+            return view;
         }
+
+        public IReadOnlyList<KeyGesture> BlockedNativeGestures => new[]
+        {
+            new KeyGesture(Key.Z, KeyModifiers.Control),
+            new KeyGesture(Key.Y, KeyModifiers.Control),
+            new KeyGesture(Key.Z, KeyModifiers.Control | KeyModifiers.Shift)
+        };
     }
 
     internal class TextEditorMetadata : IModuleMetadata

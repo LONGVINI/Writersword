@@ -1,4 +1,7 @@
-﻿namespace Writersword.Core.Interfaces.Modules
+﻿using Avalonia.Input;
+using System.Collections.Generic;
+
+namespace Writersword.Core.Interfaces.Modules
 {
     /// <summary>
     /// Опциональный интерфейс для модулей поддерживающих Undo/Redo.
@@ -24,5 +27,11 @@
         /// Вызывай из модуля при каждом действии пользователя.
         /// </summary>
         void PushCommand(IUndoableCommand command);
+
+        /// <summary>
+        /// Жесты которые модуль перехватывает сам — нативная обработка блокируется.
+        /// Например TextEditor блокирует Ctrl+Z чтобы TextBox не обрабатывал его дважды.
+        /// </summary>
+        IReadOnlyList<KeyGesture> BlockedNativeGestures { get; }
     }
 }

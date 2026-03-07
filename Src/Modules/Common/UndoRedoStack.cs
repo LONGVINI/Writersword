@@ -26,15 +26,13 @@ namespace Writersword.Modules.Common
         public string? RedoDescription => CanRedo ? _redoStack.Peek().Description : null;
 
         /// <summary>
-        /// Выполнить команду и положить в стек.
-        /// Сбрасывает RedoStack — новое действие отменяет историю повторов.
+        /// Положить команду в стек БЕЗ выполнения
+        /// Используй когда действие уже применено и нужно только запомнить его для Undo.
         /// </summary>
         public void Push(IUndoableCommand command)
         {
-            command.Execute();
             _undoStack.Push(command);
             _redoStack.Clear();
-
             if (_undoStack.Count > _maxSteps)
                 TrimStack();
         }

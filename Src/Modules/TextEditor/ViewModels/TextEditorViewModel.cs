@@ -1,13 +1,12 @@
 using ReactiveUI;
-using System.Collections.Generic;
 using Writersword.Modules.TextEditor.Models;
 using Writersword.Src.Modules.TextEditor.Models;
 
 namespace Writersword.Modules.TextEditor.ViewModels
 {
     /// <summary>
-    /// ViewModel для текстового редактора
-    /// Управляет документом и его содержимым
+    /// ViewModel для текстового редактора.
+    /// Управляет документом и его содержимым.
     /// </summary>
     public class TextEditorViewModel : ReactiveObject
     {
@@ -16,7 +15,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private bool _isReadOnly = false;
         private double _fontSize = 14;
         private string _fontFamily = "Times New Roman";
-        private bool _isUndoing = false;
 
         /// <summary>Простой текст для отображения в TextBox</summary>
         public string PlainText
@@ -57,15 +55,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// <summary>Есть несохранённые изменения</summary>
         public bool IsModified => _document.IsModified;
 
-        /// <summary>Флаг — идёт Undo/Redo, не пушить в стек</summary>
-        public bool IsUndoing => _isUndoing;
-
         public TextEditorViewModel()
         {
-            _document = new EditorDocument
-            {
-                Title = "Untitled"
-            };
+            _document = new EditorDocument { Title = "Untitled" };
         }
 
         /// <summary>Создать новый документ</summary>
@@ -75,20 +67,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
             PlainText = string.Empty;
         }
 
-        /// <summary>Загрузить содержимое документа без пуша в стек</summary>
+        /// <summary>Загрузить содержимое документа</summary>
         public void LoadDocument(string content)
         {
-            _isUndoing = true;
             PlainText = content;
-            _isUndoing = false;
-        }
-
-        /// <summary>Применить текст через Undo/Redo — не пушить в стек</summary>
-        public void ApplyTextSilently(string text)
-        {
-            _isUndoing = true;
-            PlainText = text;
-            _isUndoing = false;
         }
 
         /// <summary>Применить настройки к редактору</summary>
