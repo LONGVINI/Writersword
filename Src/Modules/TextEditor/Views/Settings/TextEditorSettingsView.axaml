@@ -1,0 +1,184 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels"
+             xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
+             x:Class="Writersword.Modules.TextEditor.Views.Settings.TextEditorSettingsView"
+             x:DataType="vm:TextEditorSettingsViewModel"
+             MinWidth="420">
+
+	<ScrollViewer VerticalScrollBarVisibility="Auto">
+		<StackPanel Margin="16" Spacing="20">
+
+			<!-- Раздел: шрифт по умолчанию для новых документов -->
+			<StackPanel Spacing="8">
+				<TextBlock Text="{DynamicResource Settings_FontGroup}"
+                           FontWeight="SemiBold"
+                           FontSize="13"/>
+				<Separator/>
+
+				<!-- Выбор семейства шрифта -->
+				<Grid ColumnDefinitions="160 *" RowDefinitions="Auto">
+					<TextBlock Grid.Column="0"
+                               Text="{DynamicResource Settings_FontFamily}"
+                               VerticalAlignment="Center"/>
+					<ComboBox Grid.Column="1"
+                              ItemsSource="{Binding AvailableFonts}"
+                              SelectedItem="{Binding FontFamily}"
+                              HorizontalAlignment="Stretch"/>
+				</Grid>
+
+				<!-- Размер шрифта в pt -->
+				<Grid ColumnDefinitions="160 120 *" RowDefinitions="Auto">
+					<TextBlock Grid.Column="0"
+                               Text="{DynamicResource Settings_FontSize}"
+                               VerticalAlignment="Center"/>
+					<NumericUpDown Grid.Column="1"
+                                   Value="{Binding FontSize}"
+                                   Minimum="6"
+                                   Maximum="144"
+                                   Increment="1"
+                                   FormatString="0"/>
+				</Grid>
+
+				<!-- Предпросмотр выбранного шрифта -->
+				<Border Background="{DynamicResource InputBackground}"
+                        BorderBrush="{DynamicResource InputBorder}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="12 8">
+					<TextBlock Text="{DynamicResource Settings_PreviewText}"
+                               FontFamily="{Binding FontFamily}"
+                               FontSize="{Binding FontSize}"
+                               TextWrapping="Wrap"/>
+				</Border>
+			</StackPanel>
+
+			<!-- Раздел: орфография (NHunspell, словарь выбирается по языку Run) -->
+			<StackPanel Spacing="8">
+				<TextBlock Text="{DynamicResource Settings_SpellGroup}"
+                           FontWeight="SemiBold"
+                           FontSize="13"/>
+				<Separator/>
+
+				<CheckBox IsChecked="{Binding SpellCheckEnabled}"
+                          Content="{DynamicResource Settings_SpellCheckEnabled}"/>
+
+				<!-- Подчёркивание ошибок доступно только при включённой орфографии -->
+				<CheckBox IsChecked="{Binding ShowSpellErrors}"
+                          IsEnabled="{Binding SpellCheckEnabled}"
+                          Content="{DynamicResource Settings_ShowSpellErrors}"/>
+
+				<!-- Язык по умолчанию для новых Run -->
+				<Grid ColumnDefinitions="160 *" RowDefinitions="Auto">
+					<TextBlock Grid.Column="0"
+                               Text="{DynamicResource Settings_DefaultLanguage}"
+                               VerticalAlignment="Center"/>
+					<ComboBox Grid.Column="1"
+                              ItemsSource="{Binding AvailableLanguages}"
+                              SelectedItem="{Binding DefaultLanguage}"
+                              IsEnabled="{Binding SpellCheckEnabled}"
+                              HorizontalAlignment="Stretch"/>
+				</Grid>
+			</StackPanel>
+
+			<!-- Раздел: автозамена (правила хранятся в TextEditorSettings.AutoReplaceRules) -->
+			<StackPanel Spacing="8">
+				<TextBlock Text="{DynamicResource Settings_AutoReplaceGroup}"
+                           FontWeight="SemiBold"
+                           FontSize="13"/>
+				<Separator/>
+
+				<CheckBox IsChecked="{Binding AutoReplaceEnabled}"
+                          Content="{DynamicResource Settings_AutoReplaceEnabled}"/>
+			</StackPanel>
+
+			<!-- Раздел: параметры отображения редактора -->
+			<StackPanel Spacing="8">
+				<TextBlock Text="{DynamicResource Settings_ViewGroup}"
+                           FontWeight="SemiBold"
+                           FontSize="13"/>
+				<Separator/>
+
+				<CheckBox IsChecked="{Binding ShowRuler}"
+                          Content="{DynamicResource Settings_ShowRuler}"/>
+
+				<CheckBox IsChecked="{Binding ShowFormattingMarks}"
+                          Content="{DynamicResource Settings_ShowFormattingMarks}"/>
+
+				<!-- Режим при открытии нового документа: Page или Draft -->
+				<Grid ColumnDefinitions="160 *" RowDefinitions="Auto">
+					<TextBlock Grid.Column="0"
+                               Text="{DynamicResource Settings_DefaultViewMode}"
+                               VerticalAlignment="Center"/>
+					<ComboBox Grid.Column="1"
+                              ItemsSource="{Binding ViewModes}"
+                              SelectedItem="{Binding DefaultViewMode}"
+                              HorizontalAlignment="Stretch"/>
+				</Grid>
+
+				<!-- Масштаб при открытии нового документа: 25–200% -->
+				<Grid ColumnDefinitions="160 * Auto" RowDefinitions="Auto">
+					<TextBlock Grid.Column="0"
+                               Text="{DynamicResource Settings_DefaultZoom}"
+                               VerticalAlignment="Center"/>
+					<Slider Grid.Column="1"
+                            Minimum="25"
+                            Maximum="200"
+                            Value="{Binding DefaultZoom, Converter={x:Static converters:ZoomPercentConverter.Instance}}"
+                            TickFrequency="25"
+                            IsSnapToTickEnabled="True"
+                            VerticalAlignment="Center"/>
+					<TextBlock Grid.Column="2"
+                               Width="40"
+                               TextAlignment="Right"
+                               VerticalAlignment="Center"
+                               Margin="8 0 0 0">
+						<TextBlock.Text>
+							<MultiBinding StringFormat="{}{0}%">
+								<Binding Path="ZoomPercent"/>
+							</MultiBinding>
+						</TextBlock.Text>
+					</TextBlock>
+				</Grid>
+			</StackPanel>
+
+			<!-- Раздел: автосохранение в дельта-кеш -->
+			<StackPanel Spacing="8">
+				<TextBlock Text="{DynamicResource Settings_AutoSaveGroup}"
+                           FontWeight="SemiBold"
+                           FontSize="13"/>
+				<Separator/>
+
+				<!-- Интервал в секундах; 0 — отключить автосохранение -->
+				<Grid ColumnDefinitions="160 120 *" RowDefinitions="Auto">
+					<TextBlock Grid.Column="0"
+                               Text="{DynamicResource Settings_AutoSaveInterval}"
+                               VerticalAlignment="Center"/>
+					<NumericUpDown Grid.Column="1"
+                                   Value="{Binding AutoSaveIntervalSeconds}"
+                                   Minimum="0"
+                                   Maximum="3600"
+                                   Increment="10"
+                                   FormatString="0"/>
+					<TextBlock Grid.Column="2"
+                               Text="{DynamicResource Settings_AutoSaveSeconds}"
+                               VerticalAlignment="Center"
+                               Margin="8 0 0 0"
+                               Foreground="{DynamicResource TextSecondary}"/>
+				</Grid>
+
+				<TextBlock Text="{DynamicResource Settings_AutoSaveHint}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextSecondary}"
+                           TextWrapping="Wrap"/>
+			</StackPanel>
+
+			<!-- Сброс всех настроек к значениям по умолчанию -->
+			<Button Content="{DynamicResource Settings_ResetToDefaults}"
+                    Command="{Binding ResetToDefaultsCommand}"
+                    HorizontalAlignment="Left"
+                    Classes="Secondary"/>
+
+		</StackPanel>
+	</ScrollViewer>
+</UserControl>

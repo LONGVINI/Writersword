@@ -1,0 +1,135 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.StatusBar"
+             xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
+             x:Class="Writersword.Modules.TextEditor.Views.StatusBar.EditorStatusBarView"
+             x:DataType="vm:StatusBarViewModel"
+             Height="24">
+
+	<Border Background="{DynamicResource StatusBarBackground}"
+            BorderBrush="{DynamicResource StatusBarBorder}"
+            BorderThickness="0 1 0 0">
+
+		<Grid ColumnDefinitions="* Auto">
+
+			<!-- Левая часть: счётчики страниц, слов, символов, абзацев, язык, бейджи -->
+			<StackPanel Grid.Column="0"
+                        Orientation="Horizontal"
+                        Spacing="16"
+                        Margin="8 0"
+                        VerticalAlignment="Center">
+
+				<!-- Текущая страница / всего страниц -->
+				<StackPanel Orientation="Horizontal" Spacing="4">
+					<TextBlock Text="{DynamicResource Status_Page}"
+                               FontSize="11"
+                               Foreground="{DynamicResource StatusBarForeground}"/>
+					<TextBlock FontSize="11"
+                               Foreground="{DynamicResource StatusBarForeground}">
+						<TextBlock.Text>
+							<MultiBinding StringFormat="{}{0} / {1}">
+								<Binding Path="CurrentPage"/>
+								<Binding Path="PageCount"/>
+							</MultiBinding>
+						</TextBlock.Text>
+					</TextBlock>
+				</StackPanel>
+
+				<Separator Width="1" Height="12" Background="{DynamicResource StatusBarSeparator}"/>
+
+				<!-- Количество слов -->
+				<StackPanel Orientation="Horizontal" Spacing="4">
+					<TextBlock Text="{DynamicResource Status_Words}"
+                               FontSize="11"
+                               Foreground="{DynamicResource StatusBarForeground}"/>
+					<TextBlock Text="{Binding WordCount}"
+                               FontSize="11"
+                               Foreground="{DynamicResource StatusBarForeground}"/>
+				</StackPanel>
+
+				<Separator Width="1" Height="12" Background="{DynamicResource StatusBarSeparator}"/>
+
+				<!-- Количество символов -->
+				<StackPanel Orientation="Horizontal" Spacing="4">
+					<TextBlock Text="{DynamicResource Status_Chars}"
+                               FontSize="11"
+                               Foreground="{DynamicResource StatusBarForeground}"/>
+					<TextBlock Text="{Binding CharCount}"
+                               FontSize="11"
+                               Foreground="{DynamicResource StatusBarForeground}"/>
+				</StackPanel>
+
+				<Separator Width="1" Height="12" Background="{DynamicResource StatusBarSeparator}"/>
+
+				<!-- Количество абзацев -->
+				<StackPanel Orientation="Horizontal" Spacing="4">
+					<TextBlock Text="{DynamicResource Status_Paragraphs}"
+                               FontSize="11"
+                               Foreground="{DynamicResource StatusBarForeground}"/>
+					<TextBlock Text="{Binding ParagraphCount}"
+                               FontSize="11"
+                               Foreground="{DynamicResource StatusBarForeground}"/>
+				</StackPanel>
+
+				<Separator Width="1" Height="12" Background="{DynamicResource StatusBarSeparator}"/>
+
+				<!-- Текущий язык курсора -->
+				<TextBlock Text="{Binding Language}"
+                           FontSize="11"
+                           Foreground="{DynamicResource StatusBarForeground}"
+                           VerticalAlignment="Center"/>
+
+				<!-- Бейдж: орфография включена -->
+				<Border IsVisible="{Binding IsSpellCheckActive}"
+                        Background="{DynamicResource AccentColor}"
+                        CornerRadius="2"
+                        Padding="4 1">
+					<TextBlock Text="{DynamicResource SpellCheck_Active}"
+                               FontSize="10"
+                               Foreground="White"/>
+				</Border>
+
+				<!-- Бейдж: документ открыт только для чтения -->
+				<Border IsVisible="{Binding IsReadOnly}"
+                        Background="{DynamicResource WarningColor}"
+                        CornerRadius="2"
+                        Padding="4 1">
+					<TextBlock Text="{DynamicResource Editor_ReadOnly}"
+                               FontSize="10"
+                               Foreground="White"/>
+				</Border>
+
+			</StackPanel>
+
+			<!-- Правая часть: процент масштаба и слайдер -->
+			<StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="4"
+                        Margin="0 0 8 0"
+                        VerticalAlignment="Center">
+
+				<!-- Числовое значение масштаба в процентах -->
+				<TextBlock FontSize="11"
+                           Foreground="{DynamicResource StatusBarForeground}"
+                           VerticalAlignment="Center">
+					<TextBlock.Text>
+						<MultiBinding StringFormat="{}{0}%">
+							<Binding Path="ZoomPercent"/>
+						</MultiBinding>
+					</TextBlock.Text>
+				</TextBlock>
+
+				<!-- Слайдер масштаба: диапазон 25–500% -->
+				<Slider Minimum="25"
+                        Maximum="500"
+                        Value="{Binding Zoom, Converter={x:Static converters:ZoomPercentConverter.Instance}}"
+                        Width="80"
+                        Height="14"
+                        VerticalAlignment="Center"
+                        ToolTip.Tip="{DynamicResource View_Zoom}"/>
+
+			</StackPanel>
+
+		</Grid>
+	</Border>
+</UserControl>

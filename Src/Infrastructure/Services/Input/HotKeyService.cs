@@ -151,8 +151,7 @@ namespace Writersword.Src.Infrastructure.Services.Input
             var allEntries = GetAllEntries().ToList();
 
             var matched = allEntries.FirstOrDefault(entry =>
-                entry.hotKey.ActiveGesture != null &&
-                entry.hotKey.ActiveGesture.Matches(_pendingSequence));
+                    entry.hotKey.ActiveGestures.Any(g => g.Matches(_pendingSequence)));
 
             if (matched.hotKey != null)
             {
@@ -174,8 +173,7 @@ namespace Writersword.Src.Infrastructure.Services.Input
             }
 
             bool isPrefix = allEntries.Any(entry =>
-                entry.hotKey.ActiveGesture != null &&
-                entry.hotKey.ActiveGesture.IsPrefix(_pendingSequence));
+                entry.hotKey.ActiveGestures.Any(g => g.IsPrefix(_pendingSequence)));
 
             if (isPrefix)
             {

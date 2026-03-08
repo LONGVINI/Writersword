@@ -1,0 +1,211 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
+             xmlns:loc="using:Writersword.Src.Modules.TextEditor.Resources"
+             x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonReferencesTab"
+             x:DataType="vm:RibbonReferencesTabViewModel">
+
+	<UserControl.Styles>
+
+		<!-- Большая кнопка риббона — иконка сверху, подпись снизу -->
+		<Style Selector="Button.RibbonBtnLarge">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="3"/>
+			<Setter Property="Padding" Value="4 2"/>
+			<Setter Property="MinWidth" Value="40"/>
+			<Setter Property="MinHeight" Value="52"/>
+			<Setter Property="VerticalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor" Value="Hand"/>
+		</Style>
+		<Style Selector="Button.RibbonBtnLarge:pointerover">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.RibbonBtnLarge:pressed">
+			<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.RibbonBtnLarge:disabled">
+			<Setter Property="Opacity" Value="0.5"/>
+		</Style>
+
+		<!-- SplitButton риббона — основная кнопка плюс стрелка с выпадающим меню -->
+		<Style Selector="SplitButton.RibbonSplit">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="3"/>
+			<Setter Property="Padding" Value="4 4 2 4"/>
+			<Setter Property="MinWidth" Value="24"/>
+			<Setter Property="MinHeight" Value="24"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor" Value="Hand"/>
+		</Style>
+		<Style Selector="SplitButton.RibbonSplit:pointerover">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		</Style>
+		<Style Selector="SplitButton.RibbonSplit:pressed">
+			<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+	</UserControl.Styles>
+
+	<ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+		<StackPanel Orientation="Horizontal" Spacing="1" Margin="4 2" VerticalAlignment="Center">
+
+			<!-- Группа: Оглавление — вставка и обновление TOC -->
+			<Border Padding="4 2">
+				<StackPanel Spacing="2">
+					<TextBlock Text="{x:Static loc:TextEditorStrings.Ref_TOC_Group}"
+                               FontSize="10"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+					<StackPanel Orientation="Horizontal" Spacing="2">
+
+						<Button Command="{Binding InsertTOCCommand}"
+                                Classes="RibbonBtnLarge"
+                                Width="55"
+                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Insert_TOC}">
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Data="M3 9h14V7H3v2zm0 4h14v-2H3v2zm0 4h14v-2H3v2zM17 7v2h2V7h-2zm2 8h-2v2h2v-2zm0-4h-2v2h2v-2z" Width="20" Height="20"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_TOC}" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+						</Button>
+
+						<Button Command="{Binding UpdateTOCCommand}"
+                                Classes="RibbonBtnLarge"
+                                Width="55"
+                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Ref_UpdateTOC}">
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Data="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" Width="20" Height="20"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.Ref_UpdateTOC}" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+						</Button>
+
+					</StackPanel>
+				</StackPanel>
+			</Border>
+
+			<Separator Width="1" Height="40" Background="{DynamicResource BorderSubtleBrush}" Margin="3 0" VerticalAlignment="Center"/>
+
+			<!-- Группа: Сноски — подстрочные и концевые -->
+			<Border Padding="4 2">
+				<StackPanel Spacing="2">
+					<TextBlock Text="{x:Static loc:TextEditorStrings.Ref_Footnotes_Group}"
+                               FontSize="10"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+					<StackPanel Orientation="Horizontal" Spacing="2">
+
+						<Button Command="{Binding InsertFootnoteCommand}"
+                                Classes="RibbonBtnLarge"
+                                Width="55"
+                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Insert_Footnote}">
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Data="M4 18v2h16v-2H4zm6-7.5h4L12 7l-2 3.5zM20 3H4v2l8 6 8-6V3z" Width="20" Height="20"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Footnote}" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+						</Button>
+
+						<Button Command="{Binding InsertEndnoteCommand}"
+                                Classes="RibbonBtnLarge"
+                                Width="55"
+                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Ref_Endnote}">
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Data="M20 3H4v2l8 6 8-6V3zM4 21h16v-2H4v2zm0-4h16v-2H4v2z" Width="20" Height="20"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.Ref_Endnote}" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+						</Button>
+
+					</StackPanel>
+				</StackPanel>
+			</Border>
+
+			<Separator Width="1" Height="40" Background="{DynamicResource BorderSubtleBrush}" Margin="3 0" VerticalAlignment="Center"/>
+
+			<!-- Группа: Инструменты — проверка орфографии, счётчик слов -->
+			<Border Padding="4 2">
+				<StackPanel Spacing="2">
+					<TextBlock Text="{x:Static loc:TextEditorStrings.Ref_Tools_Group}"
+                               FontSize="10"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+					<StackPanel Orientation="Horizontal" Spacing="2">
+
+						<Button Command="{Binding RunSpellCheckCommand}"
+                                Classes="RibbonBtnLarge"
+                                Width="50"
+                                ToolTip.Tip="{x:Static loc:TextEditorStrings.SpellCheck_Title}">
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Data="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9zm-1 14l-4-4 1.41-1.41L11 14.17l6.59-6.59L19 9l-8 8z" Width="20" Height="20"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.SpellCheck_Title}" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+						</Button>
+
+						<Button Command="{Binding ShowWordCountCommand}"
+                                Classes="RibbonBtnLarge"
+                                Width="55"
+                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Status_Words}">
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Data="M3 18h12v-2H3v2zM3 6v2h18V6H3zm0 7h18v-2H3v2z" Width="20" Height="20"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.Status_Words}" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+						</Button>
+
+					</StackPanel>
+				</StackPanel>
+			</Border>
+
+			<Separator Width="1" Height="40" Background="{DynamicResource BorderSubtleBrush}" Margin="3 0" VerticalAlignment="Center"/>
+
+			<!-- Группа: Экспорт — печать и экспорт в разные форматы -->
+			<Border Padding="4 2">
+				<StackPanel Spacing="2">
+					<TextBlock Text="{x:Static loc:TextEditorStrings.Ref_Export_Group}"
+                               FontSize="10"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+					<StackPanel Orientation="Horizontal" Spacing="2">
+
+						<Button Command="{Binding PrintCommand}"
+                                Classes="RibbonBtnLarge"
+                                Width="45"
+                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Print_Title}">
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Data="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z" Width="20" Height="20"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.Print_Title}" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+						</Button>
+
+						<!-- Экспорт — SplitButton с выбором формата из меню -->
+						<SplitButton Classes="RibbonSplit"
+                                     Width="55" Height="48"
+                                     Command="{Binding ExportPdfCommand}"
+                                     ToolTip.Tip="{x:Static loc:TextEditorStrings.Export_PDF}">
+							<SplitButton.Content>
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8.5 7.5c0 .83-.67 1.5-1.5 1.5H9v2H7.5V7H10c.83 0 1.5.67 1.5 1.5v1zm5 2c0 .83-.67 1.5-1.5 1.5h-2.5V7H15c.83 0 1.5.67 1.5 1.5v3zm4-3H19v1h1.5V11H19v2h-1.5V7h3v1.5zM9 9.5h1v-1H9v1zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm10 5.5h1v-3h-1v3z" Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Export_PDF}" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</SplitButton.Content>
+							<SplitButton.Flyout>
+								<MenuFlyout>
+									<MenuItem Header="{x:Static loc:TextEditorStrings.Export_PDF}"      Command="{Binding ExportPdfCommand}"/>
+									<MenuItem Header="{x:Static loc:TextEditorStrings.Export_Docx}"     Command="{Binding ExportDocxCommand}"/>
+									<MenuItem Header="{x:Static loc:TextEditorStrings.Export_Txt}"      Command="{Binding ExportTxtCommand}"/>
+									<MenuItem Header="{x:Static loc:TextEditorStrings.Export_Markdown}" Command="{Binding ExportMarkdownCommand}"/>
+								</MenuFlyout>
+							</SplitButton.Flyout>
+						</SplitButton>
+
+					</StackPanel>
+				</StackPanel>
+			</Border>
+
+		</StackPanel>
+	</ScrollViewer>
+</UserControl>

@@ -1,0 +1,37 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Базовый стиль TextBox на листке бумаги.
+         Используется во всех текстовых модулях: TextEditor, Poetry, Screenplay и др.
+         Прозрачный фон — листок рендерится родительским Border.
+         Цвет текста фиксирован и не зависит от темы приложения.
+         Специфика модуля задаётся дополнительным классом поверх. -->
+    <Style Selector="TextBox.DocumentTextBox">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Foreground" Value="#1A1A1A"/>
+        <Setter Property="CaretBrush" Value="#1A1A1A"/>
+        <Setter Property="SelectionBrush" Value="#3A7BD5"/>
+        <Setter Property="SelectionForegroundBrush" Value="White"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="AcceptsReturn" Value="False"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="MinHeight" Value="0"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="VerticalAlignment" Value="Top"/>
+    </Style>
+
+    <Style Selector="TextBox.DocumentTextBox /template/ Border#PART_BorderElement">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+    </Style>
+    <Style Selector="TextBox.DocumentTextBox:pointerover /template/ Border#PART_BorderElement">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+    </Style>
+    <Style Selector="TextBox.DocumentTextBox:focus /template/ Border#PART_BorderElement">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+    </Style>
+
+</Styles>

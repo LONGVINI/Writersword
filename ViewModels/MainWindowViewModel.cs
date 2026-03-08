@@ -554,11 +554,7 @@ namespace Writersword.ViewModels
                 Category = HotKeyCategory.File,
                 Scope = HotKeyScope.Global,
                 DefaultGesture = new HotKeyGesture(new KeyGesture(Key.W, KeyModifiers.Control))
-            }, ReactiveCommand.CreateFromTask(async () =>
-            {
-                if (TabBar.ActiveTab != null)
-                    await _projectWorkflow.CloseDocumentAsync(TabBar.ActiveTab);
-            }));
+            }, MenuBar.CloseTabCommand);
 
             _hotKeyService.Register("HotKey_File_CloseAllTabs", new HotKey
             {
@@ -621,7 +617,12 @@ namespace Writersword.ViewModels
                 DisplayNameKey = Strings.HotKey_Edit_Redo,
                 Category = HotKeyCategory.Edit,
                 Scope = HotKeyScope.Global,
-                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.Y, KeyModifiers.Control))
+                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.Y, KeyModifiers.Control)),
+                DefaultGestures = new List<HotKeyGesture>
+                {
+                    new HotKeyGesture(new KeyGesture(Key.Y, KeyModifiers.Control)),
+                    new HotKeyGesture(new KeyGesture(Key.Z, KeyModifiers.Control | KeyModifiers.Shift))
+                }
             }, MenuBar.RedoCommand);
 
             _hotKeyService.LoadSettings();

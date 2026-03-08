@@ -117,28 +117,520 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="Align_Center" xml:space="preserve">
+    <value>Align Center</value>
+    <comment>Text alignment button</comment>
+  </data>
+  <data name="Align_Justify" xml:space="preserve">
+    <value>Justify</value>
+    <comment>Text alignment button</comment>
+  </data>
+  <data name="Align_Left" xml:space="preserve">
+    <value>Align Left</value>
+    <comment>Text alignment button</comment>
+  </data>
+  <data name="Align_Right" xml:space="preserve">
+    <value>Align Right</value>
+    <comment>Text alignment button</comment>
+  </data>
+  <data name="Break_SectionContinuous" xml:space="preserve">
+    <value>Section Break (Continuous)</value>
+    <comment>Insert menu item</comment>
+  </data>
+  <data name="Break_SectionNextPage" xml:space="preserve">
+    <value>Section Break (Next Page)</value>
+    <comment>Insert menu item</comment>
+  </data>
+  <data name="Columns_One" xml:space="preserve">
+    <value>One Column</value>
+    <comment>Layout columns option</comment>
+  </data>
+  <data name="Columns_Three" xml:space="preserve">
+    <value>Three Columns</value>
+    <comment>Layout columns option</comment>
+  </data>
+  <data name="Columns_Two" xml:space="preserve">
+    <value>Two Columns</value>
+    <comment>Layout columns option</comment>
+  </data>
   <data name="Description" xml:space="preserve">
     <value>Main text editing workspace</value>
     <comment>Module description</comment>
   </data>
   <data name="DisplayName" xml:space="preserve">
     <value>Text Editor</value>
-    <comment>Module name in menu</comment>
+    <comment>Module display name</comment>
+  </data>
+  <data name="Editor_ReadOnly" xml:space="preserve">
+    <value>Read Only</value>
+    <comment>Status bar label</comment>
+  </data>
+  <data name="Edit_Redo" xml:space="preserve">
+    <value>Redo</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Edit_SelectAll" xml:space="preserve">
+    <value>Select All</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Edit_Undo" xml:space="preserve">
+    <value>Undo</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Export_Docx" xml:space="preserve">
+    <value>Export to Word</value>
+    <comment>References tab export menu</comment>
+  </data>
+  <data name="Export_Markdown" xml:space="preserve">
+    <value>Export to Markdown</value>
+    <comment>References tab export menu</comment>
+  </data>
+  <data name="Export_PDF" xml:space="preserve">
+    <value>Export to PDF</value>
+    <comment>References tab export menu</comment>
+  </data>
+  <data name="Export_Txt" xml:space="preserve">
+    <value>Export to TXT</value>
+    <comment>References tab export menu</comment>
+  </data>
+  <data name="FindReplace_Title" xml:space="preserve">
+    <value>Find and Replace</value>
+    <comment>Dialog title</comment>
+  </data>
+  <data name="Find_Title" xml:space="preserve">
+    <value>Find</value>
+    <comment>Dialog title</comment>
+  </data>
+  <data name="Format_Bold" xml:space="preserve">
+    <value>Bold</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_ClearFormatting" xml:space="preserve">
+    <value>Clear Formatting</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_Copy" xml:space="preserve">
+    <value>Copy</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_Cut" xml:space="preserve">
+    <value>Cut</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_DecreaseFontSize" xml:space="preserve">
+    <value>Decrease Font Size</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_FontFamily" xml:space="preserve">
+    <value>Font Family</value>
+    <comment>Toolbar label</comment>
+  </data>
+  <data name="Format_FontSize" xml:space="preserve">
+    <value>Font Size</value>
+    <comment>Toolbar label</comment>
+  </data>
+  <data name="Format_Highlight" xml:space="preserve">
+    <value>Highlight Color</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_IncreaseFontSize" xml:space="preserve">
+    <value>Increase Font Size</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_Italic" xml:space="preserve">
+    <value>Italic</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_Paste" xml:space="preserve">
+    <value>Paste</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_Strikethrough" xml:space="preserve">
+    <value>Strikethrough</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_Subscript" xml:space="preserve">
+    <value>Subscript</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_Superscript" xml:space="preserve">
+    <value>Superscript</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_TextColor" xml:space="preserve">
+    <value>Text Color</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_Underline" xml:space="preserve">
+    <value>Underline</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Insert_Bookmark" xml:space="preserve">
+    <value>Bookmark</value>
+    <comment>Insert tab button</comment>
+  </data>
+  <data name="Insert_Comment" xml:space="preserve">
+    <value>Comment</value>
+    <comment>Insert tab button</comment>
+  </data>
+  <data name="Insert_Footnote" xml:space="preserve">
+    <value>Footnote</value>
+    <comment>Insert tab button</comment>
+  </data>
+  <data name="Insert_Hyperlink" xml:space="preserve">
+    <value>Hyperlink</value>
+    <comment>Insert tab button</comment>
+  </data>
+  <data name="Insert_Image" xml:space="preserve">
+    <value>Insert Image</value>
+    <comment>Insert tab button</comment>
+  </data>
+  <data name="Insert_Links_Group" xml:space="preserve">
+    <value>Links</value>
+    <comment>Insert tab group header</comment>
+  </data>
+  <data name="Insert_Media_Group" xml:space="preserve">
+    <value>Media</value>
+    <comment>Insert tab group header</comment>
+  </data>
+  <data name="Insert_PageBreak" xml:space="preserve">
+    <value>Page Break</value>
+    <comment>Insert tab button</comment>
+  </data>
+  <data name="Insert_Page_Group" xml:space="preserve">
+    <value>Page</value>
+    <comment>Insert tab group header</comment>
+  </data>
+  <data name="Insert_Shape" xml:space="preserve">
+    <value>Insert Shape</value>
+    <comment>Insert tab button</comment>
+  </data>
+  <data name="Insert_Table" xml:space="preserve">
+    <value>Insert Table</value>
+    <comment>Insert tab button</comment>
+  </data>
+  <data name="Insert_Table_Group" xml:space="preserve">
+    <value>Table</value>
+    <comment>Insert tab group header</comment>
+  </data>
+  <data name="Insert_TextBox" xml:space="preserve">
+    <value>Text Box</value>
+    <comment>Insert tab button</comment>
+  </data>
+  <data name="Insert_TOC" xml:space="preserve">
+    <value>Table of Contents</value>
+    <comment>Insert tab button</comment>
+  </data>
+  <data name="Layout_Breaks_Group" xml:space="preserve">
+    <value>Breaks</value>
+    <comment>Layout tab group header</comment>
+  </data>
+  <data name="Layout_Columns" xml:space="preserve">
+    <value>Columns</value>
+    <comment>Layout tab button</comment>
+  </data>
+  <data name="Layout_Margins" xml:space="preserve">
+    <value>Margins</value>
+    <comment>Layout tab button</comment>
+  </data>
+  <data name="Layout_Orientation" xml:space="preserve">
+    <value>Orientation</value>
+    <comment>Layout tab button</comment>
+  </data>
+  <data name="Layout_PageSize" xml:space="preserve">
+    <value>Page Size</value>
+    <comment>Layout tab button</comment>
+  </data>
+  <data name="Layout_Page_Group" xml:space="preserve">
+    <value>Page</value>
+    <comment>Layout tab group header</comment>
+  </data>
+  <data name="Layout_SectionBreak" xml:space="preserve">
+    <value>Section Break</value>
+    <comment>Layout tab button</comment>
+  </data>
+  <data name="List_Bullet" xml:space="preserve">
+    <value>Bullet List</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="List_Multilevel" xml:space="preserve">
+    <value>Multilevel List</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="List_Numbered" xml:space="preserve">
+    <value>Numbered List</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Orientation_Landscape" xml:space="preserve">
+    <value>Landscape</value>
+    <comment>Orientation option</comment>
+  </data>
+  <data name="Orientation_Portrait" xml:space="preserve">
+    <value>Portrait</value>
+    <comment>Orientation option</comment>
+  </data>
+  <data name="Para_Indent" xml:space="preserve">
+    <value>Increase Indent</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Para_LineSpacing" xml:space="preserve">
+    <value>Line Spacing</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Para_Outdent" xml:space="preserve">
+    <value>Decrease Indent</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Para_SpaceAfter" xml:space="preserve">
+    <value>Space After Paragraph</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Para_SpaceBefore" xml:space="preserve">
+    <value>Space Before Paragraph</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Print_Title" xml:space="preserve">
+    <value>Print</value>
+    <comment>Dialog title</comment>
+  </data>
+  <data name="Ref_Endnote" xml:space="preserve">
+    <value>Endnote</value>
+    <comment>References tab button</comment>
+  </data>
+  <data name="Ref_Export_Group" xml:space="preserve">
+    <value>Export</value>
+    <comment>References tab group header</comment>
+  </data>
+  <data name="Ref_Footnotes_Group" xml:space="preserve">
+    <value>Footnotes</value>
+    <comment>References tab group header</comment>
+  </data>
+  <data name="Ref_TOC_Group" xml:space="preserve">
+    <value>Table of Contents</value>
+    <comment>References tab group header</comment>
+  </data>
+  <data name="Ref_Tools_Group" xml:space="preserve">
+    <value>Tools</value>
+    <comment>References tab group header</comment>
+  </data>
+  <data name="Ref_UpdateTOC" xml:space="preserve">
+    <value>Update TOC</value>
+    <comment>References tab button</comment>
+  </data>
+  <data name="Ribbon_Home" xml:space="preserve">
+    <value>Home</value>
+    <comment>Ribbon tab label</comment>
+  </data>
+  <data name="Ribbon_Insert" xml:space="preserve">
+    <value>Insert</value>
+    <comment>Ribbon tab label</comment>
+  </data>
+  <data name="Ribbon_Layout" xml:space="preserve">
+    <value>Layout</value>
+    <comment>Ribbon tab label</comment>
+  </data>
+  <data name="Ribbon_References" xml:space="preserve">
+    <value>References</value>
+    <comment>Ribbon tab label</comment>
+  </data>
+  <data name="Ribbon_Styles" xml:space="preserve">
+    <value>Styles</value>
+    <comment>Ribbon tab label</comment>
+  </data>
+  <data name="Settings_AutoReplaceEnabled" xml:space="preserve">
+    <value>Enable autocorrect</value>
+    <comment>Settings checkbox label</comment>
+  </data>
+  <data name="Settings_AutoReplaceGroup" xml:space="preserve">
+    <value>AutoCorrect</value>
+    <comment>Settings group header</comment>
+  </data>
+  <data name="Settings_AutoSaveGroup" xml:space="preserve">
+    <value>Auto Save</value>
+    <comment>Settings group header</comment>
+  </data>
+  <data name="Settings_AutoSaveHint" xml:space="preserve">
+    <value>Document is saved to cache on every interval. Set 0 to disable.</value>
+    <comment>Settings hint text</comment>
+  </data>
+  <data name="Settings_AutoSaveInterval" xml:space="preserve">
+    <value>Auto save interval</value>
+    <comment>Settings label</comment>
+  </data>
+  <data name="Settings_AutoSaveSeconds" xml:space="preserve">
+    <value>sec. (0 — disabled)</value>
+    <comment>Settings unit label</comment>
+  </data>
+  <data name="Settings_DefaultLanguage" xml:space="preserve">
+    <value>Default language</value>
+    <comment>Settings label</comment>
+  </data>
+  <data name="Settings_DefaultViewMode" xml:space="preserve">
+    <value>Default view mode</value>
+    <comment>Settings label</comment>
+  </data>
+  <data name="Settings_DefaultZoom" xml:space="preserve">
+    <value>Default zoom</value>
+    <comment>Settings label</comment>
   </data>
   <data name="Settings_FontFamily" xml:space="preserve">
     <value>Font Family</value>
-    <comment>Label for font family selector in settings</comment>
+    <comment>Settings label</comment>
+  </data>
+  <data name="Settings_FontGroup" xml:space="preserve">
+    <value>Default Font</value>
+    <comment>Settings group header</comment>
   </data>
   <data name="Settings_FontSize" xml:space="preserve">
     <value>Font Size</value>
-    <comment>Label for font size input in settings</comment>
+    <comment>Settings label</comment>
   </data>
   <data name="Settings_Preview" xml:space="preserve">
     <value>Preview</value>
-    <comment>Label for font preview section in settings</comment>
+    <comment>Settings label</comment>
   </data>
   <data name="Settings_PreviewText" xml:space="preserve">
-    <value>The quick brown fox jumps over the lazy dog</value>
-    <comment>Sample text shown in font preview</comment>
+    <value>The quick brown fox jumps over the lazy dog.</value>
+    <comment>Font preview sample text</comment>
+  </data>
+  <data name="Settings_ResetToDefaults" xml:space="preserve">
+    <value>Reset to defaults</value>
+    <comment>Settings button</comment>
+  </data>
+  <data name="Settings_ShowFormattingMarks" xml:space="preserve">
+    <value>Show formatting marks</value>
+    <comment>Settings checkbox label</comment>
+  </data>
+  <data name="Settings_ShowRuler" xml:space="preserve">
+    <value>Show ruler</value>
+    <comment>Settings checkbox label</comment>
+  </data>
+  <data name="Settings_ShowSpellErrors" xml:space="preserve">
+    <value>Underline spelling errors</value>
+    <comment>Settings checkbox label</comment>
+  </data>
+  <data name="Settings_SpellCheckEnabled" xml:space="preserve">
+    <value>Enable spell check</value>
+    <comment>Settings checkbox label</comment>
+  </data>
+  <data name="Settings_SpellGroup" xml:space="preserve">
+    <value>Spell Check</value>
+    <comment>Settings group header</comment>
+  </data>
+  <data name="Settings_ViewGroup" xml:space="preserve">
+    <value>Display</value>
+    <comment>Settings group header</comment>
+  </data>
+  <data name="Shape_Arrow" xml:space="preserve">
+    <value>Arrow</value>
+    <comment>Shape picker option</comment>
+  </data>
+  <data name="Shape_Callout" xml:space="preserve">
+    <value>Callout</value>
+    <comment>Shape picker option</comment>
+  </data>
+  <data name="Shape_Ellipse" xml:space="preserve">
+    <value>Ellipse</value>
+    <comment>Shape picker option</comment>
+  </data>
+  <data name="Shape_Line" xml:space="preserve">
+    <value>Line</value>
+    <comment>Shape picker option</comment>
+  </data>
+  <data name="Shape_Rectangle" xml:space="preserve">
+    <value>Rectangle</value>
+    <comment>Shape picker option</comment>
+  </data>
+  <data name="SpellCheck_Active" xml:space="preserve">
+    <value>Spell</value>
+    <comment>Status bar label</comment>
+  </data>
+  <data name="SpellCheck_Title" xml:space="preserve">
+    <value>Spell Check</value>
+    <comment>Dialog title</comment>
+  </data>
+  <data name="Status_Chars" xml:space="preserve">
+    <value>Characters</value>
+    <comment>Status bar label</comment>
+  </data>
+  <data name="Status_Page" xml:space="preserve">
+    <value>Page</value>
+    <comment>Status bar label</comment>
+  </data>
+  <data name="Status_Pages" xml:space="preserve">
+    <value>Pages</value>
+    <comment>Status bar label</comment>
+  </data>
+  <data name="Status_Paragraphs" xml:space="preserve">
+    <value>Paragraphs</value>
+    <comment>Status bar label</comment>
+  </data>
+  <data name="Status_Words" xml:space="preserve">
+    <value>Words</value>
+    <comment>Status bar label</comment>
+  </data>
+  <data name="Style_Code" xml:space="preserve">
+    <value>Code</value>
+    <comment>Style picker option</comment>
+  </data>
+  <data name="Style_Heading1" xml:space="preserve">
+    <value>Heading 1</value>
+    <comment>Style picker option</comment>
+  </data>
+  <data name="Style_Heading2" xml:space="preserve">
+    <value>Heading 2</value>
+    <comment>Style picker option</comment>
+  </data>
+  <data name="Style_Heading3" xml:space="preserve">
+    <value>Heading 3</value>
+    <comment>Style picker option</comment>
+  </data>
+  <data name="Style_Heading4" xml:space="preserve">
+    <value>Heading 4</value>
+    <comment>Style picker option</comment>
+  </data>
+  <data name="Style_Heading5" xml:space="preserve">
+    <value>Heading 5</value>
+    <comment>Style picker option</comment>
+  </data>
+  <data name="Style_Heading6" xml:space="preserve">
+    <value>Heading 6</value>
+    <comment>Style picker option</comment>
+  </data>
+  <data name="Style_Normal" xml:space="preserve">
+    <value>Normal</value>
+    <comment>Style picker option</comment>
+  </data>
+  <data name="Style_NoSpacing" xml:space="preserve">
+    <value>No Spacing</value>
+    <comment>Style picker option</comment>
+  </data>
+  <data name="Style_Quote" xml:space="preserve">
+    <value>Quote</value>
+    <comment>Style picker option</comment>
+  </data>
+  <data name="View_CanvasColor" xml:space="preserve">
+    <value>Page Color</value>
+    <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="View_DraftMode" xml:space="preserve">
+    <value>Draft Mode</value>
+    <comment>View mode option</comment>
+  </data>
+  <data name="View_FocusMode" xml:space="preserve">
+    <value>Focus Mode</value>
+    <comment>View mode option</comment>
+  </data>
+  <data name="View_Fullscreen" xml:space="preserve">
+    <value>Fullscreen</value>
+    <comment>View mode option</comment>
+  </data>
+  <data name="View_PageMode" xml:space="preserve">
+    <value>Page Mode</value>
+    <comment>View mode option</comment>
+  </data>
+  <data name="View_Zoom" xml:space="preserve">
+    <value>Zoom</value>
+    <comment>Toolbar label</comment>
   </data>
 </root>

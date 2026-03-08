@@ -61,6 +61,87 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Align Center.
+        /// </summary>
+        public static string Align_Center {
+            get {
+                return ResourceManager.GetString("Align_Center", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Justify.
+        /// </summary>
+        public static string Align_Justify {
+            get {
+                return ResourceManager.GetString("Align_Justify", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Align Left.
+        /// </summary>
+        public static string Align_Left {
+            get {
+                return ResourceManager.GetString("Align_Left", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Align Right.
+        /// </summary>
+        public static string Align_Right {
+            get {
+                return ResourceManager.GetString("Align_Right", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Section Break (Continuous).
+        /// </summary>
+        public static string Break_SectionContinuous {
+            get {
+                return ResourceManager.GetString("Break_SectionContinuous", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Section Break (Next Page).
+        /// </summary>
+        public static string Break_SectionNextPage {
+            get {
+                return ResourceManager.GetString("Break_SectionNextPage", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на One Column.
+        /// </summary>
+        public static string Columns_One {
+            get {
+                return ResourceManager.GetString("Columns_One", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Three Columns.
+        /// </summary>
+        public static string Columns_Three {
+            get {
+                return ResourceManager.GetString("Columns_Three", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Two Columns.
+        /// </summary>
+        public static string Columns_Two {
+            get {
+                return ResourceManager.GetString("Columns_Two", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Main text editing workspace.
         /// </summary>
         public static string Description {
@@ -79,11 +160,722 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Redo.
+        /// </summary>
+        public static string Edit_Redo {
+            get {
+                return ResourceManager.GetString("Edit_Redo", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Select All.
+        /// </summary>
+        public static string Edit_SelectAll {
+            get {
+                return ResourceManager.GetString("Edit_SelectAll", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Undo.
+        /// </summary>
+        public static string Edit_Undo {
+            get {
+                return ResourceManager.GetString("Edit_Undo", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Read Only.
+        /// </summary>
+        public static string Editor_ReadOnly {
+            get {
+                return ResourceManager.GetString("Editor_ReadOnly", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Export to Word.
+        /// </summary>
+        public static string Export_Docx {
+            get {
+                return ResourceManager.GetString("Export_Docx", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Export to Markdown.
+        /// </summary>
+        public static string Export_Markdown {
+            get {
+                return ResourceManager.GetString("Export_Markdown", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Export to PDF.
+        /// </summary>
+        public static string Export_PDF {
+            get {
+                return ResourceManager.GetString("Export_PDF", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Export to TXT.
+        /// </summary>
+        public static string Export_Txt {
+            get {
+                return ResourceManager.GetString("Export_Txt", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Find.
+        /// </summary>
+        public static string Find_Title {
+            get {
+                return ResourceManager.GetString("Find_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Find and Replace.
+        /// </summary>
+        public static string FindReplace_Title {
+            get {
+                return ResourceManager.GetString("FindReplace_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Bold.
+        /// </summary>
+        public static string Format_Bold {
+            get {
+                return ResourceManager.GetString("Format_Bold", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Clear Formatting.
+        /// </summary>
+        public static string Format_ClearFormatting {
+            get {
+                return ResourceManager.GetString("Format_ClearFormatting", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Copy.
+        /// </summary>
+        public static string Format_Copy {
+            get {
+                return ResourceManager.GetString("Format_Copy", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Cut.
+        /// </summary>
+        public static string Format_Cut {
+            get {
+                return ResourceManager.GetString("Format_Cut", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Decrease Font Size.
+        /// </summary>
+        public static string Format_DecreaseFontSize {
+            get {
+                return ResourceManager.GetString("Format_DecreaseFontSize", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Font Family.
+        /// </summary>
+        public static string Format_FontFamily {
+            get {
+                return ResourceManager.GetString("Format_FontFamily", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Font Size.
+        /// </summary>
+        public static string Format_FontSize {
+            get {
+                return ResourceManager.GetString("Format_FontSize", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Highlight Color.
+        /// </summary>
+        public static string Format_Highlight {
+            get {
+                return ResourceManager.GetString("Format_Highlight", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Increase Font Size.
+        /// </summary>
+        public static string Format_IncreaseFontSize {
+            get {
+                return ResourceManager.GetString("Format_IncreaseFontSize", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Italic.
+        /// </summary>
+        public static string Format_Italic {
+            get {
+                return ResourceManager.GetString("Format_Italic", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Paste.
+        /// </summary>
+        public static string Format_Paste {
+            get {
+                return ResourceManager.GetString("Format_Paste", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Strikethrough.
+        /// </summary>
+        public static string Format_Strikethrough {
+            get {
+                return ResourceManager.GetString("Format_Strikethrough", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Subscript.
+        /// </summary>
+        public static string Format_Subscript {
+            get {
+                return ResourceManager.GetString("Format_Subscript", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Superscript.
+        /// </summary>
+        public static string Format_Superscript {
+            get {
+                return ResourceManager.GetString("Format_Superscript", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Text Color.
+        /// </summary>
+        public static string Format_TextColor {
+            get {
+                return ResourceManager.GetString("Format_TextColor", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Underline.
+        /// </summary>
+        public static string Format_Underline {
+            get {
+                return ResourceManager.GetString("Format_Underline", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Bookmark.
+        /// </summary>
+        public static string Insert_Bookmark {
+            get {
+                return ResourceManager.GetString("Insert_Bookmark", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Comment.
+        /// </summary>
+        public static string Insert_Comment {
+            get {
+                return ResourceManager.GetString("Insert_Comment", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Footnote.
+        /// </summary>
+        public static string Insert_Footnote {
+            get {
+                return ResourceManager.GetString("Insert_Footnote", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Hyperlink.
+        /// </summary>
+        public static string Insert_Hyperlink {
+            get {
+                return ResourceManager.GetString("Insert_Hyperlink", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Insert Image.
+        /// </summary>
+        public static string Insert_Image {
+            get {
+                return ResourceManager.GetString("Insert_Image", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Links.
+        /// </summary>
+        public static string Insert_Links_Group {
+            get {
+                return ResourceManager.GetString("Insert_Links_Group", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Media.
+        /// </summary>
+        public static string Insert_Media_Group {
+            get {
+                return ResourceManager.GetString("Insert_Media_Group", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Page.
+        /// </summary>
+        public static string Insert_Page_Group {
+            get {
+                return ResourceManager.GetString("Insert_Page_Group", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Page Break.
+        /// </summary>
+        public static string Insert_PageBreak {
+            get {
+                return ResourceManager.GetString("Insert_PageBreak", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Insert Shape.
+        /// </summary>
+        public static string Insert_Shape {
+            get {
+                return ResourceManager.GetString("Insert_Shape", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Insert Table.
+        /// </summary>
+        public static string Insert_Table {
+            get {
+                return ResourceManager.GetString("Insert_Table", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Table.
+        /// </summary>
+        public static string Insert_Table_Group {
+            get {
+                return ResourceManager.GetString("Insert_Table_Group", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Text Box.
+        /// </summary>
+        public static string Insert_TextBox {
+            get {
+                return ResourceManager.GetString("Insert_TextBox", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Table of Contents.
+        /// </summary>
+        public static string Insert_TOC {
+            get {
+                return ResourceManager.GetString("Insert_TOC", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Breaks.
+        /// </summary>
+        public static string Layout_Breaks_Group {
+            get {
+                return ResourceManager.GetString("Layout_Breaks_Group", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Columns.
+        /// </summary>
+        public static string Layout_Columns {
+            get {
+                return ResourceManager.GetString("Layout_Columns", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Margins.
+        /// </summary>
+        public static string Layout_Margins {
+            get {
+                return ResourceManager.GetString("Layout_Margins", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Orientation.
+        /// </summary>
+        public static string Layout_Orientation {
+            get {
+                return ResourceManager.GetString("Layout_Orientation", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Page.
+        /// </summary>
+        public static string Layout_Page_Group {
+            get {
+                return ResourceManager.GetString("Layout_Page_Group", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Page Size.
+        /// </summary>
+        public static string Layout_PageSize {
+            get {
+                return ResourceManager.GetString("Layout_PageSize", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Section Break.
+        /// </summary>
+        public static string Layout_SectionBreak {
+            get {
+                return ResourceManager.GetString("Layout_SectionBreak", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Bullet List.
+        /// </summary>
+        public static string List_Bullet {
+            get {
+                return ResourceManager.GetString("List_Bullet", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Multilevel List.
+        /// </summary>
+        public static string List_Multilevel {
+            get {
+                return ResourceManager.GetString("List_Multilevel", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Numbered List.
+        /// </summary>
+        public static string List_Numbered {
+            get {
+                return ResourceManager.GetString("List_Numbered", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Landscape.
+        /// </summary>
+        public static string Orientation_Landscape {
+            get {
+                return ResourceManager.GetString("Orientation_Landscape", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Portrait.
+        /// </summary>
+        public static string Orientation_Portrait {
+            get {
+                return ResourceManager.GetString("Orientation_Portrait", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Increase Indent.
+        /// </summary>
+        public static string Para_Indent {
+            get {
+                return ResourceManager.GetString("Para_Indent", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Line Spacing.
+        /// </summary>
+        public static string Para_LineSpacing {
+            get {
+                return ResourceManager.GetString("Para_LineSpacing", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Decrease Indent.
+        /// </summary>
+        public static string Para_Outdent {
+            get {
+                return ResourceManager.GetString("Para_Outdent", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Space After Paragraph.
+        /// </summary>
+        public static string Para_SpaceAfter {
+            get {
+                return ResourceManager.GetString("Para_SpaceAfter", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Space Before Paragraph.
+        /// </summary>
+        public static string Para_SpaceBefore {
+            get {
+                return ResourceManager.GetString("Para_SpaceBefore", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Print.
+        /// </summary>
+        public static string Print_Title {
+            get {
+                return ResourceManager.GetString("Print_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Endnote.
+        /// </summary>
+        public static string Ref_Endnote {
+            get {
+                return ResourceManager.GetString("Ref_Endnote", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Export.
+        /// </summary>
+        public static string Ref_Export_Group {
+            get {
+                return ResourceManager.GetString("Ref_Export_Group", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Footnotes.
+        /// </summary>
+        public static string Ref_Footnotes_Group {
+            get {
+                return ResourceManager.GetString("Ref_Footnotes_Group", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Table of Contents.
+        /// </summary>
+        public static string Ref_TOC_Group {
+            get {
+                return ResourceManager.GetString("Ref_TOC_Group", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Tools.
+        /// </summary>
+        public static string Ref_Tools_Group {
+            get {
+                return ResourceManager.GetString("Ref_Tools_Group", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Update TOC.
+        /// </summary>
+        public static string Ref_UpdateTOC {
+            get {
+                return ResourceManager.GetString("Ref_UpdateTOC", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Home.
+        /// </summary>
+        public static string Ribbon_Home {
+            get {
+                return ResourceManager.GetString("Ribbon_Home", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Insert.
+        /// </summary>
+        public static string Ribbon_Insert {
+            get {
+                return ResourceManager.GetString("Ribbon_Insert", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Layout.
+        /// </summary>
+        public static string Ribbon_Layout {
+            get {
+                return ResourceManager.GetString("Ribbon_Layout", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на References.
+        /// </summary>
+        public static string Ribbon_References {
+            get {
+                return ResourceManager.GetString("Ribbon_References", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Styles.
+        /// </summary>
+        public static string Ribbon_Styles {
+            get {
+                return ResourceManager.GetString("Ribbon_Styles", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Enable autocorrect.
+        /// </summary>
+        public static string Settings_AutoReplaceEnabled {
+            get {
+                return ResourceManager.GetString("Settings_AutoReplaceEnabled", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на AutoCorrect.
+        /// </summary>
+        public static string Settings_AutoReplaceGroup {
+            get {
+                return ResourceManager.GetString("Settings_AutoReplaceGroup", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Auto Save.
+        /// </summary>
+        public static string Settings_AutoSaveGroup {
+            get {
+                return ResourceManager.GetString("Settings_AutoSaveGroup", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Document is saved to cache on every interval. Set 0 to disable..
+        /// </summary>
+        public static string Settings_AutoSaveHint {
+            get {
+                return ResourceManager.GetString("Settings_AutoSaveHint", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Auto save interval.
+        /// </summary>
+        public static string Settings_AutoSaveInterval {
+            get {
+                return ResourceManager.GetString("Settings_AutoSaveInterval", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на sec. (0 — disabled).
+        /// </summary>
+        public static string Settings_AutoSaveSeconds {
+            get {
+                return ResourceManager.GetString("Settings_AutoSaveSeconds", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Default language.
+        /// </summary>
+        public static string Settings_DefaultLanguage {
+            get {
+                return ResourceManager.GetString("Settings_DefaultLanguage", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Default view mode.
+        /// </summary>
+        public static string Settings_DefaultViewMode {
+            get {
+                return ResourceManager.GetString("Settings_DefaultViewMode", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Default zoom.
+        /// </summary>
+        public static string Settings_DefaultZoom {
+            get {
+                return ResourceManager.GetString("Settings_DefaultZoom", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Font Family.
         /// </summary>
         public static string Settings_FontFamily {
             get {
                 return ResourceManager.GetString("Settings_FontFamily", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Default Font.
+        /// </summary>
+        public static string Settings_FontGroup {
+            get {
+                return ResourceManager.GetString("Settings_FontGroup", resourceCulture);
             }
         }
         
@@ -106,11 +898,326 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         }
         
         /// <summary>
-        ///   Ищет локализованную строку, похожую на The quick brown fox jumps over the lazy dog.
+        ///   Ищет локализованную строку, похожую на The quick brown fox jumps over the lazy dog..
         /// </summary>
         public static string Settings_PreviewText {
             get {
                 return ResourceManager.GetString("Settings_PreviewText", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset to defaults.
+        /// </summary>
+        public static string Settings_ResetToDefaults {
+            get {
+                return ResourceManager.GetString("Settings_ResetToDefaults", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Show formatting marks.
+        /// </summary>
+        public static string Settings_ShowFormattingMarks {
+            get {
+                return ResourceManager.GetString("Settings_ShowFormattingMarks", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Show ruler.
+        /// </summary>
+        public static string Settings_ShowRuler {
+            get {
+                return ResourceManager.GetString("Settings_ShowRuler", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Underline spelling errors.
+        /// </summary>
+        public static string Settings_ShowSpellErrors {
+            get {
+                return ResourceManager.GetString("Settings_ShowSpellErrors", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Enable spell check.
+        /// </summary>
+        public static string Settings_SpellCheckEnabled {
+            get {
+                return ResourceManager.GetString("Settings_SpellCheckEnabled", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Spell Check.
+        /// </summary>
+        public static string Settings_SpellGroup {
+            get {
+                return ResourceManager.GetString("Settings_SpellGroup", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Display.
+        /// </summary>
+        public static string Settings_ViewGroup {
+            get {
+                return ResourceManager.GetString("Settings_ViewGroup", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Arrow.
+        /// </summary>
+        public static string Shape_Arrow {
+            get {
+                return ResourceManager.GetString("Shape_Arrow", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Callout.
+        /// </summary>
+        public static string Shape_Callout {
+            get {
+                return ResourceManager.GetString("Shape_Callout", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Ellipse.
+        /// </summary>
+        public static string Shape_Ellipse {
+            get {
+                return ResourceManager.GetString("Shape_Ellipse", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Line.
+        /// </summary>
+        public static string Shape_Line {
+            get {
+                return ResourceManager.GetString("Shape_Line", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Rectangle.
+        /// </summary>
+        public static string Shape_Rectangle {
+            get {
+                return ResourceManager.GetString("Shape_Rectangle", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Spell.
+        /// </summary>
+        public static string SpellCheck_Active {
+            get {
+                return ResourceManager.GetString("SpellCheck_Active", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Spell Check.
+        /// </summary>
+        public static string SpellCheck_Title {
+            get {
+                return ResourceManager.GetString("SpellCheck_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Characters.
+        /// </summary>
+        public static string Status_Chars {
+            get {
+                return ResourceManager.GetString("Status_Chars", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Page.
+        /// </summary>
+        public static string Status_Page {
+            get {
+                return ResourceManager.GetString("Status_Page", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Pages.
+        /// </summary>
+        public static string Status_Pages {
+            get {
+                return ResourceManager.GetString("Status_Pages", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Paragraphs.
+        /// </summary>
+        public static string Status_Paragraphs {
+            get {
+                return ResourceManager.GetString("Status_Paragraphs", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Words.
+        /// </summary>
+        public static string Status_Words {
+            get {
+                return ResourceManager.GetString("Status_Words", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Code.
+        /// </summary>
+        public static string Style_Code {
+            get {
+                return ResourceManager.GetString("Style_Code", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Heading 1.
+        /// </summary>
+        public static string Style_Heading1 {
+            get {
+                return ResourceManager.GetString("Style_Heading1", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Heading 2.
+        /// </summary>
+        public static string Style_Heading2 {
+            get {
+                return ResourceManager.GetString("Style_Heading2", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Heading 3.
+        /// </summary>
+        public static string Style_Heading3 {
+            get {
+                return ResourceManager.GetString("Style_Heading3", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Heading 4.
+        /// </summary>
+        public static string Style_Heading4 {
+            get {
+                return ResourceManager.GetString("Style_Heading4", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Heading 5.
+        /// </summary>
+        public static string Style_Heading5 {
+            get {
+                return ResourceManager.GetString("Style_Heading5", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Heading 6.
+        /// </summary>
+        public static string Style_Heading6 {
+            get {
+                return ResourceManager.GetString("Style_Heading6", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Normal.
+        /// </summary>
+        public static string Style_Normal {
+            get {
+                return ResourceManager.GetString("Style_Normal", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на No Spacing.
+        /// </summary>
+        public static string Style_NoSpacing {
+            get {
+                return ResourceManager.GetString("Style_NoSpacing", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Quote.
+        /// </summary>
+        public static string Style_Quote {
+            get {
+                return ResourceManager.GetString("Style_Quote", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Page Color.
+        /// </summary>
+        public static string View_CanvasColor {
+            get {
+                return ResourceManager.GetString("View_CanvasColor", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Draft Mode.
+        /// </summary>
+        public static string View_DraftMode {
+            get {
+                return ResourceManager.GetString("View_DraftMode", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Focus Mode.
+        /// </summary>
+        public static string View_FocusMode {
+            get {
+                return ResourceManager.GetString("View_FocusMode", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Fullscreen.
+        /// </summary>
+        public static string View_Fullscreen {
+            get {
+                return ResourceManager.GetString("View_Fullscreen", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Page Mode.
+        /// </summary>
+        public static string View_PageMode {
+            get {
+                return ResourceManager.GetString("View_PageMode", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Zoom.
+        /// </summary>
+        public static string View_Zoom {
+            get {
+                return ResourceManager.GetString("View_Zoom", resourceCulture);
             }
         }
     }

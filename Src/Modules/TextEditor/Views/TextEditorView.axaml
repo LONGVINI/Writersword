@@ -1,21 +1,101 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels"
+             xmlns:ribbon="using:Writersword.Modules.TextEditor.Views.Toolbar"
+             xmlns:statusbar="using:Writersword.Modules.TextEditor.Views.StatusBar"
+             xmlns:doc="using:Writersword.Modules.TextEditor.Views.Document"
+             xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
              x:Class="Writersword.Modules.TextEditor.Views.TextEditorView"
-             x:DataType="vm:TextEditorViewModel"
-             Background="{DynamicResource BgAppBrush}"
-             Tag="TextEditor">
-	<Border Background="{DynamicResource BgAppBrush}" Padding="40">
-		<Border Background="White"
-                MinWidth="850" MaxWidth="850" MinHeight="1100"
-                CornerRadius="2" BoxShadow="0 2 10 0 #40000000"
-                HorizontalAlignment="Center" VerticalAlignment="Top">
-			<TextBox Name="EditorTextBox"
-                     Classes="editor"
-                     Text="{Binding PlainText, Mode=TwoWay}"
-                     IsReadOnly="{Binding IsReadOnly}"
-                     FontFamily="{Binding FontFamily}"
-                     FontSize="{Binding FontSize}"/>
+             x:DataType="vm:TextEditorViewModel">
+
+	<!-- Корневая сетка: Ribbon / Линейка / Область документа / Статус-бар -->
+	<Grid RowDefinitions="Auto Auto * Auto">
+
+		<!-- Ribbon с вкладками Главная / Вставка / Макет / Ссылки -->
+		<ribbon:RibbonView Grid.Row="0"
+                           DataContext="{Binding Ribbon}"/>
+
+		<!-- Горизонтальная линейка — видна только в режиме страницы -->
+		<Border Grid.Row="1"
+                IsVisible="{Binding DocumentViewModel.ViewMode,
+                            Converter={x:Static converters:ViewModePageConverter.Instance}}"
+                Background="{DynamicResource RulerBackground}"
+                Height="20"
+                BorderBrush="{DynamicResource RulerBorder}"
+                BorderThickness="0 0 0 1">
+			<Canvas/>
 		</Border>
-	</Border>
+
+		<!-- Прокручиваемая область документа.
+             Фон берётся из CanvasSettings — цвет рабочего пространства вокруг листа. -->
+		<ScrollViewer Grid.Row="2"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto"
+                      Background="{Binding DocumentViewModel.CanvasSettings.CanvasBackgroundColor,
+                                   Converter={x:Static converters:HexColorConverter.Instance}}">
+
+			<Panel>
+
+				<!-- Режим страницы: параграфы внутри "листа" с полями и тенью.
+                     Ширина и поля листа вычисляются конверторами из PageSettings. -->
+				<ItemsControl IsVisible="{Binding DocumentViewModel.ViewMode,
+                                          Converter={x:Static converters:ViewModePageConverter.Instance}}"
+                              ItemsSource="{Binding DocumentViewModel.Paragraphs}"
+                              Margin="40 20">
+					<ItemsControl.ItemsPanel>
+						<ItemsPanelTemplate>
+							<VirtualizingStackPanel Orientation="Vertical"/>
+						</ItemsPanelTemplate>
+					</ItemsControl.ItemsPanel>
+					<ItemsControl.Template>
+						<ControlTemplate>
+							<!-- "Лист" бумаги — белый (или кастомный) прямоугольник с тенью -->
+							<Border Background="{Binding DataContext.DocumentViewModel.CanvasSettings.PageBackgroundColor,
+                                                 RelativeSource={RelativeSource AncestorType=UserControl},
+                                                 Converter={x:Static converters:HexColorConverter.Instance}}"
+                                    Width="{Binding DataContext.DocumentViewModel.PageSettings,
+                                            RelativeSource={RelativeSource AncestorType=UserControl},
+                                            Converter={x:Static converters:PageWidthConverter.Instance}}"
+                                    Padding="{Binding DataContext.DocumentViewModel.PageSettings,
+                                              RelativeSource={RelativeSource AncestorType=UserControl},
+                                              Converter={x:Static converters:PageMarginsConverter.Instance}}"
+                                    BoxShadow="0 2 8 2 #40000000"
+                                    HorizontalAlignment="Center">
+								<ItemsPresenter/>
+							</Border>
+						</ControlTemplate>
+					</ItemsControl.Template>
+					<ItemsControl.ItemTemplate>
+						<DataTemplate>
+							<doc:EditorParagraphView/>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+
+				<!-- Режим черновика: параграфы без листа, без полей, без тени -->
+				<ItemsControl IsVisible="{Binding DocumentViewModel.ViewMode,
+                                          Converter={x:Static converters:ViewModeDraftConverter.Instance}}"
+                              ItemsSource="{Binding DocumentViewModel.Paragraphs}"
+                              Margin="20 12">
+					<ItemsControl.ItemsPanel>
+						<ItemsPanelTemplate>
+							<VirtualizingStackPanel Orientation="Vertical"/>
+						</ItemsPanelTemplate>
+					</ItemsControl.ItemsPanel>
+					<ItemsControl.ItemTemplate>
+						<DataTemplate>
+							<doc:EditorParagraphView/>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+
+			</Panel>
+
+		</ScrollViewer>
+
+		<!-- Статус-бар: счётчики, язык, масштаб -->
+		<statusbar:EditorStatusBarView Grid.Row="3"
+                                       DataContext="{Binding StatusBar}"/>
+
+	</Grid>
 </UserControl>

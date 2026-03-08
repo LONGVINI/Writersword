@@ -6,4 +6,5 @@
 	<StyleInclude Source="avares://Writersword/Styles/Controls/ComboBox.axaml"/>
 	<StyleInclude Source="avares://Writersword/Styles/Controls/CheckBox.axaml"/>
 	<StyleInclude Source="avares://Writersword/Styles/Controls/ToggleSwitch.axaml"/>
+	<StyleInclude Source="avares://Writersword/Styles/Controls/DocumentTextBox.axaml"/>
 </Styles>

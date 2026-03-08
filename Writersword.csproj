@@ -34,16 +34,14 @@
        AVALONIA UI + DOCK СИСТЕМА
        ======================================== -->
 	<ItemGroup>
-		<!-- Основные пакеты Avalonia (версия 11.3.10) -->
 		<PackageReference Include="Avalonia" Version="11.3.10" />
 		<PackageReference Include="Avalonia.Desktop" Version="11.3.10" />
+		<PackageReference Include="Avalonia.Svg.Skia" Version="11.3.0" />
 		<PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.10" />
 		<PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.10" />
 		<PackageReference Include="Avalonia.Diagnostics" Version="11.3.10" />
 		<PackageReference Include="Avalonia.ReactiveUI" Version="11.3.8" />
 		<PackageReference Include="Avalonia.Xaml.Interactivity" Version="11.3.0.6" />
-
-		<!-- Dock система (11.3.8 совместима с Avalonia 11.3.10) -->
 		<PackageReference Include="Dock.Avalonia" Version="11.3.8" />
 		<PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="11.3.8" />
 		<PackageReference Include="Dock.Model" Version="11.3.8" />
@@ -76,51 +74,50 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       РЕСУРСЫ (картинки, стили)
+       РЕСУРСЫ (картинки)
        ======================================== -->
 	<ItemGroup>
-		<!-- Включаем все ресурсы КРОМЕ локализации -->
 		<AvaloniaResource Include="Resources\**" Exclude="Resources\Localization\**" />
 	</ItemGroup>
 
 	<!-- ========================================
        СТИЛИ И ТЕМЫ
-       Явное перечисление для надёжного включения в сборку
+       Файлы прописаны явно — исключены из неявного glob через AvaloniaXaml Remove
        ======================================== -->
 	<ItemGroup>
-		<!-- Стили Dock -->
 		<AvaloniaResource Include="Styles\DockStyles.axaml">
 			<SubType>Designer</SubType>
 		</AvaloniaResource>
-
-		<!-- Базовые токены -->
 		<AvaloniaResource Include="Styles\Base\Colors.axaml" />
 		<AvaloniaResource Include="Styles\Base\Typography.axaml" />
 		<AvaloniaResource Include="Styles\Base\Spacing.axaml" />
-
-		<!-- Темы оформления -->
 		<AvaloniaResource Include="Styles\Themes\DarkTheme.axaml" />
 		<AvaloniaResource Include="Styles\Themes\LightTheme.axaml" />
 		<AvaloniaResource Include="Styles\Themes\SepiaTheme.axaml" />
 	</ItemGroup>
 
+	<!-- Убираем явно прописанные стили из неявного glob чтобы не было дублирования -->
+	<ItemGroup>
+		<AvaloniaXaml Remove="Styles\DockStyles.axaml" />
+		<AvaloniaXaml Remove="Styles\Base\Colors.axaml" />
+		<AvaloniaXaml Remove="Styles\Base\Typography.axaml" />
+		<AvaloniaXaml Remove="Styles\Base\Spacing.axaml" />
+		<AvaloniaXaml Remove="Styles\Themes\DarkTheme.axaml" />
+		<AvaloniaXaml Remove="Styles\Themes\LightTheme.axaml" />
+		<AvaloniaXaml Remove="Styles\Themes\SepiaTheme.axaml" />
+	</ItemGroup>
+
 	<!-- ========================================
        ЛОКАЛИЗАЦИЯ (resx файлы)
-       Включаем вручную, т.к. отключили автоматическое
        ======================================== -->
 	<ItemGroup>
-		<!-- Основной файл локализации (генерирует .Designer.cs) -->
 		<EmbeddedResource Include="Resources\Localization\Strings.resx">
 			<Generator>PublicResXFileCodeGenerator</Generator>
 			<LastGenOutput>Strings.Designer.cs</LastGenOutput>
 		</EmbeddedResource>
-
-		<!-- Русская локализация -->
 		<EmbeddedResource Include="Resources\Localization\Strings.ru.resx">
 			<DependentUpon>Strings.resx</DependentUpon>
 		</EmbeddedResource>
-
-		<!-- Армянская локализация -->
 
 		<!-- Модуль Notes -->
 		<EmbeddedResource Include="Src\Modules\Notes\Resources\NotesStrings.resx">
@@ -135,13 +132,13 @@
 			<LastGenOutput>SynonymsStrings.Designer.cs</LastGenOutput>
 		</EmbeddedResource>
 		<EmbeddedResource Include="Src\Modules\Synonyms\Resources\SynonymsStrings.ru.resx" />
-
-		<!-- Модуль TextEditor -->
 		<EmbeddedResource Include="Src\Modules\TextEditor\Resources\TextEditorStrings.resx">
-			<Generator>PublicResXFileCodeGenerator</Generator>
-			<LastGenOutput>TextEditorStrings.Designer.cs</LastGenOutput>
+		  <Generator>PublicResXFileCodeGenerator</Generator>
+		  <LastGenOutput>TextEditorStrings.Designer.cs</LastGenOutput>
 		</EmbeddedResource>
 		<EmbeddedResource Include="Src\Modules\TextEditor\Resources\TextEditorStrings.ru.resx" />
+
+		<!-- Модуль TextEditor -->
 
 		<!-- Модуль Timer -->
 		<EmbeddedResource Include="Src\Modules\Timer\Resources\TimerStrings.resx">
@@ -185,7 +182,6 @@
 		</EmbeddedResource>
 		<EmbeddedResource Include="Src\ProjectTypes\Novel\Resources\NovelStrings.ru.resx" />
 
-		<!-- Авто-генерируемый код для локализации -->
 		<Compile Update="Resources\Localization\Strings.Designer.cs">
 			<DesignTime>True</DesignTime>
 			<AutoGen>True</AutoGen>
@@ -194,7 +190,7 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       ИСКЛЮЧЕНИЯ (папки не участвующие в сборке)
+       ИСКЛЮЧЕНИЯ
        ======================================== -->
 	<ItemGroup>
 		<AvaloniaXaml Remove="Docs\AI_GUIDE V2.0\**" />
@@ -228,7 +224,6 @@
 		<Folder Include="Resources\Images\" />
 		<Folder Include="Projects\" />
 		<Folder Include="Src\Core\Models\Modules\" />
-		<Folder Include="Src\Modules\TextEditor\Commands\" />
 		<Folder Include="Src\WorkModes\Branching\" />
 		<Folder Include="Src\WorkModes\Dialogues\" />
 		<Folder Include="Src\WorkModes\GameEconomy\" />
@@ -253,9 +248,9 @@
 			<DependentUpon>SynonymsStrings.resx</DependentUpon>
 		</Compile>
 		<Compile Update="Src\Modules\TextEditor\Resources\TextEditorStrings.Designer.cs">
-			<DesignTime>True</DesignTime>
-			<AutoGen>True</AutoGen>
-			<DependentUpon>TextEditorStrings.resx</DependentUpon>
+		  <DesignTime>True</DesignTime>
+		  <AutoGen>True</AutoGen>
+		  <DependentUpon>TextEditorStrings.resx</DependentUpon>
 		</Compile>
 		<Compile Update="Src\Modules\Timer\Resources\TimerStrings.Designer.cs">
 			<DesignTime>True</DesignTime>
@@ -288,13 +283,13 @@
 			<DependentUpon>TranslationStrings.resx</DependentUpon>
 		</Compile>
 		<Compile Update="Views\Components\RecoveryBannerView.axaml.cs">
-		  <DependentUpon>RecoveryBannerView.axaml</DependentUpon>
+			<DependentUpon>RecoveryBannerView.axaml</DependentUpon>
 		</Compile>
 		<Compile Update="Views\FloatingWindowView.axaml.cs">
-		  <DependentUpon>FloatingWindowView.axaml</DependentUpon>
+			<DependentUpon>FloatingWindowView.axaml</DependentUpon>
 		</Compile>
 		<Compile Update="Views\MainWindowView.axaml.cs">
-		  <DependentUpon>MainWindowView.axaml</DependentUpon>
+			<DependentUpon>MainWindowView.axaml</DependentUpon>
 		</Compile>
 		<Compile Update="Views\MessageBoxView.axaml.cs">
 			<DependentUpon>MessageBoxView.axaml</DependentUpon>
@@ -325,7 +320,7 @@
 			<DependentUpon>MenuBarView.axaml</DependentUpon>
 		</Compile>
 	</ItemGroup>
-	
+
 	<ProjectExtensions>
 		<VisualStudio>
 			<UserProperties />

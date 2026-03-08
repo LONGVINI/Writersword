@@ -8,469 +8,514 @@
              VerticalAlignment="Stretch"
              HorizontalAlignment="Stretch">
 
-    <UserControl.Styles>
-        <Style Selector="Button.compact">
-            <Setter Property="MinWidth" Value="0"/>
-            <Setter Property="MinHeight" Value="0"/>
-        </Style>
-        <Style Selector="Button.ghost">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-        </Style>
-        <Style Selector="Button.ghost /template/ ContentPresenter">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-        </Style>
-        <Style Selector="Button.ghost:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-        </Style>
-        <Style Selector="Button.ghost:pressed /template/ ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-        </Style>
+	<UserControl.Styles>
 
-        <Style Selector="Button.innertab">
-            <Setter Property="MinWidth" Value="0"/>
-            <Setter Property="MinHeight" Value="0"/>
-            <Setter Property="Padding" Value="12,6"/>
-            <Setter Property="CornerRadius" Value="4"/>
-            <Setter Property="FontSize" Value="13"/>
-        </Style>
-        <Style Selector="Button.innertab /template/ ContentPresenter">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-        </Style>
-        <Style Selector="Button.innertab:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
-        </Style>
-        <Style Selector="Button.innertab.active /template/ ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
-        </Style>
-        <Style Selector="Button.innertab.active TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-        </Style>
+		<!-- Убираем минимальные размеры у кнопок для компактного отображения -->
+		<Style Selector="Button.compact">
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+		</Style>
 
-        <Style Selector="Button.prefixitem">
-            <Setter Property="MinWidth" Value="0"/>
-            <Setter Property="MinHeight" Value="0"/>
-            <Setter Property="Padding" Value="10,6"/>
-            <Setter Property="HorizontalAlignment" Value="Stretch"/>
-            <Setter Property="HorizontalContentAlignment" Value="Left"/>
-            <Setter Property="CornerRadius" Value="4"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="BorderThickness" Value="0"/>
-        </Style>
-        <Style Selector="Button.prefixitem /template/ ContentPresenter">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-        </Style>
-        <Style Selector="Button.prefixitem:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
-        </Style>
-        <Style Selector="Button.prefixitem.remove TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
-        </Style>
-    </UserControl.Styles>
+		<!-- Прозрачная кнопка без рамки — используется для иконок удаления/сброса -->
+		<Style Selector="Button.ghost">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="Button.ghost /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="Button.ghost:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button.ghost:pressed /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
 
-    <Grid ColumnDefinitions="200,1,*">
+		<!-- Внутренние вкладки Привязки / Префиксы в левой панели -->
+		<Style Selector="Button.innertab">
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="12,6"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="FontSize" Value="13"/>
+		</Style>
+		<Style Selector="Button.innertab /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="Button.innertab:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<!-- Активная вкладка выделяется акцентным фоном и цветом текста -->
+		<Style Selector="Button.innertab.active /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+		</Style>
+		<Style Selector="Button.innertab.active TextBlock">
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+		</Style>
 
-        <!-- ЛЕВАЯ ПАНЕЛЬ НАВИГАЦИИ -->
-        <DockPanel Grid.Column="0">
+		<!-- Пункт в Popup выбора префикса — растягивается на всю ширину Popup -->
+		<Style Selector="Button.prefixitem">
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="10,6"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Left"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="Button.prefixitem /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="Button.prefixitem:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<!-- Пункт "Убрать префикс" отображается красным цветом -->
+		<Style Selector="Button.prefixitem.remove TextBlock">
+			<Setter Property="Foreground" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
 
-            <Border DockPanel.Dock="Top"
+	</UserControl.Styles>
+
+	<!-- Основная сетка: левая панель навигации | разделитель | правая панель содержимого -->
+	<Grid ColumnDefinitions="200,1,*">
+
+		<!-- ================================================================ -->
+		<!-- ЛЕВАЯ ПАНЕЛЬ: переключатель вкладок + навигация по секциям       -->
+		<!-- ================================================================ -->
+		<DockPanel Grid.Column="0">
+
+			<!-- Переключатель вкладок Привязки / Префиксы -->
+			<Border DockPanel.Dock="Top"
                     Padding="6,8,6,4"
                     BorderBrush="{DynamicResource BorderSubtleBrush}"
                     BorderThickness="0,0,0,1">
-                <StackPanel Orientation="Horizontal" Spacing="2">
-                    <Button Classes="innertab compact"
+				<StackPanel Orientation="Horizontal" Spacing="2">
+					<Button Classes="innertab compact"
                             Classes.active="{Binding IsBindingsTabActive}"
                             Command="{Binding ShowBindingsTabCommand}">
-                        <TextBlock Text="{x:Static loc:Strings.HotKey_Tab_Bindings}"
+						<TextBlock Text="{x:Static loc:Strings.HotKey_Tab_Bindings}"
                                    Foreground="{DynamicResource TextSecondaryBrush}"/>
-                    </Button>
-                    <Button Classes="innertab compact"
+					</Button>
+					<Button Classes="innertab compact"
                             Classes.active="{Binding IsPrefixesTabActive}"
                             Command="{Binding ShowPrefixesTabCommand}">
-                        <TextBlock Text="{x:Static loc:Strings.HotKey_Tab_Prefixes}"
+						<TextBlock Text="{x:Static loc:Strings.HotKey_Tab_Prefixes}"
                                    Foreground="{DynamicResource TextSecondaryBrush}"/>
-                    </Button>
-                </StackPanel>
-            </Border>
+					</Button>
+				</StackPanel>
+			</Border>
 
-            <DockPanel IsVisible="{Binding IsBindingsTabActive}">
-                <TextBlock DockPanel.Dock="Top"
+			<!-- Навигация по секциям — видима только на вкладке Привязки -->
+			<DockPanel IsVisible="{Binding IsBindingsTabActive}">
+
+				<!-- Заголовок "Область" над списком секций -->
+				<TextBlock DockPanel.Dock="Top"
                            Text="{x:Static loc:Strings.HotKey_Col_Scope}"
-                           FontSize="11"
-                           FontWeight="SemiBold"
+                           FontSize="11" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextDisabledBrush}"
                            TextWrapping="Wrap"
                            Margin="12,10,12,6"/>
 
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding Sections}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:HotKeySectionItem">
-                                <StackPanel>
-                                    <Button Margin="4,1"
-                                            Padding="10,6"
+				<ScrollViewer VerticalScrollBarVisibility="Auto">
+					<ItemsControl ItemsSource="{Binding Sections}">
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="vm:HotKeySectionItem">
+								<StackPanel>
+
+									<!-- Кнопка секции верхнего уровня (глобальная или модуль) -->
+									<Button Margin="4,1" Padding="10,6"
                                             HorizontalAlignment="Stretch"
                                             HorizontalContentAlignment="Left"
-                                            Classes="ghost"
-                                            CornerRadius="4"
+                                            Classes="ghost" CornerRadius="4"
                                             Classes.selected="{Binding IsSelected}"
                                             Command="{Binding $parent[UserControl].DataContext.SelectSectionCommand}"
                                             CommandParameter="{Binding}">
-                                        <Button.Styles>
-                                            <Style Selector="Button.selected /template/ ContentPresenter">
-                                                <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
-                                            </Style>
-                                        </Button.Styles>
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <Border Width="6" Height="6"
-                                                    CornerRadius="3"
+										<Button.Styles>
+											<!-- Выбранная секция подсвечивается акцентным фоном -->
+											<Style Selector="Button.selected /template/ ContentPresenter">
+												<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+											</Style>
+										</Button.Styles>
+										<StackPanel Orientation="Horizontal" Spacing="8">
+											<!-- Цветная точка-индикатор: серая / акцентная при выборе -->
+											<Border Width="6" Height="6" CornerRadius="3"
                                                     VerticalAlignment="Center"
                                                     Classes.selected="{Binding IsSelected}">
-                                                <Border.Styles>
-                                                    <Style Selector="Border">
-                                                        <Setter Property="Background" Value="{DynamicResource TextMutedBrush}"/>
-                                                    </Style>
-                                                    <Style Selector="Border.selected">
-                                                        <Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
-                                                    </Style>
-                                                </Border.Styles>
-                                            </Border>
-                                            <TextBlock Text="{Binding Title}"
-                                                       FontSize="13"
-                                                       TextWrapping="Wrap"
+												<Border.Styles>
+													<Style Selector="Border">
+														<Setter Property="Background" Value="{DynamicResource TextMutedBrush}"/>
+													</Style>
+													<Style Selector="Border.selected">
+														<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+													</Style>
+												</Border.Styles>
+											</Border>
+											<TextBlock Text="{Binding Title}" FontSize="13"
+                                                       TextTrimming="CharacterEllipsis"
                                                        VerticalAlignment="Center"
                                                        Classes.selected="{Binding IsSelected}">
-                                                <TextBlock.Styles>
-                                                    <Style Selector="TextBlock">
-                                                        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-                                                    </Style>
-                                                    <Style Selector="TextBlock.selected">
-                                                        <Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
-                                                        <Setter Property="FontWeight" Value="SemiBold"/>
-                                                    </Style>
-                                                </TextBlock.Styles>
-                                            </TextBlock>
-                                        </StackPanel>
-                                    </Button>
+												<TextBlock.Styles>
+													<Style Selector="TextBlock">
+														<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+													</Style>
+													<Style Selector="TextBlock.selected">
+														<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+														<Setter Property="FontWeight" Value="SemiBold"/>
+													</Style>
+												</TextBlock.Styles>
+											</TextBlock>
+										</StackPanel>
+									</Button>
 
-                                    <ItemsControl ItemsSource="{Binding SubSections}"
+									<!-- Подсекции по категориям — отображаются с отступом когда секция развёрнута -->
+									<ItemsControl ItemsSource="{Binding SubSections}"
                                                   IsVisible="{Binding IsExpanded}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="vm:HotKeySubSectionItem">
-                                                <Button Margin="20,1,4,1"
-                                                        Padding="8,5"
+										<ItemsControl.ItemTemplate>
+											<DataTemplate x:DataType="vm:HotKeySubSectionItem">
+												<Button Margin="20,1,4,1" Padding="8,5"
                                                         HorizontalAlignment="Stretch"
                                                         HorizontalContentAlignment="Left"
-                                                        Classes="ghost"
-                                                        CornerRadius="4"
+                                                        Classes="ghost" CornerRadius="4"
                                                         Classes.selected="{Binding IsSelected}"
                                                         Command="{Binding $parent[UserControl].DataContext.SelectSubSectionCommand}"
                                                         CommandParameter="{Binding}">
-                                                    <Button.Styles>
-                                                        <Style Selector="Button.selected /template/ ContentPresenter">
-                                                            <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
-                                                        </Style>
-                                                    </Button.Styles>
-                                                    <TextBlock Text="{Binding Title}"
-                                                               FontSize="12"
-                                                               TextWrapping="Wrap"
+													<Button.Styles>
+														<Style Selector="Button.selected /template/ ContentPresenter">
+															<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+														</Style>
+													</Button.Styles>
+													<TextBlock Text="{Binding Title}" FontSize="12"
+                                                               TextTrimming="CharacterEllipsis"
                                                                VerticalAlignment="Center"
                                                                Classes.selected="{Binding IsSelected}">
-                                                        <TextBlock.Styles>
-                                                            <Style Selector="TextBlock">
-                                                                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-                                                            </Style>
-                                                            <Style Selector="TextBlock.selected">
-                                                                <Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
-                                                                <Setter Property="FontWeight" Value="SemiBold"/>
-                                                            </Style>
-                                                        </TextBlock.Styles>
-                                                    </TextBlock>
-                                                </Button>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
-            </DockPanel>
+														<TextBlock.Styles>
+															<Style Selector="TextBlock">
+																<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+															</Style>
+															<Style Selector="TextBlock.selected">
+																<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+																<Setter Property="FontWeight" Value="SemiBold"/>
+															</Style>
+														</TextBlock.Styles>
+													</TextBlock>
+												</Button>
+											</DataTemplate>
+										</ItemsControl.ItemTemplate>
+									</ItemsControl>
 
-            <Border IsVisible="{Binding IsPrefixesTabActive}"/>
-        </DockPanel>
+								</StackPanel>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+				</ScrollViewer>
+			</DockPanel>
 
-        <!-- Разделитель -->
-        <Border Grid.Column="1" Background="{DynamicResource BorderSubtleBrush}"/>
+			<!-- Заглушка для вкладки Префиксы — левая панель пуста -->
+			<Border IsVisible="{Binding IsPrefixesTabActive}"/>
 
-        <!-- ПРАВАЯ ПАНЕЛЬ -->
-        <Grid Grid.Column="2">
+		</DockPanel>
 
-            <!-- ВКЛАДКА ПРИВЯЗКИ -->
-            <DockPanel Margin="{DynamicResource PaddingM}"
+		<!-- Вертикальный разделитель между панелями -->
+		<Border Grid.Column="1" Background="{DynamicResource BorderSubtleBrush}"/>
+
+		<!-- ================================================================ -->
+		<!-- ПРАВАЯ ПАНЕЛЬ: содержимое активной вкладки                       -->
+		<!-- ================================================================ -->
+		<Grid Grid.Column="2">
+
+			<!-- ============================================================ -->
+			<!-- ВКЛАДКА ПРИВЯЗКИ                                              -->
+			<!-- ============================================================ -->
+			<DockPanel Margin="{DynamicResource PaddingM}"
                        IsVisible="{Binding IsBindingsTabActive}">
 
-                <!-- Поиск + сброс всех -->
-                <DockPanel DockPanel.Dock="Top" LastChildFill="True" Margin="0,0,0,10">
-                    <Button DockPanel.Dock="Right"
-                            Classes="compact"
+				<!-- Строка поиска + кнопка "Сбросить все" -->
+				<DockPanel DockPanel.Dock="Top" LastChildFill="True" Margin="0,0,0,10">
+					<Button DockPanel.Dock="Right" Classes="compact"
                             Command="{Binding ResetAllCommand}"
-                            Padding="12,6"
-                            Margin="8,0,0,0"
-                            FontSize="12">
-                        <TextBlock Text="{x:Static loc:Strings.HotKey_ResetAll}"
-                                   TextWrapping="Wrap"
-                                   TextAlignment="Center"/>
-                    </Button>
-                    <TextBox Text="{Binding FilterText}"
+                            Padding="12,6" Margin="8,0,0,0" FontSize="12">
+						<TextBlock Text="{x:Static loc:Strings.HotKey_ResetAll}"
+                                   TextWrapping="Wrap" TextAlignment="Center"/>
+					</Button>
+					<TextBox Text="{Binding FilterText}"
                              Watermark="{x:Static loc:Strings.HotKey_Filter_Watermark}"
                              FontSize="13"/>
-                </DockPanel>
+				</DockPanel>
 
-                <!-- Легенда -->
-                <WrapPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4">
-                        <Border Width="10" Height="10" CornerRadius="2"
+				<!-- Легенда цветовых индикаторов конфликтов и префиксов -->
+				<WrapPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+					<!-- Красный — критический конфликт (одинаковые жесты в одной области) -->
+					<StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4">
+						<Border Width="10" Height="10" CornerRadius="2"
                                 Background="{DynamicResource HotKeyConflictCriticalBrush}"
                                 VerticalAlignment="Top" Margin="0,2,0,0"/>
-                        <TextBlock Text="{x:Static loc:Strings.HotKey_Legend_Critical}"
+						<TextBlock Text="{x:Static loc:Strings.HotKey_Legend_Critical}"
                                    FontSize="11" TextWrapping="Wrap"
                                    Foreground="{DynamicResource TextMutedBrush}"/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4">
-                        <Border Width="10" Height="10" CornerRadius="2"
+					</StackPanel>
+					<!-- Оранжевый — предупреждение (конфликт между разными областями) -->
+					<StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4">
+						<Border Width="10" Height="10" CornerRadius="2"
                                 Background="{DynamicResource HotKeyConflictWarningBrush}"
                                 VerticalAlignment="Top" Margin="0,2,0,0"/>
-                        <TextBlock Text="{x:Static loc:Strings.HotKey_Legend_Warning}"
+						<TextBlock Text="{x:Static loc:Strings.HotKey_Legend_Warning}"
                                    FontSize="11" TextWrapping="Wrap"
                                    Foreground="{DynamicResource TextMutedBrush}"/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,4">
-                        <Border Width="10" Height="10" CornerRadius="2"
+					</StackPanel>
+					<!-- Серый — жест сам является зарезервированным префиксом -->
+					<StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,4">
+						<Border Width="10" Height="10" CornerRadius="2"
                                 Background="{DynamicResource TextDisabledBrush}"
                                 VerticalAlignment="Top" Margin="0,2,0,0"/>
-                        <TextBlock Text="{x:Static loc:Strings.HotKey_IsPrefix}"
+						<TextBlock Text="{x:Static loc:Strings.HotKey_IsPrefix}"
                                    FontSize="11" TextWrapping="Wrap"
                                    Foreground="{DynamicResource TextMutedBrush}"/>
-                    </StackPanel>
-                </WrapPanel>
+					</StackPanel>
+				</WrapPanel>
 
-                <!-- Заголовки таблицы -->
-                <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="2*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="100"/>
-                        <ColumnDefinition Width="2*"/>
-                        <ColumnDefinition Width="36"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0"
+				<!--
+                    Заголовки таблицы — 4 колонки:
+                    Действие (2*) | По умолчанию (*) | Текущая с inline-префиксом (2*) | Сброс (36px)
+                -->
+				<Grid DockPanel.Dock="Top" Margin="0,0,0,4">
+					<Grid.ColumnDefinitions>
+						<ColumnDefinition Width="2*"/>
+						<ColumnDefinition Width="*"/>
+						<ColumnDefinition Width="2*"/>
+						<ColumnDefinition Width="36"/>
+					</Grid.ColumnDefinitions>
+					<TextBlock Grid.Column="0"
                                Text="{x:Static loc:Strings.HotKey_Col_Action}"
-                               FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap"
+                               FontSize="11" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextDisabledBrush}" Margin="4,0"/>
-                    <TextBlock Grid.Column="1"
+					<TextBlock Grid.Column="1"
                                Text="{x:Static loc:Strings.HotKey_Col_Default}"
-                               FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap"
+                               FontSize="11" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextDisabledBrush}" Margin="4,0"/>
-                    <TextBlock Grid.Column="2"
-                               Text="{x:Static loc:Strings.HotKey_Col_Prefix}"
-                               FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap"
-                               Foreground="{DynamicResource TextDisabledBrush}" Margin="4,0"/>
-                    <TextBlock Grid.Column="3"
+					<TextBlock Grid.Column="2"
                                Text="{x:Static loc:Strings.HotKey_Col_Current}"
-                               FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap"
+                               FontSize="11" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextDisabledBrush}" Margin="4,0"/>
-                </Grid>
+				</Grid>
 
-                <Border DockPanel.Dock="Top"
-                        Height="1"
+				<Border DockPanel.Dock="Top" Height="1"
                         Background="{DynamicResource BorderSubtleBrush}"
                         Margin="0,0,0,2"/>
 
-                <!-- Live input индикатор -->
-                <Border DockPanel.Dock="Top"
+				<!--
+                    Live input banner — показывается пока идёт ввод биндинга.
+                    Отображает зажатые модификаторы ("Ctrl + ") или приглашение нажать клавишу.
+                -->
+				<Border DockPanel.Dock="Top"
                         IsVisible="{Binding IsLiveInputActive}"
                         Background="{DynamicResource AccentSubtleBrush}"
                         BorderBrush="{DynamicResource AccentDefaultBrush}"
-                        BorderThickness="1"
-                        CornerRadius="4"
-                        Padding="10,6"
-                        Margin="0,0,0,6">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock Text="{x:Static loc:Strings.HotKey_PressKey}"
+                        BorderThickness="1" CornerRadius="4"
+                        Padding="10,6" Margin="0,0,0,6">
+					<StackPanel Orientation="Horizontal" Spacing="8">
+						<TextBlock Text="{x:Static loc:Strings.HotKey_PressKey}"
                                    FontSize="12"
                                    Foreground="{DynamicResource AccentDefaultBrush}"
-                                   FontStyle="Italic"
-                                   VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding LiveInputDisplay}"
+                                   FontStyle="Italic" VerticalAlignment="Center"/>
+						<TextBlock Text="{Binding LiveInputDisplay}"
                                    FontSize="13" FontWeight="SemiBold"
                                    FontFamily="Consolas,Monospace"
                                    Foreground="{DynamicResource AccentDefaultBrush}"
                                    VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Border>
+					</StackPanel>
+				</Border>
 
-                <!-- Список строк хоткеев -->
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding FilteredRows}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:HotKeyRowViewModel">
+				<!-- Список строк хоткеев с учётом фильтра и выбранной секции -->
+				<ScrollViewer VerticalScrollBarVisibility="Auto">
+					<ItemsControl ItemsSource="{Binding FilteredRows}">
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="vm:HotKeyRowViewModel">
+								<StackPanel Margin="0,1" Spacing="0">
 
-                                <StackPanel Margin="0,1" Spacing="0">
-
-                                    <Border CornerRadius="4"
-                                            Padding="2"
+									<!--
+                                        Обёртка строки — фон зависит от типа конфликта:
+                                        прозрачный / красноватый / оранжеватый
+                                    -->
+									<Border CornerRadius="4" Padding="2"
                                             Classes.critical="{Binding IsCritical}"
                                             Classes.warning="{Binding IsWarning}">
-                                        <Border.Styles>
-                                            <Style Selector="Border">
-                                                <Setter Property="Background" Value="Transparent"/>
-                                            </Style>
-                                            <Style Selector="Border.critical">
-                                                <Setter Property="Background" Value="{DynamicResource HotKeyConflictCriticalRowBrush}"/>
-                                            </Style>
-                                            <Style Selector="Border.warning">
-                                                <Setter Property="Background" Value="{DynamicResource HotKeyConflictWarningRowBrush}"/>
-                                            </Style>
-                                        </Border.Styles>
+										<Border.Styles>
+											<Style Selector="Border">
+												<Setter Property="Background" Value="Transparent"/>
+											</Style>
+											<Style Selector="Border.critical">
+												<Setter Property="Background" Value="{DynamicResource HotKeyConflictCriticalRowBrush}"/>
+											</Style>
+											<Style Selector="Border.warning">
+												<Setter Property="Background" Value="{DynamicResource HotKeyConflictWarningRowBrush}"/>
+											</Style>
+										</Border.Styles>
 
-                                        <Grid MinHeight="32">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="2*"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="100"/>
-                                                <ColumnDefinition Width="2*"/>
-                                                <ColumnDefinition Width="36"/>
-                                            </Grid.ColumnDefinitions>
+										<Grid MinHeight="32">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="2*"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="2*"/>
+												<ColumnDefinition Width="36"/>
+											</Grid.ColumnDefinitions>
 
-                                            <!-- Col 0: Название команды -->
-                                            <StackPanel Grid.Column="0"
-                                                        Orientation="Horizontal"
-                                                        Spacing="6"
-                                                        Margin="4,6"
-                                                        VerticalAlignment="Center">
-                                                <Border Width="7" Height="7"
-                                                        CornerRadius="4"
+											<!--
+                                                Col 0: Название действия с индикаторами конфликта/префикса.
+                                                DockPanel + LastChildFill гарантирует что TextBlock
+                                                не вылезает за пределы колонки — обрезается многоточием.
+                                            -->
+											<DockPanel Grid.Column="0"
+                                                       Margin="4,6" VerticalAlignment="Center"
+                                                       LastChildFill="True">
+
+												<!-- Цветная точка конфликта — прибита к левому краю -->
+												<Border DockPanel.Dock="Left"
+                                                        Width="7" Height="7" CornerRadius="4"
                                                         VerticalAlignment="Center"
+                                                        Margin="0,0,6,0"
                                                         IsVisible="{Binding HasConflict}"
                                                         ToolTip.Tip="{Binding ConflictTooltip}"
                                                         Classes.critical="{Binding IsCritical}"
                                                         Classes.warning="{Binding IsWarning}">
-                                                    <Border.Styles>
-                                                        <Style Selector="Border.critical">
-                                                            <Setter Property="Background" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
-                                                        </Style>
-                                                        <Style Selector="Border.warning">
-                                                            <Setter Property="Background" Value="{DynamicResource HotKeyConflictWarningBrush}"/>
-                                                        </Style>
-                                                    </Border.Styles>
-                                                </Border>
-                                                <Border Width="7" Height="7"
-                                                        CornerRadius="4"
+													<Border.Styles>
+														<Style Selector="Border.critical">
+															<Setter Property="Background" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+														</Style>
+														<Style Selector="Border.warning">
+															<Setter Property="Background" Value="{DynamicResource HotKeyConflictWarningBrush}"/>
+														</Style>
+													</Border.Styles>
+												</Border>
+
+												<!-- Серая точка — жест является зарезервированным префиксом -->
+												<Border DockPanel.Dock="Left"
+                                                        Width="7" Height="7" CornerRadius="4"
                                                         VerticalAlignment="Center"
+                                                        Margin="0,0,6,0"
                                                         Background="{DynamicResource TextDisabledBrush}"
                                                         IsVisible="{Binding IsPrefix}"
                                                         ToolTip.Tip="{x:Static loc:Strings.HotKey_IsPrefix}"/>
-                                                <TextBlock Text="{Binding DisplayName}"
-                                                           FontSize="13"
-                                                           TextWrapping="Wrap"
-                                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                                           VerticalAlignment="Center"/>
-                                            </StackPanel>
 
-                                            <!-- Col 1: По умолчанию -->
-                                            <TextBlock Grid.Column="1"
+												<!--
+                                                    Текст занимает оставшееся место (LastChildFill=True).
+                                                    TextTrimming обрезает с многоточием если не влезает.
+                                                -->
+												<TextBlock Text="{Binding DisplayName}"
+														   FontSize="13"
+														   TextWrapping="Wrap"
+														   Foreground="{DynamicResource TextPrimaryBrush}"
+														   VerticalAlignment="Center"/>
+											</DockPanel>
+
+											<!-- Col 1: Жесты по умолчанию (только для чтения) -->
+											<TextBlock Grid.Column="1"
                                                        Text="{Binding DefaultGesturesDisplay}"
-                                                       FontSize="12"
-                                                       FontFamily="Consolas,Monospace"
+                                                       FontSize="12" FontFamily="Consolas,Monospace"
                                                        TextWrapping="Wrap"
                                                        Foreground="{DynamicResource TextMutedBrush}"
-                                                       VerticalAlignment="Center"
-                                                       Margin="4,0"/>
+                                                       VerticalAlignment="Center" Margin="4,0"/>
 
-                                            <!-- Col 2: Префикс — кнопка + Popup -->
-                                            <Panel Grid.Column="2"
-                                                   VerticalAlignment="Center"
-                                                   Margin="4,2">
+											<!--
+                                                Col 2: Список биндингов с inline-префиксом.
+                                                Каждый биндинг отображается как строка:
+                                                [Кнопка префикса (90px)] [Кнопка жеста (*)] [Удалить (22px)]
+                                                Popup префикса привязан к конкретному HotKeyBindingViewModel.
+                                                CommandParameter для TogglePrefixPopupCommand — биндинг, не строка!
+                                            -->
+											<StackPanel Grid.Column="2"
+                                                        Margin="4,4" Spacing="3"
+                                                        VerticalAlignment="Center">
+												<ItemsControl ItemsSource="{Binding Bindings}">
+													<ItemsControl.ItemTemplate>
+														<DataTemplate x:DataType="vm:HotKeyBindingViewModel">
+															<Grid Margin="0,1" ColumnDefinitions="90,*,22">
 
-                                                <Button HorizontalAlignment="Stretch"
-                                                        HorizontalContentAlignment="Left"
-                                                        Padding="7,3"
-                                                        ToolTip.Tip="{x:Static loc:Strings.HotKey_Prefix_PickTooltip}"
-                                                        Command="{Binding $parent[UserControl].DataContext.TogglePrefixPopupCommand}"
-                                                        CommandParameter="{Binding}">
-                                                    <Button.Styles>
-                                                        <Style Selector="Button:pointerover /template/ ContentPresenter">
-                                                            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
-                                                        </Style>
-                                                    </Button.Styles>
-                                                    <TextBlock Text="{Binding PrefixDisplayText}"
-                                                               FontSize="12"
-                                                               FontFamily="Consolas,Monospace"
-                                                               TextWrapping="NoWrap"
-                                                               Classes.hasprefix="{Binding HasPrefix}">
-                                                        <TextBlock.Styles>
-                                                            <Style Selector="TextBlock">
-                                                                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-                                                            </Style>
-                                                            <Style Selector="TextBlock.hasprefix">
-                                                                <Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
-                                                                <Setter Property="FontWeight" Value="SemiBold"/>
-                                                            </Style>
-                                                        </TextBlock.Styles>
-                                                    </TextBlock>
-                                                </Button>
-
-                                                <Popup IsOpen="{Binding IsPrefixPopupOpen, Mode=TwoWay}"
-                                                       Placement="Bottom"
-                                                       IsLightDismissEnabled="True"
-                                                       MinWidth="140">
-                                                    <Border Background="{DynamicResource BgPanelBrush}"
-                                                            BorderBrush="{DynamicResource BorderDefaultBrush}"
-                                                            BorderThickness="1"
-                                                            CornerRadius="6"
-                                                            Padding="4">
-                                                        <ItemsControl ItemsSource="{Binding $parent[UserControl].DataContext.PrefixPopupItems}">
-                                                            <ItemsControl.ItemTemplate>
-                                                                <DataTemplate x:DataType="vm:PrefixPopupItem">
-                                                                    <Button Classes="prefixitem compact"
-                                                                            Classes.remove="{Binding IsRemoveAction}"
-                                                                            Command="{Binding $parent[UserControl].DataContext.SelectPrefixForRowCommand}"
+																<!-- Кнопка выбора префикса для этого биндинга -->
+																<Panel Grid.Column="0" Margin="0,0,4,0">
+																	<!--
+                                                                        Кнопка показывает текущий префикс ("—" или жест).
+                                                                        Акцентный цвет и Bold если префикс установлен.
+                                                                        Скрывается в режиме редактирования жеста.
+                                                                    -->
+																	<Button IsVisible="{Binding !IsEditing}"
+                                                                            HorizontalAlignment="Stretch"
+                                                                            HorizontalContentAlignment="Left"
+                                                                            Padding="7,3"
+                                                                            ToolTip.Tip="{x:Static loc:Strings.HotKey_Prefix_PickTooltip}"
+                                                                            Command="{Binding $parent[UserControl].DataContext.TogglePrefixPopupCommand}"
                                                                             CommandParameter="{Binding}">
-                                                                        <TextBlock Text="{Binding DisplayText}"
+																		<Button.Styles>
+																			<Style Selector="Button:pointerover /template/ ContentPresenter">
+																				<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+																			</Style>
+																		</Button.Styles>
+																		<TextBlock Text="{Binding PrefixDisplayText}"
                                                                                    FontSize="12"
                                                                                    FontFamily="Consolas,Monospace"
-                                                                                   TextWrapping="NoWrap"/>
-                                                                    </Button>
-                                                                </DataTemplate>
-                                                            </ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
-                                                    </Border>
-                                                </Popup>
-                                            </Panel>
+                                                                                   TextTrimming="CharacterEllipsis"
+                                                                                   Classes.hasprefix="{Binding HasPrefix}">
+																			<TextBlock.Styles>
+																				<Style Selector="TextBlock">
+																					<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+																				</Style>
+																				<!-- Установленный префикс подсвечивается акцентным цветом -->
+																				<Style Selector="TextBlock.hasprefix">
+																					<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+																					<Setter Property="FontWeight" Value="SemiBold"/>
+																				</Style>
+																			</TextBlock.Styles>
+																		</TextBlock>
+																	</Button>
 
-                                            <!-- Col 3: Текущие биндинги -->
-                                            <StackPanel Grid.Column="3"
-                                                        Margin="4,4"
-                                                        Spacing="3"
-                                                        VerticalAlignment="Center">
-                                                <ItemsControl ItemsSource="{Binding Bindings}">
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate x:DataType="vm:HotKeyBindingViewModel">
-                                                            <Grid Margin="0,1" ColumnDefinitions="*,22">
+																	<!--
+                                                                        Popup с доступными префиксами.
+                                                                        IsOpen привязан к IsPrefixPopupOpen биндинга.
+                                                                        PrefixPopupItems пересобираются VM при открытии.
+                                                                        Первый пункт — "Убрать префикс" (если он установлен).
+                                                                    -->
+																	<Popup IsOpen="{Binding IsPrefixPopupOpen, Mode=TwoWay}"
+                                                                           Placement="Bottom"
+                                                                           IsLightDismissEnabled="True"
+                                                                           MinWidth="140">
+																		<Border Background="{DynamicResource BgPanelBrush}"
+                                                                                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                                                                BorderThickness="1" CornerRadius="6" Padding="4">
+																			<ItemsControl ItemsSource="{Binding $parent[UserControl].DataContext.PrefixPopupItems}">
+																				<ItemsControl.ItemTemplate>
+																					<DataTemplate x:DataType="vm:PrefixPopupItem">
+																						<Button Classes="prefixitem compact"
+                                                                                                Classes.remove="{Binding IsRemoveAction}"
+                                                                                                Command="{Binding $parent[UserControl].DataContext.SelectPrefixForRowCommand}"
+                                                                                                CommandParameter="{Binding}">
+																							<TextBlock Text="{Binding DisplayText}"
+                                                                                                       FontSize="12"
+                                                                                                       FontFamily="Consolas,Monospace"
+                                                                                                       TextWrapping="NoWrap"/>
+																						</Button>
+																					</DataTemplate>
+																				</ItemsControl.ItemTemplate>
+																			</ItemsControl>
+																		</Border>
+																	</Popup>
+																</Panel>
 
-                                                                <!-- Кнопка жеста (режим просмотра) -->
-                                                                <Button Grid.Column="0"
+																<!--
+                                                                    Кнопка жеста биндинга.
+                                                                    Кастомные жесты — акцентный цвет и Bold.
+                                                                    Скрывается в режиме редактирования.
+                                                                -->
+																<Button Grid.Column="1"
                                                                         IsVisible="{Binding !IsEditing}"
                                                                         HorizontalAlignment="Stretch"
                                                                         HorizontalContentAlignment="Left"
@@ -478,212 +523,193 @@
                                                                         ToolTip.Tip="{x:Static loc:Strings.HotKey_Edit}"
                                                                         Command="{Binding $parent[UserControl].DataContext.StartEditBindingCommand}"
                                                                         CommandParameter="{Binding}">
-                                                                    <Button.Styles>
-                                                                        <Style Selector="Button:pointerover /template/ ContentPresenter">
-                                                                            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
-                                                                        </Style>
-                                                                    </Button.Styles>
-                                                                    <TextBlock Text="{Binding GestureDisplay}"
+																	<Button.Styles>
+																		<Style Selector="Button:pointerover /template/ ContentPresenter">
+																			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+																		</Style>
+																	</Button.Styles>
+																	<TextBlock Text="{Binding GestureDisplay}"
                                                                                FontSize="12"
                                                                                FontFamily="Consolas,Monospace"
-                                                                               TextWrapping="Wrap"
+                                                                               TextTrimming="CharacterEllipsis"
                                                                                Classes.custom="{Binding IsCustom}">
-                                                                        <TextBlock.Styles>
-                                                                            <Style Selector="TextBlock">
-                                                                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-                                                                            </Style>
-                                                                            <Style Selector="TextBlock.custom">
-                                                                                <Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
-                                                                                <Setter Property="FontWeight" Value="SemiBold"/>
-                                                                            </Style>
-                                                                        </TextBlock.Styles>
-                                                                    </TextBlock>
-                                                                </Button>
+																		<TextBlock.Styles>
+																			<Style Selector="TextBlock">
+																				<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+																			</Style>
+																			<Style Selector="TextBlock.custom">
+																				<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+																				<Setter Property="FontWeight" Value="SemiBold"/>
+																			</Style>
+																		</TextBlock.Styles>
+																	</TextBlock>
+																</Button>
 
-                                                                <!-- Режим ожидания нажатия -->
-                                                                <Border Grid.Column="0"
+																<!--
+                                                                    Плейсхолдер в режиме ожидания нажатия клавиши.
+                                                                    Показывается вместо кнопки жеста пока IsEditing == true.
+                                                                -->
+																<Border Grid.Column="1"
                                                                         IsVisible="{Binding IsEditing}"
                                                                         Background="{DynamicResource AccentSubtleBrush}"
                                                                         BorderBrush="{DynamicResource AccentDefaultBrush}"
-                                                                        BorderThickness="1"
-                                                                        CornerRadius="4"
-                                                                        Padding="7,3">
-                                                                    <TextBlock Text="{x:Static loc:Strings.HotKey_PressKey}"
-                                                                               FontSize="12"
-                                                                               TextWrapping="Wrap"
+                                                                        BorderThickness="1" CornerRadius="4" Padding="7,3">
+																	<TextBlock Text="{x:Static loc:Strings.HotKey_PressKey}"
+                                                                               FontSize="12" TextWrapping="Wrap"
                                                                                Foreground="{DynamicResource AccentDefaultBrush}"
                                                                                FontStyle="Italic"/>
-                                                                </Border>
+																</Border>
 
-                                                                <!-- Кнопка удалить кастомный биндинг -->
-                                                                <Button Grid.Column="1"
+																<!-- Кнопка удаления биндинга — только для кастомных жестов -->
+																<Button Grid.Column="2"
                                                                         IsVisible="{Binding IsCustom}"
                                                                         HorizontalAlignment="Center"
                                                                         VerticalAlignment="Center"
                                                                         Width="18" Height="18"
-                                                                        Padding="0"
-                                                                        Classes="ghost"
+                                                                        Padding="0" Classes="ghost"
                                                                         ToolTip.Tip="{x:Static loc:Strings.HotKey_RemoveBinding}"
                                                                         Command="{Binding $parent[UserControl].DataContext.RemoveBindingCommand}"
                                                                         CommandParameter="{Binding}">
-                                                                    <TextBlock Text="&#10005;"
-                                                                               FontSize="9"
+																	<TextBlock Text="&#10005;" FontSize="9"
                                                                                Foreground="{DynamicResource TextMutedBrush}"
                                                                                HorizontalAlignment="Center"
                                                                                VerticalAlignment="Center"/>
-                                                                </Button>
-                                                            </Grid>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
+																</Button>
 
-                                                <!-- Кнопка добавить биндинг -->
-                                                <Button Padding="6,2"
-                                                        Classes="ghost"
+															</Grid>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+
+												<!-- Кнопка добавления нового биндинга к строке -->
+												<Button Padding="6,2" Classes="ghost"
                                                         BorderThickness="1"
                                                         BorderBrush="{DynamicResource BorderSubtleBrush}"
-                                                        CornerRadius="4"
-                                                        HorizontalAlignment="Left"
+                                                        CornerRadius="4" HorizontalAlignment="Left"
                                                         ToolTip.Tip="{x:Static loc:Strings.HotKey_AddBinding}"
                                                         Command="{Binding $parent[UserControl].DataContext.AddBindingCommand}"
                                                         CommandParameter="{Binding}">
-                                                    <TextBlock Text="+"
-                                                               FontSize="13"
+													<TextBlock Text="+" FontSize="13"
                                                                Foreground="{DynamicResource TextMutedBrush}"/>
-                                                </Button>
-                                            </StackPanel>
+												</Button>
 
-                                            <!-- Col 4: Кнопка сброса -->
-                                            <StackPanel Grid.Column="4"
-                                                        Margin="2,4"
-                                                        VerticalAlignment="Center">
-                                                <Button Width="28" Height="24"
-                                                        Padding="0"
-                                                        Classes="ghost"
+											</StackPanel>
+
+											<!-- Col 3: Кнопка сброса строки к дефолту (только при наличии кастомных биндингов) -->
+											<StackPanel Grid.Column="3" Margin="2,4" VerticalAlignment="Center">
+												<Button Width="28" Height="24" Padding="0" Classes="ghost"
                                                         IsVisible="{Binding HasCustomBindings}"
                                                         ToolTip.Tip="{x:Static loc:Strings.HotKey_Reset}"
                                                         Command="{Binding $parent[UserControl].DataContext.ResetRowCommand}"
                                                         CommandParameter="{Binding}">
-                                                    <TextBlock Text="&#8634;"
-                                                               FontSize="15"
+													<TextBlock Text="&#8634;" FontSize="15"
                                                                Foreground="{DynamicResource TextMutedBrush}"
                                                                HorizontalAlignment="Center"
                                                                VerticalAlignment="Center"/>
-                                                </Button>
-                                            </StackPanel>
+												</Button>
+											</StackPanel>
 
-                                        </Grid>
-                                    </Border>
+										</Grid>
+									</Border>
 
-                                    <!-- Временная ошибка под строкой — исчезает через 3 секунды -->
-                                    <TextBlock IsVisible="{Binding HasError}"
+									<!-- Временное сообщение об ошибке назначения — исчезает через 3 секунды -->
+									<TextBlock IsVisible="{Binding HasError}"
                                                Text="{Binding ErrorMessage}"
                                                FontSize="11"
                                                Foreground="{DynamicResource HotKeyConflictCriticalBrush}"
-                                               Margin="6,2,0,2"
-                                               TextWrapping="Wrap"/>
+                                               Margin="6,2,0,2" TextWrapping="Wrap"/>
 
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+								</StackPanel>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+				</ScrollViewer>
 
-            </DockPanel>
+			</DockPanel>
 
-            <!-- ВКЛАДКА ПРЕФИКСЫ -->
-            <DockPanel Margin="{DynamicResource PaddingM}"
+			<!-- ============================================================ -->
+			<!-- ВКЛАДКА ПРЕФИКСЫ                                             -->
+			<!-- ============================================================ -->
+			<DockPanel Margin="{DynamicResource PaddingM}"
                        IsVisible="{Binding IsPrefixesTabActive}">
 
-                <!-- Кнопка добавить + Live input -->
-                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-                    <Button DockPanel.Dock="Left"
-                            Classes="compact"
+				<!-- Верхняя панель: кнопка добавления + live input banner -->
+				<DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+					<Button DockPanel.Dock="Left" Classes="compact"
                             Command="{Binding AddPrefixCommand}"
-                            Padding="12,6"
-                            Margin="0,0,8,0"
-                            FontSize="12">
-                        <TextBlock Text="{x:Static loc:Strings.HotKey_Prefix_Add}"
-                                   TextWrapping="Wrap"/>
-                    </Button>
-
-                    <Border IsVisible="{Binding IsLiveInputActive}"
+                            Padding="12,6" Margin="0,0,8,0" FontSize="12">
+						<TextBlock Text="{x:Static loc:Strings.HotKey_Prefix_Add}" TextWrapping="Wrap"/>
+					</Button>
+					<!-- Live input banner — показывается при вводе жеста нового или редактируемого префикса -->
+					<Border IsVisible="{Binding IsLiveInputActive}"
                             Background="{DynamicResource AccentSubtleBrush}"
                             BorderBrush="{DynamicResource AccentDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="4"
-                            Padding="10,6">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="{x:Static loc:Strings.HotKey_Prefix_PressKey}"
-                                       FontSize="12"
-                                       Foreground="{DynamicResource AccentDefaultBrush}"
-                                       FontStyle="Italic"
-                                       VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding LiveInputDisplay}"
+                            BorderThickness="1" CornerRadius="4" Padding="10,6">
+						<StackPanel Orientation="Horizontal" Spacing="8">
+							<TextBlock Text="{x:Static loc:Strings.HotKey_Prefix_PressKey}"
+                                       FontSize="12" Foreground="{DynamicResource AccentDefaultBrush}"
+                                       FontStyle="Italic" VerticalAlignment="Center"/>
+							<TextBlock Text="{Binding LiveInputDisplay}"
                                        FontSize="13" FontWeight="SemiBold"
                                        FontFamily="Consolas,Monospace"
                                        Foreground="{DynamicResource AccentDefaultBrush}"
                                        VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
-                </DockPanel>
+						</StackPanel>
+					</Border>
+				</DockPanel>
 
-                <!-- Ошибка уровня вкладки — показывается когда новый префикс не прошёл валидацию -->
-                <TextBlock DockPanel.Dock="Top"
+				<!-- Ошибка уровня вкладки — например, жест уже занят другим префиксом -->
+				<TextBlock DockPanel.Dock="Top"
                            IsVisible="{Binding HasPrefixTabError}"
                            Text="{Binding PrefixTabErrorMessage}"
                            FontSize="11"
                            Foreground="{DynamicResource HotKeyConflictCriticalBrush}"
-                           Margin="0,0,0,6"
-                           TextWrapping="Wrap"/>
+                           Margin="0,0,0,6" TextWrapping="Wrap"/>
 
-                <!-- Заголовки таблицы префиксов -->
-                <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="140"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="160"/>
-                        <ColumnDefinition Width="28"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0"
-                               Text="{x:Static loc:Strings.HotKey_Prefix_Col_Gesture}"
+				<!-- Заголовки таблицы префиксов: Жест | Комментарий | Используется | Удалить -->
+				<Grid DockPanel.Dock="Top" Margin="0,0,0,4">
+					<Grid.ColumnDefinitions>
+						<ColumnDefinition Width="140"/>
+						<ColumnDefinition Width="*"/>
+						<ColumnDefinition Width="160"/>
+						<ColumnDefinition Width="28"/>
+					</Grid.ColumnDefinitions>
+					<TextBlock Grid.Column="0" Text="{x:Static loc:Strings.HotKey_Prefix_Col_Gesture}"
                                FontSize="11" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextDisabledBrush}" Margin="4,0"/>
-                    <TextBlock Grid.Column="1"
-                               Text="{x:Static loc:Strings.HotKey_Prefix_Col_Comment}"
+					<TextBlock Grid.Column="1" Text="{x:Static loc:Strings.HotKey_Prefix_Col_Comment}"
                                FontSize="11" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextDisabledBrush}" Margin="4,0"/>
-                    <TextBlock Grid.Column="2"
-                               Text="{x:Static loc:Strings.HotKey_Prefix_Col_UsedBy}"
+					<TextBlock Grid.Column="2" Text="{x:Static loc:Strings.HotKey_Prefix_Col_UsedBy}"
                                FontSize="11" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextDisabledBrush}" Margin="4,0"/>
-                </Grid>
+				</Grid>
 
-                <Border DockPanel.Dock="Top"
-                        Height="1"
-                        Background="{DynamicResource BorderSubtleBrush}"
-                        Margin="0,0,0,2"/>
+				<Border DockPanel.Dock="Top" Height="1"
+                        Background="{DynamicResource BorderSubtleBrush}" Margin="0,0,0,2"/>
 
-                <!-- Список строк префиксов -->
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding PrefixRows}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:PrefixRowViewModel">
-                                <StackPanel Spacing="2" Margin="0,1">
+				<!-- Список строк префиксов -->
+				<ScrollViewer VerticalScrollBarVisibility="Auto">
+					<ItemsControl ItemsSource="{Binding PrefixRows}">
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="vm:PrefixRowViewModel">
+								<StackPanel Spacing="2" Margin="0,1">
+									<Grid MinHeight="32">
+										<Grid.ColumnDefinitions>
+											<ColumnDefinition Width="140"/>
+											<ColumnDefinition Width="*"/>
+											<ColumnDefinition Width="160"/>
+											<ColumnDefinition Width="28"/>
+										</Grid.ColumnDefinitions>
 
-                                    <Grid MinHeight="32">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="140"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="160"/>
-                                            <ColumnDefinition Width="28"/>
-                                        </Grid.ColumnDefinitions>
-
-                                        <!-- Колонка жеста -->
-                                        <StackPanel Grid.Column="0"
-                                                    VerticalAlignment="Center"
-                                                    Margin="4,0">
-                                            <Button IsVisible="{Binding !IsEditingGesture}"
+										<!-- Колонка жеста: кнопка редактирования или плейсхолдер ввода -->
+										<StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="4,0">
+											<!--
+                                                Кнопка отображает текущий жест.
+                                                Автоматически выведенные префиксы (IsAutoDerived) не редактируются —
+                                                кнопка отключена но визуально не приглушена.
+                                            -->
+											<Button IsVisible="{Binding !IsEditingGesture}"
                                                     HorizontalAlignment="Stretch"
                                                     HorizontalContentAlignment="Left"
                                                     Padding="7,3"
@@ -691,124 +717,115 @@
                                                     ToolTip.Tip="{x:Static loc:Strings.HotKey_Edit}"
                                                     Command="{Binding $parent[UserControl].DataContext.StartEditPrefixGestureCommand}"
                                                     CommandParameter="{Binding}">
-                                                <Button.Styles>
-                                                    <Style Selector="Button:pointerover /template/ ContentPresenter">
-                                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
-                                                    </Style>
-                                                    <Style Selector="Button:disabled /template/ ContentPresenter">
-                                                        <Setter Property="Opacity" Value="1"/>
-                                                    </Style>
-                                                </Button.Styles>
-                                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                                    <TextBlock Text="{Binding GestureDisplay}"
-                                                               FontSize="12"
-                                                               FontFamily="Consolas,Monospace"
+												<Button.Styles>
+													<Style Selector="Button:pointerover /template/ ContentPresenter">
+														<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+													</Style>
+													<!-- Отключенная кнопка не меняет opacity — читаемость сохраняется -->
+													<Style Selector="Button:disabled /template/ ContentPresenter">
+														<Setter Property="Opacity" Value="1"/>
+													</Style>
+												</Button.Styles>
+												<StackPanel Orientation="Horizontal" Spacing="6">
+													<TextBlock Text="{Binding GestureDisplay}"
+                                                               FontSize="12" FontFamily="Consolas,Monospace"
                                                                VerticalAlignment="Center"
                                                                Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                                    <Border IsVisible="{Binding IsAutoDerived}"
+													<!-- Бейдж "авто" для автоматически выведенных префиксов -->
+													<Border IsVisible="{Binding IsAutoDerived}"
                                                             Background="{DynamicResource BgHoverBrush}"
                                                             BorderBrush="{DynamicResource BorderSubtleBrush}"
-                                                            BorderThickness="1"
-                                                            CornerRadius="3"
-                                                            Padding="4,1">
-                                                        <TextBlock Text="{x:Static loc:Strings.HotKey_Prefix_AutoDerived}"
+                                                            BorderThickness="1" CornerRadius="3" Padding="4,1">
+														<TextBlock Text="{x:Static loc:Strings.HotKey_Prefix_AutoDerived}"
                                                                    FontSize="10"
                                                                    Foreground="{DynamicResource TextMutedBrush}"/>
-                                                    </Border>
-                                                </StackPanel>
-                                            </Button>
-
-                                            <Border IsVisible="{Binding IsEditingGesture}"
+													</Border>
+												</StackPanel>
+											</Button>
+											<!-- Плейсхолдер в режиме ввода жеста префикса -->
+											<Border IsVisible="{Binding IsEditingGesture}"
                                                     Background="{DynamicResource AccentSubtleBrush}"
                                                     BorderBrush="{DynamicResource AccentDefaultBrush}"
-                                                    BorderThickness="1"
-                                                    CornerRadius="4"
-                                                    Padding="7,3">
-                                                <TextBlock Text="{x:Static loc:Strings.HotKey_Prefix_PressKey}"
+                                                    BorderThickness="1" CornerRadius="4" Padding="7,3">
+												<TextBlock Text="{x:Static loc:Strings.HotKey_Prefix_PressKey}"
                                                            FontSize="12"
                                                            Foreground="{DynamicResource AccentDefaultBrush}"
                                                            FontStyle="Italic"/>
-                                            </Border>
-                                        </StackPanel>
+											</Border>
+										</StackPanel>
 
-                                        <!-- Колонка комментария -->
-                                        <Grid Grid.Column="1"
-                                              VerticalAlignment="Center"
-                                              Margin="4,0">
-                                            <Button IsVisible="{Binding !IsEditingComment}"
+										<!--
+                                            Колонка комментария: клик переводит в режим редактирования (TextBox).
+                                            Автоматически выведенные префиксы — комментарий не редактируется.
+                                            Потеря фокуса TextBox сохраняет комментарий через code-behind.
+                                        -->
+										<Grid Grid.Column="1" VerticalAlignment="Center" Margin="4,0">
+											<!-- Статичный режим — кликабельный TextBlock -->
+											<Button IsVisible="{Binding !IsEditingComment}"
                                                     HorizontalAlignment="Stretch"
                                                     HorizontalContentAlignment="Left"
                                                     VerticalContentAlignment="Center"
-                                                    Padding="0"
-                                                    Classes="ghost"
+                                                    Padding="0" Classes="ghost"
                                                     IsEnabled="{Binding !IsAutoDerived}"
                                                     Command="{Binding $parent[UserControl].DataContext.StartEditCommentCommand}"
                                                     CommandParameter="{Binding}">
-                                                <Button.Styles>
-                                                    <Style Selector="Button:disabled /template/ ContentPresenter">
-                                                        <Setter Property="Opacity" Value="1"/>
-                                                    </Style>
-                                                </Button.Styles>
-                                                <TextBlock Text="{Binding Comment}"
-                                                           FontSize="12"
+												<Button.Styles>
+													<Style Selector="Button:disabled /template/ ContentPresenter">
+														<Setter Property="Opacity" Value="1"/>
+													</Style>
+												</Button.Styles>
+												<TextBlock Text="{Binding Comment}" FontSize="12"
                                                            Foreground="{DynamicResource TextSecondaryBrush}"
-                                                           TextWrapping="Wrap"
-                                                           VerticalAlignment="Center"
+                                                           TextWrapping="Wrap" VerticalAlignment="Center"
                                                            Cursor="IBeam"/>
-                                            </Button>
-
-                                            <TextBox IsVisible="{Binding IsEditingComment}"
+											</Button>
+											<!-- Режим редактирования — TextBox, потеря фокуса сохраняет -->
+											<TextBox IsVisible="{Binding IsEditingComment}"
                                                      Text="{Binding Comment, Mode=TwoWay}"
-                                                     Tag="{Binding}"
-                                                     FontSize="12"
+                                                     Tag="{Binding}" FontSize="12"
                                                      Watermark="{x:Static loc:Strings.HotKey_Prefix_CommentPlaceholder}"
                                                      Padding="6,3"/>
-                                        </Grid>
+										</Grid>
 
-                                        <!-- Колонка использующих хоткеев -->
-                                        <TextBlock Grid.Column="2"
+										<!-- Колонка "Используется" — список хоткеев которые используют этот префикс -->
+										<TextBlock Grid.Column="2"
                                                    Text="{Binding UsedByText}"
-                                                   FontSize="12"
-                                                   TextWrapping="Wrap"
+                                                   FontSize="12" TextWrapping="Wrap"
                                                    Foreground="{DynamicResource TextMutedBrush}"
-                                                   VerticalAlignment="Center"
-                                                   Margin="4,0"/>
+                                                   VerticalAlignment="Center" Margin="4,0"/>
 
-                                        <!-- Кнопка удалить -->
-                                        <Button Grid.Column="3"
+										<!-- Кнопка удаления — только для незанятых пользовательских префиксов -->
+										<Button Grid.Column="3"
                                                 IsVisible="{Binding CanRemove}"
-                                                Width="22" Height="22"
-                                                Padding="0"
-                                                Classes="ghost"
-                                                VerticalAlignment="Center"
+                                                Width="22" Height="22" Padding="0"
+                                                Classes="ghost" VerticalAlignment="Center"
                                                 HorizontalAlignment="Center"
                                                 ToolTip.Tip="{x:Static loc:Strings.HotKey_Prefix_Remove}"
                                                 Command="{Binding $parent[UserControl].DataContext.RemovePrefixCommand}"
                                                 CommandParameter="{Binding}">
-                                            <TextBlock Text="&#10005;"
-                                                       FontSize="9"
+											<TextBlock Text="&#10005;" FontSize="9"
                                                        Foreground="{DynamicResource TextMutedBrush}"
                                                        HorizontalAlignment="Center"
                                                        VerticalAlignment="Center"/>
-                                        </Button>
-                                    </Grid>
+										</Button>
 
-                                    <!-- Ошибка под строкой — для существующих префиксов -->
-                                    <TextBlock IsVisible="{Binding HasError}"
+									</Grid>
+
+									<!-- Сообщение об ошибке строки (например, жест занят) -->
+									<TextBlock IsVisible="{Binding HasError}"
                                                Text="{Binding ErrorMessage}"
                                                FontSize="11"
                                                Foreground="{DynamicResource HotKeyConflictCriticalBrush}"
-                                               Margin="4,0,0,2"
-                                               TextWrapping="Wrap"/>
+                                               Margin="4,0,0,2" TextWrapping="Wrap"/>
+								</StackPanel>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+				</ScrollViewer>
 
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+			</DockPanel>
 
-            </DockPanel>
+		</Grid>
 
-        </Grid>
-    </Grid>
+	</Grid>
 </UserControl>

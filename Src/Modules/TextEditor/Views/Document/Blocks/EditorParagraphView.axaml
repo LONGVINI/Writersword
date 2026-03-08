@@ -1,0 +1,19 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Blocks"
+             x:Class="Writersword.Modules.TextEditor.Views.Document.EditorParagraphView"
+             x:DataType="vm:ParagraphViewModel">
+
+	<!--
+        DocumentTextBox — базовый слой: прозрачный фон, без рамки, цвет не зависит от темы.
+        EditorParagraph — специфика TextEditor: размер шрифта, межабзацный отступ.
+        Оба класса объявлены в Styles/Controls/.
+    -->
+	<TextBox Text="{Binding PlainText, Mode=TwoWay}"
+             Classes="DocumentTextBox EditorParagraph"
+             AcceptsReturn="False"
+             AcceptsTab="False"
+             Name="ParagraphBox"
+             Margin="0 0 0 4"/>
+
+</UserControl>
