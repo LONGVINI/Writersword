@@ -115,6 +115,15 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Clipboard.
+        /// </summary>
+        public static string Clipboard_Group {
+            get {
+                return ResourceManager.GetString("Clipboard_Group", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на One Column.
         /// </summary>
         public static string Columns_One {
@@ -156,6 +165,15 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         public static string DisplayName {
             get {
                 return ResourceManager.GetString("DisplayName", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Editing.
+        /// </summary>
+        public static string Edit_Group {
+            get {
+                return ResourceManager.GetString("Edit_Group", resourceCulture);
             }
         }
         
@@ -246,6 +264,15 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         public static string FindReplace_Title {
             get {
                 return ResourceManager.GetString("FindReplace_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Font.
+        /// </summary>
+        public static string Font_Group {
+            get {
+                return ResourceManager.GetString("Font_Group", resourceCulture);
             }
         }
         
@@ -669,6 +696,15 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         public static string Para_SpaceBefore {
             get {
                 return ResourceManager.GetString("Para_SpaceBefore", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Paragraph.
+        /// </summary>
+        public static string Paragraph_Group {
+            get {
+                return ResourceManager.GetString("Paragraph_Group", resourceCulture);
             }
         }
         

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Windows.Input;
 using ReactiveUI;
@@ -100,8 +101,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public double DefaultZoom
         {
             get => _defaultZoom;
-            set => this.RaiseAndSetIfChanged(ref _defaultZoom, value);
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _defaultZoom, value);
+                this.RaisePropertyChanged(nameof(ZoomPercent));
+            }
         }
+
+        /// <summary>Масштаб в процентах для отображения рядом со слайдером.</summary>
+        public int ZoomPercent => (int)Math.Round(_defaultZoom * 100);
 
         // --- Автосохранение ---
 

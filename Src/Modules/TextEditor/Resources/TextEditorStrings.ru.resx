@@ -135,6 +135,9 @@
   <data name="Break_SectionNextPage" xml:space="preserve">
     <value>Разрыв раздела (следующая страница)</value>
   </data>
+  <data name="Clipboard_Group" xml:space="preserve">
+    <value>Буфер</value>
+  </data>
   <data name="Columns_One" xml:space="preserve">
     <value>Одна колонка</value>
   </data>
@@ -152,6 +155,9 @@
   </data>
   <data name="Editor_ReadOnly" xml:space="preserve">
     <value>Только чтение</value>
+  </data>
+  <data name="Edit_Group" xml:space="preserve">
+    <value>Правка</value>
   </data>
   <data name="Edit_Redo" xml:space="preserve">
     <value>Повторить</value>
@@ -179,6 +185,9 @@
   </data>
   <data name="Find_Title" xml:space="preserve">
     <value>Найти</value>
+  </data>
+  <data name="Font_Group" xml:space="preserve">
+    <value>Шрифт</value>
   </data>
   <data name="Format_Bold" xml:space="preserve">
     <value>Жирный</value>
@@ -305,6 +314,9 @@
   </data>
   <data name="Orientation_Portrait" xml:space="preserve">
     <value>Книжная</value>
+  </data>
+  <data name="Paragraph_Group" xml:space="preserve">
+    <value>Абзац</value>
   </data>
   <data name="Para_Indent" xml:space="preserve">
     <value>Увеличить отступ</value>

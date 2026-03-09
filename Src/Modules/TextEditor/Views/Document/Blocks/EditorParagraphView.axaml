@@ -4,16 +4,48 @@
              x:Class="Writersword.Modules.TextEditor.Views.Document.EditorParagraphView"
              x:DataType="vm:ParagraphViewModel">
 
-	<!--
-        DocumentTextBox — базовый слой: прозрачный фон, без рамки, цвет не зависит от темы.
-        EditorParagraph — специфика TextEditor: размер шрифта, межабзацный отступ.
-        Оба класса объявлены в Styles/Controls/.
-    -->
-	<TextBox Text="{Binding PlainText, Mode=TwoWay}"
-             Classes="DocumentTextBox EditorParagraph"
-             AcceptsReturn="False"
-             AcceptsTab="False"
-             Name="ParagraphBox"
-             Margin="0 0 0 4"/>
+	<UserControl.Styles>
+		<Style Selector="Border.SelectionBorder">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Border Name="SelectionBorder"
+        Classes="SelectionBorder"
+        CornerRadius="2"
+        Margin="0 0 0 4">
+		<TextBox Name="ParagraphBox"
+				 Text="{Binding PlainText, Mode=TwoWay}"
+				 Background="Transparent"
+				 BorderThickness="0"
+				 Padding="0"
+				 TextWrapping="Wrap"
+				 AcceptsReturn="False"
+				 AcceptsTab="False"
+				 CaretBrush="#1A1A1A"
+				 SelectionBrush="#3390FF"
+				 SelectionForegroundBrush="White"
+				 Foreground="#1A1A1A"
+				 MinHeight="20">
+			<TextBox.Template>
+				<ControlTemplate TargetType="TextBox">
+					<ScrollViewer HorizontalScrollBarVisibility="Disabled"
+								  VerticalScrollBarVisibility="Disabled">
+						<TextPresenter Name="PART_TextPresenter"
+									   Text="{TemplateBinding Text}"
+									   CaretBrush="{TemplateBinding CaretBrush}"
+									   SelectionBrush="{TemplateBinding SelectionBrush}"
+									   SelectionForegroundBrush="{TemplateBinding SelectionForegroundBrush}"
+									   SelectionStart="{TemplateBinding SelectionStart}"
+									   SelectionEnd="{TemplateBinding SelectionEnd}"
+									   TextWrapping="{TemplateBinding TextWrapping}"
+									   TextAlignment="{TemplateBinding TextAlignment}"
+									   PasswordChar="{TemplateBinding PasswordChar}"
+									   RevealPassword="{TemplateBinding RevealPassword}"/>
+					</ScrollViewer>
+				</ControlTemplate>
+			</TextBox.Template>
+		</TextBox>
+	</Border>
 
 </UserControl>

@@ -141,6 +141,10 @@
     <value>Section Break (Next Page)</value>
     <comment>Insert menu item</comment>
   </data>
+  <data name="Clipboard_Group" xml:space="preserve">
+    <value>Clipboard</value>
+    <comment>Label for the Clipboard ribbon group header</comment>
+  </data>
   <data name="Columns_One" xml:space="preserve">
     <value>One Column</value>
     <comment>Layout columns option</comment>
@@ -164,6 +168,10 @@
   <data name="Editor_ReadOnly" xml:space="preserve">
     <value>Read Only</value>
     <comment>Status bar label</comment>
+  </data>
+  <data name="Edit_Group" xml:space="preserve">
+    <value>Editing</value>
+    <comment>Label for the Editing ribbon group header (Find, Replace, SelectAll)</comment>
   </data>
   <data name="Edit_Redo" xml:space="preserve">
     <value>Redo</value>
@@ -200,6 +208,10 @@
   <data name="Find_Title" xml:space="preserve">
     <value>Find</value>
     <comment>Dialog title</comment>
+  </data>
+  <data name="Font_Group" xml:space="preserve">
+    <value>Font</value>
+    <comment>Label for the Font ribbon group header</comment>
   </data>
   <data name="Format_Bold" xml:space="preserve">
     <value>Bold</value>
@@ -368,6 +380,10 @@
   <data name="Orientation_Portrait" xml:space="preserve">
     <value>Portrait</value>
     <comment>Orientation option</comment>
+  </data>
+  <data name="Paragraph_Group" xml:space="preserve">
+    <value>Paragraph</value>
+    <comment>Label for the Paragraph ribbon group header</comment>
   </data>
   <data name="Para_Indent" xml:space="preserve">
     <value>Increase Indent</value>

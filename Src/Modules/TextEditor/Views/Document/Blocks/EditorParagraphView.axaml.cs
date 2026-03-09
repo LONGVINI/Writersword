@@ -1,130 +1,182 @@
+using System;
+using System.ComponentModel;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Interactivity;
-using Avalonia.VisualTree;
-using System;
+using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using Writersword.Modules.TextEditor.ViewModels.Blocks;
 
 namespace Writersword.Modules.TextEditor.Views.Document
 {
     public partial class EditorParagraphView : UserControl
     {
+        private ParagraphViewModel? _vm;
+        private TextBox? _box;
+        private Border? _border;
+
         public EditorParagraphView()
         {
             InitializeComponent();
-            AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
+            _box = this.FindControl<TextBox>("ParagraphBox");
+            _border = this.FindControl<Border>("SelectionBorder");
+            WireBoxEvents();
+            DataContextChanged += OnDataContextChanged;
         }
 
-        /// <summary>
-        /// При смене DataContext подписываемся на события фокуса от ViewModel.
-        /// Вызывается Avalonia когда ItemsControl присваивает DataContext новому View.
-        /// </summary>
-        protected override void OnDataContextChanged(EventArgs e)
+        private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+        // в”Ђв”Ђ DataContext в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+
+        private void OnDataContextChanged(object? sender, EventArgs e)
         {
-            base.OnDataContextChanged(e);
-
-            if (DataContext is ParagraphViewModel vm)
+            if (_vm is not null)
             {
-                vm.FocusRequested += OnFocusRequested;
-                vm.RequestFocusAtPosition = OnFocusAtPositionRequested;
+                _vm.PropertyChanged -= OnVmPropertyChanged;
+                _vm.FocusRequested -= OnFocusRequested;
+                _vm.RequestFocusAtPosition = null;
+                _vm.OnActivated = null;
+                _vm.OnSelectionChanged = null;
             }
-        }
 
-        /// <summary>
-        /// Переводит фокус на TextBox параграфа.
-        /// Если контрол ещё не смонтирован в визуальное дерево — ждём AttachedToVisualTree.
-        /// </summary>
-        private void OnFocusRequested()
-        {
-            var box = this.FindControl<TextBox>("ParagraphBox");
-            if (box is null) return;
+            _vm = DataContext as ParagraphViewModel;
 
-            if (box.IsAttachedToVisualTree())
-            {
-                box.Focus();
-            }
-            else
-            {
-                void OnAttached(object? s, Avalonia.VisualTreeAttachmentEventArgs args)
+            if (_vm is null) return;
+
+            _vm.PropertyChanged += OnVmPropertyChanged;
+            _vm.FocusRequested += OnFocusRequested;
+
+            _vm.RequestFocusAtPosition = pos =>
+                Dispatcher.UIThread.Post(() =>
                 {
-                    box.AttachedToVisualTree -= OnAttached;
-                    box.Focus();
-                }
-                box.AttachedToVisualTree += OnAttached;
-            }
+                    if (_box is null) return;
+                    _box.Focus();
+                    _box.SelectionStart = pos;
+                    _box.SelectionEnd = pos;
+                }, DispatcherPriority.Input);
+
+            _vm.OnActivated = pvm => { /* СѓР¶Рµ РѕР±СЂР°Р±Р°С‚С‹РІР°РµС‚СЃСЏ РІ GotFocus */ };
+            _vm.OnSelectionChanged = _ => { };
+
+            // РџСЂРёРјРµРЅСЏРµРј РЅР°С‡Р°Р»СЊРЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ IsSelected.
+            ApplySelectedClass();
         }
 
-        /// <summary>
-        /// Переводит фокус и устанавливает каретку на указанную позицию.
-        /// Используется после мержа параграфов чтобы каретка встала в точку слияния.
-        /// </summary>
-        private void OnFocusAtPositionRequested(int caretPosition)
+        // в”Ђв”Ђ РџРѕРґРїРёСЃРєР° РЅР° СЃРѕР±С‹С‚РёСЏ TextBox в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+
+        private void WireBoxEvents()
         {
-            var box = this.FindControl<TextBox>("ParagraphBox");
-            if (box is null) return;
+            if (_box is null) return;
 
-            void SetFocus()
+            _box.GotFocus += (_, _) =>
             {
-                box.Focus();
-                box.CaretIndex = caretPosition;
-            }
+                _vm?.OnActivated?.Invoke(_vm);
+                // РЎРЅРёРјР°РµРј document-level РІС‹РґРµР»РµРЅРёРµ РїСЂРё РІС…РѕРґРµ РІ TextBox.
+                _vm?.RequestClearSelection?.Invoke();
+            };
 
-            if (box.IsAttachedToVisualTree())
+            _box.PropertyChanged += (_, e) =>
             {
-                SetFocus();
-            }
-            else
-            {
-                void OnAttached(object? s, Avalonia.VisualTreeAttachmentEventArgs args)
+                if (e.Property == TextBox.SelectionStartProperty
+                 || e.Property == TextBox.SelectionEndProperty)
                 {
-                    box.AttachedToVisualTree -= OnAttached;
-                    SetFocus();
+                    if (_vm is null || _box is null) return;
+                    _vm.SelectionStart = _box.SelectionStart;
+                    _vm.SelectionEnd = _box.SelectionEnd;
+                    _vm.OnSelectionChanged?.Invoke(_vm);
                 }
-                box.AttachedToVisualTree += OnAttached;
-            }
+            };
+
+            _box.AddHandler(KeyDownEvent, OnBoxKeyDown,
+                Avalonia.Interactivity.RoutingStrategies.Tunnel);
         }
 
-        /// <summary>
-        /// Перехватываем Enter и Backspace на уровне параграфа.
-        /// Enter — разбивает текст по позиции каретки:
-        ///   текст до каретки остаётся в текущем параграфе,
-        ///   текст после каретки переносится в новый параграф.
-        /// Backspace в позиции 0 — сливает текст текущего параграфа с предыдущим.
-        /// </summary>
-        private void OnKeyDown(object? sender, KeyEventArgs e)
+        private void OnBoxKeyDown(object? sender, KeyEventArgs e)
         {
-            if (DataContext is not ParagraphViewModel vm) return;
+            if (_vm is null || _box is null) return;
 
-            var box = this.FindControl<TextBox>("ParagraphBox");
-
+            // в”Ђв”Ђ Enter в†’ РЅРѕРІС‹Р№ РїР°СЂР°РіСЂР°С„ в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
             if (e.Key == Key.Enter)
             {
                 e.Handled = true;
+                int caret = _box.SelectionStart;
+                string before = (_box.Text ?? "")[..caret];
+                string after = (_box.Text ?? "")[caret..];
 
-                int caretIndex = box?.CaretIndex ?? vm.PlainText.Length;
-                string textBefore = vm.PlainText[..caretIndex];
-                string textAfter = vm.PlainText[caretIndex..];
-
-                vm.PlainText = textBefore;
-
-                var newVm = vm.RequestAddAfter?.Invoke(vm);
+                _vm.PlainText = before;
+                var newVm = _vm.RequestAddAfter?.Invoke(_vm);
                 if (newVm is not null)
-                    newVm.PlainText = textAfter;
-
+                {
+                    newVm.PlainText = after;
+                    // Р¤РѕРєСѓСЃ РЅР° РЅРѕРІРѕРј РїР°СЂР°РіСЂР°С„Рµ Р·Р°РїСЂР°С€РёРІР°РµС‚ СЃР°Рј RequestAddAfter.
+                }
                 return;
             }
 
-            if (e.Key == Key.Back)
+            // в”Ђв”Ђ Backspace в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+            if (e.Key == Key.Back && _box.SelectionStart == 0 && _box.SelectionEnd == 0)
             {
-                int caretIndex = box?.CaretIndex ?? 0;
-
-                // Backspace в начале параграфа — мёрж с предыдущим
-                if (caretIndex == 0)
-                {
-                    e.Handled = true;
-                    vm.RequestMergeWithPrevious?.Invoke(vm, vm.PlainText);
-                }
+                e.Handled = true;
+                if (string.IsNullOrEmpty(_box.Text))
+                    _vm.RequestDelete?.Invoke(_vm);
+                else
+                    _vm.RequestMergeWithPrevious?.Invoke(_vm, _vm.PlainText);
+                return;
             }
+
+            // в”Ђв”Ђ Ctrl+A: РїРµСЂРІРѕРµ РЅР°Р¶Р°С‚РёРµ вЂ” РІС‹РґРµР»РёС‚СЊ РІСЃС‘ РІ Р°Р±Р·Р°С†Рµ,
+            //            РІС‚РѕСЂРѕРµ вЂ” РІС‹РґРµР»РёС‚СЊ РІРµСЃСЊ РґРѕРєСѓРјРµРЅС‚ в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+            if (e.Key == Key.A && e.KeyModifiers == KeyModifiers.Control)
+            {
+                bool docSelected = _vm.RequestGetDocumentSelectedText?.Invoke() is not null;
+                if (!docSelected)
+                {
+                    // Р•СЃР»Рё РІРµСЃСЊ С‚РµРєСЃС‚ TextBox СѓР¶Рµ РІС‹РґРµР»РµРЅ вЂ” РІС‹РґРµР»СЏРµРј РІРµСЃСЊ РґРѕРєСѓРјРµРЅС‚.
+                    bool allInBox = _box.SelectionStart == 0
+                                 && _box.SelectionEnd == (_box.Text?.Length ?? 0);
+                    if (allInBox)
+                        _vm.RequestSelectAll?.Invoke();
+                    else
+                        _box.SelectAll();
+                }
+                else
+                {
+                    _vm.RequestClearSelection?.Invoke();
+                    _box.SelectAll();
+                }
+                e.Handled = true;
+            }
+        }
+
+        // в”Ђв”Ђ ViewModel в†’ View в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+
+        private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(ParagraphViewModel.IsSelected))
+                ApplySelectedClass();
+        }
+
+        /// <summary>
+        /// Р”РѕР±Р°РІР»СЏРµС‚/СѓР±РёСЂР°РµС‚ CSS-РєР»Р°СЃСЃ "selected" РЅР° Border.
+        /// РРјРµРЅРЅРѕ СЌС‚РѕС‚ РєР»Р°СЃСЃ РІРєР»СЋС‡Р°РµС‚ СЃРёРЅРёР№ С„РѕРЅ Р°Р±Р·Р°С†Р° РїСЂРё РјСѓР»СЊС‚РёРІС‹РґРµР»РµРЅРёРё.
+        /// </summary>
+        private void ApplySelectedClass()
+        {
+            if (_border is null) return;
+
+            if (_vm?.IsSelected == true)
+            {
+                if (!_border.Classes.Contains("selected"))
+                    _border.Classes.Add("selected");
+            }
+            else
+            {
+                _border.Classes.Remove("selected");
+            }
+        }
+
+        private void OnFocusRequested()
+        {
+            Dispatcher.UIThread.Post(() => _box?.Focus(), DispatcherPriority.Input);
         }
     }
 }
