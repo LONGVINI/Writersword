@@ -1,8 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Serilog;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Src.Core.Interfaces.Services.Input;
 
@@ -10,50 +9,78 @@ namespace Writersword.Modules.Common
 {
     /// <summary>
     /// Фабрика для создания экземпляров модулей и получения их метаданных.
-    /// Метаданные кешируются и сбрасываются при перерегистрации.
-    /// При вызове RegisterAllHotKeys читает IHotKeyDescriptor из метаданных
-    /// и регистрирует определения клавиш в HotKeyService без создания живых модулей.
+    /// Хранит живые экземпляры IConfigurableModule для применения глобальных настроек.
     /// </summary>
     public class ModuleFactory
     {
-        private readonly ILogger<ModuleFactory> _logger;
+        private static readonly ILogger _logger = Log.ForContext<ModuleFactory>();
+
         private readonly Dictionary<string, Func<IModule>> _moduleCreators = new();
+        private readonly Dictionary<string, IConfigurableModule> _liveConfigurables = new();
         private List<IModuleMetadata>? _cachedMetadata;
 
-        public ModuleFactory()
-        {
-            _logger = App.Services.GetService<ILogger<ModuleFactory>>()!;
-        }
+        // ── Регистрация типов ─────────────────────────────────────────────
 
-        /// <summary>Зарегистрировать создатель модуля</summary>
+        /// <summary>Зарегистрировать создатель модуля.</summary>
         public void Register(string moduleType, Func<IModule> creator)
         {
             _moduleCreators[moduleType] = creator;
             _cachedMetadata = null;
-            _logger.LogDebug("Registered: {moduleType}", moduleType);
+            _logger.Debug("Registered: {ModuleType}", moduleType);
         }
 
-        /// <summary>Создать новый экземпляр модуля. Возвращает null если тип не зарегистрирован</summary>
+        /// <summary>Создать новый экземпляр модуля. Возвращает null если тип не зарегистрирован.</summary>
         public IModule? Create(string moduleType)
         {
             if (_moduleCreators.TryGetValue(moduleType, out var creator))
             {
                 var module = creator();
-                _logger.LogDebug("Created: {moduleType}", moduleType);
+                _logger.Debug("Created: {ModuleType}", moduleType);
                 return module;
             }
 
-            _logger.LogError("Module not registered: {moduleType}", moduleType);
+            _logger.Error("Module not registered: {ModuleType}", moduleType);
             return null;
         }
 
-        /// <summary>Проверить зарегистрирован ли тип модуля</summary>
+        /// <summary>Проверить зарегистрирован ли тип модуля.</summary>
         public bool IsRegistered(string moduleType) =>
             _moduleCreators.ContainsKey(moduleType);
 
-        /// <summary>Получить все зарегистрированные ключи</summary>
+        /// <summary>Получить все зарегистрированные ключи.</summary>
         public IEnumerable<string> GetRegisteredTypes() =>
             _moduleCreators.Keys;
+
+        // ── Живые экземпляры ──────────────────────────────────────────────
+
+        /// <summary>
+        /// Зарегистрировать живой экземпляр модуля.
+        /// Вызывается модулем при Initialize().
+        /// </summary>
+        public void RegisterLive(string moduleType, IConfigurableModule configurable)
+        {
+            _liveConfigurables[moduleType] = configurable;
+            _logger.Debug("RegisterLive: {ModuleType}", moduleType);
+        }
+
+        /// <summary>
+        /// Снять живой модуль с регистрации.
+        /// Вызывается модулем при Dispose().
+        /// </summary>
+        public void UnregisterLive(string moduleType)
+        {
+            _liveConfigurables.Remove(moduleType);
+            _logger.Debug("UnregisterLive: {ModuleType}", moduleType);
+        }
+
+        /// <summary>
+        /// Получить живой экземпляр модуля если он зарегистрирован.
+        /// Возвращает null если модуль не запущен.
+        /// </summary>
+        public IConfigurableModule? GetLive(string moduleType) =>
+            _liveConfigurables.TryGetValue(moduleType, out var m) ? m : null;
+
+        // ── Метаданные ────────────────────────────────────────────────────
 
         /// <summary>
         /// Получить метаданные всех модулей для построения UI.
@@ -63,11 +90,11 @@ namespace Writersword.Modules.Common
         {
             if (_cachedMetadata != null)
             {
-                _logger.LogDebug("Returning cached metadata for {Count} module types", _cachedMetadata.Count);
+                _logger.Debug("Returning cached metadata: {Count} types", _cachedMetadata.Count);
                 return _cachedMetadata;
             }
 
-            _logger.LogDebug("Building metadata cache...");
+            _logger.Debug("Building metadata cache...");
             var metadataList = new List<IModuleMetadata>();
 
             foreach (var moduleType in GetRegisteredTypes())
@@ -77,30 +104,37 @@ namespace Writersword.Modules.Common
                 {
                     metadataList.Add(tempModule.Metadata);
                     tempModule.Dispose();
-                    _logger.LogDebug("Cached metadata for: {moduleType}", moduleType);
+                    _logger.Debug("Cached metadata: {ModuleType}", moduleType);
                 }
                 else
                 {
-                    _logger.LogWarning("Failed to get metadata for: {moduleType}", moduleType);
+                    _logger.Warning("Failed to get metadata: {ModuleType}", moduleType);
                 }
             }
 
             _cachedMetadata = metadataList;
-            _logger.LogDebug("Metadata cache built: {Count} module types", metadataList.Count);
-            return metadataList;
+            _logger.Debug("Metadata cache built: {Count} types", metadataList.Count);
+            return _cachedMetadata;
         }
+
+        /// <summary>Сбросить кеш метаданных.</summary>
+        public void ClearMetadataCache()
+        {
+            _cachedMetadata = null;
+            _logger.Debug("Metadata cache cleared");
+        }
+
+        // ── Горячие клавиши ───────────────────────────────────────────────
 
         /// <summary>
         /// Зарегистрировать горячие клавиши всех модулей в HotKeyService.
-        /// Читает IHotKeyDescriptor из метаданных каждого модуля.
-        /// Не создаёт живые экземпляры модулей — только читает метаданные.
-        /// Вызывается один раз при старте приложения после регистрации глобальных клавиш.
+        /// Не создаёт живые экземпляры — только читает метаданные.
         /// </summary>
         public void RegisterAllHotKeys()
         {
             var hotKeyService = App.Services.GetRequiredService<IHotKeyService>();
             var metadata = GetAllModuleMetadata();
-            int registeredCount = 0;
+            int total = 0;
 
             foreach (var meta in metadata)
             {
@@ -108,25 +142,20 @@ namespace Writersword.Modules.Common
                 {
                     hotKeyService.RegisterFromDescriptor(descriptor);
                     var keys = descriptor.GetHotKeys();
-                    registeredCount += keys.Count;
-                    _logger.LogDebug("Registered {Count} hotkeys from descriptor: {ModuleType}",
-                        keys.Count, meta.ModuleType);
+                    total += keys.Count;
+                    _logger.Debug("Registered {Count} hotkeys: {ModuleType}", keys.Count, meta.ModuleType);
                 }
             }
 
-            _logger.LogDebug("RegisterAllHotKeys complete: {Count} total hotkeys registered", registeredCount);
+            _logger.Debug("RegisterAllHotKeys complete: {Total} total hotkeys", total);
         }
 
-        /// <summary>Сбросить кеш метаданных</summary>
-        public void ClearMetadataCache()
-        {
-            _cachedMetadata = null;
-            _logger.LogDebug("Metadata cache cleared");
-        }
+        // ── Настраиваемые модули ──────────────────────────────────────────
 
         /// <summary>
         /// Получить все модули у которых есть настройки (реализуют IConfigurableModule).
-        /// Создаёт временные экземпляры только для проверки интерфейса.
+        /// Использует живой экземпляр если модуль запущен, иначе создаёт временный.
+        /// Временные экземпляры используются только как носители UI настроек — применять через GetLive().
         /// </summary>
         public List<(string moduleType, IConfigurableModule configurable)> GetConfigurableModules()
         {
@@ -134,19 +163,28 @@ namespace Writersword.Modules.Common
 
             foreach (var moduleType in GetRegisteredTypes())
             {
-                var temp = Create(moduleType);
-                if (temp is IConfigurableModule configurable)
+                var live = GetLive(moduleType);
+                if (live is not null)
                 {
-                    result.Add((moduleType, configurable));
-                    _logger.LogDebug("Configurable module found: {moduleType}", moduleType);
+                    result.Add((moduleType, live));
+                    _logger.Debug("Configurable module (live): {ModuleType}", moduleType);
+                    continue;
+                }
+
+                // Живого нет — создаём временный экземпляр только для чтения настроек
+                var temp = Create(moduleType);
+                if (temp is IConfigurableModule tempConfigurable)
+                {
+                    result.Add((moduleType, tempConfigurable));
+                    _logger.Debug("Configurable module (temp): {ModuleType}", moduleType);
                 }
                 else
                 {
-                    temp?.Dispose();
+                    _logger.Warning("Module is not IConfigurableModule, skipping: {ModuleType}", moduleType);
                 }
             }
 
-            _logger.LogDebug("Found {Count} configurable modules", result.Count);
+            _logger.Debug("Found {Count} configurable modules", result.Count);
             return result;
         }
     }

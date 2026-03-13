@@ -741,4 +741,58 @@
   <data name="HotKey_Edit_Redo" xml:space="preserve">
     <value>Повторить</value>
   </data>
+  <data name="Settings_Field_ResetToDefault" xml:space="preserve">
+    <value>Сбросить до стандартного</value>
+  </data>
+  <data name="Settings_Field_ResetToGlobal" xml:space="preserve">
+    <value>Сбросить до глобального</value>
+  </data>
+  <data name="Settings_Toolbar_ResetAllToDefaults" xml:space="preserve">
+    <value>Сбросить всё до стандартных</value>
+  </data>
+  <data name="Settings_Toolbar_ResetAllToGlobal" xml:space="preserve">
+    <value>Сбросить всё до глобальных</value>
+  </data>
+  <data name="Settings_Toolbar_SaveAsGlobal" xml:space="preserve">
+    <value>Сохранить как глобальные</value>
+  </data>
+  <data name="Settings_Toolbar_ResetAllToDefaultsLocal" xml:space="preserve">
+    <value>Сбросить всё до стандартных</value>
+  </data>
+  <data name="Settings_Confirm_ResetAllToDefaults_Title" xml:space="preserve">
+    <value>Сбросить до стандартных?</value>
+  </data>
+  <data name="Settings_Confirm_ResetAllToDefaults_Message" xml:space="preserve">
+    <value>Все настройки будут сброшены до стандартных значений. Это действие нельзя отменить.</value>
+  </data>
+  <data name="Settings_Confirm_ResetAllToGlobal_Title" xml:space="preserve">
+    <value>Сбросить до глобальных?</value>
+  </data>
+  <data name="Settings_Confirm_ResetAllToGlobal_Message" xml:space="preserve">
+    <value>Все локальные настройки будут сброшены до глобальных значений. Это действие нельзя отменить.</value>
+  </data>
+  <data name="Settings_Confirm_SaveAsGlobal_Title" xml:space="preserve">
+    <value>Сохранить как глобальные?</value>
+  </data>
+  <data name="Settings_Confirm_SaveAsGlobal_Message" xml:space="preserve">
+    <value>Текущие настройки будут применяться ко всем новым проектам этого типа.</value>
+  </data>
+  <data name="Settings_Toolbar_ApplyToProject" xml:space="preserve">
+    <value>Применить к этому проекту</value>
+  </data>
+  <data name="Settings_Toolbar_PromoteToGlobal" xml:space="preserve">
+    <value>Сохранить как глобальные</value>
+  </data>
+  <data name="Settings_Confirm_ApplyToProject_Title" xml:space="preserve">
+    <value>Применить к проекту?</value>
+  </data>
+  <data name="Settings_Confirm_ApplyToProject_Message" xml:space="preserve">
+    <value>Текущие глобальные настройки будут применены к этому проекту.</value>
+  </data>
+  <data name="Settings_Confirm_PromoteToGlobal_Title" xml:space="preserve">
+    <value>Сохранить как глобальные?</value>
+  </data>
+  <data name="Settings_Confirm_PromoteToGlobal_Message" xml:space="preserve">
+    <value>Эти настройки станут стандартными для всех будущих проектов.</value>
+  </data>
 </root>

@@ -14,6 +14,7 @@ using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
 using Writersword.Src.Core.Interfaces.Services;
+using Writersword.Src.Core.Interfaces.Services.Storage;
 using Writersword.Src.Core.Interfaces.WorkFlows;
 using Writersword.Src.Core.Interfaces.WorkModes;
 using Writersword.Src.Core.Interfaces.Workspace;
@@ -46,14 +47,17 @@ namespace Writersword.Src.Infrastructure.Workspace
 
         public event EventHandler? WorkspaceChanged;
 
+        private readonly IProjectFileStorage? _fileStorage;
+
         public IWorkModeService GetWorkModeService() => _workModeService;
 
         public WorkspaceController(
-            DocumentTabViewModel tab,
-            string projectPath,
-            List<WorkMode> loadedWorkModes,
-            DockFactory dockFactory,
-            IWorkspaceAutoSaveService autoSave)
+             DocumentTabViewModel tab,
+             string projectPath,
+             List<WorkMode> loadedWorkModes,
+             DockFactory dockFactory,
+             IWorkspaceAutoSaveService autoSave,
+             IProjectFileStorage? fileStorage = null)  
         {
             _logger = App.Services.GetService<ILogger<WorkspaceController>>()!;
             _tab = tab;
@@ -68,6 +72,7 @@ namespace Writersword.Src.Infrastructure.Workspace
 
             _activeWorkMode = loadedWorkModes.FirstOrDefault(w => w.IsActive)
                               ?? loadedWorkModes.First();
+            _fileStorage = fileStorage;
 
             _logger.LogDebug("Created for: {TabTitle}", tab.Title);
             _logger.LogDebug("Total WorkModes: {TotalCount}, Active: {ActiveTitle}",
@@ -414,7 +419,37 @@ namespace Writersword.Src.Infrastructure.Workspace
             if (!string.IsNullOrEmpty(_projectPath))
                 _autoSave.Start(_projectPath, _tab.GetProject());
 
+            // Применяем локальные настройки ПОСЛЕ создания layout — теперь модули живые
+            if (_fileStorage != null)
+                ApplyLocalSettingsToModules(_fileStorage);
+
             _logger.LogDebug("Workspace activated");
+        }
+
+
+        private void ApplyLocalSettingsToModules(IProjectFileStorage storage)
+        {
+            var service = App.Services.GetRequiredService<ILocalSettingsStorageService>();
+            var modules = GetActiveModules();
+
+            foreach (var module in modules)
+            {
+                if (module is not IConfigurableModule configurable) continue;
+
+                try
+                {
+                    var settings = service.Load(storage, module.moduleType, configurable.SettingsType);
+                    if (settings is not null)
+                    {
+                        configurable.ApplyLocalSettings(settings);
+                        _logger.LogDebug("Local settings applied on activate: {ModuleType}", module.moduleType);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to apply local settings for {ModuleType}", module.moduleType);
+                }
+            }
         }
 
         /// <summary>
@@ -704,7 +739,7 @@ namespace Writersword.Src.Infrastructure.Workspace
 
             _dockFactory.OnModuleClosed = (moduleType) =>
             {
-                Avalonia.Threading.Dispatcher.UIThread.Post(
+                Dispatcher.UIThread.Post(
                     () => HandleModuleClosedInDock(moduleType));
             };
 

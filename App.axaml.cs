@@ -106,6 +106,7 @@ namespace Writersword
             services.AddSingleton<IModuleStateCollectorService, ModuleStateCollectorService>();
             services.AddSingleton<WorkModeFactory>();
             services.AddSingleton<WorkModeRegistry>();
+            services.AddSingleton<ILocalSettingsStorageService, LocalSettingsStorageService>();
 
             services.AddSingleton<ProjectTypeRegistry>(sp =>
             {

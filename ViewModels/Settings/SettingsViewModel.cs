@@ -7,30 +7,34 @@ using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
 using System.Reactive;
+using System.Threading.Tasks;
+using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Modules.Common;
 using Writersword.Resources.Localization;
 using Writersword.Src.Core.Interfaces.Services.Storage;
+using Writersword.Src.Core.Interfaces.Services.UI;
 using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Views;
 using Writersword.Views.Settings;
 
 namespace Writersword.ViewModels.Settings
 {
     /// <summary>
-    /// ViewModel окна настроек
-    /// Собирает вкладки из глобальных настроек и настроек модулей
-    /// Секция Global Module Settings и This Project Module Settings разделены и сворачиваемы
+    /// ViewModel окна настроек.
+    /// Глобальные настройки: сохраняются в ISettingsService при закрытии.
+    /// Локальные настройки: сохраняются в {moduleType}/settings.json внутри project.zip при закрытии.
     /// </summary>
     public class SettingsViewModel : ViewModelBase
     {
         private readonly ILogger<SettingsViewModel> _logger;
         private readonly ISettingsService _settingsService;
+        private readonly IDialogService _dialogService;
+        private readonly ModuleFactory _moduleFactory;
         private SettingsTabItem? _selectedTab;
 
-        /// <summary>Список вкладок настроек</summary>
         public ObservableCollection<SettingsTabItem> Tabs { get; } = new();
 
-        /// <summary>Текущая выбранная вкладка</summary>
         public SettingsTabItem? SelectedTab
         {
             get => _selectedTab;
@@ -39,32 +43,320 @@ namespace Writersword.ViewModels.Settings
                 this.RaiseAndSetIfChanged(ref _selectedTab, value);
                 this.RaisePropertyChanged(nameof(ShowProjectBanner));
                 this.RaisePropertyChanged(nameof(ShowGlobalBanner));
+                this.RaisePropertyChanged(nameof(ShowModuleToolbar));
+                this.RaisePropertyChanged(nameof(IsSelectedTabLocal));
+                this.RaisePropertyChanged(nameof(IsSelectedTabGlobal));
             }
         }
 
-        /// <summary>Показывать ли янтарный баннер "This Project"</summary>
         public bool ShowProjectBanner => SelectedTab?.IsProjectTab == true;
-
-        /// <summary>Показывать ли синий баннер "Global"</summary>
         public bool ShowGlobalBanner => SelectedTab?.IsProjectTab == false && SelectedTab?.IsModuleTab == true;
 
-        /// <summary>Команда закрытия окна</summary>
+        /// <summary>True когда нужно показывать toolbar над контентом модуля.</summary>
+        public bool ShowModuleToolbar => SelectedTab?.IsModuleTab == true && SelectedTab?.IsDisabled == false;
+
+        /// <summary>True когда выбрана локальная вкладка модуля.</summary>
+        public bool IsSelectedTabLocal => SelectedTab?.IsProjectLocal == true;
+
+        /// <summary>True когда выбрана глобальная вкладка модуля.</summary>
+        public bool IsSelectedTabGlobal => SelectedTab?.IsProjectLocal == false && SelectedTab?.IsModuleTab == true;
+
+        /// <summary>Команда закрытия — применяет все настройки и закрывает окно.</summary>
         public ReactiveCommand<Unit, Unit> CloseCommand { get; }
 
-        /// <summary>Событие запроса на закрытие окна</summary>
+        /// <summary>Сбросить все поля текущей вкладки до хардкод дефолтов.</summary>
+        public ReactiveCommand<Unit, Unit> ResetAllToDefaultsCommand { get; }
+
+        /// <summary>Сбросить все поля текущей локальной вкладки до глобальных значений.</summary>
+        public ReactiveCommand<Unit, Unit> ResetAllToGlobalCommand { get; }
+
+        /// <summary>Сохранить текущие глобальные настройки в файл и уведомить живой модуль.</summary>
+        public ReactiveCommand<Unit, Unit> SaveAsGlobalCommand { get; }
+
+        /// <summary>
+        /// Применить текущие глобальные UI-значения к локальной VM того же модуля.
+        /// Доступна только в глобальной вкладке.
+        /// </summary>
+        public ReactiveCommand<Unit, Unit> ApplyToProjectCommand { get; }
+
+        /// <summary>
+        /// Сохранить текущие локальные UI-значения как глобальные.
+        /// Доступна только в локальной вкладке.
+        /// </summary>
+        public ReactiveCommand<Unit, Unit> PromoteLocalToGlobalCommand { get; }
+
         public event Action? CloseRequested;
 
         public SettingsViewModel()
         {
             _logger = App.Services.GetService<ILogger<SettingsViewModel>>()!;
             _settingsService = App.Services.GetRequiredService<ISettingsService>();
-            CloseCommand = ReactiveCommand.Create(() => CloseRequested?.Invoke());
+            _dialogService = App.Services.GetRequiredService<IDialogService>();
+            _moduleFactory = App.Services.GetRequiredService<ModuleFactory>();
+
+            CloseCommand = ReactiveCommand.Create(() =>
+            {
+                ApplyAllSettings();
+                CloseRequested?.Invoke();
+            });
+
+            ResetAllToDefaultsCommand = ReactiveCommand.CreateFromTask(ResetAllToDefaultsAsync);
+            ResetAllToGlobalCommand = ReactiveCommand.CreateFromTask(ResetAllToGlobalAsync);
+            SaveAsGlobalCommand = ReactiveCommand.CreateFromTask(SaveAsGlobalAsync);
+            ApplyToProjectCommand = ReactiveCommand.CreateFromTask(ApplyToProjectAsync);
+            PromoteLocalToGlobalCommand = ReactiveCommand.CreateFromTask(PromoteLocalToGlobalAsync);
+
             LoadTabs();
         }
 
-        /// <summary>Загрузить все вкладки настроек</summary>
+        // ── Toolbar команды ───────────────────────────────────────────────
+
+        /// <summary>
+        /// Сбросить все поля текущей вкладки до хардкод дефолтов.
+        /// Работает и для глобальной и для локальной вкладки.
+        /// </summary>
+        private async Task ResetAllToDefaultsAsync()
+        {
+            if (SelectedTab?.Module is null) return;
+
+            var result = await _dialogService.ShowMessageAsync(
+                Strings.Settings_Confirm_ResetAllToDefaults_Title,
+                Strings.Settings_Confirm_ResetAllToDefaults_Message,
+                MessageBoxType.Warning,
+                MessageBoxButtons.YesNo);
+
+            if (result != MessageBoxResult.Yes) return;
+
+            try
+            {
+                if (SelectedTab.IsProjectLocal)
+                {
+                    SelectedTab.Module.ResetLocalSettingsToDefaults();
+                    _logger.LogDebug("Local settings reset to defaults: {Title}", SelectedTab.Title);
+                }
+                else
+                {
+                    SelectedTab.Module.ResetSettingsToDefaults();
+                    _logger.LogDebug("Global settings reset to defaults: {Title}", SelectedTab.Title);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error resetting settings to defaults for tab {Title}", SelectedTab.Title);
+            }
+        }
+
+        /// <summary>
+        /// Сбросить все поля текущей локальной вкладки до глобальных значений.
+        /// </summary>
+        private async Task ResetAllToGlobalAsync()
+        {
+            if (SelectedTab?.Module is null || !SelectedTab.IsProjectLocal) return;
+
+            var result = await _dialogService.ShowMessageAsync(
+                Strings.Settings_Confirm_ResetAllToGlobal_Title,
+                Strings.Settings_Confirm_ResetAllToGlobal_Message,
+                MessageBoxType.Warning,
+                MessageBoxButtons.YesNo);
+
+            if (result != MessageBoxResult.Yes) return;
+
+            try
+            {
+                SelectedTab.Module.ResetLocalSettingsToGlobal();
+                _logger.LogDebug("Local settings reset to global: {Title}", SelectedTab.Title);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error resetting local settings to global for tab {Title}", SelectedTab.Title);
+            }
+        }
+
+        /// <summary>
+        /// Сохранить текущие глобальные UI-значения в файл и уведомить живой модуль.
+        /// Только для глобальных вкладок.
+        /// </summary>
+        private async Task SaveAsGlobalAsync()
+        {
+            if (SelectedTab?.Module is null || SelectedTab.IsProjectLocal) return;
+
+            var result = await _dialogService.ShowMessageAsync(
+                Strings.Settings_Confirm_SaveAsGlobal_Title,
+                Strings.Settings_Confirm_SaveAsGlobal_Message,
+                MessageBoxType.Question,
+                MessageBoxButtons.YesNo);
+
+            if (result != MessageBoxResult.Yes) return;
+
+            try
+            {
+                var dc = SelectedTab.Content?.DataContext;
+                if (dc is null) return;
+
+                var method = dc.GetType().GetMethod("GetSettings");
+                if (method is null) return;
+
+                var settings = method.Invoke(dc, null);
+                if (settings is null) return;
+
+                SelectedTab.Module.ApplySettings(settings);
+                _logger.LogDebug("Settings saved as global: {Title}", SelectedTab.Title);
+
+                if (!string.IsNullOrEmpty(SelectedTab.ModuleType))
+                {
+                    var live = _moduleFactory.GetLive(SelectedTab.ModuleType);
+                    if (live is not null && !ReferenceEquals(live, SelectedTab.Module))
+                    {
+                        live.ApplySettings(settings);
+                        _logger.LogDebug("Live module notified after SaveAsGlobal: {ModuleType}", SelectedTab.ModuleType);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving settings as global for tab {Title}", SelectedTab.Title);
+            }
+        }
+
+        /// <summary>
+        /// Применить текущие глобальные UI-значения к локальной VM того же модуля.
+        /// Только для глобальных вкладок. Не сохраняет — применяется при закрытии.
+        /// </summary>
+        private async Task ApplyToProjectAsync()
+        {
+            if (SelectedTab?.Module is null || SelectedTab.IsProjectLocal) return;
+
+            var result = await _dialogService.ShowMessageAsync(
+                Strings.Settings_Confirm_ApplyToProject_Title,
+                Strings.Settings_Confirm_ApplyToProject_Message,
+                MessageBoxType.Question,
+                MessageBoxButtons.YesNo);
+
+            if (result != MessageBoxResult.Yes) return;
+
+            try
+            {
+                SelectedTab.Module.ApplyGlobalToLocal();
+                _logger.LogDebug("ApplyGlobalToLocal: {ModuleType}", SelectedTab.ModuleType);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in ApplyToProject for {Title}", SelectedTab.Title);
+            }
+        }
+
+        /// <summary>
+        /// Сохранить текущие локальные UI-значения как глобальные.
+        /// Только для локальных вкладок. Сохраняет в ISettingsService немедленно.
+        /// </summary>
+        private async Task PromoteLocalToGlobalAsync()
+        {
+            if (SelectedTab?.Module is null || !SelectedTab.IsProjectLocal) return;
+
+            var result = await _dialogService.ShowMessageAsync(
+                Strings.Settings_Confirm_PromoteToGlobal_Title,
+                Strings.Settings_Confirm_PromoteToGlobal_Message,
+                MessageBoxType.Question,
+                MessageBoxButtons.YesNo);
+
+            if (result != MessageBoxResult.Yes) return;
+
+            try
+            {
+                SelectedTab.Module.PromoteLocalToGlobal();
+                _logger.LogDebug("PromoteLocalToGlobal: {ModuleType}", SelectedTab.ModuleType);
+
+                if (!string.IsNullOrEmpty(SelectedTab.ModuleType))
+                {
+                    var live = _moduleFactory.GetLive(SelectedTab.ModuleType);
+                    if (live is not null && !ReferenceEquals(live, SelectedTab.Module))
+                    {
+                        var settings = SelectedTab.Module.GetSettings();
+                        live.ApplySettings(settings);
+                        _logger.LogDebug("Live module notified after PromoteLocalToGlobal: {ModuleType}", SelectedTab.ModuleType);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in PromoteLocalToGlobal for {Title}", SelectedTab.Title);
+            }
+        }
+
+        // ── Применение настроек при закрытии ─────────────────────────────
+
+        /// <summary>
+        /// Применяет настройки всех вкладок при закрытии окна.
+        /// Глобальные: сохраняет в ISettingsService + уведомляет живой модуль.
+        /// Локальные: сохраняет в {moduleType}/settings.json внутри project.zip
+        ///            + применяет на живой модуль.
+        /// </summary>
+        private void ApplyAllSettings()
+        {
+            var tabCollection = App.Services.GetRequiredService<ITabCollection>();
+            var storage = tabCollection.ActiveTab?.Context?.FileStorage;
+            var localSettingsService = App.Services.GetRequiredService<ILocalSettingsStorageService>();
+
+            foreach (var tab in Tabs)
+            {
+                if (tab.Module is null || tab.Content?.DataContext is null) continue;
+
+                try
+                {
+                    var dc = tab.Content.DataContext;
+                    var method = dc.GetType().GetMethod("GetSettings");
+                    if (method is null) continue;
+
+                    var settings = method.Invoke(dc, null);
+                    if (settings is null) continue;
+
+                    if (tab.IsProjectLocal)
+                    {
+                        // Применяем к живому модулю
+                        tab.Module.ApplyLocalSettings(settings);
+                        _logger.LogDebug("Local settings applied: {Title}", tab.Title);
+
+                        // Сохраняем в {moduleType}/settings.json внутри project.zip
+                        if (storage != null && !string.IsNullOrEmpty(tab.ModuleType))
+                        {
+                            localSettingsService.Save(storage, tab.ModuleType, settings);
+                            _logger.LogDebug("Local settings saved to ZIP: {ModuleType}", tab.ModuleType);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("Cannot save local settings — no storage for {ModuleType}", tab.ModuleType);
+                        }
+                    }
+                    else
+                    {
+                        // Глобальные настройки — сохраняем в сервис
+                        tab.Module.ApplySettings(settings);
+                        _logger.LogDebug("Global settings saved: {Title}", tab.Title);
+
+                        // Уведомляем живой модуль если он отличается от временного
+                        if (!string.IsNullOrEmpty(tab.ModuleType))
+                        {
+                            var live = _moduleFactory.GetLive(tab.ModuleType);
+                            if (live is not null && !ReferenceEquals(live, tab.Module))
+                            {
+                                live.ApplySettings(settings);
+                                _logger.LogDebug("Live module notified: {ModuleType}", tab.ModuleType);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error applying settings for tab {Title}", tab.Title);
+                }
+            }
+        }
+
+        // ── Загрузка вкладок ──────────────────────────────────────────────
+
         private void LoadTabs()
         {
+            // ── Системные вкладки ─────────────────────────────────────────
             Tabs.Add(new SettingsTabItem
             {
                 Title = Strings.Settings_Tab_General,
@@ -89,14 +381,14 @@ namespace Writersword.ViewModels.Settings
                 IsModuleTab = false
             });
 
-            var moduleFactory = App.Services.GetRequiredService<ModuleFactory>();
             var tabCollection = App.Services.GetRequiredService<ITabCollection>();
             var activeTab = tabCollection.ActiveTab;
-            var hasActiveProject = activeTab != null && activeTab.Context?.FileStorage != null;
+            var hasActiveProject = activeTab?.Context?.FileStorage != null;
 
-            var configurableModules = moduleFactory.GetConfigurableModules();
+            var configurableModules = _moduleFactory.GetConfigurableModules();
 
-            var globalSectionHeader = new SettingsTabItem
+            // ── Секция глобальных настроек ────────────────────────────────
+            Tabs.Add(new SettingsTabItem
             {
                 Title = Strings.Settings_Section_GlobalModuleSettings,
                 IsHeader = false,
@@ -104,18 +396,21 @@ namespace Writersword.ViewModels.Settings
                 IsGlobalSection = true,
                 SectionKey = "global",
                 IsExpanded = true
-            };
-            Tabs.Add(globalSectionHeader);
+            });
 
             foreach (var (moduleType, configurable) in configurableModules)
             {
                 try
                 {
                     var globalView = configurable.CreateSettingsView();
+
                     Tabs.Add(new SettingsTabItem
                     {
                         Title = configurable.SettingsTitle,
                         Content = globalView,
+                        Module = configurable,
+                        ModuleType = moduleType,
+                        IsProjectLocal = false,
                         IsHeader = false,
                         IsModuleTab = true,
                         IsProjectTab = false,
@@ -123,7 +418,7 @@ namespace Writersword.ViewModels.Settings
                         IsVisible = true
                     });
 
-                    _logger.LogDebug("Global settings tab added for module: {Title}", configurable.SettingsTitle);
+                    _logger.LogDebug("Global settings tab added: {Title}", configurable.SettingsTitle);
                 }
                 catch (Exception ex)
                 {
@@ -131,7 +426,8 @@ namespace Writersword.ViewModels.Settings
                 }
             }
 
-            var projectSectionHeader = new SettingsTabItem
+            // ── Секция настроек проекта ───────────────────────────────────
+            Tabs.Add(new SettingsTabItem
             {
                 Title = Strings.Settings_Section_ThisProjectSettings,
                 IsHeader = false,
@@ -139,8 +435,7 @@ namespace Writersword.ViewModels.Settings
                 IsGlobalSection = false,
                 SectionKey = "project",
                 IsExpanded = true
-            };
-            Tabs.Add(projectSectionHeader);
+            });
 
             foreach (var (moduleType, configurable) in configurableModules)
             {
@@ -148,25 +443,29 @@ namespace Writersword.ViewModels.Settings
                 {
                     Control localView;
                     bool localEnabled = false;
+                    IConfigurableModule? localModule = null;
 
                     if (hasActiveProject)
                     {
                         var liveModule = activeTab!.ModuleContext.GetModule(moduleType);
+
                         if (liveModule is IConfigurableModule liveConfigurable)
                         {
                             localView = liveConfigurable.CreateLocalSettingsView();
+                            localModule = liveConfigurable;
                             localEnabled = true;
                         }
                         else
                         {
-                            var tempModule = moduleFactory.Create(moduleType);
+                            var tempModule = _moduleFactory.Create(moduleType);
                             if (tempModule is IConfigurableModule tempConfigurable)
                             {
                                 tempModule.Initialize();
                                 tempModule.Context = activeTab!.Context;
                                 localView = tempConfigurable.CreateLocalSettingsView();
+                                localModule = tempConfigurable;
                                 localEnabled = true;
-                                _logger.LogDebug("Temp module created for project settings: {ModuleType}", moduleType);
+                                _logger.LogDebug("Temp module for project settings: {ModuleType}", moduleType);
                             }
                             else
                             {
@@ -184,6 +483,9 @@ namespace Writersword.ViewModels.Settings
                     {
                         Title = configurable.SettingsTitle,
                         Content = localView,
+                        Module = localModule,
+                        ModuleType = moduleType,
+                        IsProjectLocal = true,
                         IsHeader = false,
                         IsModuleTab = true,
                         IsProjectTab = true,
@@ -192,7 +494,7 @@ namespace Writersword.ViewModels.Settings
                         IsVisible = true
                     });
 
-                    _logger.LogDebug("Project settings tab added for module: {Title}", configurable.SettingsTitle);
+                    _logger.LogDebug("Project settings tab added: {Title}", configurable.SettingsTitle);
                 }
                 catch (Exception ex)
                 {
@@ -200,6 +502,7 @@ namespace Writersword.ViewModels.Settings
                 }
             }
 
+            // ── Выбираем первую доступную вкладку ────────────────────────
             foreach (var tab in Tabs)
             {
                 if (!tab.IsHeader && !tab.IsSectionHeader && !tab.IsModuleHeader && !tab.IsDisabled)
@@ -212,24 +515,21 @@ namespace Writersword.ViewModels.Settings
             _logger.LogDebug("Loaded {Count} settings tabs", Tabs.Count);
         }
 
-        /// <summary>Создать заглушку когда проект не открыт</summary>
-        private static Control BuildNoProjectView()
-        {
-            return new UserControl
-            {
-                Content = new TextBlock
-                {
-                    Text = Strings.Settings_NoProjectOpen,
-                    Foreground = Avalonia.Media.Brushes.Gray,
-                    FontSize = 13,
-                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                    Margin = new Thickness(0, 20, 0, 0)
-                }
-            };
-        }
+        // ── Helpers ───────────────────────────────────────────────────────
 
-        /// <summary>Переключить свёрнутость секции и обновить видимость дочерних вкладок</summary>
+        private static Control BuildNoProjectView() => new UserControl
+        {
+            Content = new TextBlock
+            {
+                Text = Strings.Settings_NoProjectOpen,
+                Foreground = Brushes.Gray,
+                FontSize = 13,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Margin = new Thickness(0, 20, 0, 0)
+            }
+        };
+
         public void ToggleSection(SettingsTabItem sectionHeader)
         {
             if (!sectionHeader.IsSectionHeader) return;
@@ -246,7 +546,6 @@ namespace Writersword.ViewModels.Settings
                 SelectedTab = null;
         }
 
-        /// <summary>Выбрать вкладку</summary>
         public void SelectTab(SettingsTabItem tab)
         {
             if (tab.IsHeader || tab.IsSectionHeader || tab.IsModuleHeader || tab.IsDisabled) return;
@@ -259,50 +558,36 @@ namespace Writersword.ViewModels.Settings
         }
     }
 
-    /// <summary>
-    /// Элемент вкладки в окне настроек
-    /// Не содержит цветов — все цвета определены в SettingsView.axaml через DynamicResource
-    /// </summary>
+    // ── SettingsTabItem ───────────────────────────────────────────────────
+
     public class SettingsTabItem : ReactiveObject
     {
         private bool _isSelected;
         private bool _isVisible = true;
         private bool _isExpanded = true;
 
-        /// <summary>Название вкладки</summary>
         public string Title { get; set; } = "";
-
-        /// <summary>Содержимое вкладки</summary>
         public Control? Content { get; set; }
 
-        /// <summary>Является ли элемент заголовком секции верхнего уровня (не кликабельный)</summary>
+        /// <summary>Модуль которому принадлежит вкладка. Null для системных вкладок.</summary>
+        public IConfigurableModule? Module { get; set; }
+
+        /// <summary>Тип модуля — используется для поиска живого экземпляра через ModuleFactory.</summary>
+        public string ModuleType { get; set; } = "";
+
+        /// <summary>True — локальные настройки проекта, False — глобальные.</summary>
+        public bool IsProjectLocal { get; set; } = false;
+
         public bool IsHeader { get; set; } = false;
-
-        /// <summary>Является ли элемент цветным заголовком секции модулей (Global / This Project)</summary>
         public bool IsSectionHeader { get; set; } = false;
-
-        /// <summary>Для IsSectionHeader: true — секция Global, false — секция This Project</summary>
         public bool IsGlobalSection { get; set; } = true;
-
-        /// <summary>Ключ секции к которой принадлежит вкладка (global / project)</summary>
         public string SectionKey { get; set; } = "";
-
-        /// <summary>Является ли элемент заголовком модуля</summary>
         public bool IsModuleHeader { get; set; } = false;
-
-        /// <summary>Является ли вкладкой модуля (отображается с отступом)</summary>
         public bool IsModuleTab { get; set; } = false;
-
-        /// <summary>Является ли вкладкой настроек проекта (показывает янтарный баннер)</summary>
         public bool IsProjectTab { get; set; } = false;
-
-        /// <summary>Недоступна ли вкладка (нет открытого проекта или модуль не запущен)</summary>
         public bool IsDisabled { get; set; } = false;
-
-        /// <summary>Показывать ли как кликабельную вкладку</summary>
         public bool IsClickable => !IsHeader && !IsSectionHeader && !IsModuleHeader && !IsDisabled;
 
-        /// <summary>Развёрнута ли секция (для IsSectionHeader)</summary>
         public bool IsExpanded
         {
             get => _isExpanded;
@@ -313,7 +598,6 @@ namespace Writersword.ViewModels.Settings
             }
         }
 
-        /// <summary>Видима ли вкладка (управляется через ToggleSection)</summary>
         public bool IsVisible
         {
             get => _isVisible;
@@ -324,18 +608,12 @@ namespace Writersword.ViewModels.Settings
             }
         }
 
-        /// <summary>Видим ли элемент в списке — заголовки секций всегда видимы, остальные управляются через IsVisible</summary>
         public bool IsVisibleInList => IsSectionHeader || IsHeader || IsVisible;
-
-        /// <summary>Символ стрелки для заголовка секции — меняется в зависимости от IsExpanded</summary>
         public string ExpandArrow => IsExpanded ? "▾" : "▸";
-
-        /// <summary>Отступ вкладки — для модульных вкладок добавляет левый отступ</summary>
         public Thickness Indent => IsModuleTab
             ? new Thickness(28, 7, 16, 7)
             : new Thickness(16, 7, 16, 7);
 
-        /// <summary>Выбрана ли вкладка</summary>
         public bool IsSelected
         {
             get => _isSelected;

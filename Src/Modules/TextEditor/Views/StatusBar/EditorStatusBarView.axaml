@@ -3,138 +3,167 @@
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.StatusBar"
              xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
              xmlns:loc="using:Writersword.Src.Modules.TextEditor.Resources"
+             xmlns:sb="using:Writersword.Modules.TextEditor.Views.StatusBar"
              x:Class="Writersword.Modules.TextEditor.Views.StatusBar.EditorStatusBarView"
              x:DataType="vm:StatusBarViewModel"
-             Height="24">
+             Height="30">
 
-    <Border Background="{DynamicResource StatusBarBackground}"
+	<UserControl.Styles>
+		<!-- Кнопка режима — обычное состояние -->
+		<Style Selector="Button.ViewModeBtn">
+			<Setter Property="Background"   Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding"      Value="6 2"/>
+			<Setter Property="FontSize"     Value="11"/>
+			<Setter Property="Foreground"   Value="{DynamicResource StatusBarForeground}"/>
+			<Setter Property="CornerRadius" Value="2"/>
+			<Setter Property="Cursor"       Value="Hand"/>
+		</Style>
+		<!-- Активный режим -->
+		<Style Selector="Button.ViewModeBtn.Active">
+			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Foreground" Value="White"/>
+		</Style>
+		<Style Selector="Button.ViewModeBtn:pointerover">
+			<Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Border Background="{DynamicResource StatusBarBackground}"
             BorderBrush="{DynamicResource StatusBarBorder}"
             BorderThickness="0 1 0 0">
-        <Grid ColumnDefinitions="* Auto">
 
-            <!-- Левая часть: статистика и режимы -->
-            <StackPanel Grid.Column="0"
+		<Grid ColumnDefinitions="* Auto">
+
+			<!-- Левая часть: статистика -->
+			<StackPanel Grid.Column="0"
                         Orientation="Horizontal"
-                        Spacing="16"
+                        Spacing="12"
                         Margin="8 0"
                         VerticalAlignment="Center">
 
-                <!-- Страница X / Y -->
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="{x:Static loc:TextEditorStrings.Status_Page}"
+				<StackPanel Orientation="Horizontal" Spacing="4">
+					<TextBlock Text="{x:Static loc:TextEditorStrings.Status_Page}"
                                FontSize="11"
                                Foreground="{DynamicResource StatusBarForeground}"/>
-                    <TextBlock FontSize="11"
-                               Foreground="{DynamicResource StatusBarForeground}">
-                        <TextBlock.Text>
-                            <MultiBinding StringFormat="{}{0} / {1}">
-                                <Binding Path="CurrentPage"/>
-                                <Binding Path="PageCount"/>
-                            </MultiBinding>
-                        </TextBlock.Text>
-                    </TextBlock>
-                </StackPanel>
+					<TextBlock FontSize="11" Foreground="{DynamicResource StatusBarForeground}">
+						<TextBlock.Text>
+							<MultiBinding StringFormat="{}{0} / {1}">
+								<Binding Path="CurrentPage"/>
+								<Binding Path="PageCount"/>
+							</MultiBinding>
+						</TextBlock.Text>
+					</TextBlock>
+				</StackPanel>
 
-                <Separator Width="1" Height="12"
-                           Background="{DynamicResource StatusBarSeparator}"/>
+				<Separator Width="1" Height="12" Background="{DynamicResource StatusBarSeparator}"/>
 
-                <!-- Слова -->
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="{x:Static loc:TextEditorStrings.Status_Words}"
-                               FontSize="11"
-                               Foreground="{DynamicResource StatusBarForeground}"/>
-                    <TextBlock Text="{Binding WordCount}"
-                               FontSize="11"
-                               Foreground="{DynamicResource StatusBarForeground}"/>
-                </StackPanel>
+				<StackPanel Orientation="Horizontal" Spacing="4">
+					<TextBlock Text="{x:Static loc:TextEditorStrings.Status_Words}"
+                               FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
+					<TextBlock Text="{Binding WordCount}"
+                               FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
+				</StackPanel>
 
-                <Separator Width="1" Height="12"
-                           Background="{DynamicResource StatusBarSeparator}"/>
+				<Separator Width="1" Height="12" Background="{DynamicResource StatusBarSeparator}"/>
 
-                <!-- Символы -->
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="{x:Static loc:TextEditorStrings.Status_Chars}"
-                               FontSize="11"
-                               Foreground="{DynamicResource StatusBarForeground}"/>
-                    <TextBlock Text="{Binding CharCount}"
-                               FontSize="11"
-                               Foreground="{DynamicResource StatusBarForeground}"/>
-                </StackPanel>
+				<StackPanel Orientation="Horizontal" Spacing="4">
+					<TextBlock Text="{x:Static loc:TextEditorStrings.Status_Chars}"
+                               FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
+					<TextBlock Text="{Binding CharCount}"
+                               FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
+				</StackPanel>
 
-                <Separator Width="1" Height="12"
-                           Background="{DynamicResource StatusBarSeparator}"/>
+				<Separator Width="1" Height="12" Background="{DynamicResource StatusBarSeparator}"/>
 
-                <!-- Абзацы -->
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="{x:Static loc:TextEditorStrings.Status_Paragraphs}"
-                               FontSize="11"
-                               Foreground="{DynamicResource StatusBarForeground}"/>
-                    <TextBlock Text="{Binding ParagraphCount}"
-                               FontSize="11"
-                               Foreground="{DynamicResource StatusBarForeground}"/>
-                </StackPanel>
+				<StackPanel Orientation="Horizontal" Spacing="4">
+					<TextBlock Text="{x:Static loc:TextEditorStrings.Status_Paragraphs}"
+                               FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
+					<TextBlock Text="{Binding ParagraphCount}"
+                               FontSize="11" Foreground="{DynamicResource StatusBarForeground}"/>
+				</StackPanel>
 
-                <Separator Width="1" Height="12"
-                           Background="{DynamicResource StatusBarSeparator}"/>
+				<Separator Width="1" Height="12" Background="{DynamicResource StatusBarSeparator}"/>
 
-                <!-- Язык -->
-                <TextBlock Text="{Binding Language}"
+				<TextBlock Text="{Binding Language}"
                            FontSize="11"
                            Foreground="{DynamicResource StatusBarForeground}"
                            VerticalAlignment="Center"/>
 
-                <!-- Индикатор: проверка орфографии активна -->
-                <Border IsVisible="{Binding IsSpellCheckActive}"
+				<Border IsVisible="{Binding IsSpellCheckActive}"
                         Background="{DynamicResource AccentDefaultBrush}"
-                        CornerRadius="2"
-                        Padding="4 1">
-                    <TextBlock Text="{x:Static loc:TextEditorStrings.SpellCheck_Active}"
-                               FontSize="10"
-                               Foreground="White"/>
-                </Border>
+                        CornerRadius="2" Padding="4 1">
+					<TextBlock Text="{x:Static loc:TextEditorStrings.SpellCheck_Active}"
+                               FontSize="10" Foreground="White"/>
+				</Border>
 
-                <!-- Индикатор: только чтение -->
-                <Border IsVisible="{Binding IsReadOnly}"
+				<Border IsVisible="{Binding IsReadOnly}"
                         Background="{DynamicResource WarningColor}"
-                        CornerRadius="2"
-                        Padding="4 1">
-                    <TextBlock Text="{x:Static loc:TextEditorStrings.Editor_ReadOnly}"
-                               FontSize="10"
-                               Foreground="White"/>
-                </Border>
+                        CornerRadius="2" Padding="4 1">
+					<TextBlock Text="{x:Static loc:TextEditorStrings.Editor_ReadOnly}"
+                               FontSize="10" Foreground="White"/>
+				</Border>
 
-            </StackPanel>
+			</StackPanel>
 
-            <!-- Правая часть: масштаб -->
-            <StackPanel Grid.Column="1"
-                        Orientation="Horizontal"
-                        Spacing="4"
-                        Margin="0 0 8 0"
-                        VerticalAlignment="Center">
+			<!-- Правая часть: кнопки режимов + зум -->
+			<StackPanel Grid.Column="1"
+						Orientation="Horizontal"
+						Spacing="2"
+						Margin="0 0 8 0"
+						MinWidth="260"
+						VerticalAlignment="Center">
 
-                <TextBlock FontSize="11"
-                           Foreground="{DynamicResource StatusBarForeground}"
-                           VerticalAlignment="Center">
-                    <TextBlock.Text>
-                        <MultiBinding StringFormat="{}{0}%">
-                            <Binding Path="ZoomPercent"/>
-                        </MultiBinding>
-                    </TextBlock.Text>
-                </TextBlock>
+				<!-- Кнопки режимов -->
+				<Button Classes="ViewModeBtn"
+                        Classes.Active="{Binding IsPageMode}"
+                        Command="{Binding SetPageModeCommand}"
+                        ToolTip.Tip="Страница">📄</Button>
 
-                <!-- Слайдер масштаба: 25–500 % -->
-                <Slider Minimum="25"
-                        Maximum="500"
-                        Value="{Binding Zoom,
-                            Converter={x:Static converters:ZoomPercentConverter.Instance}}"
-                        Width="80"
-                        Height="14"
-                        VerticalAlignment="Center"
-                        ToolTip.Tip="{x:Static loc:TextEditorStrings.View_Zoom}"/>
+				<Button Classes="ViewModeBtn"
+                        Classes.Active="{Binding IsDraftMode}"
+                        Command="{Binding SetDraftModeCommand}"
+                        ToolTip.Tip="Черновик">📝</Button>
 
-            </StackPanel>
+				<Button Classes="ViewModeBtn"
+                        Classes.Active="{Binding IsWebMode}"
+                        Command="{Binding SetWebModeCommand}"
+                        ToolTip.Tip="Веб">🌐</Button>
 
-        </Grid>
-    </Border>
+				<Button Classes="ViewModeBtn"
+                        Classes.Active="{Binding IsReadingMode}"
+                        Command="{Binding SetReadingModeCommand}"
+                        ToolTip.Tip="Чтение">📖</Button>
+
+				<Separator Width="1" Height="12"
+                           Background="{DynamicResource StatusBarSeparator}"
+                           Margin="4 0"/>
+
+				<!-- Зум -->
+				<TextBox Name="ZoomTextBox"
+						 FontSize="12"
+						 Foreground="{DynamicResource StatusBarForeground}"
+						 Background="Transparent"
+						 BorderThickness="0"
+						 BorderBrush="Transparent"
+						 Padding="0"
+						 Width="38"
+						 Height="18"
+						 VerticalAlignment="Center"
+						 VerticalContentAlignment="Center"
+						 TextAlignment="Center"
+						 Margin="0 0 4 0"
+						 Text="{Binding ZoomPercent, Mode=OneWay, StringFormat={}{0}%}"/>
+
+				<sb:ZoomSlider Minimum="25"
+							   Maximum="500"
+							   Value="{Binding Zoom,
+                   Converter={x:Static converters:ZoomPercentConverter.Instance},
+                   Mode=TwoWay}"
+							   VerticalAlignment="Center"/>
+			</StackPanel>
+
+		</Grid>
+	</Border>
 
 </UserControl>

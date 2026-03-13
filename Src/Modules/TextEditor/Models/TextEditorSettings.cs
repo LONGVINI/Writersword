@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 using Writersword.Modules.TextEditor.Models.Document;
 
 namespace Writersword.Modules.TextEditor.Models
@@ -40,6 +41,7 @@ namespace Writersword.Modules.TextEditor.Models
         /// Глобальные правила автозамены.
         /// Применяются ко всем документам, могут быть переопределены на уровне документа.
         /// </summary>
+        [JsonIgnore]
         public List<AutoReplaceRule> AutoReplaceRules { get; set; } = CreateDefaultRules();
 
         // --- Отображение ---
@@ -65,6 +67,12 @@ namespace Writersword.Modules.TextEditor.Models
 
         /// <summary>Автоматически определять язык при вставке текста.</summary>
         public bool AutoDetectLanguage { get; set; } = true;
+
+        /// <summary>
+        /// Физический размер монитора по диагонали в дюймах.
+        /// 0 = автоматически (96 DPI).
+        /// </summary>
+        public double MonitorSizeInches { get; set; } = 0;
 
         /// <summary>
         /// Создаёт набор встроенных правил автозамены по умолчанию.

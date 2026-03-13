@@ -925,6 +925,42 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Monitor.
+        /// </summary>
+        public static string Settings_MonitorGroup {
+            get {
+                return ResourceManager.GetString("Settings_MonitorGroup", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Monitor diagonal.
+        /// </summary>
+        public static string Settings_MonitorSize {
+            get {
+                return ResourceManager.GetString("Settings_MonitorSize", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Enter the physical diagonal of your screen for accurate page size. Example: 24, 27, 32..
+        /// </summary>
+        public static string Settings_MonitorSizeHint {
+            get {
+                return ResourceManager.GetString("Settings_MonitorSizeHint", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на inches (0 = auto).
+        /// </summary>
+        public static string Settings_MonitorSizeUnit {
+            get {
+                return ResourceManager.GetString("Settings_MonitorSizeUnit", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Preview.
         /// </summary>
         public static string Settings_Preview {

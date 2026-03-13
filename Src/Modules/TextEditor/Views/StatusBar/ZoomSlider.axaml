@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Writersword.Modules.TextEditor.Views.StatusBar.ZoomSlider"
+             Width="120"
+             Height="14">
+
+	<Grid Margin="5 0">
+		<!-- Track background -->
+		<Border Height="4"
+                VerticalAlignment="Center"
+                CornerRadius="2"
+                Background="#555555"/>
+
+		<!-- Track fill -->
+		<Border Name="FillTrack"
+                Height="4"
+                VerticalAlignment="Center"
+                CornerRadius="2"
+                Background="#0078D4"
+                HorizontalAlignment="Left"
+                Width="0"/>
+
+		<!-- Thumb -->
+		<Ellipse Name="Thumb"
+                 Width="10"
+                 Height="10"
+                 Fill="#0078D4"
+                 VerticalAlignment="Center"
+                 HorizontalAlignment="Left"/>
+	</Grid>
+
+</UserControl>

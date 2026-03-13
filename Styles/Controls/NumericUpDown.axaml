@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
 	<Style Selector="NumericUpDown">
 		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
 		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
@@ -9,12 +10,13 @@
 		<Setter Property="FontSize" Value="{DynamicResource FontSizeS}"/>
 		<Setter Property="Padding" Value="{DynamicResource PaddingXS}"/>
 		<Setter Property="MinHeight" Value="28"/>
+		<Setter Property="HorizontalContentAlignment" Value="Center"/>
+		<Setter Property="VerticalContentAlignment" Value="Center"/>
 	</Style>
 
 	<Style Selector="NumericUpDown:pointerover">
 		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 	</Style>
-
 	<Style Selector="NumericUpDown:focus-within">
 		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 	</Style>
@@ -25,15 +27,28 @@
 		<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
 	</Style>
 
+	<Style Selector="NumericUpDown /template/ ButtonSpinner">
+		<Setter Property="Background" Value="Transparent"/>
+		<Setter Property="BorderThickness" Value="0"/>
+	</Style>
+
 	<Style Selector="NumericUpDown /template/ TextBox">
 		<Setter Property="Background" Value="Transparent"/>
 		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
 		<Setter Property="BorderThickness" Value="0"/>
 		<Setter Property="Padding" Value="{DynamicResource PaddingXS}"/>
+		<Setter Property="VerticalAlignment" Value="Center"/>
+		<Setter Property="HorizontalContentAlignment" Value="Center"/>
+		<Setter Property="VerticalContentAlignment" Value="Center"/>
 	</Style>
 
-	<Style Selector="NumericUpDown /template/ ButtonSpinner">
-		<Setter Property="Background" Value="Transparent"/>
-		<Setter Property="BorderThickness" Value="0"/>
+	<Style Selector="NumericUpDown /template/ TextBox /template/ TextPresenter#PART_TextPresenter">
+		<Setter Property="HorizontalAlignment" Value="Center"/>
+		<Setter Property="VerticalAlignment" Value="Center"/>
+	</Style>
+
+	<Style Selector="NumericUpDown /template/ TextBox /template/ ScrollViewer#PART_ContentHost">
+		<Setter Property="VerticalAlignment" Value="Center"/>
+		<Setter Property="HorizontalAlignment" Value="Stretch"/>
 	</Style>
 </Styles>

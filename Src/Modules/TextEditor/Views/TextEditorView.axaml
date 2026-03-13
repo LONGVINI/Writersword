@@ -8,14 +8,14 @@
              x:Class="Writersword.Modules.TextEditor.Views.TextEditorView"
              x:DataType="vm:TextEditorViewModel">
 
-	<Grid RowDefinitions="Auto Auto * Auto">
+    <Grid RowDefinitions="Auto Auto * Auto">
 
-		<!-- Строка 0: Ribbon -->
-		<toolbar:RibbonView Grid.Row="0"
+        <!-- Строка 0: Ribbon -->
+        <toolbar:RibbonView Grid.Row="0"
                             DataContext="{Binding Ribbon}"/>
 
-		<!-- Строка 1: Линейка (только в Page-режиме) -->
-		<Border Grid.Row="1"
+        <!-- Строка 1: Линейка (только в Page-режиме) -->
+        <Border Grid.Row="1"
                 Height="20"
                 Background="{DynamicResource RulerBackground}"
                 BorderBrush="{DynamicResource RulerBorder}"
@@ -23,73 +23,24 @@
                 IsVisible="{Binding DocumentViewModel.ViewMode,
                     Converter={x:Static converters:ViewModePageConverter.Instance}}"/>
 
-		<!-- Строка 2: Рабочая область -->
+        <!-- Строка 2: Рабочая область -->
 		<ScrollViewer Name="DocumentScrollViewer"
-                      Grid.Row="2"
-                      HorizontalScrollBarVisibility="Auto"
-                      VerticalScrollBarVisibility="Auto"
-                      Background="{Binding DocumentViewModel.CanvasSettings.CanvasBackgroundColor,
-                          Converter={x:Static converters:HexColorConverter.Instance}}">
+              Grid.Row="2"
+              HorizontalScrollBarVisibility="Auto"
+              VerticalScrollBarVisibility="Auto"
+              Background="{Binding DocumentViewModel.CanvasSettings.CanvasBackgroundColor,
+                  Converter={x:Static converters:HexColorConverter.Instance}}">
 
-			<Panel>
+			<doc:DocumentCanvas x:Name="PageCanvas"
+								HorizontalAlignment="Stretch"
+								DataContext="{Binding DocumentViewModel}"/>
 
-				<!-- Page-режим -->
-				<ItemsControl Name="PageItemsControl"
-                              ItemsSource="{Binding DocumentViewModel.Paragraphs}"
-                              Margin="40 20"
-                              IsVisible="{Binding DocumentViewModel.ViewMode,
-                                  Converter={x:Static converters:ViewModePageConverter.Instance}}">
-					<ItemsControl.ItemsPanel>
-						<ItemsPanelTemplate>
-							<StackPanel Spacing="0"/>
-						</ItemsPanelTemplate>
-					</ItemsControl.ItemsPanel>
-					<ItemsControl.Template>
-						<ControlTemplate>
-							<Border Background="{Binding DocumentViewModel.CanvasSettings.PageBackgroundColor,
-                                        Converter={x:Static converters:HexColorConverter.Instance}}"
-                                    Width="{Binding DocumentViewModel.PageSettings,
-                                        Converter={x:Static converters:PageWidthConverter.Instance}}"
-                                    Padding="{Binding DocumentViewModel.PageSettings,
-                                        Converter={x:Static converters:PageMarginsConverter.Instance}}"
-                                    BoxShadow="0 2 8 0 #40000000"
-                                    HorizontalAlignment="Center">
-								<ItemsPresenter/>
-							</Border>
-						</ControlTemplate>
-					</ItemsControl.Template>
-					<ItemsControl.ItemTemplate>
-						<DataTemplate>
-							<doc:EditorParagraphView/>
-						</DataTemplate>
-					</ItemsControl.ItemTemplate>
-				</ItemsControl>
-
-				<!-- Draft-режим -->
-				<ItemsControl Name="DraftItemsControl"
-                              ItemsSource="{Binding DocumentViewModel.Paragraphs}"
-                              Margin="20 12"
-                              IsVisible="{Binding DocumentViewModel.ViewMode,
-                                  Converter={x:Static converters:ViewModeDraftConverter.Instance}}">
-					<ItemsControl.ItemsPanel>
-						<ItemsPanelTemplate>
-							<StackPanel Spacing="0"/>
-						</ItemsPanelTemplate>
-					</ItemsControl.ItemsPanel>
-					<ItemsControl.ItemTemplate>
-						<DataTemplate>
-							<doc:EditorParagraphView/>
-						</DataTemplate>
-					</ItemsControl.ItemTemplate>
-				</ItemsControl>
-
-			</Panel>
 		</ScrollViewer>
 
-		<!-- Строка 3: Строка состояния -->
-		<statusbar:EditorStatusBarView Grid.Row="3"
+        <!-- Строка 3: Строка состояния -->
+        <statusbar:EditorStatusBarView Grid.Row="3"
                                        DataContext="{Binding StatusBar}"/>
 
-	</Grid>
+    </Grid>
 
 </UserControl>

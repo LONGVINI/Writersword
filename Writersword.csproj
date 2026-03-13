@@ -224,6 +224,7 @@
 		<Folder Include="Resources\Images\" />
 		<Folder Include="Projects\" />
 		<Folder Include="Src\Core\Models\Modules\" />
+		<Folder Include="Src\Modules\TextEditor\Views\Document\" />
 		<Folder Include="Src\WorkModes\Branching\" />
 		<Folder Include="Src\WorkModes\Dialogues\" />
 		<Folder Include="Src\WorkModes\GameEconomy\" />
@@ -318,6 +319,9 @@
 		</Compile>
 		<Compile Update="Views\Components\MenuBar\MenuBarView.axaml.cs">
 			<DependentUpon>MenuBarView.axaml</DependentUpon>
+		</Compile>
+		<Compile Update="Views\Settings\SettingButtons.axaml.cs">
+		  <DependentUpon>SettingButtons.axaml</DependentUpon>
 		</Compile>
 	</ItemGroup>
 

@@ -261,7 +261,7 @@ namespace Writersword.Src.Infrastructure.Services.Storage
                         {
                             var sessionDataJson = JsonConvert.SerializeObject(sessionData, Formatting.Indented);
                             var sessionDataEntry = archive.CreateEntry(
-                                $"modules/{moduleType}/sessiondata.json", CompressionLevel.Optimal);
+                                $"Modules/{moduleType}/sessiondata.json", CompressionLevel.Optimal);
                             using (var stream = sessionDataEntry.Open())
                             using (var writer = new StreamWriter(stream))
                             {

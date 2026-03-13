@@ -1708,6 +1708,114 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Current global settings will be applied to this project..
+        /// </summary>
+        public static string Settings_Confirm_ApplyToProject_Message {
+            get {
+                return ResourceManager.GetString("Settings_Confirm_ApplyToProject_Message", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Apply to project?.
+        /// </summary>
+        public static string Settings_Confirm_ApplyToProject_Title {
+            get {
+                return ResourceManager.GetString("Settings_Confirm_ApplyToProject_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на These settings will become the default for all future projects..
+        /// </summary>
+        public static string Settings_Confirm_PromoteToGlobal_Message {
+            get {
+                return ResourceManager.GetString("Settings_Confirm_PromoteToGlobal_Message", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save as global?.
+        /// </summary>
+        public static string Settings_Confirm_PromoteToGlobal_Title {
+            get {
+                return ResourceManager.GetString("Settings_Confirm_PromoteToGlobal_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на All settings will be reset to their default values. This cannot be undone..
+        /// </summary>
+        public static string Settings_Confirm_ResetAllToDefaults_Message {
+            get {
+                return ResourceManager.GetString("Settings_Confirm_ResetAllToDefaults_Message", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset to defaults?.
+        /// </summary>
+        public static string Settings_Confirm_ResetAllToDefaults_Title {
+            get {
+                return ResourceManager.GetString("Settings_Confirm_ResetAllToDefaults_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на All local settings will be reset to global values. This cannot be undone..
+        /// </summary>
+        public static string Settings_Confirm_ResetAllToGlobal_Message {
+            get {
+                return ResourceManager.GetString("Settings_Confirm_ResetAllToGlobal_Message", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset to global?.
+        /// </summary>
+        public static string Settings_Confirm_ResetAllToGlobal_Title {
+            get {
+                return ResourceManager.GetString("Settings_Confirm_ResetAllToGlobal_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Current settings will be applied to all future projects of this type..
+        /// </summary>
+        public static string Settings_Confirm_SaveAsGlobal_Message {
+            get {
+                return ResourceManager.GetString("Settings_Confirm_SaveAsGlobal_Message", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save as global?.
+        /// </summary>
+        public static string Settings_Confirm_SaveAsGlobal_Title {
+            get {
+                return ResourceManager.GetString("Settings_Confirm_SaveAsGlobal_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset to default.
+        /// </summary>
+        public static string Settings_Field_ResetToDefault {
+            get {
+                return ResourceManager.GetString("Settings_Field_ResetToDefault", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset to global.
+        /// </summary>
+        public static string Settings_Field_ResetToGlobal {
+            get {
+                return ResourceManager.GetString("Settings_Field_ResetToGlobal", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Language.
         /// </summary>
         public static string Settings_General_Language {
@@ -1848,6 +1956,60 @@ namespace Writersword.Resources.Localization {
         public static string Settings_Title {
             get {
                 return ResourceManager.GetString("Settings_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Apply to this project.
+        /// </summary>
+        public static string Settings_Toolbar_ApplyToProject {
+            get {
+                return ResourceManager.GetString("Settings_Toolbar_ApplyToProject", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save as global.
+        /// </summary>
+        public static string Settings_Toolbar_PromoteToGlobal {
+            get {
+                return ResourceManager.GetString("Settings_Toolbar_PromoteToGlobal", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset all to defaults.
+        /// </summary>
+        public static string Settings_Toolbar_ResetAllToDefaults {
+            get {
+                return ResourceManager.GetString("Settings_Toolbar_ResetAllToDefaults", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset all to defaults.
+        /// </summary>
+        public static string Settings_Toolbar_ResetAllToDefaultsLocal {
+            get {
+                return ResourceManager.GetString("Settings_Toolbar_ResetAllToDefaultsLocal", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset all to global.
+        /// </summary>
+        public static string Settings_Toolbar_ResetAllToGlobal {
+            get {
+                return ResourceManager.GetString("Settings_Toolbar_ResetAllToGlobal", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save as global.
+        /// </summary>
+        public static string Settings_Toolbar_SaveAsGlobal {
+            get {
+                return ResourceManager.GetString("Settings_Toolbar_SaveAsGlobal", resourceCulture);
             }
         }
         

@@ -1,15 +1,14 @@
 ﻿using Avalonia.Controls;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using ReactiveUI;
 using System;
 using System.Collections.Generic;
 using System.Reactive;
 using System.Reactive.Linq;
-using System.Text;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
+using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models;
 using Writersword.Core.Models.Settings;
 using Writersword.Modules.Common;
@@ -26,8 +25,10 @@ namespace Writersword.Modules.Timer
     {
         private readonly ILogger<TimerModule> _logger;
         private TimerViewModel? _viewModel;
+        private TimerSettingsViewModel? _settingsVm;
 
-        private const string LocalSettingsPath = "Timer/settings.json";
+        /// <summary>Хардкод дефолты — создаются один раз, никогда не меняются.</summary>
+        private static readonly TimerSettings _hardcodedDefaults = new();
 
         public TimerModule() : base()
         {
@@ -63,9 +64,7 @@ namespace Writersword.Modules.Timer
         /// </summary>
         public IReadOnlyList<HotKey> GetHotKeys() => new TimerMetadata().GetHotKeys();
 
-        /// <summary>
-        /// Выполнить действие по ID горячей клавиши
-        /// </summary>
+        /// <summary>Выполнить действие по ID горячей клавиши.</summary>
         public void ExecuteHotKey(string id)
         {
             if (_viewModel == null) return;
@@ -93,67 +92,22 @@ namespace Writersword.Modules.Timer
             }
         }
 
-        /// <summary>
-        /// Загрузить локальные настройки из ZIP проекта и применить поверх глобальных.
-        /// Вызывается после установки Context.
-        /// </summary>
-        private void LoadAndApplyLocalSettings()
-        {
-            if (Context?.FileStorage == null) return;
-
-            var data = Context.FileStorage.ReadFile(LocalSettingsPath);
-            if (data == null) return;
-
-            try
-            {
-                var json = Encoding.UTF8.GetString(data);
-                var local = JsonConvert.DeserializeObject<TimerSettings>(json);
-                if (local != null)
-                {
-                    _viewModel?.ApplySettings(local);
-                    _logger.LogDebug("Local settings applied: DefaultMinutes={Min}, IsCountdown={Countdown}",
-                        local.DefaultMinutes, local.IsCountdown);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error loading local settings");
-            }
-        }
-
-        /// <summary>
-        /// Сохранить локальные настройки в ZIP проекта
-        /// </summary>
-        private void SaveLocalSettings(TimerSettings settings)
-        {
-            if (Context?.FileStorage == null)
-            {
-                _logger.LogWarning("Cannot save local settings — FileStorage is null");
-                return;
-            }
-
-            try
-            {
-                var json = JsonConvert.SerializeObject(settings, Formatting.Indented);
-                var data = Encoding.UTF8.GetBytes(json);
-                Context.FileStorage.WriteFile(LocalSettingsPath, data);
-                _logger.LogDebug("Local settings saved to ZIP");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error saving local settings");
-            }
-        }
-
         protected override void OnContextChanged(DocumentContext? context)
         {
             if (context != null)
-            {
                 _logger.LogDebug("Context changed - timer continues running");
-                LoadAndApplyLocalSettings();
-            }
         }
 
+        // ── IConfigurableModule ───────────────────────────────────────────
+
+        /// <summary>
+        /// Возвращает хардкод дефолты модуля.
+        /// </summary>
+        public object GetDefaultSettings() => _hardcodedDefaults;
+
+        /// <summary>
+        /// Получить текущие глобальные настройки из ISettingsService.
+        /// </summary>
         public object GetSettings()
         {
             var settingsService = App.Services.GetRequiredService<ISettingsService>();
@@ -161,6 +115,9 @@ namespace Writersword.Modules.Timer
                    ?? new TimerSettings();
         }
 
+        /// <summary>
+        /// Применить глобальные настройки: сохранить в сервис и обновить VM.
+        /// </summary>
         public void ApplySettings(object settings)
         {
             if (settings is not TimerSettings typed) return;
@@ -173,50 +130,109 @@ namespace Writersword.Modules.Timer
                 typed.DefaultMinutes, typed.IsCountdown);
         }
 
+        /// <summary>
+        /// Получить текущие локальные настройки из _settingsVm.
+        /// Если VM не создана — возвращает глобальные.
+        /// Вызывается сервисом при сохранении в ZIP.
+        /// </summary>
         public object GetLocalSettings()
         {
-            if (Context?.FileStorage == null)
+            if (_settingsVm is null)
                 return GetSettings();
 
-            var data = Context.FileStorage.ReadFile(LocalSettingsPath);
-            if (data == null)
-                return GetSettings();
-
-            try
+            return new TimerSettings
             {
-                var json = Encoding.UTF8.GetString(data);
-                return JsonConvert.DeserializeObject<TimerSettings>(json) ?? GetSettings();
-            }
-            catch
-            {
-                return GetSettings();
-            }
+                DefaultMinutes = (int)(_settingsVm.DefaultMinutes ?? 0),
+                DefaultSeconds = (int)(_settingsVm.DefaultSeconds ?? 0),
+                IsCountdown = _settingsVm.IsCountdown
+            };
         }
 
+        /// <summary>
+        /// Применить локальные настройки к VM и живому таймеру.
+        /// Файловый I/O — только через ILocalSettingsStorageService, не здесь.
+        /// </summary>
         public void ApplyLocalSettings(object settings)
         {
             if (settings is not TimerSettings typed) return;
 
-            SaveLocalSettings(typed);
+            if (_settingsVm is not null)
+            {
+                _settingsVm.DefaultMinutes = typed.DefaultMinutes;
+                _settingsVm.DefaultSeconds = typed.DefaultSeconds;
+                _settingsVm.IsCountdown = typed.IsCountdown;
+            }
+
             _viewModel?.ApplySettings(typed);
-            _logger.LogDebug("Local settings applied and saved: DefaultMinutes={Min}, IsCountdown={Countdown}",
+            _logger.LogDebug("Local settings applied: DefaultMinutes={Min}, IsCountdown={Countdown}",
                 typed.DefaultMinutes, typed.IsCountdown);
         }
 
+        /// <summary>
+        /// Сбросить UI глобальных настроек к хардкод дефолтам.
+        /// Вызывается toolbar кнопкой в глобальной вкладке.
+        /// </summary>
+        public void ResetSettingsToDefaults()
+        {
+            if (_settingsVm is null) return;
+
+            _settingsVm.DefaultMinutes = _hardcodedDefaults.DefaultMinutes;
+            _settingsVm.DefaultSeconds = _hardcodedDefaults.DefaultSeconds;
+            _settingsVm.IsCountdown = _hardcodedDefaults.IsCountdown;
+
+            _logger.LogDebug("Global settings reset to hardcoded defaults");
+        }
+
+        /// <summary>
+        /// Сбросить UI локальных настроек к глобальным значениям.
+        /// Вызывается toolbar кнопкой в локальной вкладке.
+        /// </summary>
+        public void ResetLocalSettingsToGlobal()
+        {
+            if (_settingsVm is null) return;
+
+            var globalSettings = (GetSettings() as TimerSettings) ?? new TimerSettings();
+
+            _settingsVm.DefaultMinutes = globalSettings.DefaultMinutes;
+            _settingsVm.DefaultSeconds = globalSettings.DefaultSeconds;
+            _settingsVm.IsCountdown = globalSettings.IsCountdown;
+
+            _logger.LogDebug("Local settings reset to global values");
+        }
+
+        /// <summary>
+        /// Сбросить UI локальных настроек к хардкод дефолтам.
+        /// Вызывается toolbar кнопкой в локальной вкладке.
+        /// </summary>
+        public void ResetLocalSettingsToDefaults()
+        {
+            if (_settingsVm is null) return;
+
+            _settingsVm.DefaultMinutes = _hardcodedDefaults.DefaultMinutes;
+            _settingsVm.DefaultSeconds = _hardcodedDefaults.DefaultSeconds;
+            _settingsVm.IsCountdown = _hardcodedDefaults.IsCountdown;
+
+            _logger.LogDebug("Local settings reset to hardcoded defaults");
+        }
+
+        /// <summary>
+        /// Создать View для глобальных настроек.
+        /// Подписка на изменения — автоматически сохраняет глобальные настройки.
+        /// </summary>
         public Control CreateSettingsView()
         {
             var settingsService = App.Services.GetRequiredService<ISettingsService>();
             var settings = settingsService.GetModuleSettings<TimerSettings>(moduleType)
                            ?? new TimerSettings();
 
-            var vm = new TimerSettingsViewModel
+            _settingsVm = new TimerSettingsViewModel
             {
                 DefaultMinutes = settings.DefaultMinutes,
                 DefaultSeconds = settings.DefaultSeconds,
                 IsCountdown = settings.IsCountdown
             };
 
-            vm.WhenAnyValue(x => x.DefaultMinutes, x => x.DefaultSeconds, x => x.IsCountdown)
+            _settingsVm.WhenAnyValue(x => x.DefaultMinutes, x => x.DefaultSeconds, x => x.IsCountdown)
                 .Skip(1)
                 .Subscribe(tuple =>
                 {
@@ -228,33 +244,76 @@ namespace Writersword.Modules.Timer
                     });
                 });
 
-            return new TimerSettingsView { DataContext = vm };
+            return new TimerSettingsView { DataContext = _settingsVm };
         }
 
+        /// <summary>
+        /// Создать View для локальных настроек проекта.
+        /// Начальные значения берутся из ZIP через ILocalSettingsStorageService,
+        /// или из глобальных если локальных нет.
+        /// </summary>
         public Control CreateLocalSettingsView()
         {
-            var local = GetLocalSettings() as TimerSettings ?? new TimerSettings();
+            TimerSettings local;
 
-            var vm = new TimerSettingsViewModel
+            if (Context?.FileStorage != null)
+            {
+                var service = App.Services.GetRequiredService<ILocalSettingsStorageService>();
+                local = service.Load(Context.FileStorage, moduleType, typeof(TimerSettings))
+                        as TimerSettings
+                        ?? (GetSettings() as TimerSettings)
+                        ?? new TimerSettings();
+            }
+            else
+            {
+                local = (GetSettings() as TimerSettings) ?? new TimerSettings();
+            }
+
+            _settingsVm = new TimerSettingsViewModel
             {
                 DefaultMinutes = local.DefaultMinutes,
                 DefaultSeconds = local.DefaultSeconds,
                 IsCountdown = local.IsCountdown
             };
 
-            vm.WhenAnyValue(x => x.DefaultMinutes, x => x.DefaultSeconds, x => x.IsCountdown)
-                .Skip(1)
-                .Subscribe(tuple =>
-                {
-                    ApplyLocalSettings(new TimerSettings
-                    {
-                        DefaultMinutes = (int)(tuple.Item1 ?? 0),
-                        DefaultSeconds = (int)(tuple.Item2 ?? 0),
-                        IsCountdown = tuple.Item3
-                    });
-                });
+            return new TimerSettingsView { DataContext = _settingsVm };
+        }
 
-            return new TimerSettingsView { DataContext = vm };
+        /// <summary>
+        /// Применить текущие глобальные UI-значения к локальной VM.
+        /// Timer использует одну VM — просто обновляем значения из глобальных.
+        /// </summary>
+        public void ApplyGlobalToLocal()
+        {
+            if (_settingsVm is null) return;
+
+            var globalSettings = (GetSettings() as TimerSettings) ?? new TimerSettings();
+
+            _settingsVm.DefaultMinutes = globalSettings.DefaultMinutes;
+            _settingsVm.DefaultSeconds = globalSettings.DefaultSeconds;
+            _settingsVm.IsCountdown = globalSettings.IsCountdown;
+
+            _logger.LogDebug("ApplyGlobalToLocal completed");
+        }
+
+        /// <summary>
+        /// Сохранить текущие локальные UI-значения как глобальные.
+        /// </summary>
+        public void PromoteLocalToGlobal()
+        {
+            if (_settingsVm is null) return;
+
+            var settings = new TimerSettings
+            {
+                DefaultMinutes = (int)(_settingsVm.DefaultMinutes ?? 0),
+                DefaultSeconds = (int)(_settingsVm.DefaultSeconds ?? 0),
+                IsCountdown = _settingsVm.IsCountdown
+            };
+
+            var settingsService = App.Services.GetRequiredService<ISettingsService>();
+            settingsService.SaveModuleSettings(moduleType, settings);
+
+            _logger.LogDebug("PromoteLocalToGlobal completed");
         }
 
         public override object? GetCustomData() => null;
@@ -279,7 +338,6 @@ namespace Writersword.Modules.Timer
 
         /// <summary>
         /// Статический список горячих клавиш таймера.
-        /// Вызывается ModuleFactory при старте приложения.
         /// DefaultGesture null — пользователь назначает сам.
         /// </summary>
         public IReadOnlyList<HotKey> GetHotKeys() => new[]

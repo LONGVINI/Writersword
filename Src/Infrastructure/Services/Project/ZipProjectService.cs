@@ -57,7 +57,7 @@ namespace Writersword.Src.Infrastructure.Services.Project
                         projectEntry?.Delete();
 
                         var oldModules = archive.Entries
-                            .Where(e => e.FullName.StartsWith("modules/"))
+                            .Where(e => e.FullName.StartsWith("modules/", StringComparison.OrdinalIgnoreCase))
                             .ToList();
 
                         foreach (var entry in oldModules)
@@ -103,7 +103,10 @@ namespace Writersword.Src.Infrastructure.Services.Project
 
                         if (customData != null && !(customData is string str && string.IsNullOrWhiteSpace(str)))
                         {
-                            var customDataJson = JsonHelper.Serialize(customData);
+                            string customDataJson = customData is string s
+                                ? s
+                                : JsonHelper.Serialize(customData);
+
                             var customDataEntry = archive.CreateEntry(
                                 $"modules/{moduleType}/CustomData.json", CompressionLevel.Optimal);
                             using (var writer = new StreamWriter(customDataEntry.Open()))
@@ -170,20 +173,24 @@ namespace Writersword.Src.Infrastructure.Services.Project
                     _logger.LogDebug("Loaded project.json: {Title}", project.Title);
 
                     var moduleIds = archive.Entries
-                        .Where(e => e.FullName.StartsWith("modules/") && e.FullName.EndsWith("/CustomData.json"))
+                        .Where(e => e.FullName.StartsWith("modules/", StringComparison.OrdinalIgnoreCase)
+                                 && e.FullName.EndsWith("/CustomData.json", StringComparison.OrdinalIgnoreCase))
                         .Select(e => e.FullName.Split('/')[1])
                         .Distinct()
                         .ToList();
 
                     foreach (var moduleType in moduleIds)
                     {
-                        var customDataEntry = archive.GetEntry($"modules/{moduleType}/CustomData.json");
+                        var customDataEntry = archive.Entries.FirstOrDefault(e =>
+                            e.FullName.Equals($"modules/{moduleType}/CustomData.json",
+                                StringComparison.OrdinalIgnoreCase));
+
                         if (customDataEntry != null)
                         {
                             using (var reader = new StreamReader(customDataEntry.Open()))
                             {
                                 var customDataJson = await reader.ReadToEndAsync();
-                                project.ModulesData[moduleType] = JsonConvert.DeserializeObject<object>(customDataJson);
+                                project.ModulesData[moduleType] = customDataJson;
                                 _logger.LogDebug("Loaded module: {moduleType}", moduleType);
                             }
                         }

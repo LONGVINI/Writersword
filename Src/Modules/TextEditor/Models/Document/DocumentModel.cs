@@ -12,10 +12,14 @@ namespace Writersword.Modules.TextEditor.Models.Document
     /// </summary>
     public enum EditorViewMode
     {
-        /// <summary>Листы с полями — как в Word.</summary>
+        /// <summary>Листы с полями, физический размер бумаги — как в Word.</summary>
         Page = 0,
-        /// <summary>Только текст без листов и полей.</summary>
-        Draft = 1
+        /// <summary>Черновик — вся ширина без листов.</summary>
+        Draft = 1,
+        /// <summary>Веб-документ — вся ширина с переносом слов.</summary>
+        Web = 2,
+        /// <summary>Режим чтения — узкая колонка по центру, комфортная для чтения.</summary>
+        Reading = 3
     }
 
     /// <summary>

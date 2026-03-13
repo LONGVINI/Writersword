@@ -1,6 +1,5 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-
 	<!-- Базовые стили поля ввода -->
 	<Style Selector="TextBox">
 		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
@@ -11,6 +10,7 @@
 		<Setter Property="FontSize" Value="{DynamicResource FontSizeS}"/>
 		<Setter Property="Padding" Value="{DynamicResource PaddingXS}"/>
 		<Setter Property="MinHeight" Value="28"/>
+		<Setter Property="VerticalContentAlignment" Value="Center"/>
 		<Setter Property="CaretBrush" Value="{DynamicResource TextPrimaryBrush}"/>
 		<Setter Property="SelectionBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		<Setter Property="SelectionForegroundBrush" Value="White"/>
@@ -29,7 +29,6 @@
 	<Style Selector="TextBox:disabled /template/ Border#PART_BorderElement">
 		<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
 	</Style>
-
 	<!-- Редакторское поле для большого текста (TextEditor, сценарии, поэзия и т.д.) -->
 	<!-- Использование: Classes="editor" на TextBox -->
 	<Style Selector="TextBox.editor">
@@ -66,5 +65,4 @@
 		<Setter Property="Background" Value="White"/>
 		<Setter Property="BorderBrush" Value="Transparent"/>
 	</Style>
-
 </Styles>

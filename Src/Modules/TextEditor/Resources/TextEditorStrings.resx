@@ -501,6 +501,22 @@
     <value>Font Size</value>
     <comment>Settings label</comment>
   </data>
+  <data name="Settings_MonitorGroup" xml:space="preserve">
+    <value>Monitor</value>
+    <comment>Monitor settings group header</comment>
+  </data>
+  <data name="Settings_MonitorSize" xml:space="preserve">
+    <value>Monitor diagonal</value>
+    <comment>Label for monitor diagonal input</comment>
+  </data>
+  <data name="Settings_MonitorSizeHint" xml:space="preserve">
+    <value>Enter the physical diagonal of your screen for accurate page size. Example: 24, 27, 32.</value>
+    <comment>Hint text below the input</comment>
+  </data>
+  <data name="Settings_MonitorSizeUnit" xml:space="preserve">
+    <value>inches (0 = auto)</value>
+    <comment>Unit suffix next to the input</comment>
+  </data>
   <data name="Settings_Preview" xml:space="preserve">
     <value>Preview</value>
     <comment>Settings label</comment>

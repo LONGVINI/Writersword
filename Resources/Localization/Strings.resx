@@ -945,4 +945,76 @@
     <value>Redo</value>
     <comment>Hotkey display name for redo action</comment>
   </data>
+  <data name="Settings_Field_ResetToDefault" xml:space="preserve">
+    <value>Reset to default</value>
+    <comment>Tooltip on reset-to-hardcoded button in SettingRow</comment>
+  </data>
+  <data name="Settings_Field_ResetToGlobal" xml:space="preserve">
+    <value>Reset to global</value>
+    <comment>Tooltip on reset-to-global button in SettingRow, local context only</comment>
+  </data>
+  <data name="Settings_Toolbar_ResetAllToDefaults" xml:space="preserve">
+    <value>Reset all to defaults</value>
+    <comment>Toolbar button in global module settings tab</comment>
+  </data>
+  <data name="Settings_Toolbar_ResetAllToGlobal" xml:space="preserve">
+    <value>Reset all to global</value>
+    <comment>Toolbar button in local project settings tab</comment>
+  </data>
+  <data name="Settings_Toolbar_SaveAsGlobal" xml:space="preserve">
+    <value>Save as global</value>
+    <comment>Toolbar button to save current settings as global defaults</comment>
+  </data>
+  <data name="Settings_Toolbar_ResetAllToDefaultsLocal" xml:space="preserve">
+    <value>Reset all to defaults</value>
+    <comment>Toolbar button in local module settings tab</comment>
+  </data>
+  <data name="Settings_Confirm_ResetAllToDefaults_Title" xml:space="preserve">
+    <value>Reset to defaults?</value>
+    <comment>Confirmation dialog title for reset all to hardcoded defaults</comment>
+  </data>
+  <data name="Settings_Confirm_ResetAllToDefaults_Message" xml:space="preserve">
+    <value>All settings will be reset to their default values. This cannot be undone.</value>
+    <comment>Confirmation dialog message for reset all to hardcoded defaults</comment>
+  </data>
+  <data name="Settings_Confirm_ResetAllToGlobal_Title" xml:space="preserve">
+    <value>Reset to global?</value>
+    <comment>Confirmation dialog title for reset all to global values</comment>
+  </data>
+  <data name="Settings_Confirm_ResetAllToGlobal_Message" xml:space="preserve">
+    <value>All local settings will be reset to global values. This cannot be undone.</value>
+    <comment>Confirmation dialog message for reset all to global values</comment>
+  </data>
+  <data name="Settings_Confirm_SaveAsGlobal_Title" xml:space="preserve">
+    <value>Save as global?</value>
+    <comment>Confirmation dialog title for saving current settings as global</comment>
+  </data>
+  <data name="Settings_Confirm_SaveAsGlobal_Message" xml:space="preserve">
+    <value>Current settings will be applied to all future projects of this type.</value>
+    <comment>Confirmation dialog message for saving current settings as global</comment>
+  </data>
+  <data name="Settings_Toolbar_ApplyToProject" xml:space="preserve">
+    <value>Apply to this project</value>
+    <comment>Button in global tab toolbar</comment>
+  </data>
+  <data name="Settings_Toolbar_PromoteToGlobal" xml:space="preserve">
+    <value>Save as global</value>
+    <comment>Button in local tab toolbar</comment>
+  </data>
+  <data name="Settings_Confirm_ApplyToProject_Title" xml:space="preserve">
+    <value>Apply to project?</value>
+    <comment>Confirmation dialog title</comment>
+  </data>
+  <data name="Settings_Confirm_ApplyToProject_Message" xml:space="preserve">
+    <value>Current global settings will be applied to this project.</value>
+    <comment>dialog</comment>
+  </data>
+  <data name="Settings_Confirm_PromoteToGlobal_Title" xml:space="preserve">
+    <value>Save as global?</value>
+    <comment>Confirmation dialog title</comment>
+  </data>
+  <data name="Settings_Confirm_PromoteToGlobal_Message" xml:space="preserve">
+    <value>These settings will become the default for all future projects.</value>
+    <comment>Confirmation dialog message</comment>
+  </data>
 </root>

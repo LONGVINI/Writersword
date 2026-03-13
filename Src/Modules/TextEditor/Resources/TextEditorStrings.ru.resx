@@ -405,6 +405,18 @@
   <data name="Settings_FontSize" xml:space="preserve">
     <value>Размер шрифта</value>
   </data>
+  <data name="Settings_MonitorGroup" xml:space="preserve">
+    <value>Монитор</value>
+  </data>
+  <data name="Settings_MonitorSize" xml:space="preserve">
+    <value>Диагональ монитора</value>
+  </data>
+  <data name="Settings_MonitorSizeHint" xml:space="preserve">
+    <value>Укажите физическую диагональ экрана для точного отображения размера страницы. Например: 24, 27, 32.</value>
+  </data>
+  <data name="Settings_MonitorSizeUnit" xml:space="preserve">
+    <value>дюймов (0 = авто)</value>
+  </data>
   <data name="Settings_Preview" xml:space="preserve">
     <value>Предпросмотр</value>
   </data>

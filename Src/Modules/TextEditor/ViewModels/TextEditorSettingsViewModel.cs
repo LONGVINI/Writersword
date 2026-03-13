@@ -1,210 +1,161 @@
+using ReactiveUI;
 using System;
 using System.Collections.Generic;
-using System.Windows.Input;
-using ReactiveUI;
+using Writersword.Core.Enums;
+using Writersword.Core.Models.Settings;
 using Writersword.Modules.TextEditor.Models;
 using Writersword.Modules.TextEditor.Models.Document;
 
 namespace Writersword.Modules.TextEditor.ViewModels
 {
-    /// <summary>
-    /// ViewModel окна настроек модуля TextEditor.
-    /// Отображает и редактирует <see cref="TextEditorSettings"/>.
-    /// Инфраструктура получает настройки через <see cref="GetSettings"/>.
-    /// </summary>
     public sealed class TextEditorSettingsViewModel : ReactiveObject
     {
-        private double _fontSize;
-        private string _fontFamily;
-        private bool _spellCheckEnabled;
-        private string _defaultLanguage;
-        private bool _showSpellErrors;
-        private bool _autoReplaceEnabled;
-        private bool _showRuler;
-        private bool _showFormattingMarks;
-        private EditorViewMode _defaultViewMode;
-        private double _defaultZoom;
-        private int _autoSaveIntervalSeconds;
+        public SettingsFieldContext Context { get; }
 
-        // --- Основные параметры ---
+        public SettingValue<string> FontFamily { get; }
+        public SettingValue<double> FontSize { get; }
+        public SettingValue<bool> SpellCheckEnabled { get; }
+        public SettingValue<string> DefaultLanguage { get; }
+        public SettingValue<bool> ShowSpellErrors { get; }
+        public SettingValue<bool> AutoReplaceEnabled { get; }
+        public SettingValue<bool> ShowRuler { get; }
+        public SettingValue<bool> ShowFormattingMarks { get; }
+        public SettingValue<EditorViewMode> DefaultViewMode { get; }
+        public SettingValue<double> DefaultZoom { get; }
+        public SettingValue<int> AutoSaveIntervalSeconds { get; }
+        public SettingValue<double> MonitorSizeInches { get; }
 
-        /// <summary>Размер шрифта по умолчанию для новых документов.</summary>
-        public double FontSize
+        // ── Прокси для NumericUpDown (decimal?) ───────────────────────────
+
+        /// <summary>Масштаб в процентах — для слайдера и NumericUpDown.</summary>
+        public decimal? ZoomPercent
         {
-            get => _fontSize;
-            set => this.RaiseAndSetIfChanged(ref _fontSize, value);
-        }
-
-        /// <summary>Семейство шрифта по умолчанию.</summary>
-        public string FontFamily
-        {
-            get => _fontFamily;
-            set => this.RaiseAndSetIfChanged(ref _fontFamily, value);
-        }
-
-        // --- Орфография ---
-
-        /// <summary>Включить проверку орфографии.</summary>
-        public bool SpellCheckEnabled
-        {
-            get => _spellCheckEnabled;
-            set => this.RaiseAndSetIfChanged(ref _spellCheckEnabled, value);
-        }
-
-        /// <summary>Язык по умолчанию (ru, uk, en...).</summary>
-        public string DefaultLanguage
-        {
-            get => _defaultLanguage;
-            set => this.RaiseAndSetIfChanged(ref _defaultLanguage, value);
-        }
-
-        /// <summary>Подчёркивать ошибки в тексте.</summary>
-        public bool ShowSpellErrors
-        {
-            get => _showSpellErrors;
-            set => this.RaiseAndSetIfChanged(ref _showSpellErrors, value);
-        }
-
-        // --- Автозамена ---
-
-        /// <summary>Включить автозамену.</summary>
-        public bool AutoReplaceEnabled
-        {
-            get => _autoReplaceEnabled;
-            set => this.RaiseAndSetIfChanged(ref _autoReplaceEnabled, value);
-        }
-
-        // --- Отображение ---
-
-        /// <summary>Показывать горизонтальную линейку.</summary>
-        public bool ShowRuler
-        {
-            get => _showRuler;
-            set => this.RaiseAndSetIfChanged(ref _showRuler, value);
-        }
-
-        /// <summary>Показывать непечатаемые символы.</summary>
-        public bool ShowFormattingMarks
-        {
-            get => _showFormattingMarks;
-            set => this.RaiseAndSetIfChanged(ref _showFormattingMarks, value);
-        }
-
-        /// <summary>Режим отображения по умолчанию для новых документов.</summary>
-        public EditorViewMode DefaultViewMode
-        {
-            get => _defaultViewMode;
-            set => this.RaiseAndSetIfChanged(ref _defaultViewMode, value);
-        }
-
-        /// <summary>Масштаб по умолчанию (1.0 = 100%).</summary>
-        public double DefaultZoom
-        {
-            get => _defaultZoom;
+            get => (decimal)Math.Round(DefaultZoom.Value * 100);
             set
             {
-                this.RaiseAndSetIfChanged(ref _defaultZoom, value);
-                this.RaisePropertyChanged(nameof(ZoomPercent));
+                if (value is null) return;
+                int clamped = Math.Clamp((int)value.Value, 25, 500);
+                DefaultZoom.Value = clamped / 100.0;
             }
         }
 
-        /// <summary>Масштаб в процентах для отображения рядом со слайдером.</summary>
-        public int ZoomPercent => (int)Math.Round(_defaultZoom * 100);
-
-        // --- Автосохранение ---
-
-        /// <summary>Интервал автосохранения в секундах (0 — отключено).</summary>
-        public int AutoSaveIntervalSeconds
+        /// <summary>Прокси для FontSize — NumericUpDown работает с decimal?.</summary>
+        public decimal? FontSizeProxy
         {
-            get => _autoSaveIntervalSeconds;
-            set => this.RaiseAndSetIfChanged(ref _autoSaveIntervalSeconds, value);
+            get => (decimal)FontSize.Value;
+            set { if (value is not null) FontSize.Value = (double)value.Value; }
         }
 
-        // --- Доступные значения для ComboBox ---
+        /// <summary>Прокси для AutoSaveIntervalSeconds — NumericUpDown работает с decimal?.</summary>
+        public decimal? AutoSaveSecondsProxy
+        {
+            get => AutoSaveIntervalSeconds.Value;
+            set { if (value is not null) AutoSaveIntervalSeconds.Value = (int)value.Value; }
+        }
 
-        /// <summary>Список доступных шрифтов.</summary>
+        // ── Справочники ───────────────────────────────────────────────────
+
         public IReadOnlyList<string> AvailableFonts { get; } = new[]
         {
-            "Arial",
-            "Times New Roman",
-            "Calibri",
-            "Georgia",
-            "Verdana",
-            "Tahoma",
-            "Trebuchet MS",
-            "Consolas",
-            "Courier New"
+            "Arial", "Times New Roman", "Calibri", "Georgia",
+            "Verdana", "Tahoma", "Trebuchet MS", "Consolas", "Courier New"
         };
 
-        /// <summary>Список доступных языков.</summary>
         public IReadOnlyList<string> AvailableLanguages { get; } = new[]
         {
             "ru", "uk", "en"
         };
 
-        /// <summary>Список режимов отображения.</summary>
         public IReadOnlyList<EditorViewMode> ViewModes { get; } = new[]
         {
             EditorViewMode.Page,
             EditorViewMode.Draft
         };
 
-        /// <summary>Команда сброса к настройкам по умолчанию.</summary>
-        public ICommand ResetToDefaultsCommand { get; }
+        // ── Конструкторы ──────────────────────────────────────────────────
 
-        public TextEditorSettingsViewModel(TextEditorSettings settings)
+        /// <summary>Глобальная вкладка — current == global.</summary>
+        public TextEditorSettingsViewModel(
+            TextEditorSettings hardcoded,
+            TextEditorSettings global)
         {
-            _fontSize               = settings.FontSize;
-            _fontFamily             = settings.FontFamily;
-            _spellCheckEnabled      = settings.SpellCheckEnabled;
-            _defaultLanguage        = settings.DefaultLanguage;
-            _showSpellErrors        = settings.ShowSpellErrors;
-            _autoReplaceEnabled     = settings.AutoReplaceEnabled;
-            _showRuler              = settings.ShowRuler;
-            _showFormattingMarks    = settings.ShowFormattingMarks;
-            _defaultViewMode        = settings.DefaultViewMode;
-            _defaultZoom            = settings.DefaultZoom;
-            _autoSaveIntervalSeconds = settings.AutoSaveIntervalSeconds;
+            Context = SettingsFieldContext.Global;
 
-            ResetToDefaultsCommand = ReactiveCommand.Create(ResetToDefaults);
+            FontFamily = new SettingValue<string>(hardcoded.FontFamily, global.FontFamily);
+            FontSize = new SettingValue<double>(hardcoded.FontSize, global.FontSize);
+            SpellCheckEnabled = new SettingValue<bool>(hardcoded.SpellCheckEnabled, global.SpellCheckEnabled);
+            DefaultLanguage = new SettingValue<string>(hardcoded.DefaultLanguage, global.DefaultLanguage);
+            ShowSpellErrors = new SettingValue<bool>(hardcoded.ShowSpellErrors, global.ShowSpellErrors);
+            AutoReplaceEnabled = new SettingValue<bool>(hardcoded.AutoReplaceEnabled, global.AutoReplaceEnabled);
+            ShowRuler = new SettingValue<bool>(hardcoded.ShowRuler, global.ShowRuler);
+            ShowFormattingMarks = new SettingValue<bool>(hardcoded.ShowFormattingMarks, global.ShowFormattingMarks);
+            DefaultViewMode = new SettingValue<EditorViewMode>(hardcoded.DefaultViewMode, global.DefaultViewMode);
+            DefaultZoom = new SettingValue<double>(hardcoded.DefaultZoom, global.DefaultZoom);
+            AutoSaveIntervalSeconds = new SettingValue<int>(hardcoded.AutoSaveIntervalSeconds, global.AutoSaveIntervalSeconds);
+            MonitorSizeInches = new SettingValue<double>(hardcoded.MonitorSizeInches, global.MonitorSizeInches);
+
+            WireProxies();
         }
 
-        /// <summary>
-        /// Возвращает объект настроек с текущими значениями.
-        /// Вызывается инфраструктурой при сохранении настроек.
-        /// </summary>
-        public TextEditorSettings GetSettings()
+        /// <summary>Локальная вкладка — current = локальные настройки проекта.</summary>
+        public TextEditorSettingsViewModel(
+            TextEditorSettings hardcoded,
+            TextEditorSettings global,
+            TextEditorSettings current)
         {
-            return new TextEditorSettings
+            Context = SettingsFieldContext.Local;
+
+            FontFamily = new SettingValue<string>(hardcoded.FontFamily, global.FontFamily, current.FontFamily);
+            FontSize = new SettingValue<double>(hardcoded.FontSize, global.FontSize, current.FontSize);
+            SpellCheckEnabled = new SettingValue<bool>(hardcoded.SpellCheckEnabled, global.SpellCheckEnabled, current.SpellCheckEnabled);
+            DefaultLanguage = new SettingValue<string>(hardcoded.DefaultLanguage, global.DefaultLanguage, current.DefaultLanguage);
+            ShowSpellErrors = new SettingValue<bool>(hardcoded.ShowSpellErrors, global.ShowSpellErrors, current.ShowSpellErrors);
+            AutoReplaceEnabled = new SettingValue<bool>(hardcoded.AutoReplaceEnabled, global.AutoReplaceEnabled, current.AutoReplaceEnabled);
+            ShowRuler = new SettingValue<bool>(hardcoded.ShowRuler, global.ShowRuler, current.ShowRuler);
+            ShowFormattingMarks = new SettingValue<bool>(hardcoded.ShowFormattingMarks, global.ShowFormattingMarks, current.ShowFormattingMarks);
+            DefaultViewMode = new SettingValue<EditorViewMode>(hardcoded.DefaultViewMode, global.DefaultViewMode, current.DefaultViewMode);
+            DefaultZoom = new SettingValue<double>(hardcoded.DefaultZoom, global.DefaultZoom, current.DefaultZoom);
+            AutoSaveIntervalSeconds = new SettingValue<int>(hardcoded.AutoSaveIntervalSeconds, global.AutoSaveIntervalSeconds, current.AutoSaveIntervalSeconds);
+            MonitorSizeInches = new SettingValue<double>(hardcoded.MonitorSizeInches, global.MonitorSizeInches, current.MonitorSizeInches);
+
+            WireProxies();
+        }
+
+        private void WireProxies()
+        {
+            DefaultZoom.PropertyChanged += (_, e) =>
             {
-                FontSize               = _fontSize,
-                FontFamily             = _fontFamily,
-                SpellCheckEnabled      = _spellCheckEnabled,
-                DefaultLanguage        = _defaultLanguage,
-                ShowSpellErrors        = _showSpellErrors,
-                AutoReplaceEnabled     = _autoReplaceEnabled,
-                ShowRuler              = _showRuler,
-                ShowFormattingMarks    = _showFormattingMarks,
-                DefaultViewMode        = _defaultViewMode,
-                DefaultZoom            = _defaultZoom,
-                AutoSaveIntervalSeconds = _autoSaveIntervalSeconds
+                if (e.PropertyName == nameof(SettingValue<double>.Value))
+                    this.RaisePropertyChanged(nameof(ZoomPercent));
+            };
+
+            FontSize.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(SettingValue<double>.Value))
+                    this.RaisePropertyChanged(nameof(FontSizeProxy));
+            };
+
+            AutoSaveIntervalSeconds.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(SettingValue<int>.Value))
+                    this.RaisePropertyChanged(nameof(AutoSaveSecondsProxy));
             };
         }
 
-        private void ResetToDefaults()
+        public TextEditorSettings GetSettings() => new()
         {
-            var defaults = new TextEditorSettings();
-            FontSize               = defaults.FontSize;
-            FontFamily             = defaults.FontFamily;
-            SpellCheckEnabled      = defaults.SpellCheckEnabled;
-            DefaultLanguage        = defaults.DefaultLanguage;
-            ShowSpellErrors        = defaults.ShowSpellErrors;
-            AutoReplaceEnabled     = defaults.AutoReplaceEnabled;
-            ShowRuler              = defaults.ShowRuler;
-            ShowFormattingMarks    = defaults.ShowFormattingMarks;
-            DefaultViewMode        = defaults.DefaultViewMode;
-            DefaultZoom            = defaults.DefaultZoom;
-            AutoSaveIntervalSeconds = defaults.AutoSaveIntervalSeconds;
-        }
+            FontFamily = FontFamily.Value,
+            FontSize = FontSize.Value,
+            SpellCheckEnabled = SpellCheckEnabled.Value,
+            DefaultLanguage = DefaultLanguage.Value,
+            ShowSpellErrors = ShowSpellErrors.Value,
+            AutoReplaceEnabled = AutoReplaceEnabled.Value,
+            ShowRuler = ShowRuler.Value,
+            ShowFormattingMarks = ShowFormattingMarks.Value,
+            DefaultViewMode = DefaultViewMode.Value,
+            DefaultZoom = DefaultZoom.Value,
+            AutoSaveIntervalSeconds = AutoSaveIntervalSeconds.Value,
+            MonitorSizeInches = MonitorSizeInches.Value
+        };
     }
 }

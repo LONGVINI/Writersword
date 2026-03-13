@@ -158,7 +158,7 @@ namespace Writersword.ViewModels
         /// Инициализировать WorkspaceController без активации
         /// Вызывается из ProjectWorkflow после загрузки WorkModes
         /// </summary>
-        public void InitializeWorkspace(List<Core.Models.WorkModes.WorkMode> loadedWorkModes)
+        public void InitializeWorkspace(List<Core.Models.WorkModes.WorkMode> loadedWorkModes, IProjectFileStorage? storage = null)
         {
             if (string.IsNullOrEmpty(_filePath))
             {
@@ -174,7 +174,8 @@ namespace Writersword.ViewModels
                 _filePath,
                 loadedWorkModes,
                 dockFactory,
-                autoSave
+                autoSave,
+                storage
             );
 
             IsLoaded = true;
