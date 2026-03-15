@@ -221,10 +221,10 @@
                                Text="{x:Static loc:TextEditorStrings.Settings_AutoSaveInterval}"/>
 					<Grid ColumnDefinitions="140,Auto,*,Auto">
 						<NumericUpDown Grid.Column="0"
-Value="{Binding AutoSaveSecondsProxy}"
-Minimum="0" Maximum="3600" Increment="10"
-FormatString="0"
-HorizontalContentAlignment="Center"/>
+									   Value="{Binding AutoSaveSecondsProxy}"
+									   Minimum="0" Maximum="3600" Increment="10"
+									   FormatString="0"
+									   HorizontalContentAlignment="Center"/>
 						<TextBlock Grid.Column="1"
                                    Text="{x:Static loc:TextEditorStrings.Settings_AutoSaveSeconds}"
                                    VerticalAlignment="Center"

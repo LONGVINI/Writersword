@@ -11,6 +11,7 @@ using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.Settings;
 using Writersword.Src.Core.Interfaces.Services.Input;
 using Writersword.Src.Core.Interfaces.Services.Storage;
+using Writersword.Src.Core.Interfaces.Services.UI;
 
 namespace Writersword.Src.Infrastructure.Services.Input
 {
@@ -178,6 +179,14 @@ namespace Writersword.Src.Infrastructure.Services.Input
             if (isPrefix)
             {
                 _logger.LogDebug("Prefix matched, waiting for next key");
+
+                var notificationService = App.Services.GetService<INotificationService>();
+                var pendingStr = string.Join(" ", _pendingSequence.Select(g => g.ToString()));
+                notificationService?.Show(
+                    $"{pendingStr}...",
+                    NotificationType.Info,
+                    TimeSpan.FromMilliseconds(SequenceTimeoutMs));
+
                 return true;
             }
 

@@ -2,7 +2,7 @@
 using System;
 using System.Globalization;
 
-namespace Writersword.Converters
+namespace Writersword.Src.Infrastructure.Converters
 {
     /// <summary>
     /// Конвертер для привязки RadioButton к Enum

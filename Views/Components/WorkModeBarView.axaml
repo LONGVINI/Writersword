@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.ViewModels.Components"
-             xmlns:converters="using:Writersword.Converters"
+             xmlns:converters="using:Writersword.Infrastructure.Converters"
              xmlns:i="clr-namespace:Avalonia.Xaml.Interactivity;assembly=Avalonia.Xaml.Interactivity"
              xmlns:behaviors="using:Writersword.Behaviors"
              x:Class="Writersword.Views.Components.WorkModeBarView"

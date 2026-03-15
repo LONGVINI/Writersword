@@ -199,11 +199,28 @@ namespace Writersword.ViewModels.Settings
                 var settings = method.Invoke(dc, null);
                 if (settings is null) return;
 
+                // Сохраняем в глобальный модуль
                 SelectedTab.Module.ApplySettings(settings);
                 _logger.LogDebug("Settings saved as global: {Title}", SelectedTab.Title);
 
                 if (!string.IsNullOrEmpty(SelectedTab.ModuleType))
                 {
+                    // Обновляем локальную вкладку — GlobalValue поменялся
+                    foreach (var tab in Tabs)
+                    {
+                        if (tab.ModuleType == SelectedTab.ModuleType && tab.IsProjectLocal && tab.IsModuleTab)
+                        {
+                            // Применяем новые глобальные к локальному модулю как глобальный ориентир
+                            tab.Module?.ApplySettings(settings);
+                            // Пересоздаём View с обновлёнными GlobalValue
+                            if (tab.Module is not null)
+                                tab.Content = tab.Module.CreateLocalSettingsView();
+                            _logger.LogDebug("Local tab refreshed after SaveAsGlobal: {ModuleType}", SelectedTab.ModuleType);
+                            break;
+                        }
+                    }
+
+                    // Уведомляем живой модуль
                     var live = _moduleFactory.GetLive(SelectedTab.ModuleType);
                     if (live is not null && !ReferenceEquals(live, SelectedTab.Module))
                     {
@@ -217,6 +234,7 @@ namespace Writersword.ViewModels.Settings
                 _logger.LogError(ex, "Error saving settings as global for tab {Title}", SelectedTab.Title);
             }
         }
+
 
         /// <summary>
         /// Применить текущие глобальные UI-значения к локальной VM того же модуля.
@@ -236,8 +254,24 @@ namespace Writersword.ViewModels.Settings
 
             try
             {
-                SelectedTab.Module.ApplyGlobalToLocal();
-                _logger.LogDebug("ApplyGlobalToLocal: {ModuleType}", SelectedTab.ModuleType);
+                var dc = SelectedTab.Content?.DataContext;
+                var method = dc?.GetType().GetMethod("GetSettings");
+                var settings = method?.Invoke(dc, null);
+                if (settings is null) return;
+
+                // Находим локальную вкладку и применяем к ней напрямую
+                foreach (var tab in Tabs)
+                {
+                    if (tab.ModuleType == SelectedTab.ModuleType && tab.IsProjectLocal && tab.IsModuleTab)
+                    {
+                        tab.Module?.ApplySettings(settings);       // обновляет _globalSettings
+                        tab.Module?.ApplyLocalSettings(settings);  // обновляет _localSettings
+                        if (tab.Module is not null)
+                            tab.Content = tab.Module.CreateLocalSettingsView();
+                        _logger.LogDebug("ApplyGlobalToLocal via local tab: {ModuleType}", SelectedTab.ModuleType);
+                        break;
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -268,11 +302,29 @@ namespace Writersword.ViewModels.Settings
 
                 if (!string.IsNullOrEmpty(SelectedTab.ModuleType))
                 {
+                    // Получаем промоутированные настройки из локального модуля
+                    var promotedSettings = SelectedTab.Module.GetLocalSettings();
+
+                    // Находим глобальную вкладку и обновляем её модуль напрямую
+                    foreach (var tab in Tabs)
+                    {
+                        if (tab.ModuleType == SelectedTab.ModuleType && !tab.IsProjectLocal && tab.IsModuleTab)
+                        {
+                            // Применяем к глобальному модулю — обновляет его _globalSettings
+                            tab.Module?.ApplySettings(promotedSettings);
+                            // Пересоздаём View с обновлёнными значениями
+                            if (tab.Module is not null)
+                                tab.Content = tab.Module.CreateSettingsView();
+                            _logger.LogDebug("Global tab refreshed after promote: {ModuleType}", SelectedTab.ModuleType);
+                            break;
+                        }
+                    }
+
+                    // Уведомляем живой модуль из контекста если он отличается
                     var live = _moduleFactory.GetLive(SelectedTab.ModuleType);
                     if (live is not null && !ReferenceEquals(live, SelectedTab.Module))
                     {
-                        var settings = SelectedTab.Module.GetSettings();
-                        live.ApplySettings(settings);
+                        live.ApplySettings(promotedSettings);
                         _logger.LogDebug("Live module notified after PromoteLocalToGlobal: {ModuleType}", SelectedTab.ModuleType);
                     }
                 }
@@ -283,6 +335,61 @@ namespace Writersword.ViewModels.Settings
             }
         }
 
+        /// <summary>
+        /// Пересоздаёт View глобальной вкладки модуля после того как глобальные значения изменились.
+        /// </summary>
+        private void RefreshGlobalTab(string moduleType)
+        {
+            var globalTab = null as SettingsTabItem;
+            foreach (var tab in Tabs)
+            {
+                if (tab.ModuleType == moduleType && !tab.IsProjectLocal && tab.IsModuleTab)
+                {
+                    globalTab = tab;
+                    break;
+                }
+            }
+
+            if (globalTab?.Module is null) return;
+
+            try
+            {
+                globalTab.Content = globalTab.Module.CreateSettingsView();
+                _logger.LogDebug("Global tab refreshed: {ModuleType}", moduleType);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing global tab: {ModuleType}", moduleType);
+            }
+        }
+
+        /// <summary>
+        /// Пересоздаёт View локальной вкладки модуля после того как глобальные значения изменились.
+        /// </summary>
+        private void RefreshLocalTab(string moduleType)
+        {
+            var localTab = null as SettingsTabItem;
+            foreach (var tab in Tabs)
+            {
+                if (tab.ModuleType == moduleType && tab.IsProjectLocal && tab.IsModuleTab)
+                {
+                    localTab = tab;
+                    break;
+                }
+            }
+
+            if (localTab?.Module is null) return;
+
+            try
+            {
+                localTab.Content = localTab.Module.CreateLocalSettingsView();
+                _logger.LogDebug("Local tab refreshed: {ModuleType}", moduleType);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing local tab: {ModuleType}", moduleType);
+            }
+        }
         // ── Применение настроек при закрытии ─────────────────────────────
 
         /// <summary>
@@ -299,24 +406,23 @@ namespace Writersword.ViewModels.Settings
 
             foreach (var tab in Tabs)
             {
-                if (tab.Module is null || tab.Content?.DataContext is null) continue;
+                if (tab.Module is null) continue;
 
                 try
                 {
-                    var dc = tab.Content.DataContext;
-                    var method = dc.GetType().GetMethod("GetSettings");
-                    if (method is null) continue;
-
-                    var settings = method.Invoke(dc, null);
-                    if (settings is null) continue;
-
                     if (tab.IsProjectLocal)
                     {
-                        // Применяем к живому модулю
+                        // Локальные — читаем из UI как раньше
+                        if (tab.Content?.DataContext is null) continue;
+                        var dc = tab.Content.DataContext;
+                        var method = dc.GetType().GetMethod("GetSettings");
+                        if (method is null) continue;
+                        var settings = method.Invoke(dc, null);
+                        if (settings is null) continue;
+
                         tab.Module.ApplyLocalSettings(settings);
                         _logger.LogDebug("Local settings applied: {Title}", tab.Title);
 
-                        // Сохраняем в {moduleType}/settings.json внутри project.zip
                         if (storage != null && !string.IsNullOrEmpty(tab.ModuleType))
                         {
                             localSettingsService.Save(storage, tab.ModuleType, settings);
@@ -327,13 +433,14 @@ namespace Writersword.ViewModels.Settings
                             _logger.LogWarning("Cannot save local settings — no storage for {ModuleType}", tab.ModuleType);
                         }
                     }
-                    else
+                    else if (tab.IsModuleTab)
                     {
-                        // Глобальные настройки — сохраняем в сервис
+                        // Глобальные модульные — берём из модуля, не из UI
+                        // Модуль уже обновил _globalSettings через SaveAsGlobal или PromoteLocalToGlobal
+                        var settings = tab.Module.GetSettings();
                         tab.Module.ApplySettings(settings);
-                        _logger.LogDebug("Global settings saved: {Title}", tab.Title);
+                        _logger.LogDebug("Global settings saved from module: {Title}", tab.Title);
 
-                        // Уведомляем живой модуль если он отличается от временного
                         if (!string.IsNullOrEmpty(tab.ModuleType))
                         {
                             var live = _moduleFactory.GetLive(tab.ModuleType);
@@ -567,7 +674,13 @@ namespace Writersword.ViewModels.Settings
         private bool _isExpanded = true;
 
         public string Title { get; set; } = "";
-        public Control? Content { get; set; }
+
+        private Control? _content;
+        public Control? Content
+        {
+            get => _content;
+            set => this.RaiseAndSetIfChanged(ref _content, value);
+        }
 
         /// <summary>Модуль которому принадлежит вкладка. Null для системных вкладок.</summary>
         public IConfigurableModule? Module { get; set; }
