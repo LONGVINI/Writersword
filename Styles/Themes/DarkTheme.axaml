@@ -56,5 +56,6 @@
 	<SolidColorBrush x:Key="AppTooltipBackground">#2D2D30</SolidColorBrush>
 	<SolidColorBrush x:Key="AppTooltipBorderBrush">#3E3E42</SolidColorBrush>
 	<SolidColorBrush x:Key="AppTooltipForeground">#FFFFFF</SolidColorBrush>
+	<SolidColorBrush x:Key="AppTooltipKeyBackground">#3C3C3F</SolidColorBrush>
 
 </ResourceDictionary>

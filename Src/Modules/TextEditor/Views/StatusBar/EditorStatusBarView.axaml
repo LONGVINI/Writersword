@@ -216,14 +216,14 @@
 				</Button>
 
 				<!-- ТЕСТОВАЯ КНОПКА -->
-				<!--<Button behaviours:TooltipBehavior.Tip="Режим страницы"
+				<Button behaviours:TooltipBehavior.Tip="Режим страницы"
 						behaviours:TooltipBehavior.Description="Отображает документ постранично как при печати"
-						behaviours:TooltipBehavior.HotKey="Ctrl+1"
+						behaviours:TooltipBehavior.HotKeyId="HotKey_Edit_Undo"
 						behaviours:TooltipBehavior.PreviewPath="avares://Writersword/Resources/Images/TestImages/test_033_1400x787_anim.gif"
 						Margin="4 0"
 						FontSize="11">
 					Тест
-				</Button>-->
+				</Button>
 				<!-- КОНЕЦ ТЕСТОВАЯ КНОПКА -->
 				
 				<TextBox Name="ZoomTextBox"

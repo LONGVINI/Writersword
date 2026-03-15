@@ -5,8 +5,12 @@ using Avalonia.Controls.Primitives.PopupPositioning;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using Writersword.Src.Core.Interfaces.Services.Input;
 using Writersword.Styles.UserControls;
 
 namespace Writersword.Infrastructure.Behaviours
@@ -16,9 +20,15 @@ namespace Writersword.Infrastructure.Behaviours
     /// Заменяет стандартный ToolTip Avalonia, который перехватывает первый клик.
     /// Использование в XAML: behaviours:TooltipBehavior.Tip="текст"
     /// Опционально:          behaviours:TooltipBehavior.Description="описание"
-    ///                       behaviours:TooltipBehavior.HotKey="Ctrl+1"
+    ///                       behaviours:TooltipBehavior.HotKey="Ctrl+1 ;; Ctrl+Shift+P"
+    ///                       behaviours:TooltipBehavior.HotKeyId="HotKey_Edit_Undo"
     ///                       behaviours:TooltipBehavior.PreviewPath="avares://Writersword/Resources/Images/file.gif"
     ///                       behaviours:TooltipBehavior.ShowDelay="1200"
+    /// Формат HotKey:
+    ///   "Ctrl+1"                   — один хорд
+    ///   "Ctrl+K Ctrl+C"            — последовательность двух хордов (пробел между хордами)
+    ///   "Ctrl+1 ;; Ctrl+Shift+P"   — два альтернативных бинда через ;;
+    /// HotKeyId имеет приоритет над HotKey если оба заданы.
     /// </summary>
     public static class TooltipBehavior
     {
@@ -39,11 +49,23 @@ namespace Writersword.Infrastructure.Behaviours
                 "Description", typeof(TooltipBehavior));
 
         /// <summary>
-        /// Горячая клавиша — отображается в правом нижнем углу в рамочке. Скрывается если не задана.
+        /// Горячие клавиши в строковом формате.
+        /// Пробел разделяет хорды в последовательности, ";;" разделяет альтернативные бинды,
+        /// "+" разделяет клавиши внутри одного хорда.
+        /// Скрывается если не задано. Игнорируется если задан HotKeyId.
         /// </summary>
         public static readonly AttachedProperty<string?> HotKeyProperty =
             AvaloniaProperty.RegisterAttached<Control, string?>(
                 "HotKey", typeof(TooltipBehavior));
+
+        /// <summary>
+        /// ID горячей клавиши из IHotKeyService.
+        /// Если задан — резолвит актуальный жест автоматически.
+        /// Имеет приоритет над HotKey если оба заданы.
+        /// </summary>
+        public static readonly AttachedProperty<string?> HotKeyIdProperty =
+            AvaloniaProperty.RegisterAttached<Control, string?>(
+                "HotKeyId", typeof(TooltipBehavior));
 
         /// <summary>
         /// Путь к картинке или гифке в формате avares://Assembly/Path/file.ext
@@ -85,13 +107,21 @@ namespace Writersword.Infrastructure.Behaviours
         public static string? GetDescription(Control element) =>
             element.GetValue(DescriptionProperty);
 
-        /// <summary>Устанавливает горячую клавишу подсказки.</summary>
+        /// <summary>Устанавливает горячие клавиши подсказки в строковом формате.</summary>
         public static void SetHotKey(Control element, string? value) =>
             element.SetValue(HotKeyProperty, value);
 
-        /// <summary>Возвращает горячую клавишу подсказки.</summary>
+        /// <summary>Возвращает горячие клавиши подсказки в строковом формате.</summary>
         public static string? GetHotKey(Control element) =>
             element.GetValue(HotKeyProperty);
+
+        /// <summary>Устанавливает ID горячей клавиши для резолва из IHotKeyService.</summary>
+        public static void SetHotKeyId(Control element, string? value) =>
+            element.SetValue(HotKeyIdProperty, value);
+
+        /// <summary>Возвращает ID горячей клавиши.</summary>
+        public static string? GetHotKeyId(Control element) =>
+            element.GetValue(HotKeyIdProperty);
 
         /// <summary>Устанавливает путь к картинке/гифке подсказки.</summary>
         public static void SetPreviewPath(Control element, string? value) =>
@@ -141,7 +171,7 @@ namespace Writersword.Infrastructure.Behaviours
                 element.PointerEntered += OnPointerEntered;
                 element.PointerExited += OnPointerExited;
                 element.PointerPressed += OnPointerPressed;
-                _logger.Debug("TooltipBehavior: подписка на {Element}, текст='{Tip}'",
+                _logger.Debug("TooltipBehavior: subscribed to {Element}, text='{Tip}'",
                     element.GetType().Name, e.NewValue);
             }
         }
@@ -166,7 +196,7 @@ namespace Writersword.Infrastructure.Behaviours
 
             SetTimer(element, timer);
             timer.Start();
-            _logger.Debug("TooltipBehavior: таймер запущен для {Element}, задержка={Delay}мс",
+            _logger.Debug("TooltipBehavior: timer started for {Element}, delay={Delay}ms",
                 element.GetType().Name, GetShowDelay(element));
         }
 
@@ -176,7 +206,7 @@ namespace Writersword.Infrastructure.Behaviours
         private static void OnPointerExited(object? sender, PointerEventArgs e)
         {
             if (sender is not Control element) return;
-            _logger.Debug("TooltipBehavior: указатель ушёл с {Element}, скрываем подсказку",
+            _logger.Debug("TooltipBehavior: pointer exited {Element}, hiding tooltip",
                 element.GetType().Name);
             HideTooltip(element);
         }
@@ -187,7 +217,7 @@ namespace Writersword.Infrastructure.Behaviours
         private static void OnPointerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (sender is not Control element) return;
-            _logger.Debug("TooltipBehavior: клик на {Element}, скрываем подсказку",
+            _logger.Debug("TooltipBehavior: pointer pressed on {Element}, hiding tooltip",
                 element.GetType().Name);
             HideTooltip(element);
         }
@@ -200,8 +230,97 @@ namespace Writersword.Infrastructure.Behaviours
         {
             if (element.TryFindResource(key, out var resource) && resource is IBrush brush)
                 return brush;
-            _logger.Warning("TooltipBehavior: ресурс '{Key}' не найден, используем fallback", key);
+            _logger.Warning("TooltipBehavior: resource '{Key}' not found, using fallback", key);
             return fallback;
+        }
+
+        /// <summary>
+        /// Резолвит строку горячих клавиш из IHotKeyService по ID.
+        /// Конвертирует ActiveGestures в формат парсера:
+        /// шаги хорда через пробел, альтернативные бинды через ;;
+        /// Возвращает null если ID не найден или сервис недоступен.
+        /// </summary>
+        private static string? ResolveHotKeyString(string? hotKeyId)
+        {
+            if (string.IsNullOrEmpty(hotKeyId)) return null;
+
+            try
+            {
+                var service = App.Services.GetService<IHotKeyService>();
+                if (service is null)
+                {
+                    _logger.Warning("TooltipBehavior: IHotKeyService not available");
+                    return null;
+                }
+
+                var hotKey = service.GetHotKey(hotKeyId);
+                if (hotKey is null || hotKey.ActiveGestures.Count == 0)
+                {
+                    _logger.Debug("TooltipBehavior: hotkey not found or no gestures for id='{Id}'",
+                        hotKeyId);
+                    return null;
+                }
+
+                // Каждый ActiveGesture — один бинд, шаги через пробел
+                var bindings = hotKey.ActiveGestures.Select(g =>
+                    string.Join(" ", g.Steps.Select(s => s.ToString())));
+
+                return string.Join(" ;; ", bindings);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "TooltipBehavior: failed to resolve hotkey id='{Id}'", hotKeyId);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Парсит строку горячих клавиш в список строк токенов.
+        /// ";;" разделяет альтернативные бинды — каждый на отдельной строке.
+        /// Пробел разделяет хорды в последовательности.
+        /// "+" разделяет клавиши внутри одного хорда.
+        /// Возвращает null если строка пустая.
+        /// </summary>
+        private static List<List<HotKeyToken>>? ParseHotKey(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                _logger.Debug("TooltipBehavior: ParseHotKey — empty string");
+                return null;
+            }
+
+            var bindings = raw.Split(
+                new[] { ";;" }, StringSplitOptions.RemoveEmptyEntries);
+
+            var result = new List<List<HotKeyToken>>();
+
+            foreach (var binding in bindings)
+            {
+                var chords = binding.Trim().Split(
+                    new[] { " " }, StringSplitOptions.RemoveEmptyEntries);
+
+                var tokens = new List<HotKeyToken>();
+
+                foreach (var chord in chords)
+                {
+                    // Весь хорд — один токен, например "Ctrl+A"
+                    string trimmed = chord.Trim();
+                    if (!string.IsNullOrEmpty(trimmed))
+                        tokens.Add(new HotKeyToken(trimmed, true));
+                }
+
+                if (tokens.Count > 0)
+                {
+                    result.Add(tokens);
+                    _logger.Debug("TooltipBehavior: ParseHotKey — binding with {Count} tokens",
+                        tokens.Count);
+                }
+            }
+
+            _logger.Debug("TooltipBehavior: ParseHotKey — total {Count} bindings from '{Raw}'",
+                result.Count, raw);
+
+            return result.Count > 0 ? result : null;
         }
 
         /// <summary>
@@ -210,6 +329,8 @@ namespace Writersword.Infrastructure.Behaviours
         /// Учитывает горизонтальное положение — сдвигает если вылезает за край окна.
         /// Стрелка всегда указывает на центр кнопки.
         /// Кисти резолвятся из главного дерева ресурсов и передаются напрямую в TooltipView.
+        /// ParsedHotKeys устанавливается последним — после всех кистей.
+        /// HotKeyId имеет приоритет над HotKey для резолва жестов.
         /// </summary>
         private static void ShowTooltip(Control element)
         {
@@ -219,16 +340,24 @@ namespace Writersword.Infrastructure.Behaviours
             var bgBrush = ResolveBrush(element, "AppTooltipBackground", new SolidColorBrush(Color.Parse("#2D2D30")));
             var borderBrush = ResolveBrush(element, "AppTooltipBorderBrush", new SolidColorBrush(Color.Parse("#3E3E42")));
             var fgBrush = ResolveBrush(element, "AppTooltipForeground", new SolidColorBrush(Color.Parse("#FFFFFF")));
+            var keyBadgeBrush = ResolveBrush(element, "AppTooltipKeyBackground", new SolidColorBrush(Color.Parse("#3C3C3F")));
 
+            // HotKeyId имеет приоритет над HotKey
+            var hotKeyString = ResolveHotKeyString(GetHotKeyId(element)) ?? GetHotKey(element);
+
+            _logger.Debug("TooltipBehavior: creating TooltipView, text='{Tip}'", tip);
+
+            // ParsedHotKeys устанавливается последним — RebuildHotKeys использует кисти
             var view = new TooltipView
             {
                 Title = tip,
                 Description = GetDescription(element),
-                HotKey = GetHotKey(element),
                 PreviewPath = GetPreviewPath(element),
                 TooltipBackground = bgBrush,
                 TooltipBorderBrush = borderBrush,
                 TooltipForeground = fgBrush,
+                KeyBadgeBackground = keyBadgeBrush,
+                ParsedHotKeys = ParseHotKey(hotKeyString),
             };
 
             var popup = new Popup
@@ -246,7 +375,7 @@ namespace Writersword.Infrastructure.Behaviours
                 var topLevel = TopLevel.GetTopLevel(element);
                 if (topLevel is null)
                 {
-                    _logger.Warning("TooltipBehavior: TopLevel не найден для {Element}",
+                    _logger.Warning("TooltipBehavior: TopLevel not found for {Element}",
                         element.GetType().Name);
                     return;
                 }
@@ -275,8 +404,8 @@ namespace Writersword.Infrastructure.Behaviours
                 view.ArrowHorizontalOffset = elementCenterX - clampedLeft - 6;
 
                 _logger.Debug(
-                    "TooltipBehavior: показана подсказка для {Element}, позиция={Position}, текст='{Tip}'",
-                    element.GetType().Name, goAbove ? "сверху" : "снизу", tip);
+                    "TooltipBehavior: tooltip shown for {Element}, position={Position}, text='{Tip}'",
+                    element.GetType().Name, goAbove ? "above" : "below", tip);
             };
 
             SetPopup(element, popup);
@@ -296,7 +425,7 @@ namespace Writersword.Infrastructure.Behaviours
             {
                 popup.Close();
                 SetPopup(element, null);
-                _logger.Debug("TooltipBehavior: Popup закрыт для {Element}",
+                _logger.Debug("TooltipBehavior: popup closed for {Element}",
                     element.GetType().Name);
             }
         }

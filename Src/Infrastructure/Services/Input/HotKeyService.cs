@@ -540,11 +540,18 @@ namespace Writersword.Src.Infrastructure.Services.Input
 
                     try
                     {
-                        var parts = kvp.Value.Split(
-                            new[] { " -> ", " \u2192 ", "\u2192" },
-                            StringSplitOptions.RemoveEmptyEntries);
-                        var steps = parts.Select(p => KeyGesture.Parse(p.Trim())).ToList();
-                        hotKey.CustomGestures.Add(new HotKeyGesture(steps));
+                        // Несколько жестов разделены |||
+                        var gestureStrings = kvp.Value.Split(
+                            new[] { " ||| " }, StringSplitOptions.RemoveEmptyEntries);
+
+                        foreach (var gestureStr in gestureStrings)
+                        {
+                            var parts = gestureStr.Trim().Split(
+                                new[] { " -> ", " \u2192 ", "\u2192" },
+                                StringSplitOptions.RemoveEmptyEntries);
+                            var steps = parts.Select(p => KeyGesture.Parse(p.Trim())).ToList();
+                            hotKey.CustomGestures.Add(new HotKeyGesture(steps));
+                        }
                     }
                     catch
                     {
@@ -571,7 +578,8 @@ namespace Writersword.Src.Infrastructure.Services.Input
                 foreach (var hotKey in GetAllHotKeys())
                 {
                     if (hotKey.CustomGestures.Count == 0) continue;
-                    toSave[hotKey.Id] = hotKey.CustomGestures[0].ToString();
+                    // Все жесты через разделитель ||| (не пересекается с форматом жестов)
+                    toSave[hotKey.Id] = string.Join(" ||| ", hotKey.CustomGestures.Select(g => g.ToString()));
                 }
 
                 if (_userPrefixes.Count > 0)
