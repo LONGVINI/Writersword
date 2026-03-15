@@ -585,6 +585,10 @@
     <value>Characters</value>
     <comment>Status bar label</comment>
   </data>
+  <data name="Status_FitToPhysicalSize" xml:space="preserve">
+    <value>Match physical page size</value>
+    <comment>Status bar button tooltip, shown when monitor size is configured</comment>
+  </data>
   <data name="Status_Page" xml:space="preserve">
     <value>Page</value>
     <comment>Status bar label</comment>
@@ -659,6 +663,14 @@
   </data>
   <data name="View_PageMode" xml:space="preserve">
     <value>Page Mode</value>
+    <comment>View mode option</comment>
+  </data>
+  <data name="View_ReadingMode" xml:space="preserve">
+    <value>Reading Mode</value>
+    <comment>View mode option</comment>
+  </data>
+  <data name="View_WebMode" xml:space="preserve">
+    <value>Web Mode</value>
     <comment>View mode option</comment>
   </data>
   <data name="View_Zoom" xml:space="preserve">

@@ -101,30 +101,66 @@ namespace Writersword.Modules.TextEditor
             DeltaCachePayload payload = _serializer.BuildDeltaPayload(
                 _viewModel.DocumentViewModel.Document, _lastDeltaPayload);
             _lastDeltaPayload = payload;
-            return _serializer.Serialize(_viewModel.DocumentViewModel.Document);
+
+            string documentJson = _serializer.Serialize(_viewModel.DocumentViewModel.Document);
+            string localSettingsJson = System.Text.Json.JsonSerializer.Serialize(_localSettings);
+
+            var envelope = new { v = 2, doc = documentJson, local = localSettingsJson };
+            return System.Text.Json.JsonSerializer.Serialize(envelope);
         }
 
         public override void SetCustomData(object? data)
         {
             _viewModel ??= CreateAndInitViewModel();
 
-            string? json = data switch
+            string? raw = data switch
             {
                 string s when !string.IsNullOrWhiteSpace(s) => s,
                 byte[] b when b.Length > 0 => System.Text.Encoding.UTF8.GetString(b),
                 _ => null
             };
 
-            if (json is not null)
+            if (raw is not null)
             {
                 try
                 {
-                    DocumentModel? doc = _serializer.Deserialize(json);
-                    if (doc is not null)
+                    using var envelope = System.Text.Json.JsonDocument.Parse(raw);
+                    var root = envelope.RootElement;
+
+                    if (root.TryGetProperty("v", out var ver) && ver.GetInt32() == 2
+                        && root.TryGetProperty("doc", out var docProp)
+                        && root.TryGetProperty("local", out var localProp))
                     {
-                        _viewModel.LoadDocument(doc, _localSettings);
-                        _logger.Debug("Документ загружен, title={Title}", doc.Title);
-                        return;
+                        string docJson = docProp.GetString() ?? string.Empty;
+                        string localJson = localProp.GetString() ?? string.Empty;
+
+                        if (!string.IsNullOrWhiteSpace(localJson))
+                        {
+                            var savedLocal = System.Text.Json.JsonSerializer.Deserialize<TextEditorSettings>(localJson);
+                            if (savedLocal is not null)
+                            {
+                                _localSettings = savedLocal;
+                                _logger.Debug("Локальные настройки восстановлены: MonitorSizeInches={V}", _localSettings.MonitorSizeInches);
+                            }
+                        }
+
+                        DocumentModel? doc = _serializer.Deserialize(docJson);
+                        if (doc is not null)
+                        {
+                            _viewModel.LoadDocument(doc, _localSettings);
+                            _logger.Debug("Документ загружен (v2), title={Title}", doc.Title);
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        DocumentModel? doc = _serializer.Deserialize(raw);
+                        if (doc is not null)
+                        {
+                            _viewModel.LoadDocument(doc, _localSettings);
+                            _logger.Debug("Документ загружен (legacy), title={Title}", doc.Title);
+                            return;
+                        }
                     }
                     _logger.Warning("Deserialize вернул null");
                 }

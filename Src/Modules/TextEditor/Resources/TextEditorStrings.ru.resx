@@ -468,6 +468,9 @@
   <data name="Status_Chars" xml:space="preserve">
     <value>Символы</value>
   </data>
+  <data name="Status_FitToPhysicalSize" xml:space="preserve">
+    <value>Масштаб 1:1 с реальным листом</value>
+  </data>
   <data name="Status_Page" xml:space="preserve">
     <value>Страница</value>
   </data>
@@ -524,6 +527,12 @@
   </data>
   <data name="View_PageMode" xml:space="preserve">
     <value>Режим страницы</value>
+  </data>
+  <data name="View_ReadingMode" xml:space="preserve">
+    <value>Режим чтения</value>
+  </data>
+  <data name="View_WebMode" xml:space="preserve">
+    <value>Веб-режим</value>
   </data>
   <data name="View_Zoom" xml:space="preserve">
     <value>Масштаб</value>

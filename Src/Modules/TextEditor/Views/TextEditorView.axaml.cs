@@ -45,6 +45,17 @@ namespace Writersword.Modules.TextEditor.Views
                 return;
             }
 
+            // RecommendedZoomChanged must be assigned before MonitorSizeInches,
+            // because the setter calls RebuildDpiCache() which fires the callback.
+            canvas.RecommendedZoomChanged = recommendedZoom =>
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    vm.StatusBar.RecommendedZoom = recommendedZoom;
+                    _logger.Debug("RecommendedZoom updated: {V}", recommendedZoom);
+                }, Avalonia.Threading.DispatcherPriority.Background);
+            };
+
             _logger.Debug("SyncCanvas: MonitorSizeInches={V}", vm.MonitorSizeInches);
             canvas.MonitorSizeInches = vm.MonitorSizeInches;
 

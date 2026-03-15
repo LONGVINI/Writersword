@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using System.Text.Json.Serialization;
+using Newtonsoft.Json;
 using Writersword.Modules.TextEditor.Models.Document;
 
 namespace Writersword.Modules.TextEditor.Models

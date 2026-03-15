@@ -25,7 +25,6 @@ namespace Writersword.Modules.TextEditor.Commands
             _before = docVm.Paragraphs.Select(p => p.PlainText ?? "").ToList();
         }
 
-        /// <summary>Вызвать ПОСЛЕ выполнения операции — запоминает состояние "после".</summary>
         public void Commit()
         {
             _after = _docVm.Paragraphs.Select(p => p.PlainText ?? "").ToList();

@@ -22,6 +22,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
 
         private bool _viewModeChanging;
         private bool _zoomChanging;
+        private double _recommendedZoom = 0;
 
         // --- Статистика ---
         public int WordCount { get => _wordCount; set => this.RaiseAndSetIfChanged(ref _wordCount, value); }
@@ -47,6 +48,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
                     double clamped = Math.Max(0.25, Math.Min(5.0, value));
                     this.RaiseAndSetIfChanged(ref _zoom, clamped);
                     this.RaisePropertyChanged(nameof(ZoomPercent));
+                    this.RaisePropertyChanged(nameof(HasRecommendedZoom));
                     ZoomChanged?.Invoke(clamped);
                 }
                 finally
@@ -57,6 +59,20 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
         }
 
         public int ZoomPercent => (int)Math.Round(_zoom * 100);
+
+        public double RecommendedZoom
+        {
+            get => _recommendedZoom;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _recommendedZoom, value);
+                this.RaisePropertyChanged(nameof(RecommendedZoomPercent));
+                this.RaisePropertyChanged(nameof(HasRecommendedZoom));
+            }
+        }
+
+        public int RecommendedZoomPercent => (int)Math.Round(_recommendedZoom * 100);
+        public bool HasRecommendedZoom => _recommendedZoom > 0;
 
         public Action<double>? ZoomChanged { get; set; }
 
@@ -95,10 +111,15 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
         public ICommand SetDraftModeCommand { get; }
         public ICommand SetWebModeCommand { get; }
         public ICommand SetReadingModeCommand { get; }
+        public ICommand FitToPhysicalSizeCommand { get; }
 
         public StatusBarViewModel()
         {
             SetPageModeCommand = ReactiveCommand.Create(() => { ViewMode = EditorViewMode.Page; });
+            FitToPhysicalSizeCommand = ReactiveCommand.Create(() =>
+            {
+                Zoom = _recommendedZoom;
+            });
             SetDraftModeCommand = ReactiveCommand.Create(() => { ViewMode = EditorViewMode.Draft; });
             SetWebModeCommand = ReactiveCommand.Create(() => { ViewMode = EditorViewMode.Web; });
             SetReadingModeCommand = ReactiveCommand.Create(() => { ViewMode = EditorViewMode.Reading; });

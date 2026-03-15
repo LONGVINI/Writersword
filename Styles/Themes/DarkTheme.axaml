@@ -52,4 +52,9 @@
 	<SolidColorBrush x:Key="MenuBarItemForeground">#FFFFFF</SolidColorBrush>
 	<SolidColorBrush x:Key="MenuBarItemForegroundPointerOver">#FFFFFF</SolidColorBrush>
 
+	<!-- Подсказки -->
+	<SolidColorBrush x:Key="AppTooltipBackground">#2D2D30</SolidColorBrush>
+	<SolidColorBrush x:Key="AppTooltipBorderBrush">#3E3E42</SolidColorBrush>
+	<SolidColorBrush x:Key="AppTooltipForeground">#FFFFFF</SolidColorBrush>
+
 </ResourceDictionary>

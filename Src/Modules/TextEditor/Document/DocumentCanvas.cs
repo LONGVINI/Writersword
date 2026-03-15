@@ -61,6 +61,11 @@ namespace Writersword.Modules.TextEditor.Views.Document
         private double _cachedDpi = 96.0;
 
         /// <summary>
+        /// Вызывается после пересчёта DPI — передаёт рекомендуемый zoom наружу.
+        /// </summary>
+        public Action<double>? RecommendedZoomChanged { get; set; }
+
+        /// <summary>
         /// Physical monitor diagonal in inches.
         /// 0 = use standard 96 DPI.
         /// Triggers DPI cache rebuild and layout on change.
@@ -111,6 +116,8 @@ namespace Writersword.Modules.TextEditor.Views.Document
             if (_monitorSizeInches <= 0)
             {
                 _cachedDpi = 96.0;
+                Avalonia.Threading.Dispatcher.UIThread.Post(
+                    () => RecommendedZoomChanged?.Invoke(RecommendedZoom));
                 return;
             }
 
@@ -125,40 +132,52 @@ namespace Writersword.Modules.TextEditor.Views.Document
 
             _logger.Debug("DPI recalculated: physW={W} physH={H} diagPx={D} dpi={DPI}",
                 physW, physH, diagPx, _cachedDpi);
+
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                () => RecommendedZoomChanged?.Invoke(RecommendedZoom));
         }
 
-        private double MmToPx(double mm) => mm * (_cachedDpi / 25.4);
+        private double MmToLogicalPx(double mm) => mm * (96.0 / 25.4);
+        public double RecommendedZoom => _cachedDpi > 0 ? _cachedDpi / 96.0 : 1.0;
 
         private double GetPageWidthPx()
         {
             var ps = DocVm?.Document.PageSettings;
-            if (ps is null) return MmToPx(210);
+            if (ps is null) return MmToLogicalPx(210);
             return ps.Orientation == Models.Page.PageOrientation.Landscape
-                ? MmToPx(ps.HeightMm)
-                : MmToPx(ps.WidthMm);
+                ? MmToLogicalPx(ps.HeightMm)
+                : MmToLogicalPx(ps.WidthMm);
         }
 
         private double GetPageHeightPx()
         {
             var ps = DocVm?.Document.PageSettings;
-            if (ps is null) return MmToPx(297);
+            if (ps is null) return MmToLogicalPx(297);
             return ps.Orientation == Models.Page.PageOrientation.Landscape
-                ? MmToPx(ps.WidthMm)
-                : MmToPx(ps.HeightMm);
+                ? MmToLogicalPx(ps.WidthMm)
+                : MmToLogicalPx(ps.HeightMm);
         }
 
         private (double padLeft, double padTop, double padRight, double padBottom) GetPagePadding()
         {
             var ps = DocVm?.Document.PageSettings;
-            if (ps is null) return (MmToPx(20), MmToPx(20), MmToPx(20), MmToPx(20));
+            if (ps is null) return (MmToLogicalPx(20), MmToLogicalPx(20), MmToLogicalPx(20), MmToLogicalPx(20));
             return (
-                MmToPx(ps.MarginLeftMm),
-                MmToPx(ps.MarginTopMm),
-                MmToPx(ps.MarginRightMm),
-                MmToPx(ps.MarginBottomMm));
+                MmToLogicalPx(ps.MarginLeftMm),
+                MmToLogicalPx(ps.MarginTopMm),
+                MmToLogicalPx(ps.MarginRightMm),
+                MmToLogicalPx(ps.MarginBottomMm));
         }
 
         // ── DataContext ───────────────────────────────────────────────────
+
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToVisualTree(e);
+            // Screen becomes accessible only after attachment to the visual tree.
+            // Re-run DPI calculation so RecommendedZoomChanged fires with a valid screen.
+            RebuildDpiCache();
+        }
 
         protected override void OnDataContextChanged(EventArgs e)
         {
@@ -263,9 +282,6 @@ namespace Writersword.Modules.TextEditor.Views.Document
             _layouts.Clear();
             _pages.Clear();
             if (DocVm is null) { _canvasHeight = 100; return; }
-
-            // Recalculate DPI once per layout pass
-            RebuildDpiCache();
 
             switch (DocVm.ViewMode)
             {

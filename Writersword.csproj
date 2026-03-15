@@ -34,6 +34,7 @@
        AVALONIA UI + DOCK СИСТЕМА
        ======================================== -->
 	<ItemGroup>
+		<PackageReference Include="AnimatedImage.Avalonia" Version="2.1.4" />
 		<PackageReference Include="Avalonia" Version="11.3.10" />
 		<PackageReference Include="Avalonia.Desktop" Version="11.3.10" />
 		<PackageReference Include="Avalonia.Svg.Skia" Version="11.3.0" />
@@ -221,7 +222,6 @@
 		<Folder Include="Docs\Architecture\" />
 		<Folder Include="Docs\UserGuide\" />
 		<Folder Include="Models\" />
-		<Folder Include="Resources\Images\" />
 		<Folder Include="Projects\" />
 		<Folder Include="Src\Core\Models\Modules\" />
 		<Folder Include="Src\Modules\TextEditor\Views\Document\" />

@@ -1,5 +1,8 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using Writersword.Modules.TextEditor.ViewModels.StatusBar;
 
 namespace Writersword.Modules.TextEditor.Views.StatusBar
@@ -10,24 +13,20 @@ namespace Writersword.Modules.TextEditor.Views.StatusBar
         {
             InitializeComponent();
 
+            this.AddHandler(PointerPressedEvent, OnTunnelPointerPressed, RoutingStrategies.Tunnel);
+
             var tb = this.FindControl<TextBox>("ZoomTextBox");
             if (tb is null) return;
-
-            // Применяем только по Enter
             tb.KeyDown += (_, e) =>
             {
                 if (e.Key != Key.Enter) return;
                 ApplyZoomFromTextBox(tb);
                 e.Handled = true;
             };
-
-            // Или когда фокус уходит
             tb.LostFocus += (_, _) =>
             {
                 ApplyZoomFromTextBox(tb);
             };
-
-            // При получении фокуса — показываем чистое число
             tb.GotFocus += (_, _) =>
             {
                 if (DataContext is StatusBarViewModel vm)
@@ -35,25 +34,28 @@ namespace Writersword.Modules.TextEditor.Views.StatusBar
             };
         }
 
+        private void OnTunnelPointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (e.Source is not Control ctrl) return;
+            var btn = ctrl as Button ?? ctrl.FindAncestorOfType<Button>(includeSelf: true);
+            if (btn is not null)
+                ToolTip.SetIsOpen(btn, false);
+        }
+
         private void ApplyZoomFromTextBox(TextBox tb)
         {
             if (DataContext is not StatusBarViewModel vm) return;
-
             string raw = (tb.Text ?? "").Replace("%", "").Trim();
-
             if (string.IsNullOrEmpty(raw))
             {
                 tb.Text = $"{vm.ZoomPercent}%";
                 return;
             }
-
             if (int.TryParse(raw, out int percent))
             {
-                // Клампим в диапазон
                 percent = percent < 25 ? 25 : percent > 500 ? 500 : percent;
                 vm.Zoom = percent / 100.0;
             }
-
             tb.Text = $"{vm.ZoomPercent}%";
         }
     }

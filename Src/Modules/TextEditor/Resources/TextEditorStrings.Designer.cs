@@ -1114,6 +1114,15 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Match physical page size.
+        /// </summary>
+        public static string Status_FitToPhysicalSize {
+            get {
+                return ResourceManager.GetString("Status_FitToPhysicalSize", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Page.
         /// </summary>
         public static string Status_Page {
@@ -1281,6 +1290,24 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         public static string View_PageMode {
             get {
                 return ResourceManager.GetString("View_PageMode", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reading Mode.
+        /// </summary>
+        public static string View_ReadingMode {
+            get {
+                return ResourceManager.GetString("View_ReadingMode", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Web Mode.
+        /// </summary>
+        public static string View_WebMode {
+            get {
+                return ResourceManager.GetString("View_WebMode", resourceCulture);
             }
         }
         
