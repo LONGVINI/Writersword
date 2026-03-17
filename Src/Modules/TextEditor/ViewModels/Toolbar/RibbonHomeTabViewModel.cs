@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows.Input;
 using ReactiveUI;
 using Writersword.Modules.TextEditor.Models.Styles;
@@ -12,27 +13,28 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
     /// </summary>
     public sealed class CursorContext
     {
-        public bool    IsBold          { get; set; }
-        public bool    IsItalic        { get; set; }
-        public bool    IsUnderline     { get; set; }
-        public bool    IsStrikethrough { get; set; }
-        public bool    IsSuperscript   { get; set; }
-        public bool    IsSubscript     { get; set; }
-        public bool    IsAllCaps       { get; set; }
-        public bool    IsBulletList    { get; set; }
-        public bool    IsNumberedList  { get; set; }
-        public string? FontFamily      { get; set; }
-        public double  FontSize        { get; set; } = 14;
-        public string? TextColor       { get; set; }
-        public string? HighlightColor  { get; set; }
+        public bool IsBold { get; set; }
+        public bool IsItalic { get; set; }
+        public bool IsUnderline { get; set; }
+        public bool IsStrikethrough { get; set; }
+        public bool IsSuperscript { get; set; }
+        public bool IsSubscript { get; set; }
+        public bool IsAllCaps { get; set; }
+        public bool IsBulletList { get; set; }
+        public bool IsNumberedList { get; set; }
+        public string? FontFamily { get; set; }
+        public double FontSize { get; set; } = 14;
+        public string? TextColor { get; set; }
+        public string? HighlightColor { get; set; }
         public TextAlignment Alignment { get; set; } = TextAlignment.Left;
-        public string  StyleName       { get; set; } = "Normal";
-        public string? Language        { get; set; }
+        public string StyleName { get; set; } = "Normal";
+        public string? Language { get; set; }
     }
 
     /// <summary>
     /// ViewModel вкладки "Главная" Ribbon.
-    /// Хранит текущее состояние форматирования и команды для кнопок.
+    /// Хранит текущее состояние форматирования, команды для кнопок
+    /// и свойства адаптивного отображения групп.
     /// </summary>
     public sealed class RibbonHomeTabViewModel : ReactiveObject
     {
@@ -40,24 +42,51 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         // --- Состояние форматирования символов ---
 
-        private bool    _isBold;
-        private bool    _isItalic;
-        private bool    _isUnderline;
-        private bool    _isStrikethrough;
-        private bool    _isSuperscript;
-        private bool    _isSubscript;
-        private bool    _isAllCaps;
-        private bool    _isBulletList;
-        private bool    _isNumberedList;
+        private bool _isBold;
+        private bool _isItalic;
+        private bool _isUnderline;
+        private bool _isStrikethrough;
+        private bool _isSuperscript;
+        private bool _isSubscript;
+        private bool _isAllCaps;
+        private bool _isBulletList;
+        private bool _isNumberedList;
         private string? _fontFamily;
-        private double  _currentFontSize = 14;
+        private double _currentFontSize = 14;
+        private string _currentFontSizeText = "14";
         private string? _currentTextColor;
         private string? _currentHighlightColor;
+
+        // --- Флаг подавления рекурсии при синхронизации размера шрифта ---
+        private bool _isSyncingFontSize;
 
         // --- Состояние форматирования абзаца ---
 
         private TextAlignment _currentAlignment = TextAlignment.Left;
-        private string        _currentStyleName = "Normal";
+        private string _currentStyleName = "Normal";
+
+        // --- Адаптивное отображение ---
+
+        private bool _isClipboardGroupExpanded = true;
+        private bool _isParagraphGroupExpanded = true;
+        private bool _isEditGroupExpanded = true;
+        private bool _isStylesGroupExpanded = true;
+        private IReadOnlyList<string> _visibleStyles;
+
+        // --- Константы геометрии риббона ---
+
+        private const double CardWidth = 66;
+        private const double WidthFont = 300;
+        private const double WidthClipboardFull = 135;
+        private const double WidthClipboardSmall = 66;
+        private const double WidthParagraphFull = 295;
+        private const double WidthParagraphSmall = 66;
+        private const double WidthEditFull = 172;
+        private const double WidthEditSmall = 66;
+        private const double WidthStylesSmall = 66;
+        private const double StylesGroupOverhead = 20;
+        private const int MaxCards = 10;
+        private const int MinCards = 3;
 
         // --- Свойства: символы ---
 
@@ -131,7 +160,42 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             set
             {
                 if (this.RaiseAndSetIfChanged(ref _currentFontSize, value) is { } && value > 0)
+                {
+                    if (!_isSyncingFontSize)
+                    {
+                        _isSyncingFontSize = true;
+                        CurrentFontSizeText = ((int)value).ToString();
+                        _isSyncingFontSize = false;
+                    }
                     _target.SetFontSize(value);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Строковое представление размера шрифта для редактируемого поля.
+        /// При изменении парсится и применяется к документу.
+        /// Синхронизируется с CurrentFontSize в обе стороны.
+        /// </summary>
+        public string CurrentFontSizeText
+        {
+            get => _currentFontSizeText;
+            set
+            {
+                if (this.RaiseAndSetIfChanged(ref _currentFontSizeText, value) is { } && !_isSyncingFontSize)
+                {
+                    if (double.TryParse(value,
+                        System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out double parsed) && parsed > 0 && parsed <= 144)
+                    {
+                        _isSyncingFontSize = true;
+                        _currentFontSize = parsed;
+                        this.RaisePropertyChanged(nameof(CurrentFontSize));
+                        _target.SetFontSize(parsed);
+                        _isSyncingFontSize = false;
+                    }
+                }
             }
         }
 
@@ -165,7 +229,59 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             }
         }
 
-        // --- Доступные значения для комбобоксов ---
+        // --- Свойства: адаптивное отображение ---
+
+        /// <summary>
+        /// True — группа Буфер обмена показывается полностью.
+        /// False — свёрнута в кнопку с Flyout.
+        /// </summary>
+        public bool IsClipboardGroupExpanded
+        {
+            get => _isClipboardGroupExpanded;
+            set => this.RaiseAndSetIfChanged(ref _isClipboardGroupExpanded, value);
+        }
+
+        /// <summary>
+        /// True — группа Абзац показывается полностью.
+        /// False — свёрнута в кнопку с Flyout.
+        /// </summary>
+        public bool IsParagraphGroupExpanded
+        {
+            get => _isParagraphGroupExpanded;
+            set => this.RaiseAndSetIfChanged(ref _isParagraphGroupExpanded, value);
+        }
+
+        /// <summary>
+        /// True — группа Правка показывается полностью.
+        /// False — свёрнута в кнопку с Flyout.
+        /// </summary>
+        public bool IsEditGroupExpanded
+        {
+            get => _isEditGroupExpanded;
+            set => this.RaiseAndSetIfChanged(ref _isEditGroupExpanded, value);
+        }
+
+        /// <summary>
+        /// True — группа Стили показывается полностью.
+        /// False — свёрнута в кнопку с Flyout.
+        /// </summary>
+        public bool IsStylesGroupExpanded
+        {
+            get => _isStylesGroupExpanded;
+            set => this.RaiseAndSetIfChanged(ref _isStylesGroupExpanded, value);
+        }
+
+        /// <summary>
+        /// Подмножество AvailableStyles для отображения в галерее.
+        /// Количество карточек уменьшается по одной при сужении риббона.
+        /// </summary>
+        public IReadOnlyList<string> VisibleStyles
+        {
+            get => _visibleStyles;
+            private set => this.RaiseAndSetIfChanged(ref _visibleStyles, value);
+        }
+
+        // --- Доступные значения ---
 
         public IReadOnlyList<string> AvailableFonts { get; } = new[]
         {
@@ -178,6 +294,16 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             "Trebuchet MS",
             "Consolas",
             "Courier New"
+        };
+
+        /// <summary>
+        /// Стандартный набор размеров шрифта как в Word.
+        /// Отображается в выпадающем списке поля размера.
+        /// </summary>
+        public IReadOnlyList<string> StandardFontSizes { get; } = new[]
+        {
+            "8", "9", "10", "11", "12", "14", "16", "18",
+            "20", "22", "24", "28", "32", "36", "48", "72"
         };
 
         public IReadOnlyList<string> AvailableStyles { get; } = new[]
@@ -194,57 +320,109 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             "No Spacing"
         };
 
-        // --- Команды ---
+        // --- Команды: форматирование символов ---
 
-        public ICommand BoldCommand           { get; }
-        public ICommand ItalicCommand         { get; }
-        public ICommand UnderlineCommand      { get; }
-        public ICommand StrikethroughCommand  { get; }
-        public ICommand SuperscriptCommand    { get; }
-        public ICommand SubscriptCommand      { get; }
-        public ICommand AllCapsCommand        { get; }
-        public ICommand ClearFormattingCommand{ get; }
-        public ICommand TextColorCommand      { get; }
+        public ICommand BoldCommand { get; }
+        public ICommand ItalicCommand { get; }
+        public ICommand UnderlineCommand { get; }
+        public ICommand StrikethroughCommand { get; }
+        public ICommand SuperscriptCommand { get; }
+        public ICommand SubscriptCommand { get; }
+        public ICommand AllCapsCommand { get; }
+        public ICommand ClearFormattingCommand { get; }
+        public ICommand TextColorCommand { get; }
         public ICommand HighlightColorCommand { get; }
         public ICommand IncreaseFontSizeCommand { get; }
         public ICommand DecreaseFontSizeCommand { get; }
 
-        public ICommand BulletListCommand     { get; }
-        public ICommand NumberedListCommand   { get; }
+        /// <summary>
+        /// Применяет выбранный размер из выпадающего списка.
+        /// CommandParameter — строка с числом.
+        /// </summary>
+        public ICommand SelectFontSizeCommand { get; }
+
+        // --- Команды: смена регистра ---
+
+        /// <summary>Как в предложениях — первая буква предложения заглавная.</summary>
+        public ICommand CaseSentenceCommand { get; }
+
+        /// <summary>все строчные.</summary>
+        public ICommand CaseLowerCommand { get; }
+
+        /// <summary>ВСЕ ПРОПИСНЫЕ.</summary>
+        public ICommand CaseUpperCommand { get; }
+
+        /// <summary>Начинать С Прописных — каждое слово с заглавной.</summary>
+        public ICommand CaseTitleCommand { get; }
+
+        /// <summary>иЗМЕНИТЬ РЕГИСТР — инвертирует регистр каждого символа.</summary>
+        public ICommand CaseToggleCommand { get; }
+
+        // --- Команды: эффекты текста (заготовки) ---
+
+        /// <summary>Контур текста — заготовка для будущей реализации.</summary>
+        public ICommand TextOutlineCommand { get; }
+
+        /// <summary>Тень текста — заготовка для будущей реализации.</summary>
+        public ICommand TextShadowCommand { get; }
+
+        /// <summary>Отражение текста — заготовка для будущей реализации.</summary>
+        public ICommand TextReflectionCommand { get; }
+
+        /// <summary>Свечение текста — заготовка для будущей реализации.</summary>
+        public ICommand TextGlowCommand { get; }
+
+        // --- Команды: форматирование абзаца ---
+
+        public ICommand BulletListCommand { get; }
+        public ICommand NumberedListCommand { get; }
         public ICommand IncreaseIndentCommand { get; }
         public ICommand DecreaseIndentCommand { get; }
-        public ICommand AlignLeftCommand      { get; }
-        public ICommand AlignCenterCommand    { get; }
-        public ICommand AlignRightCommand     { get; }
-        public ICommand AlignJustifyCommand   { get; }
+        public ICommand AlignLeftCommand { get; }
+        public ICommand AlignCenterCommand { get; }
+        public ICommand AlignRightCommand { get; }
+        public ICommand AlignJustifyCommand { get; }
         public ICommand SetLineSpacingCommand { get; }
-        public ICommand SpaceBeforeCommand    { get; }
-        public ICommand SpaceAfterCommand     { get; }
+        public ICommand SpaceBeforeCommand { get; }
+        public ICommand SpaceAfterCommand { get; }
 
-        public ICommand CutCommand            { get; }
-        public ICommand CopyCommand           { get; }
-        public ICommand PasteCommand          { get; }
-        public ICommand SelectAllCommand      { get; }
-        public ICommand UndoCommand           { get; }
-        public ICommand RedoCommand           { get; }
-        public ICommand FindCommand           { get; }
-        public ICommand FindReplaceCommand    { get; }
+        // --- Команды: буфер, правка ---
+
+        public ICommand CutCommand { get; }
+        public ICommand CopyCommand { get; }
+        public ICommand PasteCommand { get; }
+        public ICommand SelectAllCommand { get; }
+        public ICommand UndoCommand { get; }
+        public ICommand RedoCommand { get; }
+        public ICommand FindCommand { get; }
+        public ICommand FindReplaceCommand { get; }
+
+        // --- Команды: стили ---
+
+        /// <summary>Сохраняет форматирование курсора как стиль.</summary>
+        public ICommand SaveStyleFromCursorCommand { get; }
+
+        /// <summary>Открывает окно редактора стилей.</summary>
+        public ICommand EditStylesCommand { get; }
+
+        /// <summary>Сбрасывает стили к стандартным.</summary>
+        public ICommand ResetStylesToDefaultsCommand { get; }
 
         public RibbonHomeTabViewModel(ITextEditorCommandTarget target)
         {
             _target = target ?? throw new ArgumentNullException(nameof(target));
+            _visibleStyles = AvailableStyles;
 
-            BoldCommand            = ReactiveCommand.Create(() => _target.ToggleBold());
-            ItalicCommand          = ReactiveCommand.Create(() => _target.ToggleItalic());
-            UnderlineCommand       = ReactiveCommand.Create(() => _target.ToggleUnderline());
-            StrikethroughCommand   = ReactiveCommand.Create(() => _target.ToggleStrikethrough());
-            SuperscriptCommand     = ReactiveCommand.Create(() => _target.ToggleSuperscript());
-            SubscriptCommand       = ReactiveCommand.Create(() => _target.ToggleSubscript());
-            AllCapsCommand         = ReactiveCommand.Create(() => _target.ToggleAllCaps());
+            BoldCommand = ReactiveCommand.Create(() => _target.ToggleBold());
+            ItalicCommand = ReactiveCommand.Create(() => _target.ToggleItalic());
+            UnderlineCommand = ReactiveCommand.Create(() => _target.ToggleUnderline());
+            StrikethroughCommand = ReactiveCommand.Create(() => _target.ToggleStrikethrough());
+            SuperscriptCommand = ReactiveCommand.Create(() => _target.ToggleSuperscript());
+            SubscriptCommand = ReactiveCommand.Create(() => _target.ToggleSubscript());
+            AllCapsCommand = ReactiveCommand.Create(() => _target.ToggleAllCaps());
             ClearFormattingCommand = ReactiveCommand.Create(() => _target.ClearFormatting());
 
-            // Цвет: при нажатии применяем текущий выбранный цвет.
-            TextColorCommand      = ReactiveCommand.Create(() =>
+            TextColorCommand = ReactiveCommand.Create(() =>
                 _target.SetTextColor(_currentTextColor ?? "#1A1A1A"));
             HighlightColorCommand = ReactiveCommand.Create(() =>
                 _target.SetHighlightColor(_currentHighlightColor));
@@ -252,14 +430,43 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             IncreaseFontSizeCommand = ReactiveCommand.Create(() => _target.IncreaseFontSize());
             DecreaseFontSizeCommand = ReactiveCommand.Create(() => _target.DecreaseFontSize());
 
-            BulletListCommand     = ReactiveCommand.Create(() => _target.ToggleBulletList());
-            NumberedListCommand   = ReactiveCommand.Create(() => _target.ToggleNumberedList());
+            // Применяет размер шрифта выбранный из выпадающего списка.
+            SelectFontSizeCommand = ReactiveCommand.Create<string>(param =>
+            {
+                if (double.TryParse(param, System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out double v) && v > 0)
+                {
+                    _isSyncingFontSize = true;
+                    _currentFontSize = v;
+                    _currentFontSizeText = ((int)v).ToString();
+                    this.RaisePropertyChanged(nameof(CurrentFontSize));
+                    this.RaisePropertyChanged(nameof(CurrentFontSizeText));
+                    _isSyncingFontSize = false;
+                    _target.SetFontSize(v);
+                }
+            });
+
+            // Смена регистра — делегируем в ToggleAllCaps или реализуем через target позже.
+            CaseSentenceCommand = ReactiveCommand.Create(() => { });
+            CaseLowerCommand = ReactiveCommand.Create(() => { });
+            CaseUpperCommand = ReactiveCommand.Create(() => _target.ToggleAllCaps());
+            CaseTitleCommand = ReactiveCommand.Create(() => { });
+            CaseToggleCommand = ReactiveCommand.Create(() => { });
+
+            // Эффекты текста — заготовки.
+            TextOutlineCommand = ReactiveCommand.Create(() => { });
+            TextShadowCommand = ReactiveCommand.Create(() => { });
+            TextReflectionCommand = ReactiveCommand.Create(() => { });
+            TextGlowCommand = ReactiveCommand.Create(() => { });
+
+            BulletListCommand = ReactiveCommand.Create(() => _target.ToggleBulletList());
+            NumberedListCommand = ReactiveCommand.Create(() => _target.ToggleNumberedList());
             IncreaseIndentCommand = ReactiveCommand.Create(() => _target.IncreaseIndent());
             DecreaseIndentCommand = ReactiveCommand.Create(() => _target.DecreaseIndent());
 
-            AlignLeftCommand    = ReactiveCommand.Create(() => _target.SetAlignment(TextAlignment.Left));
-            AlignCenterCommand  = ReactiveCommand.Create(() => _target.SetAlignment(TextAlignment.Center));
-            AlignRightCommand   = ReactiveCommand.Create(() => _target.SetAlignment(TextAlignment.Right));
+            AlignLeftCommand = ReactiveCommand.Create(() => _target.SetAlignment(TextAlignment.Left));
+            AlignCenterCommand = ReactiveCommand.Create(() => _target.SetAlignment(TextAlignment.Center));
+            AlignRightCommand = ReactiveCommand.Create(() => _target.SetAlignment(TextAlignment.Right));
             AlignJustifyCommand = ReactiveCommand.Create(() => _target.SetAlignment(TextAlignment.Justify));
 
             // CommandParameter передаётся строкой из AXAML ("1.0", "1.5" и т.д.).
@@ -271,43 +478,45 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             });
 
             SpaceBeforeCommand = ReactiveCommand.Create(() => _target.SetSpaceBefore(6));
-            SpaceAfterCommand  = ReactiveCommand.Create(() => _target.SetSpaceAfter(6));
+            SpaceAfterCommand = ReactiveCommand.Create(() => _target.SetSpaceAfter(6));
 
-            CutCommand         = ReactiveCommand.Create(() => _target.Cut());
-            CopyCommand        = ReactiveCommand.Create(() => _target.Copy());
-            PasteCommand       = ReactiveCommand.Create(() => _target.Paste());
-            SelectAllCommand   = ReactiveCommand.Create(() => _target.SelectAll());
-            UndoCommand        = ReactiveCommand.Create(() => _target.Undo());
-            RedoCommand        = ReactiveCommand.Create(() => _target.Redo());
-            FindCommand        = ReactiveCommand.Create(() => _target.OpenFind());
+            CutCommand = ReactiveCommand.Create(() => _target.Cut());
+            CopyCommand = ReactiveCommand.Create(() => _target.Copy());
+            PasteCommand = ReactiveCommand.Create(() => _target.Paste());
+            SelectAllCommand = ReactiveCommand.Create(() => _target.SelectAll());
+            UndoCommand = ReactiveCommand.Create(() => _target.Undo());
+            RedoCommand = ReactiveCommand.Create(() => _target.Redo());
+            FindCommand = ReactiveCommand.Create(() => _target.OpenFind());
             FindReplaceCommand = ReactiveCommand.Create(() => _target.OpenFindReplace());
+
+            SaveStyleFromCursorCommand = ReactiveCommand.Create(() => _target.ApplyStyle(_currentStyleName));
+            EditStylesCommand = ReactiveCommand.Create(() => { });
+            ResetStylesToDefaultsCommand = ReactiveCommand.Create(() => { });
         }
 
         /// <summary>
         /// Синхронизирует состояние кнопок Ribbon с контекстом курсора.
-        /// Вызывается TextEditorViewModel при каждом изменении позиции каретки.
         /// При установке полей напрямую (через backing field) не вызывает команды.
         /// </summary>
         public void UpdateFromCursorContext(CursorContext ctx)
         {
-            // Устанавливаем напрямую в backing fields, чтобы не триггерить команды.
-            _isBold          = ctx.IsBold;
-            _isItalic        = ctx.IsItalic;
-            _isUnderline     = ctx.IsUnderline;
+            _isBold = ctx.IsBold;
+            _isItalic = ctx.IsItalic;
+            _isUnderline = ctx.IsUnderline;
             _isStrikethrough = ctx.IsStrikethrough;
-            _isSuperscript   = ctx.IsSuperscript;
-            _isSubscript     = ctx.IsSubscript;
-            _isAllCaps       = ctx.IsAllCaps;
-            _isBulletList    = ctx.IsBulletList;
-            _isNumberedList  = ctx.IsNumberedList;
-            _fontFamily      = ctx.FontFamily;
+            _isSuperscript = ctx.IsSuperscript;
+            _isSubscript = ctx.IsSubscript;
+            _isAllCaps = ctx.IsAllCaps;
+            _isBulletList = ctx.IsBulletList;
+            _isNumberedList = ctx.IsNumberedList;
+            _fontFamily = ctx.FontFamily;
             _currentFontSize = ctx.FontSize;
-            _currentTextColor       = ctx.TextColor;
-            _currentHighlightColor  = ctx.HighlightColor;
+            _currentFontSizeText = ((int)ctx.FontSize).ToString();
+            _currentTextColor = ctx.TextColor;
+            _currentHighlightColor = ctx.HighlightColor;
             _currentAlignment = ctx.Alignment;
             _currentStyleName = ctx.StyleName;
 
-            // Поднимаем изменения разом.
             this.RaisePropertyChanged(nameof(IsBold));
             this.RaisePropertyChanged(nameof(IsItalic));
             this.RaisePropertyChanged(nameof(IsUnderline));
@@ -319,10 +528,93 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             this.RaisePropertyChanged(nameof(IsNumberedList));
             this.RaisePropertyChanged(nameof(CurrentFontFamily));
             this.RaisePropertyChanged(nameof(CurrentFontSize));
+            this.RaisePropertyChanged(nameof(CurrentFontSizeText));
             this.RaisePropertyChanged(nameof(CurrentTextColor));
             this.RaisePropertyChanged(nameof(CurrentHighlightColor));
             this.RaisePropertyChanged(nameof(CurrentAlignment));
             this.RaisePropertyChanged(nameof(CurrentStyleName));
+        }
+
+        /// <summary>
+        /// Обновляет адаптивное отображение риббона по доступной ширине.
+        /// Порядок сворачивания:
+        ///   1. Стили теряют карточки по одной (MaxCards → MinCards).
+        ///   2. Стили схлопываются в кнопку.
+        ///   3. Правка схлопывается.
+        ///   4. Абзац схлопывается.
+        ///   5. Буфер обмена схлопывается.
+        ///   6. Только после этого появляются стрелки (управляется code-behind).
+        /// </summary>
+        public void UpdateLayout(double availableWidth)
+        {
+            double baseWidth = WidthFont
+                + WidthClipboardFull
+                + WidthParagraphFull
+                + WidthEditFull
+                + StylesGroupOverhead;
+
+            double stylesSpace = availableWidth - baseWidth;
+
+            int cards = stylesSpace > 0
+                ? Math.Clamp((int)(stylesSpace / CardWidth), 0, MaxCards)
+                : 0;
+
+            if (cards >= MinCards)
+            {
+                IsClipboardGroupExpanded = true;
+                IsParagraphGroupExpanded = true;
+                IsEditGroupExpanded = true;
+                IsStylesGroupExpanded = true;
+                SetVisibleStyles(cards);
+                return;
+            }
+
+            IsStylesGroupExpanded = false;
+            SetVisibleStyles(0);
+
+            double w3 = WidthFont + WidthClipboardFull + WidthParagraphFull
+                      + WidthEditSmall + WidthStylesSmall;
+
+            if (availableWidth >= w3)
+            {
+                IsClipboardGroupExpanded = true;
+                IsParagraphGroupExpanded = true;
+                IsEditGroupExpanded = false;
+                return;
+            }
+
+            IsEditGroupExpanded = false;
+
+            double w4 = WidthFont + WidthClipboardFull + WidthParagraphSmall
+                      + WidthEditSmall + WidthStylesSmall;
+
+            if (availableWidth >= w4)
+            {
+                IsClipboardGroupExpanded = true;
+                IsParagraphGroupExpanded = false;
+                return;
+            }
+
+            IsParagraphGroupExpanded = false;
+
+            IsClipboardGroupExpanded = availableWidth >= 645;
+        }
+
+        /// <summary>
+        /// Устанавливает подмножество стилей для отображения в галерее.
+        /// При count == 0 устанавливает пустой список.
+        /// </summary>
+        private void SetVisibleStyles(int count)
+        {
+            if (count <= 0)
+            {
+                VisibleStyles = Array.Empty<string>();
+                return;
+            }
+
+            int clamped = Math.Min(count, AvailableStyles.Count);
+            if (VisibleStyles.Count == clamped) return;
+            VisibleStyles = AvailableStyles.Take(clamped).ToList();
         }
     }
 }

@@ -367,11 +367,20 @@ namespace Writersword.Infrastructure.Behaviours
                 PlacementTarget = element,
                 Placement = PlacementMode.Top,
                 VerticalOffset = -4,
-                IsLightDismissEnabled = false,
+                IsLightDismissEnabled = false
             };
 
             popup.Opened += (_, _) =>
             {
+                if (popup.Host is PopupRoot popupRoot)
+                {
+                    popupRoot.Background = Brushes.Transparent;
+                    popupRoot.TransparencyLevelHint = new[]
+                    {
+                    WindowTransparencyLevel.Transparent
+                };
+                }
+
                 var topLevel = TopLevel.GetTopLevel(element);
                 if (topLevel is null)
                 {
@@ -379,6 +388,7 @@ namespace Writersword.Infrastructure.Behaviours
                         element.GetType().Name);
                     return;
                 }
+
 
                 var pos = element.TranslatePoint(new Point(0, 0), topLevel);
                 if (pos is null) return;

@@ -1,253 +1,494 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              xmlns:loc="using:Writersword.Src.Modules.TextEditor.Resources"
+             xmlns:controls="using:Writersword.Styles.UserControls"
              x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonInsertTab"
              x:DataType="vm:RibbonInsertTabViewModel">
 
 	<UserControl.Styles>
 
-		<!-- Обычная кнопка риббона — прозрачная, без рамки по умолчанию -->
 		<Style Selector="Button.RibbonBtn">
-			<Setter Property="Background" Value="Transparent"/>
-			<Setter Property="BorderBrush" Value="Transparent"/>
-			<Setter Property="BorderThickness" Value="1"/>
-			<Setter Property="CornerRadius" Value="3"/>
-			<Setter Property="Padding" Value="4"/>
-			<Setter Property="MinWidth" Value="24"/>
-			<Setter Property="MinHeight" Value="24"/>
-			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4"/>
+			<Setter Property="MinWidth"                   Value="26"/>
+			<Setter Property="MinHeight"                  Value="26"/>
+			<Setter Property="VerticalAlignment"          Value="Center"/>
 			<Setter Property="HorizontalContentAlignment" Value="Center"/>
-			<Setter Property="VerticalContentAlignment" Value="Center"/>
-			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-			<Setter Property="Cursor" Value="Hand"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
 		</Style>
-		<Style Selector="Button.RibbonBtn:pointerover">
-			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
-			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Style Selector="Button.RibbonBtn /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
 		</Style>
-		<Style Selector="Button.RibbonBtn:pressed">
-			<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+		<Style Selector="Button.RibbonBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
-		<Style Selector="Button.RibbonBtn:disabled">
-			<Setter Property="Opacity" Value="0.5"/>
+		<Style Selector="Button.RibbonBtn:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn:disabled /template/ ContentPresenter">
+			<Setter Property="Opacity" Value="0.4"/>
 		</Style>
 
-		<!-- Большая кнопка риббона — иконка сверху, подпись снизу -->
 		<Style Selector="Button.RibbonBtnLarge">
-			<Setter Property="Background" Value="Transparent"/>
-			<Setter Property="BorderBrush" Value="Transparent"/>
-			<Setter Property="BorderThickness" Value="1"/>
-			<Setter Property="CornerRadius" Value="3"/>
-			<Setter Property="Padding" Value="4 2"/>
-			<Setter Property="MinWidth" Value="40"/>
-			<Setter Property="MinHeight" Value="52"/>
-			<Setter Property="VerticalAlignment" Value="Stretch"/>
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4 2"/>
+			<Setter Property="MinWidth"                   Value="40"/>
+			<Setter Property="MinHeight"                  Value="54"/>
+			<Setter Property="VerticalAlignment"          Value="Stretch"/>
 			<Setter Property="HorizontalContentAlignment" Value="Center"/>
-			<Setter Property="VerticalContentAlignment" Value="Center"/>
-			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-			<Setter Property="Cursor" Value="Hand"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
 		</Style>
-		<Style Selector="Button.RibbonBtnLarge:pointerover">
-			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
-			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Style Selector="Button.RibbonBtnLarge /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
 		</Style>
-		<Style Selector="Button.RibbonBtnLarge:pressed">
-			<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+		<Style Selector="Button.RibbonBtnLarge:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
-		<Style Selector="Button.RibbonBtnLarge:disabled">
-			<Setter Property="Opacity" Value="0.5"/>
+		<Style Selector="Button.RibbonBtnLarge:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.RibbonBtnLarge:disabled /template/ ContentPresenter">
+			<Setter Property="Opacity" Value="0.4"/>
 		</Style>
 
-		<!-- SplitButton риббона — основная кнопка плюс стрелка с выпадающим меню -->
 		<Style Selector="SplitButton.RibbonSplit">
-			<Setter Property="Background" Value="Transparent"/>
-			<Setter Property="BorderBrush" Value="Transparent"/>
-			<Setter Property="BorderThickness" Value="1"/>
-			<Setter Property="CornerRadius" Value="3"/>
-			<Setter Property="Padding" Value="4 4 2 4"/>
-			<Setter Property="MinWidth" Value="24"/>
-			<Setter Property="MinHeight" Value="24"/>
+			<Setter Property="Background"        Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"       Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"   Value="1"/>
+			<Setter Property="CornerRadius"      Value="3"/>
+			<Setter Property="Padding"           Value="4 4 2 4"/>
+			<Setter Property="MinWidth"          Value="26"/>
+			<Setter Property="MinHeight"         Value="26"/>
 			<Setter Property="VerticalAlignment" Value="Center"/>
-			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-			<Setter Property="Cursor" Value="Hand"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"            Value="Hand"/>
 		</Style>
 		<Style Selector="SplitButton.RibbonSplit:pointerover">
-			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
-			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 		<Style Selector="SplitButton.RibbonSplit:pressed">
-			<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="Border.RibbonGroup">
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Padding"         Value="6 4 6 0"/>
+			<Setter Property="Margin"          Value="2 3"/>
+		</Style>
+
+		<Style Selector="Border.RibbonGroupCollapsed">
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Padding"         Value="2 4 2 0"/>
+			<Setter Property="Margin"          Value="2 3"/>
+		</Style>
+
+		<Style Selector="Grid.RibbonGroupLabelGrid">
+			<Setter Property="Margin" Value="0 3 0 2"/>
+		</Style>
+
+		<Style Selector="TextBlock.RibbonGroupLabel">
+			<Setter Property="FontSize"            Value="10"/>
+			<Setter Property="Foreground"          Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="TextAlignment"       Value="Center"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="VerticalAlignment"   Value="Center"/>
 		</Style>
 
 	</UserControl.Styles>
 
-	<ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-		<StackPanel Orientation="Horizontal" Spacing="1" Margin="4 2" VerticalAlignment="Center">
+	<controls:RibbonScrollContainer x:Name="ScrollContainer">
+		<controls:RibbonScrollContainer.RibbonContent>
+			<StackPanel Orientation="Horizontal">
 
-			<!-- Группа: Таблица -->
-			<Border Padding="4 2">
-				<StackPanel Spacing="2">
-					<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Table_Group}"
-                               FontSize="10"
-                               Foreground="{DynamicResource TextSecondaryBrush}"/>
-					<Button Command="{Binding InsertTableCommand}"
-                            Classes="RibbonBtn"
-                            ToolTip.Tip="{x:Static loc:TextEditorStrings.Insert_Table}">
-						<StackPanel Orientation="Horizontal" Spacing="4">
-							<PathIcon Data="M20 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 2v3H5V5h15zm-5 14h-5v-3h5v3zm0-5h-5V9h5v5zm5 5h-4v-3h4v3zm0-5h-4V9h4v5zM5 9h4v5H5V9zm0 7h4v3H5v-3z" Width="16" Height="16"/>
-							<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Table}" FontSize="11"/>
-						</StackPanel>
-					</Button>
-				</StackPanel>
-			</Border>
-
-			<Separator Width="1" Height="40" Background="{DynamicResource BorderSubtleBrush}" Margin="3 0" VerticalAlignment="Center"/>
-
-			<!-- Группа: Медиа — изображения, текстовые блоки, фигуры -->
-			<Border Padding="4 2">
-				<StackPanel Spacing="2">
-					<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Media_Group}"
-                               FontSize="10"
-                               Foreground="{DynamicResource TextSecondaryBrush}"/>
-					<StackPanel Orientation="Horizontal" Spacing="2">
-
-						<Button Command="{Binding InsertImageCommand}"
+				<!-- ═══════════════════════════════════════════════════════
+                     ТАБЛИЦА — развёрнутая
+                     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup"
+                        IsVisible="{Binding IsTableGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Insert_Table_Group}"/>
+						</Grid>
+						<Button Command="{Binding InsertTableCommand}"
                                 Classes="RibbonBtnLarge"
-                                Width="50"
-                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Insert_Image}">
+                                VerticalAlignment="Top"
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Table}"
+                                behaviours:TooltipBehavior.ShowDelay="700">
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Data="M20 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 2v3H5V5h15zm-5 14h-5v-3h5v3zm0-5h-5V9h5v5zm5 5h-4v-3h4v3zm0-5h-4V9h4v5zM5 9h4v5H5V9zm0 7h4v3H5v-3z" Width="20" Height="20"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Table}" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+						</Button>
+					</DockPanel>
+				</Border>
+
+				<!-- ТАБЛИЦА — свёрнутая -->
+				<Border Classes="RibbonGroupCollapsed"
+                        IsVisible="{Binding !IsTableGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Insert_Table_Group}"/>
+						</Grid>
+						<Button Classes="RibbonBtnLarge" VerticalAlignment="Top"
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Table_Group}"
+                                behaviours:TooltipBehavior.ShowDelay="700">
+							<Button.Flyout>
+								<Flyout Placement="Bottom">
+									<StackPanel Margin="8">
+										<Button Command="{Binding InsertTableCommand}"
+                                                Classes="RibbonBtnLarge"
+                                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Table}"
+                                                behaviours:TooltipBehavior.ShowDelay="700">
+											<StackPanel Spacing="2" HorizontalAlignment="Center">
+												<PathIcon Data="M20 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 2v3H5V5h15zm-5 14h-5v-3h5v3zm0-5h-5V9h5v5zm5 5h-4v-3h4v3zm0-5h-4V9h4v5zM5 9h4v5H5V9zm0 7h4v3H5v-3z" Width="20" Height="20"/>
+												<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Table}" FontSize="9" TextAlignment="Center"/>
+											</StackPanel>
+										</Button>
+									</StackPanel>
+								</Flyout>
+							</Button.Flyout>
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Data="M20 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 2v3H5V5h15zm-5 14h-5v-3h5v3zm0-5h-5V9h5v5zm5 5h-4v-3h4v3zm0-5h-4V9h4v5zM5 9h4v5H5V9zm0 7h4v3H5v-3z" Width="20" Height="20"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Table_Group}" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+						</Button>
+					</DockPanel>
+				</Border>
+
+				<!-- ═══════════════════════════════════════════════════════
+                     МЕДИА — развёрнутая
+                     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup"
+                        IsVisible="{Binding IsMediaGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Insert_Media_Group}"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+							<Button Command="{Binding InsertImageCommand}"
+                                    Classes="RibbonBtnLarge"
+                                    behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Image}"
+                                    behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Image}" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+							<Button Command="{Binding InsertFloatingTextBoxCommand}"
+                                    Classes="RibbonBtnLarge"
+                                    behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_TextBox}"
+                                    behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M2 6h2v2H2V6zm0 5h2v2H2v-2zm0 5h2v2H2v-2zm4-10v2h14V6H6zm0 5v2h14v-2H6zm0 5v2h14v-2H6z" Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_TextBox}" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+							<SplitButton Classes="RibbonSplit"
+                                         Command="{Binding InsertShapeRectangleCommand}"
+                                         behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Shape}"
+                                         behaviours:TooltipBehavior.ShowDelay="700">
+								<SplitButton.Content>
+									<StackPanel Spacing="2" HorizontalAlignment="Center">
+										<PathIcon Data="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z" Width="20" Height="20"/>
+										<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Shape}" FontSize="9" TextAlignment="Center"/>
+									</StackPanel>
+								</SplitButton.Content>
+								<SplitButton.Flyout>
+									<MenuFlyout>
+										<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Rectangle}" Command="{Binding InsertShapeRectangleCommand}"/>
+										<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Ellipse}"   Command="{Binding InsertShapeEllipseCommand}"/>
+										<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Line}"      Command="{Binding InsertShapeLineCommand}"/>
+										<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Arrow}"     Command="{Binding InsertShapeArrowCommand}"/>
+										<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Callout}"   Command="{Binding InsertShapeCalloutCommand}"/>
+									</MenuFlyout>
+								</SplitButton.Flyout>
+							</SplitButton>
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- МЕДИА — свёрнутая -->
+				<Border Classes="RibbonGroupCollapsed"
+                        IsVisible="{Binding !IsMediaGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Insert_Media_Group}"/>
+						</Grid>
+						<Button Classes="RibbonBtnLarge" VerticalAlignment="Top"
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Media_Group}"
+                                behaviours:TooltipBehavior.ShowDelay="700">
+							<Button.Flyout>
+								<Flyout Placement="Bottom">
+									<StackPanel Orientation="Horizontal" Spacing="4" Margin="8">
+										<Button Command="{Binding InsertImageCommand}"
+                                                Classes="RibbonBtnLarge"
+                                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Image}"
+                                                behaviours:TooltipBehavior.ShowDelay="700">
+											<StackPanel Spacing="2" HorizontalAlignment="Center">
+												<PathIcon Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" Width="20" Height="20"/>
+												<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Image}" FontSize="9" TextAlignment="Center"/>
+											</StackPanel>
+										</Button>
+										<Button Command="{Binding InsertFloatingTextBoxCommand}"
+                                                Classes="RibbonBtnLarge"
+                                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_TextBox}"
+                                                behaviours:TooltipBehavior.ShowDelay="700">
+											<StackPanel Spacing="2" HorizontalAlignment="Center">
+												<PathIcon Data="M2 6h2v2H2V6zm0 5h2v2H2v-2zm0 5h2v2H2v-2zm4-10v2h14V6H6zm0 5v2h14v-2H6zm0 5v2h14v-2H6z" Width="20" Height="20"/>
+												<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_TextBox}" FontSize="9" TextAlignment="Center"/>
+											</StackPanel>
+										</Button>
+										<SplitButton Classes="RibbonSplit"
+                                                     Command="{Binding InsertShapeRectangleCommand}"
+                                                     behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Shape}"
+                                                     behaviours:TooltipBehavior.ShowDelay="700">
+											<SplitButton.Content>
+												<StackPanel Spacing="2" HorizontalAlignment="Center">
+													<PathIcon Data="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z" Width="20" Height="20"/>
+													<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Shape}" FontSize="9" TextAlignment="Center"/>
+												</StackPanel>
+											</SplitButton.Content>
+											<SplitButton.Flyout>
+												<MenuFlyout>
+													<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Rectangle}" Command="{Binding InsertShapeRectangleCommand}"/>
+													<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Ellipse}"   Command="{Binding InsertShapeEllipseCommand}"/>
+													<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Line}"      Command="{Binding InsertShapeLineCommand}"/>
+													<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Arrow}"     Command="{Binding InsertShapeArrowCommand}"/>
+													<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Callout}"   Command="{Binding InsertShapeCalloutCommand}"/>
+												</MenuFlyout>
+											</SplitButton.Flyout>
+										</SplitButton>
+									</StackPanel>
+								</Flyout>
+							</Button.Flyout>
 							<StackPanel Spacing="2" HorizontalAlignment="Center">
 								<PathIcon Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" Width="20" Height="20"/>
-								<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Image}" FontSize="9" TextAlignment="Center"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Media_Group}" FontSize="9" TextAlignment="Center"/>
 							</StackPanel>
 						</Button>
+					</DockPanel>
+				</Border>
 
-						<Button Command="{Binding InsertFloatingTextBoxCommand}"
-                                Classes="RibbonBtnLarge"
-                                Width="50"
-                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Insert_TextBox}">
-							<StackPanel Spacing="2" HorizontalAlignment="Center">
-								<PathIcon Data="M2 6h2v2H2V6zm0 5h2v2H2v-2zm0 5h2v2H2v-2zm4-10v2h14V6H6zm0 5v2h14v-2H6zm0 5v2h14v-2H6z" Width="20" Height="20"/>
-								<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_TextBox}" FontSize="9" TextAlignment="Center"/>
-							</StackPanel>
-						</Button>
-
-						<!-- Фигуры — SplitButton с выбором типа из выпадающего меню -->
-						<SplitButton Classes="RibbonSplit"
-                                     Width="50" Height="48"
-                                     Command="{Binding InsertShapeRectangleCommand}"
-                                     ToolTip.Tip="{x:Static loc:TextEditorStrings.Insert_Shape}">
-							<SplitButton.Content>
+				<!-- ═══════════════════════════════════════════════════════
+                     СТРАНИЦА — развёрнутая
+                     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup"
+                        IsVisible="{Binding IsPageGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Insert_Page_Group}"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+							<Button Command="{Binding InsertPageBreakCommand}"
+                                    Classes="RibbonBtnLarge"
+                                    behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_PageBreak}"
+                                    behaviours:TooltipBehavior.ShowDelay="700">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Data="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z" Width="20" Height="20"/>
-									<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Shape}" FontSize="9" TextAlignment="Center"/>
+									<PathIcon Data="M5 3v12h2v-2h2v2h2V3H5zm2 8V5h2v6H7zm8 2h2V3h-4v12h2v-2zm0-8h2v6h-2V5zM3 19h18v2H3v-2z" Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_PageBreak}" FontSize="9" TextAlignment="Center"/>
 								</StackPanel>
-							</SplitButton.Content>
-							<SplitButton.Flyout>
-								<MenuFlyout>
-									<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Rectangle}" Command="{Binding InsertShapeRectangleCommand}"/>
-									<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Ellipse}"   Command="{Binding InsertShapeEllipseCommand}"/>
-									<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Line}"      Command="{Binding InsertShapeLineCommand}"/>
-									<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Arrow}"     Command="{Binding InsertShapeArrowCommand}"/>
-									<MenuItem Header="{x:Static loc:TextEditorStrings.Shape_Callout}"   Command="{Binding InsertShapeCalloutCommand}"/>
-								</MenuFlyout>
-							</SplitButton.Flyout>
-						</SplitButton>
+							</Button>
+							<SplitButton Classes="RibbonSplit"
+                                         Command="{Binding InsertSectionBreakNextPageCommand}"
+                                         behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_SectionBreak}"
+                                         behaviours:TooltipBehavior.ShowDelay="700">
+								<SplitButton.Content>
+									<StackPanel Spacing="2" HorizontalAlignment="Center">
+										<PathIcon Data="M3 19h18v2H3v-2zm5-6h2V5H8v8zm6 0h2V5h-2v8z" Width="20" Height="20"/>
+										<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_SectionBreak}" FontSize="9" TextAlignment="Center"/>
+									</StackPanel>
+								</SplitButton.Content>
+								<SplitButton.Flyout>
+									<MenuFlyout>
+										<MenuItem Header="{x:Static loc:TextEditorStrings.Break_SectionNextPage}"   Command="{Binding InsertSectionBreakNextPageCommand}"/>
+										<MenuItem Header="{x:Static loc:TextEditorStrings.Break_SectionContinuous}" Command="{Binding InsertSectionBreakContinuousCommand}"/>
+									</MenuFlyout>
+								</SplitButton.Flyout>
+							</SplitButton>
+						</StackPanel>
+					</DockPanel>
+				</Border>
 
-					</StackPanel>
-				</StackPanel>
-			</Border>
-
-			<Separator Width="1" Height="40" Background="{DynamicResource BorderSubtleBrush}" Margin="3 0" VerticalAlignment="Center"/>
-
-			<!-- Группа: Страница — разрывы страниц и разделов -->
-			<Border Padding="4 2">
-				<StackPanel Spacing="2">
-					<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Page_Group}"
-                               FontSize="10"
-                               Foreground="{DynamicResource TextSecondaryBrush}"/>
-					<StackPanel Orientation="Horizontal" Spacing="2">
-
-						<Button Command="{Binding InsertPageBreakCommand}"
-                                Classes="RibbonBtnLarge"
-                                Width="50"
-                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Insert_PageBreak}">
+				<!-- СТРАНИЦА — свёрнутая -->
+				<Border Classes="RibbonGroupCollapsed"
+                        IsVisible="{Binding !IsPageGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Insert_Page_Group}"/>
+						</Grid>
+						<Button Classes="RibbonBtnLarge" VerticalAlignment="Top"
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Page_Group}"
+                                behaviours:TooltipBehavior.ShowDelay="700">
+							<Button.Flyout>
+								<Flyout Placement="Bottom">
+									<StackPanel Orientation="Horizontal" Spacing="4" Margin="8">
+										<Button Command="{Binding InsertPageBreakCommand}"
+                                                Classes="RibbonBtnLarge"
+                                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_PageBreak}"
+                                                behaviours:TooltipBehavior.ShowDelay="700">
+											<StackPanel Spacing="2" HorizontalAlignment="Center">
+												<PathIcon Data="M5 3v12h2v-2h2v2h2V3H5zm2 8V5h2v6H7zm8 2h2V3h-4v12h2v-2zm0-8h2v6h-2V5zM3 19h18v2H3v-2z" Width="20" Height="20"/>
+												<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_PageBreak}" FontSize="9" TextAlignment="Center"/>
+											</StackPanel>
+										</Button>
+										<SplitButton Classes="RibbonSplit"
+                                                     Command="{Binding InsertSectionBreakNextPageCommand}"
+                                                     behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_SectionBreak}"
+                                                     behaviours:TooltipBehavior.ShowDelay="700">
+											<SplitButton.Content>
+												<StackPanel Spacing="2" HorizontalAlignment="Center">
+													<PathIcon Data="M3 19h18v2H3v-2zm5-6h2V5H8v8zm6 0h2V5h-2v8z" Width="20" Height="20"/>
+													<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_SectionBreak}" FontSize="9" TextAlignment="Center"/>
+												</StackPanel>
+											</SplitButton.Content>
+											<SplitButton.Flyout>
+												<MenuFlyout>
+													<MenuItem Header="{x:Static loc:TextEditorStrings.Break_SectionNextPage}"   Command="{Binding InsertSectionBreakNextPageCommand}"/>
+													<MenuItem Header="{x:Static loc:TextEditorStrings.Break_SectionContinuous}" Command="{Binding InsertSectionBreakContinuousCommand}"/>
+												</MenuFlyout>
+											</SplitButton.Flyout>
+										</SplitButton>
+									</StackPanel>
+								</Flyout>
+							</Button.Flyout>
 							<StackPanel Spacing="2" HorizontalAlignment="Center">
 								<PathIcon Data="M5 3v12h2v-2h2v2h2V3H5zm2 8V5h2v6H7zm8 2h2V3h-4v12h2v-2zm0-8h2v6h-2V5zM3 19h18v2H3v-2z" Width="20" Height="20"/>
-								<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_PageBreak}" FontSize="9" TextAlignment="Center"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Page_Group}" FontSize="9" TextAlignment="Center"/>
 							</StackPanel>
 						</Button>
+					</DockPanel>
+				</Border>
 
-						<!-- Разрыв раздела — SplitButton с выбором типа разрыва -->
-						<SplitButton Classes="RibbonSplit"
-                                     Width="60" Height="48"
-                                     Command="{Binding InsertSectionBreakNextPageCommand}"
-                                     ToolTip.Tip="{x:Static loc:TextEditorStrings.Layout_SectionBreak}">
-							<SplitButton.Content>
+				<!-- ═══════════════════════════════════════════════════════
+                     ССЫЛКИ — развёрнутая
+                     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup"
+                        IsVisible="{Binding IsLinksGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Insert_Links_Group}"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+							<Button Command="{Binding InsertHyperlinkCommand}"
+                                    Classes="RibbonBtnLarge"
+                                    behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Hyperlink}"
+                                    behaviours:TooltipBehavior.ShowDelay="700">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Data="M3 19h18v2H3v-2zm5-6h2V5H8v8zm6 0h2V5h-2v8z" Width="20" Height="20"/>
-									<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_SectionBreak}" FontSize="9" TextAlignment="Center"/>
+									<PathIcon Data="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z" Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Hyperlink}" FontSize="9" TextAlignment="Center"/>
 								</StackPanel>
-							</SplitButton.Content>
-							<SplitButton.Flyout>
-								<MenuFlyout>
-									<MenuItem Header="{x:Static loc:TextEditorStrings.Break_SectionNextPage}"   Command="{Binding InsertSectionBreakNextPageCommand}"/>
-									<MenuItem Header="{x:Static loc:TextEditorStrings.Break_SectionContinuous}" Command="{Binding InsertSectionBreakContinuousCommand}"/>
-								</MenuFlyout>
-							</SplitButton.Flyout>
-						</SplitButton>
+							</Button>
+							<Button Command="{Binding InsertBookmarkCommand}"
+                                    Classes="RibbonBtnLarge"
+                                    behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Bookmark}"
+                                    behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z" Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Bookmark}" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+							<Button Command="{Binding InsertCommentCommand}"
+                                    Classes="RibbonBtnLarge"
+                                    behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Comment}"
+                                    behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z" Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Comment}" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+						</StackPanel>
+					</DockPanel>
+				</Border>
 
-					</StackPanel>
-				</StackPanel>
-			</Border>
-
-			<Separator Width="1" Height="40" Background="{DynamicResource BorderSubtleBrush}" Margin="3 0" VerticalAlignment="Center"/>
-
-			<!-- Группа: Ссылки — гиперссылки, закладки, комментарии -->
-			<Border Padding="4 2">
-				<StackPanel Spacing="2">
-					<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Links_Group}"
-                               FontSize="10"
-                               Foreground="{DynamicResource TextSecondaryBrush}"/>
-					<StackPanel Orientation="Horizontal" Spacing="2">
-
-						<Button Command="{Binding InsertHyperlinkCommand}"
-                                Classes="RibbonBtnLarge"
-                                Width="50"
-                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Insert_Hyperlink}">
+				<!-- ССЫЛКИ — свёрнутая -->
+				<Border Classes="RibbonGroupCollapsed"
+                        IsVisible="{Binding !IsLinksGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Insert_Links_Group}"/>
+						</Grid>
+						<Button Classes="RibbonBtnLarge" VerticalAlignment="Top"
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Links_Group}"
+                                behaviours:TooltipBehavior.ShowDelay="700">
+							<Button.Flyout>
+								<Flyout Placement="Bottom">
+									<StackPanel Orientation="Horizontal" Spacing="4" Margin="8">
+										<Button Command="{Binding InsertHyperlinkCommand}"
+                                                Classes="RibbonBtnLarge"
+                                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Hyperlink}"
+                                                behaviours:TooltipBehavior.ShowDelay="700">
+											<StackPanel Spacing="2" HorizontalAlignment="Center">
+												<PathIcon Data="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z" Width="20" Height="20"/>
+												<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Hyperlink}" FontSize="9" TextAlignment="Center"/>
+											</StackPanel>
+										</Button>
+										<Button Command="{Binding InsertBookmarkCommand}"
+                                                Classes="RibbonBtnLarge"
+                                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Bookmark}"
+                                                behaviours:TooltipBehavior.ShowDelay="700">
+											<StackPanel Spacing="2" HorizontalAlignment="Center">
+												<PathIcon Data="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z" Width="20" Height="20"/>
+												<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Bookmark}" FontSize="9" TextAlignment="Center"/>
+											</StackPanel>
+										</Button>
+										<Button Command="{Binding InsertCommentCommand}"
+                                                Classes="RibbonBtnLarge"
+                                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_Comment}"
+                                                behaviours:TooltipBehavior.ShowDelay="700">
+											<StackPanel Spacing="2" HorizontalAlignment="Center">
+												<PathIcon Data="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z" Width="20" Height="20"/>
+												<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Comment}" FontSize="9" TextAlignment="Center"/>
+											</StackPanel>
+										</Button>
+									</StackPanel>
+								</Flyout>
+							</Button.Flyout>
 							<StackPanel Spacing="2" HorizontalAlignment="Center">
 								<PathIcon Data="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z" Width="20" Height="20"/>
-								<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Hyperlink}" FontSize="9" TextAlignment="Center"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Links_Group}" FontSize="9" TextAlignment="Center"/>
 							</StackPanel>
 						</Button>
+					</DockPanel>
+				</Border>
 
-						<Button Command="{Binding InsertBookmarkCommand}"
-                                Classes="RibbonBtnLarge"
-                                Width="50"
-                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Insert_Bookmark}">
-							<StackPanel Spacing="2" HorizontalAlignment="Center">
-								<PathIcon Data="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z" Width="20" Height="20"/>
-								<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Bookmark}" FontSize="9" TextAlignment="Center"/>
-							</StackPanel>
-						</Button>
+			</StackPanel>
+		</controls:RibbonScrollContainer.RibbonContent>
+	</controls:RibbonScrollContainer>
 
-						<Button Command="{Binding InsertCommentCommand}"
-                                Classes="RibbonBtnLarge"
-                                Width="50"
-                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Insert_Comment}">
-							<StackPanel Spacing="2" HorizontalAlignment="Center">
-								<PathIcon Data="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z" Width="20" Height="20"/>
-								<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_Comment}" FontSize="9" TextAlignment="Center"/>
-							</StackPanel>
-						</Button>
-
-					</StackPanel>
-				</StackPanel>
-			</Border>
-
-		</StackPanel>
-	</ScrollViewer>
 </UserControl>

@@ -1,0 +1,33 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Writersword.Styles.UserControls.RibbonScrollContainer">
+
+	<Grid>
+		<Grid.ColumnDefinitions>
+			<ColumnDefinition Width="Auto"/>
+			<ColumnDefinition Width="*"/>
+			<ColumnDefinition Width="Auto"/>
+		</Grid.ColumnDefinitions>
+
+		<Button x:Name="BtnScrollLeft"
+                Grid.Column="0"
+                Classes="RibbonScrollArrow">
+			<PathIcon Data="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6z" Width="10" Height="10"/>
+		</Button>
+
+		<ScrollViewer x:Name="RibbonScrollViewer"
+                      Grid.Column="1"
+                      HorizontalScrollBarVisibility="Hidden"
+                      VerticalScrollBarVisibility="Disabled">
+			<ContentPresenter x:Name="ContentHost"
+                              HorizontalAlignment="Left"/>
+		</ScrollViewer>
+
+		<Button x:Name="BtnScrollRight"
+                Grid.Column="2"
+                Classes="RibbonScrollArrow RibbonScrollArrowRight">
+			<PathIcon Data="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z" Width="10" Height="10"/>
+		</Button>
+	</Grid>
+
+</UserControl>

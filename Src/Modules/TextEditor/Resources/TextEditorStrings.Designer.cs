@@ -115,6 +115,51 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на lowercase.
+        /// </summary>
+        public static string Case_Lower {
+            get {
+                return ResourceManager.GetString("Case_Lower", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Sentence case..
+        /// </summary>
+        public static string Case_Sentence {
+            get {
+                return ResourceManager.GetString("Case_Sentence", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Capitalize Each Word.
+        /// </summary>
+        public static string Case_Title {
+            get {
+                return ResourceManager.GetString("Case_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на tOGGLE cASE.
+        /// </summary>
+        public static string Case_Toggle {
+            get {
+                return ResourceManager.GetString("Case_Toggle", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на UPPERCASE.
+        /// </summary>
+        public static string Case_Upper {
+            get {
+                return ResourceManager.GetString("Case_Upper", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Clipboard.
         /// </summary>
         public static string Clipboard_Group {
@@ -277,11 +322,38 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на All Caps.
+        /// </summary>
+        public static string Format_AllCaps {
+            get {
+                return ResourceManager.GetString("Format_AllCaps", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Bold.
         /// </summary>
         public static string Format_Bold {
             get {
                 return ResourceManager.GetString("Format_Bold", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на B.
+        /// </summary>
+        public static string Format_Bold_Letter {
+            get {
+                return ResourceManager.GetString("Format_Bold_Letter", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Change Case.
+        /// </summary>
+        public static string Format_ChangeCase {
+            get {
+                return ResourceManager.GetString("Format_ChangeCase", resourceCulture);
             }
         }
         
@@ -367,6 +439,15 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на I.
+        /// </summary>
+        public static string Format_Italic_Letter {
+            get {
+                return ResourceManager.GetString("Format_Italic_Letter", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Paste.
         /// </summary>
         public static string Format_Paste {
@@ -381,6 +462,15 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         public static string Format_Strikethrough {
             get {
                 return ResourceManager.GetString("Format_Strikethrough", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на S.
+        /// </summary>
+        public static string Format_Strikethrough_Letter {
+            get {
+                return ResourceManager.GetString("Format_Strikethrough_Letter", resourceCulture);
             }
         }
         
@@ -417,6 +507,15 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         public static string Format_Underline {
             get {
                 return ResourceManager.GetString("Format_Underline", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на U.
+        /// </summary>
+        public static string Format_Underline_Letter {
+            get {
+                return ResourceManager.GetString("Format_Underline_Letter", resourceCulture);
             }
         }
         
@@ -1245,6 +1344,78 @@ namespace Writersword.Src.Modules.TextEditor.Resources {
         public static string Style_Quote {
             get {
                 return ResourceManager.GetString("Style_Quote", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Edit styles....
+        /// </summary>
+        public static string Styles_EditStyles {
+            get {
+                return ResourceManager.GetString("Styles_EditStyles", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset to defaults.
+        /// </summary>
+        public static string Styles_ResetToDefaults {
+            get {
+                return ResourceManager.GetString("Styles_ResetToDefaults", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save style from cursor.
+        /// </summary>
+        public static string Styles_SaveFromCursor {
+            get {
+                return ResourceManager.GetString("Styles_SaveFromCursor", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Glow.
+        /// </summary>
+        public static string TextEffect_Glow {
+            get {
+                return ResourceManager.GetString("TextEffect_Glow", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Outline.
+        /// </summary>
+        public static string TextEffect_Outline {
+            get {
+                return ResourceManager.GetString("TextEffect_Outline", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reflection.
+        /// </summary>
+        public static string TextEffect_Reflection {
+            get {
+                return ResourceManager.GetString("TextEffect_Reflection", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на TextEffect_Shadow.
+        /// </summary>
+        public static string TextEffect_Shadow {
+            get {
+                return ResourceManager.GetString("TextEffect_Shadow", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Text Effects.
+        /// </summary>
+        public static string TextEffect_Title {
+            get {
+                return ResourceManager.GetString("TextEffect_Title", resourceCulture);
             }
         }
         

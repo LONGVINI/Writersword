@@ -135,6 +135,21 @@
   <data name="Break_SectionNextPage" xml:space="preserve">
     <value>Разрыв раздела (следующая страница)</value>
   </data>
+  <data name="Case_Lower" xml:space="preserve">
+    <value>все строчные</value>
+  </data>
+  <data name="Case_Sentence" xml:space="preserve">
+    <value>Как в предложениях.</value>
+  </data>
+  <data name="Case_Title" xml:space="preserve">
+    <value>Начинать С Прописных</value>
+  </data>
+  <data name="Case_Toggle" xml:space="preserve">
+    <value>иЗМЕНИТЬ РЕГИСТР</value>
+  </data>
+  <data name="Case_Upper" xml:space="preserve">
+    <value>ВСЕ ПРОПИСНЫЕ</value>
+  </data>
   <data name="Clipboard_Group" xml:space="preserve">
     <value>Буфер</value>
   </data>
@@ -189,8 +204,17 @@
   <data name="Font_Group" xml:space="preserve">
     <value>Шрифт</value>
   </data>
+  <data name="Format_AllCaps" xml:space="preserve">
+    <value>Все заглавные</value>
+  </data>
   <data name="Format_Bold" xml:space="preserve">
     <value>Жирный</value>
+  </data>
+  <data name="Format_Bold_Letter" xml:space="preserve">
+    <value>Ж</value>
+  </data>
+  <data name="Format_ChangeCase" xml:space="preserve">
+    <value>Изменить регистр</value>
   </data>
   <data name="Format_ClearFormatting" xml:space="preserve">
     <value>Очистить форматирование</value>
@@ -219,11 +243,17 @@
   <data name="Format_Italic" xml:space="preserve">
     <value>Курсив</value>
   </data>
+  <data name="Format_Italic_Letter" xml:space="preserve">
+    <value>К</value>
+  </data>
   <data name="Format_Paste" xml:space="preserve">
     <value>Вставить</value>
   </data>
   <data name="Format_Strikethrough" xml:space="preserve">
     <value>Зачёркнутый</value>
+  </data>
+  <data name="Format_Strikethrough_Letter" xml:space="preserve">
+    <value>З</value>
   </data>
   <data name="Format_Subscript" xml:space="preserve">
     <value>Подстрочный</value>
@@ -236,6 +266,9 @@
   </data>
   <data name="Format_Underline" xml:space="preserve">
     <value>Подчёркнутый</value>
+  </data>
+  <data name="Format_Underline_Letter" xml:space="preserve">
+    <value>Ч</value>
   </data>
   <data name="Insert_Bookmark" xml:space="preserve">
     <value>Закладка</value>
@@ -483,6 +516,15 @@
   <data name="Status_Words" xml:space="preserve">
     <value>Слова</value>
   </data>
+  <data name="Styles_EditStyles" xml:space="preserve">
+    <value>Редактировать стили...</value>
+  </data>
+  <data name="Styles_ResetToDefaults" xml:space="preserve">
+    <value>Сбросить к стандартным</value>
+  </data>
+  <data name="Styles_SaveFromCursor" xml:space="preserve">
+    <value>Сохранить стиль из курсора</value>
+  </data>
   <data name="Style_Code" xml:space="preserve">
     <value>Код</value>
   </data>
@@ -513,6 +555,18 @@
   <data name="Style_Quote" xml:space="preserve">
     <value>Цитата</value>
   </data>
+  <data name="TextEffect_Glow" xml:space="preserve">
+    <value>Свечение</value>
+  </data>
+  <data name="TextEffect_Outline" xml:space="preserve">
+    <value>Контур</value>
+  </data>
+  <data name="TextEffect_Reflection" xml:space="preserve">
+    <value>Отражение</value>
+  </data>
+  <data name="TextEffect_Shadow" xml:space="preserve">
+    <value>Тень</value>
+  </data>
   <data name="View_CanvasColor" xml:space="preserve">
     <value>Цвет страницы</value>
   </data>
@@ -536,5 +590,8 @@
   </data>
   <data name="View_Zoom" xml:space="preserve">
     <value>Масштаб</value>
+  </data>
+  <data name="TextEffect_Title" xml:space="preserve">
+    <value>Эффекты текста</value>
   </data>
 </root>

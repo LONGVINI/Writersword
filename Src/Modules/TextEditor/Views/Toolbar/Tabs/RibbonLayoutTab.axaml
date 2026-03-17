@@ -2,233 +2,452 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
              xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              xmlns:loc="using:Writersword.Src.Modules.TextEditor.Resources"
+             xmlns:controls="using:Writersword.Styles.UserControls"
              x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonLayoutTab"
              x:DataType="vm:RibbonLayoutTabViewModel">
 
 	<UserControl.Styles>
 
-		<!-- Большая кнопка риббона — иконка сверху, подпись снизу -->
+		<Style Selector="Button.RibbonBtn">
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4"/>
+			<Setter Property="MinWidth"                   Value="26"/>
+			<Setter Property="MinHeight"                  Value="26"/>
+			<Setter Property="VerticalAlignment"          Value="Center"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
 		<Style Selector="Button.RibbonBtnLarge">
-			<Setter Property="Background" Value="Transparent"/>
-			<Setter Property="BorderBrush" Value="Transparent"/>
-			<Setter Property="BorderThickness" Value="1"/>
-			<Setter Property="CornerRadius" Value="3"/>
-			<Setter Property="Padding" Value="4 2"/>
-			<Setter Property="MinWidth" Value="40"/>
-			<Setter Property="MinHeight" Value="52"/>
-			<Setter Property="VerticalAlignment" Value="Stretch"/>
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4 2"/>
+			<Setter Property="MinWidth"                   Value="40"/>
+			<Setter Property="MinHeight"                  Value="54"/>
+			<Setter Property="VerticalAlignment"          Value="Stretch"/>
 			<Setter Property="HorizontalContentAlignment" Value="Center"/>
-			<Setter Property="VerticalContentAlignment" Value="Center"/>
-			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-			<Setter Property="Cursor" Value="Hand"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
 		</Style>
-		<Style Selector="Button.RibbonBtnLarge:pointerover">
-			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
-			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Style Selector="Button.RibbonBtnLarge /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
 		</Style>
-		<Style Selector="Button.RibbonBtnLarge:pressed">
-			<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+		<Style Selector="Button.RibbonBtnLarge:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
-		<Style Selector="Button.RibbonBtnLarge:disabled">
-			<Setter Property="Opacity" Value="0.5"/>
+		<Style Selector="Button.RibbonBtnLarge:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
-		<!-- ToggleButton для выбора количества колонок -->
 		<Style Selector="ToggleButton.RibbonToggle">
-			<Setter Property="Background" Value="Transparent"/>
-			<Setter Property="BorderBrush" Value="Transparent"/>
-			<Setter Property="BorderThickness" Value="1"/>
-			<Setter Property="CornerRadius" Value="3"/>
-			<Setter Property="Padding" Value="4"/>
-			<Setter Property="MinWidth" Value="24"/>
-			<Setter Property="MinHeight" Value="24"/>
-			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4"/>
+			<Setter Property="MinWidth"                   Value="26"/>
+			<Setter Property="MinHeight"                  Value="26"/>
+			<Setter Property="VerticalAlignment"          Value="Center"/>
 			<Setter Property="HorizontalContentAlignment" Value="Center"/>
-			<Setter Property="VerticalContentAlignment" Value="Center"/>
-			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-			<Setter Property="Cursor" Value="Hand"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
 		</Style>
-		<Style Selector="ToggleButton.RibbonToggle:pointerover">
-			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
-			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Style Selector="ToggleButton.RibbonToggle /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
 		</Style>
-		<Style Selector="ToggleButton.RibbonToggle:pressed">
-			<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+		<Style Selector="ToggleButton.RibbonToggle:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
-		<Style Selector="ToggleButton.RibbonToggle:checked">
-			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+		<Style Selector="ToggleButton.RibbonToggle:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
-			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
-		<Style Selector="ToggleButton.RibbonToggle:disabled">
-			<Setter Property="Opacity" Value="0.5"/>
+		<Style Selector="ToggleButton.RibbonToggle:checked /template/ ContentPresenter">
+			<Setter Property="Background"             Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush"            Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggle:checked:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
-		<!-- SplitButton риббона — основная кнопка плюс стрелка с выпадающим меню -->
 		<Style Selector="SplitButton.RibbonSplit">
-			<Setter Property="Background" Value="Transparent"/>
-			<Setter Property="BorderBrush" Value="Transparent"/>
-			<Setter Property="BorderThickness" Value="1"/>
-			<Setter Property="CornerRadius" Value="3"/>
-			<Setter Property="Padding" Value="4 4 2 4"/>
-			<Setter Property="MinWidth" Value="24"/>
-			<Setter Property="MinHeight" Value="24"/>
+			<Setter Property="Background"        Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"       Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"   Value="1"/>
+			<Setter Property="CornerRadius"      Value="3"/>
+			<Setter Property="Padding"           Value="4 4 2 4"/>
+			<Setter Property="MinWidth"          Value="26"/>
+			<Setter Property="MinHeight"         Value="26"/>
 			<Setter Property="VerticalAlignment" Value="Center"/>
-			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-			<Setter Property="Cursor" Value="Hand"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"            Value="Hand"/>
 		</Style>
 		<Style Selector="SplitButton.RibbonSplit:pointerover">
-			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
-			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 		<Style Selector="SplitButton.RibbonSplit:pressed">
-			<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="Border.RibbonGroup">
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Padding"         Value="6 4 6 0"/>
+			<Setter Property="Margin"          Value="2 3"/>
+		</Style>
+
+		<Style Selector="Border.RibbonGroupCollapsed">
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Padding"         Value="2 4 2 0"/>
+			<Setter Property="Margin"          Value="2 3"/>
+		</Style>
+
+		<Style Selector="Grid.RibbonGroupLabelGrid">
+			<Setter Property="Margin" Value="0 3 0 2"/>
+		</Style>
+
+		<Style Selector="TextBlock.RibbonGroupLabel">
+			<Setter Property="FontSize"            Value="10"/>
+			<Setter Property="Foreground"          Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="TextAlignment"       Value="Center"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="VerticalAlignment"   Value="Center"/>
 		</Style>
 
 	</UserControl.Styles>
 
-	<ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-		<StackPanel Orientation="Horizontal" Spacing="1" Margin="4 2" VerticalAlignment="Center">
+	<controls:RibbonScrollContainer x:Name="ScrollContainer">
+		<controls:RibbonScrollContainer.RibbonContent>
+			<StackPanel Orientation="Horizontal">
 
-			<!-- Группа: Страница — размер, ориентация, поля -->
-			<Border Padding="4 2">
-				<StackPanel Spacing="2">
-					<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_Page_Group}"
-                               FontSize="10"
-                               Foreground="{DynamicResource TextSecondaryBrush}"/>
-					<StackPanel Orientation="Horizontal" Spacing="2">
-
-						<!-- Размер страницы — быстрый выбор из предустановок -->
-						<SplitButton Classes="RibbonSplit"
-                                     Width="55" Height="48"
-                                     Command="{Binding SetSizeA4Command}"
-                                     ToolTip.Tip="{x:Static loc:TextEditorStrings.Layout_PageSize}">
-							<SplitButton.Content>
+				<!-- ═══════════════════════════════════════════════════════
+                     СТРАНИЦА — развёрнутая
+                     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup"
+                        IsVisible="{Binding IsPageGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Layout_Page_Group}"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+							<SplitButton Classes="RibbonSplit"
+                                         Command="{Binding SetSizeA4Command}"
+                                         behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_PageSize}"
+                                         behaviours:TooltipBehavior.ShowDelay="700">
+								<SplitButton.Content>
+									<StackPanel Spacing="2" HorizontalAlignment="Center">
+										<PathIcon Data="M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z" Width="20" Height="20"/>
+										<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_PageSize}" FontSize="9" TextAlignment="Center"/>
+									</StackPanel>
+								</SplitButton.Content>
+								<SplitButton.Flyout>
+									<MenuFlyout>
+										<MenuItem Header="A4 (210 x 297 mm)"    Command="{Binding SetSizeA4Command}"/>
+										<MenuItem Header="A3 (297 x 420 mm)"    Command="{Binding SetSizeA3Command}"/>
+										<MenuItem Header="A5 (148 x 210 mm)"    Command="{Binding SetSizeA5Command}"/>
+										<MenuItem Header="Letter (8.5 x 11 in)" Command="{Binding SetSizeLetterCommand}"/>
+									</MenuFlyout>
+								</SplitButton.Flyout>
+							</SplitButton>
+							<SplitButton Classes="RibbonSplit"
+                                         Command="{Binding SetOrientationPortraitCommand}"
+                                         behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_Orientation}"
+                                         behaviours:TooltipBehavior.ShowDelay="700">
+								<SplitButton.Content>
+									<StackPanel Spacing="2" HorizontalAlignment="Center">
+										<PathIcon Data="M17 1H7c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zm0 18H7V5h10v14z" Width="20" Height="20"/>
+										<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_Orientation}" FontSize="9" TextAlignment="Center"/>
+									</StackPanel>
+								</SplitButton.Content>
+								<SplitButton.Flyout>
+									<MenuFlyout>
+										<MenuItem Header="{x:Static loc:TextEditorStrings.Orientation_Portrait}"  Command="{Binding SetOrientationPortraitCommand}"/>
+										<MenuItem Header="{x:Static loc:TextEditorStrings.Orientation_Landscape}" Command="{Binding SetOrientationLandscapeCommand}"/>
+									</MenuFlyout>
+								</SplitButton.Flyout>
+							</SplitButton>
+							<Button Command="{Binding SetMarginsCommand}"
+                                    Classes="RibbonBtnLarge"
+                                    behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_Margins}"
+                                    behaviours:TooltipBehavior.ShowDelay="700">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Data="M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z" Width="20" Height="20"/>
-									<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_PageSize}" FontSize="9" TextAlignment="Center"/>
+									<PathIcon Data="M3 3v18h18V3H3zm16 16H5V5h14v14z" Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_Margins}" FontSize="9" TextAlignment="Center"/>
 								</StackPanel>
-							</SplitButton.Content>
-							<SplitButton.Flyout>
-								<MenuFlyout>
-									<MenuItem Header="A4 (210 x 297 mm)"    Command="{Binding SetSizeA4Command}"/>
-									<MenuItem Header="A3 (297 x 420 mm)"    Command="{Binding SetSizeA3Command}"/>
-									<MenuItem Header="A5 (148 x 210 mm)"    Command="{Binding SetSizeA5Command}"/>
-									<MenuItem Header="Letter (8.5 x 11 in)" Command="{Binding SetSizeLetterCommand}"/>
-								</MenuFlyout>
-							</SplitButton.Flyout>
-						</SplitButton>
+							</Button>
+						</StackPanel>
+					</DockPanel>
+				</Border>
 
-						<!-- Ориентация страницы — портрет или альбом -->
-						<SplitButton Classes="RibbonSplit"
-                                     Width="60" Height="48"
-                                     Command="{Binding SetOrientationPortraitCommand}"
-                                     ToolTip.Tip="{x:Static loc:TextEditorStrings.Layout_Orientation}">
-							<SplitButton.Content>
-								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Data="M17 1H7c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zm0 18H7V5h10v14z" Width="20" Height="20"/>
-									<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_Orientation}" FontSize="9" TextAlignment="Center"/>
-								</StackPanel>
-							</SplitButton.Content>
-							<SplitButton.Flyout>
-								<MenuFlyout>
-									<MenuItem Header="{x:Static loc:TextEditorStrings.Orientation_Portrait}"  Command="{Binding SetOrientationPortraitCommand}"/>
-									<MenuItem Header="{x:Static loc:TextEditorStrings.Orientation_Landscape}" Command="{Binding SetOrientationLandscapeCommand}"/>
-								</MenuFlyout>
-							</SplitButton.Flyout>
-						</SplitButton>
-
-						<!-- Поля страницы -->
-						<Button Command="{Binding SetMarginsCommand}"
-                                Classes="RibbonBtnLarge"
-                                Width="55"
-                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Layout_Margins}">
+				<!-- СТРАНИЦА — свёрнутая -->
+				<Border Classes="RibbonGroupCollapsed"
+                        IsVisible="{Binding !IsPageGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Layout_Page_Group}"/>
+						</Grid>
+						<Button Classes="RibbonBtnLarge" VerticalAlignment="Top"
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_Page_Group}"
+                                behaviours:TooltipBehavior.ShowDelay="700">
+							<Button.Flyout>
+								<Flyout Placement="Bottom">
+									<StackPanel Orientation="Horizontal" Spacing="4" Margin="8">
+										<SplitButton Classes="RibbonSplit"
+                                                     Command="{Binding SetSizeA4Command}"
+                                                     behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_PageSize}"
+                                                     behaviours:TooltipBehavior.ShowDelay="700">
+											<SplitButton.Content>
+												<StackPanel Spacing="2" HorizontalAlignment="Center">
+													<PathIcon Data="M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z" Width="20" Height="20"/>
+													<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_PageSize}" FontSize="9" TextAlignment="Center"/>
+												</StackPanel>
+											</SplitButton.Content>
+											<SplitButton.Flyout>
+												<MenuFlyout>
+													<MenuItem Header="A4 (210 x 297 mm)"    Command="{Binding SetSizeA4Command}"/>
+													<MenuItem Header="A3 (297 x 420 mm)"    Command="{Binding SetSizeA3Command}"/>
+													<MenuItem Header="A5 (148 x 210 mm)"    Command="{Binding SetSizeA5Command}"/>
+													<MenuItem Header="Letter (8.5 x 11 in)" Command="{Binding SetSizeLetterCommand}"/>
+												</MenuFlyout>
+											</SplitButton.Flyout>
+										</SplitButton>
+										<SplitButton Classes="RibbonSplit"
+                                                     Command="{Binding SetOrientationPortraitCommand}"
+                                                     behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_Orientation}"
+                                                     behaviours:TooltipBehavior.ShowDelay="700">
+											<SplitButton.Content>
+												<StackPanel Spacing="2" HorizontalAlignment="Center">
+													<PathIcon Data="M17 1H7c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zm0 18H7V5h10v14z" Width="20" Height="20"/>
+													<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_Orientation}" FontSize="9" TextAlignment="Center"/>
+												</StackPanel>
+											</SplitButton.Content>
+											<SplitButton.Flyout>
+												<MenuFlyout>
+													<MenuItem Header="{x:Static loc:TextEditorStrings.Orientation_Portrait}"  Command="{Binding SetOrientationPortraitCommand}"/>
+													<MenuItem Header="{x:Static loc:TextEditorStrings.Orientation_Landscape}" Command="{Binding SetOrientationLandscapeCommand}"/>
+												</MenuFlyout>
+											</SplitButton.Flyout>
+										</SplitButton>
+										<Button Command="{Binding SetMarginsCommand}"
+                                                Classes="RibbonBtnLarge"
+                                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_Margins}"
+                                                behaviours:TooltipBehavior.ShowDelay="700">
+											<StackPanel Spacing="2" HorizontalAlignment="Center">
+												<PathIcon Data="M3 3v18h18V3H3zm16 16H5V5h14v14z" Width="20" Height="20"/>
+												<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_Margins}" FontSize="9" TextAlignment="Center"/>
+											</StackPanel>
+										</Button>
+									</StackPanel>
+								</Flyout>
+							</Button.Flyout>
 							<StackPanel Spacing="2" HorizontalAlignment="Center">
-								<PathIcon Data="M3 3v18h18V3H3zm16 16H5V5h14v14z" Width="20" Height="20"/>
-								<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_Margins}" FontSize="9" TextAlignment="Center"/>
+								<PathIcon Data="M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z" Width="20" Height="20"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_Page_Group}" FontSize="9" TextAlignment="Center"/>
 							</StackPanel>
 						</Button>
+					</DockPanel>
+				</Border>
 
-					</StackPanel>
-				</StackPanel>
-			</Border>
+				<!-- ═══════════════════════════════════════════════════════
+                     КОЛОНКИ — развёрнутая
+                     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup"
+                        IsVisible="{Binding IsColumnsGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Layout_Columns}"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+							<ToggleButton IsChecked="{Binding CurrentColumnCount, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=1}"
+                                          Command="{Binding Set1ColumnCommand}"
+                                          Classes="RibbonToggle"
+                                          behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Columns_One}"
+                                          behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Data="M3 3h18v18H3V3zm2 2v14h14V5H5z" Width="18" Height="18"/>
+							</ToggleButton>
+							<ToggleButton IsChecked="{Binding CurrentColumnCount, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=2}"
+                                          Command="{Binding Set2ColumnsCommand}"
+                                          Classes="RibbonToggle"
+                                          behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Columns_Two}"
+                                          behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Data="M3 3h8v18H3V3zm10 0h8v18h-8V3z" Width="18" Height="18"/>
+							</ToggleButton>
+							<ToggleButton IsChecked="{Binding CurrentColumnCount, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=3}"
+                                          Command="{Binding Set3ColumnsCommand}"
+                                          Classes="RibbonToggle"
+                                          behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Columns_Three}"
+                                          behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Data="M3 3h5v18H3V3zm7 0h4v18h-4V3zm6 0h5v18h-5V3z" Width="18" Height="18"/>
+							</ToggleButton>
+						</StackPanel>
+					</DockPanel>
+				</Border>
 
-			<Separator Width="1" Height="40" Background="{DynamicResource BorderSubtleBrush}" Margin="3 0" VerticalAlignment="Center"/>
+				<!-- КОЛОНКИ — свёрнутая -->
+				<Border Classes="RibbonGroupCollapsed"
+                        IsVisible="{Binding !IsColumnsGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Layout_Columns}"/>
+						</Grid>
+						<Button Classes="RibbonBtnLarge" VerticalAlignment="Top"
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_Columns}"
+                                behaviours:TooltipBehavior.ShowDelay="700">
+							<Button.Flyout>
+								<Flyout Placement="Bottom">
+									<StackPanel Orientation="Horizontal" Spacing="4" Margin="8">
+										<ToggleButton IsChecked="{Binding CurrentColumnCount, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=1}"
+                                                      Command="{Binding Set1ColumnCommand}" Classes="RibbonToggle"
+                                                      behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Columns_One}"
+                                                      behaviours:TooltipBehavior.ShowDelay="700">
+											<PathIcon Data="M3 3h18v18H3V3zm2 2v14h14V5H5z" Width="18" Height="18"/>
+										</ToggleButton>
+										<ToggleButton IsChecked="{Binding CurrentColumnCount, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=2}"
+                                                      Command="{Binding Set2ColumnsCommand}" Classes="RibbonToggle"
+                                                      behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Columns_Two}"
+                                                      behaviours:TooltipBehavior.ShowDelay="700">
+											<PathIcon Data="M3 3h8v18H3V3zm10 0h8v18h-8V3z" Width="18" Height="18"/>
+										</ToggleButton>
+										<ToggleButton IsChecked="{Binding CurrentColumnCount, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=3}"
+                                                      Command="{Binding Set3ColumnsCommand}" Classes="RibbonToggle"
+                                                      behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Columns_Three}"
+                                                      behaviours:TooltipBehavior.ShowDelay="700">
+											<PathIcon Data="M3 3h5v18H3V3zm7 0h4v18h-4V3zm6 0h5v18h-5V3z" Width="18" Height="18"/>
+										</ToggleButton>
+									</StackPanel>
+								</Flyout>
+							</Button.Flyout>
+							<StackPanel Spacing="2" HorizontalAlignment="Center">
+								<PathIcon Data="M3 3h8v18H3V3zm10 0h8v18h-8V3z" Width="20" Height="20"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_Columns}" FontSize="9" TextAlignment="Center"/>
+							</StackPanel>
+						</Button>
+					</DockPanel>
+				</Border>
 
-			<!-- Группа: Колонки — EqualityConverter сравнивает CurrentColumnCount с числом -->
-			<Border Padding="4 2">
-				<StackPanel Spacing="2">
-					<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_Columns}"
-                               FontSize="10"
-                               Foreground="{DynamicResource TextSecondaryBrush}"/>
-					<StackPanel Orientation="Horizontal" Spacing="2">
+				<!-- ═══════════════════════════════════════════════════════
+                     РАЗРЫВЫ — развёрнутая
+                     ═══════════════════════════════════════════════════════ -->
+				<Border Classes="RibbonGroup"
+                        IsVisible="{Binding IsBreaksGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Layout_Breaks_Group}"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+							<Button Command="{Binding InsertPageBreakCommand}"
+                                    Classes="RibbonBtnLarge"
+                                    behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_PageBreak}"
+                                    behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M5 3v12h2v-2h2v2h2V3H5zm2 8V5h2v6H7zm8 2h2V3h-4v12h2v-2zm0-8h2v6h-2V5zM3 19h18v2H3v-2z" Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_PageBreak}" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+							<Button Command="{Binding InsertSectionBreakCommand}"
+                                    Classes="RibbonBtnLarge"
+                                    behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_SectionBreak}"
+                                    behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M3 19h18v2H3v-2zm5-6h2V5H8v8zm6 0h2V5h-2v8z" Width="20" Height="20"/>
+									<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_SectionBreak}" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</Button>
+						</StackPanel>
+					</DockPanel>
+				</Border>
 
-						<ToggleButton IsChecked="{Binding CurrentColumnCount, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=1}"
-                                      Command="{Binding Set1ColumnCommand}"
-                                      Classes="RibbonToggle"
-                                      Width="36" Height="36"
-                                      ToolTip.Tip="{x:Static loc:TextEditorStrings.Columns_One}">
-							<PathIcon Data="M3 3h18v18H3V3zm2 2v14h14V5H5z" Width="18" Height="18"/>
-						</ToggleButton>
-
-						<ToggleButton IsChecked="{Binding CurrentColumnCount, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=2}"
-                                      Command="{Binding Set2ColumnsCommand}"
-                                      Classes="RibbonToggle"
-                                      Width="36" Height="36"
-                                      ToolTip.Tip="{x:Static loc:TextEditorStrings.Columns_Two}">
-							<PathIcon Data="M3 3h8v18H3V3zm10 0h8v18h-8V3z" Width="18" Height="18"/>
-						</ToggleButton>
-
-						<ToggleButton IsChecked="{Binding CurrentColumnCount, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=3}"
-                                      Command="{Binding Set3ColumnsCommand}"
-                                      Classes="RibbonToggle"
-                                      Width="36" Height="36"
-                                      ToolTip.Tip="{x:Static loc:TextEditorStrings.Columns_Three}">
-							<PathIcon Data="M3 3h5v18H3V3zm7 0h4v18h-4V3zm6 0h5v18h-5V3z" Width="18" Height="18"/>
-						</ToggleButton>
-
-					</StackPanel>
-				</StackPanel>
-			</Border>
-
-			<Separator Width="1" Height="40" Background="{DynamicResource BorderSubtleBrush}" Margin="3 0" VerticalAlignment="Center"/>
-
-			<!-- Группа: Разрывы — страниц и разделов -->
-			<Border Padding="4 2">
-				<StackPanel Spacing="2">
-					<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_Breaks_Group}"
-                               FontSize="10"
-                               Foreground="{DynamicResource TextSecondaryBrush}"/>
-					<StackPanel Orientation="Horizontal" Spacing="2">
-
-						<Button Command="{Binding InsertPageBreakCommand}"
-                                Classes="RibbonBtnLarge"
-                                Width="55"
-                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Insert_PageBreak}">
+				<!-- РАЗРЫВЫ — свёрнутая -->
+				<Border Classes="RibbonGroupCollapsed"
+                        IsVisible="{Binding !IsBreaksGroupExpanded}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel"
+                                       Text="{x:Static loc:TextEditorStrings.Layout_Breaks_Group}"/>
+						</Grid>
+						<Button Classes="RibbonBtnLarge" VerticalAlignment="Top"
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_Breaks_Group}"
+                                behaviours:TooltipBehavior.ShowDelay="700">
+							<Button.Flyout>
+								<Flyout Placement="Bottom">
+									<StackPanel Orientation="Horizontal" Spacing="4" Margin="8">
+										<Button Command="{Binding InsertPageBreakCommand}"
+                                                Classes="RibbonBtnLarge"
+                                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Insert_PageBreak}"
+                                                behaviours:TooltipBehavior.ShowDelay="700">
+											<StackPanel Spacing="2" HorizontalAlignment="Center">
+												<PathIcon Data="M5 3v12h2v-2h2v2h2V3H5zm2 8V5h2v6H7zm8 2h2V3h-4v12h2v-2zm0-8h2v6h-2V5zM3 19h18v2H3v-2z" Width="20" Height="20"/>
+												<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_PageBreak}" FontSize="9" TextAlignment="Center"/>
+											</StackPanel>
+										</Button>
+										<Button Command="{Binding InsertSectionBreakCommand}"
+                                                Classes="RibbonBtnLarge"
+                                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Layout_SectionBreak}"
+                                                behaviours:TooltipBehavior.ShowDelay="700">
+											<StackPanel Spacing="2" HorizontalAlignment="Center">
+												<PathIcon Data="M3 19h18v2H3v-2zm5-6h2V5H8v8zm6 0h2V5h-2v8z" Width="20" Height="20"/>
+												<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_SectionBreak}" FontSize="9" TextAlignment="Center"/>
+											</StackPanel>
+										</Button>
+									</StackPanel>
+								</Flyout>
+							</Button.Flyout>
 							<StackPanel Spacing="2" HorizontalAlignment="Center">
 								<PathIcon Data="M5 3v12h2v-2h2v2h2V3H5zm2 8V5h2v6H7zm8 2h2V3h-4v12h2v-2zm0-8h2v6h-2V5zM3 19h18v2H3v-2z" Width="20" Height="20"/>
-								<TextBlock Text="{x:Static loc:TextEditorStrings.Insert_PageBreak}" FontSize="9" TextAlignment="Center"/>
+								<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_Breaks_Group}" FontSize="9" TextAlignment="Center"/>
 							</StackPanel>
 						</Button>
+					</DockPanel>
+				</Border>
 
-						<Button Command="{Binding InsertSectionBreakCommand}"
-                                Classes="RibbonBtnLarge"
-                                Width="60"
-                                ToolTip.Tip="{x:Static loc:TextEditorStrings.Layout_SectionBreak}">
-							<StackPanel Spacing="2" HorizontalAlignment="Center">
-								<PathIcon Data="M3 19h18v2H3v-2zm5-6h2V5H8v8zm6 0h2V5h-2v8z" Width="20" Height="20"/>
-								<TextBlock Text="{x:Static loc:TextEditorStrings.Layout_SectionBreak}" FontSize="9" TextAlignment="Center"/>
-							</StackPanel>
-						</Button>
+			</StackPanel>
+		</controls:RibbonScrollContainer.RibbonContent>
+	</controls:RibbonScrollContainer>
 
-					</StackPanel>
-				</StackPanel>
-			</Border>
-
-		</StackPanel>
-	</ScrollViewer>
 </UserControl>

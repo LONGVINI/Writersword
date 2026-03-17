@@ -160,11 +160,11 @@ namespace Writersword.Modules.TextEditor.Converters
             {
                 return alignment switch
                 {
-                    Models.Styles.TextAlignment.Left => Avalonia.Media.TextAlignment.Left,
-                    Models.Styles.TextAlignment.Center => Avalonia.Media.TextAlignment.Center,
-                    Models.Styles.TextAlignment.Right => Avalonia.Media.TextAlignment.Right,
-                    Models.Styles.TextAlignment.Justify => Avalonia.Media.TextAlignment.Justify,
-                    _ => Avalonia.Media.TextAlignment.Left
+                    Models.Styles.TextAlignment.Left => TextAlignment.Left,
+                    Models.Styles.TextAlignment.Center => TextAlignment.Center,
+                    Models.Styles.TextAlignment.Right => TextAlignment.Right,
+                    Models.Styles.TextAlignment.Justify => TextAlignment.Justify,
+                    _ => TextAlignment.Left
                 };
             }
             return Avalonia.Media.TextAlignment.Left;
@@ -172,14 +172,14 @@ namespace Writersword.Modules.TextEditor.Converters
 
         public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         {
-            if (value is Avalonia.Media.TextAlignment alignment)
+            if (value is TextAlignment alignment)
             {
                 return alignment switch
                 {
-                    Avalonia.Media.TextAlignment.Left => Models.Styles.TextAlignment.Left,
-                    Avalonia.Media.TextAlignment.Center => Models.Styles.TextAlignment.Center,
-                    Avalonia.Media.TextAlignment.Right => Models.Styles.TextAlignment.Right,
-                    Avalonia.Media.TextAlignment.Justify => Models.Styles.TextAlignment.Justify,
+                    TextAlignment.Left => Models.Styles.TextAlignment.Left,
+                    TextAlignment.Center => Models.Styles.TextAlignment.Center,
+                    TextAlignment.Right => Models.Styles.TextAlignment.Right,
+                    TextAlignment.Justify => Models.Styles.TextAlignment.Justify,
                     _ => Models.Styles.TextAlignment.Left
                 };
             }
@@ -266,6 +266,65 @@ namespace Writersword.Modules.TextEditor.Converters
         {
             if (value is null || parameter is null) return false;
             return value.ToString() == parameter.ToString();
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+            => AvaloniaProperty.UnsetValue;
+    }
+
+    /// <summary>
+    /// Возвращает размер шрифта для превью карточки стиля в галерее.
+    /// </summary>
+    public sealed class StylePreviewSizeConverter : IValueConverter
+    {
+        public static readonly StylePreviewSizeConverter Instance = new();
+
+        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            return value is string name ? name switch
+            {
+                "Heading 1" => 16.0,
+                "Heading 2" => 14.0,
+                "Heading 3" => 13.0,
+                "Heading 4" => 12.0,
+                "Heading 5" => 11.0,
+                "Heading 6" => 10.0,
+                _ => 11.0
+            } : 11.0;
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+            => AvaloniaProperty.UnsetValue;
+    }
+
+    /// <summary>
+    /// Возвращает FontWeight для превью карточки стиля в галерее.
+    /// </summary>
+    public sealed class StylePreviewWeightConverter : IValueConverter
+    {
+        public static readonly StylePreviewWeightConverter Instance = new();
+
+        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            return value is string name && name.StartsWith("Heading")
+                ? FontWeight.Bold
+                : FontWeight.Normal;
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+            => AvaloniaProperty.UnsetValue;
+    }
+
+    /// <summary>
+    /// Возвращает FontStyle для превью карточки стиля в галерее.
+    /// </summary>
+    public sealed class StylePreviewStyleConverter : IValueConverter
+    {
+        public static readonly StylePreviewStyleConverter Instance = new();
+
+        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            return value is "Quote" ? FontStyle.Italic : FontStyle.Normal;
         }
 
         public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

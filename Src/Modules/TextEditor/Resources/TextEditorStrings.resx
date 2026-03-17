@@ -141,6 +141,26 @@
     <value>Section Break (Next Page)</value>
     <comment>Insert menu item</comment>
   </data>
+  <data name="Case_Lower" xml:space="preserve">
+    <value>lowercase</value>
+    <comment>All characters lowercase</comment>
+  </data>
+  <data name="Case_Sentence" xml:space="preserve">
+    <value>Sentence case.</value>
+    <comment>Capitalize first letter of sentence</comment>
+  </data>
+  <data name="Case_Title" xml:space="preserve">
+    <value>Capitalize Each Word</value>
+    <comment>First letter of each word capitalized</comment>
+  </data>
+  <data name="Case_Toggle" xml:space="preserve">
+    <value>tOGGLE cASE</value>
+    <comment>Invert case of each character</comment>
+  </data>
+  <data name="Case_Upper" xml:space="preserve">
+    <value>UPPERCASE</value>
+    <comment>All characters uppercase</comment>
+  </data>
   <data name="Clipboard_Group" xml:space="preserve">
     <value>Clipboard</value>
     <comment>Label for the Clipboard ribbon group header</comment>
@@ -213,9 +233,21 @@
     <value>Font</value>
     <comment>Label for the Font ribbon group header</comment>
   </data>
+  <data name="Format_AllCaps" xml:space="preserve">
+    <value>All Caps</value>
+    <comment>Toggle all caps formatting for selected text</comment>
+  </data>
   <data name="Format_Bold" xml:space="preserve">
     <value>Bold</value>
     <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_Bold_Letter" xml:space="preserve">
+    <value>B</value>
+    <comment>Letter shown on Bold button</comment>
+  </data>
+  <data name="Format_ChangeCase" xml:space="preserve">
+    <value>Change Case</value>
+    <comment>Change text case dropdown button</comment>
   </data>
   <data name="Format_ClearFormatting" xml:space="preserve">
     <value>Clear Formatting</value>
@@ -253,6 +285,10 @@
     <value>Italic</value>
     <comment>Toolbar button tooltip</comment>
   </data>
+  <data name="Format_Italic_Letter" xml:space="preserve">
+    <value>I</value>
+    <comment>Letter shown on Italic button</comment>
+  </data>
   <data name="Format_Paste" xml:space="preserve">
     <value>Paste</value>
     <comment>Toolbar button tooltip</comment>
@@ -260,6 +296,10 @@
   <data name="Format_Strikethrough" xml:space="preserve">
     <value>Strikethrough</value>
     <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_Strikethrough_Letter" xml:space="preserve">
+    <value>S</value>
+    <comment>Letter shown on Strikethrough button</comment>
   </data>
   <data name="Format_Subscript" xml:space="preserve">
     <value>Subscript</value>
@@ -276,6 +316,10 @@
   <data name="Format_Underline" xml:space="preserve">
     <value>Underline</value>
     <comment>Toolbar button tooltip</comment>
+  </data>
+  <data name="Format_Underline_Letter" xml:space="preserve">
+    <value>U</value>
+    <comment>Letter shown on Underline button</comment>
   </data>
   <data name="Insert_Bookmark" xml:space="preserve">
     <value>Bookmark</value>
@@ -605,6 +649,18 @@
     <value>Words</value>
     <comment>Status bar label</comment>
   </data>
+  <data name="Styles_EditStyles" xml:space="preserve">
+    <value>Edit styles...</value>
+    <comment>Open style editor window</comment>
+  </data>
+  <data name="Styles_ResetToDefaults" xml:space="preserve">
+    <value>Reset to defaults</value>
+    <comment>Reset all document styles to default values</comment>
+  </data>
+  <data name="Styles_SaveFromCursor" xml:space="preserve">
+    <value>Save style from cursor</value>
+    <comment>Save current cursor formatting as style</comment>
+  </data>
   <data name="Style_Code" xml:space="preserve">
     <value>Code</value>
     <comment>Style picker option</comment>
@@ -645,6 +701,22 @@
     <value>Quote</value>
     <comment>Style picker option</comment>
   </data>
+  <data name="TextEffect_Glow" xml:space="preserve">
+    <value>Glow</value>
+    <comment>Text glow effect</comment>
+  </data>
+  <data name="TextEffect_Outline" xml:space="preserve">
+    <value>Outline</value>
+    <comment>Text outline effect</comment>
+  </data>
+  <data name="TextEffect_Reflection" xml:space="preserve">
+    <value>Reflection</value>
+    <comment>Text reflection effect</comment>
+  </data>
+  <data name="TextEffect_Shadow" xml:space="preserve">
+    <value>TextEffect_Shadow</value>
+    <comment>Text shadow effect</comment>
+  </data>
   <data name="View_CanvasColor" xml:space="preserve">
     <value>Page Color</value>
     <comment>Toolbar button tooltip</comment>
@@ -676,5 +748,9 @@
   <data name="View_Zoom" xml:space="preserve">
     <value>Zoom</value>
     <comment>Toolbar label</comment>
+  </data>
+  <data name="TextEffect_Title" xml:space="preserve">
+    <value>Text Effects</value>
+    <comment>Effects applied to selected text</comment>
   </data>
 </root>
