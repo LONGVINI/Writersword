@@ -3,6 +3,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
+using Writersword.Core.Models.Print;
 using Writersword.Modules.TextEditor.Models.Page;
 
 // TextAlignment намеренно не импортируется через using — конфликт с Avalonia.Media.TextAlignment.
@@ -37,7 +38,7 @@ namespace Writersword.Modules.TextEditor.Converters
     }
 
     /// <summary>
-    /// Преобразует <see cref="PageSettings"/> в ширину листа в пикселях.
+    /// Преобразует <see cref="TextEditorPageSettings"/> в ширину листа в пикселях.
     /// 1 мм = 96/25.4 пикселей (96 dpi).
     /// </summary>
     public sealed class PageWidthConverter : IValueConverter
@@ -48,7 +49,7 @@ namespace Writersword.Modules.TextEditor.Converters
 
         public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         {
-            if (value is PageSettings settings)
+            if (value is TextEditorPageSettings settings)
             {
                 double widthMm = settings.Orientation == PageOrientation.Landscape
                     ? settings.HeightMm
@@ -63,7 +64,7 @@ namespace Writersword.Modules.TextEditor.Converters
     }
 
     /// <summary>
-    /// Преобразует <see cref="PageSettings"/> в <see cref="Thickness"/> полей листа в пикселях.
+    /// Преобразует <see cref="TextEditorPageSettings"/> в <see cref="Thickness"/> полей листа в пикселях.
     /// </summary>
     public sealed class PageMarginsConverter : IValueConverter
     {
@@ -73,7 +74,7 @@ namespace Writersword.Modules.TextEditor.Converters
 
         public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         {
-            if (value is PageSettings settings)
+            if (value is TextEditorPageSettings settings)
             {
                 double left = (settings.MarginLeftMm + settings.MarginGutterMm) * MmToPx;
                 double right = settings.MarginRightMm * MmToPx;

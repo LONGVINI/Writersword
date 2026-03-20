@@ -1,5 +1,6 @@
 ﻿using System.Windows.Input;
 using ReactiveUI;
+using Writersword.Modules.TextEditor.Contracts;
 
 namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 {
@@ -52,17 +53,17 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         {
             _target = target;
 
-            InsertTOCCommand = ReactiveCommand.Create(() => { });
+            InsertTOCCommand = ReactiveCommand.Create(() => _target.InsertTOC());
             UpdateTOCCommand = ReactiveCommand.Create(() => { });
-            InsertFootnoteCommand = ReactiveCommand.Create(() => { });
-            InsertEndnoteCommand = ReactiveCommand.Create(() => { });
-            RunSpellCheckCommand = ReactiveCommand.Create(() => { });
-            ShowWordCountCommand = ReactiveCommand.Create(() => { });
-            PrintCommand = ReactiveCommand.Create(() => { });
-            ExportPdfCommand = ReactiveCommand.Create(() => { });
-            ExportDocxCommand = ReactiveCommand.Create(() => { });
-            ExportTxtCommand = ReactiveCommand.Create(() => { });
-            ExportMarkdownCommand = ReactiveCommand.Create(() => { });
+            InsertFootnoteCommand = ReactiveCommand.Create(() => _target.InsertFootnote());
+            InsertEndnoteCommand = ReactiveCommand.Create(() => _target.InsertEndnote());
+            RunSpellCheckCommand = ReactiveCommand.Create(() => _target.RunSpellCheck());
+            ShowWordCountCommand = ReactiveCommand.Create(() => _target.ShowWordCount());
+            PrintCommand = ReactiveCommand.Create(() => _target.Print());
+            ExportPdfCommand = ReactiveCommand.Create(() => _target.ExportToPdf());
+            ExportDocxCommand = ReactiveCommand.Create(() => _target.ExportToDocx());
+            ExportTxtCommand = ReactiveCommand.Create(() => _target.ExportToTxt());
+            ExportMarkdownCommand = ReactiveCommand.Create(() => _target.ExportToMarkdown());
         }
 
         public void UpdateLayout(double availableWidth)

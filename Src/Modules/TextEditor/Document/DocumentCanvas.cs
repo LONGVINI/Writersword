@@ -1,75 +1,121 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Input.Platform;
 using Avalonia.Media;
-using Avalonia.Media.TextFormatting;
+using Avalonia.Rendering.SceneGraph;
+using Avalonia.Skia;
 using Avalonia.Threading;
 using Serilog;
+using SkiaSharp;
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Threading.Tasks;
+using Writersword.Core.Models.Print;
+using Writersword.Core.Models.Rendering;
+using Writersword.Infrastructure.Rendering;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.Commands;
 using Writersword.Modules.TextEditor.Models.Document;
-using Writersword.Modules.TextEditor.Models.Inline;
+using Writersword.Modules.TextEditor.Models.Page;
 using Writersword.Modules.TextEditor.ViewModels;
 using Writersword.Modules.TextEditor.ViewModels.Blocks;
+using Writersword.Src.Core.Interfaces.Services.Input;
 
 namespace Writersword.Modules.TextEditor.Views.Document
 {
     public sealed class DocumentCanvas : Control
     {
-        // ── Layout ───────────────────────────────────────────────────────
-        private record ParaLayout(ParagraphViewModel Vm, TextLayout Layout, double Y, double Height, int PageIndex);
-        private record PageRect(double Y, double Width, double Height, double PadLeft, double PadTop);
+        // ── Конвертация единиц ────────────────────────────────────────────
+        private const float PtToPx = 96f / 72f;
+        private const float PxToPt = 72f / 96f;
 
+        // ── Константы геометрии ───────────────────────────────────────────
+        private const float PageGapPt = 15f;
+        private const float DraftPadHPt = 9f;
+        private const float DraftPadWPt = 0f;
+        private const float ReadingMaxPt = 510f;
+        private const float FallbackLinePt = 16.5f;
+
+        // ── Layout ───────────────────────────────────────────────────────
+        private record ParaLayout(
+            ParagraphViewModel Vm,
+            SKTextLayout Layout,
+            float Ypt,
+            float HeightPt,
+            int PageIndex,
+            int LineFrom,
+            int LineTo);
+
+        private record PageRect(
+            float Ypt,
+            float WidthPt,
+            float HeightPt,
+            float PadLeftPt,
+            float PadTopPt,
+            float MarginLeftPt);
+
+        // Атомарный снимок для render-потока.
+        // Rebuild-методы строят новые списки и меняют ссылки под локом.
+        // RenderWithSKCanvas захватывает снимок под тем же локом.
+        private readonly object _renderLock = new();
         private List<ParaLayout> _layouts = new();
         private List<PageRect> _pages = new();
         private double _canvasWidth;
         private double _canvasHeight;
+        private float _canvasHeightPt;
 
-        // ── Constants ────────────────────────────────────────────────────
-        private const double PageGap = 20;
-        private const double DraftPadH = 12;
-        private const double DraftPadW = 0;
-        private const double ReadingMax = 680;
-        private const double LineHeight = 22;
+        // ── Кеш лейаутов ─────────────────────────────────────────────────
+        private readonly Dictionary<ParagraphViewModel, (string Text, float Width, SKTextLayout Layout)>
+            _layoutCache = new();
 
-        // ── Caret ────────────────────────────────────────────────────────
+        // ── Дебаунс пересчёта ─────────────────────────────────────────────
+        // При вставке N абзацев генерируется N событий CollectionChanged.
+        // Каждое отменяет предыдущий токен и ставит новый Background-таск.
+        // Пересчёт выполняется один раз — когда очередь UI-потока опустеет.
+        private System.Threading.CancellationTokenSource _rebuildCts = new();
+
+        // ── Виртуализация ─────────────────────────────────────────────────
+        private ScrollViewer? _parentScrollViewer;
+        private double _scrollOffsetY = 0;
+        private double _viewportHeight = 600;
+
+        // ── Каретка ───────────────────────────────────────────────────────
         private int _caretPara = 0;
         private int _caretChar = 0;
         private bool _caretVisible = true;
+        private float _preferredCaretXPt = 0f;
         private readonly DispatcherTimer _caretTimer;
 
-        // ── Selection ────────────────────────────────────────────────────
+        // ── Выделение ─────────────────────────────────────────────────────
         private int _selStartPara = 0;
         private int _selStartChar = 0;
         private int _selEndPara = 0;
         private int _selEndChar = 0;
         private bool _isSelecting;
 
-        // ── Logger ───────────────────────────────────────────────────────
+        // ── Буфер обмена (кеш) ────────────────────────────────────────────
+        private string? _clipboardCache;
+
+        // ── Рендеринг ─────────────────────────────────────────────────────
+        private readonly SKTextRenderer _renderer = new();
+        private StyleResolver? _styleResolver;
+
+        // ── Логирование ───────────────────────────────────────────────────
         private static readonly ILogger _logger = Log.ForContext<DocumentCanvas>();
 
-        // ── Undo / settings ──────────────────────────────────────────────
+        // ── HotKey ───────────────────────────────────────────────────────
+        private IHotKeyService? _hotKeyService;
+
+        // ── Undo ─────────────────────────────────────────────────────────
         public UndoRedoStack? UndoStack { get; set; }
 
         private double _monitorSizeInches = 0;
         private double _cachedDpi = 96.0;
 
-        /// <summary>
-        /// Вызывается после пересчёта DPI — передаёт рекомендуемый zoom наружу.
-        /// </summary>
         public Action<double>? RecommendedZoomChanged { get; set; }
 
-        /// <summary>
-        /// Physical monitor diagonal in inches.
-        /// 0 = use standard 96 DPI.
-        /// Triggers DPI cache rebuild and layout on change.
-        /// </summary>
         public double MonitorSizeInches
         {
             get => _monitorSizeInches;
@@ -85,14 +131,13 @@ namespace Writersword.Modules.TextEditor.Views.Document
 
         private DocumentSnapshotCommand? _pendingSnapshot;
 
-        // ── Brushes ───────────────────────────────────────────────────────
-        private static readonly IBrush SelectionBrush =
-            new SolidColorBrush(Color.Parse("#3390FF"), 0.35);
-        private static readonly IBrush PageBrush = Brushes.White;
-        private static readonly IBrush CanvasBrush = new SolidColorBrush(Color.Parse("#E8E8E8"));
-        private static readonly IPen CaretPen = new Pen(Brushes.Black, 1.5);
+        // ── Цвета ─────────────────────────────────────────────────────────
+        private static readonly SKColor SelectionColor = new(0x33, 0x90, 0xFF, 0x60);
+        private static readonly SKColor CanvasBgColor = new(0xE8, 0xE8, 0xE8);
+        private static readonly SKColor PageShadowColor = new(0x00, 0x00, 0x00, 0x28);
 
-        private DocumentViewModel? DocVm => DataContext as DocumentViewModel;
+        private DocumentViewModel? _docVm;
+        private DocumentViewModel? DocVm => _docVm;
         private double Zoom => DocVm?.Zoom ?? 1.0;
 
         public DocumentCanvas()
@@ -105,19 +150,21 @@ namespace Writersword.Modules.TextEditor.Views.Document
             _caretTimer.Start();
         }
 
-        // ── DPI cache ─────────────────────────────────────────────────────
+        // ── HotKey ───────────────────────────────────────────────────────
 
-        /// <summary>
-        /// Recalculates physical DPI from monitor diagonal and screen resolution.
-        /// Called once per layout pass and when MonitorSizeInches changes.
-        /// </summary>
+        public void SetHotKeyService(IHotKeyService service)
+        {
+            _hotKeyService = service;
+        }
+
+        // ── DPI ───────────────────────────────────────────────────────────
+
         private void RebuildDpiCache()
         {
             if (_monitorSizeInches <= 0)
             {
                 _cachedDpi = 96.0;
-                Avalonia.Threading.Dispatcher.UIThread.Post(
-                    () => RecommendedZoomChanged?.Invoke(RecommendedZoom));
+                Dispatcher.UIThread.Post(() => RecommendedZoomChanged?.Invoke(RecommendedZoom));
                 return;
             }
 
@@ -133,58 +180,127 @@ namespace Writersword.Modules.TextEditor.Views.Document
             _logger.Debug("DPI recalculated: physW={W} physH={H} diagPx={D} dpi={DPI}",
                 physW, physH, diagPx, _cachedDpi);
 
-            Avalonia.Threading.Dispatcher.UIThread.Post(
-                () => RecommendedZoomChanged?.Invoke(RecommendedZoom));
+            Dispatcher.UIThread.Post(() => RecommendedZoomChanged?.Invoke(RecommendedZoom));
         }
 
-        private double MmToLogicalPx(double mm) => mm * (96.0 / 25.4);
         public double RecommendedZoom => _cachedDpi > 0 ? _cachedDpi / 96.0 : 1.0;
 
-        private double GetPageWidthPx()
+        private static float MmToPt(double mm) => (float)(mm * 72.0 / 25.4);
+
+        private float GetPageWidthPt()
         {
             var ps = DocVm?.Document.PageSettings;
-            if (ps is null) return MmToLogicalPx(210);
-            return ps.Orientation == Models.Page.PageOrientation.Landscape
-                ? MmToLogicalPx(ps.HeightMm)
-                : MmToLogicalPx(ps.WidthMm);
+            if (ps is null) return MmToPt(210);
+            return ps.Orientation == PageOrientation.Landscape
+                ? MmToPt(ps.HeightMm) : MmToPt(ps.WidthMm);
         }
 
-        private double GetPageHeightPx()
+        private float GetPageHeightPt()
         {
             var ps = DocVm?.Document.PageSettings;
-            if (ps is null) return MmToLogicalPx(297);
-            return ps.Orientation == Models.Page.PageOrientation.Landscape
-                ? MmToLogicalPx(ps.WidthMm)
-                : MmToLogicalPx(ps.HeightMm);
+            if (ps is null) return MmToPt(297);
+            return ps.Orientation == PageOrientation.Landscape
+                ? MmToPt(ps.WidthMm) : MmToPt(ps.HeightMm);
         }
 
-        private (double padLeft, double padTop, double padRight, double padBottom) GetPagePadding()
+        private (float left, float top, float right, float bottom) GetPagePaddingPt()
         {
             var ps = DocVm?.Document.PageSettings;
-            if (ps is null) return (MmToLogicalPx(20), MmToLogicalPx(20), MmToLogicalPx(20), MmToLogicalPx(20));
+            if (ps is null)
+                return (MmToPt(20), MmToPt(20), MmToPt(20), MmToPt(20));
             return (
-                MmToLogicalPx(ps.MarginLeftMm),
-                MmToLogicalPx(ps.MarginTopMm),
-                MmToLogicalPx(ps.MarginRightMm),
-                MmToLogicalPx(ps.MarginBottomMm));
+                MmToPt(ps.MarginLeftMm + ps.MarginGutterMm),
+                MmToPt(ps.MarginTopMm),
+                MmToPt(ps.MarginRightMm),
+                MmToPt(ps.MarginBottomMm));
         }
 
-        // ── DataContext ───────────────────────────────────────────────────
+        // ── DataContext / ScrollViewer ─────────────────────────────────────
 
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnAttachedToVisualTree(e);
-            // Screen becomes accessible only after attachment to the visual tree.
-            // Re-run DPI calculation so RecommendedZoomChanged fires with a valid screen.
             RebuildDpiCache();
+            SubscribeToScrollViewer();
+            _ = PrefetchClipboardAsync();
+        }
+
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnDetachedFromVisualTree(e);
+            UnsubscribeFromScrollViewer();
+        }
+
+        protected override void OnGotFocus(GotFocusEventArgs e)
+        {
+            base.OnGotFocus(e);
+            _ = PrefetchClipboardAsync();
+        }
+
+        private async Task PrefetchClipboardAsync()
+        {
+            try
+            {
+                var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+                if (clipboard is null) return;
+#pragma warning disable CS0618
+                _clipboardCache = await clipboard.GetTextAsync();
+#pragma warning restore CS0618
+            }
+            catch { }
+        }
+
+        private void SubscribeToScrollViewer()
+        {
+            StyledElement? parent = Parent;
+            while (parent is not null)
+            {
+                if (parent is ScrollViewer sv)
+                {
+                    _parentScrollViewer = sv;
+                    sv.ScrollChanged += OnScrollChanged;
+                    _scrollOffsetY = sv.Offset.Y;
+                    _viewportHeight = sv.Viewport.Height;
+                    _logger.Debug("ScrollViewer subscribed: viewportH={H}", _viewportHeight);
+                    break;
+                }
+                parent = parent.Parent;
+            }
+        }
+
+        private void UnsubscribeFromScrollViewer()
+        {
+            if (_parentScrollViewer is null) return;
+            _parentScrollViewer.ScrollChanged -= OnScrollChanged;
+            _parentScrollViewer = null;
+        }
+
+        private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
+        {
+            if (sender is not ScrollViewer sv) return;
+            _scrollOffsetY = sv.Offset.Y;
+            _viewportHeight = sv.Viewport.Height;
+            InvalidateVisual();
         }
 
         protected override void OnDataContextChanged(EventArgs e)
         {
             base.OnDataContextChanged(e);
 
+            if (_docVm is not null)
+            {
+                _docVm.Paragraphs.CollectionChanged -= OnParagraphsChanged;
+                _docVm.PropertyChanged -= OnDocVmPropertyChanged;
+            }
+
+            _docVm = DataContext as DocumentViewModel;
+            _layoutCache.Clear();
+
+            _logger.Debug("DataContextChanged: docVm={HasVm}", _docVm is not null);
+
             if (DocVm is not null)
             {
+                _styleResolver = new StyleResolver(DocVm.Document.Styles);
                 DocVm.Paragraphs.CollectionChanged += OnParagraphsChanged;
                 DocVm.PropertyChanged += OnDocVmPropertyChanged;
                 foreach (var pvm in DocVm.Paragraphs)
@@ -196,20 +312,49 @@ namespace Writersword.Modules.TextEditor.Views.Document
 
         private void OnDocVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (e.PropertyName == nameof(DocumentViewModel.ViewMode) ||
-                e.PropertyName == nameof(DocumentViewModel.Zoom) ||
-                e.PropertyName == nameof(DocumentViewModel.PageSettings))
+            if (e.PropertyName is nameof(DocumentViewModel.ViewMode)
+                               or nameof(DocumentViewModel.PageSettings))
+            {
+                _logger.Debug("DocVm property changed: {Prop}", e.PropertyName);
+                if (DocVm is not null)
+                    _styleResolver = new StyleResolver(DocVm.Document.Styles);
+                _layoutCache.Clear();
                 InvalidateMeasure();
+                return;
+            }
+
+            // При смене зума текстовая область в pt не меняется —
+            // лейауты валидны, пересчитывать не нужно, только перерисовать.
+            if (e.PropertyName is nameof(DocumentViewModel.Zoom))
+            {
+                _logger.Debug("DocVm property changed: Zoom");
+                InvalidateMeasure();
+            }
         }
+
 
         private void OnParagraphsChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
+            _logger.Debug("OnParagraphsChanged: action={A} newStart={NS} oldStart={OS}",
+                e.Action, e.NewStartingIndex, e.OldStartingIndex);
+
             if (e.NewItems is not null)
                 foreach (ParagraphViewModel pvm in e.NewItems) WirePvm(pvm);
+
             if (e.OldItems is not null)
                 foreach (ParagraphViewModel pvm in e.OldItems)
+                {
                     pvm.PropertyChanged -= OnPvmPropertyChanged;
-            InvalidateMeasure();
+                    _layoutCache.Remove(pvm);
+                }
+
+            int dirtyIdx = 0;
+            if (e.NewItems is not null && e.NewStartingIndex >= 0)
+                dirtyIdx = e.NewStartingIndex;
+            else if (e.OldItems is not null && e.OldStartingIndex >= 0)
+                dirtyIdx = Math.Max(0, e.OldStartingIndex - 1);
+
+            ScheduleRebuild(dirtyIdx);
         }
 
         private void WirePvm(ParagraphViewModel pvm)
@@ -221,8 +366,10 @@ namespace Writersword.Modules.TextEditor.Views.Document
                 if (DocVm is null) return;
                 int idx = DocVm.Paragraphs.IndexOf(pvm);
                 if (idx < 0) return;
-                _caretPara = idx;
+                _caretPara = FindFirstSliceForParagraphIndex(idx);
                 _caretChar = pvm.PlainText?.Length ?? 0;
+                SnapCaretToCorrectSlice();
+                UpdatePreferredX();
                 SyncSel(); ResetCaret(); InvalidateVisual();
             };
 
@@ -231,16 +378,76 @@ namespace Writersword.Modules.TextEditor.Views.Document
                 if (DocVm is null) return;
                 int idx = DocVm.Paragraphs.IndexOf(pvm);
                 if (idx < 0) return;
-                _caretPara = idx;
+                _caretPara = FindFirstSliceForParagraphIndex(idx);
                 _caretChar = Clamp(pos, 0, pvm.PlainText?.Length ?? 0);
+                SnapCaretToCorrectSlice();
+                UpdatePreferredX();
                 SyncSel(); ResetCaret(); InvalidateVisual();
             };
         }
 
         private void OnPvmPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (e.PropertyName == nameof(ParagraphViewModel.PlainText))
-                InvalidateMeasure();
+            if (e.PropertyName != nameof(ParagraphViewModel.PlainText)) return;
+
+            if (sender is ParagraphViewModel pvm && DocVm is not null)
+            {
+                int idx = DocVm.Paragraphs.IndexOf(pvm);
+                if (idx >= 0)
+                {
+                    ScheduleRebuild(idx);
+                    return;
+                }
+            }
+
+            ScheduleRebuild(0);
+        }
+
+        // ── Дебаунс пересчёта ─────────────────────────────────────────────
+        //
+        // ScheduleRebuild вызывается из каждого изменения данных.
+        // При вставке N абзацев вызывается N раз подряд на UI-потоке.
+        // Каждый вызов отменяет предыдущий CancellationToken и ставит новый
+        // Background-таск. Так как все вызовы синхронны, пока код не вернётся
+        // в event loop, ни один Background-таск не выполнится.
+        // В итоге выполняется ровно один полный пересчёт.
+        //
+        // До завершения пересчёта рендер показывает последнее стабильное
+        // состояние — без мерцания и промежуточных сломанных frames.
+
+        private void ScheduleRebuild(int dirtyParaIdx)
+        {
+            _logger.Debug("ScheduleRebuild: paraIdx={Idx}", dirtyParaIdx);
+
+            if (DocVm is not null && dirtyParaIdx < DocVm.Paragraphs.Count)
+                _layoutCache.Remove(DocVm.Paragraphs[dirtyParaIdx]);
+
+            _rebuildCts.Cancel();
+            _rebuildCts = new System.Threading.CancellationTokenSource();
+            var cts = _rebuildCts;
+
+            InvalidateVisual();
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (cts.IsCancellationRequested)
+                {
+                    _logger.Debug("ScheduleRebuild: cancelled");
+                    return;
+                }
+
+                _logger.Debug("ScheduleRebuild: executing full rebuild");
+
+                double oldCanvasH = _canvasHeight;
+                RebuildLayouts();
+
+                // ScrollViewer получит новый размер контента.
+                if (Math.Abs(_canvasHeight - oldCanvasH) > 0.5)
+                    InvalidateMeasure();
+                else
+                    InvalidateVisual();
+
+            }, DispatcherPriority.Background);
         }
 
         // ── Measure / Layout ─────────────────────────────────────────────
@@ -248,17 +455,42 @@ namespace Writersword.Modules.TextEditor.Views.Document
         protected override Size MeasureOverride(Size available)
         {
             double zoom = Zoom;
-            double availW = double.IsInfinity(available.Width) ? 800 : Math.Max(available.Width, 1);
+            double availW = double.IsInfinity(available.Width)
+                ? 800 : Math.Max(available.Width, 1);
 
-            _canvasWidth = Math.Max(availW / zoom, 1);
+            double viewportW = _parentScrollViewer?.Viewport.Width > 0
+                ? _parentScrollViewer.Viewport.Width
+                : availW;
+            double newCanvasWidth = Math.Max(viewportW / zoom, 1);
 
-            RebuildLayouts();
+            _logger.Debug("MeasureOverride: availW={A} viewportW={V} canvasWidth={C} zoom={Z}",
+                availW, viewportW, newCanvasWidth, zoom);
+
+            if (_styleResolver is null && DocVm is not null)
+                _styleResolver = new StyleResolver(DocVm.Document.Styles);
+
+            // Пересчитываем лейаут только если изменилась логическая ширина канваса.
+            // При чистом изменении зума ширина в pt не меняется — rebuild не нужен.
+            if (Math.Abs(newCanvasWidth - _canvasWidth) > 0.5)
+            {
+                _canvasWidth = newCanvasWidth;
+                _layoutCache.Clear();
+                RebuildLayouts();
+            }
+            else if (_layouts.Count == 0)
+            {
+                _canvasWidth = newCanvasWidth;
+                RebuildLayouts();
+            }
 
             double visualH = Math.Max(_canvasHeight * zoom, 100);
             double visualW = availW;
 
             if (DocVm?.ViewMode == EditorViewMode.Page)
-                visualW = Math.Max(availW, GetPageWidthPx() * zoom + PageGap * 4);
+                visualW = Math.Max(availW,
+                    GetPageWidthPt() * PtToPx * zoom + PageGapPt * PtToPx * 4);
+
+            _logger.Debug("MeasureOverride result: visualW={W} visualH={H}", visualW, visualH);
 
             return new Size(visualW, visualH);
         }
@@ -266,22 +498,50 @@ namespace Writersword.Modules.TextEditor.Views.Document
         protected override Size ArrangeOverride(Size finalSize)
         {
             double zoom = Zoom;
-            double logicalW = Math.Max(finalSize.Width / zoom, 1);
+            double viewportW = _parentScrollViewer?.Viewport.Width > 0
+                ? _parentScrollViewer.Viewport.Width
+                : finalSize.Width;
+            double logicalW = Math.Max(viewportW / zoom, 1);
 
+            // MeasureOverride уже мог обновить _canvasWidth и сделать rebuild.
+            // Здесь проверяем повторно — ArrangeOverride может получить другой finalSize.
             if (Math.Abs(logicalW - _canvasWidth) > 0.5)
             {
+                _logger.Debug("ArrangeOverride: width changed {Old} -> {New}", _canvasWidth, logicalW);
                 _canvasWidth = logicalW;
+                _layoutCache.Clear();
                 RebuildLayouts();
             }
 
             return new Size(finalSize.Width, Math.Max(_canvasHeight * zoom, 100));
         }
 
+        // ── Пересчёт лейаута ─────────────────────────────────────────────
+        //
+        // Строит новые списки во временных переменных.
+        // Заменяет _layouts / _pages / _canvasHeightPt атомарно под локом.
+        // Render-поток всегда видит полное консистентное состояние.
+
         private void RebuildLayouts()
         {
-            _layouts.Clear();
-            _pages.Clear();
-            if (DocVm is null) { _canvasHeight = 100; return; }
+            if (DocVm is null)
+            {
+                float emptyH = FallbackLinePt * 5f;
+                lock (_renderLock)
+                {
+                    _layouts = new List<ParaLayout>();
+                    _pages = new List<PageRect>();
+                    _canvasHeightPt = emptyH;
+                    _canvasHeight = emptyH * PtToPx;
+                }
+                return;
+            }
+
+            if (_styleResolver is null)
+                _styleResolver = new StyleResolver(DocVm.Document.Styles);
+
+            _logger.Debug("RebuildLayouts: mode={M} paragraphs={P} canvasWidth={W}",
+                DocVm.ViewMode, DocVm.Paragraphs.Count, _canvasWidth);
 
             switch (DocVm.ViewMode)
             {
@@ -290,202 +550,369 @@ namespace Writersword.Modules.TextEditor.Views.Document
                     break;
                 case EditorViewMode.Draft:
                 case EditorViewMode.Web:
-                    RebuildFlowMode(_canvasWidth, DraftPadH, DraftPadW);
+                    RebuildFlowMode(
+                        (float)(_canvasWidth * PxToPt), DraftPadHPt, DraftPadWPt);
                     break;
                 case EditorViewMode.Reading:
-                    double rw = Math.Min(_canvasWidth, ReadingMax);
-                    RebuildFlowMode(rw, 24, (_canvasWidth - rw) / 2);
-                    break;
+                    {
+                        float cw = (float)(_canvasWidth * PxToPt);
+                        RebuildFlowMode(Math.Min(cw, ReadingMaxPt), 18f,
+                            (cw - Math.Min(cw, ReadingMaxPt)) / 2f);
+                        break;
+                    }
             }
+
+            _logger.Debug("RebuildLayouts done: layouts={L} pages={P} canvasH={H}",
+                _layouts.Count, _pages.Count, _canvasHeightPt);
         }
 
         private void RebuildPageMode()
         {
-            double pageW = GetPageWidthPx();
-            double pageH = GetPageHeightPx();
-            var (pl, pt, pr, pb) = GetPagePadding();
-            double textW = Math.Max(pageW - pl - pr, 1);
-            double pageX = Math.Max((_canvasWidth - pageW) / 2.0, 0);
+            float pageWidthPt = GetPageWidthPt();
+            float pageHeightPt = GetPageHeightPt();
+            var (ml, mt, mr, mb) = GetPagePaddingPt();
+            float textWidthPt = Math.Max(pageWidthPt - ml - mr, 1f);
+            float canvasWPt = (float)(_canvasWidth * PxToPt);
+            float pageXPt = Math.Max((canvasWPt - pageWidthPt) / 2f, 0f);
 
-            double pageY = PageGap;
-            double contentY = pageY + pt;
+            float pageYPt = PageGapPt;
+            float pageBottomPt = pageYPt + pageHeightPt - mb;
+            float contentYPt = pageYPt + mt;
             int pageIdx = 0;
 
-            _pages.Add(new PageRect(pageY, pageW, pageH, pageX, pt));
+            var newLayouts = new List<ParaLayout>();
+            var newPages = new List<PageRect>();
+
+            newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml));
 
             foreach (var pvm in DocVm!.Paragraphs)
             {
-                var rp = GetFirstRp(pvm);
-                var tl = BuildTextLayout(pvm, rp, textW);
-                double h = Math.Max(tl.Height, LineHeight);
+                var layout = GetOrBuildLayout(pvm, textWidthPt);
+                if (layout.Lines.Count == 0) continue;
 
-                if (contentY + h > pageY + pageH - pb && contentY > pageY + pt)
+                contentYPt += layout.SpaceBeforePt;
+
+                int lineFrom = 0;
+                float lineGroupYPt = contentYPt;
+
+                for (int li = 0; li < layout.Lines.Count; li++)
                 {
-                    pageY = pageY + pageH + PageGap;
-                    contentY = pageY + pt;
-                    pageIdx++;
-                    _pages.Add(new PageRect(pageY, pageW, pageH, pageX, pt));
+                    var line = layout.Lines[li];
+                    bool isLast = li == layout.Lines.Count - 1;
+
+                    if (contentYPt + line.Height > pageBottomPt
+                        && contentYPt > pageYPt + mt)
+                    {
+                        if (li > lineFrom)
+                        {
+                            newLayouts.Add(new ParaLayout(
+                                pvm, layout, lineGroupYPt,
+                                contentYPt - lineGroupYPt,
+                                pageIdx, lineFrom, li));
+                        }
+
+                        pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                        pageBottomPt = pageYPt + pageHeightPt - mb;
+                        contentYPt = pageYPt + mt;
+                        pageIdx++;
+                        newPages.Add(new PageRect(
+                            pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml));
+
+                        lineFrom = li;
+                        lineGroupYPt = contentYPt;
+                    }
+
+                    contentYPt += line.Height;
+                    if (isLast) contentYPt += layout.SpaceAfterPt;
                 }
 
-                _layouts.Add(new ParaLayout(pvm, tl, contentY, h, pageIdx));
-                contentY += h + 4;
+                newLayouts.Add(new ParaLayout(
+                    pvm, layout, lineGroupYPt,
+                    contentYPt - lineGroupYPt,
+                    pageIdx, lineFrom, layout.Lines.Count));
             }
 
-            _canvasHeight = pageY + pageH + PageGap;
+            float newCanvasH = pageYPt + pageHeightPt + PageGapPt;
+
+            lock (_renderLock)
+            {
+                _layouts = newLayouts;
+                _pages = newPages;
+                _canvasHeightPt = newCanvasH;
+                _canvasHeight = newCanvasH * PtToPx;
+            }
         }
 
-        private void RebuildFlowMode(double maxWidth, double padH, double padW)
+        private void RebuildFlowMode(float maxWidthPt, float padHPt, float padWPt)
         {
-            double textW = Math.Max(maxWidth - padW * 2, 1);
-            double y = padH;
+            float textWidthPt = Math.Max(maxWidthPt - padWPt * 2f, 1f);
+            float yPt = padHPt;
+
+            var newLayouts = new List<ParaLayout>();
 
             foreach (var pvm in DocVm!.Paragraphs)
             {
-                var rp = GetFirstRp(pvm);
-                var tl = BuildTextLayout(pvm, rp, textW);
-                double h = Math.Max(tl.Height, LineHeight);
-
-                _layouts.Add(new ParaLayout(pvm, tl, y, h, 0));
-                y += h + 4;
+                var layout = GetOrBuildLayout(pvm, textWidthPt);
+                float hPt = Math.Max(layout.TotalHeightPt, FallbackLinePt);
+                newLayouts.Add(new ParaLayout(
+                    pvm, layout, yPt + layout.SpaceBeforePt, hPt, 0, 0, layout.Lines.Count));
+                yPt += layout.BlockHeightPt;
             }
 
-            _canvasHeight = y + padH;
+            float newCanvasH = yPt + padHPt;
+
+            lock (_renderLock)
+            {
+                _layouts = newLayouts;
+                _pages = new List<PageRect>();
+                _canvasHeightPt = newCanvasH;
+                _canvasHeight = newCanvasH * PtToPx;
+            }
         }
 
-        private static RunProperties? GetFirstRp(ParagraphViewModel pvm)
+        private SKTextLayout GetOrBuildLayout(ParagraphViewModel pvm, float widthPt)
         {
-            if (pvm.Model.Chunks.Count > 0 && pvm.Model.Chunks[0].Runs.Count > 0)
-                return pvm.Model.Chunks[0].Runs[0].Properties;
-            return null;
-        }
+            string text = pvm.PlainText ?? string.Empty;
 
-        private TextLayout BuildTextLayout(ParagraphViewModel pvm, RunProperties? rp, double maxW)
-        {
-            string family = rp?.FontFamily ?? "Times New Roman";
-            double size = rp?.FontSize ?? 14.0;
-            var weight = rp?.IsBold == true ? FontWeight.Bold : FontWeight.Normal;
-            var fStyle = rp?.IsItalic == true ? FontStyle.Italic : FontStyle.Normal;
-            var tf = new Typeface(family, fStyle, weight);
+            if (_layoutCache.TryGetValue(pvm, out var cached)
+                && cached.Text == text
+                && Math.Abs(cached.Width - widthPt) < 0.1f)
+                return cached.Layout;
 
-            IBrush fg = Brushes.Black;
-            if (rp?.TextColor is not null && Color.TryParse(rp.TextColor, out var col))
-                fg = new SolidColorBrush(col);
-
-            TextAlignment align = TextAlignment.Left;
-            if (pvm.Model.Properties.Alignment.HasValue)
-                align = pvm.Model.Properties.Alignment.Value switch
-                {
-                    Models.Styles.TextAlignment.Center => TextAlignment.Center,
-                    Models.Styles.TextAlignment.Right => TextAlignment.Right,
-                    Models.Styles.TextAlignment.Justify => TextAlignment.Justify,
-                    _ => TextAlignment.Left
-                };
-
-            string text = string.IsNullOrEmpty(pvm.PlainText) ? "\u200B" : pvm.PlainText;
-
-            return new TextLayout(text, tf, size, fg,
-                textAlignment: align,
-                textWrapping: TextWrapping.Wrap,
-                maxWidth: maxW);
+            var layout = _renderer.BuildLayout(pvm.Model, widthPt, _styleResolver!);
+            _layoutCache[pvm] = (text, widthPt, layout);
+            return layout;
         }
 
         // ── Render ────────────────────────────────────────────────────────
 
         public override void Render(DrawingContext ctx)
         {
+            ctx.Custom(new CanvasSKDrawOperation(
+                this, new Rect(0, 0, Bounds.Width, Bounds.Height)));
+        }
+
+        internal void RenderWithSKCanvas(SKCanvas canvas)
+        {
+            // Захватываем атомарный снимок — render-поток никогда не видит
+            // промежуточное состояние пересборки (pages=1 layouts=0).
+            List<ParaLayout> layouts;
+            List<PageRect> pages;
+            float canvasHeightPt;
+            double canvasWidth;
+
+            lock (_renderLock)
+            {
+                layouts = _layouts;
+                pages = _pages;
+                canvasHeightPt = _canvasHeightPt;
+                canvasWidth = _canvasWidth;
+            }
+
             double zoom = Zoom;
+            float scale = (float)(PtToPx * zoom);
 
-            using (ctx.PushTransform(Matrix.CreateScale(zoom, zoom)))
-            {
-                var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
-                if (mode == EditorViewMode.Page)
-                    RenderPageMode(ctx);
-                else
-                    RenderFlowMode(ctx, mode);
-            }
+            canvas.Save();
+            canvas.Scale(scale, scale);
+
+            var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
+            if (mode == EditorViewMode.Page)
+                RenderPageMode(canvas, layouts, pages, canvasHeightPt, canvasWidth);
+            else
+                RenderFlowMode(canvas, mode, layouts, canvasHeightPt, canvasWidth);
+
+            canvas.Restore();
         }
 
-        private void RenderPageMode(DrawingContext ctx)
+        private void RenderPageMode(
+            SKCanvas canvas,
+            List<ParaLayout> layouts,
+            List<PageRect> pages,
+            float canvasHeightPt,
+            double canvasWidth)
         {
-            ctx.FillRectangle(CanvasBrush, new Rect(0, 0, _canvasWidth, _canvasHeight));
+            float canvasWPt = (float)(canvasWidth * PxToPt);
 
-            var (ml, _, _, _) = GetPagePadding();
+            using var bgPaint = new SKPaint { Color = CanvasBgColor };
+            canvas.DrawRect(0, 0, canvasWPt, canvasHeightPt, bgPaint);
 
-            foreach (var page in _pages)
+            var (firstPage, lastPage) = GetVisiblePageRange(pages);
+
+            _logger.Debug(
+                "RenderPageMode: pages={P} layouts={L} visible=[{F},{La}] scrollY={S} viewportH={V}",
+                pages.Count, layouts.Count, firstPage, lastPage,
+                _scrollOffsetY, _viewportHeight);
+
+            for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
             {
-                ctx.FillRectangle(
-                    new SolidColorBrush(Color.FromArgb(40, 0, 0, 0)),
-                    new Rect(page.PadLeft + 4, page.Y + 4, page.Width, page.Height));
-
-                ctx.FillRectangle(PageBrush, new Rect(page.PadLeft, page.Y, page.Width, page.Height));
+                var page = pages[pi];
+                using var sh = new SKPaint { Color = PageShadowColor };
+                canvas.DrawRect(page.PadLeftPt + 3, page.Ypt + 3,
+                                page.WidthPt, page.HeightPt, sh);
+                using var pg = new SKPaint { Color = SKColors.White };
+                canvas.DrawRect(page.PadLeftPt, page.Ypt,
+                                page.WidthPt, page.HeightPt, pg);
             }
 
-            for (int i = 0; i < _layouts.Count; i++)
+            for (int i = 0; i < layouts.Count; i++)
             {
-                var pl = _layouts[i];
-                var page = pl.PageIndex < _pages.Count ? _pages[pl.PageIndex] : _pages[0];
-                double originX = page.PadLeft + ml;
-                var origin = new Point(originX, pl.Y);
+                var pl = layouts[i];
+                if (pl.PageIndex < firstPage || pl.PageIndex > lastPage) continue;
+                if (pl.PageIndex >= pages.Count) continue;
 
-                DrawSelectionForPara(ctx, i, pl, origin);
-                pl.Layout.Draw(ctx, origin);
+                var page = pages[pl.PageIndex];
+                float paraXPt = page.PadLeftPt + page.MarginLeftPt;
+                float paraYPt = pl.Ypt;
+
+                DrawSelectionForSlice(canvas, i, pl, paraXPt, paraYPt, layouts);
+                SKTextRenderer.RenderParagraphLines(
+                    canvas, pl.Layout, paraXPt, paraYPt, pl.LineFrom, pl.LineTo);
 
                 if (_caretVisible && _caretPara == i)
-                    DrawCaret(ctx, pl, origin);
+                    DrawCaret(canvas, pl, paraXPt, paraYPt);
             }
         }
 
-        private void RenderFlowMode(DrawingContext ctx, EditorViewMode mode)
+        private void RenderFlowMode(
+            SKCanvas canvas,
+            EditorViewMode mode,
+            List<ParaLayout> layouts,
+            float canvasHeightPt,
+            double canvasWidth)
         {
-            ctx.FillRectangle(Brushes.Transparent, new Rect(0, 0, _canvasWidth, _canvasHeight));
+            float canvasWPt = (float)(canvasWidth * PxToPt);
 
-            double padW = mode == EditorViewMode.Reading
-                ? (_canvasWidth - Math.Min(_canvasWidth, ReadingMax)) / 2
-                : DraftPadW;
+            using var bgPaint = new SKPaint { Color = SKColors.Transparent };
+            canvas.DrawRect(0, 0, canvasWPt, canvasHeightPt, bgPaint);
 
-            for (int i = 0; i < _layouts.Count; i++)
+            float padWPt = mode == EditorViewMode.Reading
+                ? (canvasWPt - Math.Min(canvasWPt, ReadingMaxPt)) / 2f : DraftPadWPt;
+
+            float zoom = (float)Zoom;
+            float viewTopPt = (float)(_scrollOffsetY / zoom * PxToPt) - FallbackLinePt * 5f;
+            float viewBottomPt = (float)((_scrollOffsetY + Math.Max(_viewportHeight, 100))
+                                          / zoom * PxToPt) + FallbackLinePt * 5f;
+
+            for (int i = 0; i < layouts.Count; i++)
             {
-                var pl = _layouts[i];
-                var origin = new Point(padW, pl.Y);
+                var pl = layouts[i];
+                if (pl.Ypt + pl.HeightPt < viewTopPt) continue;
+                if (pl.Ypt > viewBottomPt) break;
 
-                DrawSelectionForPara(ctx, i, pl, origin);
-                pl.Layout.Draw(ctx, origin);
+                float paraXPt = padWPt;
+                float paraYPt = pl.Ypt;
+
+                DrawSelectionForSlice(canvas, i, pl, paraXPt, paraYPt, layouts);
+                SKTextRenderer.RenderParagraphLines(
+                    canvas, pl.Layout, paraXPt, paraYPt, pl.LineFrom, pl.LineTo);
 
                 if (_caretVisible && _caretPara == i)
-                    DrawCaret(ctx, pl, origin);
+                    DrawCaret(canvas, pl, paraXPt, paraYPt);
             }
         }
 
-        private void DrawSelectionForPara(DrawingContext ctx, int i, ParaLayout pl, Point origin)
+        private (int first, int last) GetVisiblePageRange(List<PageRect> pages)
+        {
+            if (pages.Count == 0) return (0, 0);
+
+            double zoom = Zoom;
+            float viewTopPt = (float)(_scrollOffsetY / zoom * PxToPt);
+            float viewBottomPt = (float)((_scrollOffsetY + Math.Max(_viewportHeight, 100))
+                                           / zoom * PxToPt);
+
+            float bufferPt = (pages.Count > 0 ? pages[0].HeightPt : 842f) + PageGapPt;
+            viewTopPt -= bufferPt;
+            viewBottomPt += bufferPt;
+
+            int first = 0, last = pages.Count - 1;
+
+            for (int i = 0; i < pages.Count; i++)
+            {
+                if (pages[i].Ypt + pages[i].HeightPt >= viewTopPt) { first = i; break; }
+            }
+            for (int i = first; i < pages.Count; i++)
+            {
+                last = i;
+                if (pages[i].Ypt > viewBottomPt) break;
+            }
+
+            return (first, last);
+        }
+
+        private void DrawSelectionForSlice(
+     SKCanvas canvas, int sliceIdx, ParaLayout pl,
+     float xPt, float yPt, List<ParaLayout> layouts)
         {
             if (!HasSel()) return;
+
             var (sp, sc, ep, ec) = NormalizeSelection();
-            if (i < sp || i > ep) return;
+            var startVm = GetVmAt(sp, layouts);
+            var endVm = GetVmAt(ep, layouts);
+            if (startVm is null || endVm is null) return;
+
+            int startDocIdx = DocVm?.Paragraphs.IndexOf(startVm) ?? -1;
+            int endDocIdx = DocVm?.Paragraphs.IndexOf(endVm) ?? -1;
+            int thisDocIdx = DocVm?.Paragraphs.IndexOf(pl.Vm) ?? -1;
+
+            if (thisDocIdx < 0 || thisDocIdx < startDocIdx || thisDocIdx > endDocIdx) return;
 
             int len = pl.Vm.PlainText?.Length ?? 0;
-            int from, to;
-            if (sp == ep) { from = sc; to = ec; }
-            else if (i == sp) { from = sc; to = len; }
-            else if (i == ep) { from = 0; to = ec; }
-            else { from = 0; to = len; }
+            int from = startDocIdx == endDocIdx ? sc
+                     : thisDocIdx == startDocIdx ? sc : 0;
+            int to = startDocIdx == endDocIdx ? ec
+                     : thisDocIdx == endDocIdx ? ec : len;
 
             from = Clamp(from, 0, len);
             to = Clamp(to, 0, len);
-            if (from >= to) return;
 
-            foreach (var r in pl.Layout.HitTestTextRange(from, to - from))
-                ctx.FillRectangle(SelectionBrush,
-                    new Rect(origin.X + r.X, origin.Y + r.Y, r.Width, r.Height));
+            using var paint = new SKPaint { Color = SelectionColor };
+
+            // Пустой абзац или граница выделения совпадает с концом пустого —
+            // рисуем маленький прямоугольник фиксированной ширины как в Word.
+            if (len == 0 || from == to)
+            {
+                if (pl.Layout.Lines.Count == 0) return;
+                var line = pl.LineFrom < pl.Layout.Lines.Count
+                    ? pl.Layout.Lines[pl.LineFrom]
+                    : pl.Layout.Lines[^1];
+                const float markWidthPt = 5f;
+                canvas.DrawRect(xPt, yPt, markWidthPt, line.Height, paint);
+                return;
+            }
+
+            var rects = pl.Layout.HitTestRange(from, to);
+            if (rects.Count == 0) return;
+
+            float yBase = pl.LineFrom < pl.Layout.Lines.Count
+                ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
+
+            foreach (var r in rects)
+            {
+                if (r.LineIndex < pl.LineFrom || r.LineIndex >= pl.LineTo) continue;
+                canvas.DrawRect(
+                    xPt + r.Rect.Left,
+                    yPt + (r.Rect.Top - yBase),
+                    r.Rect.Width, r.Rect.Height,
+                    paint);
+            }
         }
-
-        private void DrawCaret(DrawingContext ctx, ParaLayout pl, Point origin)
+        private void DrawCaret(SKCanvas canvas, ParaLayout pl, float xPt, float yPt)
         {
             int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
-            Rect b = pl.Layout.HitTestTextPosition(pos);
-            double x = origin.X + b.X;
-            double y1 = origin.Y + b.Y;
-            double y2 = y1 + (b.Height > 0 ? b.Height : LineHeight);
-            ctx.DrawLine(CaretPen, new Point(x, y1), new Point(x, y2));
+            var caret = pl.Layout.HitTestPosition(pos);
+            float yBase = pl.LineFrom < pl.Layout.Lines.Count
+                ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
+
+            using var paint = new SKPaint
+            {
+                Color = SKColors.Black,
+                StrokeWidth = 1.1f,
+                IsAntialias = false
+            };
+
+            float cx = xPt + caret.X;
+            float cy = yPt + (caret.Y - yBase);
+            canvas.DrawLine(cx, cy, cx, cy + caret.Height, paint);
         }
 
         // ── Pointer ───────────────────────────────────────────────────────
@@ -496,15 +923,15 @@ namespace Writersword.Modules.TextEditor.Views.Document
             Focus();
 
             var (pi, ci) = HitTest(e.GetPosition(this));
-            _caretPara = pi;
-            _caretChar = ci;
-            _selStartPara = pi;
-            _selStartChar = ci;
-            _selEndPara = pi;
-            _selEndChar = ci;
+            _caretPara = pi; _caretChar = ci;
+            _selStartPara = pi; _selStartChar = ci;
+            _selEndPara = pi; _selEndChar = ci;
             _isSelecting = true;
 
-            var pvm = GetVmAt(pi);
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
+
+            var pvm = GetVmAt(_caretPara);
             if (pvm is not null) DocVm?.SetActiveParagraph(pvm);
 
             ResetCaret(); InvalidateVisual();
@@ -549,7 +976,10 @@ namespace Writersword.Modules.TextEditor.Views.Document
             pvm.PlainText = t[..pos] + e.Text + t[pos..];
             _caretChar = pos + e.Text.Length;
 
-            CommitEdit(); SyncSel(); ResetCaret(); InvalidateMeasure();
+            CommitEdit();
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
+            SyncSel(); ResetCaret();
             e.Handled = true;
         }
 
@@ -557,135 +987,341 @@ namespace Writersword.Modules.TextEditor.Views.Document
         {
             base.OnKeyDown(e);
 
-            var pvm = GetVmAt(_caretPara);
-            if (pvm is null) return;
+            if (_hotKeyService is not null)
+            {
+                var gesture = new KeyGesture(e.Key, e.KeyModifiers);
+                if (_hotKeyService.HandleKeyPress(gesture, "TextEditor"))
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
 
-            string text = pvm.PlainText ?? "";
-            int len = text.Length;
-            bool ctrl = e.KeyModifiers == KeyModifiers.Control;
+            HandleKeyFallback(e);
+        }
+
+        private void HandleKeyFallback(KeyEventArgs e)
+        {
             bool shft = e.KeyModifiers == KeyModifiers.Shift;
+            bool ctrl = e.KeyModifiers == KeyModifiers.Control;
 
             switch (e.Key)
             {
-                case Key.Back:
-                    BeginEdit("Delete");
-                    if (HasSel()) { DeleteSelection(); CommitEdit(); e.Handled = true; break; }
-                    if (_caretChar > 0)
+                case Key.Back: ExecuteDeleteBack(); e.Handled = true; break;
+                case Key.Delete: ExecuteDeleteForward(); e.Handled = true; break;
+                case Key.Enter: ExecuteNewParagraph(); e.Handled = true; break;
+
+                case Key.Left: ExecuteNavLeft(shft); e.Handled = true; break;
+                case Key.Right: ExecuteNavRight(shft); e.Handled = true; break;
+                case Key.Up: ExecuteNavUp(shft); e.Handled = true; break;
+                case Key.Down: ExecuteNavDown(shft); e.Handled = true; break;
+
+                case Key.Home: ExecuteHome(ctrl, shft); e.Handled = true; break;
+                case Key.End: ExecuteEnd(ctrl, shft); e.Handled = true; break;
+
+                case Key.C when ctrl: ExecuteCopy(); e.Handled = true; break;
+                case Key.X when ctrl: ExecuteCut(); e.Handled = true; break;
+                case Key.V when ctrl: ExecutePaste(); e.Handled = true; break;
+                case Key.A when ctrl: ExecuteSelectAll(); e.Handled = true; break;
+
+                case Key.Z when ctrl: ExecuteUndo(); e.Handled = true; break;
+                case Key.Y when ctrl: ExecuteRedo(); e.Handled = true; break;
+            }
+        }
+
+        // ── Публичные команды ─────────────────────────────────────────────
+
+        public void ExecuteDeleteBack()
+        {
+            var pvm = GetVmAt(_caretPara);
+            if (pvm is null) return;
+            string text = pvm.PlainText ?? "";
+            BeginEdit("Delete");
+            if (HasSel()) { DeleteSelection(); CommitEdit(); ResetCaret(); InvalidateVisual(); return; }
+            if (_caretChar > 0 && text.Length > 0)
+            {
+                int p = Clamp(_caretChar, 1, text.Length);
+                pvm.PlainText = text[..(p - 1)] + text[p..];
+                _caretChar = p - 1;
+            }
+            else if (_caretChar == 0 && _caretPara > 0)
+            {
+                DocVm?.MergeParagraphWithPrevious(pvm, text);
+            }
+            CommitEdit();
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
+            SyncSel(); ResetCaret(); InvalidateVisual();
+        }
+
+        public void ExecuteDeleteForward()
+        {
+            var pvm = GetVmAt(_caretPara);
+            if (pvm is null) return;
+            string text = pvm.PlainText ?? "";
+            BeginEdit("Delete");
+            if (HasSel()) { DeleteSelection(); CommitEdit(); ResetCaret(); InvalidateVisual(); return; }
+            if (_caretChar < text.Length)
+            {
+                int p = Clamp(_caretChar, 0, text.Length - 1);
+                pvm.PlainText = text[..p] + text[(p + 1)..];
+            }
+            else if (_caretPara < (DocVm?.Paragraphs.Count ?? 0) - 1)
+            {
+                var next = GetVmAt(_caretPara + 1);
+                if (next is not null) { pvm.PlainText += next.PlainText; DocVm?.DeleteParagraph(next); }
+            }
+            CommitEdit();
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
+            SyncSel(); ResetCaret(); InvalidateVisual();
+        }
+
+        public void ExecuteNewParagraph()
+        {
+            var pvm = GetVmAt(_caretPara);
+            if (pvm is null) return;
+
+            BeginEdit("New paragraph");
+            DeleteSelection();
+
+            string text = pvm.PlainText ?? "";
+            int cp = Clamp(_caretChar, 0, text.Length);
+            pvm.PlainText = text[..cp];
+
+            var newVm = DocVm?.AddParagraphAfter(pvm);
+            if (newVm is not null)
+            {
+                newVm.PlainText = text[cp..];
+
+                // Отменяем отложенный rebuild и выполняем синхронно,
+                // чтобы _layouts был актуален до установки _caretPara.
+                _rebuildCts.Cancel();
+                _rebuildCts = new System.Threading.CancellationTokenSource();
+                RebuildLayouts();
+
+                // Ищем новую VM в актуальных _layouts по ссылке.
+                int newSliceIdx = -1;
+                for (int i = 0; i < _layouts.Count; i++)
+                {
+                    if (_layouts[i].Vm == newVm)
                     {
-                        int p = Clamp(_caretChar, 1, text.Length);
-                        pvm.PlainText = text[..(p - 1)] + text[p..];
-                        _caretChar = p - 1;
+                        newSliceIdx = i;
+                        break;
                     }
-                    else if (_caretPara > 0)
-                    {
-                        var prev = GetVmAt(_caretPara - 1)!;
-                        int mergeAt = prev.PlainText?.Length ?? 0;
-                        DocVm?.MergeParagraphWithPrevious(pvm, text);
-                        _caretPara--;
-                        _caretChar = mergeAt;
-                    }
-                    CommitEdit(); SyncSel(); e.Handled = true; break;
+                }
 
-                case Key.Delete:
-                    BeginEdit("Delete");
-                    if (HasSel()) { DeleteSelection(); CommitEdit(); e.Handled = true; break; }
-                    if (_caretChar < len)
-                    {
-                        int p = Clamp(_caretChar, 0, text.Length - 1);
-                        pvm.PlainText = text[..p] + text[(p + 1)..];
-                    }
-                    else if (_caretPara < (DocVm?.Paragraphs.Count ?? 0) - 1)
-                    {
-                        var next = GetVmAt(_caretPara + 1);
-                        if (next is not null)
-                        {
-                            pvm.PlainText += next.PlainText;
-                            DocVm?.DeleteParagraph(next);
-                        }
-                    }
-                    CommitEdit(); SyncSel(); e.Handled = true; break;
-
-                case Key.Enter:
-                    BeginEdit("New paragraph");
-                    DeleteSelection();
-                    text = pvm.PlainText ?? "";
-                    int cp = Clamp(_caretChar, 0, text.Length);
-                    string bf = text[..cp];
-                    string af = text[cp..];
-                    pvm.PlainText = bf;
-                    var newVm = DocVm?.AddParagraphAfter(pvm);
-                    if (newVm is not null)
-                    {
-                        newVm.PlainText = af;
-                        _caretPara = DocVm!.Paragraphs.IndexOf(newVm);
-                        _caretChar = 0;
-                    }
-                    CommitEdit(); SyncSel(); e.Handled = true; break;
-
-                case Key.Left:
-                    if (HasSel() && !shft)
-                    { var (sp, sc, _, _) = NormalizeSelection(); _caretPara = sp; _caretChar = sc; }
-                    else if (_caretChar > 0) _caretChar--;
-                    else if (_caretPara > 0) { _caretPara--; _caretChar = GetVmAt(_caretPara)?.PlainText?.Length ?? 0; }
-                    if (!shft) SyncSel(); else ExtendSel();
-                    e.Handled = true; break;
-
-                case Key.Right:
-                    if (HasSel() && !shft)
-                    { var (_, _, ep, ec) = NormalizeSelection(); _caretPara = ep; _caretChar = ec; }
-                    else if (_caretChar < len) _caretChar++;
-                    else if (_caretPara < _layouts.Count - 1) { _caretPara++; _caretChar = 0; }
-                    if (!shft) SyncSel(); else ExtendSel();
-                    e.Handled = true; break;
-
-                case Key.Up:
-                    MoveCaretVertically(-1);
-                    if (!shft) SyncSel(); else ExtendSel();
-                    e.Handled = true; break;
-
-                case Key.Down:
-                    MoveCaretVertically(+1);
-                    if (!shft) SyncSel(); else ExtendSel();
-                    e.Handled = true; break;
-
-                case Key.Home:
-                    if (ctrl) { _caretPara = 0; _caretChar = 0; }
-                    else _caretChar = 0;
-                    if (!shft) SyncSel(); else ExtendSel();
-                    e.Handled = true; break;
-
-                case Key.End:
-                    if (ctrl) { _caretPara = _layouts.Count - 1; _caretChar = GetVmAt(_caretPara)?.PlainText?.Length ?? 0; }
-                    else _caretChar = len;
-                    if (!shft) SyncSel(); else ExtendSel();
-                    e.Handled = true; break;
-
-                case Key.C when ctrl: _ = CopyAsync(); e.Handled = true; break;
-                case Key.X when ctrl: _ = CutAsync(); e.Handled = true; break;
-                case Key.V when ctrl: _ = PasteAsync(); e.Handled = true; break;
-                case Key.A when ctrl: SelectAll(); e.Handled = true; break;
-
-                case Key.Z when ctrl:
-                    UndoStack?.Undo(); ClampCaret(); SyncSel(); e.Handled = true; break;
-                case Key.Y when ctrl:
-                    UndoStack?.Redo(); ClampCaret(); SyncSel(); e.Handled = true; break;
+                if (newSliceIdx >= 0)
+                {
+                    _caretPara = newSliceIdx;
+                    _caretChar = 0;
+                }
             }
 
-            ResetCaret();
-            InvalidateMeasure();
+            CommitEdit();
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
+            SyncSel(); ResetCaret(); InvalidateVisual();
         }
+
+        public void ExecuteNavLeft(bool extend)
+        {
+            if (HasSel() && !extend)
+            { var (sp, sc, _, _) = NormalizeSelection(); _caretPara = sp; _caretChar = sc; }
+            else if (_caretChar > 0) _caretChar--;
+            else if (_caretPara > 0)
+            { _caretPara--; _caretChar = GetVmAt(_caretPara)?.PlainText?.Length ?? 0; }
+            SnapCaretToCorrectSlice();
+            if (!extend) SyncSel(); else ExtendSel();
+            UpdatePreferredX();
+            ResetCaret(); InvalidateVisual();
+        }
+
+        public void ExecuteNavRight(bool extend)
+        {
+            int len = GetVmAt(_caretPara)?.PlainText?.Length ?? 0;
+            if (HasSel() && !extend)
+            { var (_, _, ep, ec) = NormalizeSelection(); _caretPara = ep; _caretChar = ec; }
+            else if (_caretChar < len) _caretChar++;
+            else if (_caretPara < _layouts.Count - 1) { _caretPara++; _caretChar = 0; }
+            SnapCaretToCorrectSlice();
+            if (!extend) SyncSel(); else ExtendSel();
+            UpdatePreferredX();
+            ResetCaret(); InvalidateVisual();
+        }
+
+        public void ExecuteNavUp(bool extend)
+        {
+            MoveCaretVertically(-1);
+            SnapCaretToCorrectSlice();
+            if (!extend) SyncSel(); else ExtendSel();
+            ResetCaret(); InvalidateVisual();
+        }
+
+        public void ExecuteNavDown(bool extend)
+        {
+            MoveCaretVertically(+1);
+            SnapCaretToCorrectSlice();
+            if (!extend) SyncSel(); else ExtendSel();
+            ResetCaret(); InvalidateVisual();
+        }
+
+        public void ExecuteHome(bool document, bool extend)
+        {
+            if (document) { _caretPara = 0; _caretChar = 0; }
+            else
+            {
+                var layout = GetLayoutAt(_caretPara);
+                if (layout is not null)
+                {
+                    int li = layout.GetLineIndexForChar(_caretChar);
+                    _caretChar = li >= 0 && li < layout.Lines.Count
+                        ? layout.Lines[li].FirstCharIndex : 0;
+                }
+                else _caretChar = 0;
+            }
+            SnapCaretToCorrectSlice();
+            if (!extend) SyncSel(); else ExtendSel();
+            UpdatePreferredX();
+            ResetCaret(); InvalidateVisual();
+        }
+
+        public void ExecuteEnd(bool document, bool extend)
+        {
+            if (document)
+            {
+                _caretPara = _layouts.Count - 1;
+                _caretChar = GetVmAt(_caretPara)?.PlainText?.Length ?? 0;
+            }
+            else
+            {
+                int len = GetVmAt(_caretPara)?.PlainText?.Length ?? 0;
+                var layout = GetLayoutAt(_caretPara);
+                if (layout is not null)
+                {
+                    int li = layout.GetLineIndexForChar(_caretChar);
+                    _caretChar = li >= 0 && li < layout.Lines.Count
+                        ? layout.Lines[li].LastCharIndex + 1 : len;
+                }
+                else _caretChar = len;
+            }
+            SnapCaretToCorrectSlice();
+            if (!extend) SyncSel(); else ExtendSel();
+            UpdatePreferredX();
+            ResetCaret(); InvalidateVisual();
+        }
+
+        public void ExecuteSelectAll()
+        {
+            if (_layouts.Count == 0) return;
+            _selStartPara = 0; _selStartChar = 0;
+            _selEndPara = _layouts.Count - 1;
+            _selEndChar = GetVmAt(_layouts.Count - 1)?.PlainText?.Length ?? 0;
+            _caretPara = _selEndPara; _caretChar = _selEndChar;
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
+            InvalidateVisual();
+        }
+
+        public void ExecuteCopy() => _ = CopyAsync();
+        public void ExecuteCut() => _ = CutAsync();
+        public void ExecutePaste() => _ = PasteAsync();
+
+        public void ExecuteUndo()
+        {
+            UndoStack?.Undo();
+            ClampCaret(); SyncSel(); ResetCaret(); InvalidateVisual();
+        }
+
+        public void ExecuteRedo()
+        {
+            UndoStack?.Redo();
+            ClampCaret(); SyncSel(); ResetCaret(); InvalidateVisual();
+        }
+
+        // ── Вертикальная навигация ────────────────────────────────────────
 
         private void MoveCaretVertically(int dir)
         {
-            _caretPara = Clamp(_caretPara + dir, 0, _layouts.Count - 1);
-            _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
+            var layout = GetLayoutAt(_caretPara);
+            if (layout is null)
+            {
+                _caretPara = Clamp(_caretPara + dir, 0, _layouts.Count - 1);
+                _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
+                return;
+            }
+
+            int lineIdx = layout.GetLineIndexForChar(_caretChar);
+            int targetLine = lineIdx + dir;
+
+            if (targetLine >= 0 && targetLine < layout.Lines.Count)
+            {
+                _caretChar = layout.GetCharIndexForVerticalMove(
+                    _caretChar, dir, _preferredCaretXPt - layout.LeftIndentPt);
+            }
+            else if (dir < 0 && _caretPara > 0)
+            {
+                _caretPara--;
+                var prev = GetLayoutAt(_caretPara);
+                if (prev is not null && prev.Lines.Count > 0)
+                {
+                    var ll = prev.Lines[^1];
+                    var hit = prev.HitTestPoint(
+                        _preferredCaretXPt - prev.LeftIndentPt,
+                        ll.Y + ll.Height * 0.5f);
+                    _caretChar = hit.CharIndex;
+                }
+                else _caretChar = GetVmAt(_caretPara)?.PlainText?.Length ?? 0;
+            }
+            else if (dir > 0 && _caretPara < _layouts.Count - 1)
+            {
+                _caretPara++;
+                var next = GetLayoutAt(_caretPara);
+                if (next is not null && next.Lines.Count > 0)
+                {
+                    var fl = next.Lines[0];
+                    var hit = next.HitTestPoint(
+                        _preferredCaretXPt - next.LeftIndentPt,
+                        fl.Y + fl.Height * 0.5f);
+                    _caretChar = hit.CharIndex;
+                }
+                else _caretChar = 0;
+            }
         }
 
         private void ClampCaret()
         {
-            int maxPara = Math.Max(0, (DocVm?.Paragraphs.Count ?? 1) - 1);
-            _caretPara = Clamp(_caretPara, 0, maxPara);
+            _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
             _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
+        }
+
+        private void UpdatePreferredX()
+        {
+            var layout = GetLayoutAt(_caretPara);
+            if (layout is null) return;
+            var caret = layout.HitTestPosition(_caretChar);
+            _preferredCaretXPt = caret.X + layout.LeftIndentPt;
+        }
+
+        private void SnapCaretToCorrectSlice()
+        {
+            if (_layouts.Count == 0) return;
+            _caretPara = Clamp(_caretPara, 0, _layouts.Count - 1);
+
+            var targetVm = GetVmAt(_caretPara);
+            if (targetVm is null) return;
+
+            var layout = GetLayoutAt(_caretPara);
+            if (layout is null) return;
+
+            int lineIdx = layout.GetLineIndexForChar(_caretChar);
+
+            for (int i = 0; i < _layouts.Count; i++)
+            {
+                var pl = _layouts[i];
+                if (pl.Vm != targetVm) continue;
+                if (lineIdx >= pl.LineFrom && lineIdx < pl.LineTo) { _caretPara = i; return; }
+            }
         }
 
         // ── Undo ─────────────────────────────────────────────────────────
@@ -711,10 +1347,16 @@ namespace Writersword.Modules.TextEditor.Views.Document
 
         private (int sp, int sc, int ep, int ec) NormalizeSelection()
         {
-            if (_selStartPara < _selEndPara)
+            var sVm = GetVmAt(_selStartPara);
+            var eVm = GetVmAt(_selEndPara);
+            if (sVm is null || eVm is null)
                 return (_selStartPara, _selStartChar, _selEndPara, _selEndChar);
-            if (_selStartPara > _selEndPara)
-                return (_selEndPara, _selEndChar, _selStartPara, _selStartChar);
+
+            int si = DocVm?.Paragraphs.IndexOf(sVm) ?? 0;
+            int ei = DocVm?.Paragraphs.IndexOf(eVm) ?? 0;
+
+            if (si < ei) return (_selStartPara, _selStartChar, _selEndPara, _selEndChar);
+            if (si > ei) return (_selEndPara, _selEndChar, _selStartPara, _selStartChar);
             if (_selStartChar <= _selEndChar)
                 return (_selStartPara, _selStartChar, _selEndPara, _selEndChar);
             return (_selEndPara, _selEndChar, _selStartPara, _selStartChar);
@@ -732,58 +1374,46 @@ namespace Writersword.Modules.TextEditor.Views.Document
             _selEndChar = _caretChar;
         }
 
-        private void SelectAll()
-        {
-            if (_layouts.Count == 0) return;
-            _selStartPara = 0; _selStartChar = 0;
-            _selEndPara = _layouts.Count - 1;
-            _selEndChar = GetVmAt(_layouts.Count - 1)?.PlainText?.Length ?? 0;
-            _caretPara = _selEndPara;
-            _caretChar = _selEndChar;
-            InvalidateVisual();
-        }
-
         private void DeleteSelection()
         {
             if (!HasSel()) return;
             var (sp, sc, ep, ec) = NormalizeSelection();
+            var sVm = GetVmAt(sp);
+            var eVm = GetVmAt(ep);
+            if (sVm is null || eVm is null) return;
 
-            if (sp == ep)
+            if (sVm == eVm)
             {
-                var pvm = GetVmAt(sp);
-                if (pvm is null) return;
-                string t = pvm.PlainText ?? "";
+                string t = sVm.PlainText ?? "";
                 int s2 = Clamp(sc, 0, t.Length);
                 int e2 = Clamp(ec, 0, t.Length);
-                pvm.PlainText = t[..s2] + t[e2..];
-                _caretPara = sp; _caretChar = s2;
+                sVm.PlainText = t[..s2] + t[e2..];
+                _caretChar = s2;
             }
             else
             {
-                var startPvm = GetVmAt(sp);
-                var endPvm = GetVmAt(ep);
-                if (startPvm is null || endPvm is null) return;
-
-                string st = startPvm.PlainText ?? "";
-                string et = endPvm.PlainText ?? "";
+                string st = sVm.PlainText ?? "";
+                string et = eVm.PlainText ?? "";
                 int s2 = Clamp(sc, 0, st.Length);
                 int e2 = Clamp(ec, 0, et.Length);
 
+                int si = DocVm?.Paragraphs.IndexOf(sVm) ?? 0;
+                int ei = DocVm?.Paragraphs.IndexOf(eVm) ?? 0;
+
                 var toDelete = new List<ParagraphViewModel>();
-                for (int i = ep; i > sp; i--)
-                {
-                    var p = GetVmAt(i);
-                    if (p is not null) toDelete.Add(p);
-                }
+                for (int di = ei; di > si; di--)
+                    if (di < (DocVm?.Paragraphs.Count ?? 0))
+                        toDelete.Add(DocVm!.Paragraphs[di]);
 
-                startPvm.PlainText = st[..s2] + et[e2..];
+                sVm.PlainText = st[..s2] + et[e2..];
                 foreach (var p in toDelete) DocVm?.DeleteParagraph(p);
-
-                _caretPara = sp; _caretChar = s2;
+                _caretChar = s2;
             }
 
+            _caretPara = sp;
             SyncSel();
-            InvalidateMeasure();
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
         }
 
         // ── Clipboard ────────────────────────────────────────────────────
@@ -792,20 +1422,41 @@ namespace Writersword.Modules.TextEditor.Views.Document
         {
             if (!HasSel()) return;
             var (sp, sc, ep, ec) = NormalizeSelection();
-            var lines = new List<string>();
+            var sVm = GetVmAt(sp);
+            var eVm = GetVmAt(ep);
+            if (sVm is null || eVm is null) return;
 
-            for (int i = sp; i <= ep; i++)
+            int si = DocVm?.Paragraphs.IndexOf(sVm) ?? 0;
+            int ei = DocVm?.Paragraphs.IndexOf(eVm) ?? 0;
+
+            var lines = new List<string>();
+            var seenVms = new HashSet<ParagraphViewModel>();
+
+            for (int i = sp; i <= ep && i < _layouts.Count; i++)
             {
-                string t = GetVmAt(i)?.PlainText ?? "";
-                int from = Clamp(i == sp ? sc : 0, 0, t.Length);
-                int to = Clamp(i == ep ? ec : t.Length, 0, t.Length);
+                var pvm = GetVmAt(i);
+                if (pvm is null || !seenVms.Add(pvm)) continue;
+
+                int di = DocVm?.Paragraphs.IndexOf(pvm) ?? -1;
+                if (di < si || di > ei) continue;
+
+                string t = pvm.PlainText ?? "";
+                int from = di == si ? Clamp(sc, 0, t.Length) : 0;
+                int to = di == ei ? Clamp(ec, 0, t.Length) : t.Length;
                 if (from > to) to = from;
                 lines.Add(t[from..to]);
             }
 
+            string result = string.Join(Environment.NewLine, lines);
+            _clipboardCache = result;
+
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
             if (clipboard is not null)
-                await clipboard.SetTextAsync(string.Join(Environment.NewLine, lines));
+            {
+#pragma warning disable CS0618
+                await clipboard.SetTextAsync(result);
+#pragma warning restore CS0618
+            }
         }
 
         private async Task CutAsync()
@@ -814,15 +1465,27 @@ namespace Writersword.Modules.TextEditor.Views.Document
             await CopyAsync();
             DeleteSelection();
             CommitEdit();
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
+            SyncSel(); ResetCaret(); InvalidateVisual();
         }
 
         private async Task PasteAsync()
         {
-            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-            if (clipboard is null) return;
+            string? text = _clipboardCache;
 
-            string? text = await clipboard.TryGetTextAsync();
+            if (string.IsNullOrEmpty(text))
+            {
+                var cb = TopLevel.GetTopLevel(this)?.Clipboard;
+                if (cb is null) return;
+#pragma warning disable CS0618
+                text = await cb.GetTextAsync();
+#pragma warning restore CS0618
+            }
+
             if (string.IsNullOrEmpty(text)) return;
+
+            _ = PrefetchClipboardAsync();
 
             BeginEdit("Paste");
             DeleteSelection();
@@ -845,13 +1508,11 @@ namespace Writersword.Modules.TextEditor.Views.Document
             {
                 pvm.PlainText = before + lines[0];
                 var prev = pvm;
-
                 for (int i = 1; i < lines.Length - 1; i++)
                 {
                     var nv = DocVm?.AddParagraphAfter(prev);
                     if (nv is not null) { nv.PlainText = lines[i]; prev = nv; }
                 }
-
                 var last = DocVm?.AddParagraphAfter(prev);
                 if (last is not null)
                 {
@@ -861,51 +1522,76 @@ namespace Writersword.Modules.TextEditor.Views.Document
                 }
             }
 
-            CommitEdit(); SyncSel(); InvalidateMeasure();
+            CommitEdit();
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
+            SyncSel();
+            ResetCaret();
         }
 
         // ── HitTest ───────────────────────────────────────────────────────
 
-        private (int parIdx, int charIdx) HitTest(Point pt)
+        private (int parIdx, int charIdx) HitTest(Point ptLogPx)
         {
             if (_layouts.Count == 0) return (0, 0);
 
             double zoom = Zoom;
-            pt = new Point(pt.X / zoom, pt.Y / zoom);
+            float xPt = (float)(ptLogPx.X / zoom * PxToPt);
+            float yPt = (float)(ptLogPx.Y / zoom * PxToPt);
 
             var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
-            double padW;
+            float padXPt;
 
             if (mode == EditorViewMode.Page)
             {
-                var (ml, _, _, _) = GetPagePadding();
-                double pageX = Math.Max((_canvasWidth - GetPageWidthPx()) / 2.0, 0);
-                padW = pageX + ml;
+                var (ml, _, _, _) = GetPagePaddingPt();
+                float cw = (float)(_canvasWidth * PxToPt);
+                float pgX = Math.Max((cw - GetPageWidthPt()) / 2f, 0f);
+                padXPt = pgX + ml;
             }
             else if (mode == EditorViewMode.Reading)
-                padW = (_canvasWidth - Math.Min(_canvasWidth, ReadingMax)) / 2;
-            else
-                padW = DraftPadW;
+            {
+                float cw = (float)(_canvasWidth * PxToPt);
+                padXPt = (cw - Math.Min(cw, ReadingMaxPt)) / 2f;
+            }
+            else padXPt = DraftPadWPt;
+
+            int bestIdx = 0;
+            float bestDist = float.MaxValue;
 
             for (int i = 0; i < _layouts.Count; i++)
             {
                 var pl = _layouts[i];
-                double bot = pl.Y + pl.Height + 4;
+                float top = pl.Ypt;
+                float bot = pl.Ypt + pl.HeightPt;
+                float dist = yPt < top ? top - yPt : yPt > bot ? yPt - bot : 0f;
 
-                if (pt.Y <= bot || i == _layouts.Count - 1)
+                if (dist < bestDist)
                 {
-                    double lx = Clamp(pt.X - padW, 0,
-                        Math.Max(pl.Layout.WidthIncludingTrailingWhitespace, 1));
-                    double ly = Clamp(pt.Y - pl.Y, 0,
-                        Math.Max(pl.Height - 1, 0));
-
-                    var hit = pl.Layout.HitTestPoint(new Point(lx, ly));
-                    return (i, hit.TextPosition);
+                    bestDist = dist;
+                    bestIdx = i;
+                    if (dist == 0f) break;
                 }
             }
 
-            var lastPl = _layouts[^1];
-            return (_layouts.Count - 1, lastPl.Vm.PlainText?.Length ?? 0);
+            var best = _layouts[bestIdx];
+            float yBase = best.LineFrom < best.Layout.Lines.Count
+                               ? best.Layout.Lines[best.LineFrom].Y : 0f;
+            float localX = xPt - padXPt - best.Layout.LeftIndentPt;
+            float localY = yPt - best.Ypt + yBase;
+
+            if (best.LineFrom < best.Layout.Lines.Count)
+            {
+                float fy = best.Layout.Lines[best.LineFrom].Y;
+                int lto = best.LineTo > 0 && best.LineTo <= best.Layout.Lines.Count
+                    ? best.LineTo : best.Layout.Lines.Count;
+                float ly = best.Layout.Lines[lto - 1].Y
+                            + best.Layout.Lines[lto - 1].Height;
+                localY = Clamp(localY, fy + 0.1f, ly - 0.1f);
+            }
+
+            var hit = best.Layout.HitTestPoint(localX, localY);
+            return (bestIdx, hit.CharIndex);
         }
 
         // ── Scroll to caret ───────────────────────────────────────────────
@@ -919,16 +1605,15 @@ namespace Writersword.Modules.TextEditor.Views.Document
                 double zoom = Zoom;
                 var pl = _layouts[_caretPara];
                 int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
-                Rect b = pl.Layout.HitTestTextPosition(pos);
-                double x = b.X;
-                double y = pl.Y + b.Y;
-                double h = b.Height > 0 ? b.Height : LineHeight;
+                var caret = pl.Layout.HitTestPosition(pos);
+                float yBase = pl.LineFrom < pl.Layout.Lines.Count
+                    ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
 
-                this.BringIntoView(new Rect(
-                    (x - 10) * zoom,
-                    (y - 10) * zoom,
-                    20 * zoom,
-                    (h + 20) * zoom));
+                double xPx = (pl.Layout.LeftIndentPt + caret.X) * PtToPx * zoom;
+                double yPx = (pl.Ypt + (caret.Y - yBase)) * PtToPx * zoom;
+                double hPx = caret.Height * PtToPx * zoom;
+
+                this.BringIntoView(new Rect(xPx - 10, yPx - 10, 20, hPx + 20));
             }, DispatcherPriority.Render);
         }
 
@@ -936,6 +1621,22 @@ namespace Writersword.Modules.TextEditor.Views.Document
 
         private ParagraphViewModel? GetVmAt(int idx) =>
             idx >= 0 && idx < _layouts.Count ? _layouts[idx].Vm : null;
+
+        private ParagraphViewModel? GetVmAt(int idx, List<ParaLayout> layouts) =>
+            idx >= 0 && idx < layouts.Count ? layouts[idx].Vm : null;
+
+        private SKTextLayout? GetLayoutAt(int idx) =>
+            idx >= 0 && idx < _layouts.Count ? _layouts[idx].Layout : null;
+
+        private int FindFirstSliceForParagraphIndex(int paragraphIndex)
+        {
+            if (paragraphIndex < 0 || DocVm is null) return 0;
+            if (paragraphIndex >= DocVm.Paragraphs.Count) return _layouts.Count - 1;
+            var target = DocVm.Paragraphs[paragraphIndex];
+            for (int i = 0; i < _layouts.Count; i++)
+                if (_layouts[i].Vm == target) return i;
+            return 0;
+        }
 
         private void ResetCaret()
         {
@@ -945,7 +1646,36 @@ namespace Writersword.Modules.TextEditor.Views.Document
             ScrollToCaret();
         }
 
-        private static int Clamp(int v, int min, int max) => v < min ? min : v > max ? max : v;
-        private static double Clamp(double v, double min, double max) => v < min ? min : v > max ? max : v;
+        private static int Clamp(int v, int min, int max)
+            => v < min ? min : v > max ? max : v;
+        private static float Clamp(float v, float min, float max)
+            => v < min ? min : v > max ? max : v;
+
+        // ── ICustomDrawOperation ──────────────────────────────────────────
+
+        private sealed class CanvasSKDrawOperation : ICustomDrawOperation
+        {
+            private readonly DocumentCanvas _canvas;
+            public Rect Bounds { get; }
+
+            public CanvasSKDrawOperation(DocumentCanvas canvas, Rect bounds)
+            {
+                _canvas = canvas;
+                Bounds = bounds;
+            }
+
+            public void Dispose() { }
+            public bool Equals(ICustomDrawOperation? other) => false;
+            public bool HitTest(Point p) => true;
+
+            public void Render(ImmediateDrawingContext context)
+            {
+                var feature = context.TryGetFeature(typeof(ISkiaSharpApiLeaseFeature))
+                    as ISkiaSharpApiLeaseFeature;
+                if (feature is null) return;
+                using var lease = feature.Lease();
+                _canvas.RenderWithSKCanvas(lease.SkCanvas);
+            }
+        }
     }
 }

@@ -12,9 +12,12 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using Writersword.Core.Interfaces.Print;
 using Writersword.Core.Interfaces.Services;
+using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Infrastructure.Logging;
 using Writersword.Infrastructure.Services.Modules;
+using Writersword.Infrastructure.Services.UI;
 using Writersword.Modules.Common;
 using Writersword.Src.Core.Interfaces.Services;
 using Writersword.Src.Core.Interfaces.Services.Input;
@@ -40,20 +43,27 @@ using Writersword.Views;
 namespace Writersword
 {
     /// <summary>
-    /// Главный класс приложения
-    /// Отвечает за инициализацию DI контейнера, регистрацию сервисов и модулей
+    /// Главный класс приложения.
+    /// Отвечает за инициализацию DI контейнера, регистрацию сервисов и модулей.
     /// </summary>
     public partial class App : Application
     {
         /// <summary>
-        /// Глобальный DI контейнер
-        /// Доступен из любого места приложения через App.Services
+        /// Глобальный DI контейнер.
+        /// Доступен из любого места приложения через App.Services.
         /// </summary>
         public static IServiceProvider Services { get; private set; } = null!;
 
         /// <summary>
-        /// Инициализация Avalonia - загрузка XAML ресурсов
-        /// Вызывается автоматически при запуске приложения
+        /// Главное окно приложения.
+        /// Используется модулями для открытия дочерних диалогов и окон,
+        /// в том числе PrintPreviewView.
+        /// </summary>
+        public static Window? MainWindow { get; private set; }
+
+        /// <summary>
+        /// Инициализация Avalonia — загрузка XAML ресурсов.
+        /// Вызывается автоматически при запуске приложения.
         /// </summary>
         public override void Initialize()
         {
@@ -61,8 +71,8 @@ namespace Writersword
         }
 
         /// <summary>
-        /// Основная инициализация приложения
-        /// Здесь настраивается DI, создаётся главное окно, регистрируются модули
+        /// Основная инициализация приложения.
+        /// Здесь настраивается DI, создаётся главное окно, регистрируются модули.
         /// </summary>
         public override void OnFrameworkInitializationCompleted()
         {
@@ -88,6 +98,7 @@ namespace Writersword
 
             services.AddSingleton<ISettingsService, SettingsService>();
             services.AddSingleton<IDialogService, DialogService>();
+            services.AddSingleton<IPrintService, PrintService>();
             services.AddSingleton<INotificationService, NotificationService>();
             services.AddSingleton<IProjectService, ProjectService>();
             services.AddSingleton<ZipProjectService>();
@@ -135,7 +146,8 @@ namespace Writersword
             var moduleFactory = Services.GetRequiredService<ModuleFactory>();
             var assembly = Assembly.GetExecutingAssembly();
 
-            var moduleTypes = assembly.GetTypes().Where(t => typeof(BaseModule).IsAssignableFrom(t) && !t.IsAbstract);
+            var moduleTypes = assembly.GetTypes()
+                .Where(t => typeof(BaseModule).IsAssignableFrom(t) && !t.IsAbstract);
 
             foreach (var moduleType in moduleTypes)
             {
@@ -145,7 +157,8 @@ namespace Writersword
                     var capturedType = moduleType;
                     moduleFactory.Register(instance.moduleType, () =>
                         Activator.CreateInstance(capturedType) as BaseModule
-                        ?? throw new InvalidOperationException($"Failed to create module {capturedType.Name}"));
+                        ?? throw new InvalidOperationException(
+                            $"Failed to create module {capturedType.Name}"));
                 }
             }
 
@@ -155,22 +168,23 @@ namespace Writersword
             var workModeRegistry = Services.GetRequiredService<WorkModeRegistry>();
 
             var workModeTypes = assembly.GetTypes()
-                .Where(t => typeof(IWorkMode).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
+                .Where(t => typeof(IWorkMode).IsAssignableFrom(t)
+                         && !t.IsInterface
+                         && !t.IsAbstract);
 
             foreach (var workModeType in workModeTypes)
             {
                 var instance = Activator.CreateInstance(workModeType) as IWorkMode;
                 if (instance != null)
-                {
                     RegisterWorkMode(workModeFactory, workModeRegistry, instance);
-                }
             }
 
             Log.ForContext<App>().Debug("Registered {Count} WorkModes", workModeTypes.Count());
 
             var projectTypeRegistry = Services.GetRequiredService<ProjectTypeRegistry>();
             projectTypeRegistry.LoadAll();
-            Log.ForContext<App>().Debug("Registered {Count} ProjectTypes", projectTypeRegistry.GetAll().Count);
+            Log.ForContext<App>().Debug("Registered {Count} ProjectTypes",
+                projectTypeRegistry.GetAll().Count);
 
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
@@ -188,6 +202,8 @@ namespace Writersword
                 {
                     DataContext = mainViewModel
                 };
+
+                MainWindow = mainWindow;
 
 #if DEBUG
                 mainWindow.AttachDevTools();
@@ -207,7 +223,8 @@ namespace Writersword
                         var projectWorkflow = Services.GetRequiredService<IProjectWorkflow>();
                         var tabCollection = Services.GetRequiredService<ITabCollection>();
 
-                        Log.ForContext<App>().Debug("Restoring {Count} projects from last session", openProjects.Count);
+                        Log.ForContext<App>().Debug(
+                            "Restoring {Count} projects from last session", openProjects.Count);
 
                         var tabs = new List<DocumentTabViewModel>();
 
@@ -217,35 +234,38 @@ namespace Writersword
 
                             if (!File.Exists(projectPath))
                             {
-                                Log.ForContext<App>().Warning("Project file not found: {Path}", projectPath);
+                                Log.ForContext<App>().Warning(
+                                    "Project file not found: {Path}", projectPath);
                                 continue;
                             }
 
                             bool initializeWorkspace = (i == 0);
 
-                            var tab = await projectWorkflow.OpenDocumentAsync(projectPath, initializeWorkspace);
+                            var tab = await projectWorkflow.OpenDocumentAsync(
+                                projectPath, initializeWorkspace);
 
                             if (tab != null)
                             {
                                 tabs.Add(tab);
-                                Log.ForContext<App>().Debug("Created tab {Index}/{Total}: {Path} (Initialized: {Init})",
+                                Log.ForContext<App>().Debug(
+                                    "Created tab {Index}/{Total}: {Path} (Initialized: {Init})",
                                     i + 1, openProjects.Count, projectPath, initializeWorkspace);
                             }
                             else
                             {
-                                Log.ForContext<App>().Warning("Failed to create tab for: {Path}", projectPath);
+                                Log.ForContext<App>().Warning(
+                                    "Failed to create tab for: {Path}", projectPath);
                             }
                         }
 
                         foreach (var tab in tabs)
-                        {
                             tabCollection.Add(tab);
-                        }
 
                         if (tabCollection.Tabs.Count > 0)
                         {
                             tabCollection.ActiveTab = tabCollection.Tabs[0];
-                            Log.ForContext<App>().Debug("Activated first tab: {Title}", tabCollection.Tabs[0].Title);
+                            Log.ForContext<App>().Debug(
+                                "Activated first tab: {Title}", tabCollection.Tabs[0].Title);
                         }
                         else
                         {
@@ -263,20 +283,21 @@ namespace Writersword
         }
 
         /// <summary>
-        /// Регистрирует WorkMode в фабрике и реестре
-        /// Вызывается автоматически для всех найденных WorkMode классов
+        /// Регистрирует WorkMode в фабрике и реестре.
+        /// Вызывается автоматически для всех найденных WorkMode классов.
         /// </summary>
-        private void RegisterWorkMode(WorkModeFactory factory, WorkModeRegistry registry, IWorkMode workMode)
+        private void RegisterWorkMode(
+            WorkModeFactory factory, WorkModeRegistry registry, IWorkMode workMode)
         {
             factory.Register(workMode.Id, () => workMode);
             registry.Register(workMode);
         }
 
         /// <summary>
-        /// Показать экран приветствия (Welcome screen)
-        /// Можно вызвать из любого места приложения
+        /// Показать экран приветствия.
+        /// Можно вызвать из любого места приложения.
         /// </summary>
-        /// <param name="owner">Родительское окно (для модального отображения)</param>
+        /// <param name="owner">Родительское окно для модального отображения.</param>
         public static async Task ShowWelcomeScreen(Window owner)
         {
             var welcomeViewModel = Services.GetRequiredService<WelcomeViewModel>();

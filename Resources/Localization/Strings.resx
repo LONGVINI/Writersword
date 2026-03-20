@@ -1017,4 +1017,56 @@
     <value>These settings will become the default for all future projects.</value>
     <comment>Confirmation dialog message</comment>
   </data>
+  <data name="Print_Close" xml:space="preserve">
+    <value>Close</value>
+    <comment>Button to close the print preview window</comment>
+  </data>
+  <data name="Print_FirstPage" xml:space="preserve">
+    <value>First page</value>
+    <comment>Tooltip for navigate-to-first-page button</comment>
+  </data>
+  <data name="Print_LastPage" xml:space="preserve">
+    <value>Last page</value>
+    <comment>Tooltip for navigate-to-last-page button</comment>
+  </data>
+  <data name="Print_NextPage" xml:space="preserve">
+    <value>Next page</value>
+    <comment>Tooltip for navigate-to-next-page button</comment>
+  </data>
+  <data name="Print_PageOf" xml:space="preserve">
+    <value>of</value>
+    <comment>Word "of" between current and total page numbers in status bar</comment>
+  </data>
+  <data name="Print_PagePrefix" xml:space="preserve">
+    <value>Page</value>
+    <comment>Word "Page" before page number in status bar</comment>
+  </data>
+  <data name="Print_PrevPage" xml:space="preserve">
+    <value>Previous page</value>
+    <comment>Tooltip for navigate-to-previous-page button</comment>
+  </data>
+  <data name="Print_PrintBtn" xml:space="preserve">
+    <value>Print</value>
+    <comment>Button that sends document to system print dialog</comment>
+  </data>
+  <data name="Print_Rendering" xml:space="preserve">
+    <value>Rendering...</value>
+    <comment>Loading indicator shown while page bitmap is being rendered</comment>
+  </data>
+  <data name="Print_SavePdf" xml:space="preserve">
+    <value>Save as PDF</value>
+    <comment>Button to save document as PDF file</comment>
+  </data>
+  <data name="Print_ZoomIn" xml:space="preserve">
+    <value>Zoom in</value>
+    <comment>Tooltip for zoom-in button</comment>
+  </data>
+  <data name="Print_ZoomOut" xml:space="preserve">
+    <value>Zoom out</value>
+    <comment>Tooltip for zoom-out button</comment>
+  </data>
+  <data name="Print_ZoomReset" xml:space="preserve">
+    <value>Reset zoom</value>
+    <comment>Tooltip for zoom-reset button, resets to 100%</comment>
+  </data>
 </root>

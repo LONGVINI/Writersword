@@ -1,4 +1,5 @@
 using ReactiveUI;
+using Writersword.Modules.TextEditor.Contracts;
 
 namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 {

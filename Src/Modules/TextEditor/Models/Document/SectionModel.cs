@@ -25,7 +25,7 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// Null — унаследовать от DocumentModel.PageSettings.
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public PageSettings? PageSettings { get; set; }
+        public TextEditorPageSettings? PageSettings { get; set; }
 
         /// <summary>
         /// Настройки колонок для этого раздела.

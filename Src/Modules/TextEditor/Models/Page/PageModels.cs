@@ -1,33 +1,16 @@
-using System.Text.Json.Serialization;
+using System.Collections.Generic;
+using Writersword.Core.Models.Print;
+using Writersword.Modules.TextEditor.Models.Document;
 
 namespace Writersword.Modules.TextEditor.Models.Page
 {
     /// <summary>
-    /// Стандартный формат бумаги.
+    /// Настройки физической страницы документа TextEditor.
+    /// PaperSize и PageOrientation вынесены в Core.Models.Print —
+    /// они общие для всех модулей поддерживающих печать.
+    /// BreakType определён в Models.Document — не дублируется здесь.
     /// </summary>
-    public enum PaperSize
-    {
-        A4 = 0,
-        A3 = 1,
-        A5 = 2,
-        Letter = 3,
-        Custom = 4
-    }
-
-    /// <summary>
-    /// Ориентация страницы.
-    /// </summary>
-    public enum PageOrientation
-    {
-        Portrait = 0,
-        Landscape = 1
-    }
-
-    /// <summary>
-    /// Настройки физической страницы (размер, поля, ориентация).
-    /// Используется и на уровне документа, и переопределяется на уровне раздела.
-    /// </summary>
-    public sealed class PageSettings
+    public sealed class TextEditorPageSettings
     {
         /// <summary>Предустановленный формат бумаги.</summary>
         public PaperSize PaperSize { get; set; } = PaperSize.A4;
@@ -63,187 +46,150 @@ namespace Writersword.Modules.TextEditor.Models.Page
         public double FooterDistanceMm { get; set; } = 12;
 
         /// <summary>
-        /// Возвращает ширину текстовой области в мм с учётом полей и ориентации.
+        /// Возвращает физическую ширину страницы в мм с учётом ориентации.
+        /// При Landscape ширина и высота меняются местами.
+        /// </summary>
+        public double GetPhysicalWidthMm()
+            => Orientation == PageOrientation.Landscape ? HeightMm : WidthMm;
+
+        /// <summary>
+        /// Возвращает физическую высоту страницы в мм с учётом ориентации.
+        /// </summary>
+        public double GetPhysicalHeightMm()
+            => Orientation == PageOrientation.Landscape ? WidthMm : HeightMm;
+
+        /// <summary>
+        /// Возвращает ширину текстовой области в мм с учётом полей и переплёта.
         /// </summary>
         public double GetTextWidthMm()
-        {
-            double pageWidth = Orientation == PageOrientation.Landscape ? HeightMm : WidthMm;
-            return pageWidth - MarginLeftMm - MarginRightMm - MarginGutterMm;
-        }
+            => GetPhysicalWidthMm() - MarginLeftMm - MarginRightMm - MarginGutterMm;
 
         /// <summary>
         /// Возвращает высоту текстовой области в мм.
         /// </summary>
         public double GetTextHeightMm()
-        {
-            double pageHeight = Orientation == PageOrientation.Landscape ? WidthMm : HeightMm;
-            return pageHeight - MarginTopMm - MarginBottomMm;
-        }
+            => GetPhysicalHeightMm() - MarginTopMm - MarginBottomMm;
 
-        /// <summary>Применяет предустановленный размер бумаги, обновляя WidthMm и HeightMm.</summary>
+        /// <summary>
+        /// Применяет предустановленный формат бумаги — выставляет WidthMm и HeightMm.
+        /// При Custom размеры не меняются.
+        /// </summary>
         public void ApplyPaperSize(PaperSize size)
         {
             PaperSize = size;
             switch (size)
             {
                 case PaperSize.A3:
-                    WidthMm = 297; HeightMm = 420; break;
+                    WidthMm = 297; HeightMm = 420;
+                    break;
                 case PaperSize.A4:
-                    WidthMm = 210; HeightMm = 297; break;
+                    WidthMm = 210; HeightMm = 297;
+                    break;
                 case PaperSize.A5:
-                    WidthMm = 148; HeightMm = 210; break;
+                    WidthMm = 148; HeightMm = 210;
+                    break;
                 case PaperSize.Letter:
-                    WidthMm = 215.9; HeightMm = 279.4; break;
+                    WidthMm = 215.9; HeightMm = 279.4;
+                    break;
+                case PaperSize.Legal:
+                    WidthMm = 215.9; HeightMm = 355.6;
+                    break;
+                case PaperSize.B5:
+                    WidthMm = 176; HeightMm = 250;
+                    break;
+                    // Custom — размеры задаются пользователем вручную, не меняем.
             }
         }
-
-        public PageSettings Clone() => (PageSettings)MemberwiseClone();
     }
 
     /// <summary>
-    /// Предустановленная цветовая тема листа.
+    /// Настройки колонок текстовой области.
+    /// </summary>
+    public sealed class ColumnSettings
+    {
+        /// <summary>Количество колонок. 1 — одна колонка (нет разбивки).</summary>
+        public int ColumnCount { get; set; } = 1;
+
+        /// <summary>Расстояние между колонками в мм.</summary>
+        public double GapMm { get; set; } = 12.5;
+
+        /// <summary>Показывать разделительную линию между колонками.</summary>
+        public bool ShowSeparator { get; set; } = false;
+    }
+
+    /// <summary>
+    /// Пресет цветовой темы канваса редактора.
+    /// Влияет только на отображение в редакторе — не на печать.
     /// </summary>
     public enum CanvasThemePreset
     {
-        /// <summary>Чистый белый лист.</summary>
-        White = 0,
-        /// <summary>Состаренная бумага (кремовый фон).</summary>
-        AgedPaper = 1,
-        /// <summary>Тёмный режим для глаз.</summary>
-        DarkMode = 2,
-        /// <summary>Произвольные цвета заданные пользователем.</summary>
-        Custom = 3
+        Default = 0,
+        Sepia = 1,
+        Dark = 2,
+        HighContrast = 3,
+        Custom = 4
     }
 
     /// <summary>
-    /// Визуальные настройки листа — цвет фона и текста.
-    /// Полностью независимы от темы приложения и от настроек печати/экспорта.
-    /// При экспорте в PDF/docx эти значения игнорируются.
+    /// Настройки визуального отображения канваса.
+    /// Не влияют на печать и экспорт.
     /// </summary>
     public sealed class CanvasSettings
     {
-        /// <summary>Активный пресет.</summary>
-        public CanvasThemePreset Preset { get; set; } = CanvasThemePreset.White;
+        /// <summary>Активный пресет темы канваса.</summary>
+        public CanvasThemePreset Preset { get; set; } = CanvasThemePreset.Default;
 
-        /// <summary>Цвет фона листа (#RRGGBB). Переопределяется пресетом при его выборе.</summary>
+        /// <summary>Цвет фона страницы в редакторе (HEX). Не влияет на печать.</summary>
         public string PageBackgroundColor { get; set; } = "#FFFFFF";
 
-        /// <summary>Цвет основного текста (#RRGGBB). Переопределяется пресетом.</summary>
+        /// <summary>Цвет текста по умолчанию в редакторе (HEX). Не влияет на печать.</summary>
         public string DefaultTextColor { get; set; } = "#1A1A1A";
 
-        /// <summary>Цвет тени/фона вокруг листа.</summary>
-        public string CanvasBackgroundColor { get; set; } = "#E8E8E8";
-
-        /// <summary>Применяет предустановленную тему, обновляя все цвета.</summary>
+        /// <summary>
+        /// Применяет предустановленную тему — выставляет цвета канваса по пресету.
+        /// </summary>
         public void ApplyPreset(CanvasThemePreset preset)
         {
             Preset = preset;
             switch (preset)
             {
-                case CanvasThemePreset.White:
+                case CanvasThemePreset.Default:
                     PageBackgroundColor = "#FFFFFF";
                     DefaultTextColor = "#1A1A1A";
-                    CanvasBackgroundColor = "#E8E8E8";
                     break;
-                case CanvasThemePreset.AgedPaper:
-                    PageBackgroundColor = "#F5EDD6";
-                    DefaultTextColor = "#2C1A0E";
-                    CanvasBackgroundColor = "#D4C4A0";
+                case CanvasThemePreset.Sepia:
+                    PageBackgroundColor = "#F5F0E8";
+                    DefaultTextColor = "#3B2F2F";
                     break;
-                case CanvasThemePreset.DarkMode:
-                    PageBackgroundColor = "#1E1E2E";
-                    DefaultTextColor = "#CDD6F4";
-                    CanvasBackgroundColor = "#11111B";
+                case CanvasThemePreset.Dark:
+                    PageBackgroundColor = "#1E1E1E";
+                    DefaultTextColor = "#D4D4D4";
                     break;
+                case CanvasThemePreset.HighContrast:
+                    PageBackgroundColor = "#000000";
+                    DefaultTextColor = "#FFFFFF";
+                    break;
+                    // Custom — цвета задаются пользователем вручную, не меняем.
             }
         }
-
-        public CanvasSettings Clone() => (CanvasSettings)MemberwiseClone();
     }
 
     /// <summary>
-    /// Настройки нумерации страниц в колонтитуле.
-    /// </summary>
-    public enum PageNumberFormat
-    {
-        /// <summary>1, 2, 3 ...</summary>
-        Decimal = 0,
-        /// <summary>i, ii, iii ...</summary>
-        LowerRoman = 1,
-        /// <summary>I, II, III ...</summary>
-        UpperRoman = 2,
-        /// <summary>a, b, c ...</summary>
-        LowerLetter = 3,
-        /// <summary>A, B, C ...</summary>
-        UpperLetter = 4
-    }
-
-    /// <summary>
-    /// Верхний или нижний колонтитул раздела.
+    /// Колонтитул раздела — верхний или нижний.
+    /// Содержит параграфы которые повторяются на каждой странице раздела.
     /// </summary>
     public sealed class HeaderFooterModel
     {
-        /// <summary>Включён ли колонтитул.</summary>
-        public bool IsEnabled { get; set; }
-
-        /// <summary>Отдельный колонтитул для первой страницы раздела.</summary>
-        public bool DifferentFirstPage { get; set; }
-
-        /// <summary>Отдельные колонтитулы для чётных и нечётных страниц.</summary>
-        public bool DifferentOddEven { get; set; }
-
-        /// <summary>Текст колонтитула на нечётных (и всех обычных) страницах.</summary>
-        public string OddPageContent { get; set; } = string.Empty;
-
-        /// <summary>Текст колонтитула на чётных страницах.</summary>
-        public string EvenPageContent { get; set; } = string.Empty;
-
-        /// <summary>Текст колонтитула на первой странице раздела.</summary>
-        public string FirstPageContent { get; set; } = string.Empty;
-
-        /// <summary>Включить вывод номера страницы.</summary>
-        public bool ShowPageNumber { get; set; }
-
-        /// <summary>Формат нумерации страниц.</summary>
-        public PageNumberFormat PageNumberFormat { get; set; } = PageNumberFormat.Decimal;
-
-        /// <summary>Начальный номер страницы в разделе. -1 — продолжить от предыдущего.</summary>
-        public int StartPageNumber { get; set; } = -1;
-
-        public HeaderFooterModel Clone() => (HeaderFooterModel)MemberwiseClone();
-    }
-
-    /// <summary>
-    /// Настройки колонок раздела.
-    /// </summary>
-    public sealed class ColumnSettings
-    {
-        /// <summary>Количество колонок.</summary>
-        public int ColumnCount { get; set; } = 1;
-
-        /// <summary>Одинаковая ширина колонок.</summary>
-        public bool EqualWidth { get; set; } = true;
+        /// <summary>Колонтитул активен — отображается при печати и в режиме Page.</summary>
+        public bool IsEnabled { get; set; } = false;
 
         /// <summary>
-        /// Ширина каждой колонки в мм. Используется при EqualWidth = false.
-        /// Длина массива должна равняться ColumnCount.
+        /// Отличается ли колонтитул первой страницы от остальных.
+        /// Используется для титульной страницы.
         /// </summary>
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public double[]? ColumnWidthsMm { get; set; }
+        public bool DifferentFirstPage { get; set; } = false;
 
-        /// <summary>
-        /// Отступ между колонками в мм. Используется при EqualWidth = false.
-        /// Длина массива должна равняться ColumnCount - 1.
-        /// </summary>
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public double[]? SpacingMm { get; set; }
-
-        /// <summary>Отступ между колонками в мм при EqualWidth = true.</summary>
-        public double EqualSpacingMm { get; set; } = 12.5;
-
-        /// <summary>Показывать разделительную линию между колонками.</summary>
-        public bool ShowSeparatorLine { get; set; }
-
-        public ColumnSettings Clone() => (ColumnSettings)MemberwiseClone();
+        /// <summary>Параграфы колонтитула в порядке следования.</summary>
+        public List<ParagraphBlock> Paragraphs { get; set; } = new();
     }
 }

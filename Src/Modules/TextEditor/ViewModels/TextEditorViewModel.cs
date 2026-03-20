@@ -1,8 +1,10 @@
+using ReactiveUI;
+using Serilog;
 using System;
 using System.Reactive.Linq;
 using System.Text;
-using ReactiveUI;
-using Serilog;
+using Writersword.Core.Models.Print;
+using Writersword.Modules.TextEditor.Contracts;
 using Writersword.Modules.TextEditor.Models;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Page;
@@ -59,6 +61,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
             get => _isModified;
             set => this.RaiseAndSetIfChanged(ref _isModified, value);
         }
+
+        // ── События ───────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Поднимается когда пользователь нажимает Print.
+        /// TextEditorModule подписывается на это событие,
+        /// создаёт TextEditorPrintDocument и вызывает IPrintService.
+        /// ViewModel не знает ни о каком сервисе печати напрямую.
+        /// </summary>
+        public event Action<DocumentModel, TextEditorPageSettings>? PrintRequested;
+
+        // ── Constructor ───────────────────────────────────────────────────
 
         public TextEditorViewModel()
         {
@@ -182,7 +196,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertShape(Models.Document.ShapeType st) => DocumentViewModel?.InsertShape(st);
         public void InsertFloatingTextBox() => DocumentViewModel?.InsertFloatingTextBox();
         public void InsertPageBreak() => DocumentViewModel?.InsertPageBreak();
-        public void InsertSectionBreak(BreakType t) => DocumentViewModel?.InsertSectionBreak(t);
+        public void InsertSectionBreak(Models.Document.BreakType t) => DocumentViewModel?.InsertSectionBreak(t);
         public void InsertFootnote() => DocumentViewModel?.InsertFootnote();
         public void InsertEndnote() => DocumentViewModel?.InsertEndnote();
         public void InsertBookmark(string name) => DocumentViewModel?.InsertBookmark(name);
@@ -192,7 +206,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void SetPageSize(PaperSize s) => DocumentViewModel?.SetPageSize(s);
         public void SetPageOrientation(PageOrientation o) => DocumentViewModel?.SetPageOrientation(o);
-        public void SetPageMargins(double t, double b, double l, double r) => DocumentViewModel?.SetPageMargins(t, b, l, r);
+        public void SetPageMargins(double t, double b, double l, double r)
+            => DocumentViewModel?.SetPageMargins(t, b, l, r);
         public void SetColumns(int c) => DocumentViewModel?.SetColumns(c);
 
         public void SetZoom(double zoom) => DocumentViewModel?.SetZoom(zoom);
@@ -202,11 +217,59 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetCanvasTheme(CanvasThemePreset p) => DocumentViewModel?.SetCanvasTheme(p);
         public void SetCanvasColors(string bg, string tc) => DocumentViewModel?.SetCanvasColors(bg, tc);
 
+        public void ZoomIn()
+        {
+            if (DocumentViewModel is null) return;
+            double[] steps = { 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0 };
+            double current = StatusBar.Zoom;
+            foreach (double step in steps)
+                if (step > current + 0.01)
+                {
+                    DocumentViewModel.SetZoom(step);
+                    StatusBar.Zoom = step;
+                    return;
+                }
+        }
+
+        public void ZoomOut()
+        {
+            if (DocumentViewModel is null) return;
+            double[] steps = { 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0 };
+            double current = StatusBar.Zoom;
+            for (int i = steps.Length - 1; i >= 0; i--)
+                if (steps[i] < current - 0.01)
+                {
+                    DocumentViewModel.SetZoom(steps[i]);
+                    StatusBar.Zoom = steps[i];
+                    return;
+                }
+        }
+
+        public void ZoomReset()
+        {
+            if (DocumentViewModel is null) return;
+            DocumentViewModel.SetZoom(1.0);
+            StatusBar.Zoom = 1.0;
+        }
+
         public void OpenFind() => DocumentViewModel?.OpenFind();
         public void OpenFindReplace() => DocumentViewModel?.OpenFindReplace();
         public void RunSpellCheck() => DocumentViewModel?.RunSpellCheck();
         public void ShowWordCount() => DocumentViewModel?.ShowWordCount();
-        public void Print() => DocumentViewModel?.Print();
+
+        /// <summary>
+        /// Поднимает событие PrintRequested с текущим документом и настройками страницы.
+        /// TextEditorModule подписан на это событие и выполняет всю логику печати.
+        /// </summary>
+        public void Print()
+        {
+            if (DocumentViewModel is null) return;
+            _logger.Debug("Print requested: title={Title}", DocumentViewModel.Document.Title);
+            PrintRequested?.Invoke(
+                DocumentViewModel.Document,
+                DocumentViewModel.Document.PageSettings);
+        }
+
         public void ExportToPdf() => DocumentViewModel?.ExportToPdf();
         public void ExportToDocx() => DocumentViewModel?.ExportToDocx();
         public void ExportToTxt() => DocumentViewModel?.ExportToTxt();

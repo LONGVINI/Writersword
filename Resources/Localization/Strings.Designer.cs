@@ -1609,6 +1609,123 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Close.
+        /// </summary>
+        public static string Print_Close {
+            get {
+                return ResourceManager.GetString("Print_Close", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на First page.
+        /// </summary>
+        public static string Print_FirstPage {
+            get {
+                return ResourceManager.GetString("Print_FirstPage", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Last page.
+        /// </summary>
+        public static string Print_LastPage {
+            get {
+                return ResourceManager.GetString("Print_LastPage", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Next page.
+        /// </summary>
+        public static string Print_NextPage {
+            get {
+                return ResourceManager.GetString("Print_NextPage", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на of.
+        /// </summary>
+        public static string Print_PageOf {
+            get {
+                return ResourceManager.GetString("Print_PageOf", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Page.
+        /// </summary>
+        public static string Print_PagePrefix {
+            get {
+                return ResourceManager.GetString("Print_PagePrefix", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Previous page.
+        /// </summary>
+        public static string Print_PrevPage {
+            get {
+                return ResourceManager.GetString("Print_PrevPage", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Print.
+        /// </summary>
+        public static string Print_PrintBtn {
+            get {
+                return ResourceManager.GetString("Print_PrintBtn", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Rendering....
+        /// </summary>
+        public static string Print_Rendering {
+            get {
+                return ResourceManager.GetString("Print_Rendering", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Save as PDF.
+        /// </summary>
+        public static string Print_SavePdf {
+            get {
+                return ResourceManager.GetString("Print_SavePdf", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Zoom in.
+        /// </summary>
+        public static string Print_ZoomIn {
+            get {
+                return ResourceManager.GetString("Print_ZoomIn", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Zoom out.
+        /// </summary>
+        public static string Print_ZoomOut {
+            get {
+                return ResourceManager.GetString("Print_ZoomOut", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset zoom.
+        /// </summary>
+        public static string Print_ZoomReset {
+            get {
+                return ResourceManager.GetString("Print_ZoomReset", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на 🎮 Game Design Document.
         /// </summary>
         public static string ProjectType_GameDesign {

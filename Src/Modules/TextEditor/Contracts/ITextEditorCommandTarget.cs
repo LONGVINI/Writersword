@@ -1,17 +1,19 @@
+using Writersword.Core.Models.Print;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
 using Writersword.Modules.TextEditor.Models.Page;
 using Writersword.Modules.TextEditor.Models.Styles;
 
-namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
+namespace Writersword.Modules.TextEditor.Contracts
 {
     /// <summary>
     /// Контракт между Ribbon (командный источник) и DocumentViewModel (исполнитель).
     /// Все операции редактирования проходят через этот интерфейс.
+    /// PaperSize и PageOrientation берутся из Core.Models.Print.
     /// </summary>
     public interface ITextEditorCommandTarget
     {
-        // --- Форматирование символов ---
+        // ── Форматирование символов ───────────────────────────────────────
         void ToggleBold();
         void ToggleItalic();
         void ToggleUnderline();
@@ -28,7 +30,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         void IncreaseFontSize();
         void DecreaseFontSize();
 
-        // --- Форматирование абзаца ---
+        // ── Форматирование абзаца ─────────────────────────────────────────
         void SetAlignment(TextAlignment alignment);
         void IncreaseIndent();
         void DecreaseIndent();
@@ -37,12 +39,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         void SetSpaceAfter(double pt);
         void ApplyStyle(string styleName);
 
-        // --- Списки ---
+        // ── Списки ────────────────────────────────────────────────────────
         void ToggleBulletList();
         void ToggleNumberedList();
         void ToggleMultilevelList();
 
-        // --- Буфер обмена ---
+        // ── Буфер обмена ─────────────────────────────────────────────────
         void Cut();
         void Copy();
         void Paste();
@@ -50,7 +52,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         void Undo();
         void Redo();
 
-        // --- Вставка ---
+        // ── Вставка ──────────────────────────────────────────────────────
         void InsertTable(int rows, int columns);
         void InsertImage(string filePath);
         void InsertShape(ShapeType shapeType);
@@ -64,13 +66,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         void InsertTOC();
         void InsertComment(string text);
 
-        // --- Макет ---
+        // ── Макет страницы ────────────────────────────────────────────────
         void SetPageSize(PaperSize size);
         void SetPageOrientation(PageOrientation orientation);
         void SetPageMargins(double top, double bottom, double left, double right);
         void SetColumns(int count);
 
-        // --- Вид ---
+        // ── Вид ───────────────────────────────────────────────────────────
         void SetZoom(double zoom);
         void SetViewMode(EditorViewMode mode);
         void ToggleFullscreen();
@@ -78,13 +80,24 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         void SetCanvasTheme(CanvasThemePreset preset);
         void SetCanvasColors(string pageBackground, string textColor);
 
-        // --- Поиск ---
+        /// <summary>Увеличить масштаб на один шаг.</summary>
+        void ZoomIn();
+
+        /// <summary>Уменьшить масштаб на один шаг.</summary>
+        void ZoomOut();
+
+        /// <summary>Сбросить масштаб к 100%.</summary>
+        void ZoomReset();
+
+        // ── Поиск ────────────────────────────────────────────────────────
         void OpenFind();
         void OpenFindReplace();
 
-        // --- Инструменты ---
+        // ── Инструменты ──────────────────────────────────────────────────
         void RunSpellCheck();
         void ShowWordCount();
+
+        // ── Печать и экспорт ─────────────────────────────────────────────
         void Print();
         void ExportToPdf();
         void ExportToDocx();

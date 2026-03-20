@@ -14,7 +14,7 @@ namespace Writersword.Modules.Common
         private readonly Stack<IUndoableCommand> _undoStack = new();
         private readonly Stack<IUndoableCommand> _redoStack = new();
 
-        public UndoRedoStack(int maxSteps = 50)
+        public UndoRedoStack(int maxSteps = 100)
         {
             _maxSteps = maxSteps;
         }

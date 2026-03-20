@@ -795,4 +795,40 @@
   <data name="Settings_Confirm_PromoteToGlobal_Message" xml:space="preserve">
     <value>Эти настройки станут стандартными для всех будущих проектов.</value>
   </data>
+  <data name="Print_Close" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="Print_FirstPage" xml:space="preserve">
+    <value>Первая страница</value>
+  </data>
+  <data name="Print_LastPage" xml:space="preserve">
+    <value>Последняя страница</value>
+  </data>
+  <data name="Print_NextPage" xml:space="preserve">
+    <value>Следующая страница</value>
+  </data>
+  <data name="Print_PageOf" xml:space="preserve">
+    <value>из</value>
+  </data>
+  <data name="Print_PagePrefix" xml:space="preserve">
+    <value>Страница</value>
+  </data>
+  <data name="Print_PrevPage" xml:space="preserve">
+    <value>Предыдущая страница</value>
+  </data>
+  <data name="Print_PrintBtn" xml:space="preserve">
+    <value>Печать</value>
+  </data>
+  <data name="Print_Rendering" xml:space="preserve">
+    <value>Рендеринг...</value>
+  </data>
+  <data name="Print_SavePdf" xml:space="preserve">
+    <value>Сохранить как PDF</value>
+  </data>
+  <data name="Print_ZoomIn" xml:space="preserve">
+    <value>Увеличить</value>
+  </data>
+  <data name="Print_ZoomOut" xml:space="preserve">
+    <value>Уменьшить</value>
+  </data>
 </root>

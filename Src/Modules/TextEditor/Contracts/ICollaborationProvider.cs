@@ -1,4 +1,4 @@
-namespace Writersword.Modules.TextEditor.Services
+namespace Writersword.Modules.TextEditor.Contracts
 {
     /// <summary>
     /// Провод для будущей реализации совместной работы.

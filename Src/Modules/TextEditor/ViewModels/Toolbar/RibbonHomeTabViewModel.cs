@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows.Input;
 using ReactiveUI;
 using Writersword.Modules.TextEditor.Models.Styles;
+using Writersword.Modules.TextEditor.Contracts;
 
 namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 {

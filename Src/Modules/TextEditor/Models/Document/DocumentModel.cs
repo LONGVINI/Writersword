@@ -55,7 +55,7 @@ namespace Writersword.Modules.TextEditor.Models.Document
         // --- Настройки документа ---
 
         /// <summary>Настройки страницы по умолчанию (переопределяются на уровне раздела).</summary>
-        public PageSettings PageSettings { get; set; } = new();
+        public TextEditorPageSettings PageSettings { get; set; } = new();
 
         /// <summary>Настройки колонок по умолчанию.</summary>
         public ColumnSettings ColumnSettings { get; set; } = new();

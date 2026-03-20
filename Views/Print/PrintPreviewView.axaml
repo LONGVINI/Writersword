@@ -1,0 +1,335 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Writersword.ViewModels.Print"
+        xmlns:loc="using:Writersword.Resources.Localization"
+        x:Class="Writersword.Views.Print.PrintPreviewView"
+        x:DataType="vm:PrintPreviewViewModel"
+        Title="{Binding DocumentTitle}"
+        Width="1000" Height="760"
+        MinWidth="700" MinHeight="500"
+        WindowStartupLocation="CenterOwner"
+        CanResize="True">
+
+	<Window.Styles>
+
+		<!-- Кнопка тулбара превью -->
+		<Style Selector="Button.PreviewBtn">
+			<Setter Property="Background"                 Value="Transparent"/>
+			<Setter Property="BorderBrush"                Value="Transparent"/>
+			<Setter Property="BorderThickness"            Value="0"/>
+			<Setter Property="CornerRadius"               Value="4"/>
+			<Setter Property="Padding"                    Value="8 4"/>
+			<Setter Property="MinHeight"                  Value="30"/>
+			<Setter Property="VerticalAlignment"          Value="Center"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="Button.PreviewBtn /template/ ContentPresenter">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderBrush"     Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+		</Style>
+		<Style Selector="Button.PreviewBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Button.PreviewBtn:pressed /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+		</Style>
+		<Style Selector="Button.PreviewBtn:disabled /template/ ContentPresenter">
+			<Setter Property="Opacity" Value="0.35"/>
+		</Style>
+
+		<!-- Кнопка действия (Print) -->
+		<Style Selector="Button.PreviewActionBtn">
+			<Setter Property="Background"                 Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="BorderBrush"                Value="Transparent"/>
+			<Setter Property="BorderThickness"            Value="0"/>
+			<Setter Property="CornerRadius"               Value="4"/>
+			<Setter Property="Padding"                    Value="14 6"/>
+			<Setter Property="MinHeight"                  Value="30"/>
+			<Setter Property="VerticalAlignment"          Value="Center"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="White"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+			<Setter Property="FontWeight"                 Value="SemiBold"/>
+		</Style>
+		<Style Selector="Button.PreviewActionBtn /template/ ContentPresenter">
+			<Setter Property="Background"   Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="CornerRadius" Value="4"/>
+		</Style>
+		<Style Selector="Button.PreviewActionBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentHoverBrush}"/>
+		</Style>
+		<Style Selector="Button.PreviewActionBtn:pressed /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+		</Style>
+		<Style Selector="Button.PreviewActionBtn:disabled /template/ ContentPresenter">
+			<Setter Property="Opacity" Value="0.35"/>
+		</Style>
+
+		<!-- Кнопка закрытия -->
+		<Style Selector="Button.PreviewCloseBtn">
+			<Setter Property="Background"                 Value="Transparent"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="4"/>
+			<Setter Property="Padding"                    Value="14 6"/>
+			<Setter Property="MinHeight"                  Value="30"/>
+			<Setter Property="VerticalAlignment"          Value="Center"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="Button.PreviewCloseBtn /template/ ContentPresenter">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+		</Style>
+		<Style Selector="Button.PreviewCloseBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.PreviewCloseBtn:pressed /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+		</Style>
+
+		<!-- Разделитель тулбара -->
+		<Style Selector="Separator.ToolbarDivider">
+			<Setter Property="Width"             Value="1"/>
+			<Setter Property="Height"            Value="20"/>
+			<Setter Property="Background"        Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="Margin"            Value="4 0"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+
+	</Window.Styles>
+
+	<Grid RowDefinitions="Auto,*,Auto">
+
+		<!-- ═══════════════════════════════════════════════════════
+             ТУЛБАР
+             ═══════════════════════════════════════════════════════ -->
+		<Border Grid.Row="0"
+                Background="{DynamicResource BgSurfaceBrush}"
+                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                BorderThickness="0 0 0 1"
+                Padding="8 4">
+			<Grid ColumnDefinitions="Auto,*,Auto">
+
+				<!-- Левая группа: навигация + масштаб -->
+				<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2"
+                            VerticalAlignment="Center">
+
+					<Button Command="{Binding NavigateFirstCommand}"
+                            Classes="PreviewBtn"
+                            IsEnabled="{Binding CanNavigatePrev}"
+                            ToolTip.Tip="{x:Static loc:Strings.Print_FirstPage}">
+						<PathIcon Data="M6 18V6H8V18H6ZM9.5 12L18 18V6L9.5 12Z"
+                                  Width="14" Height="14"/>
+					</Button>
+
+					<Button Command="{Binding NavigatePrevCommand}"
+                            Classes="PreviewBtn"
+                            IsEnabled="{Binding CanNavigatePrev}"
+                            ToolTip.Tip="{x:Static loc:Strings.Print_PrevPage}">
+						<PathIcon Data="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"
+                                  Width="14" Height="14"/>
+					</Button>
+
+					<!-- Счётчик страниц -->
+					<StackPanel Orientation="Horizontal" Spacing="4"
+                                VerticalAlignment="Center" Margin="4 0">
+						<TextBlock Text="{x:Static loc:Strings.Print_PagePrefix}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   VerticalAlignment="Center"/>
+						<TextBlock Text="{Binding CurrentPageDisplay}"
+                                   FontSize="12" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   VerticalAlignment="Center"/>
+						<TextBlock Text="{x:Static loc:Strings.Print_PageOf}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   VerticalAlignment="Center"/>
+						<TextBlock Text="{Binding PageCount}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   VerticalAlignment="Center"/>
+					</StackPanel>
+
+					<Button Command="{Binding NavigateNextCommand}"
+                            Classes="PreviewBtn"
+                            IsEnabled="{Binding CanNavigateNext}"
+                            ToolTip.Tip="{x:Static loc:Strings.Print_NextPage}">
+						<PathIcon Data="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"
+                                  Width="14" Height="14"/>
+					</Button>
+
+					<Button Command="{Binding NavigateLastCommand}"
+                            Classes="PreviewBtn"
+                            IsEnabled="{Binding CanNavigateNext}"
+                            ToolTip.Tip="{x:Static loc:Strings.Print_LastPage}">
+						<PathIcon Data="M6 18V6H8V18H6ZM9.5 12L18 18V6L9.5 12Z"
+                                  Width="14" Height="14"
+                                  RenderTransform="scaleX(-1)"/>
+					</Button>
+
+					<Separator Classes="ToolbarDivider"/>
+
+					<!-- Масштаб -->
+					<Button Command="{Binding ZoomOutCommand}"
+                            Classes="PreviewBtn"
+                            ToolTip.Tip="{x:Static loc:Strings.Print_ZoomOut}">
+						<PathIcon Data="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14zM7 9h5v1H7z"
+                                  Width="14" Height="14"/>
+					</Button>
+
+					<Button Command="{Binding ZoomResetCommand}"
+                            Classes="PreviewBtn"
+                            ToolTip.Tip="{x:Static loc:Strings.Print_ZoomReset}">
+						<StackPanel Orientation="Horizontal" Spacing="2">
+							<TextBlock Text="{Binding ZoomPercent}"
+                                       FontSize="11" VerticalAlignment="Center"/>
+							<TextBlock Text="%"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       VerticalAlignment="Center"/>
+						</StackPanel>
+					</Button>
+
+					<Button Command="{Binding ZoomInCommand}"
+                            Classes="PreviewBtn"
+                            ToolTip.Tip="{x:Static loc:Strings.Print_ZoomIn}">
+						<PathIcon Data="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14zM10 6.5H8.5V8H7V6.5H5.5V5H7V3.5h1.5V5H10z"
+                                  Width="14" Height="14"/>
+					</Button>
+
+				</StackPanel>
+
+				<!-- Центр: индикатор рендеринга -->
+				<StackPanel Grid.Column="1"
+                            Orientation="Horizontal" Spacing="6"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                            IsVisible="{Binding IsRendering}">
+					<TextBlock Text="{x:Static loc:Strings.Print_Rendering}"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               VerticalAlignment="Center"/>
+				</StackPanel>
+
+				<!-- Правая группа: действия -->
+				<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"
+                            VerticalAlignment="Center">
+
+					<Button Command="{Binding SavePdfCommand}"
+                            Classes="PreviewBtn"
+                            ToolTip.Tip="{x:Static loc:Strings.Print_SavePdf}">
+						<StackPanel Orientation="Horizontal" Spacing="5">
+							<PathIcon Data="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
+                                      Width="14" Height="14"/>
+							<TextBlock Text="{x:Static loc:Strings.Print_SavePdf}"
+                                       FontSize="12" VerticalAlignment="Center"/>
+						</StackPanel>
+					</Button>
+
+					<Separator Classes="ToolbarDivider"/>
+
+					<Button Command="{Binding PrintCommand}"
+                            Classes="PreviewActionBtn"
+                            ToolTip.Tip="{x:Static loc:Strings.Print_PrintBtn}">
+						<StackPanel Orientation="Horizontal" Spacing="5">
+							<PathIcon Data="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"
+                                      Width="14" Height="14"/>
+							<TextBlock Text="{x:Static loc:Strings.Print_PrintBtn}"
+                                       FontSize="12" VerticalAlignment="Center"/>
+						</StackPanel>
+					</Button>
+
+					<Button Command="{Binding CloseCommand}"
+                            Classes="PreviewCloseBtn"
+                            ToolTip.Tip="{x:Static loc:Strings.Print_Close}">
+						<TextBlock Text="{x:Static loc:Strings.Print_Close}"
+                                   FontSize="12" VerticalAlignment="Center"/>
+					</Button>
+
+				</StackPanel>
+			</Grid>
+		</Border>
+
+		<!-- ═══════════════════════════════════════════════════════
+             ОБЛАСТЬ ПРЕВЬЮ
+             Width и Height биндятся на ScaledPreviewWidthPx /
+             ScaledPreviewHeightPx — вычисляются из реальных
+             физических размеров PageSettings в VM.
+             Работает для любого формата: A4, A3, книжный, кастомный.
+             ═══════════════════════════════════════════════════════ -->
+		<ScrollViewer Grid.Row="1"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto"
+                      Background="{DynamicResource BgBaseBrush}"
+                      Padding="24">
+
+			<Border HorizontalAlignment="Center"
+                    VerticalAlignment="Top"
+                    BoxShadow="0 4 24 0 #40000000"
+                    CornerRadius="2">
+
+				<Image Source="{Binding PreviewBitmap}"
+                       Width="{Binding ScaledPreviewWidthPx}"
+                       Height="{Binding ScaledPreviewHeightPx}"
+                       RenderOptions.BitmapInterpolationMode="HighQuality"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Top"
+                       Stretch="Fill"/>
+
+			</Border>
+		</ScrollViewer>
+
+		<!-- ═══════════════════════════════════════════════════════
+             СТАТУСБАР
+             ═══════════════════════════════════════════════════════ -->
+		<Border Grid.Row="2"
+                Background="{DynamicResource BgSurfaceBrush}"
+                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                BorderThickness="0 1 0 0"
+                Padding="12 4">
+			<Grid ColumnDefinitions="*,Auto">
+
+				<TextBlock Grid.Column="0"
+                           Text="{Binding DocumentTitle}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"/>
+
+				<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
+                            VerticalAlignment="Center">
+					<TextBlock Text="{x:Static loc:Strings.Print_PagePrefix}"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               VerticalAlignment="Center"/>
+					<TextBlock Text="{Binding CurrentPageDisplay}"
+                               FontSize="11" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               VerticalAlignment="Center"/>
+					<TextBlock Text="{x:Static loc:Strings.Print_PageOf}"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               VerticalAlignment="Center"/>
+					<TextBlock Text="{Binding PageCount}"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               VerticalAlignment="Center"/>
+				</StackPanel>
+
+			</Grid>
+		</Border>
+
+	</Grid>
+</Window>

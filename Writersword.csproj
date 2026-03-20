@@ -222,7 +222,6 @@
 		<Folder Include="Docs\Architecture\" />
 		<Folder Include="Docs\UserGuide\" />
 		<Folder Include="Models\" />
-		<Folder Include="Projects\" />
 		<Folder Include="Src\Core\Models\Modules\" />
 		<Folder Include="Src\Modules\TextEditor\Views\Document\" />
 		<Folder Include="Src\WorkModes\Branching\" />
