@@ -3,7 +3,7 @@ using Avalonia.Media;
 using System;
 using System.Globalization;
 
-namespace Writersword.Src.Infrastructure.Converters
+namespace Writersword.Infrastructure.Converters
 {
     /// <summary>Конвертер bool в строку "active" для Tag</summary>
     public class BoolToActiveTagConverter : IValueConverter

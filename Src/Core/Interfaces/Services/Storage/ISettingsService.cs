@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Settings;
 
-namespace Writersword.Src.Core.Interfaces.Services.Storage
+namespace Writersword.Core.Interfaces.Services.Storage
 {
     /// <summary>
     /// Сервис для работы с настройками приложения

@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Writersword.Src.Modules.Timer.Resources {
+namespace Writersword.Modules.Timer.Resources {
     using System;
     
     

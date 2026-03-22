@@ -7,8 +7,8 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.ViewModels;
 
 namespace Writersword.ViewModels.Components

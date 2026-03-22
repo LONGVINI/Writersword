@@ -5,10 +5,10 @@ using System.Collections.Generic;
 using System.Linq;
 using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
-using Writersword.Src.Core.Interfaces.Services;
-using Writersword.Src.Core.Interfaces.WorkModes;
+using Writersword.Core.Interfaces.Services;
+using Writersword.Core.Interfaces.WorkModes;
 
-namespace Writersword.Src.Infrastructure.Services.WorkModes
+namespace Writersword.Infrastructure.Services.WorkModes
 {
     /// <summary>
     /// Главный сервис для работы с WorkModes

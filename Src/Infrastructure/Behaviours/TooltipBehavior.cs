@@ -10,7 +10,7 @@ using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Writersword.Src.Core.Interfaces.Services.Input;
+using Writersword.Core.Interfaces.Services.Input;
 using Writersword.Styles.UserControls;
 
 namespace Writersword.Infrastructure.Behaviours

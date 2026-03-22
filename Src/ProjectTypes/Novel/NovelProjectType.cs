@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
-using Writersword.Src.ProjectTypes.Common;
+using Writersword.ProjectTypes.Common;
 
-namespace Writersword.Src.ProjectTypes.Novel
+namespace Writersword.ProjectTypes.Novel
 {
     /// <summary>
     /// Тип проекта: Роман

@@ -8,9 +8,9 @@ using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
-using Writersword.Src.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.Services.Storage;
 
-namespace Writersword.Src.Infrastructure.Services.Storage
+namespace Writersword.Infrastructure.Services.Storage
 {
     /// <summary>
     /// Сервис фонового кеширования состояния модулей

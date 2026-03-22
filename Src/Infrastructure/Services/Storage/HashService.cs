@@ -6,7 +6,7 @@ using System.Text;
 using Newtonsoft.Json;
 using Writersword.Core.Interfaces.Services;
 
-namespace Writersword.Src.Infrastructure.Services.Storage
+namespace Writersword.Infrastructure.Services.Storage
 {
     /// <summary>
     /// Реализация сервиса для вычисления SHA256 хешей

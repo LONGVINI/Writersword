@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Writersword.Core.Interfaces.Print;
 using Writersword.Core.Interfaces.Services.UI;
-using Writersword.Src.Core.Interfaces.Services.UI;
 
 namespace Writersword.ViewModels.Print
 {

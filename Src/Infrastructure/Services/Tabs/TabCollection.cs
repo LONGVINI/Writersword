@@ -5,11 +5,11 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.ViewModels;
 
-namespace Writersword.Src.Infrastructure.Services.Tabs
+namespace Writersword.Infrastructure.Services.Tabs
 {
     /// <summary>
     /// Реализация сервиса управления коллекцией вкладок

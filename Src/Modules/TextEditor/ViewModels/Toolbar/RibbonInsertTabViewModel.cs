@@ -1,6 +1,7 @@
 ﻿using System.Windows.Input;
 using ReactiveUI;
 using Writersword.Modules.TextEditor.Contracts;
+using Writersword.Modules.TextEditor.Models.Document;
 
 namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 {
@@ -24,25 +25,23 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             get => _isTableGroupExpanded;
             set => this.RaiseAndSetIfChanged(ref _isTableGroupExpanded, value);
         }
-
         public bool IsMediaGroupExpanded
         {
             get => _isMediaGroupExpanded;
             set => this.RaiseAndSetIfChanged(ref _isMediaGroupExpanded, value);
         }
-
         public bool IsPageGroupExpanded
         {
             get => _isPageGroupExpanded;
             set => this.RaiseAndSetIfChanged(ref _isPageGroupExpanded, value);
         }
-
         public bool IsLinksGroupExpanded
         {
             get => _isLinksGroupExpanded;
             set => this.RaiseAndSetIfChanged(ref _isLinksGroupExpanded, value);
         }
 
+        // Команды Insert остаются как заглушки — всё ещё дорабатывается.
         public ICommand InsertTableCommand { get; }
         public ICommand InsertImageCommand { get; }
         public ICommand InsertFloatingTextBoxCommand { get; }
@@ -62,6 +61,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         {
             _target = target;
 
+            // InsertTableCommand открывает пикер через code-behind RibbonInsertTab.
+            // Реальная вставка идёт через InsertTableWithSize(rows, cols).
             InsertTableCommand = ReactiveCommand.Create(() => { });
             InsertImageCommand = ReactiveCommand.Create(() => { });
             InsertFloatingTextBoxCommand = ReactiveCommand.Create(() => { });
@@ -70,12 +71,23 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             InsertShapeLineCommand = ReactiveCommand.Create(() => { });
             InsertShapeArrowCommand = ReactiveCommand.Create(() => { });
             InsertShapeCalloutCommand = ReactiveCommand.Create(() => { });
-            InsertPageBreakCommand = ReactiveCommand.Create(() => { });
-            InsertSectionBreakNextPageCommand = ReactiveCommand.Create(() => { });
-            InsertSectionBreakContinuousCommand = ReactiveCommand.Create(() => { });
+            InsertPageBreakCommand = ReactiveCommand.Create(() => _target.InsertPageBreak());
+            InsertSectionBreakNextPageCommand = ReactiveCommand.Create(
+                () => _target.InsertSectionBreak(BreakType.SectionNextPage));
+            InsertSectionBreakContinuousCommand = ReactiveCommand.Create(
+                () => _target.InsertSectionBreak(BreakType.SectionContinuous));
             InsertHyperlinkCommand = ReactiveCommand.Create(() => { });
             InsertBookmarkCommand = ReactiveCommand.Create(() => { });
             InsertCommentCommand = ReactiveCommand.Create(() => { });
+        }
+
+        /// <summary>
+        /// Вставляет таблицу заданного размера.
+        /// Вызывается из code-behind RibbonInsertTab после выбора в TableGridPickerControl.
+        /// </summary>
+        public void InsertTableWithSize(int rows, int cols)
+        {
+            _target.InsertTable(rows, cols);
         }
 
         /// <summary>

@@ -17,7 +17,7 @@
 		<Description>Multi-modal writing application for writers, poets, screenwriters, and game developers</Description>
 		<ApplicationIcon>Resources\Images\icon.ico</ApplicationIcon>
 
-		<!-- Отключаем автоматическое включение .resx (будем управлять вручную) -->
+		<!-- Отключаем автоматическое включение .resx (управляем вручную) -->
 		<EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
 	</PropertyGroup>
 
@@ -110,8 +110,12 @@
 
 	<!-- ========================================
        ЛОКАЛИЗАЦИЯ (resx файлы)
+       LogicalName — правильное имя embedded resource без Src для runtime.
+       CustomToolNamespace — правильный namespace для Designer.cs.
+       После изменений: ПКМ на каждый .resx -> Run Custom Tool.
        ======================================== -->
 	<ItemGroup>
+		<!-- Основная локализация приложения -->
 		<EmbeddedResource Include="Resources\Localization\Strings.resx">
 			<Generator>PublicResXFileCodeGenerator</Generator>
 			<LastGenOutput>Strings.Designer.cs</LastGenOutput>
@@ -124,6 +128,8 @@
 		<EmbeddedResource Include="Src\Modules\Notes\Resources\NotesStrings.resx">
 			<Generator>PublicResXFileCodeGenerator</Generator>
 			<LastGenOutput>NotesStrings.Designer.cs</LastGenOutput>
+			<LogicalName>Writersword.Modules.Notes.Resources.NotesStrings.resources</LogicalName>
+			<CustomToolNamespace>Writersword.Modules.Notes.Resources</CustomToolNamespace>
 		</EmbeddedResource>
 		<EmbeddedResource Include="Src\Modules\Notes\Resources\NotesStrings.ru.resx" />
 
@@ -131,20 +137,26 @@
 		<EmbeddedResource Include="Src\Modules\Synonyms\Resources\SynonymsStrings.resx">
 			<Generator>PublicResXFileCodeGenerator</Generator>
 			<LastGenOutput>SynonymsStrings.Designer.cs</LastGenOutput>
+			<LogicalName>Writersword.Modules.Synonyms.Resources.SynonymsStrings.resources</LogicalName>
+			<CustomToolNamespace>Writersword.Modules.Synonyms.Resources</CustomToolNamespace>
 		</EmbeddedResource>
 		<EmbeddedResource Include="Src\Modules\Synonyms\Resources\SynonymsStrings.ru.resx" />
-		<EmbeddedResource Include="Src\Modules\TextEditor\Resources\TextEditorStrings.resx">
-		  <Generator>PublicResXFileCodeGenerator</Generator>
-		  <LastGenOutput>TextEditorStrings.Designer.cs</LastGenOutput>
-		</EmbeddedResource>
-		<EmbeddedResource Include="Src\Modules\TextEditor\Resources\TextEditorStrings.ru.resx" />
 
 		<!-- Модуль TextEditor -->
+		<EmbeddedResource Include="Src\Modules\TextEditor\Resources\TextEditorStrings.resx">
+			<Generator>PublicResXFileCodeGenerator</Generator>
+			<LastGenOutput>TextEditorStrings.Designer.cs</LastGenOutput>
+			<LogicalName>Writersword.Modules.TextEditor.Resources.TextEditorStrings.resources</LogicalName>
+			<CustomToolNamespace>Writersword.Modules.TextEditor.Resources</CustomToolNamespace>
+		</EmbeddedResource>
+		<EmbeddedResource Include="Src\Modules\TextEditor\Resources\TextEditorStrings.ru.resx" />
 
 		<!-- Модуль Timer -->
 		<EmbeddedResource Include="Src\Modules\Timer\Resources\TimerStrings.resx">
 			<Generator>PublicResXFileCodeGenerator</Generator>
 			<LastGenOutput>TimerStrings.Designer.cs</LastGenOutput>
+			<LogicalName>Writersword.Modules.Timer.Resources.TimerStrings.resources</LogicalName>
+			<CustomToolNamespace>Writersword.Modules.Timer.Resources</CustomToolNamespace>
 		</EmbeddedResource>
 		<EmbeddedResource Include="Src\Modules\Timer\Resources\TimerStrings.ru.resx" />
 
@@ -152,6 +164,8 @@
 		<EmbeddedResource Include="Src\ProjectTypes\GameDesign\Resources\GameDesignStrings.resx">
 			<Generator>ResXFileCodeGenerator</Generator>
 			<LastGenOutput>GameDesignStrings.Designer.cs</LastGenOutput>
+			<LogicalName>Writersword.ProjectTypes.GameDesign.Resources.GameDesignStrings.resources</LogicalName>
+			<CustomToolNamespace>Writersword.ProjectTypes.GameDesign.Resources</CustomToolNamespace>
 		</EmbeddedResource>
 		<EmbeddedResource Include="Src\ProjectTypes\GameDesign\Resources\GameDesignStrings.ru.resx" />
 
@@ -159,6 +173,8 @@
 		<EmbeddedResource Include="Src\ProjectTypes\Translation\Resources\TranslationStrings.resx">
 			<Generator>ResXFileCodeGenerator</Generator>
 			<LastGenOutput>TranslationStrings.Designer.cs</LastGenOutput>
+			<LogicalName>Writersword.ProjectTypes.Translation.Resources.TranslationStrings.resources</LogicalName>
+			<CustomToolNamespace>Writersword.ProjectTypes.Translation.Resources</CustomToolNamespace>
 		</EmbeddedResource>
 		<EmbeddedResource Include="Src\ProjectTypes\Translation\Resources\TranslationStrings.ru.resx" />
 
@@ -166,6 +182,8 @@
 		<EmbeddedResource Include="Src\ProjectTypes\Poetry\Resources\PoetryStrings.resx">
 			<Generator>ResXFileCodeGenerator</Generator>
 			<LastGenOutput>PoetryStrings.Designer.cs</LastGenOutput>
+			<LogicalName>Writersword.ProjectTypes.Poetry.Resources.PoetryStrings.resources</LogicalName>
+			<CustomToolNamespace>Writersword.ProjectTypes.Poetry.Resources</CustomToolNamespace>
 		</EmbeddedResource>
 		<EmbeddedResource Include="Src\ProjectTypes\Poetry\Resources\PoetryStrings.ru.resx" />
 
@@ -173,6 +191,8 @@
 		<EmbeddedResource Include="Src\ProjectTypes\Screenplay\Resources\ScreenplayStrings.resx">
 			<Generator>ResXFileCodeGenerator</Generator>
 			<LastGenOutput>ScreenplayStrings.Designer.cs</LastGenOutput>
+			<LogicalName>Writersword.ProjectTypes.Screenplay.Resources.ScreenplayStrings.resources</LogicalName>
+			<CustomToolNamespace>Writersword.ProjectTypes.Screenplay.Resources</CustomToolNamespace>
 		</EmbeddedResource>
 		<EmbeddedResource Include="Src\ProjectTypes\Screenplay\Resources\ScreenplayStrings.ru.resx" />
 
@@ -180,6 +200,8 @@
 		<EmbeddedResource Include="Src\ProjectTypes\Novel\Resources\NovelStrings.resx">
 			<Generator>ResXFileCodeGenerator</Generator>
 			<LastGenOutput>NovelStrings.Designer.cs</LastGenOutput>
+			<LogicalName>Writersword.ProjectTypes.Novel.Resources.NovelStrings.resources</LogicalName>
+			<CustomToolNamespace>Writersword.ProjectTypes.Novel.Resources</CustomToolNamespace>
 		</EmbeddedResource>
 		<EmbeddedResource Include="Src\ProjectTypes\Novel\Resources\NovelStrings.ru.resx" />
 
@@ -238,9 +260,9 @@
        ======================================== -->
 	<ItemGroup>
 		<Compile Update="Src\Modules\Notes\Resources\NotesStrings.Designer.cs">
-			<DesignTime>True</DesignTime>
-			<AutoGen>True</AutoGen>
-			<DependentUpon>NotesStrings.resx</DependentUpon>
+		  <DesignTime>True</DesignTime>
+		  <AutoGen>True</AutoGen>
+		  <DependentUpon>NotesStrings.resx</DependentUpon>
 		</Compile>
 		<Compile Update="Src\Modules\Synonyms\Resources\SynonymsStrings.Designer.cs">
 			<DesignTime>True</DesignTime>
@@ -248,9 +270,9 @@
 			<DependentUpon>SynonymsStrings.resx</DependentUpon>
 		</Compile>
 		<Compile Update="Src\Modules\TextEditor\Resources\TextEditorStrings.Designer.cs">
-		  <DesignTime>True</DesignTime>
-		  <AutoGen>True</AutoGen>
-		  <DependentUpon>TextEditorStrings.resx</DependentUpon>
+			<DesignTime>True</DesignTime>
+			<AutoGen>True</AutoGen>
+			<DependentUpon>TextEditorStrings.resx</DependentUpon>
 		</Compile>
 		<Compile Update="Src\Modules\Timer\Resources\TimerStrings.Designer.cs">
 			<DesignTime>True</DesignTime>
@@ -320,7 +342,7 @@
 			<DependentUpon>MenuBarView.axaml</DependentUpon>
 		</Compile>
 		<Compile Update="Views\Settings\SettingButtons.axaml.cs">
-		  <DependentUpon>SettingButtons.axaml</DependentUpon>
+			<DependentUpon>SettingButtons.axaml</DependentUpon>
 		</Compile>
 	</ItemGroup>
 

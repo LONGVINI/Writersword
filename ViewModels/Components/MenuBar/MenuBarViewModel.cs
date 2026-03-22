@@ -6,13 +6,13 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Reactive;
-using Writersword.Src.Core.Interfaces.Services;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Interfaces.Services.UI;
-using Writersword.Src.Core.Interfaces.WorkFlows;
-using Writersword.Src.Core.Interfaces.WorkModes;
-using Writersword.Src.ProjectTypes.Common;
-using Writersword.Src.WorkModes.Common;
+using Writersword.Core.Interfaces.Services;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.Services.UI;
+using Writersword.Core.Interfaces.WorkFlows;
+using Writersword.Core.Interfaces.WorkModes;
+using Writersword.ProjectTypes.Common;
+using Writersword.WorkModes.Common;
 using Writersword.ViewModels.Components;
 
 namespace Writersword.ViewModels.Components.MenuBar

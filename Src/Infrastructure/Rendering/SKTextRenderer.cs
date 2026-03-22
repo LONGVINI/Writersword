@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using SkiaSharp;
 using Writersword.Core.Models.Print;
@@ -17,6 +18,13 @@ namespace Writersword.Infrastructure.Rendering
     /// </summary>
     public sealed class SKTextRenderer
     {
+        // Кеш объектов SKTypeface по ключу (гарнитура, жирный, курсив).
+        // Создание SKTypeface дорогое — запрашивает шрифт у системы.
+        // Один документ обычно использует 2-5 шрифтов — кеш живёт всё время работы.
+        // ConcurrentDictionary — потокобезопасен для чтения из фонового потока статистики.
+        private static readonly ConcurrentDictionary<(string Family, bool Bold, bool Italic), SKTypeface>
+            _typefaceCache = new();
+
         // ── Публичный API ─────────────────────────────────────────────────
 
         /// <summary>
@@ -72,6 +80,226 @@ namespace Writersword.Infrastructure.Rendering
         }
 
         /// <summary>
+        /// Строит вёрстку таблицы.
+        /// Вычисляет ширины колонок, верстает содержимое каждой ячейки,
+        /// определяет высоту строк по самой высокой ячейке.
+        /// Вызывается DocumentCanvas при изменении таблицы или ширины канваса.
+        /// </summary>
+        /// <param name="table">Блок таблицы из модели документа.</param>
+        /// <param name="textAreaWidthPt">Ширина текстовой области в pt.</param>
+        /// <param name="styles">Резолвер стилей документа.</param>
+        public SKTableLayout BuildTableLayout(
+            TableBlock table,
+            float textAreaWidthPt,
+            StyleResolver styles)
+        {
+            int colCount = table.ColumnCount;
+            int rowCount = table.RowCount;
+
+            // Вычисляем ширины колонок в pt.
+            float tableWidthPt = textAreaWidthPt * (float)(table.WidthPercent / 100.0);
+            var colWidthsPt = ComputeColumnWidths(table, tableWidthPt, colCount);
+
+            // Накапливаем X-смещения колонок.
+            var colOffsetsPt = new List<float>(colCount);
+            float xOff = 0f;
+            foreach (var w in colWidthsPt)
+            {
+                colOffsetsPt.Add(xOff);
+                xOff += w;
+            }
+
+            var tableLayout = new SKTableLayout
+            {
+                RowCount = rowCount,
+                ColumnCount = colCount,
+                TotalWidthPt = tableWidthPt
+            };
+            tableLayout.ColumnWidthsPt.AddRange(colWidthsPt);
+            tableLayout.ColumnOffsetsPt.AddRange(colOffsetsPt);
+
+            float tableY = 0f;
+
+            for (int row = 0; row < rowCount; row++)
+            {
+                var rowLayout = new SKTableRowLayout { Row = row, Ypt = tableY };
+                float rowHeight = 0f;
+
+                for (int col = 0; col < colCount; col++)
+                {
+                    var cell = table.GetCell(row, col);
+
+                    // Пропускаем ячейки которые являются частью объединения
+                    // но не являются главной ячейкой.
+                    if (cell is null || (cell.Row != row || cell.Column != col))
+                        continue;
+
+                    // Ширина ячейки с учётом ColSpan.
+                    float cellWidthPt = 0f;
+                    for (int c = col; c < col + cell.ColSpan && c < colCount; c++)
+                        cellWidthPt += colWidthsPt[c];
+
+                    float padTopPt = (float)cell.PaddingTopPt;
+                    float padBottomPt = (float)cell.PaddingBottomPt;
+                    float padLeftPt = (float)cell.PaddingLeftPt;
+                    float padRightPt = (float)cell.PaddingRightPt;
+
+                    float contentWidthPt = Math.Max(
+                        cellWidthPt - padLeftPt - padRightPt
+                       - (float)cell.Borders.ThicknessPt
+                       - (float)cell.Borders.ThicknessPt,
+                        1f);
+
+                    var cellLayout = new SKTableCellLayout
+                    {
+                        Row = row,
+                        Column = col,
+                        RowSpan = cell.RowSpan,
+                        ColSpan = cell.ColSpan,
+                        Xpt = colOffsetsPt[col],
+                        Ypt = tableY,
+                        WidthPt = cellWidthPt,
+                        PadTopPt = padTopPt,
+                        PadBottomPt = padBottomPt,
+                        PadLeftPt = padLeftPt,
+                        PadRightPt = padRightPt,
+                        BackgroundColor = cell.BackgroundColor,
+                        VerticalAlignment = (int)cell.VerticalAlignment,
+                        Borders = BuildCellBorderLayout(cell.Borders)
+                    };
+
+                    // Верстаем параграфы ячейки.
+                    float cellContentY = 0f;
+                    for (int pi = 0; pi < cell.Paragraphs.Count; pi++)
+                    {
+                        var para = cell.Paragraphs[pi];
+                        var paraLayout = BuildLayout(para, contentWidthPt, styles);
+
+                        cellLayout.Paragraphs.Add(new SKTableParaLayout
+                        {
+                            Layout = paraLayout,
+                            Ypt = cellContentY,
+                            ParagraphIndex = pi
+                        });
+
+                        cellContentY += paraLayout.SpaceBeforePt
+                                      + paraLayout.TotalHeightPt
+                                      + paraLayout.SpaceAfterPt;
+                    }
+
+                    cellLayout.ContentHeightPt = cellContentY;
+                    cellLayout.HeightPt = cellContentY + padTopPt + padBottomPt
+                                        + (float)(cell.Borders.Top)
+                                        + (float)(cell.Borders.Bottom);
+
+                    // Высота строки определяется самой высокой ячейкой без RowSpan.
+                    if (cell.RowSpan == 1 && cellLayout.HeightPt > rowHeight)
+                        rowHeight = cellLayout.HeightPt;
+
+                    rowLayout.Cells.Add(cellLayout);
+                }
+
+                // Минимальная высота строки — высота пустой строки.
+                if (rowHeight < 14f) rowHeight = 14f;
+
+                rowLayout.HeightPt = rowHeight;
+
+                // Проставляем финальную высоту всем ячейкам строки
+                // (без RowSpan — для ячеек с RowSpan высота будет пересчитана позже).
+                foreach (var cellLayout in rowLayout.Cells)
+                    if (cellLayout.RowSpan == 1)
+                        cellLayout.HeightPt = rowHeight;
+
+                tableLayout.Rows.Add(rowLayout);
+                tableY += rowHeight;
+            }
+
+            // Пересчёт высот для объединённых ячеек (RowSpan > 1).
+            foreach (var rowLayout in tableLayout.Rows)
+            {
+                foreach (var cellLayout in rowLayout.Cells)
+                {
+                    if (cellLayout.RowSpan <= 1) continue;
+
+                    float totalH = 0f;
+                    for (int r = cellLayout.Row;
+                         r < cellLayout.Row + cellLayout.RowSpan
+                         && r < tableLayout.Rows.Count; r++)
+                        totalH += tableLayout.Rows[r].HeightPt;
+
+                    cellLayout.HeightPt = totalH;
+                }
+            }
+
+            tableLayout.TotalHeightPt = tableY;
+            return tableLayout;
+        }
+
+        /// <summary>
+        /// Рендерит таблицу на SKCanvas.
+        /// tableX/tableY — позиция верхнего левого угла таблицы в pt.
+        /// Рисует фон ячеек, границы и содержимое параграфов.
+        /// </summary>
+        public static void RenderTable(
+            SKCanvas canvas,
+            SKTableLayout tableLayout,
+            float tableX,
+            float tableY)
+        {
+            foreach (var row in tableLayout.Rows)
+            {
+                foreach (var cell in row.Cells)
+                {
+                    float cellX = tableX + cell.Xpt;
+                    float cellY = tableY + cell.Ypt;
+
+                    // Фон ячейки.
+                    if (!string.IsNullOrEmpty(cell.BackgroundColor)
+                        && SKColor.TryParse(cell.BackgroundColor, out var bgColor))
+                    {
+                        using var bgPaint = new SKPaint { Color = bgColor };
+                        canvas.DrawRect(cellX, cellY, cell.WidthPt, cell.HeightPt, bgPaint);
+                    }
+
+                    // Границы ячейки.
+                    RenderCellBorders(canvas, cell, cellX, cellY);
+
+                    // Содержимое — параграфы.
+                    float contentX = cellX + cell.PadLeftPt + cell.Borders.Left.WidthPt;
+                    float contentAreaH = cell.HeightPt - cell.PadTopPt - cell.PadBottomPt
+                                       - cell.Borders.Top.WidthPt - cell.Borders.Bottom.WidthPt;
+
+                    // Вертикальное выравнивание содержимого.
+                    float contentOffsetY = cell.VerticalAlignment switch
+                    {
+                        1 => (contentAreaH - cell.ContentHeightPt) / 2f, // Middle
+                        2 => contentAreaH - cell.ContentHeightPt,         // Bottom
+                        _ => 0f                                            // Top
+                    };
+                    contentOffsetY = Math.Max(0f, contentOffsetY);
+
+                    float contentY = cellY + cell.PadTopPt
+                                   + cell.Borders.Top.WidthPt
+                                   + contentOffsetY;
+
+                    foreach (var paraLayout in cell.Paragraphs)
+                    {
+                        float paraY = contentY + paraLayout.Ypt
+                                    + paraLayout.Layout.SpaceBeforePt;
+
+                        RenderParagraphLines(
+                            canvas,
+                            paraLayout.Layout,
+                            contentX + paraLayout.Layout.LeftIndentPt,
+                            paraY,
+                            0,
+                            paraLayout.Layout.Lines.Count);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// Строит вёрстку всего документа — разбивает параграфы по страницам построчно.
         /// Один параграф может давать несколько SKPageParagraph если он пересекает границу страниц.
         /// Вызывается TextEditorPrintDocument и DocumentCanvas в Page mode.
@@ -123,7 +351,7 @@ namespace Writersword.Infrastructure.Rendering
                         continue;
                     }
 
-                    // Добавляем SpaceBefore только перед первым слайсом параграфа.
+                    // SpaceBefore добавляем только перед первым слайсом параграфа.
                     currentY += layout.SpaceBeforePt;
 
                     int lineFrom = 0;
@@ -168,7 +396,7 @@ namespace Writersword.Infrastructure.Rendering
                             currentY += layout.SpaceAfterPt;
                     }
 
-                    // Записываем финальный слайс параграфа (остаток или весь параграф).
+                    // Финальный слайс параграфа (остаток или весь параграф).
                     currentPage.Paragraphs.Add(new SKPageParagraph
                     {
                         Layout = layout,
@@ -190,9 +418,6 @@ namespace Writersword.Infrastructure.Rendering
 
         /// <summary>
         /// Рендерит одну страницу на SKCanvas.
-        /// Использует RenderParagraphLines для корректного рендеринга
-        /// параграфов разбитых по страницам — рисует только строки слайса.
-        /// Canvas должен быть настроен на размер страницы в pt.
         /// </summary>
         public static void RenderPage(
             SKCanvas canvas,
@@ -212,12 +437,10 @@ namespace Writersword.Infrastructure.Rendering
                 float paraX = page.MarginLeftPt + para.Layout.LeftIndentPt;
                 float paraY = page.MarginTopPt + para.Y;
 
-                // Выделение — рисуем под текстом.
                 if (selectionParaIndex == para.ParagraphIndex && selectionFrom < selectionTo)
                 {
                     var rects = para.Layout.HitTestRange(selectionFrom, selectionTo);
 
-                    // Y-база первой строки слайса — для корректного смещения выделения.
                     float yBase = para.LineFrom < para.Layout.Lines.Count
                         ? para.Layout.Lines[para.LineFrom].Y : 0f;
 
@@ -237,7 +460,6 @@ namespace Writersword.Infrastructure.Rendering
                 RenderParagraphLines(canvas, para.Layout, paraX, paraY,
                     para.LineFrom, para.LineTo);
 
-                // Каретка — рисуем поверх текста.
                 if (drawCaret && caretParaIndex == para.ParagraphIndex)
                 {
                     float yBase = para.LineFrom < para.Layout.Lines.Count
@@ -259,31 +481,34 @@ namespace Writersword.Infrastructure.Rendering
 
         /// <summary>
         /// Рендерит один параграф на SKCanvas.
-        /// Координаты параграфа (paraX, paraY) в pt — включают поля страницы.
-        /// Public — используется DocumentCanvas напрямую для отрисовки параграфов
-        /// вне контекста SKPageLayout.
         /// </summary>
         public static void RenderParagraph(
             SKCanvas canvas, SKTextLayout layout, float paraX, float paraY)
         {
+            bool isFirstLine = true;
             foreach (var line in layout.Lines)
             {
                 float lineY = paraY + line.Y;
                 float offsetX = ComputeAlignmentOffset(layout, line);
 
+                // Для первой строки параграфа добавляем отступ первой строки.
+                // Он учитывается при переносе (WrapTokensToLines уменьшает lineWidth),
+                // но не хранится в seg.X — сегменты всегда начинаются с X = 0.
+                float firstLineExtra = isFirstLine ? layout.FirstLineIndentPt : 0f;
+                isFirstLine = false;
+
                 foreach (var seg in line.Segments)
                 {
-                    float segX = paraX + seg.X + offsetX;
+                    float segX = paraX + seg.X + offsetX + firstLineExtra;
                     float baseY = lineY + line.Baseline;
 
-                    // Highlight — фон под текстом.
                     if (seg.HighlightColor != SKColors.Transparent)
                     {
                         using var hlPaint = new SKPaint { Color = seg.HighlightColor };
                         canvas.DrawRect(segX, lineY, seg.Width, line.Height, hlPaint);
                     }
 
-                    using var typeface = CreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
+                    var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
                     using var font = new SKFont(typeface, seg.FontSizePt);
                     using var paint = new SKPaint
                     {
@@ -293,7 +518,6 @@ namespace Writersword.Infrastructure.Rendering
 
                     canvas.DrawText(seg.Text, segX, baseY, font, paint);
 
-                    // Подчёркивание.
                     if (seg.IsUnderline)
                     {
                         using var uPaint = new SKPaint
@@ -306,7 +530,6 @@ namespace Writersword.Infrastructure.Rendering
                         canvas.DrawLine(segX, underlineY, segX + seg.Width, underlineY, uPaint);
                     }
 
-                    // Зачёркивание.
                     if (seg.IsStrikethrough)
                     {
                         using var sPaint = new SKPaint
@@ -326,8 +549,6 @@ namespace Writersword.Infrastructure.Rendering
 
         /// <summary>
         /// Собирает список токенов (символ + форматирование) из runs параграфа.
-        /// Один токен = один символ — обеспечивает точный посимвольный HitTest.
-        /// Форматирование берётся из Run.Properties или из стиля параграфа.
         /// </summary>
         private static List<(string Char, SKRunSegment Format, int GlobalIndex)> CollectTokens(
             ParagraphBlock para,
@@ -378,11 +599,10 @@ namespace Writersword.Infrastructure.Rendering
             return tokens;
         }
 
-        // ── Вёрстка строк ────────────────────────────────────────────────
+        // ── Вёрстка строк ─────────────────────────────────────────────────
 
         /// <summary>
         /// Жадный алгоритм переноса токенов по строкам с учётом ширины текстовой области.
-        /// Строит строки — заполняет layout.Lines и вычисляет высоты.
         /// </summary>
         private static void WrapTokensToLines(
             List<(string Char, SKRunSegment Format, int GlobalIndex)> tokens,
@@ -404,10 +624,14 @@ namespace Writersword.Infrastructure.Rendering
             var wordBuffer = new List<(string Char, SKRunSegment Format, int GlobalIndex)>();
             float wordWidth = 0f;
 
+            // Переносит слово из wordBuffer на следующую строку если оно не помещается.
+            // Если слово само по себе шире строки (oversize word) — разбивает его
+            // посимвольно: символы идут на строку пока влезают, остаток переносится.
             void FlushWord()
             {
                 if (wordBuffer.Count == 0) return;
 
+                // Если слово не влезает целиком на текущую строку — начинаем новую.
                 if (currentW + wordWidth > lineWidth && currentLine.Segments.Count > 0)
                 {
                     FinalizeLine(currentLine, layout, lineSpacing);
@@ -419,7 +643,32 @@ namespace Writersword.Infrastructure.Rendering
                     };
                 }
 
-                AppendWordToLine(currentLine, wordBuffer, ref currentW);
+                // Слово помещается целиком — быстрый путь.
+                if (wordWidth <= lineWidth)
+                {
+                    AppendWordToLine(currentLine, wordBuffer, ref currentW);
+                    wordBuffer.Clear();
+                    wordWidth = 0f;
+                    return;
+                }
+
+                // Слово само по себе шире доступной ширины строки (oversize word).
+                // Разбиваем его посимвольно: каждый символ что не влезает — начинает новую строку.
+                foreach (var (wch, wfmt, widx) in wordBuffer)
+                {
+                    float charW = MeasureChar(wch, wfmt);
+
+                    if (currentW + charW > lineWidth && currentLine.Segments.Count > 0)
+                    {
+                        FinalizeLine(currentLine, layout, lineSpacing);
+                        lineWidth = availableWidthPt;
+                        currentW = 0f;
+                        currentLine = new SKLineLayout { FirstCharIndex = widx };
+                    }
+
+                    AppendCharToLine(currentLine, wch, wfmt, widx, ref currentW, charW);
+                }
+
                 wordBuffer.Clear();
                 wordWidth = 0f;
             }
@@ -455,9 +704,6 @@ namespace Writersword.Infrastructure.Rendering
                 layout.Lines[^1].IsLastLine = true;
         }
 
-        /// <summary>
-        /// Добавляет слово (буфер символов) в текущую строку.
-        /// </summary>
         private static void AppendWordToLine(
             SKLineLayout line,
             List<(string Char, SKRunSegment Format, int GlobalIndex)> word,
@@ -470,11 +716,6 @@ namespace Writersword.Infrastructure.Rendering
             }
         }
 
-        /// <summary>
-        /// Добавляет один символ в строку.
-        /// Если предыдущий сегмент имеет то же форматирование — добавляет к нему.
-        /// Иначе создаёт новый сегмент.
-        /// </summary>
         private static void AppendCharToLine(
             SKLineLayout line,
             string ch,
@@ -515,9 +756,6 @@ namespace Writersword.Infrastructure.Rendering
             line.TextWidth = currentW;
         }
 
-        /// <summary>
-        /// Завершает строку — вычисляет метрики глифов, высоту, baseline.
-        /// </summary>
         private static void FinalizeLine(
             SKLineLayout line,
             SKTextLayout layout,
@@ -528,7 +766,7 @@ namespace Writersword.Infrastructure.Rendering
 
             foreach (var seg in line.Segments)
             {
-                using var typeface = CreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
+                var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
                 using var font = new SKFont(typeface, seg.FontSizePt);
 
                 font.GetFontMetrics(out var metrics);
@@ -554,12 +792,9 @@ namespace Writersword.Infrastructure.Rendering
             layout.Lines.Add(line);
         }
 
-        /// <summary>
-        /// Строит пустую строку для пустого параграфа.
-        /// </summary>
         private static SKLineLayout BuildEmptyLine(SKTextLayout layout, float lineSpacing)
         {
-            using var typeface = CreateTypeface(
+            var typeface = GetOrCreateTypeface(
                 StyleResolver.FallbackFontFamily, false, false);
             using var font = new SKFont(typeface, StyleResolver.FallbackFontSizePt);
 
@@ -580,15 +815,23 @@ namespace Writersword.Infrastructure.Rendering
             };
         }
 
-        // ── Выравнивание ─────────────────────────────────────────────────
+        // ── Выравнивание ──────────────────────────────────────────────────
 
-        /// <summary>
-        /// Вычисляет X-смещение строки для выравнивания (center, right, justify).
-        /// Justify не применяется к последней строке параграфа.
-        /// </summary>
         private static float ComputeAlignmentOffset(SKTextLayout layout, SKLineLayout line)
         {
-            float availableWidth = layout.RightIndentPt + layout.LeftIndentPt;
+            // textWidthPt — ширина текстовой зоны без отступов (то, что передавалось
+            // в WrapTokensToLines). Не хранится в SKTextLayout, поэтому берём
+            // максимальную ширину полной строки (не последней) как приближение.
+            // Для Left-выравнивания offsetX = 0 и это поле не используется вообще.
+            if (layout.Alignment == RenderAlignment.Left
+                || layout.Lines.Count == 0) return 0f;
+
+            // Ищем ширину самой широкой полной строки.
+            float maxLineWidth = 0f;
+            foreach (var l in layout.Lines)
+                if (l.TextWidth > maxLineWidth) maxLineWidth = l.TextWidth;
+
+            float availableWidth = maxLineWidth;
 
             return layout.Alignment switch
             {
@@ -603,16 +846,11 @@ namespace Writersword.Infrastructure.Rendering
 
         private static float MeasureChar(string ch, SKRunSegment format)
         {
-            using var typeface = CreateTypeface(format.FontFamily, format.IsBold, format.IsItalic);
+            var typeface = GetOrCreateTypeface(format.FontFamily, format.IsBold, format.IsItalic);
             using var font = new SKFont(typeface, format.FontSizePt);
             return font.MeasureText(ch);
         }
 
-        /// <summary>
-        /// Строит массив метрик глифов для сегмента.
-        /// Каждый элемент — X-позиция и ширина одного символа.
-        /// Используется для посимвольного HitTest.
-        /// </summary>
         private static SKGlyphMetrics[] BuildGlyphMetrics(SKRunSegment seg, SKFont font)
         {
             if (string.IsNullOrEmpty(seg.Text))
@@ -636,7 +874,151 @@ namespace Writersword.Infrastructure.Rendering
             return glyphs;
         }
 
-        // ── Вспомогательные ──────────────────────────────────────────────
+        // ── Таблицы — вспомогательные ─────────────────────────────────────
+
+        /// <summary>
+        /// Вычисляет ширины колонок в pt.
+        /// Auto-колонки делят оставшееся место поровну.
+        /// Fixed — фиксированная ширина в мм конвертируется в pt.
+        /// Percent — процент от ширины таблицы.
+        /// </summary>
+        private static List<float> ComputeColumnWidths(
+            TableBlock table, float tableWidthPt, int colCount)
+        {
+            var widths = new float[colCount];
+            float usedPt = 0f;
+            int autoCount = 0;
+
+            for (int i = 0; i < colCount && i < table.Columns.Count; i++)
+            {
+                var col = table.Columns[i];
+                switch (col.WidthType)
+                {
+                    case TableColumnWidthType.Fixed:
+                        widths[i] = MmToPt(col.WidthValue);
+                        usedPt += widths[i];
+                        break;
+                    case TableColumnWidthType.Percent:
+                        widths[i] = tableWidthPt * (float)(col.WidthValue / 100.0);
+                        usedPt += widths[i];
+                        break;
+                    default:
+                        autoCount++;
+                        break;
+                }
+            }
+
+            // Для колонок без явно заданной ширины делим оставшееся пространство.
+            if (autoCount > 0)
+            {
+                float autoWidth = Math.Max((tableWidthPt - usedPt) / autoCount, 10f);
+                for (int i = 0; i < colCount; i++)
+                    if (widths[i] == 0f)
+                        widths[i] = autoWidth;
+            }
+
+            return new List<float>(widths);
+        }
+
+        /// <summary>
+        /// Рендерит границы одной ячейки таблицы.
+        /// </summary>
+        private static void RenderCellBorders(
+            SKCanvas canvas,
+            SKTableCellLayout cell,
+            float cellX,
+            float cellY)
+        {
+            DrawBorderLine(canvas, cell.Borders.Top,
+                cellX, cellY,
+                cellX + cell.WidthPt, cellY);
+
+            DrawBorderLine(canvas, cell.Borders.Bottom,
+                cellX, cellY + cell.HeightPt,
+                cellX + cell.WidthPt, cellY + cell.HeightPt);
+
+            DrawBorderLine(canvas, cell.Borders.Left,
+                cellX, cellY,
+                cellX, cellY + cell.HeightPt);
+
+            DrawBorderLine(canvas, cell.Borders.Right,
+                cellX + cell.WidthPt, cellY,
+                cellX + cell.WidthPt, cellY + cell.HeightPt);
+        }
+
+        /// <summary>
+        /// Рисует одну линию границы ячейки с учётом стиля и толщины.
+        /// </summary>
+        private static void DrawBorderLine(
+            SKCanvas canvas,
+            SKTableBorderLineLayout border,
+            float x1, float y1, float x2, float y2)
+        {
+            if (border.WidthPt <= 0 || border.Style == 3) return; // Style 3 = None
+
+            if (!SKColor.TryParse(border.Color, out var color))
+                color = SKColors.Black;
+
+            using var paint = new SKPaint
+            {
+                Color = color,
+                StrokeWidth = border.WidthPt,
+                IsStroke = true,
+                IsAntialias = false
+            };
+
+            // Стиль 1 = Dashed.
+            if (border.Style == 1)
+                paint.PathEffect = SKPathEffect.CreateDash(
+                    new[] { border.WidthPt * 4f, border.WidthPt * 2f }, 0);
+
+            canvas.DrawLine(x1, y1, x2, y2, paint);
+        }
+
+        /// <summary>
+        /// Строит SKTableCellBorderLayout из модели CellBorders.
+        /// </summary>
+        private static SKTableCellBorderLayout BuildCellBorderLayout(CellBorders borders)
+        {
+            return new SKTableCellBorderLayout
+            {
+                Top = BorderLineToLayout(borders.Top, borders.ThicknessPt, borders.Color),
+                Bottom = BorderLineToLayout(borders.Bottom, borders.ThicknessPt, borders.Color),
+                Left = BorderLineToLayout(borders.Left, borders.ThicknessPt, borders.Color),
+                Right = BorderLineToLayout(borders.Right, borders.ThicknessPt, borders.Color)
+            };
+        }
+
+        /// <summary>
+        /// Конвертирует BorderStyle + толщину в SKTableBorderLineLayout.
+        /// </summary>
+        private static SKTableBorderLineLayout BorderLineToLayout(
+            BorderStyle style, double thicknessPt, string? color)
+        {
+            return new SKTableBorderLineLayout
+            {
+                WidthPt = style == BorderStyle.None ? 0f : (float)thicknessPt,
+                Color = color ?? "#000000",
+                Style = style switch
+                {
+                    BorderStyle.None => 3,
+                    BorderStyle.Dashed => 1,
+                    BorderStyle.Dotted => 1,
+                    _ => 0
+                }
+            };
+        }
+
+        /// <summary>
+        /// Возвращает толщину границы в pt для расчёта внутренних отступов ячейки.
+        /// </summary>
+        private static float BorderToPt(CellBorders borders)
+            => (float)borders.ThicknessPt;
+
+        private static float BorderToPt(SKTableBorderLineLayout border)
+            => border.WidthPt;
+
+        // ── Вспомогательные ───────────────────────────────────────────────
 
         private static SKPageContent CreatePage(
             float pageWidthPt, float pageHeightPt,
@@ -672,8 +1054,13 @@ namespace Writersword.Infrastructure.Rendering
 
         private static float MmToPt(double mm) => (float)(mm * 72.0 / 25.4);
 
-        private static SKTypeface CreateTypeface(string family, bool bold, bool italic)
+        private static SKTypeface GetOrCreateTypeface(string family, bool bold, bool italic)
         {
+            var key = (family, bold, italic);
+
+            if (_typefaceCache.TryGetValue(key, out var cached))
+                return cached;
+
             var style = (bold, italic) switch
             {
                 (true, true) => SKFontStyle.BoldItalic,
@@ -682,9 +1069,12 @@ namespace Writersword.Infrastructure.Rendering
                 _ => SKFontStyle.Normal
             };
 
-            return SKTypeface.FromFamilyName(family, style)
+            var typeface = SKTypeface.FromFamilyName(family, style)
                 ?? SKTypeface.FromFamilyName(StyleResolver.FallbackFontFamily, style)
                 ?? SKTypeface.Default;
+
+            _typefaceCache.TryAdd(key, typeface);
+            return typeface;
         }
 
         private static SKColor ParseColor(string? hex)
@@ -701,8 +1091,6 @@ namespace Writersword.Infrastructure.Rendering
 
         /// <summary>
         /// Рендерит диапазон строк параграфа [lineFrom, lineTo).
-        /// Y-смещение вычисляется относительно первой строки диапазона —
-        /// корректно при разбивке параграфа по страницам.
         /// </summary>
         public static void RenderParagraphLines(
             SKCanvas canvas, SKTextLayout layout,
@@ -722,9 +1110,14 @@ namespace Writersword.Infrastructure.Rendering
                 float lineY = paraY + (line.Y - yBase);
                 float offsetX = ComputeAlignmentOffset(layout, line);
 
+                // Для первой строки параграфа добавляем отступ первой строки.
+                // Он учитывается при переносе (WrapTokensToLines уменьшает lineWidth),
+                // но не хранится в seg.X — сегменты всегда начинаются с X = 0.
+                float firstLineExtra = (i == 0) ? layout.FirstLineIndentPt : 0f;
+
                 foreach (var seg in line.Segments)
                 {
-                    float segX = paraX + seg.X + offsetX;
+                    float segX = paraX + seg.X + offsetX + firstLineExtra;
                     float baseY = lineY + line.Baseline;
 
                     if (seg.HighlightColor != SKColors.Transparent)
@@ -733,7 +1126,7 @@ namespace Writersword.Infrastructure.Rendering
                         canvas.DrawRect(segX, lineY, seg.Width, line.Height, hlPaint);
                     }
 
-                    using var typeface = CreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
+                    var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
                     using var font = new SKFont(typeface, seg.FontSizePt);
                     using var paint = new SKPaint
                     {
@@ -768,6 +1161,6 @@ namespace Writersword.Infrastructure.Rendering
                     }
                 }
             }
-        } 
+        }
     }
 }

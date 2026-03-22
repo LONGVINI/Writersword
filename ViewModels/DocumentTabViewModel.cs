@@ -8,15 +8,13 @@ using System.Reactive;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
-using Writersword.Core.Models;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Services;
 using Writersword.Modules.Common;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Interfaces.Workspace;
-using Writersword.Src.Core.Services;
-using Writersword.Src.Infrastructure.Dock;
-using Writersword.Src.Infrastructure.Workspace;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.Workspace;
+using Writersword.Infrastructure.Dock;
+using Writersword.Infrastructure.Workspace;
 
 namespace Writersword.ViewModels
 {
@@ -167,7 +165,7 @@ namespace Writersword.ViewModels
             }
 
             var dockFactory = App.Services.GetRequiredService<DockFactory>();
-            var autoSave = App.Services.GetRequiredService<Src.Core.Interfaces.Services.IWorkspaceAutoSaveService>();
+            var autoSave = App.Services.GetRequiredService<IWorkspaceAutoSaveService>();
 
             Workspace = new WorkspaceController(
                 this,

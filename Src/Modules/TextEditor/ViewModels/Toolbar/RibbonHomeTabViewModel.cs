@@ -30,6 +30,15 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public TextAlignment Alignment { get; set; } = TextAlignment.Left;
         public string StyleName { get; set; } = "Normal";
         public string? Language { get; set; }
+
+        /// <summary>Левый отступ активного абзаца в pt. Используется линейкой.</summary>
+        public double LeftIndentPt { get; set; }
+
+        /// <summary>Отступ первой строки активного абзаца в pt. Используется линейкой.</summary>
+        public double FirstLineIndentPt { get; set; }
+
+        /// <summary>Правый отступ активного абзаца в pt. Используется линейкой.</summary>
+        public double RightIndentPt { get; set; }
     }
 
     /// <summary>

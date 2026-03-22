@@ -1,4 +1,4 @@
-namespace Writersword.Src.Modules.Notes.Models
+namespace Writersword.Modules.Notes.Models
 {
     /// <summary>
     /// Модель заметки

@@ -5,7 +5,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Writersword.Src.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.ViewModels.Components;
 using Writersword.ViewModels.Settings;
 using Writersword.Views.Settings;

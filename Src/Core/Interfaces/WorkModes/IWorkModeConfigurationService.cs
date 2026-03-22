@@ -2,7 +2,7 @@
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.WorkModes;
 
-namespace Writersword.Src.Core.Interfaces.Services
+namespace Writersword.Core.Interfaces.Services
 {
     /// <summary>
     /// Интерфейс сервиса управления конфигурациями WorkModes

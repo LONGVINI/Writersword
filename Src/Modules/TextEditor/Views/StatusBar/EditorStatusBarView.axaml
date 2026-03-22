@@ -2,7 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.StatusBar"
              xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
-             xmlns:loc="using:Writersword.Src.Modules.TextEditor.Resources"
+             xmlns:loc="using:Writersword.Modules.TextEditor.Resources"
              xmlns:sb="using:Writersword.Modules.TextEditor.Views.StatusBar"
              xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              x:Class="Writersword.Modules.TextEditor.Views.StatusBar.EditorStatusBarView"

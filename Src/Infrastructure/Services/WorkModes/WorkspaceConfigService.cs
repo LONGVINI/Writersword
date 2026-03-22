@@ -5,9 +5,8 @@ using System;
 using System.Text;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Settings;
-using Writersword.Src.Core.Interfaces.Services;
 
-namespace Writersword.Src.Infrastructure.Services.WorkModes
+namespace Writersword.Infrastructure.Services.WorkModes
 {
     /// <summary>
     /// Сервис управления локальной конфигурацией workspace

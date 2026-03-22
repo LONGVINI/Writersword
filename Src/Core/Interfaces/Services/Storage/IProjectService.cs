@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Enums;
 
-namespace Writersword.Src.Core.Interfaces.Services.Storage
+namespace Writersword.Core.Interfaces.Services.Storage
 {
     /// <summary>
     /// Интерфейс сервиса работы с проектами

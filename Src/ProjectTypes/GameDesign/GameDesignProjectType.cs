@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
-using Writersword.Src.ProjectTypes.Common;
+using Writersword.ProjectTypes.Common;
 
-namespace Writersword.Src.ProjectTypes.GameDesign
+namespace Writersword.ProjectTypes.GameDesign
 {
     /// <summary>
     /// Тип проекта: Гейм-дизайн

@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Linq;
-using Writersword.Src.Core.Interfaces.Services.Input;
+using Writersword.Core.Interfaces.Services.Input;
 using Writersword.ViewModels.Components.MenuBar;
 
 namespace Writersword.Views.Components.MenuBar

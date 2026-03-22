@@ -1,4 +1,4 @@
-namespace Writersword.Src.Modules.Timer.Models
+namespace Writersword.Modules.Timer.Models
 {
     /// <summary>
     /// Настройки модуля таймера

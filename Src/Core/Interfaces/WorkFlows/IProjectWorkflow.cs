@@ -1,10 +1,9 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Services;
-using Writersword.Src.Core.Interfaces.Services;
 using Writersword.ViewModels;
 
-namespace Writersword.Src.Core.Interfaces.WorkFlows
+namespace Writersword.Core.Interfaces.WorkFlows
 {
     /// <summary>
     /// Сервис управления жизненным циклом проектов

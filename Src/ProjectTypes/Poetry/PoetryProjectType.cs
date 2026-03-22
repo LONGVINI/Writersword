@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
-using Writersword.Src.ProjectTypes.Common;
+using Writersword.ProjectTypes.Common;
 
-namespace Writersword.Src.ProjectTypes.Poetry
+namespace Writersword.ProjectTypes.Poetry
 {
     /// <summary>
     /// Тип проекта: Поэзия

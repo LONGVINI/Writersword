@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Writersword.Src.Modules.TextEditor.Resources {
+namespace Writersword.Modules.TextEditor.Resources {
     using System;
     
     

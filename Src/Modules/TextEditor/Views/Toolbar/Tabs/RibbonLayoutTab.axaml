@@ -3,7 +3,7 @@
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
              xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
              xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
-             xmlns:loc="using:Writersword.Src.Modules.TextEditor.Resources"
+             xmlns:loc="using:Writersword.Modules.TextEditor.Resources"
              xmlns:controls="using:Writersword.Styles.UserControls"
              x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonLayoutTab"
              x:DataType="vm:RibbonLayoutTabViewModel">

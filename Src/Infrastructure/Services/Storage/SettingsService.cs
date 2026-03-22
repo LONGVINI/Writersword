@@ -7,10 +7,9 @@ using System.IO;
 using System.Linq;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Settings;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Models.Settings;
+using Writersword.Core.Interfaces.Services.Storage;
 
-namespace Writersword.Src.Infrastructure.Services.Storage
+namespace Writersword.Infrastructure.Services.Storage
 {
     /// <summary>
     /// Сервис для работы с настройками приложения

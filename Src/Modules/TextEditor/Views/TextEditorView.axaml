@@ -3,44 +3,63 @@
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels"
              xmlns:toolbar="using:Writersword.Modules.TextEditor.Views.Toolbar"
              xmlns:statusbar="using:Writersword.Modules.TextEditor.Views.StatusBar"
-             xmlns:doc="using:Writersword.Modules.TextEditor.Views.Document"
+             xmlns:doc="using:Writersword.Modules.TextEditor.Document"
              xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
              x:Class="Writersword.Modules.TextEditor.Views.TextEditorView"
              x:DataType="vm:TextEditorViewModel">
 
-    <Grid RowDefinitions="Auto Auto * Auto">
+	<Grid RowDefinitions="Auto * Auto">
 
-        <!-- Строка 0: Ribbon -->
-        <toolbar:RibbonView Grid.Row="0"
+		<!-- Строка 0: Ribbon -->
+		<toolbar:RibbonView Grid.Row="0"
                             DataContext="{Binding Ribbon}"/>
 
-        <!-- Строка 1: Линейка (только в Page-режиме) -->
-        <Border Grid.Row="1"
-                Height="20"
-                Background="{DynamicResource RulerBackground}"
-                BorderBrush="{DynamicResource RulerBorder}"
-                BorderThickness="0 0 0 1"
-                IsVisible="{Binding DocumentViewModel.ViewMode,
-                    Converter={x:Static converters:ViewModePageConverter.Instance}}"/>
+		<!-- Строка 1: Рабочая область — 2×2 сетка как в Word -->
+		<Grid Grid.Row="1"
+              RowDefinitions="Auto *"
+              ColumnDefinitions="Auto *"
+              ClipToBounds="True">
 
-        <!-- Строка 2: Рабочая область -->
-		<ScrollViewer Name="DocumentScrollViewer"
-              Grid.Row="2"
-              HorizontalScrollBarVisibility="Auto"
-              VerticalScrollBarVisibility="Auto"
-              Background="{Binding DocumentViewModel.CanvasSettings.CanvasBackgroundColor,
-                  Converter={x:Static converters:HexColorConverter.Instance}}">
+			<!-- [0,0] Угол — заглушка над вертикальной линейкой -->
+			<Border Grid.Row="0" Grid.Column="0"
+                    Width="24" Height="24"
+                    Background="{DynamicResource SystemChromeMediumColor}"/>
 
-			<doc:DocumentCanvas x:Name="PageCanvas"
-								HorizontalAlignment="Stretch"
-								DataContext="{Binding DocumentViewModel}"/>
+			<!-- [0,1] Горизонтальная линейка — точно над ScrollViewer -->
+			<doc:HorizontalRulerControl
+                    Grid.Row="0" Grid.Column="1"
+                    DataContext="{Binding Ruler}"
+                    IsVisible="{Binding IsVisible}"
+                    ClipToBounds="True"/>
 
-		</ScrollViewer>
+			<!-- [1,0] Вертикальная линейка — точно слева от ScrollViewer -->
+			<doc:VerticalRulerControl
+                    x:Name="VerticalRuler"
+                    Grid.Row="1" Grid.Column="0"
+                    DataContext="{Binding Ruler}"
+                    IsVisible="{Binding IsVisible}"
+                    ClipToBounds="True"/>
 
-        <!-- Строка 3: Строка состояния -->
-        <statusbar:EditorStatusBarView Grid.Row="3"
+			<!-- [1,1] ScrollViewer с канвасом -->
+			<ScrollViewer Name="DocumentScrollViewer"
+                          Grid.Row="1" Grid.Column="1"
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto"
+                          Background="{Binding DocumentViewModel.CanvasSettings.CanvasBackgroundColor,
+                              Converter={x:Static converters:HexColorConverter.Instance}}">
+
+				<doc:DocumentCanvas x:Name="PageCanvas"
+                                    HorizontalAlignment="Stretch"
+                                    DataContext="{Binding DocumentViewModel}"/>
+
+			</ScrollViewer>
+
+		</Grid>
+
+		<!-- Строка 2: Строка состояния -->
+		<statusbar:EditorStatusBarView Grid.Row="2"
                                        DataContext="{Binding StatusBar}"/>
 
-    </Grid>
+	</Grid>
 
 </UserControl>

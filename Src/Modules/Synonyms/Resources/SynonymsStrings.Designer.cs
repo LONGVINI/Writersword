@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Writersword.Src.Modules.Synonyms.Resources {
+namespace Writersword.Modules.Synonyms.Resources {
     using System;
     
     

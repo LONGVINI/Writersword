@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using Writersword.Core.Interfaces.Modules;
 
-namespace Writersword.Src.Core.Interfaces.Services.Storage
+namespace Writersword.Core.Interfaces.Services.Storage
 {
     /// <summary>
     /// Сервис фонового кеширования состояния модулей

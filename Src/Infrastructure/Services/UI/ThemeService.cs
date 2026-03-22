@@ -6,9 +6,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
-using Writersword.Src.Core.Interfaces.Services.UI;
+using Writersword.Core.Interfaces.Services.UI;
 
-namespace Writersword.Src.Infrastructure.Services.UI
+namespace Writersword.Infrastructure.Services.UI
 {
     /// <summary>
     /// Сервис управления темой оформления приложения

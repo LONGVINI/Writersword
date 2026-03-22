@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
-using Writersword.Src.Modules.Notes.Models;
+using Writersword.Modules.Notes.Models;
 
-namespace Writersword.Src.Modules.Notes.Services
+namespace Writersword.Modules.Notes.Services
 {
     /// <summary>
     /// Сервис для работы с заметками

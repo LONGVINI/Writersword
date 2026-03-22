@@ -6,11 +6,10 @@ using System.Linq;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.WorkModes;
-using Writersword.Src.Core.Interfaces.Services;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.WorkModes.Common;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.WorkModes.Common;
 
-namespace Writersword.Src.Infrastructure.Services.WorkModes
+namespace Writersword.Infrastructure.Services.WorkModes
 {
     /// <summary>
     /// Сервис управления конфигурациями WorkModes

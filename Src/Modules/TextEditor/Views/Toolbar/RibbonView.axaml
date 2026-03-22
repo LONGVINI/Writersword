@@ -2,7 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
              xmlns:tabs="using:Writersword.Modules.TextEditor.Views.Toolbar.Tabs"
-             xmlns:loc="using:Writersword.Src.Modules.TextEditor.Resources"
+             xmlns:loc="using:Writersword.Modules.TextEditor.Resources"
              x:Class="Writersword.Modules.TextEditor.Views.Toolbar.RibbonView"
              x:DataType="vm:RibbonViewModel">
 
@@ -35,7 +35,7 @@
 					<Setter Property="VerticalAlignment" Value="Center"/>
 				</Style>
 
-				<!-- При наведении — полностью оранжевый фон, белый текст -->
+				<!-- При наведении — оранжевый фон, белый текст -->
 				<Style Selector="TabItem:pointerover">
 					<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
 					<Setter Property="BorderThickness" Value="0"/>
@@ -44,7 +44,7 @@
 					<Setter Property="Foreground" Value="{DynamicResource MenuBarItemForegroundPointerOver}"/>
 				</Style>
 
-				<!-- Выбранная вкладка — прозрачный фон, акцентный текст, полоска снизу -->
+				<!-- Выбранная вкладка -->
 				<Style Selector="TabItem:selected">
 					<Setter Property="Background" Value="Transparent"/>
 					<Setter Property="BorderThickness" Value="0 0 0 2"/>
@@ -54,15 +54,30 @@
 					<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
 				</Style>
 
-				<!-- Убираем синюю полоску которую FluentTheme рисует внутри шаблона -->
+				<!-- Убираем FluentTheme-полоску -->
 				<Style Selector="TabItem:selected /template/ Border#PART_SelectedPipe">
 					<Setter Property="Background" Value="Transparent"/>
 					<Setter Property="IsVisible" Value="False"/>
 				</Style>
 
+				<!-- Контекстная вкладка «Таблица» — заголовок зелёного цвета -->
+				<Style Selector="TabItem.TableContextTab > TextBlock">
+					<Setter Property="Foreground" Value="#2E7D32"/>
+					<Setter Property="FontWeight" Value="Medium"/>
+				</Style>
+				<Style Selector="TabItem.TableContextTab:selected">
+					<Setter Property="BorderBrush" Value="#2E7D32"/>
+				</Style>
+				<Style Selector="TabItem.TableContextTab:selected > TextBlock">
+					<Setter Property="Foreground" Value="#2E7D32"/>
+				</Style>
+				<Style Selector="TabItem.TableContextTab:pointerover">
+					<Setter Property="Background" Value="#2E7D32"/>
+				</Style>
+
 			</TabControl.Styles>
 
-			<!-- Главная -->
+			<!-- ── Главная ──────────────────────────────────────────────── -->
 			<TabItem>
 				<TabItem.Header>
 					<TextBlock Text="{x:Static loc:TextEditorStrings.Ribbon_Home}"/>
@@ -70,7 +85,7 @@
 				<tabs:RibbonHomeTab DataContext="{Binding Home}"/>
 			</TabItem>
 
-			<!-- Вставка -->
+			<!-- ── Вставка ──────────────────────────────────────────────── -->
 			<TabItem>
 				<TabItem.Header>
 					<TextBlock Text="{x:Static loc:TextEditorStrings.Ribbon_Insert}"/>
@@ -78,7 +93,7 @@
 				<tabs:RibbonInsertTab DataContext="{Binding Insert}"/>
 			</TabItem>
 
-			<!-- Макет -->
+			<!-- ── Макет ────────────────────────────────────────────────── -->
 			<TabItem>
 				<TabItem.Header>
 					<TextBlock Text="{x:Static loc:TextEditorStrings.Ribbon_Layout}"/>
@@ -86,12 +101,23 @@
 				<tabs:RibbonLayoutTab DataContext="{Binding Layout}"/>
 			</TabItem>
 
-			<!-- Ссылки -->
+			<!-- ── Ссылки ───────────────────────────────────────────────── -->
 			<TabItem>
 				<TabItem.Header>
 					<TextBlock Text="{x:Static loc:TextEditorStrings.Ribbon_References}"/>
 				</TabItem.Header>
 				<tabs:RibbonReferencesTab DataContext="{Binding References}"/>
+			</TabItem>
+
+			<!-- ── Работа с таблицей (КОНТЕКСТНАЯ) ─────────────────────── -->
+			<!-- Видна только когда каретка находится внутри таблицы.       -->
+			<!-- IsTableTabVisible управляется из TextEditorViewModel.       -->
+			<TabItem Classes="TableContextTab"
+                     IsVisible="{Binding IsTableTabVisible}">
+				<TabItem.Header>
+					<TextBlock Text="Работа с таблицами"/>
+				</TabItem.Header>
+				<tabs:RibbonTableTab DataContext="{Binding Table}"/>
 			</TabItem>
 
 		</TabControl>

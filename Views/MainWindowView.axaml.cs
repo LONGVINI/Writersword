@@ -12,10 +12,10 @@ using System.Linq;
 using System.Threading;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Resources.Localization;
-using Writersword.Src.Core.Interfaces.Services.Input;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Interfaces.Services.UI;
-using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Core.Interfaces.Services.Input;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.Services.UI;
+using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.ViewModels;
 
 namespace Writersword.Views

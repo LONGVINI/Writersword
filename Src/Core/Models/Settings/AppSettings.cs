@@ -4,7 +4,7 @@ using System.Text;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Settings;
 
-namespace Writersword.Src.Core.Models.Settings
+namespace Writersword.Core.Models.Settings
 {
     public class AppSettings
     {

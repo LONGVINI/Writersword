@@ -3,9 +3,9 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Writersword.Src.Core.Interfaces.WorkModes;
+using Writersword.Core.Interfaces.WorkModes;
 
-namespace Writersword.Src.WorkModes.Common
+namespace Writersword.WorkModes.Common
 {
     /// <summary>
     /// Реестр всех зарегистрированных WorkMode

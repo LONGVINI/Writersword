@@ -1,9 +1,9 @@
 using System;
 using System.Globalization;
 using Writersword.Resources.Localization;
-using Writersword.Src.Core.Interfaces.Services.UI;
+using Writersword.Core.Interfaces.Services.UI;
 
-namespace Writersword.Src.Infrastructure.Services.UI
+namespace Writersword.Infrastructure.Services.UI
 {
     /// <summary>
     /// Сервис локализации

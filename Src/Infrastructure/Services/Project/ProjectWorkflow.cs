@@ -11,16 +11,14 @@ using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Settings;
 using Writersword.Resources.Localization;
-using Writersword.Src.Core.Interfaces.Services;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Interfaces.Services.UI;
-using Writersword.Src.Core.Interfaces.WorkFlows;
-using Writersword.Src.Infrastructure.Dock;
-using Writersword.Src.Infrastructure.Services.Storage;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.Services.UI;
+using Writersword.Core.Interfaces.WorkFlows;
+using Writersword.Infrastructure.Services.Storage;
 using Writersword.ViewModels;
 using Writersword.Views;
 
-namespace Writersword.Src.Infrastructure.Services.Project
+namespace Writersword.Infrastructure.Services.Project
 {
     /// <summary>
     /// Реализация сервиса управления жизненным циклом проектов.

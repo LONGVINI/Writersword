@@ -8,7 +8,7 @@ using System.Reactive;
 using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
-using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Core.Interfaces.WorkFlows;
 
 namespace Writersword.ViewModels.Components
 {

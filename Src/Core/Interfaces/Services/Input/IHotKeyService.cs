@@ -5,7 +5,7 @@ using System.Windows.Input;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.Settings;
 
-namespace Writersword.Src.Core.Interfaces.Services.Input
+namespace Writersword.Core.Interfaces.Services.Input
 {
     /// <summary>
     /// Тип конфликта между горячими клавишами

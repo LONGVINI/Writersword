@@ -9,7 +9,7 @@ using System.Reactive;
 using Writersword.Core.Enums;
 using Writersword.Core.Models.Settings;
 using Writersword.Resources.Localization;
-using Writersword.Src.Core.Interfaces.Services.Input;
+using Writersword.Core.Interfaces.Services.Input;
 
 namespace Writersword.ViewModels.Settings
 {

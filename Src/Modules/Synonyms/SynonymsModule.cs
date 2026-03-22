@@ -6,8 +6,8 @@ using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
 using Writersword.Modules.Common;
 using Writersword.Modules.Synonyms.ViewModels;
-using Writersword.Src.Core.Services;
-using Writersword.Src.Modules.Synonyms.Resources;
+using Writersword.Core.Services;
+using Writersword.Modules.Synonyms.Resources;
 using Writersword.ViewModels;
 
 namespace Writersword.Modules.Synonyms

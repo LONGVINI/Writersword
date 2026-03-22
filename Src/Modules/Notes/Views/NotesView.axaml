@@ -1,7 +1,7 @@
 ﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Notes.ViewModels"
-             xmlns:loc="using:Writersword.Src.Modules.Notes.Resources"
+             xmlns:loc="using:Writersword.Modules.Notes.Resources"
              x:Class="Writersword.Modules.Notes.Views.NotesView"
              x:DataType="vm:NotesViewModel"
              Tag="Notes">

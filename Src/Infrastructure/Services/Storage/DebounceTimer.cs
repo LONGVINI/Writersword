@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Threading;
 
-namespace Writersword.Src.Infrastructure.Services.Storage
+namespace Writersword.Infrastructure.Services.Storage
 {
     /// <summary>
     /// Таймер с debounce (отложенное выполнение)

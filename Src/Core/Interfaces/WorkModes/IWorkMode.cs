@@ -1,7 +1,7 @@
 ﻿using Writersword.Core.Interfaces.WorkModes;
 using Writersword.Core.Models.WorkModes;
 
-namespace Writersword.Src.WorkModes.Common
+namespace Writersword.WorkModes.Common
 {
     /// <summary>
     /// Базовый интерфейс для всех WorkMode

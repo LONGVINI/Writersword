@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Writersword.Src.ProjectTypes.GameDesign.Resources {
+namespace Writersword.ProjectTypes.GameDesign.Resources {
     using System;
     
     

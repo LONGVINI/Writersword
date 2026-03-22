@@ -4,10 +4,10 @@ using System;
 using System.IO;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
-using Writersword.Src.Core.Interfaces.WorkFlows;
-using Writersword.Src.Infrastructure.Services.Storage;
+using Writersword.Core.Interfaces.WorkFlows;
+using Writersword.Infrastructure.Services.Storage;
 
-namespace Writersword.Src.Core.Services
+namespace Writersword.Core.Services
 {
     /// <summary>
     /// Контекст документа - передаётся модулям для доступа к общим данным и сервисам

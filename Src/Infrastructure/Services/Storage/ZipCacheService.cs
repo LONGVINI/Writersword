@@ -12,7 +12,7 @@ using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Cache;
 using Writersword.Core.Models.Project;
 
-namespace Writersword.Src.Infrastructure.Services.Storage
+namespace Writersword.Infrastructure.Services.Storage
 {
     /// <summary>
     /// Реализация сервиса для работы с кешем в формате ZIP

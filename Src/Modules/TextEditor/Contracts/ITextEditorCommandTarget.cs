@@ -103,5 +103,22 @@ namespace Writersword.Modules.TextEditor.Contracts
         void ExportToDocx();
         void ExportToTxt();
         void ExportToMarkdown();
+
+        // ── Операции с таблицей ───────────────────────────────────────────
+
+        /// <summary>Добавить строку выше (above=true) или ниже (above=false) текущей.</summary>
+        void TableAddRow(bool above);
+
+        /// <summary>Добавить столбец слева (left=true) или справа (left=false) от текущего.</summary>
+        void TableAddColumn(bool left);
+
+        /// <summary>Удалить текущую строку таблицы.</summary>
+        void TableDeleteRow();
+
+        /// <summary>Удалить текущий столбец таблицы.</summary>
+        void TableDeleteColumn();
+
+        /// <summary>Удалить всю таблицу.</summary>
+        void TableDelete();
     }
 }

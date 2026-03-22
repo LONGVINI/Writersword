@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 using System;
 using Writersword.Core.Models.Project;
 using Writersword.ViewModels;
-using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Core.Interfaces.WorkFlows;
 
 namespace Writersword.Views
 {

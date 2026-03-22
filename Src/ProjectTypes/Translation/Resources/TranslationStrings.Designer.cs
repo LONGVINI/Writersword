@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Writersword.Src.ProjectTypes.Translation.Resources {
+namespace Writersword.ProjectTypes.Translation.Resources {
     using System;
     
     

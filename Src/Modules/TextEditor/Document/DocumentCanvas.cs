@@ -12,18 +12,18 @@ using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Threading.Tasks;
+using Writersword.Core.Interfaces.Services.Input;
 using Writersword.Core.Models.Print;
 using Writersword.Core.Models.Rendering;
 using Writersword.Infrastructure.Rendering;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.Commands;
 using Writersword.Modules.TextEditor.Models.Document;
-using Writersword.Modules.TextEditor.Models.Page;
+using Writersword.Modules.TextEditor.Models.Inline;
 using Writersword.Modules.TextEditor.ViewModels;
 using Writersword.Modules.TextEditor.ViewModels.Blocks;
-using Writersword.Src.Core.Interfaces.Services.Input;
 
-namespace Writersword.Modules.TextEditor.Views.Document
+namespace Writersword.Modules.TextEditor.Document
 {
     public sealed class DocumentCanvas : Control
     {
@@ -38,7 +38,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
         private const float ReadingMaxPt = 510f;
         private const float FallbackLinePt = 16.5f;
 
-        // ── Layout ───────────────────────────────────────────────────────
+        // ── Layout параграфов ─────────────────────────────────────────────
         private record ParaLayout(
             ParagraphViewModel Vm,
             SKTextLayout Layout,
@@ -56,24 +56,31 @@ namespace Writersword.Modules.TextEditor.Views.Document
             float PadTopPt,
             float MarginLeftPt);
 
-        // Атомарный снимок для render-потока.
-        // Rebuild-методы строят новые списки и меняют ссылки под локом.
-        // RenderWithSKCanvas захватывает снимок под тем же локом.
+        // ── Layout таблиц ─────────────────────────────────────────────────
+        private record TableEntry(
+            TableBlock Table,
+            SKTableLayout Layout,
+            float Ypt,
+            float XPt,
+            int PageIndex);
+
+        // ── Режим каретки ─────────────────────────────────────────────────
+        private enum CaretMode { Normal, Table }
+
+        // ── Атомарный снимок для render-потока ────────────────────────────
         private readonly object _renderLock = new();
         private List<ParaLayout> _layouts = new();
         private List<PageRect> _pages = new();
+        private List<TableEntry> _tables = new();
         private double _canvasWidth;
         private double _canvasHeight;
         private float _canvasHeightPt;
 
         // ── Кеш лейаутов ─────────────────────────────────────────────────
-        private readonly Dictionary<ParagraphViewModel, (string Text, float Width, SKTextLayout Layout)>
-            _layoutCache = new();
+        private readonly Dictionary<ParagraphViewModel,
+            (string Text, float Width, SKTextLayout Layout)> _layoutCache = new();
 
         // ── Дебаунс пересчёта ─────────────────────────────────────────────
-        // При вставке N абзацев генерируется N событий CollectionChanged.
-        // Каждое отменяет предыдущий токен и ставит новый Background-таск.
-        // Пересчёт выполняется один раз — когда очередь UI-потока опустеет.
         private System.Threading.CancellationTokenSource _rebuildCts = new();
 
         // ── Виртуализация ─────────────────────────────────────────────────
@@ -81,12 +88,21 @@ namespace Writersword.Modules.TextEditor.Views.Document
         private double _scrollOffsetY = 0;
         private double _viewportHeight = 600;
 
-        // ── Каретка ───────────────────────────────────────────────────────
+        // ── Каретка — обычный режим ───────────────────────────────────────
+        private CaretMode _caretMode = CaretMode.Normal;
         private int _caretPara = 0;
         private int _caretChar = 0;
         private bool _caretVisible = true;
         private float _preferredCaretXPt = 0f;
         private readonly DispatcherTimer _caretTimer;
+
+        // ── Каретка — таблица ─────────────────────────────────────────────
+        private int _tableCaretRow = 0;
+        private int _tableCaretCol = 0;
+        private int _tableCaretPara = 0;
+        private int _tableCaretChar = 0;
+        private int _tableEntryIdx = -1;
+        private TableBlock? _activeTableBlock;
 
         // ── Выделение ─────────────────────────────────────────────────────
         private int _selStartPara = 0;
@@ -95,7 +111,13 @@ namespace Writersword.Modules.TextEditor.Views.Document
         private int _selEndChar = 0;
         private bool _isSelecting;
 
-        // ── Буфер обмена (кеш) ────────────────────────────────────────────
+        // ── Bitmap-кеш для мигания каретки ────────────────────────────────
+        private SKBitmap? _lastFullRenderBitmap;
+        private int _lastFullRenderWidth;
+        private int _lastFullRenderHeight;
+        private bool _caretOnlyRedraw = false;
+
+        // ── Буфер обмена ─────────────────────────────────────────────────
         private string? _clipboardCache;
 
         // ── Рендеринг ─────────────────────────────────────────────────────
@@ -114,7 +136,36 @@ namespace Writersword.Modules.TextEditor.Views.Document
         private double _monitorSizeInches = 0;
         private double _cachedDpi = 96.0;
 
+        private DocumentSnapshotCommand? _pendingSnapshot;
+
+        // ── Цвета ─────────────────────────────────────────────────────────
+        private static readonly SKColor SelectionColor = new(0x33, 0x90, 0xFF, 0x60);
+        private static readonly SKColor CanvasBgColor = new(0xE8, 0xE8, 0xE8);
+        private static readonly SKColor PageShadowColor = new(0x00, 0x00, 0x00, 0x28);
+
+        private DocumentViewModel? _docVm;
+        private DocumentViewModel? DocVm => _docVm;
+        private double Zoom => DocVm?.Zoom ?? 1.0;
+
+        // ── Callbacks для TextEditorView ──────────────────────────────────
+
         public Action<double>? RecommendedZoomChanged { get; set; }
+
+        private double _lastPageOffsetXPx = 0;
+        private Action<double>? _pageOffsetXChanged;
+
+        public Action<double>? PageOffsetXChanged
+        {
+            get => _pageOffsetXChanged;
+            set
+            {
+                _pageOffsetXChanged = value;
+                value?.Invoke(_lastPageOffsetXPx);
+            }
+        }
+
+        public Action<IReadOnlyList<double>, IReadOnlyList<double>>? CaretEnteredTable { get; set; }
+        public Action? CaretLeftTable { get; set; }
 
         public double MonitorSizeInches
         {
@@ -129,24 +180,18 @@ namespace Writersword.Modules.TextEditor.Views.Document
             }
         }
 
-        private DocumentSnapshotCommand? _pendingSnapshot;
-
-        // ── Цвета ─────────────────────────────────────────────────────────
-        private static readonly SKColor SelectionColor = new(0x33, 0x90, 0xFF, 0x60);
-        private static readonly SKColor CanvasBgColor = new(0xE8, 0xE8, 0xE8);
-        private static readonly SKColor PageShadowColor = new(0x00, 0x00, 0x00, 0x28);
-
-        private DocumentViewModel? _docVm;
-        private DocumentViewModel? DocVm => _docVm;
-        private double Zoom => DocVm?.Zoom ?? 1.0;
-
         public DocumentCanvas()
         {
             Focusable = true;
             Cursor = new Cursor(StandardCursorType.Ibeam);
 
             _caretTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(530) };
-            _caretTimer.Tick += (_, _) => { _caretVisible = !_caretVisible; InvalidateVisual(); };
+            _caretTimer.Tick += (_, _) =>
+            {
+                _caretVisible = !_caretVisible;
+                _caretOnlyRedraw = true;
+                InvalidateVisual();
+            };
             _caretTimer.Start();
         }
 
@@ -186,6 +231,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
         public double RecommendedZoom => _cachedDpi > 0 ? _cachedDpi / 96.0 : 1.0;
 
         private static float MmToPt(double mm) => (float)(mm * 72.0 / 25.4);
+        private static double PtToMm(float pt) => pt * 25.4 / 72.0;
 
         private float GetPageWidthPt()
         {
@@ -206,8 +252,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
         private (float left, float top, float right, float bottom) GetPagePaddingPt()
         {
             var ps = DocVm?.Document.PageSettings;
-            if (ps is null)
-                return (MmToPt(20), MmToPt(20), MmToPt(20), MmToPt(20));
+            if (ps is null) return (MmToPt(20), MmToPt(20), MmToPt(20), MmToPt(20));
             return (
                 MmToPt(ps.MarginLeftMm + ps.MarginGutterMm),
                 MmToPt(ps.MarginTopMm),
@@ -215,7 +260,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
                 MmToPt(ps.MarginBottomMm));
         }
 
-        // ── DataContext / ScrollViewer ─────────────────────────────────────
+        // ── DataContext / ScrollViewer ────────────────────────────────────
 
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
@@ -229,6 +274,8 @@ namespace Writersword.Modules.TextEditor.Views.Document
         {
             base.OnDetachedFromVisualTree(e);
             UnsubscribeFromScrollViewer();
+            _lastFullRenderBitmap?.Dispose();
+            _lastFullRenderBitmap = null;
         }
 
         protected override void OnGotFocus(GotFocusEventArgs e)
@@ -280,7 +327,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             if (sender is not ScrollViewer sv) return;
             _scrollOffsetY = sv.Offset.Y;
             _viewportHeight = sv.Viewport.Height;
-            InvalidateVisual();
+            InvalidateFull();
         }
 
         protected override void OnDataContextChanged(EventArgs e)
@@ -291,6 +338,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             {
                 _docVm.Paragraphs.CollectionChanged -= OnParagraphsChanged;
                 _docVm.PropertyChanged -= OnDocVmPropertyChanged;
+                _docVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
             }
 
             _docVm = DataContext as DocumentViewModel;
@@ -303,6 +351,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
                 _styleResolver = new StyleResolver(DocVm.Document.Styles);
                 DocVm.Paragraphs.CollectionChanged += OnParagraphsChanged;
                 DocVm.PropertyChanged += OnDocVmPropertyChanged;
+                DocVm.ParagraphFormatChanged += OnParagraphFormatChanged;
                 foreach (var pvm in DocVm.Paragraphs)
                     WirePvm(pvm);
             }
@@ -310,9 +359,22 @@ namespace Writersword.Modules.TextEditor.Views.Document
             InvalidateMeasure();
         }
 
+        private void OnParagraphFormatChanged()
+        {
+            _layoutCache.Clear();
+            RebuildLayouts();
+            // После перестройки лейаутов текст мог перенестись на другие строки.
+            // Без этих вызовов каретка остаётся на старом слайсе → визуально
+            // оказывается в неверной позиции.
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
+            InvalidateFull();
+        }
+
         private void OnDocVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName is nameof(DocumentViewModel.ViewMode)
+                               or nameof(DocumentViewModel.Zoom)
                                or nameof(DocumentViewModel.PageSettings))
             {
                 _logger.Debug("DocVm property changed: {Prop}", e.PropertyName);
@@ -320,18 +382,8 @@ namespace Writersword.Modules.TextEditor.Views.Document
                     _styleResolver = new StyleResolver(DocVm.Document.Styles);
                 _layoutCache.Clear();
                 InvalidateMeasure();
-                return;
-            }
-
-            // При смене зума текстовая область в pt не меняется —
-            // лейауты валидны, пересчитывать не нужно, только перерисовать.
-            if (e.PropertyName is nameof(DocumentViewModel.Zoom))
-            {
-                _logger.Debug("DocVm property changed: Zoom");
-                InvalidateMeasure();
             }
         }
-
 
         private void OnParagraphsChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
@@ -368,6 +420,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
                 if (idx < 0) return;
                 _caretPara = FindFirstSliceForParagraphIndex(idx);
                 _caretChar = pvm.PlainText?.Length ?? 0;
+                SwitchToNormalMode();
                 SnapCaretToCorrectSlice();
                 UpdatePreferredX();
                 SyncSel(); ResetCaret(); InvalidateVisual();
@@ -380,6 +433,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
                 if (idx < 0) return;
                 _caretPara = FindFirstSliceForParagraphIndex(idx);
                 _caretChar = Clamp(pos, 0, pvm.PlainText?.Length ?? 0);
+                SwitchToNormalMode();
                 SnapCaretToCorrectSlice();
                 UpdatePreferredX();
                 SyncSel(); ResetCaret(); InvalidateVisual();
@@ -393,27 +447,13 @@ namespace Writersword.Modules.TextEditor.Views.Document
             if (sender is ParagraphViewModel pvm && DocVm is not null)
             {
                 int idx = DocVm.Paragraphs.IndexOf(pvm);
-                if (idx >= 0)
-                {
-                    ScheduleRebuild(idx);
-                    return;
-                }
+                if (idx >= 0) { ScheduleRebuild(idx); return; }
             }
 
             ScheduleRebuild(0);
         }
 
         // ── Дебаунс пересчёта ─────────────────────────────────────────────
-        //
-        // ScheduleRebuild вызывается из каждого изменения данных.
-        // При вставке N абзацев вызывается N раз подряд на UI-потоке.
-        // Каждый вызов отменяет предыдущий CancellationToken и ставит новый
-        // Background-таск. Так как все вызовы синхронны, пока код не вернётся
-        // в event loop, ни один Background-таск не выполнится.
-        // В итоге выполняется ровно один полный пересчёт.
-        //
-        // До завершения пересчёта рендер показывает последнее стабильное
-        // состояние — без мерцания и промежуточных сломанных frames.
 
         private void ScheduleRebuild(int dirtyParaIdx)
         {
@@ -426,7 +466,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             _rebuildCts = new System.Threading.CancellationTokenSource();
             var cts = _rebuildCts;
 
-            InvalidateVisual();
+            InvalidateFull();
 
             Dispatcher.UIThread.Post(() =>
             {
@@ -441,47 +481,32 @@ namespace Writersword.Modules.TextEditor.Views.Document
                 double oldCanvasH = _canvasHeight;
                 RebuildLayouts();
 
-                // ScrollViewer получит новый размер контента.
                 if (Math.Abs(_canvasHeight - oldCanvasH) > 0.5)
                     InvalidateMeasure();
                 else
-                    InvalidateVisual();
+                    InvalidateFull();
 
             }, DispatcherPriority.Background);
         }
 
-        // ── Measure / Layout ─────────────────────────────────────────────
+        // ── Measure / Layout ──────────────────────────────────────────────
 
         protected override Size MeasureOverride(Size available)
         {
             double zoom = Zoom;
-            double availW = double.IsInfinity(available.Width)
-                ? 800 : Math.Max(available.Width, 1);
-
+            double availW = double.IsInfinity(available.Width) ? 800 : Math.Max(available.Width, 1);
             double viewportW = _parentScrollViewer?.Viewport.Width > 0
-                ? _parentScrollViewer.Viewport.Width
-                : availW;
-            double newCanvasWidth = Math.Max(viewportW / zoom, 1);
+                ? _parentScrollViewer.Viewport.Width : availW;
+            _canvasWidth = Math.Max(viewportW / zoom, 1);
 
             _logger.Debug("MeasureOverride: availW={A} viewportW={V} canvasWidth={C} zoom={Z}",
-                availW, viewportW, newCanvasWidth, zoom);
+                availW, viewportW, _canvasWidth, zoom);
 
             if (_styleResolver is null && DocVm is not null)
                 _styleResolver = new StyleResolver(DocVm.Document.Styles);
 
-            // Пересчитываем лейаут только если изменилась логическая ширина канваса.
-            // При чистом изменении зума ширина в pt не меняется — rebuild не нужен.
-            if (Math.Abs(newCanvasWidth - _canvasWidth) > 0.5)
-            {
-                _canvasWidth = newCanvasWidth;
-                _layoutCache.Clear();
-                RebuildLayouts();
-            }
-            else if (_layouts.Count == 0)
-            {
-                _canvasWidth = newCanvasWidth;
-                RebuildLayouts();
-            }
+            _layoutCache.Clear();
+            RebuildLayouts();
 
             double visualH = Math.Max(_canvasHeight * zoom, 100);
             double visualW = availW;
@@ -491,7 +516,6 @@ namespace Writersword.Modules.TextEditor.Views.Document
                     GetPageWidthPt() * PtToPx * zoom + PageGapPt * PtToPx * 4);
 
             _logger.Debug("MeasureOverride result: visualW={W} visualH={H}", visualW, visualH);
-
             return new Size(visualW, visualH);
         }
 
@@ -499,12 +523,9 @@ namespace Writersword.Modules.TextEditor.Views.Document
         {
             double zoom = Zoom;
             double viewportW = _parentScrollViewer?.Viewport.Width > 0
-                ? _parentScrollViewer.Viewport.Width
-                : finalSize.Width;
+                ? _parentScrollViewer.Viewport.Width : finalSize.Width;
             double logicalW = Math.Max(viewportW / zoom, 1);
 
-            // MeasureOverride уже мог обновить _canvasWidth и сделать rebuild.
-            // Здесь проверяем повторно — ArrangeOverride может получить другой finalSize.
             if (Math.Abs(logicalW - _canvasWidth) > 0.5)
             {
                 _logger.Debug("ArrangeOverride: width changed {Old} -> {New}", _canvasWidth, logicalW);
@@ -516,11 +537,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             return new Size(finalSize.Width, Math.Max(_canvasHeight * zoom, 100));
         }
 
-        // ── Пересчёт лейаута ─────────────────────────────────────────────
-        //
-        // Строит новые списки во временных переменных.
-        // Заменяет _layouts / _pages / _canvasHeightPt атомарно под локом.
-        // Render-поток всегда видит полное консистентное состояние.
+        // ── Пересчёт лейаута ──────────────────────────────────────────────
 
         private void RebuildLayouts()
         {
@@ -531,6 +548,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
                 {
                     _layouts = new List<ParaLayout>();
                     _pages = new List<PageRect>();
+                    _tables = new List<TableEntry>();
                     _canvasHeightPt = emptyH;
                     _canvasHeight = emptyH * PtToPx;
                 }
@@ -562,8 +580,8 @@ namespace Writersword.Modules.TextEditor.Views.Document
                     }
             }
 
-            _logger.Debug("RebuildLayouts done: layouts={L} pages={P} canvasH={H}",
-                _layouts.Count, _pages.Count, _canvasHeightPt);
+            _logger.Debug("RebuildLayouts done: layouts={L} pages={P} tables={T} canvasH={H}",
+                _layouts.Count, _pages.Count, _tables.Count, _canvasHeightPt);
         }
 
         private void RebuildPageMode()
@@ -574,6 +592,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             float textWidthPt = Math.Max(pageWidthPt - ml - mr, 1f);
             float canvasWPt = (float)(_canvasWidth * PxToPt);
             float pageXPt = Math.Max((canvasWPt - pageWidthPt) / 2f, 0f);
+            float textXPt = pageXPt + ml;
 
             float pageYPt = PageGapPt;
             float pageBottomPt = pageYPt + pageHeightPt - mb;
@@ -582,16 +601,57 @@ namespace Writersword.Modules.TextEditor.Views.Document
 
             var newLayouts = new List<ParaLayout>();
             var newPages = new List<PageRect>();
+            var newTables = new List<TableEntry>();
 
             newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml));
 
-            foreach (var pvm in DocVm!.Paragraphs)
+            float pageOffsetXPx = pageXPt * PtToPx * (float)Zoom
+                - (float)(_parentScrollViewer?.Offset.X ?? 0);
+            _lastPageOffsetXPx = pageOffsetXPx;
+            PageOffsetXChanged?.Invoke(pageOffsetXPx);
+
+            foreach (var block in DocVm!.Document.Sections[0].Blocks)
             {
+                if (block is BreakBlock bb && bb.BreakType == BreakType.Page)
+                {
+                    pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                    pageBottomPt = pageYPt + pageHeightPt - mb;
+                    contentYPt = pageYPt + mt;
+                    pageIdx++;
+                    newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml));
+                    continue;
+                }
+
+                if (block is TableBlock tableBlock)
+                {
+                    var tableLayout = _renderer.BuildTableLayout(tableBlock, textWidthPt, _styleResolver!);
+                    float tableH = tableLayout.TotalHeightPt;
+
+                    if (contentYPt + tableH > pageBottomPt && contentYPt > pageYPt + mt)
+                    {
+                        pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                        pageBottomPt = pageYPt + pageHeightPt - mb;
+                        contentYPt = pageYPt + mt;
+                        pageIdx++;
+                        newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml));
+                    }
+
+                    newTables.Add(new TableEntry(tableBlock, tableLayout, contentYPt, textXPt, pageIdx));
+                    contentYPt += tableH + FallbackLinePt;
+                    continue;
+                }
+
+                if (block is not ParagraphBlock paraBlock) continue;
+
+                ParagraphViewModel? pvm = null;
+                foreach (var p in DocVm.Paragraphs)
+                    if (p.Model == paraBlock) { pvm = p; break; }
+                if (pvm is null) continue;
+
                 var layout = GetOrBuildLayout(pvm, textWidthPt);
                 if (layout.Lines.Count == 0) continue;
 
                 contentYPt += layout.SpaceBeforePt;
-
                 int lineFrom = 0;
                 float lineGroupYPt = contentYPt;
 
@@ -638,6 +698,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             {
                 _layouts = newLayouts;
                 _pages = newPages;
+                _tables = newTables;
                 _canvasHeightPt = newCanvasH;
                 _canvasHeight = newCanvasH * PtToPx;
             }
@@ -649,9 +710,25 @@ namespace Writersword.Modules.TextEditor.Views.Document
             float yPt = padHPt;
 
             var newLayouts = new List<ParaLayout>();
+            var newTables = new List<TableEntry>();
 
-            foreach (var pvm in DocVm!.Paragraphs)
+            foreach (var block in DocVm!.Document.Sections[0].Blocks)
             {
+                if (block is TableBlock tableBlock)
+                {
+                    var tableLayout = _renderer.BuildTableLayout(tableBlock, textWidthPt, _styleResolver!);
+                    newTables.Add(new TableEntry(tableBlock, tableLayout, yPt, padWPt, 0));
+                    yPt += tableLayout.TotalHeightPt + FallbackLinePt;
+                    continue;
+                }
+
+                if (block is not ParagraphBlock paraBlock) continue;
+
+                ParagraphViewModel? pvm = null;
+                foreach (var p in DocVm.Paragraphs)
+                    if (p.Model == paraBlock) { pvm = p; break; }
+                if (pvm is null) continue;
+
                 var layout = GetOrBuildLayout(pvm, textWidthPt);
                 float hPt = Math.Max(layout.TotalHeightPt, FallbackLinePt);
                 newLayouts.Add(new ParaLayout(
@@ -665,6 +742,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             {
                 _layouts = newLayouts;
                 _pages = new List<PageRect>();
+                _tables = newTables;
                 _canvasHeightPt = newCanvasH;
                 _canvasHeight = newCanvasH * PtToPx;
             }
@@ -674,6 +752,8 @@ namespace Writersword.Modules.TextEditor.Views.Document
         {
             string text = pvm.PlainText ?? string.Empty;
 
+            // BuildLayout внутри уже вычитает LeftIndent + RightIndent из widthPt,
+            // поэтому передаём полную ширину текстовой зоны страницы без изменений.
             if (_layoutCache.TryGetValue(pvm, out var cached)
                 && cached.Text == text
                 && Math.Abs(cached.Width - widthPt) < 0.1f)
@@ -694,10 +774,9 @@ namespace Writersword.Modules.TextEditor.Views.Document
 
         internal void RenderWithSKCanvas(SKCanvas canvas)
         {
-            // Захватываем атомарный снимок — render-поток никогда не видит
-            // промежуточное состояние пересборки (pages=1 layouts=0).
             List<ParaLayout> layouts;
             List<PageRect> pages;
+            List<TableEntry> tables;
             float canvasHeightPt;
             double canvasWidth;
 
@@ -705,6 +784,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             {
                 layouts = _layouts;
                 pages = _pages;
+                tables = _tables;
                 canvasHeightPt = _canvasHeightPt;
                 canvasWidth = _canvasWidth;
             }
@@ -712,24 +792,89 @@ namespace Writersword.Modules.TextEditor.Views.Document
             double zoom = Zoom;
             float scale = (float)(PtToPx * zoom);
 
-            canvas.Save();
-            canvas.Scale(scale, scale);
+            int pixelW = (int)Math.Max(Bounds.Width, 1);
+            int pixelH = (int)Math.Max(Bounds.Height, 1);
 
-            var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
-            if (mode == EditorViewMode.Page)
-                RenderPageMode(canvas, layouts, pages, canvasHeightPt, canvasWidth);
+            if (_caretOnlyRedraw
+                && _lastFullRenderBitmap is not null
+                && _lastFullRenderWidth == pixelW
+                && _lastFullRenderHeight == pixelH)
+            {
+                _caretOnlyRedraw = false;
+                canvas.DrawBitmap(_lastFullRenderBitmap, 0, 0);
+
+                if (_caretVisible)
+                {
+                    canvas.Save();
+                    canvas.Scale(scale, scale);
+                    DrawCaretOnCanvas(canvas, layouts, pages, tables, canvasWidth);
+                    canvas.Restore();
+                }
+                return;
+            }
+
+            _caretOnlyRedraw = false;
+
+            using var surface = SKSurface.Create(
+                new SKImageInfo(pixelW, pixelH, SKColorType.Bgra8888, SKAlphaType.Premul));
+
+            if (surface is not null)
+            {
+                var offscreen = surface.Canvas;
+                offscreen.Save();
+                offscreen.Scale(scale, scale);
+
+                var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
+                if (mode == EditorViewMode.Page)
+                    RenderPageMode(offscreen, layouts, pages, tables, canvasHeightPt, canvasWidth,
+                        drawCaret: false);
+                else
+                    RenderFlowMode(offscreen, mode, layouts, tables, canvasHeightPt, canvasWidth,
+                        drawCaret: false);
+
+                offscreen.Restore();
+
+                using var snapshot = surface.Snapshot();
+                _lastFullRenderBitmap?.Dispose();
+                _lastFullRenderBitmap = SKBitmap.FromImage(snapshot);
+                _lastFullRenderWidth = pixelW;
+                _lastFullRenderHeight = pixelH;
+
+                canvas.DrawBitmap(_lastFullRenderBitmap, 0, 0);
+
+                if (_caretVisible)
+                {
+                    canvas.Save();
+                    canvas.Scale(scale, scale);
+                    DrawCaretOnCanvas(canvas, layouts, pages, tables, canvasWidth);
+                    canvas.Restore();
+                }
+            }
             else
-                RenderFlowMode(canvas, mode, layouts, canvasHeightPt, canvasWidth);
+            {
+                canvas.Save();
+                canvas.Scale(scale, scale);
 
-            canvas.Restore();
+                var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
+                if (mode == EditorViewMode.Page)
+                    RenderPageMode(canvas, layouts, pages, tables, canvasHeightPt, canvasWidth,
+                        drawCaret: _caretVisible);
+                else
+                    RenderFlowMode(canvas, mode, layouts, tables, canvasHeightPt, canvasWidth,
+                        drawCaret: _caretVisible);
+
+                canvas.Restore();
+            }
         }
 
         private void RenderPageMode(
             SKCanvas canvas,
             List<ParaLayout> layouts,
             List<PageRect> pages,
+            List<TableEntry> tables,
             float canvasHeightPt,
-            double canvasWidth)
+            double canvasWidth,
+            bool drawCaret = true)
         {
             float canvasWPt = (float)(canvasWidth * PxToPt);
 
@@ -737,11 +882,6 @@ namespace Writersword.Modules.TextEditor.Views.Document
             canvas.DrawRect(0, 0, canvasWPt, canvasHeightPt, bgPaint);
 
             var (firstPage, lastPage) = GetVisiblePageRange(pages);
-
-            _logger.Debug(
-                "RenderPageMode: pages={P} layouts={L} visible=[{F},{La}] scrollY={S} viewportH={V}",
-                pages.Count, layouts.Count, firstPage, lastPage,
-                _scrollOffsetY, _viewportHeight);
 
             for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
             {
@@ -754,6 +894,12 @@ namespace Writersword.Modules.TextEditor.Views.Document
                                 page.WidthPt, page.HeightPt, pg);
             }
 
+            foreach (var te in tables)
+            {
+                if (te.PageIndex < firstPage || te.PageIndex > lastPage) continue;
+                SKTextRenderer.RenderTable(canvas, te.Layout, te.XPt, te.Ypt);
+            }
+
             for (int i = 0; i < layouts.Count; i++)
             {
                 var pl = layouts[i];
@@ -762,23 +908,29 @@ namespace Writersword.Modules.TextEditor.Views.Document
 
                 var page = pages[pl.PageIndex];
                 float paraXPt = page.PadLeftPt + page.MarginLeftPt;
+                float paraXPtWithIndent = paraXPt + pl.Layout.LeftIndentPt;
                 float paraYPt = pl.Ypt;
 
                 DrawSelectionForSlice(canvas, i, pl, paraXPt, paraYPt, layouts);
                 SKTextRenderer.RenderParagraphLines(
-                    canvas, pl.Layout, paraXPt, paraYPt, pl.LineFrom, pl.LineTo);
+                    canvas, pl.Layout, paraXPtWithIndent, paraYPt, pl.LineFrom, pl.LineTo);
 
-                if (_caretVisible && _caretPara == i)
+                if (drawCaret && _caretMode == CaretMode.Normal && _caretPara == i)
                     DrawCaret(canvas, pl, paraXPt, paraYPt);
             }
+
+            if (drawCaret && _caretMode == CaretMode.Table)
+                DrawTableCaret(canvas, tables);
         }
 
         private void RenderFlowMode(
             SKCanvas canvas,
             EditorViewMode mode,
             List<ParaLayout> layouts,
+            List<TableEntry> tables,
             float canvasHeightPt,
-            double canvasWidth)
+            double canvasWidth,
+            bool drawCaret = true)
         {
             float canvasWPt = (float)(canvasWidth * PxToPt);
 
@@ -788,60 +940,101 @@ namespace Writersword.Modules.TextEditor.Views.Document
             float padWPt = mode == EditorViewMode.Reading
                 ? (canvasWPt - Math.Min(canvasWPt, ReadingMaxPt)) / 2f : DraftPadWPt;
 
-            float zoom = (float)Zoom;
-            float viewTopPt = (float)(_scrollOffsetY / zoom * PxToPt) - FallbackLinePt * 5f;
-            float viewBottomPt = (float)((_scrollOffsetY + Math.Max(_viewportHeight, 100))
-                                          / zoom * PxToPt) + FallbackLinePt * 5f;
+            float zoom2 = (float)Zoom;
+            float viewTopPt = (float)(_scrollOffsetY / zoom2 * PxToPt) - FallbackLinePt * 5f;
+            float viewBotPt = (float)((_scrollOffsetY + Math.Max(_viewportHeight, 100))
+                                        / zoom2 * PxToPt) + FallbackLinePt * 5f;
+
+            foreach (var te in tables)
+            {
+                if (te.Ypt + te.Layout.TotalHeightPt < viewTopPt) continue;
+                if (te.Ypt > viewBotPt) break;
+                SKTextRenderer.RenderTable(canvas, te.Layout, te.XPt, te.Ypt);
+            }
 
             for (int i = 0; i < layouts.Count; i++)
             {
                 var pl = layouts[i];
                 if (pl.Ypt + pl.HeightPt < viewTopPt) continue;
-                if (pl.Ypt > viewBottomPt) break;
+                if (pl.Ypt > viewBotPt) break;
 
                 float paraXPt = padWPt;
+                float paraXPtWithIndent = paraXPt + pl.Layout.LeftIndentPt;
                 float paraYPt = pl.Ypt;
 
                 DrawSelectionForSlice(canvas, i, pl, paraXPt, paraYPt, layouts);
                 SKTextRenderer.RenderParagraphLines(
-                    canvas, pl.Layout, paraXPt, paraYPt, pl.LineFrom, pl.LineTo);
+                    canvas, pl.Layout, paraXPtWithIndent, paraYPt, pl.LineFrom, pl.LineTo);
 
-                if (_caretVisible && _caretPara == i)
+                if (drawCaret && _caretMode == CaretMode.Normal && _caretPara == i)
                     DrawCaret(canvas, pl, paraXPt, paraYPt);
             }
+
+            if (drawCaret && _caretMode == CaretMode.Table)
+                DrawTableCaret(canvas, tables);
+        }
+
+        private void DrawCaretOnCanvas(
+            SKCanvas canvas,
+            List<ParaLayout> layouts,
+            List<PageRect> pages,
+            List<TableEntry> tables,
+            double canvasWidth)
+        {
+            if (!_caretVisible) return;
+
+            if (_caretMode == CaretMode.Normal)
+            {
+                if (_caretPara < 0 || _caretPara >= layouts.Count) return;
+                var pl = layouts[_caretPara];
+                float paraX = GetParaX(pl, pages, canvasWidth);
+                DrawCaret(canvas, pl, paraX, pl.Ypt);
+            }
+            else
+            {
+                DrawTableCaret(canvas, tables);
+            }
+        }
+
+        private float GetParaX(ParaLayout pl, List<PageRect> pages, double canvasWidth)
+        {
+            var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
+            if (mode == EditorViewMode.Page && pl.PageIndex < pages.Count)
+            {
+                var page = pages[pl.PageIndex];
+                return page.PadLeftPt + page.MarginLeftPt;
+            }
+            float canvasWPt = (float)(canvasWidth * PxToPt);
+            if (mode == EditorViewMode.Reading)
+                return (canvasWPt - Math.Min(canvasWPt, ReadingMaxPt)) / 2f;
+            return DraftPadWPt;
         }
 
         private (int first, int last) GetVisiblePageRange(List<PageRect> pages)
         {
             if (pages.Count == 0) return (0, 0);
 
-            double zoom = Zoom;
-            float viewTopPt = (float)(_scrollOffsetY / zoom * PxToPt);
-            float viewBottomPt = (float)((_scrollOffsetY + Math.Max(_viewportHeight, 100))
-                                           / zoom * PxToPt);
-
+            double zoom2 = Zoom;
+            float viewTopPt = (float)(_scrollOffsetY / zoom2 * PxToPt);
+            float viewBotPt = (float)((_scrollOffsetY + Math.Max(_viewportHeight, 100)) / zoom2 * PxToPt);
             float bufferPt = (pages.Count > 0 ? pages[0].HeightPt : 842f) + PageGapPt;
             viewTopPt -= bufferPt;
-            viewBottomPt += bufferPt;
+            viewBotPt += bufferPt;
 
             int first = 0, last = pages.Count - 1;
-
             for (int i = 0; i < pages.Count; i++)
-            {
                 if (pages[i].Ypt + pages[i].HeightPt >= viewTopPt) { first = i; break; }
-            }
             for (int i = first; i < pages.Count; i++)
             {
                 last = i;
-                if (pages[i].Ypt > viewBottomPt) break;
+                if (pages[i].Ypt > viewBotPt) break;
             }
-
             return (first, last);
         }
 
         private void DrawSelectionForSlice(
-     SKCanvas canvas, int sliceIdx, ParaLayout pl,
-     float xPt, float yPt, List<ParaLayout> layouts)
+            SKCanvas canvas, int sliceIdx, ParaLayout pl,
+            float xPt, float yPt, List<ParaLayout> layouts)
         {
             if (!HasSel()) return;
 
@@ -864,38 +1057,38 @@ namespace Writersword.Modules.TextEditor.Views.Document
 
             from = Clamp(from, 0, len);
             to = Clamp(to, 0, len);
-
-            using var paint = new SKPaint { Color = SelectionColor };
-
-            // Пустой абзац или граница выделения совпадает с концом пустого —
-            // рисуем маленький прямоугольник фиксированной ширины как в Word.
-            if (len == 0 || from == to)
+            if (from >= to)
             {
-                if (pl.Layout.Lines.Count == 0) return;
-                var line = pl.LineFrom < pl.Layout.Lines.Count
-                    ? pl.Layout.Lines[pl.LineFrom]
-                    : pl.Layout.Lines[^1];
-                const float markWidthPt = 5f;
-                canvas.DrawRect(xPt, yPt, markWidthPt, line.Height, paint);
+                if (from == to && len == 0)
+                {
+                    float yBase = pl.LineFrom < pl.Layout.Lines.Count
+                        ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
+                    float lineH = pl.Layout.Lines.Count > 0
+                        ? pl.Layout.Lines[0].Height : FallbackLinePt;
+                    using var ep2 = new SKPaint { Color = SelectionColor };
+                    canvas.DrawRect(xPt, yPt - yBase + yBase, 5f, lineH, ep2);
+                }
                 return;
             }
 
             var rects = pl.Layout.HitTestRange(from, to);
             if (rects.Count == 0) return;
 
-            float yBase = pl.LineFrom < pl.Layout.Lines.Count
+            float yBase2 = pl.LineFrom < pl.Layout.Lines.Count
                 ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
 
+            using var paint = new SKPaint { Color = SelectionColor };
             foreach (var r in rects)
             {
                 if (r.LineIndex < pl.LineFrom || r.LineIndex >= pl.LineTo) continue;
                 canvas.DrawRect(
                     xPt + r.Rect.Left,
-                    yPt + (r.Rect.Top - yBase),
+                    yPt + (r.Rect.Top - yBase2),
                     r.Rect.Width, r.Rect.Height,
                     paint);
             }
         }
+
         private void DrawCaret(SKCanvas canvas, ParaLayout pl, float xPt, float yPt)
         {
             int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
@@ -910,8 +1103,39 @@ namespace Writersword.Modules.TextEditor.Views.Document
                 IsAntialias = false
             };
 
+            // HitTestPosition возвращает X = LeftIndentPt + glyphX — отступ уже включён.
+            // xPt = левый край текстовой зоны страницы (pageLeft + marginLeft).
+            // Итого: cx = (pageLeft + marginLeft) + (LeftIndentPt + glyphX) — ровно там где текст.
             float cx = xPt + caret.X;
             float cy = yPt + (caret.Y - yBase);
+            canvas.DrawLine(cx, cy, cx, cy + caret.Height, paint);
+        }
+
+        private void DrawTableCaret(SKCanvas canvas, List<TableEntry> tables)
+        {
+            if (_tableEntryIdx < 0 || _tableEntryIdx >= tables.Count) return;
+
+            var te = tables[_tableEntryIdx];
+            var cell = te.Layout.FindCell(_tableCaretRow, _tableCaretCol);
+            if (cell is null || _tableCaretPara >= cell.Paragraphs.Count) return;
+
+            var paraLayout = cell.Paragraphs[_tableCaretPara];
+            int pos = Clamp(_tableCaretChar, 0, paraLayout.Layout.TextLength);
+
+            var caret = paraLayout.Layout.HitTestPosition(pos);
+
+            float cellContentX = te.XPt + cell.Xpt + cell.PadLeftPt + cell.Borders.Left.WidthPt;
+            float cellContentY = te.Ypt + cell.Ypt + cell.PadTopPt + cell.Borders.Top.WidthPt;
+
+            float cx = cellContentX + paraLayout.Layout.LeftIndentPt + caret.X;
+            float cy = cellContentY + paraLayout.Ypt + paraLayout.Layout.SpaceBeforePt + caret.Y;
+
+            using var paint = new SKPaint
+            {
+                Color = SKColors.Black,
+                StrokeWidth = 1.1f,
+                IsAntialias = false
+            };
             canvas.DrawLine(cx, cy, cx, cy + caret.Height, paint);
         }
 
@@ -922,19 +1146,30 @@ namespace Writersword.Modules.TextEditor.Views.Document
             base.OnPointerPressed(e);
             Focus();
 
-            var (pi, ci) = HitTest(e.GetPosition(this));
+            var pt = e.GetPosition(this);
+
+            if (HitTestTable(pt, out int tableIdx, out int row, out int col,
+                out int paraIdx, out int charIdx))
+            {
+                EnterTableMode(tableIdx, row, col, paraIdx, charIdx);
+                e.Handled = true;
+                return;
+            }
+
+            var (pi, ci) = HitTest(pt);
             _caretPara = pi; _caretChar = ci;
             _selStartPara = pi; _selStartChar = ci;
             _selEndPara = pi; _selEndChar = ci;
             _isSelecting = true;
 
+            SwitchToNormalMode();
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
 
             var pvm = GetVmAt(_caretPara);
             if (pvm is not null) DocVm?.SetActiveParagraph(pvm);
 
-            ResetCaret(); InvalidateVisual();
+            ResetCaret(); InvalidateFull();
             e.Handled = true;
         }
 
@@ -948,7 +1183,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             _selEndPara = pi; _selEndChar = ci;
             _caretPara = pi; _caretChar = ci;
 
-            InvalidateVisual();
+            InvalidateFull();
             e.Handled = true;
         }
 
@@ -964,6 +1199,13 @@ namespace Writersword.Modules.TextEditor.Views.Document
         {
             base.OnTextInput(e);
             if (string.IsNullOrEmpty(e.Text)) return;
+
+            if (_caretMode == CaretMode.Table)
+            {
+                TableInsertText(e.Text);
+                e.Handled = true;
+                return;
+            }
 
             BeginEdit("Type text");
             DeleteSelection();
@@ -1005,6 +1247,22 @@ namespace Writersword.Modules.TextEditor.Views.Document
             bool shft = e.KeyModifiers == KeyModifiers.Shift;
             bool ctrl = e.KeyModifiers == KeyModifiers.Control;
 
+            if (_caretMode == CaretMode.Table)
+            {
+                switch (e.Key)
+                {
+                    case Key.Tab when !shft: TableNavigateNext(); e.Handled = true; return;
+                    case Key.Tab when shft: TableNavigatePrev(); e.Handled = true; return;
+                    case Key.Enter: TableNewParagraph(); e.Handled = true; return;
+                    case Key.Back: TableDeleteBack(); e.Handled = true; return;
+                    case Key.Delete: TableDeleteForward(); e.Handled = true; return;
+                    case Key.Left: TableNavLeft(shft); e.Handled = true; return;
+                    case Key.Right: TableNavRight(shft); e.Handled = true; return;
+                    case Key.Escape:
+                        SwitchToNormalMode(); InvalidateFull(); e.Handled = true; return;
+                }
+            }
+
             switch (e.Key)
             {
                 case Key.Back: ExecuteDeleteBack(); e.Handled = true; break;
@@ -1029,6 +1287,406 @@ namespace Writersword.Modules.TextEditor.Views.Document
             }
         }
 
+        // ── Таблица — режим каретки ───────────────────────────────────────
+
+        /// <summary>
+        /// Входим в режим таблицы: устанавливаем каретку в ячейку и регистрируем
+        /// делегаты структурных операций в DocumentViewModel.
+        /// </summary>
+        private void EnterTableMode(
+            int tableIdx, int row, int col, int paraIdx, int charIdx)
+        {
+            bool wasInTable = _caretMode == CaretMode.Table;
+            bool sameTable = wasInTable && _tableEntryIdx == tableIdx;
+
+            _caretMode = CaretMode.Table;
+            _tableEntryIdx = tableIdx;
+            _tableCaretRow = row;
+            _tableCaretCol = col;
+            _tableCaretPara = paraIdx;
+            _tableCaretChar = charIdx;
+
+            if (tableIdx >= 0 && tableIdx < _tables.Count)
+                _activeTableBlock = _tables[tableIdx].Table;
+
+            // Регистрируем делегаты — контекстный Ribbon теперь может вызывать
+            // структурные операции через ITextEditorCommandTarget.
+            if (DocVm is { } vm)
+            {
+                vm.TableAddRowDelegate = ExecuteTableAddRow;
+                vm.TableAddColDelegate = ExecuteTableAddColumn;
+                vm.TableDeleteRowDelegate = ExecuteTableDeleteRow;
+                vm.TableDeleteColDelegate = ExecuteTableDeleteColumn;
+                vm.TableDeleteDelegate = ExecuteTableDelete;
+            }
+
+            if (!sameTable)
+                NotifyCaretEnteredTableCallback();
+
+            ResetCaret(); InvalidateFull();
+        }
+
+        /// <summary>
+        /// Выходим из режима таблицы, обнуляем делегаты в DocumentViewModel.
+        /// </summary>
+        private void SwitchToNormalMode()
+        {
+            if (_caretMode == CaretMode.Table)
+            {
+                _caretMode = CaretMode.Normal;
+                _activeTableBlock = null;
+                _tableEntryIdx = -1;
+
+                // Очищаем делегаты — контекстный Ribbon больше не должен
+                // трогать таблицу, которой нет в активном контексте.
+                if (DocVm is { } vm)
+                {
+                    vm.TableAddRowDelegate = null;
+                    vm.TableAddColDelegate = null;
+                    vm.TableDeleteRowDelegate = null;
+                    vm.TableDeleteColDelegate = null;
+                    vm.TableDeleteDelegate = null;
+                }
+
+                CaretLeftTable?.Invoke();
+            }
+        }
+
+        private void NotifyCaretEnteredTableCallback()
+        {
+            if (_tableEntryIdx < 0 || _tableEntryIdx >= _tables.Count) return;
+
+            var te = _tables[_tableEntryIdx];
+            var offsets = new List<double>();
+            var widths = new List<double>();
+
+            foreach (var w in te.Layout.ColumnWidthsPt)
+                widths.Add(PtToMm(w));
+            foreach (var o in te.Layout.ColumnOffsetsPt)
+                offsets.Add(PtToMm(o));
+
+            CaretEnteredTable?.Invoke(offsets, widths);
+        }
+
+        // ── Таблица — структурные операции ───────────────────────────────
+        // Вызываются через делегаты DocumentViewModel (установлены в EnterTableMode).
+
+        /// <summary>Добавить строку выше (above=true) или ниже (above=false) текущей.</summary>
+        private void ExecuteTableAddRow(bool above)
+        {
+            if (_activeTableBlock is null) return;
+
+            int insertRow = above ? _tableCaretRow : _tableCaretRow + 1;
+
+            foreach (var cell in _activeTableBlock.Cells)
+                if (cell.Row >= insertRow) cell.Row++;
+
+            for (int c = 0; c < _activeTableBlock.ColumnCount; c++)
+                _activeTableBlock.Cells.Add(new TableCell { Row = insertRow, Column = c });
+
+            _activeTableBlock.RowCount++;
+
+            // Поправляем позицию каретки если вставили выше.
+            if (above)
+                _tableCaretRow++;
+
+            RebuildLayouts();
+            InvalidateFull();
+        }
+
+        /// <summary>Удалить строку, в которой находится каретка.</summary>
+        private void ExecuteTableDeleteRow()
+        {
+            if (_activeTableBlock is null) return;
+
+            int deleteRow = _tableCaretRow;
+
+            _activeTableBlock.Cells.RemoveAll(c => c.Row == deleteRow);
+            foreach (var cell in _activeTableBlock.Cells)
+                if (cell.Row > deleteRow) cell.Row--;
+
+            _activeTableBlock.RowCount--;
+
+            if (_activeTableBlock.RowCount <= 0)
+            {
+                ExecuteTableDelete();
+                return;
+            }
+
+            _tableCaretRow = Clamp(_tableCaretRow, 0, _activeTableBlock.RowCount - 1);
+
+            RebuildLayouts();
+            InvalidateFull();
+        }
+
+        /// <summary>Добавить столбец слева (left=true) или справа (left=false) от текущего.</summary>
+        private void ExecuteTableAddColumn(bool left)
+        {
+            if (_activeTableBlock is null) return;
+
+            int insertCol = left ? _tableCaretCol : _tableCaretCol + 1;
+
+            foreach (var cell in _activeTableBlock.Cells)
+                if (cell.Column >= insertCol) cell.Column++;
+
+            for (int r = 0; r < _activeTableBlock.RowCount; r++)
+                _activeTableBlock.Cells.Add(new TableCell { Row = r, Column = insertCol });
+
+            var colDef = new TableColumnDefinition { WidthType = TableColumnWidthType.Auto };
+            if (insertCol < _activeTableBlock.Columns.Count)
+                _activeTableBlock.Columns.Insert(insertCol, colDef);
+            else
+                _activeTableBlock.Columns.Add(colDef);
+
+            _activeTableBlock.ColumnCount++;
+
+            if (left)
+                _tableCaretCol++;
+
+            RebuildLayouts();
+            InvalidateFull();
+        }
+
+        /// <summary>Удалить столбец, в котором находится каретка.</summary>
+        private void ExecuteTableDeleteColumn()
+        {
+            if (_activeTableBlock is null) return;
+
+            int deleteCol = _tableCaretCol;
+
+            _activeTableBlock.Cells.RemoveAll(c => c.Column == deleteCol);
+            foreach (var cell in _activeTableBlock.Cells)
+                if (cell.Column > deleteCol) cell.Column--;
+
+            if (deleteCol < _activeTableBlock.Columns.Count)
+                _activeTableBlock.Columns.RemoveAt(deleteCol);
+
+            _activeTableBlock.ColumnCount--;
+
+            if (_activeTableBlock.ColumnCount <= 0)
+            {
+                ExecuteTableDelete();
+                return;
+            }
+
+            _tableCaretCol = Clamp(_tableCaretCol, 0, _activeTableBlock.ColumnCount - 1);
+
+            RebuildLayouts();
+            InvalidateFull();
+        }
+
+        /// <summary>Удалить всю таблицу целиком.</summary>
+        private void ExecuteTableDelete()
+        {
+            if (_activeTableBlock is null || DocVm is null) return;
+
+            DocVm.Document.Sections[0].Blocks.Remove(_activeTableBlock);
+
+            SwitchToNormalMode();
+
+            // Пересинхронизируем коллекцию ParagraphViewModel после удаления блока.
+            DocVm.RebuildParagraphViewModelsPublic();
+
+            _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
+            _caretChar = 0;
+
+            RebuildLayouts();
+            InvalidateFull();
+        }
+
+        // ── Таблица — редактирование ──────────────────────────────────────
+
+        private void TableInsertText(string text)
+        {
+            var cell = GetActiveTableCell();
+            if (cell is null || _tableCaretPara >= cell.Paragraphs.Count) return;
+
+            var para = cell.Paragraphs[_tableCaretPara];
+            string t = para.GetPlainText();
+            int pos = Clamp(_tableCaretChar, 0, t.Length);
+
+            SetCellParaText(cell, _tableCaretPara, t[..pos] + text + t[pos..]);
+            _tableCaretChar = pos + text.Length;
+
+            InvalidateFull();
+        }
+
+        private void TableDeleteBack()
+        {
+            var cell = GetActiveTableCell();
+            if (cell is null || _tableCaretPara >= cell.Paragraphs.Count) return;
+
+            var para = cell.Paragraphs[_tableCaretPara];
+            string t = para.GetPlainText();
+
+            if (_tableCaretChar > 0)
+            {
+                int p = Clamp(_tableCaretChar, 1, t.Length);
+                SetCellParaText(cell, _tableCaretPara, t[..(p - 1)] + t[p..]);
+                _tableCaretChar = p - 1;
+            }
+            else if (_tableCaretPara > 0)
+            {
+                var prev = cell.Paragraphs[_tableCaretPara - 1];
+                string pt = prev.GetPlainText();
+                SetCellParaText(cell, _tableCaretPara - 1, pt + t);
+                cell.Paragraphs.RemoveAt(_tableCaretPara);
+                _tableCaretPara--;
+                _tableCaretChar = pt.Length;
+            }
+
+            InvalidateFull();
+        }
+
+        private void TableDeleteForward()
+        {
+            var cell = GetActiveTableCell();
+            if (cell is null || _tableCaretPara >= cell.Paragraphs.Count) return;
+
+            var para = cell.Paragraphs[_tableCaretPara];
+            string t = para.GetPlainText();
+
+            if (_tableCaretChar < t.Length)
+            {
+                int p = Clamp(_tableCaretChar, 0, t.Length - 1);
+                SetCellParaText(cell, _tableCaretPara, t[..p] + t[(p + 1)..]);
+            }
+            else if (_tableCaretPara < cell.Paragraphs.Count - 1)
+            {
+                var next = cell.Paragraphs[_tableCaretPara + 1];
+                string nt = next.GetPlainText();
+                SetCellParaText(cell, _tableCaretPara, t + nt);
+                cell.Paragraphs.RemoveAt(_tableCaretPara + 1);
+            }
+
+            InvalidateFull();
+        }
+
+        private void TableNewParagraph()
+        {
+            var cell = GetActiveTableCell();
+            if (cell is null || _tableCaretPara >= cell.Paragraphs.Count) return;
+
+            var para = cell.Paragraphs[_tableCaretPara];
+            string t = para.GetPlainText();
+            int pos = Clamp(_tableCaretChar, 0, t.Length);
+
+            SetCellParaText(cell, _tableCaretPara, t[..pos]);
+
+            var newPara = new ParagraphBlock();
+            if (pos < t.Length)
+            {
+                var run = new RunModel { Text = t[pos..] };
+                var chunk = new TextChunk();
+                chunk.Runs.Add(run);
+                newPara.Chunks.Add(chunk);
+            }
+
+            cell.Paragraphs.Insert(_tableCaretPara + 1, newPara);
+            _tableCaretPara++;
+            _tableCaretChar = 0;
+
+            InvalidateFull();
+        }
+
+        private void TableNavLeft(bool extend)
+        {
+            if (_tableCaretChar > 0)
+            { _tableCaretChar--; ResetCaret(); InvalidateFull(); }
+        }
+
+        private void TableNavRight(bool extend)
+        {
+            var cell = GetActiveTableCell();
+            if (cell is null || _tableCaretPara >= cell.Paragraphs.Count) return;
+            int len = cell.Paragraphs[_tableCaretPara].GetPlainText().Length;
+            if (_tableCaretChar < len)
+            { _tableCaretChar++; ResetCaret(); InvalidateFull(); }
+        }
+
+        private void TableNavigateNext()
+        {
+            if (_tableEntryIdx < 0 || _tableEntryIdx >= _tables.Count) return;
+
+            var layout = _tables[_tableEntryIdx].Layout;
+            int col = _tableCaretCol + 1;
+            int row = _tableCaretRow;
+
+            if (col >= layout.ColumnCount) { col = 0; row++; }
+
+            if (row >= layout.RowCount)
+            {
+                SwitchToNormalMode();
+                _caretPara = Math.Min(_caretPara + 1, _layouts.Count - 1);
+                _caretChar = 0;
+                ResetCaret(); InvalidateFull();
+                return;
+            }
+
+            var cell = layout.FindCell(row, col);
+            if (cell is null) return;
+
+            _tableCaretRow = row;
+            _tableCaretCol = col;
+            _tableCaretPara = 0;
+            _tableCaretChar = 0;
+            ResetCaret(); InvalidateFull();
+        }
+
+        private void TableNavigatePrev()
+        {
+            if (_tableEntryIdx < 0 || _tableEntryIdx >= _tables.Count) return;
+
+            var layout = _tables[_tableEntryIdx].Layout;
+            int col = _tableCaretCol - 1;
+            int row = _tableCaretRow;
+
+            if (col < 0) { col = layout.ColumnCount - 1; row--; }
+
+            if (row < 0)
+            {
+                SwitchToNormalMode();
+                _caretPara = Math.Max(_caretPara - 1, 0);
+                _caretChar = GetVmAt(_caretPara)?.PlainText?.Length ?? 0;
+                ResetCaret(); InvalidateFull();
+                return;
+            }
+
+            var cell = layout.FindCell(row, col);
+            if (cell is null) return;
+
+            _tableCaretRow = row;
+            _tableCaretCol = col;
+            _tableCaretPara = 0;
+            _tableCaretChar = 0;
+            ResetCaret(); InvalidateFull();
+        }
+
+        private TableCell? GetActiveTableCell()
+        {
+            if (_tableEntryIdx < 0 || _tableEntryIdx >= _tables.Count) return null;
+            return _tables[_tableEntryIdx].Table.GetCell(_tableCaretRow, _tableCaretCol);
+        }
+
+        private static void SetCellParaText(TableCell cell, int paraIdx, string text)
+        {
+            if (paraIdx >= cell.Paragraphs.Count) return;
+            var para = cell.Paragraphs[paraIdx];
+
+            if (para.Chunks.Count == 0)
+            {
+                var chunk = new TextChunk();
+                chunk.Runs.Add(new RunModel { Text = text });
+                para.Chunks.Add(chunk);
+            }
+            else
+            {
+                para.Chunks[0].Runs.Clear();
+                para.Chunks[0].Runs.Add(new RunModel { Text = text });
+                para.Chunks[0].InvalidateLength();
+            }
+        }
+
         // ── Публичные команды ─────────────────────────────────────────────
 
         public void ExecuteDeleteBack()
@@ -1037,7 +1695,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             if (pvm is null) return;
             string text = pvm.PlainText ?? "";
             BeginEdit("Delete");
-            if (HasSel()) { DeleteSelection(); CommitEdit(); ResetCaret(); InvalidateVisual(); return; }
+            if (HasSel()) { DeleteSelection(); CommitEdit(); ResetCaret(); InvalidateFull(); return; }
             if (_caretChar > 0 && text.Length > 0)
             {
                 int p = Clamp(_caretChar, 1, text.Length);
@@ -1045,13 +1703,11 @@ namespace Writersword.Modules.TextEditor.Views.Document
                 _caretChar = p - 1;
             }
             else if (_caretChar == 0 && _caretPara > 0)
-            {
                 DocVm?.MergeParagraphWithPrevious(pvm, text);
-            }
             CommitEdit();
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
-            SyncSel(); ResetCaret(); InvalidateVisual();
+            SyncSel(); ResetCaret(); InvalidateFull();
         }
 
         public void ExecuteDeleteForward()
@@ -1060,7 +1716,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             if (pvm is null) return;
             string text = pvm.PlainText ?? "";
             BeginEdit("Delete");
-            if (HasSel()) { DeleteSelection(); CommitEdit(); ResetCaret(); InvalidateVisual(); return; }
+            if (HasSel()) { DeleteSelection(); CommitEdit(); ResetCaret(); InvalidateFull(); return; }
             if (_caretChar < text.Length)
             {
                 int p = Clamp(_caretChar, 0, text.Length - 1);
@@ -1074,54 +1730,37 @@ namespace Writersword.Modules.TextEditor.Views.Document
             CommitEdit();
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
-            SyncSel(); ResetCaret(); InvalidateVisual();
+            SyncSel(); ResetCaret(); InvalidateFull();
         }
 
         public void ExecuteNewParagraph()
         {
             var pvm = GetVmAt(_caretPara);
             if (pvm is null) return;
-
             BeginEdit("New paragraph");
             DeleteSelection();
-
             string text = pvm.PlainText ?? "";
             int cp = Clamp(_caretChar, 0, text.Length);
             pvm.PlainText = text[..cp];
-
             var newVm = DocVm?.AddParagraphAfter(pvm);
             if (newVm is not null)
             {
                 newVm.PlainText = text[cp..];
 
-                // Отменяем отложенный rebuild и выполняем синхронно,
-                // чтобы _layouts был актуален до установки _caretPara.
                 _rebuildCts.Cancel();
                 _rebuildCts = new System.Threading.CancellationTokenSource();
                 RebuildLayouts();
 
-                // Ищем новую VM в актуальных _layouts по ссылке.
                 int newSliceIdx = -1;
                 for (int i = 0; i < _layouts.Count; i++)
-                {
-                    if (_layouts[i].Vm == newVm)
-                    {
-                        newSliceIdx = i;
-                        break;
-                    }
-                }
+                    if (_layouts[i].Vm == newVm) { newSliceIdx = i; break; }
 
-                if (newSliceIdx >= 0)
-                {
-                    _caretPara = newSliceIdx;
-                    _caretChar = 0;
-                }
+                if (newSliceIdx >= 0) { _caretPara = newSliceIdx; _caretChar = 0; }
             }
-
             CommitEdit();
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
-            SyncSel(); ResetCaret(); InvalidateVisual();
+            SyncSel(); ResetCaret(); InvalidateFull();
         }
 
         public void ExecuteNavLeft(bool extend)
@@ -1134,7 +1773,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             SnapCaretToCorrectSlice();
             if (!extend) SyncSel(); else ExtendSel();
             UpdatePreferredX();
-            ResetCaret(); InvalidateVisual();
+            ResetCaret(); InvalidateFull();
         }
 
         public void ExecuteNavRight(bool extend)
@@ -1147,7 +1786,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             SnapCaretToCorrectSlice();
             if (!extend) SyncSel(); else ExtendSel();
             UpdatePreferredX();
-            ResetCaret(); InvalidateVisual();
+            ResetCaret(); InvalidateFull();
         }
 
         public void ExecuteNavUp(bool extend)
@@ -1155,7 +1794,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             MoveCaretVertically(-1);
             SnapCaretToCorrectSlice();
             if (!extend) SyncSel(); else ExtendSel();
-            ResetCaret(); InvalidateVisual();
+            ResetCaret(); InvalidateFull();
         }
 
         public void ExecuteNavDown(bool extend)
@@ -1163,7 +1802,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             MoveCaretVertically(+1);
             SnapCaretToCorrectSlice();
             if (!extend) SyncSel(); else ExtendSel();
-            ResetCaret(); InvalidateVisual();
+            ResetCaret(); InvalidateFull();
         }
 
         public void ExecuteHome(bool document, bool extend)
@@ -1183,7 +1822,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             SnapCaretToCorrectSlice();
             if (!extend) SyncSel(); else ExtendSel();
             UpdatePreferredX();
-            ResetCaret(); InvalidateVisual();
+            ResetCaret(); InvalidateFull();
         }
 
         public void ExecuteEnd(bool document, bool extend)
@@ -1208,7 +1847,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             SnapCaretToCorrectSlice();
             if (!extend) SyncSel(); else ExtendSel();
             UpdatePreferredX();
-            ResetCaret(); InvalidateVisual();
+            ResetCaret(); InvalidateFull();
         }
 
         public void ExecuteSelectAll()
@@ -1220,7 +1859,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             _caretPara = _selEndPara; _caretChar = _selEndChar;
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
-            InvalidateVisual();
+            InvalidateFull();
         }
 
         public void ExecuteCopy() => _ = CopyAsync();
@@ -1230,13 +1869,13 @@ namespace Writersword.Modules.TextEditor.Views.Document
         public void ExecuteUndo()
         {
             UndoStack?.Undo();
-            ClampCaret(); SyncSel(); ResetCaret(); InvalidateVisual();
+            ClampCaret(); SyncSel(); ResetCaret(); InvalidateFull();
         }
 
         public void ExecuteRedo()
         {
             UndoStack?.Redo();
-            ClampCaret(); SyncSel(); ResetCaret(); InvalidateVisual();
+            ClampCaret(); SyncSel(); ResetCaret(); InvalidateFull();
         }
 
         // ── Вертикальная навигация ────────────────────────────────────────
@@ -1300,7 +1939,11 @@ namespace Writersword.Modules.TextEditor.Views.Document
             var layout = GetLayoutAt(_caretPara);
             if (layout is null) return;
             var caret = layout.HitTestPosition(_caretChar);
-            _preferredCaretXPt = caret.X + layout.LeftIndentPt;
+            // caret.X = LeftIndentPt + glyphX — именно это значение нужно сохранить.
+            // GetCharIndexForVerticalMove ожидает (preferredX) и внутри делает
+            // preferredX - LeftIndentPt, получая glyphX. Поэтому передаём caret.X как есть.
+            // HitTestPoint при кросс-параграф навигации получает caret.X - prev.LeftIndentPt = glyphX.
+            _preferredCaretXPt = caret.X;
         }
 
         private void SnapCaretToCorrectSlice()
@@ -1467,7 +2110,7 @@ namespace Writersword.Modules.TextEditor.Views.Document
             CommitEdit();
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
-            SyncSel(); ResetCaret(); InvalidateVisual();
+            SyncSel(); ResetCaret(); InvalidateFull();
         }
 
         private async Task PasteAsync()
@@ -1531,41 +2174,40 @@ namespace Writersword.Modules.TextEditor.Views.Document
 
         // ── HitTest ───────────────────────────────────────────────────────
 
+        /// <summary>
+        /// Преобразует координату клика (логические пиксели Avalonia)
+        /// в (индекс_параграфа, позиция_символа).
+        ///
+        /// ИСПРАВЛЕНИЕ: используем _pages[best.PageIndex].PadLeftPt + MarginLeftPt
+        /// вместо пересчёта из _canvasWidth (который обновляется ArrangeOverride
+        /// независимо от перестройки лейаутов). Гарантирует согласованность
+        /// между рендером и hit-тестом.
+        /// </summary>
         private (int parIdx, int charIdx) HitTest(Point ptLogPx)
         {
-            if (_layouts.Count == 0) return (0, 0);
+            List<ParaLayout> layouts;
+            List<PageRect> pages;
+            lock (_renderLock) { layouts = _layouts; pages = _pages; }
+
+            if (layouts.Count == 0) return (0, 0);
 
             double zoom = Zoom;
             float xPt = (float)(ptLogPx.X / zoom * PxToPt);
             float yPt = (float)(ptLogPx.Y / zoom * PxToPt);
 
             var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
-            float padXPt;
-
-            if (mode == EditorViewMode.Page)
-            {
-                var (ml, _, _, _) = GetPagePaddingPt();
-                float cw = (float)(_canvasWidth * PxToPt);
-                float pgX = Math.Max((cw - GetPageWidthPt()) / 2f, 0f);
-                padXPt = pgX + ml;
-            }
-            else if (mode == EditorViewMode.Reading)
-            {
-                float cw = (float)(_canvasWidth * PxToPt);
-                padXPt = (cw - Math.Min(cw, ReadingMaxPt)) / 2f;
-            }
-            else padXPt = DraftPadWPt;
 
             int bestIdx = 0;
             float bestDist = float.MaxValue;
 
-            for (int i = 0; i < _layouts.Count; i++)
+            for (int i = 0; i < layouts.Count; i++)
             {
-                var pl = _layouts[i];
+                var pl = layouts[i];
                 float top = pl.Ypt;
                 float bot = pl.Ypt + pl.HeightPt;
-                float dist = yPt < top ? top - yPt : yPt > bot ? yPt - bot : 0f;
-
+                float dist = yPt < top ? top - yPt
+                           : yPt > bot ? yPt - bot
+                           : 0f;
                 if (dist < bestDist)
                 {
                     bestDist = dist;
@@ -1574,9 +2216,36 @@ namespace Writersword.Modules.TextEditor.Views.Document
                 }
             }
 
-            var best = _layouts[bestIdx];
+            var best = layouts[bestIdx];
+
+            float padXPt;
+            if (mode == EditorViewMode.Page)
+            {
+                if (best.PageIndex >= 0 && best.PageIndex < pages.Count)
+                {
+                    var pg = pages[best.PageIndex];
+                    padXPt = pg.PadLeftPt + pg.MarginLeftPt;
+                }
+                else
+                {
+                    var (ml, _, _, _) = GetPagePaddingPt();
+                    float cw = (float)(_canvasWidth * PxToPt);
+                    padXPt = Math.Max((cw - GetPageWidthPt()) / 2f, 0f) + ml;
+                }
+            }
+            else if (mode == EditorViewMode.Reading)
+            {
+                float cw = (float)(_canvasWidth * PxToPt);
+                padXPt = (cw - Math.Min(cw, ReadingMaxPt)) / 2f;
+            }
+            else
+            {
+                padXPt = DraftPadWPt;
+            }
+
             float yBase = best.LineFrom < best.Layout.Lines.Count
-                               ? best.Layout.Lines[best.LineFrom].Y : 0f;
+                              ? best.Layout.Lines[best.LineFrom].Y : 0f;
+
             float localX = xPt - padXPt - best.Layout.LeftIndentPt;
             float localY = yPt - best.Ypt + yBase;
 
@@ -1584,14 +2253,66 @@ namespace Writersword.Modules.TextEditor.Views.Document
             {
                 float fy = best.Layout.Lines[best.LineFrom].Y;
                 int lto = best.LineTo > 0 && best.LineTo <= best.Layout.Lines.Count
-                    ? best.LineTo : best.Layout.Lines.Count;
-                float ly = best.Layout.Lines[lto - 1].Y
-                            + best.Layout.Lines[lto - 1].Height;
+                              ? best.LineTo : best.Layout.Lines.Count;
+                float ly = best.Layout.Lines[lto - 1].Y + best.Layout.Lines[lto - 1].Height;
                 localY = Clamp(localY, fy + 0.1f, ly - 0.1f);
             }
 
             var hit = best.Layout.HitTestPoint(localX, localY);
             return (bestIdx, hit.CharIndex);
+        }
+
+        /// <summary>
+        /// HitTest по таблицам — проверяет попадание клика в ячейку.
+        /// </summary>
+        private bool HitTestTable(
+            Point ptLogPx,
+            out int tableIdx, out int row, out int col,
+            out int paraIdx, out int charIdx)
+        {
+            tableIdx = charIdx = paraIdx = row = col = 0;
+
+            List<TableEntry> tables;
+            lock (_renderLock) { tables = _tables; }
+
+            double zoom = Zoom;
+            float xPt = (float)(ptLogPx.X / zoom * PxToPt);
+            float yPt = (float)(ptLogPx.Y / zoom * PxToPt);
+
+            for (int ti = 0; ti < tables.Count; ti++)
+            {
+                var te = tables[ti];
+                float relX = xPt - te.XPt;
+                float relY = yPt - te.Ypt;
+
+                if (relX < 0 || relY < 0
+                    || relX > te.Layout.TotalWidthPt
+                    || relY > te.Layout.TotalHeightPt)
+                    continue;
+
+                var result = te.Layout.HitTestParagraph(relX, relY);
+                if (result is null) continue;
+
+                var (cell, para) = result.Value;
+
+                float cellContentX = cell.Xpt + cell.PadLeftPt + cell.Borders.Left.WidthPt;
+                float cellContentY = cell.Ypt + cell.PadTopPt + cell.Borders.Top.WidthPt;
+                float localX = relX - cellContentX - para.Layout.LeftIndentPt;
+                float localY = relY - cellContentY - para.Ypt - para.Layout.SpaceBeforePt;
+
+                localY = Math.Max(0f, localY);
+
+                var hit = para.Layout.HitTestPoint(localX, localY);
+
+                tableIdx = ti;
+                row = cell.Row;
+                col = cell.Column;
+                paraIdx = para.ParagraphIndex;
+                charIdx = hit.CharIndex;
+                return true;
+            }
+
+            return false;
         }
 
         // ── Scroll to caret ───────────────────────────────────────────────
@@ -1638,6 +2359,12 @@ namespace Writersword.Modules.TextEditor.Views.Document
             return 0;
         }
 
+        private void InvalidateFull()
+        {
+            _caretOnlyRedraw = false;
+            InvalidateVisual();
+        }
+
         private void ResetCaret()
         {
             _caretVisible = true;
@@ -1646,10 +2373,8 @@ namespace Writersword.Modules.TextEditor.Views.Document
             ScrollToCaret();
         }
 
-        private static int Clamp(int v, int min, int max)
-            => v < min ? min : v > max ? max : v;
-        private static float Clamp(float v, float min, float max)
-            => v < min ? min : v > max ? max : v;
+        private static int Clamp(int v, int min, int max) => v < min ? min : v > max ? max : v;
+        private static float Clamp(float v, float min, float max) => v < min ? min : v > max ? max : v;
 
         // ── ICustomDrawOperation ──────────────────────────────────────────
 

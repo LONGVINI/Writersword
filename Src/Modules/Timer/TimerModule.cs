@@ -14,10 +14,10 @@ using Writersword.Core.Models.Settings;
 using Writersword.Modules.Common;
 using Writersword.Modules.Timer.ViewModels;
 using Writersword.Modules.Timer.Views;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Services;
-using Writersword.Src.Modules.Timer.Models;
-using Writersword.Src.Modules.Timer.Resources;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Services;
+using Writersword.Modules.Timer.Models;
+using Writersword.Modules.Timer.Resources;
 
 namespace Writersword.Modules.Timer
 {

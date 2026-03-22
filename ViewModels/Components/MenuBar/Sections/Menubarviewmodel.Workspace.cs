@@ -3,8 +3,8 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Threading.Tasks;
 using Writersword.Core.Models.Settings;
-using Writersword.Src.Core.Interfaces.Services.UI;
-using Writersword.Src.WorkModes.Common;
+using Writersword.Core.Interfaces.Services.UI;
+using Writersword.WorkModes.Common;
 using Writersword.Views;
 
 namespace Writersword.ViewModels.Components.MenuBar

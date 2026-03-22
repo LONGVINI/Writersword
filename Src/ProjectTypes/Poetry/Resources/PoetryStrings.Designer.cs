@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Writersword.Src.ProjectTypes.Poetry.Resources {
+namespace Writersword.ProjectTypes.Poetry.Resources {
     using System;
     
     

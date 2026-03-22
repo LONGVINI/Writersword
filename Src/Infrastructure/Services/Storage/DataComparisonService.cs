@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Writersword.Core.Interfaces.Services;
 
-namespace Writersword.Src.Infrastructure.Services
+namespace Writersword.Infrastructure.Services
 {
     /// <summary>
     /// Реализация сервиса сравнения данных модулей

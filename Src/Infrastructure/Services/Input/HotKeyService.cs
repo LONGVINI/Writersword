@@ -9,11 +9,11 @@ using System.Windows.Input;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.Settings;
-using Writersword.Src.Core.Interfaces.Services.Input;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Interfaces.Services.UI;
+using Writersword.Core.Interfaces.Services.Input;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.Services.UI;
 
-namespace Writersword.Src.Infrastructure.Services.Input
+namespace Writersword.Infrastructure.Services.Input
 {
     public class HotKeyService : IHotKeyService
     {

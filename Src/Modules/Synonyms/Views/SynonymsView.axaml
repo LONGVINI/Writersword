@@ -1,7 +1,7 @@
 ﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Synonyms.ViewModels"
-             xmlns:loc="using:Writersword.Src.Modules.Synonyms.Resources"
+             xmlns:loc="using:Writersword.Modules.Synonyms.Resources"
              x:Class="Writersword.Modules.Synonyms.Views.SynonymsView"
              x:DataType="vm:SynonymsViewModel"
              Tag="Synonyms">

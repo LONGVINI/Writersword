@@ -831,4 +831,7 @@
   <data name="Print_ZoomOut" xml:space="preserve">
     <value>Уменьшить</value>
   </data>
+  <data name="Print_ZoomReset" xml:space="preserve">
+    <value>Сбросить масштаб</value>
+  </data>
 </root>

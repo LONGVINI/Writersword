@@ -9,10 +9,10 @@ using System.Reactive;
 using System.Threading.Tasks;
 using Writersword.Core.Models.Project;
 using Writersword.Resources.Localization;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Interfaces.Services.UI;
-using Writersword.Src.Core.Interfaces.WorkFlows;
-using Writersword.Src.ProjectTypes.Common;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.Services.UI;
+using Writersword.Core.Interfaces.WorkFlows;
+using Writersword.ProjectTypes.Common;
 using Writersword.Views;
 
 namespace Writersword.ViewModels

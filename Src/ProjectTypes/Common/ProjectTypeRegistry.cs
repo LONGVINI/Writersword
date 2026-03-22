@@ -4,9 +4,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using Writersword.Src.WorkModes.Common;
+using Writersword.WorkModes.Common;
 
-namespace Writersword.Src.ProjectTypes.Common
+namespace Writersword.ProjectTypes.Common
 {
     /// <summary>
     /// Реестр всех типов проектов

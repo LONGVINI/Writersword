@@ -1,9 +1,9 @@
 ﻿using System.Collections.Generic;
 using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
-using Writersword.Src.WorkModes.Common;
+using Writersword.WorkModes.Common;
 
-namespace Writersword.Src.WorkModes.Characters
+namespace Writersword.WorkModes.Characters
 {
     public class CharactersWorkMode : IWorkMode
     {

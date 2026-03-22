@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using Writersword.Core.Models.WorkModes;
 
-namespace Writersword.Src.Core.Interfaces.WorkModes
+namespace Writersword.Core.Interfaces.WorkModes
 {
     /// <summary>
     /// Главный сервис для работы с WorkModes

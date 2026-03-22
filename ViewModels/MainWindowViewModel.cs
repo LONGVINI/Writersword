@@ -22,17 +22,15 @@ using Writersword.Core.Models.Settings;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
 using Writersword.Resources.Localization;
-using Writersword.Src.Core.Interfaces.Services;
-using Writersword.Src.Core.Interfaces.Services.Input;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Interfaces.Services.UI;
-using Writersword.Src.Core.Interfaces.WorkFlows;
-using Writersword.Src.Core.Interfaces.WorkModes;
-using Writersword.Src.Infrastructure.Dock;
-using Writersword.Src.Infrastructure.Services.Tabs;
+using Writersword.Core.Interfaces.Services.Input;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.Services.UI;
+using Writersword.Core.Interfaces.WorkFlows;
+using Writersword.Infrastructure.Dock;
 using Writersword.ViewModels.Components;
 using Writersword.ViewModels.Components.MenuBar;
 using Writersword.Views;
+using Writersword.WorkModes.Common;
 
 namespace Writersword.ViewModels
 {
@@ -662,7 +660,7 @@ namespace Writersword.ViewModels
         private void InitializeMenuItems()
         {
             var moduleFactory = App.Services.GetRequiredService<ModuleFactory>();
-            var workModeRegistry = App.Services.GetRequiredService<Src.WorkModes.Common.WorkModeRegistry>();
+            var workModeRegistry = App.Services.GetRequiredService<WorkModeRegistry>();
 
             foreach (var metadata in moduleFactory.GetAllModuleMetadata())
             {
@@ -711,7 +709,7 @@ namespace Writersword.ViewModels
                 var project = GetProjectForTab(activeTab);
                 if (project == null) return;
 
-                var workModeRegistry = App.Services.GetRequiredService<Writersword.Src.WorkModes.Common.WorkModeRegistry>();
+                var workModeRegistry = App.Services.GetRequiredService<WorkModeRegistry>();
                 var workModeInstance = workModeRegistry.GetWorkMode(workModeId);
 
                 if (workModeInstance == null)

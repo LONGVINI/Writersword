@@ -11,18 +11,18 @@ using Writersword.Core.Models.Settings;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.Commands;
 using Writersword.Modules.TextEditor.HotKeys;
-using Writersword.Modules.TextEditor.Models;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Page;
 using Writersword.Modules.TextEditor.Models.Styles;
 using Writersword.Modules.TextEditor.Services;
 using Writersword.Modules.TextEditor.ViewModels;
 using Writersword.Modules.TextEditor.Views;
-using Writersword.Modules.TextEditor.Views.Document;
 using Writersword.Modules.TextEditor.Views.Settings;
-using Writersword.Src.Core.Interfaces.Services.Input;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Modules.TextEditor.Resources;
+using Writersword.Core.Interfaces.Services.Input;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Modules.TextEditor.Models.Settings;
+using Writersword.Modules.TextEditor.Resources;
+using Writersword.Modules.TextEditor.Document;
 
 namespace Writersword.Modules.TextEditor
 {

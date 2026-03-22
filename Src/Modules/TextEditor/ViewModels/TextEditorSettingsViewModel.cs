@@ -3,8 +3,8 @@ using System;
 using System.Collections.Generic;
 using Writersword.Core.Enums;
 using Writersword.Core.Models.Settings;
-using Writersword.Modules.TextEditor.Models;
 using Writersword.Modules.TextEditor.Models.Document;
+using Writersword.Modules.TextEditor.Models.Settings;
 
 namespace Writersword.Modules.TextEditor.ViewModels
 {

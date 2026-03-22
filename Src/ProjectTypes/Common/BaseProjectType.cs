@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace Writersword.Src.ProjectTypes.Common
+namespace Writersword.ProjectTypes.Common
 {
     /// <summary>
     /// Базовый класс для всех типов проектов

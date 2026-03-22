@@ -3,7 +3,7 @@ using Serilog;
 using System;
 using System.Collections.Generic;
 using Writersword.Core.Interfaces.Modules;
-using Writersword.Src.Core.Interfaces.Services.Input;
+using Writersword.Core.Interfaces.Services.Input;
 
 namespace Writersword.Modules.Common
 {

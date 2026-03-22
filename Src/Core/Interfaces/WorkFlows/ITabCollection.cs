@@ -2,7 +2,7 @@
 using System.Collections.ObjectModel;
 using Writersword.ViewModels;
 
-namespace Writersword.Src.Core.Interfaces.WorkFlows
+namespace Writersword.Core.Interfaces.WorkFlows
 {
     /// <summary>
     /// Сервис управления коллекцией вкладок документов

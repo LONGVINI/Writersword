@@ -10,12 +10,10 @@ using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Settings;
 using Writersword.Core.Models.WorkModes;
-using Writersword.Src.Core.Interfaces.Services;
-using Writersword.Src.Core.Interfaces.WorkFlows;
-using Writersword.Src.Infrastructure.Dock;
-using Writersword.ViewModels;
+using Writersword.Core.Interfaces.WorkFlows;
+using Writersword.Infrastructure.Dock;
 
-namespace Writersword.Src.Infrastructure.Services.WorkModes
+namespace Writersword.Infrastructure.Services.WorkModes
 {
     /// <summary>
     /// Сервис автоматического сохранения локальной конфигурации workspace

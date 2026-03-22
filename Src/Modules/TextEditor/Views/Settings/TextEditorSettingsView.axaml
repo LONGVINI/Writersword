@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels"
-             xmlns:loc="using:Writersword.Src.Modules.TextEditor.Resources"
+             xmlns:loc="using:Writersword.Modules.TextEditor.Resources"
              xmlns:sf="using:Writersword.Views.Settings"
              x:Class="Writersword.Modules.TextEditor.Views.Settings.TextEditorSettingsView"
              x:DataType="vm:TextEditorSettingsViewModel"

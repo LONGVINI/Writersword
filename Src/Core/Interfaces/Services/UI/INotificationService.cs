@@ -1,7 +1,7 @@
 ﻿using System;
 using Writersword.Core.Enums;
 
-namespace Writersword.Src.Core.Interfaces.Services.UI
+namespace Writersword.Core.Interfaces.Services.UI
 {
     /// <summary>
     /// Сервис для показа всплывающих уведомлений (toast notifications)

@@ -1,9 +1,9 @@
 ﻿using System.Collections.Generic;
 using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
-using Writersword.Src.WorkModes.Common;
+using Writersword.WorkModes.Common;
 
-namespace Writersword.Src.WorkModes.Editor
+namespace Writersword.WorkModes.Editor
 {
     /// <summary>
     /// WorkMode "Редактор" - основной режим работы с текстом

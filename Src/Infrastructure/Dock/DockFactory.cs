@@ -13,10 +13,10 @@ using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Core.Services;
-using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.ViewModels;
 
-namespace Writersword.Src.Infrastructure.Dock
+namespace Writersword.Infrastructure.Dock
 {
     /// <summary>
     /// Фабрика для создания Dock элементов

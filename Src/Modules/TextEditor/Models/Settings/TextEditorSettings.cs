@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using Newtonsoft.Json;
 using Writersword.Modules.TextEditor.Models.Document;
 
-namespace Writersword.Modules.TextEditor.Models
+namespace Writersword.Modules.TextEditor.Models.Settings
 {
     /// <summary>
     /// Глобальные настройки модуля текстового редактора.
@@ -10,7 +10,7 @@ namespace Writersword.Modules.TextEditor.Models
     /// </summary>
     public sealed class TextEditorSettings
     {
-        // --- Шрифт по умолчанию ---
+        // ── Шрифт по умолчанию ────────────────────────────────────────────
 
         /// <summary>Размер шрифта по умолчанию для новых документов.</summary>
         public double FontSize { get; set; } = 14;
@@ -18,7 +18,7 @@ namespace Writersword.Modules.TextEditor.Models
         /// <summary>Семейство шрифта по умолчанию для новых документов.</summary>
         public string FontFamily { get; set; } = "Times New Roman";
 
-        // --- Орфография ---
+        // ── Орфография ────────────────────────────────────────────────────
 
         /// <summary>Включить проверку орфографии.</summary>
         public bool SpellCheckEnabled { get; set; } = true;
@@ -32,7 +32,7 @@ namespace Writersword.Modules.TextEditor.Models
         /// <summary>Подчёркивать ошибки красным волнистой линией.</summary>
         public bool ShowSpellErrors { get; set; } = true;
 
-        // --- Автозамена ---
+        // ── Автозамена ────────────────────────────────────────────────────
 
         /// <summary>Включить автозамену.</summary>
         public bool AutoReplaceEnabled { get; set; } = true;
@@ -44,10 +44,17 @@ namespace Writersword.Modules.TextEditor.Models
         [JsonIgnore]
         public List<AutoReplaceRule> AutoReplaceRules { get; set; } = CreateDefaultRules();
 
-        // --- Отображение ---
+        // ── Отображение ───────────────────────────────────────────────────
 
         /// <summary>Показывать линейку.</summary>
         public bool ShowRuler { get; set; } = true;
+
+        /// <summary>
+        /// Единицы измерения линейки.
+        /// Centimeters — по умолчанию для большинства стран.
+        /// Inches — для США и ряда других стран.
+        /// </summary>
+        public RulerUnits RulerUnits { get; set; } = RulerUnits.Centimeters;
 
         /// <summary>Показывать непечатаемые символы (пробелы, переносы строк).</summary>
         public bool ShowFormattingMarks { get; set; }
@@ -58,12 +65,12 @@ namespace Writersword.Modules.TextEditor.Models
         /// <summary>Масштаб по умолчанию (1.0 = 100%).</summary>
         public double DefaultZoom { get; set; } = 1.0;
 
-        // --- Автосохранение ---
+        // ── Автосохранение ────────────────────────────────────────────────
 
         /// <summary>Интервал автосохранения в кеш (в секундах). 0 — отключено.</summary>
         public int AutoSaveIntervalSeconds { get; set; } = 30;
 
-        // --- Поведение ---
+        // ── Поведение ─────────────────────────────────────────────────────
 
         /// <summary>Автоматически определять язык при вставке текста.</summary>
         public bool AutoDetectLanguage { get; set; } = true;

@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using Writersword.Core.Enums;
 using Writersword.Views;
 
-namespace Writersword.Src.Core.Interfaces.Services.UI
+namespace Writersword.Core.Interfaces.Services.UI
 {
     /// <summary>
     /// Сервис для диалоговых окон

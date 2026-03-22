@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Timer.ViewModels"
-             xmlns:loc="using:Writersword.Src.Modules.Timer.Resources"
+             xmlns:loc="using:Writersword.Modules.Timer.Resources"
              x:Class="Writersword.Modules.Timer.Views.TimerSettingsView"
              x:DataType="vm:TimerSettingsViewModel">
 	<StackPanel Spacing="16" Margin="8">

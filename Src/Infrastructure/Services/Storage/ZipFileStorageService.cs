@@ -7,7 +7,7 @@ using System.IO.Compression;
 using System.Linq;
 using Writersword.Core.Interfaces.Services;
 
-namespace Writersword.Src.Infrastructure.Services.Storage
+namespace Writersword.Infrastructure.Services.Storage
 {
     /// <summary>
     /// Реализация работы с файлами внутри ZIP архива проекта

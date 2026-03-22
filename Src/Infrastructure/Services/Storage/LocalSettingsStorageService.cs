@@ -4,9 +4,9 @@ using Newtonsoft.Json;
 using System;
 using System.Text;
 using Writersword.Core.Interfaces.Services;
-using Writersword.Src.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.Services.Storage;
 
-namespace Writersword.Src.Infrastructure.Services.Storage
+namespace Writersword.Infrastructure.Services.Storage
 {
     /// <summary>
     /// Реализация сервиса локальных настроек модулей.

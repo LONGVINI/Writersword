@@ -12,9 +12,9 @@ using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Modules.Common;
 using Writersword.Resources.Localization;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Interfaces.Services.UI;
-using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.Services.UI;
+using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Views;
 using Writersword.Views.Settings;
 

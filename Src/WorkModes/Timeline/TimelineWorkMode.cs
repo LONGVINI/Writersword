@@ -1,9 +1,9 @@
 ﻿using System.Collections.Generic;
 using Writersword.Core.Enums;
 using Writersword.Core.Models.WorkModes;
-using Writersword.Src.WorkModes.Common;
+using Writersword.WorkModes.Common;
 
-namespace Writersword.Src.WorkModes.Timeline
+namespace Writersword.WorkModes.Timeline
 {
     /// <summary>
     /// WorkMode "Таймлайн" - работа с временной шкалой событий

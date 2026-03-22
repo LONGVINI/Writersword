@@ -3,10 +3,10 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Reactive.Linq;
 using Writersword.Core.Interfaces.Services;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Interfaces.WorkFlows;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.WorkFlows;
 
-namespace Writersword.Src.Infrastructure.Services.Project
+namespace Writersword.Infrastructure.Services.Project
 {
     /// <summary>
     /// Сервис автоматического сохранения активной вкладки

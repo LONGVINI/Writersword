@@ -3,7 +3,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 
-namespace Writersword.Src.Shared.Helpers
+namespace Writersword.Shared.Helpers
 {
     /// <summary>
     /// Вспомогательный класс для работы с JSON

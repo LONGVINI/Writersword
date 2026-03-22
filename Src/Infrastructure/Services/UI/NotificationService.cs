@@ -5,11 +5,11 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Writersword.Core.Enums;
-using Writersword.Src.Core.Interfaces.Services.UI;
+using Writersword.Core.Interfaces.Services.UI;
 using Writersword.ViewModels.Components;
 using Writersword.Views.Components;
 
-namespace Writersword.Src.Infrastructure.Services.UI
+namespace Writersword.Infrastructure.Services.UI
 {
     /// <summary>
     /// Сервис для показа всплывающих уведомлений

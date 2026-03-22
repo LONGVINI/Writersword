@@ -13,16 +13,14 @@ using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Modules.Common;
-using Writersword.Src.Core.Interfaces.Services;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Core.Interfaces.WorkFlows;
-using Writersword.Src.Core.Interfaces.WorkModes;
-using Writersword.Src.Core.Interfaces.Workspace;
-using Writersword.Src.Infrastructure.Dock;
-using Writersword.Src.Infrastructure.Services.WorkModes;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.WorkModes;
+using Writersword.Core.Interfaces.Workspace;
+using Writersword.Infrastructure.Dock;
+using Writersword.Infrastructure.Services.WorkModes;
 using Writersword.ViewModels;
 
-namespace Writersword.Src.Infrastructure.Workspace
+namespace Writersword.Infrastructure.Workspace
 {
     /// <summary>
     /// Контроллер workspace для вкладки документа

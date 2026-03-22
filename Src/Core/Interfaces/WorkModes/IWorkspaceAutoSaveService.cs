@@ -2,7 +2,7 @@
 using System.Threading.Tasks;
 using Writersword.Core.Models.Project;
 
-namespace Writersword.Src.Core.Interfaces.Services
+namespace Writersword.Core.Interfaces.Services
 {
     /// <summary>
     /// Интерфейс сервиса автосохранения workspace конфигурации

@@ -8,9 +8,9 @@ using System.IO.Compression;
 using System.Linq;
 using System.Threading.Tasks;
 using Writersword.Core.Models.Project;
-using Writersword.Src.Shared.Helpers;
+using Writersword.Shared.Helpers;
 
-namespace Writersword.Src.Infrastructure.Services.Project
+namespace Writersword.Infrastructure.Services.Project
 {
     /// <summary>
     /// —ервис дл€ работы с проектами в формате ZIP

@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using System;
 using System.Reactive;
-using Writersword.Src.Modules.Timer.Models;
+using Writersword.Modules.Timer.Models;
 
 namespace Writersword.Modules.Timer.ViewModels
 {

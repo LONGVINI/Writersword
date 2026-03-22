@@ -7,10 +7,10 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Writersword.Core.Enums;
 using Writersword.Resources.Localization;
-using Writersword.Src.Core.Interfaces.Services.UI;
+using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Views;
 
-namespace Writersword.Src.Infrastructure.Services.UI
+namespace Writersword.Infrastructure.Services.UI
 {
     public class DialogService : IDialogService
     {

@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Writersword.Src.Modules.Notes.Resources {
+namespace Writersword.Modules.Notes.Resources {
     using System;
     
     

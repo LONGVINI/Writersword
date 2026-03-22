@@ -3,8 +3,8 @@ using ReactiveUI;
 using Serilog;
 using System;
 using Writersword.Modules.Common;
+using Writersword.Modules.TextEditor.Document;
 using Writersword.Modules.TextEditor.ViewModels;
-using Writersword.Modules.TextEditor.Views.Document;
 
 namespace Writersword.Modules.TextEditor.Views
 {
@@ -19,6 +19,7 @@ namespace Writersword.Modules.TextEditor.Views
             _undoStack = undoStack;
             InitializeComponent();
             WireCanvas();
+            WireScroll();
         }
 
         public TextEditorView() : this(new UndoRedoStack()) { }
@@ -37,6 +38,35 @@ namespace Writersword.Modules.TextEditor.Views
             SyncCanvas(canvas);
         }
 
+        private void WireScroll()
+        {
+            // Подписываемся на DataContextChanged — к этому моменту
+            // visual tree уже построен и ScrollViewer точно найдётся.
+            DataContextChanged += (_, _) =>
+            {
+                if (DataContext is not TextEditorViewModel vm) return;
+
+                var scrollViewer = this.FindControl<ScrollViewer>("DocumentScrollViewer");
+                if (scrollViewer is null) return;
+
+                // Устанавливаем начальные значения.
+                vm.Ruler.ScrollOffsetY = scrollViewer.Offset.Y;
+                vm.Ruler.ViewportHeight = scrollViewer.Viewport.Height;
+
+                // Подписываемся на скролл.
+                scrollViewer.ScrollChanged += (_, _) =>
+                {
+                    vm.Ruler.ScrollOffsetY = scrollViewer.Offset.Y;
+                    vm.Ruler.ViewportHeight = scrollViewer.Viewport.Height;
+
+                    // ВРЕМЕННО
+                    System.Diagnostics.Debug.WriteLine(
+                        $"Scroll: Y={scrollViewer.Offset.Y:F1} " +
+                        $"ViewportH={scrollViewer.Viewport.Height:F1}");
+                };
+            };
+        }
+
         private void SyncCanvas(DocumentCanvas canvas)
         {
             if (DataContext is not TextEditorViewModel vm)
@@ -45,8 +75,6 @@ namespace Writersword.Modules.TextEditor.Views
                 return;
             }
 
-            // RecommendedZoomChanged must be assigned before MonitorSizeInches,
-            // because the setter calls RebuildDpiCache() which fires the callback.
             canvas.RecommendedZoomChanged = recommendedZoom =>
             {
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -54,6 +82,27 @@ namespace Writersword.Modules.TextEditor.Views
                     vm.StatusBar.RecommendedZoom = recommendedZoom;
                     _logger.Debug("RecommendedZoom updated: {V}", recommendedZoom);
                 }, Avalonia.Threading.DispatcherPriority.Background);
+            };
+
+            // X-смещение страницы → линейка.
+            canvas.PageOffsetXChanged = pageOffsetXPx =>
+            {
+                vm.NotifyPageOffsetChanged(pageOffsetXPx);
+            };
+
+            // Уведомление о входе/выходе каретки из таблицы.
+            canvas.CaretEnteredTable = (offsets, widths) =>
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    vm.NotifyCaretEnteredTable(offsets, widths),
+                    Avalonia.Threading.DispatcherPriority.Background);
+            };
+
+            canvas.CaretLeftTable = () =>
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    vm.NotifyCaretLeftTable(),
+                    Avalonia.Threading.DispatcherPriority.Background);
             };
 
             _logger.Debug("SyncCanvas: MonitorSizeInches={V}", vm.MonitorSizeInches);

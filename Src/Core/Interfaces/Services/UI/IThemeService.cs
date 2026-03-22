@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Writersword.Src.Core.Interfaces.Services.UI
+namespace Writersword.Core.Interfaces.Services.UI
 {
     /// <summary>
     /// Сервис управления темой оформления приложения

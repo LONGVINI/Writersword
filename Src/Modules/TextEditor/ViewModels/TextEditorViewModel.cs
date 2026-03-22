@@ -8,8 +8,11 @@ using Writersword.Modules.TextEditor.Contracts;
 using Writersword.Modules.TextEditor.Models;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Page;
+using Writersword.Modules.TextEditor.Models.Settings;
+using Writersword.Modules.TextEditor.Models.Styles;
 using Writersword.Modules.TextEditor.Services;
 using Writersword.Modules.TextEditor.ViewModels.Blocks;
+using Writersword.Modules.TextEditor.ViewModels.Components;
 using Writersword.Modules.TextEditor.ViewModels.StatusBar;
 using Writersword.Modules.TextEditor.ViewModels.Toolbar;
 
@@ -44,6 +47,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public RibbonViewModel Ribbon { get; }
         public StatusBarViewModel StatusBar { get; }
+
+        /// <summary>
+        /// ViewModel линейки — горизонтальной и вертикальной.
+        /// Создаётся один раз вместе с TextEditorViewModel.
+        /// Обновляется при смене документа, зума, полей страницы и активного абзаца.
+        /// </summary>
+        public RulerViewModel Ruler { get; }
 
         /// <summary>Module settings.</summary>
         public TextEditorSettings Settings { get; private set; } = new();
@@ -85,6 +95,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             Ribbon = new RibbonViewModel(this);
             StatusBar = new StatusBarViewModel();
+            Ruler = new RulerViewModel();
+
+            // Подписка на события линейки — применяем отступы к активному абзацу.
+            Ruler.IndentMarkerChanged += OnRulerIndentMarkerChanged;
+
+            // Подписка на изменение ширины колонки таблицы через линейку.
+            Ruler.ColumnWidthChanged += OnRulerColumnWidthChanged;
         }
 
         // ── Document loading ──────────────────────────────────────────────
@@ -110,6 +127,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
             StatusBar.Zoom = document.Zoom > 0 ? document.Zoom : Settings.DefaultZoom;
             DocumentViewModel?.SetZoom(StatusBar.Zoom);
 
+            // Инициализируем линейку из настроек страницы документа.
+            SyncRulerToDocument(document);
+
+            // Синхронизируем зум линейки.
+            Ruler.Zoom = StatusBar.Zoom;
+
+            // Единицы измерения из настроек.
+            Ruler.Units = Settings.RulerUnits;
+
+            // Видимость линейки.
+            Ruler.IsVisible = Settings.ShowRuler;
+
             StartAutoSave(Settings.AutoSaveIntervalSeconds);
             RefreshStatusBar();
 
@@ -119,7 +148,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 StatusBar.ViewMode = mode;
             };
 
-            StatusBar.ZoomChanged = zoom => DocumentViewModel?.SetZoom(zoom);
+            StatusBar.ZoomChanged = zoom =>
+            {
+                DocumentViewModel?.SetZoom(zoom);
+                Ruler.Zoom = zoom;
+            };
 
             _logger.Debug("Document loaded: title={Title}", document.Title);
         }
@@ -143,6 +176,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             _logger.Debug("ApplySettings: MonitorSizeInches={V}", settings.MonitorSizeInches);
             Settings = settings;
             MonitorSizeInches = settings.MonitorSizeInches;
+            Ruler.Units = settings.RulerUnits;
+            Ruler.IsVisible = settings.ShowRuler;
         }
 
         // ── Cursor context ────────────────────────────────────────────────
@@ -151,6 +186,116 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             Ribbon.Home.UpdateFromCursorContext(ctx);
             StatusBar.Language = ctx.Language ?? Settings.DefaultLanguage;
+
+            // Обновляем маркеры отступов линейки из контекста активного абзаца.
+            Ruler.UpdateFromParagraphContext(
+                ctx.LeftIndentPt,
+                ctx.FirstLineIndentPt,
+                ctx.RightIndentPt);
+        }
+
+        // ── Линейка ───────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Инициализирует линейку из настроек страницы документа.
+        /// Вызывается при загрузке документа и при изменении полей страницы.
+        /// </summary>
+        private void SyncRulerToDocument(DocumentModel document)
+        {
+            var ps = document.PageSettings;
+            Ruler.UpdatePageSettings(
+                widthMm: ps.GetPhysicalWidthMm(),
+                heightMm: ps.GetPhysicalHeightMm(),
+                marginLeftMm: ps.MarginLeftMm + ps.MarginGutterMm,
+                marginRightMm: ps.MarginRightMm,
+                marginTopMm: ps.MarginTopMm,
+                marginBottomMm: ps.MarginBottomMm);
+        }
+
+        /// <summary>
+        /// Обновляет поля страницы в линейке после их изменения.
+        /// Вызывается из DocumentCanvas когда меняются настройки страницы.
+        /// </summary>
+        public void NotifyPageSettingsChanged()
+        {
+            if (DocumentViewModel is null) return;
+            SyncRulerToDocument(DocumentViewModel.Document);
+        }
+
+        /// <summary>
+        /// Обновляет X-смещение страницы в линейке.
+        /// Вызывается из DocumentCanvas при изменении зума или ширины канваса.
+        /// pageOffsetXPx — пикселей от левого края ScrollViewer до левого края страницы.
+        /// </summary>
+        public void NotifyPageOffsetChanged(double pageOffsetXPx)
+        {
+            Ruler.PageOffsetXPx = pageOffsetXPx;
+        }
+
+        /// <summary>
+        /// Переключает линейку в режим таблицы при входе каретки в таблицу.
+        /// columnOffsetsMm и columnWidthsMm — геометрия колонок в мм.
+        /// Также показывает контекстную вкладку «Работа с таблицами» в Ribbon.
+        /// </summary>
+        public void NotifyCaretEnteredTable(
+            System.Collections.Generic.IReadOnlyList<double> columnOffsetsMm,
+            System.Collections.Generic.IReadOnlyList<double> columnWidthsMm)
+        {
+            Ruler.UpdateTableColumns(columnOffsetsMm, columnWidthsMm);
+            Ribbon.IsTableTabVisible = true;
+        }
+
+        /// <summary>
+        /// Переключает линейку обратно в режим абзаца при выходе каретки из таблицы.
+        /// Также скрывает контекстную вкладку «Работа с таблицами» в Ribbon.
+        /// </summary>
+        public void NotifyCaretLeftTable()
+        {
+            Ruler.SwitchToParagraphMode();
+            Ribbon.IsTableTabVisible = false;
+        }
+
+        /// <summary>
+        /// Применяет изменение отступа абзаца из линейки к активному абзацу.
+        /// Никакого клампинга здесь нет — диапазон ограничивается самим drag-ом
+        /// в HorizontalRulerControl и UpdateIndentDragUnclamped в RulerViewModel.
+        /// BuildLayout внутри сам корректно обрабатывает отрицательные значения.
+        /// </summary>
+        private void OnRulerIndentMarkerChanged(RulerIndentMarkerType markerType, double valueMm)
+        {
+            double valuePt = valueMm * 72.0 / 25.4;
+
+            switch (markerType)
+            {
+                case RulerIndentMarkerType.LeftIndent:
+                    DocumentViewModel?.SetLeftIndentPt(valuePt);
+                    break;
+                case RulerIndentMarkerType.FirstLineIndent:
+                    DocumentViewModel?.SetFirstLineIndentPt(valuePt);
+                    break;
+                case RulerIndentMarkerType.RightIndent:
+                    DocumentViewModel?.SetRightIndentPt(valuePt);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Применяет новую ширину колонки таблицы из линейки.
+        /// </summary>
+        private void OnRulerColumnWidthChanged(int columnIndex, double widthMm)
+        {
+            if (DocumentViewModel is null) return;
+
+            // Находим активную таблицу — ту в которой сейчас стоит каретка.
+            // DocumentCanvas должен был передать ссылку через NotifyCaretEnteredTable.
+            // Ищем по последней таблице у которой есть колонка с нужным индексом.
+            var table = DocumentViewModel.FindTable(t => t.ColumnCount > columnIndex);
+            if (table is null) return;
+
+            DocumentViewModel.TableSetColumnWidth(table, columnIndex, widthMm);
+
+            _logger.Debug(
+                "Ruler column width changed: col={Col} width={W}mm", columnIndex, widthMm);
         }
 
         // ── ITextEditorCommandTarget ──────────────────────────────────────
@@ -172,7 +317,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void IncreaseFontSize() => DocumentViewModel?.IncreaseFontSize();
         public void DecreaseFontSize() => DocumentViewModel?.DecreaseFontSize();
 
-        public void SetAlignment(Models.Styles.TextAlignment a) => DocumentViewModel?.SetAlignment(a);
+        public void SetAlignment(TextAlignment a) => DocumentViewModel?.SetAlignment(a);
         public void IncreaseIndent() => DocumentViewModel?.IncreaseIndent();
         public void DecreaseIndent() => DocumentViewModel?.DecreaseIndent();
         public void SetLineSpacing(double v) => DocumentViewModel?.SetLineSpacing(v);
@@ -193,10 +338,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void InsertTable(int rows, int cols) => DocumentViewModel?.InsertTable(rows, cols);
         public void InsertImage(string path) => DocumentViewModel?.InsertImage(path);
-        public void InsertShape(Models.Document.ShapeType st) => DocumentViewModel?.InsertShape(st);
+        public void InsertShape(ShapeType st) => DocumentViewModel?.InsertShape(st);
         public void InsertFloatingTextBox() => DocumentViewModel?.InsertFloatingTextBox();
         public void InsertPageBreak() => DocumentViewModel?.InsertPageBreak();
-        public void InsertSectionBreak(Models.Document.BreakType t) => DocumentViewModel?.InsertSectionBreak(t);
+        public void InsertSectionBreak(BreakType t) => DocumentViewModel?.InsertSectionBreak(t);
         public void InsertFootnote() => DocumentViewModel?.InsertFootnote();
         public void InsertEndnote() => DocumentViewModel?.InsertEndnote();
         public void InsertBookmark(string name) => DocumentViewModel?.InsertBookmark(name);
@@ -204,13 +349,48 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertTOC() => DocumentViewModel?.InsertTOC();
         public void InsertComment(string text) => DocumentViewModel?.InsertComment(text);
 
+        // ── ITextEditorCommandTarget: контекстные операции с таблицей ─────
+        // TextEditorViewModel делегирует вызовы в DocumentViewModel,
+        // который в свою очередь вызывает делегаты, установленные DocumentCanvas.
+
+        /// <summary>Добавить строку выше/ниже текущей строки таблицы.</summary>
+        public void TableAddRow(bool above) => DocumentViewModel?.TableAddRow(above);
+
+        /// <summary>Добавить столбец слева/справа от текущего столбца таблицы.</summary>
+        public void TableAddColumn(bool left) => DocumentViewModel?.TableAddColumn(left);
+
+        /// <summary>Удалить текущую строку таблицы.</summary>
+        public void TableDeleteRow() => DocumentViewModel?.TableDeleteRow();
+
+        /// <summary>Удалить текущий столбец таблицы.</summary>
+        public void TableDeleteColumn() => DocumentViewModel?.TableDeleteColumn();
+
+        /// <summary>Удалить всю таблицу.</summary>
+        public void TableDelete() => DocumentViewModel?.TableDelete();
+
+        // ── Макет страницы ────────────────────────────────────────────────
+
         public void SetPageSize(PaperSize s) => DocumentViewModel?.SetPageSize(s);
         public void SetPageOrientation(PageOrientation o) => DocumentViewModel?.SetPageOrientation(o);
+
         public void SetPageMargins(double t, double b, double l, double r)
-            => DocumentViewModel?.SetPageMargins(t, b, l, r);
+        {
+            DocumentViewModel?.SetPageMargins(t, b, l, r);
+            // Синхронизируем линейку после изменения полей.
+            if (DocumentViewModel is not null)
+                SyncRulerToDocument(DocumentViewModel.Document);
+        }
+
         public void SetColumns(int c) => DocumentViewModel?.SetColumns(c);
 
-        public void SetZoom(double zoom) => DocumentViewModel?.SetZoom(zoom);
+        // ── Вид ───────────────────────────────────────────────────────────
+
+        public void SetZoom(double zoom)
+        {
+            DocumentViewModel?.SetZoom(zoom);
+            Ruler.Zoom = zoom;
+        }
+
         public void SetViewMode(EditorViewMode m) => DocumentViewModel?.SetViewMode(m);
         public void ToggleFullscreen() => DocumentViewModel?.ToggleFullscreen();
         public void ToggleFocusMode() => DocumentViewModel?.ToggleFocusMode();
@@ -227,6 +407,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 {
                     DocumentViewModel.SetZoom(step);
                     StatusBar.Zoom = step;
+                    Ruler.Zoom = step;
                     return;
                 }
         }
@@ -241,6 +422,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 {
                     DocumentViewModel.SetZoom(steps[i]);
                     StatusBar.Zoom = steps[i];
+                    Ruler.Zoom = steps[i];
                     return;
                 }
         }
@@ -250,7 +432,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (DocumentViewModel is null) return;
             DocumentViewModel.SetZoom(1.0);
             StatusBar.Zoom = 1.0;
+            Ruler.Zoom = 1.0;
         }
+
+        // ── Инструменты ──────────────────────────────────────────────────
 
         public void OpenFind() => DocumentViewModel?.OpenFind();
         public void OpenFindReplace() => DocumentViewModel?.OpenFindReplace();
@@ -259,7 +444,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         /// <summary>
         /// Поднимает событие PrintRequested с текущим документом и настройками страницы.
-        /// TextEditorModule подписан на это событие и выполняет всю логику печати.
         /// </summary>
         public void Print()
         {
@@ -320,6 +504,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (_disposed) return;
             _disposed = true;
+
+            Ruler.IndentMarkerChanged -= OnRulerIndentMarkerChanged;
+            Ruler.ColumnWidthChanged -= OnRulerColumnWidthChanged;
 
             if (_documentViewModel is not null)
                 _documentViewModel.CursorContextChanged -= OnCursorContextChanged;

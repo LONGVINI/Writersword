@@ -1,7 +1,7 @@
 ﻿using System;
 using Writersword.Core.Interfaces.Services;
 
-namespace Writersword.Src.Core.Interfaces.Services.Storage
+namespace Writersword.Core.Interfaces.Services.Storage
 {
     /// <summary>
     /// Сервис для сохранения и загрузки локальных настроек модулей.

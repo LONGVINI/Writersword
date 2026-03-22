@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Writersword.Src.ProjectTypes.Screenplay.Resources {
+namespace Writersword.ProjectTypes.Screenplay.Resources {
     using System;
     
     

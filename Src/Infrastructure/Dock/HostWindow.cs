@@ -6,9 +6,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Linq;
+using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Views;
 
-namespace Writersword.Src.Infrastructure.Dock
+namespace Writersword.Infrastructure.Dock
 {
     /// <summary>
     /// Реализация IHostWindow для Float окон
@@ -201,7 +202,7 @@ namespace Writersword.Src.Infrastructure.Dock
 
             _logger.LogDebug("Closing {Count} modules from float window", documentsToClose.Count);
 
-            var tabCollection = App.Services.GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>();
+            var tabCollection = App.Services.GetRequiredService<ITabCollection>();
             var activeTab = tabCollection.ActiveTab;
 
             foreach (var document in documentsToClose)
@@ -263,7 +264,7 @@ namespace Writersword.Src.Infrastructure.Dock
         {
             _logger.LogDebug("Returning required module to dock: {moduleType}", moduleType);
 
-            var tabCollection = App.Services.GetRequiredService<Writersword.Src.Core.Interfaces.WorkFlows.ITabCollection>();
+            var tabCollection = App.Services.GetRequiredService<ITabCollection>();
             if (tabCollection.ActiveTab?.Workspace == null)
             {
                 _logger.LogWarning("No active tab or Workspace");

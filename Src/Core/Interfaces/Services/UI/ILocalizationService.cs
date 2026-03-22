@@ -1,4 +1,4 @@
-﻿namespace Writersword.Src.Core.Interfaces.Services.UI
+﻿namespace Writersword.Core.Interfaces.Services.UI
 {
     /// <summary>
     /// Сервис локализации (перевода интерфейса)

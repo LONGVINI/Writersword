@@ -2,7 +2,7 @@
 using System;
 using System.Collections.Generic;
 using Writersword.Core.Models;
-using Writersword.Src.Core.Services;
+using Writersword.Core.Services;
 using Writersword.ViewModels;
 
 namespace Writersword.Core.Interfaces.Modules

@@ -4,8 +4,8 @@ using System;
 using System.Collections.Generic;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
-using Writersword.Src.Core.Interfaces.Services.Input;
-using Writersword.Src.Core.Services;
+using Writersword.Core.Interfaces.Services.Input;
+using Writersword.Core.Services;
 using Writersword.ViewModels;
 
 namespace Writersword.Modules.Common

@@ -5,9 +5,9 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models.WorkModes;
-using Writersword.Src.Core.Interfaces.WorkModes;
+using Writersword.Core.Interfaces.WorkModes;
 
-namespace Writersword.Src.Core.Interfaces.Workspace
+namespace Writersword.Core.Interfaces.Workspace
 {
     /// <summary>
     /// Интерфейс контроллера рабочего пространства одной вкладки (проекта)

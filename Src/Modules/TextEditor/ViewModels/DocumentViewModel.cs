@@ -3,6 +3,7 @@ using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Text;
 using Writersword.Core.Models.Print;
 using Writersword.Modules.TextEditor.Contracts;
 using Writersword.Modules.TextEditor.Models.Document;
@@ -15,10 +16,6 @@ using Writersword.Modules.TextEditor.ViewModels.Toolbar;
 
 namespace Writersword.Modules.TextEditor.ViewModels
 {
-    /// <summary>
-    /// ViewModel документа. Реализует ITextEditorCommandTarget.
-    /// Является медиатором между моделью, Ribbon и View параграфов.
-    /// </summary>
     public sealed class DocumentViewModel : ReactiveObject, ITextEditorCommandTarget
     {
         private readonly DocumentModel _document;
@@ -36,14 +33,16 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public DocumentModel Document => _document;
 
-        /// <summary>Список ViewModel параграфов первого раздела.</summary>
         public ObservableCollection<ParagraphViewModel> Paragraphs { get; } = new();
-
-        /// <summary>Имена стилей документа для ComboBox в Ribbon.</summary>
         public ObservableCollection<string> AvailableStyleNames { get; } = new();
 
-        /// <summary>Событие изменения контекста курсора.</summary>
         public event Action<CursorContext>? CursorContextChanged;
+
+        /// <summary>
+        /// Поднимается когда изменилось форматирование параграфа (отступы, стиль, выравнивание).
+        /// DocumentCanvas подписывается чтобы сбросить кеш лейаутов и перестроить.
+        /// </summary>
+        public event Action? ParagraphFormatChanged;
 
         public EditorViewMode ViewMode
         {
@@ -82,6 +81,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public CanvasSettings CanvasSettings => _document.CanvasSettings;
         public TextEditorPageSettings PageSettings => _document.PageSettings;
+
+        // ── Делегаты таблицы (устанавливаются DocumentCanvas) ─────────────
+        // DocumentCanvas устанавливает эти делегаты при входе каретки в таблицу
+        // (EnterTableMode) и обнуляет при выходе (SwitchToNormalMode).
+        // ITextEditorCommandTarget.TableXxx вызывают соответствующий делегат,
+        // что позволяет контекстному Ribbon работать с таблицей без знания о Canvas.
+
+        public Action<bool>? TableAddRowDelegate { get; set; }
+        public Action<bool>? TableAddColDelegate { get; set; }
+        public Action? TableDeleteRowDelegate { get; set; }
+        public Action? TableDeleteColDelegate { get; set; }
+        public Action? TableDeleteDelegate { get; set; }
 
         public DocumentViewModel(
             DocumentModel document,
@@ -128,7 +139,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 foreach (var chunk in block.Chunks)
                     foreach (var run in chunk.Runs)
                     {
-                        if (offset + run.Text.Length > pvm.SelectionStart) { rp = run.Properties; goto foundRun; }
+                        if (offset + run.Text.Length > pvm.SelectionStart)
+                        { rp = run.Properties; goto foundRun; }
                         offset += run.Text.Length;
                     }
                 foundRun:;
@@ -162,6 +174,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             ctx.Alignment = block.Properties.Alignment ?? TextAlignment.Left;
             ctx.StyleName = block.Properties.StyleName ?? "Normal";
+            ctx.LeftIndentPt = block.Properties.LeftIndent ?? 0;
+            ctx.FirstLineIndentPt = block.Properties.FirstLineIndent ?? 0;
+            ctx.RightIndentPt = block.Properties.RightIndent ?? 0;
             return ctx;
         }
 
@@ -245,14 +260,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ToggleStrikethrough() => ApplyCharProperty(p => p.IsStrikethrough = !p.IsStrikethrough);
 
         public void ToggleSuperscript()
-        {
-            ApplyCharProperty(p => { p.IsSuperscript = !p.IsSuperscript; if (p.IsSuperscript) p.IsSubscript = false; });
-        }
+            => ApplyCharProperty(p => { p.IsSuperscript = !p.IsSuperscript; if (p.IsSuperscript) p.IsSubscript = false; });
 
         public void ToggleSubscript()
-        {
-            ApplyCharProperty(p => { p.IsSubscript = !p.IsSubscript; if (p.IsSubscript) p.IsSuperscript = false; });
-        }
+            => ApplyCharProperty(p => { p.IsSubscript = !p.IsSubscript; if (p.IsSubscript) p.IsSuperscript = false; });
 
         public void ToggleAllCaps() => ApplyCharProperty(p => p.IsAllCaps = !p.IsAllCaps);
         public void ToggleSmallCaps() => ApplyCharProperty(p => p.IsSmallCaps = !p.IsSmallCaps);
@@ -290,12 +301,23 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // ── ITextEditorCommandTarget: абзац ───────────────────────────────
 
         public void SetAlignment(TextAlignment a) => ApplyParaProperty(p => p.Alignment = a);
-        public void IncreaseIndent() => ApplyParaProperty(p => p.LeftIndent = (p.LeftIndent ?? 0) + 18);
-        public void DecreaseIndent() => ApplyParaProperty(p => p.LeftIndent = Math.Max(0, (p.LeftIndent ?? 0) - 18));
-        public void SetLineSpacing(double v) => ApplyParaProperty(p => { p.LineSpacingRule = LineSpacingRule.Auto; p.LineSpacingValue = v; });
+
+        public void IncreaseIndent()
+            => ApplyParaProperty(p => p.LeftIndent = (p.LeftIndent ?? 0) + 18);
+
+        public void DecreaseIndent()
+            => ApplyParaProperty(p => p.LeftIndent = Math.Max(0, (p.LeftIndent ?? 0) - 18));
+
+        public void SetLineSpacing(double v)
+            => ApplyParaProperty(p => { p.LineSpacingRule = LineSpacingRule.Auto; p.LineSpacingValue = v; });
+
         public void SetSpaceBefore(double pt) => ApplyParaProperty(p => p.SpaceBefore = pt);
         public void SetSpaceAfter(double pt) => ApplyParaProperty(p => p.SpaceAfter = pt);
         public void ApplyStyle(string name) => ApplyParaProperty(p => p.StyleName = name);
+
+        public void SetLeftIndentPt(double pt) => ApplyParaProperty(p => p.LeftIndent = pt);
+        public void SetFirstLineIndentPt(double pt) => ApplyParaProperty(p => p.FirstLineIndent = pt);
+        public void SetRightIndentPt(double pt) => ApplyParaProperty(p => p.RightIndent = pt);
 
         // ── ITextEditorCommandTarget: списки ──────────────────────────────
 
@@ -324,7 +346,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (_activeParagraph is null) return;
             var block = _activeParagraph.Model;
             if (block.ListProperties is null)
-                block.ListProperties = new ListProperties { ListId = Guid.NewGuid(), Level = 0, MarkerType = ListMarkerType.Decimal };
+                block.ListProperties = new ListProperties
+                { ListId = Guid.NewGuid(), Level = 0, MarkerType = ListMarkerType.Decimal };
             else
                 block.ListProperties.Level = (block.ListProperties.Level + 1) % 9;
             FireCursorContextChanged();
@@ -360,6 +383,150 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertTOC() { }
         public void InsertComment(string text) => AddAnnotation(InlineAnnotationType.Comment, content: text);
 
+        // ── ITextEditorCommandTarget: контекстные операции с таблицей ─────
+        // Каждый метод вызывает соответствующий делегат, установленный
+        // DocumentCanvas в момент входа каретки в таблицу.
+        // Если каретка не в таблице — делегаты null и вызов безопасно игнорируется.
+
+        public void TableAddRow(bool above) => TableAddRowDelegate?.Invoke(above);
+        public void TableAddColumn(bool left) => TableAddColDelegate?.Invoke(left);
+        public void TableDeleteRow() => TableDeleteRowDelegate?.Invoke();
+        public void TableDeleteColumn() => TableDeleteColDelegate?.Invoke();
+        public void TableDelete() => TableDeleteDelegate?.Invoke();
+
+        // ── Операции с таблицами (прямые — для внутреннего использования) ─
+
+        public void TableAddRowBelow(TableBlock table, int afterRow)
+        {
+            int insertRow = afterRow + 1;
+            foreach (var cell in table.Cells)
+                if (cell.Row >= insertRow) cell.Row++;
+            for (int c = 0; c < table.ColumnCount; c++)
+                table.Cells.Add(new TableCell { Row = insertRow, Column = c });
+            table.RowCount++;
+        }
+
+        public void TableAddRowAbove(TableBlock table, int beforeRow)
+        {
+            foreach (var cell in table.Cells)
+                if (cell.Row >= beforeRow) cell.Row++;
+            for (int c = 0; c < table.ColumnCount; c++)
+                table.Cells.Add(new TableCell { Row = beforeRow, Column = c });
+            table.RowCount++;
+        }
+
+        public void TableDeleteRow(TableBlock table, int row)
+        {
+            if (table.RowCount <= 1)
+            {
+                _document.Sections[0].Blocks.Remove(table);
+                RebuildParagraphViewModels();
+                return;
+            }
+            table.Cells.RemoveAll(c => c.Row == row);
+            foreach (var cell in table.Cells)
+                if (cell.Row > row) cell.Row--;
+            table.RowCount--;
+        }
+
+        public void TableAddColumnRight(TableBlock table, int afterCol)
+        {
+            int insertCol = afterCol + 1;
+            foreach (var cell in table.Cells)
+                if (cell.Column >= insertCol) cell.Column++;
+            for (int r = 0; r < table.RowCount; r++)
+                table.Cells.Add(new TableCell { Row = r, Column = insertCol });
+            table.Columns.Insert(insertCol,
+                new TableColumnDefinition { WidthType = TableColumnWidthType.Auto });
+            table.ColumnCount++;
+        }
+
+        public void TableAddColumnLeft(TableBlock table, int beforeCol)
+        {
+            foreach (var cell in table.Cells)
+                if (cell.Column >= beforeCol) cell.Column++;
+            for (int r = 0; r < table.RowCount; r++)
+                table.Cells.Add(new TableCell { Row = r, Column = beforeCol });
+            table.Columns.Insert(beforeCol,
+                new TableColumnDefinition { WidthType = TableColumnWidthType.Auto });
+            table.ColumnCount++;
+        }
+
+        public void TableDeleteColumn(TableBlock table, int col)
+        {
+            if (table.ColumnCount <= 1)
+            {
+                _document.Sections[0].Blocks.Remove(table);
+                RebuildParagraphViewModels();
+                return;
+            }
+            table.Cells.RemoveAll(c => c.Column == col);
+            foreach (var cell in table.Cells)
+                if (cell.Column > col) cell.Column--;
+            if (col < table.Columns.Count)
+                table.Columns.RemoveAt(col);
+            table.ColumnCount--;
+        }
+
+        public void TableMergeCells(TableBlock table,
+            int startRow, int startCol, int endRow, int endCol)
+        {
+            var mainCell = table.GetCell(startRow, startCol);
+            if (mainCell is null) return;
+
+            for (int r = startRow; r <= endRow; r++)
+            {
+                for (int c = startCol; c <= endCol; c++)
+                {
+                    if (r == startRow && c == startCol) continue;
+                    var cell = table.GetCell(r, c);
+                    if (cell is null) continue;
+                    bool isEmpty = cell.Paragraphs.Count == 1
+                        && string.IsNullOrEmpty(GetCellPlainText(cell));
+                    if (!isEmpty)
+                        foreach (var para in cell.Paragraphs)
+                            mainCell.Paragraphs.Add(para);
+                    table.Cells.Remove(cell);
+                }
+            }
+            mainCell.RowSpan = endRow - startRow + 1;
+            mainCell.ColSpan = endCol - startCol + 1;
+        }
+
+        public void TableSplitCell(TableBlock table, int row, int col)
+        {
+            var mainCell = table.GetCell(row, col);
+            if (mainCell is null || (mainCell.RowSpan == 1 && mainCell.ColSpan == 1)) return;
+
+            int rowSpan = mainCell.RowSpan;
+            int colSpan = mainCell.ColSpan;
+            mainCell.RowSpan = 1;
+            mainCell.ColSpan = 1;
+
+            for (int r = row; r < row + rowSpan; r++)
+                for (int c = col; c < col + colSpan; c++)
+                {
+                    if (r == row && c == col) continue;
+                    table.Cells.Add(new TableCell { Row = r, Column = c });
+                }
+        }
+
+        public void TableSetColumnWidth(TableBlock table, int colIndex, double widthMm)
+        {
+            if (colIndex < 0 || colIndex >= table.Columns.Count) return;
+            table.Columns[colIndex].WidthType = TableColumnWidthType.Fixed;
+            table.Columns[colIndex].WidthValue = Math.Max(5.0, widthMm);
+        }
+
+        public TableBlock? FindTable(Func<TableBlock, bool> predicate)
+        {
+            foreach (var section in _document.Sections)
+                foreach (var block in section.Blocks)
+                    if (block is TableBlock t && predicate(t))
+                        return t;
+            return null;
+        }
+
         // ── ITextEditorCommandTarget: макет ───────────────────────────────
 
         public void SetPageSize(PaperSize size)
@@ -388,7 +555,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // ── ITextEditorCommandTarget: вид ─────────────────────────────────
 
         public void SetZoom(double zoom) => Zoom = zoom;
-        public void SetViewMode(EditorViewMode mode) { ViewMode = mode; _document.ViewMode = mode; }
+
+        public void SetViewMode(EditorViewMode mode)
+        {
+            ViewMode = mode;
+            _document.ViewMode = mode;
+        }
+
         public void ToggleFullscreen() => IsFullscreen = !IsFullscreen;
         public void ToggleFocusMode() => IsFocusMode = !IsFocusMode;
 
@@ -422,7 +595,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void ZoomReset() => Zoom = 1.0;
 
-        // ── ITextEditorCommandTarget: поиск / инструменты / экспорт ───────
+        // ── ITextEditorCommandTarget: инструменты ─────────────────────────
 
         public void OpenFind() { }
         public void OpenFindReplace() { }
@@ -433,6 +606,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ExportToDocx() { }
         public void ExportToTxt() { }
         public void ExportToMarkdown() { }
+
+        // ── Публичный враппер пересборки параграфов ───────────────────────
+
+        /// <summary>
+        /// Публичный враппер RebuildParagraphViewModels.
+        /// Используется DocumentCanvas при удалении таблицы из документа,
+        /// чтобы пересинхронизировать коллекцию ParagraphViewModel.
+        /// </summary>
+        public void RebuildParagraphViewModelsPublic() => RebuildParagraphViewModels();
 
         // ── Внутренние методы ─────────────────────────────────────────────
 
@@ -478,6 +660,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (_activeParagraph is null) return;
             mutate(_activeParagraph.Model.Properties);
             FireCursorContextChanged();
+            ParagraphFormatChanged?.Invoke();
         }
 
         private void InsertBlock(BlockModel block)
@@ -488,7 +671,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (_activeParagraph is not null)
             {
                 int idx = section.Blocks.IndexOf(_activeParagraph.Model);
-                if (idx >= 0) { section.Blocks.Insert(idx + 1, block); RebuildParagraphViewModels(); return; }
+                if (idx >= 0)
+                {
+                    section.Blocks.Insert(idx + 1, block);
+                    RebuildParagraphViewModels();
+                    return;
+                }
             }
 
             section.Blocks.Add(block);
@@ -514,18 +702,30 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             var table = new TableBlock { RowCount = rows, ColumnCount = columns };
             for (int c = 0; c < columns; c++)
-                table.Columns.Add(new TableColumnDefinition { WidthType = TableColumnWidthType.Auto });
+                table.Columns.Add(new TableColumnDefinition
+                { WidthType = TableColumnWidthType.Auto });
             for (int r = 0; r < rows; r++)
                 for (int c = 0; c < columns; c++)
                     table.Cells.Add(new TableCell { Row = r, Column = c });
             return table;
         }
 
+        private static string GetCellPlainText(TableCell cell)
+        {
+            var sb = new StringBuilder();
+            foreach (var para in cell.Paragraphs)
+                foreach (var chunk in para.Chunks)
+                    foreach (var run in chunk.Runs)
+                        sb.Append(run.Text);
+            return sb.ToString();
+        }
+
         private void RebuildStyleNames()
         {
             AvailableStyleNames.Clear();
             foreach (var style in _document.Styles)
-                AvailableStyleNames.Add(style.DisplayName.Length > 0 ? style.DisplayName : style.Name);
+                AvailableStyleNames.Add(
+                    style.DisplayName.Length > 0 ? style.DisplayName : style.Name);
         }
 
         private void RebuildParagraphViewModels()

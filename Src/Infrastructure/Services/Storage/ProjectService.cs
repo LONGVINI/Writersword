@@ -7,10 +7,10 @@ using System.Linq;
 using System.Threading.Tasks;
 using Writersword.Core.Models.Project;
 using Writersword.Modules.Common;
-using Writersword.Src.Core.Interfaces.Services.Storage;
-using Writersword.Src.Infrastructure.Services.Project;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Infrastructure.Services.Project;
 
-namespace Writersword.Src.Infrastructure.Services.Storage
+namespace Writersword.Infrastructure.Services.Storage
 {
     /// <summary>
     /// Реализация сервиса работы с проектами
