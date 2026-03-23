@@ -47,8 +47,14 @@ namespace Writersword.Modules.TextEditor.Document
         private static readonly SKColor ColLabelMargin = new(0x88, 0x88, 0x88);
         private static readonly SKColor ColBorder = new(0xCC, 0xCC, 0xCC);
 
+        // ── Цвета границ ──────────────────────────────────────────────────
+        private static readonly SKColor ColMarginHandle = new(0x88, 0x88, 0x88);
+        private static readonly SKColor ColZeroLabel = new(0x33, 0x66, 0xCC);
+
         // ── Состояние ─────────────────────────────────────────────────────
         private RulerViewModel? _vm;
+        private bool _isDraggingMargin;
+        private bool _draggingTopMargin; // true = верхнее, false = нижнее
 
         // ── Конструктор ───────────────────────────────────────────────────
         public VerticalRulerControl()
@@ -134,6 +140,14 @@ namespace Writersword.Modules.TextEditor.Document
                     canvas.DrawRect(0, (float)pBotY, w, gapH, marginPaint);
             }
 
+            // ── Линии-разделители полей ──────────────────────────────────
+            using var handlePaint = new SKPaint
+            { Color = ColMarginHandle, StrokeWidth = 1f, IsStroke = true };
+            if (tTopY > 0 && tTopY < h)
+                canvas.DrawLine(0, (float)tTopY, w, (float)tTopY, handlePaint);
+            if (tBotY > 0 && tBotY < h)
+                canvas.DrawLine(0, (float)tBotY, w, (float)tBotY, handlePaint);
+
             // ── Шкала ─────────────────────────────────────────────────────
             DrawScale(canvas, tTopY, tBotY, w, h, zoom);
 
@@ -167,16 +181,15 @@ namespace Writersword.Modules.TextEditor.Document
             double minorInterval = _vm.MinorTickInterval;
             double tinyInterval = _vm.TinyTickInterval;
 
-            // Диапазон шкалы в единицах — от верхнего поля до нижнего.
-            double marginTopU = _vm.MmToUnits(_vm.MarginTopMm);
-            double marginBotU = _vm.MmToUnits(_vm.MarginBottomMm);
-            double textHU = _vm.MmToUnits(
-                _vm.PageHeightMm - _vm.MarginTopMm - _vm.MarginBottomMm);
+            // Шкала от tTopY (ноль = начало текста), integer-индекс → нет float-ошибок.
+            int tinyPerMajor = (int)Math.Round(majorInterval / tinyInterval);
+            int tinyPerMinor = (int)Math.Round(minorInterval / tinyInterval);
 
-            double startUnit = -marginTopU;               // начало: верхний край листа
-            double endUnit = textHU + marginBotU;       // конец:  нижний край листа
-            double step = tinyInterval;
-            int stepCount = (int)Math.Ceiling((endUnit - startUnit) / step) + 2;
+            double textHU = _vm.MmToUnits(_vm.PageHeightMm - _vm.MarginTopMm - _vm.MarginBottomMm);
+            double pageTopY = tTopY - MmToPx(_vm.MarginTopMm, zoom);
+            double pageBotY = tBotY + MmToPx(_vm.MarginBottomMm, zoom);
+            int stepsUp = (int)Math.Ceiling((tTopY - pageTopY) / (unitSizePx * tinyInterval)) + 2;
+            int stepsDown = (int)Math.Ceiling((pageBotY - tTopY) / (unitSizePx * tinyInterval)) + 2;
 
             // Краски создаём один раз.
             using var majorP = StrokePaint(ColTickMajor);
@@ -192,17 +205,16 @@ namespace Writersword.Modules.TextEditor.Document
                              ?? SKTypeface.Default;
             using var font = new SKFont(tf, 8f);
 
-            for (int i = 0; i <= stepCount; i++)
+            for (int i = -stepsUp; i <= stepsDown; i++)
             {
-                double unitValue = startUnit + i * step;
+                double unitValue = i * tinyInterval;
                 double yPx = tTopY + unitValue * unitSizePx;
 
-                // Пропускаем деления вне видимой области.
                 if (yPx < -2 || yPx > h + 2) continue;
 
                 bool inMargin = unitValue < 0 || unitValue > textHU;
-                bool isMajor = IsMultiple(unitValue + marginTopU, majorInterval);
-                bool isMinor = !isMajor && IsMultiple(unitValue + marginTopU, minorInterval);
+                bool isMajor = (i % tinyPerMajor) == 0;
+                bool isMinor = !isMajor && (i % tinyPerMinor) == 0;
 
                 float tickW = isMajor ? (float)MajorTickWidthPx
                             : isMinor ? (float)MinorTickWidthPx
@@ -214,8 +226,19 @@ namespace Writersword.Modules.TextEditor.Document
 
                 canvas.DrawLine(w - tickW, (float)yPx, w, (float)yPx, paint);
 
-                // Подпись только на основных делениях (кроме нуля).
-                if (!isMajor || Math.Abs(unitValue) <= majorInterval * 0.1) continue;
+                // Подпись на основных делениях + ноль синим.
+                if (!isMajor) continue;
+                if (Math.Abs(unitValue) <= majorInterval * 0.1)
+                {
+                    // Рисуем "0" синим.
+                    using var zeroP = new SKPaint { Color = ColZeroLabel, IsAntialias = true };
+                    using var save0 = new SKAutoCanvasRestore(canvas, true);
+                    canvas.Translate(w - (float)MajorTickWidthPx - 2f, (float)yPx);
+                    canvas.RotateDegrees(-90);
+                    float zW = font.MeasureText("0");
+                    canvas.DrawText("0", -zW / 2f, 0, font, zeroP);
+                    continue;
+                }
 
                 // Отображаем расстояние от начала текстовой зоны (или от поля).
                 double displayValue;
@@ -238,7 +261,110 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
+        // ── Pointer events ───────────────────────────────────────────────
+
+        private const double MarginHitPx = 5.0;
+
+        protected override void OnPointerPressed(Avalonia.Input.PointerPressedEventArgs e)
+        {
+            base.OnPointerPressed(e);
+            if (_vm is null) return;
+
+            var pos = e.GetPosition(this);
+            double zoom = _vm.Zoom;
+            double scrollY = _vm.ScrollOffsetY;
+            double viewportH = _vm.ViewportHeight > 0 ? _vm.ViewportHeight : Bounds.Height;
+
+            const double PageGapPt = 15.0; const double PtToPx = 96.0 / 72.0;
+            double pageHeightPx = MmToPx(_vm.PageHeightMm, zoom);
+            double pageGapPx = PageGapPt * PtToPx * zoom;
+            int pageIdx = (int)(Math.Max(0, scrollY + viewportH * 0.5 - pageGapPx)
+                                        / (pageHeightPx + pageGapPx));
+            double pTopY = pageGapPx + pageIdx * (pageHeightPx + pageGapPx) - scrollY;
+            double tTopY = pTopY + MmToPx(_vm.MarginTopMm, zoom);
+            double tBotY = pTopY + pageHeightPx - MmToPx(_vm.MarginBottomMm, zoom);
+
+            if (Math.Abs(pos.Y - tTopY) <= MarginHitPx)
+            {
+                _isDraggingMargin = true; _draggingTopMargin = true;
+                e.Pointer.Capture(this);
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
+                e.Handled = true;
+            }
+            else if (Math.Abs(pos.Y - tBotY) <= MarginHitPx)
+            {
+                _isDraggingMargin = true; _draggingTopMargin = false;
+                e.Pointer.Capture(this);
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
+                e.Handled = true;
+            }
+        }
+
+        protected override void OnPointerMoved(Avalonia.Input.PointerEventArgs e)
+        {
+            base.OnPointerMoved(e);
+            if (_vm is null) return;
+
+            var pos = e.GetPosition(this);
+            double zoom = _vm.Zoom;
+            double scrollY = _vm.ScrollOffsetY;
+            double viewportH = _vm.ViewportHeight > 0 ? _vm.ViewportHeight : Bounds.Height;
+
+            const double PageGapPt = 15.0; const double PtToPx = 96.0 / 72.0;
+            double pageHeightPx = MmToPx(_vm.PageHeightMm, zoom);
+            double pageGapPx = PageGapPt * PtToPx * zoom;
+            int pageIdx = (int)(Math.Max(0, scrollY + viewportH * 0.5 - pageGapPx)
+                                        / (pageHeightPx + pageGapPx));
+            double pTopY = pageGapPx + pageIdx * (pageHeightPx + pageGapPx) - scrollY;
+            double pBotY = pTopY + pageHeightPx;
+
+            if (_isDraggingMargin)
+            {
+                double clampedY = Math.Max(pTopY, Math.Min(pos.Y, pBotY));
+                if (_draggingTopMargin)
+                {
+                    double newMm = PxToMm(clampedY - pTopY, zoom);
+                    if (_vm.IsSnapEnabled) { double s = _vm.UnitsToMm(_vm.SnapStep); newMm = Math.Round(newMm / s) * s; }
+                    newMm = Math.Max(0, Math.Min(newMm, _vm.PageHeightMm - _vm.MarginBottomMm - 5));
+                    _vm.MarginTopMm = newMm;
+                }
+                else
+                {
+                    double newMm = PxToMm(pBotY - clampedY, zoom);
+                    if (_vm.IsSnapEnabled) { double s = _vm.UnitsToMm(_vm.SnapStep); newMm = Math.Round(newMm / s) * s; }
+                    newMm = Math.Max(0, Math.Min(newMm, _vm.PageHeightMm - _vm.MarginTopMm - 5));
+                    _vm.MarginBottomMm = newMm;
+                }
+                _vm.NotifyMarginChanged();
+                InvalidateVisual();
+                e.Handled = true;
+                return;
+            }
+
+            // Курсор при наведении на границу поля.
+            double tTopY2 = pTopY + MmToPx(_vm.MarginTopMm, zoom);
+            double tBotY2 = pTopY + pageHeightPx - MmToPx(_vm.MarginBottomMm, zoom);
+            if (Math.Abs(pos.Y - tTopY2) <= MarginHitPx || Math.Abs(pos.Y - tBotY2) <= MarginHitPx)
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
+            else
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Arrow);
+        }
+
+        protected override void OnPointerReleased(Avalonia.Input.PointerReleasedEventArgs e)
+        {
+            base.OnPointerReleased(e);
+            if (!_isDraggingMargin) return;
+            _isDraggingMargin = false;
+            e.Pointer.Capture(null);
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Arrow);
+            InvalidateVisual();
+            e.Handled = true;
+        }
+
         // ── Вспомогательные ──────────────────────────────────────────────
+
+        private static double PxToMm(double px, double zoom)
+            => px / (96.0 / 25.4) / zoom;
 
         private double UnitSizePx(double zoom)
         {

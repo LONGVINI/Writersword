@@ -102,6 +102,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             // Подписка на изменение ширины колонки таблицы через линейку.
             Ruler.ColumnWidthChanged += OnRulerColumnWidthChanged;
+
+            // Подписка на изменение полей страницы через drag на линейке.
+            Ruler.MarginChanged += OnRulerMarginChanged;
         }
 
         // ── Document loading ──────────────────────────────────────────────
@@ -290,6 +293,20 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// <summary>
         /// Применяет новую ширину колонки таблицы из линейки.
         /// </summary>
+        /// <summary>
+        /// Применяет новые поля страницы из drag на линейке к документу.
+        /// </summary>
+        private void OnRulerMarginChanged(double marginLeftMm, double marginRightMm)
+        {
+            if (DocumentViewModel is null) return;
+            var ps = DocumentViewModel.Document.PageSettings;
+            // MarginChanged передаёт Left/Right; Top/Bottom берём из RulerViewModel напрямую.
+            DocumentViewModel.SetPageMargins(
+                Ruler.MarginTopMm, Ruler.MarginBottomMm,
+                marginLeftMm, marginRightMm);
+            SyncRulerToDocument(DocumentViewModel.Document);
+        }
+
         private void OnRulerColumnWidthChanged(int columnIndex, double widthMm)
         {
             if (DocumentViewModel is null) return;
@@ -515,6 +532,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             Ruler.IndentMarkerChanged -= OnRulerIndentMarkerChanged;
             Ruler.ColumnWidthChanged -= OnRulerColumnWidthChanged;
+            Ruler.MarginChanged -= OnRulerMarginChanged;
 
             if (_documentViewModel is not null)
                 _documentViewModel.CursorContextChanged -= OnCursorContextChanged;

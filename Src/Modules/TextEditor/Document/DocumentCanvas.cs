@@ -494,6 +494,7 @@ namespace Writersword.Modules.TextEditor.Document
                 // Snap после rebuild с актуальными лейаутами.
                 // Hint уже сброшен в OnTextInput — snap использует стандартный lineIdx.
                 SnapCaretToCorrectSlice();
+                _caretLineHint = -1; // сбрасываем — hint одноразовый, только для первого snap
                 UpdatePreferredX();
                 SyncSel();
 

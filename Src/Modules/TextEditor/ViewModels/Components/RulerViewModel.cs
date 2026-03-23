@@ -120,6 +120,20 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             set => this.RaiseAndSetIfChanged(ref _mode, value);
         }
 
+        /// <summary>
+        /// Привязка к сетке (snap to grid).
+        /// Когда включена — маркеры при перетаскивании прилипают к шагу SnapStep единиц.
+        /// </summary>
+        public bool IsSnapEnabled
+        {
+            get => _isSnapEnabled;
+            set => this.RaiseAndSetIfChanged(ref _isSnapEnabled, value);
+        }
+        private bool _isSnapEnabled = true;
+
+        /// <summary>Шаг привязки в единицах линейки (0.25 см или 0.25 дюйма).</summary>
+        public double SnapStep => 0.25;
+
         /// <summary>Текущий зум редактора. Используется для пересчёта координат.</summary>
         public double Zoom
         {
@@ -284,6 +298,19 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         /// DocumentViewModel применяет значение к активному абзацу.
         /// </summary>
         public event Action<RulerIndentMarkerType, double>? IndentMarkerChanged;
+
+        /// <summary>
+        /// Вызывается когда пользователь перетащил границу поля на линейке.
+        /// Параметры: (marginLeftMm, marginRightMm).
+        /// TextEditorViewModel применяет новые поля к документу.
+        /// </summary>
+        public event Action<double, double>? MarginChanged;
+
+        /// <summary>
+        /// Вызывается HorizontalRulerControl при изменении поля через drag.
+        /// </summary>
+        public void NotifyMarginChanged()
+            => MarginChanged?.Invoke(MarginLeftMm, MarginRightMm);
 
         /// <summary>
         /// Вызывается когда пользователь перетащил маркер колонки таблицы.
@@ -461,6 +488,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         {
             if (DraggingColumnIndex < 0 || DraggingColumnIndex >= ColumnMarkers.Count) return;
 
+            // Привязка к сетке.
+            if (IsSnapEnabled)
+                rightEdgeUnits = Math.Round(rightEdgeUnits / SnapStep) * SnapStep;
+
             double textWidthUnits = MmToUnits(PageWidthMm - MarginLeftMm - MarginRightMm);
 
             // Минимальная ширина колонки — 5 мм.
@@ -535,15 +566,17 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             var marker = GetIndentMarker(DraggingIndentMarker.Value);
             if (marker is null) return;
 
+            // Привязка к сетке.
+            if (IsSnapEnabled)
+                positionUnits = Math.Round(positionUnits / SnapStep) * SnapStep;
+
             // Только верхний предел — не выходим за правый край страницы.
             double pageWidthUnits = MmToUnits(PageWidthMm);
             marker.Position = Math.Min(positionUnits, pageWidthUnits);
 
             this.RaisePropertyChanged(nameof(IndentMarkers));
 
-            // Живой предпросмотр — применяем изменение немедленно.
-            // EndIndentDrag повторно вызовет это же событие — это нормально,
-            // DocumentViewModel идемпотентен для одинакового значения.
+            // Живой предпросмотр.
             IndentMarkerChanged?.Invoke(DraggingIndentMarker.Value, UnitsToMm(marker.Position));
         }
     }
