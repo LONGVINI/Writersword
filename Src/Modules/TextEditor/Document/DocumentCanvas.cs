@@ -11,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Linq;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Services.Input;
 using Writersword.Core.Models.Print;
@@ -92,6 +93,7 @@ namespace Writersword.Modules.TextEditor.Document
         private CaretMode _caretMode = CaretMode.Normal;
         private int _caretPara = 0;
         private int _caretChar = 0;
+        private int _caretLineHint = -1; // строка кликнутая мышью; -1 = не задано
         private bool _caretVisible = true;
         private float _preferredCaretXPt = 0f;
         private readonly DispatcherTimer _caretTimer;
@@ -166,6 +168,14 @@ namespace Writersword.Modules.TextEditor.Document
 
         public Action<IReadOnlyList<double>, IReadOnlyList<double>>? CaretEnteredTable { get; set; }
         public Action? CaretLeftTable { get; set; }
+
+        /// <summary>
+        /// Вызывается с UI-потока всякий раз когда позиция каретки или скролл изменились.
+        /// TextEditorModule подписывается чтобы обновлять кеш сессионных данных
+        /// без обращения к visual tree из фонового потока.
+        /// Параметры: (docParaIdx, charIdx, scrollOffsetY).
+        /// </summary>
+        public Action<int, int, double>? CaretStateChanged { get; set; }
 
         public double MonitorSizeInches
         {
@@ -480,6 +490,12 @@ namespace Writersword.Modules.TextEditor.Document
 
                 double oldCanvasH = _canvasHeight;
                 RebuildLayouts();
+
+                // Snap после rebuild с актуальными лейаутами.
+                // Hint уже сброшен в OnTextInput — snap использует стандартный lineIdx.
+                SnapCaretToCorrectSlice();
+                UpdatePreferredX();
+                SyncSel();
 
                 if (Math.Abs(_canvasHeight - oldCanvasH) > 0.5)
                     InvalidateMeasure();
@@ -921,6 +937,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (drawCaret && _caretMode == CaretMode.Table)
                 DrawTableCaret(canvas, tables);
+
         }
 
         private void RenderFlowMode(
@@ -972,6 +989,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (drawCaret && _caretMode == CaretMode.Table)
                 DrawTableCaret(canvas, tables);
+
         }
 
         private void DrawCaretOnCanvas(
@@ -1092,9 +1110,49 @@ namespace Writersword.Modules.TextEditor.Document
         private void DrawCaret(SKCanvas canvas, ParaLayout pl, float xPt, float yPt)
         {
             int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
-            var caret = pl.Layout.HitTestPosition(pos);
+
             float yBase = pl.LineFrom < pl.Layout.Lines.Count
                 ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
+
+            // Если есть hint — рисуем каретку на строке hint даже если HitTestPosition
+            // вернула бы следующую строку (boundary-позиция LastCharIndex+1).
+            int drawLineIdx;
+            SKCaretRect caret;
+
+            if (_caretLineHint >= 0
+                && _caretLineHint >= pl.LineFrom
+                && _caretLineHint < Math.Min(pl.LineTo, pl.Layout.Lines.Count))
+            {
+                var hintLine = pl.Layout.Lines[_caretLineHint];
+                // Если pos = LastCharIndex+1 этой строки — рисуем в её конце.
+                if (pos > hintLine.LastCharIndex && !hintLine.IsLastLine)
+                {
+                    var lastSeg = hintLine.Segments.Count > 0 ? hintLine.Segments[^1] : null;
+                    caret = new SKCaretRect
+                    {
+                        X = lastSeg != null
+                            ? pl.Layout.LeftIndentPt + lastSeg.X + lastSeg.Width
+                            : pl.Layout.LeftIndentPt,
+                        Y = hintLine.Y,
+                        Height = hintLine.Height,
+                        Baseline = hintLine.Baseline
+                    };
+                    drawLineIdx = _caretLineHint;
+                }
+                else
+                {
+                    caret = pl.Layout.HitTestPosition(pos);
+                    drawLineIdx = _caretLineHint;
+                }
+            }
+            else
+            {
+                caret = pl.Layout.HitTestPosition(pos);
+                drawLineIdx = pl.Layout.GetLineIndexForChar(pos);
+            }
+
+            float firstLineX = (drawLineIdx == 0 && pl.LineFrom == 0)
+                ? pl.Layout.FirstLineIndentPt : 0f;
 
             using var paint = new SKPaint
             {
@@ -1103,10 +1161,7 @@ namespace Writersword.Modules.TextEditor.Document
                 IsAntialias = false
             };
 
-            // HitTestPosition возвращает X = LeftIndentPt + glyphX — отступ уже включён.
-            // xPt = левый край текстовой зоны страницы (pageLeft + marginLeft).
-            // Итого: cx = (pageLeft + marginLeft) + (LeftIndentPt + glyphX) — ровно там где текст.
-            float cx = xPt + caret.X;
+            float cx = xPt + caret.X + firstLineX;
             float cy = yPt + (caret.Y - yBase);
             canvas.DrawLine(cx, cy, cx, cy + caret.Height, paint);
         }
@@ -1168,6 +1223,8 @@ namespace Writersword.Modules.TextEditor.Document
 
             var pvm = GetVmAt(_caretPara);
             if (pvm is not null) DocVm?.SetActiveParagraph(pvm);
+            UpdateSelectionContext();
+
 
             ResetCaret(); InvalidateFull();
             e.Handled = true;
@@ -1183,6 +1240,7 @@ namespace Writersword.Modules.TextEditor.Document
             _selEndPara = pi; _selEndChar = ci;
             _caretPara = pi; _caretChar = ci;
 
+            UpdateSelectionContext();
             InvalidateFull();
             e.Handled = true;
         }
@@ -1191,6 +1249,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             base.OnPointerReleased(e);
             _isSelecting = false;
+            UpdateSelectionContext();
         }
 
         // ── Keyboard ─────────────────────────────────────────────────────
@@ -1199,6 +1258,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             base.OnTextInput(e);
             if (string.IsNullOrEmpty(e.Text)) return;
+            _caretLineHint = -1; // сбрасываем — после ввода snap работает по стандартному lineIdx
 
             if (_caretMode == CaretMode.Table)
             {
@@ -1219,7 +1279,8 @@ namespace Writersword.Modules.TextEditor.Document
             _caretChar = pos + e.Text.Length;
 
             CommitEdit();
-            SnapCaretToCorrectSlice();
+            // SnapCaretToCorrectSlice вызовется внутри ScheduleRebuild после RebuildLayouts —
+            // только там лейауты актуальны после переноса строк.
             UpdatePreferredX();
             SyncSel(); ResetCaret();
             e.Handled = true;
@@ -1691,6 +1752,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteDeleteBack()
         {
+            _caretLineHint = -1;
             var pvm = GetVmAt(_caretPara);
             if (pvm is null) return;
             string text = pvm.PlainText ?? "";
@@ -1712,6 +1774,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteDeleteForward()
         {
+            _caretLineHint = -1;
             var pvm = GetVmAt(_caretPara);
             if (pvm is null) return;
             string text = pvm.PlainText ?? "";
@@ -1765,6 +1828,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteNavLeft(bool extend)
         {
+            _caretLineHint = -1;
             if (HasSel() && !extend)
             { var (sp, sc, _, _) = NormalizeSelection(); _caretPara = sp; _caretChar = sc; }
             else if (_caretChar > 0) _caretChar--;
@@ -1778,6 +1842,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteNavRight(bool extend)
         {
+            _caretLineHint = -1;
             int len = GetVmAt(_caretPara)?.PlainText?.Length ?? 0;
             if (HasSel() && !extend)
             { var (_, _, ep, ec) = NormalizeSelection(); _caretPara = ep; _caretChar = ec; }
@@ -1791,6 +1856,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteNavUp(bool extend)
         {
+            _caretLineHint = -1;
             MoveCaretVertically(-1);
             SnapCaretToCorrectSlice();
             if (!extend) SyncSel(); else ExtendSel();
@@ -1799,6 +1865,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteNavDown(bool extend)
         {
+            _caretLineHint = -1;
             MoveCaretVertically(+1);
             SnapCaretToCorrectSlice();
             if (!extend) SyncSel(); else ExtendSel();
@@ -1895,8 +1962,10 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (targetLine >= 0 && targetLine < layout.Lines.Count)
             {
+                // GetCharIndexForVerticalMove ожидает layout-space (LeftIndentPt + glyphX)
+                // и сам вычитает LeftIndentPt внутри. Передаём _preferredCaretXPt как есть.
                 _caretChar = layout.GetCharIndexForVerticalMove(
-                    _caretChar, dir, _preferredCaretXPt - layout.LeftIndentPt);
+                    _caretChar, dir, _preferredCaretXPt);
             }
             else if (dir < 0 && _caretPara > 0)
             {
@@ -1939,10 +2008,11 @@ namespace Writersword.Modules.TextEditor.Document
             var layout = GetLayoutAt(_caretPara);
             if (layout is null) return;
             var caret = layout.HitTestPosition(_caretChar);
-            // caret.X = LeftIndentPt + glyphX — именно это значение нужно сохранить.
-            // GetCharIndexForVerticalMove ожидает (preferredX) и внутри делает
-            // preferredX - LeftIndentPt, получая glyphX. Поэтому передаём caret.X как есть.
-            // HitTestPoint при кросс-параграф навигации получает caret.X - prev.LeftIndentPt = glyphX.
+            // Сохраняем caret.X (= LeftIndentPt + seg.X + glyphOffset) без firstLineExtra.
+            // GetCharIndexForVerticalMove вычитает внутри LeftIndentPt, получает seg.X — это
+            // glyph-space и он одинаков для всех строк (seg.X начинается с 0).
+            // Добавлять FirstLineIndentPt здесь нельзя — при переходе с line0 на line1
+            // это создало бы неверное смещение на line1 которая не имеет firstLineExtra.
             _preferredCaretXPt = caret.X;
         }
 
@@ -1959,11 +2029,44 @@ namespace Writersword.Modules.TextEditor.Document
 
             int lineIdx = layout.GetLineIndexForChar(_caretChar);
 
+            // Если есть hint от клика мышью — предпочитаем удержать каретку на этой строке.
+            // Это решает boundary-case: char=422=FirstChar_line4, но пользователь кликнул
+            // на строку 3 (hint=3). Остаёмся в слайсе содержащем строку hint.
+            if (_caretLineHint >= 0)
+            {
+                for (int i = 0; i < _layouts.Count; i++)
+                {
+                    var pl = _layouts[i];
+                    if (pl.Vm == targetVm
+                        && _caretLineHint >= pl.LineFrom
+                        && _caretLineHint < pl.LineTo)
+                    {
+                        _caretPara = i;
+                        _logger.Debug(
+                            "SnapCaret(hint): char={C} hint={H} → slice {I} [{LF}..{LT})",
+                            _caretChar, _caretLineHint, i, pl.LineFrom, pl.LineTo);
+                        return;
+                    }
+                }
+            }
+
+            // Стандартный поиск по lineIdx.
+            var currentPl = _layouts[_caretPara];
+            if (currentPl.Vm == targetVm && lineIdx >= currentPl.LineFrom && lineIdx < currentPl.LineTo)
+                return;
+
             for (int i = 0; i < _layouts.Count; i++)
             {
                 var pl = _layouts[i];
                 if (pl.Vm != targetVm) continue;
-                if (lineIdx >= pl.LineFrom && lineIdx < pl.LineTo) { _caretPara = i; return; }
+                if (lineIdx >= pl.LineFrom && lineIdx < pl.LineTo)
+                {
+                    _caretPara = i;
+                    _logger.Debug(
+                        "SnapCaret: char={C} lineIdx={L} → slice {I} [{LF}..{LT})",
+                        _caretChar, lineIdx, i, pl.LineFrom, pl.LineTo);
+                    return;
+                }
             }
         }
 
@@ -2258,12 +2361,41 @@ namespace Writersword.Modules.TextEditor.Document
                 localY = Clamp(localY, fy + 0.1f, ly - 0.1f);
             }
 
-            var hit = best.Layout.HitTestPoint(localX, localY);
-            return (bestIdx, hit.CharIndex);
-        }
+            // Для первой строки рендер сдвигает текст на FirstLineIndentPt вправо.
+            // HitTestPoint работает в glyph-space (seg.X = 0), поэтому вычитаем смещение
+            // только когда клик попал именно на layout line 0.
+            float hitX = localX;
+            if (best.LineFrom == 0
+                && best.Layout.FirstLineIndentPt != 0
+                && best.Layout.Lines.Count > 0)
+            {
+                float line0Bottom = best.Layout.Lines[0].Y + best.Layout.Lines[0].Height;
+                if (localY <= line0Bottom)
+                    hitX -= best.Layout.FirstLineIndentPt;
+            }
 
-        /// <summary>
-        /// HitTest по таблицам — проверяет попадание клика в ячейку.
+            var hit = best.Layout.HitTestPoint(hitX, localY);
+            int resultChar = hit.CharIndex;
+
+            // Запоминаем строку по Y клика — используется в SnapCaretToCorrectSlice
+            // и DrawCaret чтобы удержать каретку на нужной строке при boundary-позиции.
+            _caretLineHint = -1;
+            for (int li = best.LineFrom; li < Math.Min(best.LineTo, best.Layout.Lines.Count); li++)
+            {
+                var ln = best.Layout.Lines[li];
+                if (localY <= ln.Y + ln.Height)
+                {
+                    _caretLineHint = li;
+                    break;
+                }
+            }
+
+            _logger.Debug(
+                "HitTest: sliceIdx={S} raw={R} result={C} lineHint={H} localX={X:F1} localY={Y:F1}",
+                bestIdx, hit.CharIndex, resultChar, _caretLineHint, hitX, localY);
+
+            return (bestIdx, resultChar);
+        }
         /// </summary>
         private bool HitTestTable(
             Point ptLogPx,
@@ -2330,7 +2462,8 @@ namespace Writersword.Modules.TextEditor.Document
                 float yBase = pl.LineFrom < pl.Layout.Lines.Count
                     ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
 
-                double xPx = (pl.Layout.LeftIndentPt + caret.X) * PtToPx * zoom;
+                // caret.X = LeftIndentPt + glyphX — отступ уже включён, не добавляем снова.
+                double xPx = caret.X * PtToPx * zoom;
                 double yPx = (pl.Ypt + (caret.Y - yBase)) * PtToPx * zoom;
                 double hPx = caret.Height * PtToPx * zoom;
 
@@ -2376,7 +2509,62 @@ namespace Writersword.Modules.TextEditor.Document
         private static int Clamp(int v, int min, int max) => v < min ? min : v > max ? max : v;
         private static float Clamp(float v, float min, float max) => v < min ? min : v > max ? max : v;
 
-        // ── ICustomDrawOperation ──────────────────────────────────────────
+        /// <summary>
+        /// Синхронизирует DocVm.SelectionParagraphs с текущим выделением.
+        /// Вызывается после каждого изменения выделения (клик, перетаскивание).
+        /// </summary>
+        private void UpdateSelectionContext()
+        {
+            if (DocVm is null) return;
+            DocVm.SelectionParagraphs.Clear();
+            if (!HasSel()) return;
+
+            var (sp, _, ep, _) = NormalizeSelection();
+            var seen = new HashSet<ParagraphViewModel>();
+            for (int i = sp; i <= ep && i < _layouts.Count; i++)
+            {
+                var pvm = GetVmAt(i);
+                if (pvm is not null && seen.Add(pvm))
+                    DocVm.SelectionParagraphs.Add(pvm);
+            }
+        }
+
+        /// <summary>
+        /// Возвращает текущее состояние каретки для сохранения в SessionData.
+        /// Возвращает индекс параграфа в документе (не в _layouts),
+        /// позицию символа и текущее смещение скролла.
+        /// </summary>
+        public (int docParaIdx, int charIdx, double scrollY) GetCaretState()
+        {
+            int docIdx = 0;
+            if (_caretPara >= 0 && _caretPara < _layouts.Count && DocVm is not null)
+            {
+                int idx = DocVm.Paragraphs.IndexOf(_layouts[_caretPara].Vm);
+                if (idx >= 0) docIdx = idx;
+            }
+            return (docIdx, _caretChar, _scrollOffsetY);
+        }
+
+        /// <summary>
+        /// Восстанавливает позицию каретки из SessionData.
+        /// Откладывает выполнение до момента когда лейауты уже построены.
+        /// </summary>
+        public void RestoreCaretState(int docParaIdx, int charIdx)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_layouts.Count == 0) return;
+                _caretPara = FindFirstSliceForParagraphIndex(docParaIdx);
+                _caretChar = Clamp(charIdx, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
+                SnapCaretToCorrectSlice();
+                UpdatePreferredX();
+                SyncSel();
+                ResetCaret();
+                InvalidateFull();
+            }, DispatcherPriority.Loaded);
+        }
+
+
 
         private sealed class CanvasSKDrawOperation : ICustomDrawOperation
         {

@@ -188,9 +188,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
             StatusBar.Language = ctx.Language ?? Settings.DefaultLanguage;
 
             // Обновляем маркеры отступов линейки из контекста активного абзаца.
+            // Верхний маркер (FirstLineIndent) рисуется на линейке от начала текстовой зоны.
+            // Текст первой строки рендерится в LeftIndent + FirstLineIndent от текстовой зоны.
+            // Поэтому передаём сумму чтобы маркер совпадал с визуальной позицией текста.
             Ruler.UpdateFromParagraphContext(
                 ctx.LeftIndentPt,
-                ctx.FirstLineIndentPt,
+                ctx.LeftIndentPt + ctx.FirstLineIndentPt,
                 ctx.RightIndentPt);
         }
 
@@ -270,9 +273,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 case RulerIndentMarkerType.LeftIndent:
                     DocumentViewModel?.SetLeftIndentPt(valuePt);
                     break;
+
                 case RulerIndentMarkerType.FirstLineIndent:
-                    DocumentViewModel?.SetFirstLineIndentPt(valuePt);
+                    // Маркер хранит абсолютную позицию = LeftIndent + FirstLineIndent.
+                    // Модель хранит FirstLineIndent как смещение относительно LeftIndent.
+                    double leftIndentPt = Ruler.LeftIndentMm * 72.0 / 25.4;
+                    DocumentViewModel?.SetFirstLineIndentPt(valuePt - leftIndentPt);
                     break;
+
                 case RulerIndentMarkerType.RightIndent:
                     DocumentViewModel?.SetRightIndentPt(valuePt);
                     break;

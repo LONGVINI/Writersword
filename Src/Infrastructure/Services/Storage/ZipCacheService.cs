@@ -128,6 +128,80 @@ namespace Writersword.Infrastructure.Services.Storage
         }
 
         /// <summary>
+        /// Загрузить CustomData И SessionData из кеша одним чтением архива.
+        /// </summary>
+        public (Dictionary<string, object?> CustomData, Dictionary<string, object?> SessionData)?
+            LoadCacheWithSession(string projectPath, string? expectedProjectId = null)
+        {
+            var cachePath = GetCachePath(projectPath);
+            if (!File.Exists(cachePath))
+            {
+                _logger.LogDebug("Cache not found: {CachePath}", cachePath);
+                return null;
+            }
+
+            try
+            {
+                var customData = new Dictionary<string, object?>();
+                var sessionData = new Dictionary<string, object?>();
+
+                using (var archive = ZipFile.OpenRead(cachePath))
+                {
+                    var metadata = LoadMetadataFromArchive(archive);
+                    if (metadata == null)
+                    {
+                        _logger.LogWarning("Failed to load metadata from cache: {CachePath}", cachePath);
+                        return null;
+                    }
+
+                    if (!string.IsNullOrEmpty(expectedProjectId)
+                        && metadata.ProjectId != expectedProjectId)
+                    {
+                        _logger.LogError(
+                            "Cache ProjectId mismatch: expected {Expected}, got {Actual}.",
+                            expectedProjectId, metadata.ProjectId);
+                        return null;
+                    }
+
+                    foreach (var kvp in metadata.Modules)
+                    {
+                        var moduleType = kvp.Key;
+
+                        // CustomData
+                        var customEntry = archive.GetEntry($"modules/{moduleType}/customdata.json");
+                        if (customEntry != null)
+                        {
+                            using var stream = customEntry.Open();
+                            using var reader = new StreamReader(stream);
+                            var json = reader.ReadToEnd();
+                            customData[moduleType] = JsonConvert.DeserializeObject<object>(json);
+                        }
+
+                        // SessionData
+                        var sessionEntry = archive.GetEntry($"modules/{moduleType}/sessiondata.json");
+                        if (sessionEntry != null)
+                        {
+                            using var stream = sessionEntry.Open();
+                            using var reader = new StreamReader(stream);
+                            var json = reader.ReadToEnd();
+                            sessionData[moduleType] = JsonConvert.DeserializeObject<object>(json);
+                            _logger.LogDebug("Loaded session data for: {moduleType}", moduleType);
+                        }
+                    }
+                }
+
+                _logger.LogDebug("LoadCacheWithSession: {CustomCount} custom, {SessionCount} session",
+                    customData.Count, sessionData.Count);
+                return (customData, sessionData);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading cache with session: {CachePath}", cachePath);
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Загрузить метаданные кеша без загрузки данных модулей
         /// </summary>
         public ModuleCacheMetadata? LoadCacheMetadata(string projectPath)
@@ -261,7 +335,7 @@ namespace Writersword.Infrastructure.Services.Storage
                         {
                             var sessionDataJson = JsonConvert.SerializeObject(sessionData, Formatting.Indented);
                             var sessionDataEntry = archive.CreateEntry(
-                                $"Modules/{moduleType}/sessiondata.json", CompressionLevel.Optimal);
+                                $"modules/{moduleType}/sessiondata.json", CompressionLevel.Optimal);
                             using (var stream = sessionDataEntry.Open())
                             using (var writer = new StreamWriter(stream))
                             {

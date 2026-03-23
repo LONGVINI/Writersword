@@ -27,9 +27,15 @@ namespace Writersword.Core.Interfaces.Services
         /// Возвращает словарь moduleType → CustomData
         /// Проверяет ProjectId: если не совпадает — возвращает null
         /// </summary>
-        /// <param name="projectPath">Путь к .writersword файлу</param>
-        /// <param name="expectedProjectId">ID проекта для верификации. null — верификация пропускается</param>
         Dictionary<string, object?>? LoadCache(string projectPath, string? expectedProjectId = null);
+
+        /// <summary>
+        /// Загрузить CustomData И SessionData из кеша одним чтением архива.
+        /// Возвращает два словаря: moduleType → CustomData, moduleType → SessionData.
+        /// SessionData может быть null для модулей у которых нет сессионных данных.
+        /// </summary>
+        (Dictionary<string, object?> CustomData, Dictionary<string, object?> SessionData)?
+            LoadCacheWithSession(string projectPath, string? expectedProjectId = null);
 
         /// <summary>
         /// Загрузить метаданные кеша без загрузки данных модулей

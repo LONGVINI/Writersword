@@ -378,16 +378,21 @@ namespace Writersword.Infrastructure.Dock
 
                 var project = tab.GetProject();
                 var cacheService = App.Services.GetRequiredService<IZipCacheService>();
-                var cache = cacheService.LoadCache(tab.FilePath, project.Id);
+                var cacheResult = cacheService.LoadCacheWithSession(tab.FilePath, project.Id);
 
                 object? customDataToRestore = null;
+                object? sessionDataToRestore = null;
 
-                if (cache != null && cache.TryGetValue(moduleType, out var cacheData))
+                if (cacheResult.HasValue)
                 {
-                    customDataToRestore = cacheData;
-                    _logger.LogDebug("Using cache data for: {moduleType}", moduleType);
+                    cacheResult.Value.CustomData.TryGetValue(moduleType, out customDataToRestore);
+                    cacheResult.Value.SessionData.TryGetValue(moduleType, out sessionDataToRestore);
+                    if (customDataToRestore != null)
+                        _logger.LogDebug("Using cache data for: {moduleType}", moduleType);
                 }
-                else if (project.ModulesData.TryGetValue(moduleType, out var fileData))
+
+                if (customDataToRestore == null
+                    && project.ModulesData.TryGetValue(moduleType, out var fileData))
                 {
                     customDataToRestore = fileData;
                     _logger.LogDebug("Using project file data for: {moduleType}", moduleType);
@@ -406,6 +411,12 @@ namespace Writersword.Infrastructure.Dock
 
                 if (customDataToRestore != null)
                     module.SetCustomData(customDataToRestore);
+
+                if (sessionDataToRestore != null)
+                {
+                    module.SetSessionData(sessionDataToRestore);
+                    _logger.LogDebug("Restored session data for: {moduleType}", moduleType);
+                }
 
                 var moduleView = module.CreateView();
                 if (moduleView != null)
@@ -776,16 +787,21 @@ namespace Writersword.Infrastructure.Dock
 
             var project = tab.GetProject();
             var cacheService = App.Services.GetRequiredService<IZipCacheService>();
-            var cache = cacheService.LoadCache(tab.FilePath, project.Id);
+            var cacheResult = cacheService.LoadCacheWithSession(tab.FilePath, project.Id);
 
             object? customDataToRestore = null;
+            object? sessionDataToRestore = null;
 
-            if (cache != null && cache.TryGetValue(slot.ModuleType, out var cacheData))
+            if (cacheResult.HasValue)
             {
-                customDataToRestore = cacheData;
-                _logger.LogDebug("Using cache data for: {ModuleType}", slot.ModuleType);
+                cacheResult.Value.CustomData.TryGetValue(slot.ModuleType, out customDataToRestore);
+                cacheResult.Value.SessionData.TryGetValue(slot.ModuleType, out sessionDataToRestore);
+                if (customDataToRestore != null)
+                    _logger.LogDebug("Using cache data for: {ModuleType}", slot.ModuleType);
             }
-            else if (project.ModulesData.TryGetValue(slot.ModuleType, out var fileData))
+
+            if (customDataToRestore == null
+                && project.ModulesData.TryGetValue(slot.ModuleType, out var fileData))
             {
                 customDataToRestore = fileData;
                 _logger.LogDebug("Using project file data for: {ModuleType}", slot.ModuleType);
@@ -805,6 +821,12 @@ namespace Writersword.Infrastructure.Dock
             {
                 module.SetCustomData(customDataToRestore);
                 _logger.LogDebug("Restored data for: {ModuleType}", slot.ModuleType);
+            }
+
+            if (sessionDataToRestore != null)
+            {
+                module.SetSessionData(sessionDataToRestore);
+                _logger.LogDebug("Restored session data for: {ModuleType}", slot.ModuleType);
             }
 
             var moduleView = module.CreateView();

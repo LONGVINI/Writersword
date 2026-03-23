@@ -526,6 +526,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
 
         /// <summary>
         /// Обновляет позицию маркера отступа без ограничения минимального значения.
+        /// Стреляет IndentMarkerChanged немедленно для живого предпросмотра:
+        /// текст сдвигается прямо во время drag без ожидания EndIndentDrag.
         /// </summary>
         public void UpdateIndentDragUnclamped(double positionUnits)
         {
@@ -538,6 +540,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             marker.Position = Math.Min(positionUnits, pageWidthUnits);
 
             this.RaisePropertyChanged(nameof(IndentMarkers));
+
+            // Живой предпросмотр — применяем изменение немедленно.
+            // EndIndentDrag повторно вызовет это же событие — это нормально,
+            // DocumentViewModel идемпотентен для одинакового значения.
+            IndentMarkerChanged?.Invoke(DraggingIndentMarker.Value, UnitsToMm(marker.Position));
         }
     }
 }

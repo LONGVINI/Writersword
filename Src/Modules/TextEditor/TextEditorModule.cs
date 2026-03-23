@@ -57,6 +57,12 @@ namespace Writersword.Modules.TextEditor
 
         private DeltaCachePayload? _lastDeltaPayload;
 
+        // Кеш сессионных данных (para, charIdx, scrollY).
+        // Обновляется на UI-потоке через UpdateSessionCache() всякий раз когда
+        // меняется позиция каретки или скролл. GetSessionData() читает его безопасно
+        // с любого потока — никакого обращения к visual tree не нужно.
+        private string? _cachedSessionData;
+
         public override string moduleType => "TextEditor";
         public override object? ViewModel => _viewModel;
         public override IModuleMetadata Metadata { get; } = new TextEditorModuleMetadata();
@@ -131,6 +137,11 @@ namespace Writersword.Modules.TextEditor
             if (_hotKeyService is not null)
                 BindCanvasHotKeyService(view);
 
+            // Если SetSessionData был вызван до CreateView (стандартный сценарий DockFactory),
+            // восстанавливаем позицию каретки сейчас — view уже существует.
+            if (_cachedSessionData is not null)
+                RestoreCaretFromCache();
+
             return view;
         }
 
@@ -147,6 +158,8 @@ namespace Writersword.Modules.TextEditor
             _logger.Debug("HotKeyService bound to PageCanvas");
         }
 
+
+
         public override object? GetCustomData()
         {
             if (_viewModel?.DocumentViewModel is null) return null;
@@ -157,7 +170,19 @@ namespace Writersword.Modules.TextEditor
             string documentJson = _serializer.Serialize(_viewModel.DocumentViewModel.Document);
             string localSettingsJson = System.Text.Json.JsonSerializer.Serialize(_localSettings);
 
-            var envelope = new { v = 2, doc = documentJson, local = localSettingsJson };
+            // Обновляем кеш сессии с UI-потока (здесь всегда UI-поток — Ctrl+S).
+            // Версия 3 = v2 + поле "caret" с позицией каретки.
+            // Старые файлы v2 читаются без него (caret будет null → позиция 0).
+            if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+                RefreshSessionCacheOnUIThread();
+
+            var envelope = new
+            {
+                v = 3,
+                doc = documentJson,
+                local = localSettingsJson,
+                caret = _cachedSessionData   // null пока не было UI-вызова
+            };
             return System.Text.Json.JsonSerializer.Serialize(envelope);
         }
 
@@ -179,7 +204,9 @@ namespace Writersword.Modules.TextEditor
                     using var envelope = System.Text.Json.JsonDocument.Parse(raw);
                     var root = envelope.RootElement;
 
-                    if (root.TryGetProperty("v", out var ver) && ver.GetInt32() == 2
+                    int envelopeVersion = root.TryGetProperty("v", out var ver) ? ver.GetInt32() : 1;
+
+                    if ((envelopeVersion == 2 || envelopeVersion == 3)
                         && root.TryGetProperty("doc", out var docProp)
                         && root.TryGetProperty("local", out var localProp))
                     {
@@ -198,11 +225,25 @@ namespace Writersword.Modules.TextEditor
                             }
                         }
 
+                        // Восстанавливаем позицию каретки из поля "caret" (версия 3+).
+                        if (envelopeVersion >= 3
+                            && root.TryGetProperty("caret", out var caretProp)
+                            && caretProp.ValueKind == System.Text.Json.JsonValueKind.String)
+                        {
+                            _cachedSessionData = caretProp.GetString();
+                        }
+
                         DocumentModel? doc = _serializer.Deserialize(docJson);
                         if (doc is not null)
                         {
                             _viewModel.LoadDocument(doc, _localSettings);
-                            _logger.Debug("Document loaded (v2), title={Title}", doc.Title);
+
+                            // Каретку восстанавливаем ПОСЛЕ загрузки документа.
+                            // Откладываем через Dispatcher.Loaded чтобы лейауты успели построиться.
+                            if (_cachedSessionData is not null)
+                                RestoreCaretFromCache();
+
+                            _logger.Debug("Document loaded (v{V}), title={Title}", envelopeVersion, doc.Title);
                             return;
                         }
                     }
@@ -225,6 +266,92 @@ namespace Writersword.Modules.TextEditor
             }
 
             _viewModel.LoadNewDocument(_localSettings);
+        }
+
+        public override object? GetSessionData()
+        {
+            // Вызывается в двух контекстах:
+            //
+            // 1. UI-поток (переключение вкладок, ручное сохранение) →
+            //    берём свежее состояние из canvas и обновляем кеш.
+            //
+            // 2. Фоновый поток (autosave-таймер ModuleStateCollectorService) →
+            //    canvas трогать нельзя, возвращаем последний кеш.
+            //    Данные чуть устаревшие (позиция на момент последнего UI-вызова),
+            //    но это приемлемо для autosave — точность до "последней вкладки".
+
+            if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+                RefreshSessionCacheOnUIThread();
+
+            return _cachedSessionData;
+        }
+
+        /// <summary>
+        /// Восстанавливает позицию каретки из _cachedSessionData.
+        /// Вызывается после загрузки документа — откладывается до Loaded.
+        /// </summary>
+        private void RestoreCaretFromCache()
+        {
+            if (_cachedSessionData is null) return;
+
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(_cachedSessionData);
+                var root = doc.RootElement;
+
+                int docParaIdx = root.TryGetProperty("para", out var p) ? p.GetInt32() : 0;
+                int charIdx = root.TryGetProperty("ch", out var c) ? c.GetInt32() : 0;
+                double scrollY = root.TryGetProperty("scroll", out var s) ? s.GetDouble() : 0;
+
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    var canvas = _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
+                    canvas?.RestoreCaretState(docParaIdx, charIdx);
+
+                    var sv = _lastCreatedView?
+                        .FindControl<Avalonia.Controls.ScrollViewer>("DocumentScrollViewer");
+                    if (sv is not null && scrollY > 0)
+                        sv.Offset = new Avalonia.Vector(sv.Offset.X, scrollY);
+
+                }, Avalonia.Threading.DispatcherPriority.Loaded);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "RestoreCaretFromCache: failed");
+            }
+        }
+
+        /// <summary>
+        /// Обновляет кеш сессионных данных. Должен вызываться только с UI-потока.
+        /// </summary>
+        private void RefreshSessionCacheOnUIThread()
+        {
+            var canvas = _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
+            if (canvas is null) return;
+
+            var (docParaIdx, charIdx, scrollY) = canvas.GetCaretState();
+            _cachedSessionData = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                para = docParaIdx,
+                ch = charIdx,
+                scroll = scrollY
+            });
+        }
+
+        public override void SetSessionData(object? data)
+        {
+            // SetSessionData вызывается из DockFactory ДО CreateView —
+            // _lastCreatedView ещё null, FindControl ничего не найдёт.
+            // Просто кешируем данные; RestoreCaretFromCache() вызовется
+            // из CreateView после того как view будет построен.
+            string? raw = data switch
+            {
+                string s when !string.IsNullOrWhiteSpace(s) => s,
+                byte[] b when b.Length > 0 => System.Text.Encoding.UTF8.GetString(b),
+                _ => null
+            };
+            if (raw is not null)
+                _cachedSessionData = raw;
         }
 
         // ── IHotKeyProvider ───────────────────────────────────────────────

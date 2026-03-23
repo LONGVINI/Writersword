@@ -1,6 +1,7 @@
 using Avalonia.Threading;
 using ReactiveUI;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
@@ -30,6 +31,23 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private bool _isReadOnly;
 
         private ParagraphViewModel? _activeParagraph;
+
+        /// <summary>
+        /// Абзацы попавшие в текущее выделение (может быть несколько).
+        /// Заполняется DocumentCanvas после каждого изменения выделения.
+        /// Используется ApplyParaProperty чтобы применять форматирование
+        /// ко всем выделенным абзацам, а не только к активному.
+        /// </summary>
+        public List<ParagraphViewModel> SelectionParagraphs { get; } = new();
+
+        // ── Делегаты таблицы (устанавливаются DocumentCanvas) ─────────────
+        // DocumentCanvas устанавливает их при входе каретки в таблицу (EnterTableMode)
+        // и обнуляет при выходе (SwitchToNormalMode).
+        public Action<bool>? TableAddRowDelegate { get; set; }
+        public Action<bool>? TableAddColDelegate { get; set; }
+        public Action? TableDeleteRowDelegate { get; set; }
+        public Action? TableDeleteColDelegate { get; set; }
+        public Action? TableDeleteDelegate { get; set; }
 
         public DocumentModel Document => _document;
 
@@ -81,18 +99,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public CanvasSettings CanvasSettings => _document.CanvasSettings;
         public TextEditorPageSettings PageSettings => _document.PageSettings;
-
-        // ── Делегаты таблицы (устанавливаются DocumentCanvas) ─────────────
-        // DocumentCanvas устанавливает эти делегаты при входе каретки в таблицу
-        // (EnterTableMode) и обнуляет при выходе (SwitchToNormalMode).
-        // ITextEditorCommandTarget.TableXxx вызывают соответствующий делегат,
-        // что позволяет контекстному Ribbon работать с таблицей без знания о Canvas.
-
-        public Action<bool>? TableAddRowDelegate { get; set; }
-        public Action<bool>? TableAddColDelegate { get; set; }
-        public Action? TableDeleteRowDelegate { get; set; }
-        public Action? TableDeleteColDelegate { get; set; }
-        public Action? TableDeleteDelegate { get; set; }
 
         public DocumentViewModel(
             DocumentModel document,
@@ -384,17 +390,16 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertComment(string text) => AddAnnotation(InlineAnnotationType.Comment, content: text);
 
         // ── ITextEditorCommandTarget: контекстные операции с таблицей ─────
-        // Каждый метод вызывает соответствующий делегат, установленный
-        // DocumentCanvas в момент входа каретки в таблицу.
-        // Если каретка не в таблице — делегаты null и вызов безопасно игнорируется.
-
         public void TableAddRow(bool above) => TableAddRowDelegate?.Invoke(above);
         public void TableAddColumn(bool left) => TableAddColDelegate?.Invoke(left);
         public void TableDeleteRow() => TableDeleteRowDelegate?.Invoke();
         public void TableDeleteColumn() => TableDeleteColDelegate?.Invoke();
         public void TableDelete() => TableDeleteDelegate?.Invoke();
 
-        // ── Операции с таблицами (прямые — для внутреннего использования) ─
+        // ── Публичный враппер пересборки параграфов ───────────────────────
+        public void RebuildParagraphViewModelsPublic() => RebuildParagraphViewModels();
+
+        // ── Операции с таблицами ──────────────────────────────────────────
 
         public void TableAddRowBelow(TableBlock table, int afterRow)
         {
@@ -607,15 +612,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ExportToTxt() { }
         public void ExportToMarkdown() { }
 
-        // ── Публичный враппер пересборки параграфов ───────────────────────
-
-        /// <summary>
-        /// Публичный враппер RebuildParagraphViewModels.
-        /// Используется DocumentCanvas при удалении таблицы из документа,
-        /// чтобы пересинхронизировать коллекцию ParagraphViewModel.
-        /// </summary>
-        public void RebuildParagraphViewModelsPublic() => RebuildParagraphViewModels();
-
         // ── Внутренние методы ─────────────────────────────────────────────
 
         private void ApplyCharProperty(Action<RunProperties> mutate, bool clearAll = false)
@@ -657,8 +653,19 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void ApplyParaProperty(Action<ParagraphProperties> mutate)
         {
-            if (_activeParagraph is null) return;
-            mutate(_activeParagraph.Model.Properties);
+            // Если есть мульти-абзацное выделение — применяем ко всем.
+            // Иначе — только к активному абзацу (обычный случай).
+            if (SelectionParagraphs.Count > 0)
+            {
+                foreach (var pvm in SelectionParagraphs)
+                    mutate(pvm.Model.Properties);
+            }
+            else if (_activeParagraph is not null)
+            {
+                mutate(_activeParagraph.Model.Properties);
+            }
+            else return;
+
             FireCursorContextChanged();
             ParagraphFormatChanged?.Invoke();
         }

@@ -485,21 +485,17 @@ namespace Writersword.Infrastructure.Rendering
         public static void RenderParagraph(
             SKCanvas canvas, SKTextLayout layout, float paraX, float paraY)
         {
-            bool isFirstLine = true;
+            int _renderLineIdx = 0;
             foreach (var line in layout.Lines)
             {
                 float lineY = paraY + line.Y;
                 float offsetX = ComputeAlignmentOffset(layout, line);
-
-                // Для первой строки параграфа добавляем отступ первой строки.
-                // Он учитывается при переносе (WrapTokensToLines уменьшает lineWidth),
-                // но не хранится в seg.X — сегменты всегда начинаются с X = 0.
-                float firstLineExtra = isFirstLine ? layout.FirstLineIndentPt : 0f;
-                isFirstLine = false;
+                float firstLineX = (_renderLineIdx == 0) ? layout.FirstLineIndentPt : 0f;
+                _renderLineIdx++;
 
                 foreach (var seg in line.Segments)
                 {
-                    float segX = paraX + seg.X + offsetX + firstLineExtra;
+                    float segX = paraX + seg.X + offsetX + firstLineX;
                     float baseY = lineY + line.Baseline;
 
                     if (seg.HighlightColor != SKColors.Transparent)
@@ -619,7 +615,7 @@ namespace Writersword.Infrastructure.Rendering
             }
 
             float lineWidth = availableWidthPt - layout.FirstLineIndentPt;
-            float currentW = 0f;
+            float currentW = 0f;  // seg.X всегда начинается с 0; FirstLineIndentPt добавляется отдельно при рендере и hit-тесте
             var currentLine = new SKLineLayout { FirstCharIndex = tokens[0].GlobalIndex };
             var wordBuffer = new List<(string Char, SKRunSegment Format, int GlobalIndex)>();
             float wordWidth = 0f;
@@ -681,8 +677,23 @@ namespace Writersword.Infrastructure.Rendering
 
                     float spaceWidth = MeasureChar(ch, format);
                     if (currentW + spaceWidth <= lineWidth || currentLine.Segments.Count == 0)
+                    {
+                        // Пробел влезает — добавляем нормально.
                         AppendCharToLine(currentLine, ch, format, globalIdx,
                             ref currentW, spaceWidth);
+                    }
+                    else
+                    {
+                        // Пробел не влезает — добавляем с нулевой шириной.
+                        // Символ должен существовать в индексации (LastCharIndex),
+                        // иначе _caretChar после ввода пробела = FirstChar следующей строки
+                        // и каретка прыгает вниз.
+                        float zeroW = 0f;
+                        AppendCharToLine(currentLine, ch, format, globalIdx,
+                            ref currentW, zeroW);
+                        // currentW не изменился (добавили 0) — следующее слово
+                        // корректно перенесётся на новую строку.
+                    }
                 }
                 else
                 {
@@ -1110,14 +1121,13 @@ namespace Writersword.Infrastructure.Rendering
                 float lineY = paraY + (line.Y - yBase);
                 float offsetX = ComputeAlignmentOffset(layout, line);
 
-                // Для первой строки параграфа добавляем отступ первой строки.
-                // Он учитывается при переносе (WrapTokensToLines уменьшает lineWidth),
-                // но не хранится в seg.X — сегменты всегда начинаются с X = 0.
-                float firstLineExtra = (i == 0) ? layout.FirstLineIndentPt : 0f;
+                // Первая строка параграфа визуально сдвигается на FirstLineIndentPt.
+                // i == 0 — это именно layout line 0 (clampedFrom ≥ 1 для последующих слайсов).
+                float firstLineX = (i == 0) ? layout.FirstLineIndentPt : 0f;
 
                 foreach (var seg in line.Segments)
                 {
-                    float segX = paraX + seg.X + offsetX + firstLineExtra;
+                    float segX = paraX + seg.X + offsetX + firstLineX;
                     float baseY = lineY + line.Baseline;
 
                     if (seg.HighlightColor != SKColors.Transparent)
