@@ -391,7 +391,10 @@ namespace Writersword.Modules.TextEditor.Document
                 if (DocVm is not null)
                     _styleResolver = new StyleResolver(DocVm.Document.Styles);
                 _layoutCache.Clear();
-                InvalidateMeasure();
+                // PageSettings изменились (поля, размер страницы) — нужен немедленный rebuild,
+                // не просто InvalidateMeasure (он откладывается и может не перестроить лейауты).
+                RebuildLayouts();
+                InvalidateFull();
             }
         }
 

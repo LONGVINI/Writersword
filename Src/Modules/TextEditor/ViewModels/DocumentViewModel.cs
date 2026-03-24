@@ -399,6 +399,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // ── Публичный враппер пересборки параграфов ───────────────────────
         public void RebuildParagraphViewModelsPublic() => RebuildParagraphViewModels();
 
+        public void FireParagraphFormatChanged() => ParagraphFormatChanged?.Invoke();
+
         // ── Операции с таблицами ──────────────────────────────────────────
 
         public void TableAddRowBelow(TableBlock table, int afterRow)

@@ -105,6 +105,29 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             // Подписка на изменение полей страницы через drag на линейке.
             Ruler.MarginChanged += OnRulerMarginChanged;
+            Ruler.MarginCommitted += OnRulerMarginCommitted;
+
+            // Делегат для ограничения drag левого поля: поле не может зайти правее
+            // самого левого маркера среди всех абзацев документа.
+            Ruler.GetMinParagraphIndentMm = () =>
+            {
+                var doc = DocumentViewModel?.Document;
+                if (doc is null) return double.MaxValue;
+                double minPt = double.MaxValue;
+                foreach (var section in doc.Sections)
+                    foreach (var block in section.Blocks)
+                        if (block is Writersword.Modules.TextEditor.Models.Document.ParagraphBlock p)
+                        {
+                            double li = p.Properties.LeftIndent ?? 0;
+                            double fi = p.Properties.FirstLineIndent ?? 0;
+                            // Абсолютная позиция первой строки = LeftIndent + FirstLineIndent
+                            // Абсолютная позиция остальных строк = LeftIndent
+                            double minIndent = Math.Min(li, li + fi);
+                            if (minIndent < minPt) minPt = minIndent;
+                        }
+                // pt → mm
+                return minPt == double.MaxValue ? double.MaxValue : minPt * 25.4 / 72.0;
+            };
         }
 
         // ── Document loading ──────────────────────────────────────────────
@@ -274,15 +297,33 @@ namespace Writersword.Modules.TextEditor.ViewModels
             switch (markerType)
             {
                 case RulerIndentMarkerType.LeftIndent:
-                    DocumentViewModel?.SetLeftIndentPt(valuePt);
-                    break;
+                    {
+                        // Всё считаем в мм, конвертируем в pt только при передаче в модель.
+                        double oldLeftMm = Ruler.LeftIndentMm;
+                        double absFirstMm = Ruler.FirstLineIndentMm; // абсолютная позиция первой строки
+                        double newLeftMm = valueMm;
+
+                        // Первая строка двигается вместе с LeftIndent
+                        double newAbsFirstMm = absFirstMm + (newLeftMm - oldLeftMm);
+
+                        // Клампим к левому краю листа
+                        double pageLeftMm = -Ruler.MarginLeftMm;
+                        newAbsFirstMm = Math.Max(newAbsFirstMm, pageLeftMm);
+
+                        // В модели FirstLineIndent = относительно LeftIndent
+                        double newFirstRelMm = newAbsFirstMm - newLeftMm;
+
+                        DocumentViewModel?.SetLeftIndentPt(newLeftMm * 72.0 / 25.4);
+                        DocumentViewModel?.SetFirstLineIndentPt(newFirstRelMm * 72.0 / 25.4);
+                        break;
+                    }
 
                 case RulerIndentMarkerType.FirstLineIndent:
-                    // Маркер хранит абсолютную позицию = LeftIndent + FirstLineIndent.
-                    // Модель хранит FirstLineIndent как смещение относительно LeftIndent.
-                    double leftIndentPt = Ruler.LeftIndentMm * 72.0 / 25.4;
-                    DocumentViewModel?.SetFirstLineIndentPt(valuePt - leftIndentPt);
-                    break;
+                    {
+                        double leftIndentPt = Ruler.LeftIndentMm * 72.0 / 25.4;
+                        DocumentViewModel?.SetFirstLineIndentPt(valuePt - leftIndentPt);
+                        break;
+                    }
 
                 case RulerIndentMarkerType.RightIndent:
                     DocumentViewModel?.SetRightIndentPt(valuePt);
@@ -299,8 +340,48 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private void OnRulerMarginChanged(double marginLeftMm, double marginRightMm)
         {
             if (DocumentViewModel is null) return;
-            var ps = DocumentViewModel.Document.PageSettings;
-            // MarginChanged передаёт Left/Right; Top/Bottom берём из RulerViewModel напрямую.
+            DocumentViewModel.SetPageMargins(
+                Ruler.MarginTopMm, Ruler.MarginBottomMm,
+                marginLeftMm, marginRightMm);
+
+            // Когда левое поле двигается вправо, абзацные маркеры которые были
+            // в зоне поля могут оказаться за левым краем листа.
+            // Зажимаем их: минимальный LeftIndent = -(marginLeftMm) в pt
+            double minIndentPt = -marginLeftMm * 72.0 / 25.4;
+            bool changed = false;
+            var doc = DocumentViewModel.Document;
+            foreach (var section in doc.Sections)
+                foreach (var block in section.Blocks)
+                    if (block is Writersword.Modules.TextEditor.Models.Document.ParagraphBlock p)
+                    {
+                        double li = p.Properties.LeftIndent ?? 0;
+                        double fi = p.Properties.FirstLineIndent ?? 0;
+                        if (li < minIndentPt)
+                        {
+                            p.Properties.LeftIndent = minIndentPt;
+                            if (fi < 0 && li + fi < minIndentPt)
+                                p.Properties.FirstLineIndent = minIndentPt - minIndentPt; // = 0
+                            changed = true;
+                        }
+                        else if (li + fi < minIndentPt)
+                        {
+                            p.Properties.FirstLineIndent = minIndentPt - li;
+                            changed = true;
+                        }
+                    }
+
+            if (changed)
+                DocumentViewModel.FireParagraphFormatChanged();
+
+            SyncRulerToDocument(DocumentViewModel.Document);
+        }
+
+        /// <summary>
+        /// Вызывается при отпускании drag поля — полный пересчёт лейаутов.
+        /// </summary>
+        private void OnRulerMarginCommitted(double marginLeftMm, double marginRightMm)
+        {
+            if (DocumentViewModel is null) return;
             DocumentViewModel.SetPageMargins(
                 Ruler.MarginTopMm, Ruler.MarginBottomMm,
                 marginLeftMm, marginRightMm);
@@ -533,6 +614,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Ruler.IndentMarkerChanged -= OnRulerIndentMarkerChanged;
             Ruler.ColumnWidthChanged -= OnRulerColumnWidthChanged;
             Ruler.MarginChanged -= OnRulerMarginChanged;
+            Ruler.MarginCommitted -= OnRulerMarginCommitted;
 
             if (_documentViewModel is not null)
                 _documentViewModel.CursorContextChanged -= OnCursorContextChanged;

@@ -20,13 +20,69 @@
               ColumnDefinitions="Auto *"
               ClipToBounds="True">
 
-			<!-- [0,0] Кнопка привязки к сетке -->
-			<doc:SnapButtonControl
-                    x:Name="SnapButton"
-                    Grid.Row="0" Grid.Column="0"
-                    Width="24" Height="24"
-                    DataContext="{Binding Ruler}"/>
-
+			<!-- [0,0] Кнопка snap-to-grid (магнитик) -->
+			<!-- [0,0] Кнопка snap-to-grid (магнитик) -->
+			<ToggleButton Grid.Row="0" Grid.Column="0"
+						  Width="24" Height="24"
+						  Padding="0"
+						  IsChecked="{Binding Ruler.IsSnapEnabled, Mode=TwoWay}"
+						  ToolTip.Tip="Привязка к сетке"
+						  Background="Transparent"
+						  BorderThickness="0"
+						  CornerRadius="0"
+						  HorizontalContentAlignment="Center"
+						  VerticalContentAlignment="Center">
+				<ToggleButton.Styles>
+					<Style Selector="ToggleButton /template/ ContentPresenter">
+						<Setter Property="Padding" Value="0"/>
+						<Setter Property="HorizontalAlignment" Value="Center"/>
+						<Setter Property="VerticalAlignment" Value="Center"/>
+					</Style>
+					<!-- Выключено — тусклый фон -->
+					<Style Selector="ToggleButton#SnapBtn > Border">
+						<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+						<Setter Property="Opacity" Value="0.5"/>
+					</Style>
+					<!-- Hover -->
+					<Style Selector="ToggleButton#SnapBtn:pointerover > Border">
+						<Setter Property="Background" Value="{DynamicResource AccentHoverBrush}"/>
+						<Setter Property="Opacity" Value="0.8"/>
+					</Style>
+					<!-- Нажато -->
+					<Style Selector="ToggleButton#SnapBtn:pressed > Border">
+						<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+						<Setter Property="Opacity" Value="1"/>
+					</Style>
+					<!-- Включено -->
+					<Style Selector="ToggleButton#SnapBtn:checked > Border">
+						<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+						<Setter Property="Opacity" Value="1"/>
+					</Style>
+					<!-- Включено + hover -->
+					<Style Selector="ToggleButton#SnapBtn:checked:pointerover > Border">
+						<Setter Property="Background" Value="{DynamicResource AccentHoverBrush}"/>
+						<Setter Property="Opacity" Value="1"/>
+					</Style>
+				</ToggleButton.Styles>
+				<Border Width="18" Height="18"
+						CornerRadius="3"
+						HorizontalAlignment="Center"
+						VerticalAlignment="Center">
+					<Viewbox Width="12" Height="12"
+							 Margin="-2 0 0 0"
+							 Stretch="Uniform">
+						<Canvas Width="24" Height="24">
+							<Path Data="M 12.71,1.39 L 5.64,8.46 A 7,7 0 0,0 5.64,18.36 A 7,7 0 0,0 15.54,18.36 L 22.61,11.29 L 20.49,9.17 L 13.41,16.24 A 4,4 0 0,1 7.76,16.24 A 4,4 0 0,1 7.76,10.59 L 14.83,3.51 Z"
+								  Fill="White"/>
+							<Path Data="M 13.77,-1.08 L 17.3,2.45 L 15.18,4.58 L 11.65,1.04 Z"
+								  Fill="rgba(255,255,255,0.65)"/>
+							<Path Data="M 21.55,6.7 L 25.08,10.23 L 22.96,12.35 L 19.42,8.82 Z"
+								  Fill="rgba(255,255,255,0.65)"/>
+						</Canvas>
+					</Viewbox>
+				</Border>
+			</ToggleButton>
+			
 			<!-- [0,1] Горизонтальная линейка — точно над ScrollViewer -->
 			<doc:HorizontalRulerControl
                     Grid.Row="0" Grid.Column="1"

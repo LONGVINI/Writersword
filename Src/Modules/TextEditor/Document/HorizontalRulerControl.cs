@@ -212,15 +212,10 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (isMajor)
                 {
+                    if (Math.Abs(unitValue) < majorInterval * 0.1) continue; // не рисуем "0"
+
                     string label;
                     SKPaint lPaint;
-                    if (Math.Abs(unitValue) < majorInterval * 0.1)
-                    {
-                        // Ноль — синяя метка "0" прямо на границе текстовой зоны.
-                        label = "0";
-                        lPaint = new SKPaint { Color = ColorZeroLabel, IsAntialias = true };
-                    }
-                    else
                     {
                         bool isNeg = unitValue < 0;
                         label = _vm.Units == Models.Settings.RulerUnits.Inches
@@ -552,8 +547,6 @@ namespace Writersword.Modules.TextEditor.Document
                 if (_draggingLeftMargin)
                 {
                     double newMarginMm = PxToMm(clampedX - pageOffsetXPx2, zoom);
-                    // Snap: SnapStep в единицах линейки (см или дюйм).
-                    // Для мм: 1 единица = 10мм → snap 0.25 ед = 2.5мм.
                     if (_vm.IsSnapEnabled)
                     {
                         double snapMm = _vm.UnitsToMm(_vm.SnapStep);
@@ -596,18 +589,23 @@ namespace Writersword.Modules.TextEditor.Document
                     double posUnits;
                     if (_vm.DraggingIndentMarker == RulerIndentMarkerType.RightIndent)
                     {
-                        // Правый отступ — от правого края текста.
-                        // Минимум: правый маркер не может уйти левее текстовой области.
-                        double clampedX = Math.Max(textAreaStartPx, Math.Min(pos.X, pageEndPx));
+                        // RightIndent считается от правого края текстовой зоны.
+                        // Отрицательное значение = маркер в зоне правого поля (текст расширен).
+                        // Минимум: правый край листа = -MarginRightMm в единицах.
+                        double pageEndPx2 = _vm.PageOffsetXPx + MmToPx(_vm.PageWidthMm, zoom);
+                        double clampedX = Math.Max(_vm.PageOffsetXPx, Math.Min(pos.X, pageEndPx2));
                         posUnits = (textAreaEndPx - clampedX) / unitSizePx;
-                        posUnits = Math.Max(0, posUnits);
                     }
                     else
                     {
                         // LeftIndent и FirstLineIndent — от левого края текста.
-                        // Ограничиваем X физическим листком.
+                        // Ограничиваем X физическим листком — маркер не может уйти за левый край.
                         double clampedX = Math.Max(pageStartPx, Math.Min(pos.X, pageEndPx));
                         posUnits = (clampedX - textAreaStartPx) / unitSizePx;
+                        // posUnits может быть отрицательным (маркер в зоне поля) —
+                        // минимум = -MarginLeftUnits (левый край листа в координатах шкалы).
+                        double minUnits = -(textAreaStartPx - pageStartPx) / unitSizePx;
+                        posUnits = Math.Max(posUnits, minUnits);
                     }
 
                     _vm.UpdateIndentDragUnclamped(posUnits);
@@ -655,9 +653,8 @@ namespace Writersword.Modules.TextEditor.Document
                 _isDraggingMargin = false;
                 e.Pointer.Capture(null);
                 Cursor = new Cursor(StandardCursorType.Arrow);
-                // MarginLeftMm/MarginRightMm — реактивные свойства RulerViewModel.
-                // TextEditorViewModel подписан через Ruler.IndentMarkerChanged и сам обновит поля.
-                // Дополнительного уведомления не требуется.
+                // CommitMarginChange инициирует полный пересчёт лейаутов.
+                _vm?.CommitMarginChange();
                 InvalidateVisual();
                 e.Handled = true;
                 return;

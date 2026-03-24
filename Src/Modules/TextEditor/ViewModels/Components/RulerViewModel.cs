@@ -304,13 +304,29 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         /// Параметры: (marginLeftMm, marginRightMm).
         /// TextEditorViewModel применяет новые поля к документу.
         /// </summary>
+        /// <summary>
+        /// Делегат для получения минимального LeftIndent по всем абзацам документа (в мм).
+        /// Устанавливается TextEditorViewModel при загрузке документа.
+        /// Используется при drag левого поля: поле не может зайти правее ни одного маркера абзаца.
+        /// </summary>
+        public Func<double>? GetMinParagraphIndentMm { get; set; }
+
         public event Action<double, double>? MarginChanged;
 
         /// <summary>
-        /// Вызывается HorizontalRulerControl при изменении поля через drag.
+        /// Вызывается при каждом движении drag (живой предпросмотр).
+        /// Обновляет только линейку — тяжёлый пересчёт лейаутов откладывается.
         /// </summary>
         public void NotifyMarginChanged()
             => MarginChanged?.Invoke(MarginLeftMm, MarginRightMm);
+
+        /// <summary>
+        /// Вызывается при отпускании drag — инициирует полный пересчёт лейаутов.
+        /// </summary>
+        public event Action<double, double>? MarginCommitted;
+
+        public void CommitMarginChange()
+            => MarginCommitted?.Invoke(MarginLeftMm, MarginRightMm);
 
         /// <summary>
         /// Вызывается когда пользователь перетащил маркер колонки таблицы.
@@ -548,6 +564,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         /// <summary>
         /// Возвращает маркер отступа по типу.
         /// </summary>
+        /// <summary>Возвращает текущую позицию маркера в единицах линейки.</summary>
+        public double GetIndentMarkerPosition(RulerIndentMarkerType type)
+            => GetIndentMarker(type)?.Position ?? 0;
+
         private RulerIndentMarker? GetIndentMarker(RulerIndentMarkerType type)
         {
             foreach (var m in IndentMarkers)
@@ -572,7 +592,41 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
 
             // Только верхний предел — не выходим за правый край страницы.
             double pageWidthUnits = MmToUnits(PageWidthMm);
-            marker.Position = Math.Min(positionUnits, pageWidthUnits);
+            positionUnits = Math.Min(positionUnits, pageWidthUnits);
+
+            // Нижний предел зависит от типа маркера:
+            // - LeftIndent/FirstLineIndent: не левее левого края листа (-MarginLeft)
+            // - RightIndent: не правее правого края листа (-MarginRight)
+            if (DraggingIndentMarker == RulerIndentMarkerType.RightIndent)
+            {
+                double minRight = -MmToUnits(MarginRightMm);
+                positionUnits = Math.Max(positionUnits, minRight);
+            }
+            else
+            {
+                double minUnits = -MmToUnits(MarginLeftMm);
+                positionUnits = Math.Max(positionUnits, minUnits);
+            }
+
+            // Когда двигается LeftIndent — FirstLineIndent тянется за ним
+            // сохраняя расстояние. Но если FirstLineIndent уже упёрся в край листа —
+            // он остаётся там, LeftIndent продолжает двигаться один.
+            if (DraggingIndentMarker == RulerIndentMarkerType.LeftIndent)
+            {
+                var firstMarker = GetIndentMarker(RulerIndentMarkerType.FirstLineIndent);
+                if (firstMarker is not null)
+                {
+                    double leftCurrent = GetIndentMarker(RulerIndentMarkerType.LeftIndent)!.Position;
+                    double offset = firstMarker.Position - leftCurrent; // сохраняем разницу
+                    double newFirst = positionUnits + offset;
+                    double minEdge = -MmToUnits(MarginLeftMm);
+                    double maxEdge = pageWidthUnits;
+                    // Прижимаем к краю — но не блокируем LeftIndent
+                    firstMarker.Position = Math.Max(minEdge, Math.Min(maxEdge, newFirst));
+                }
+            }
+
+            marker.Position = positionUnits;
 
             this.RaisePropertyChanged(nameof(IndentMarkers));
 

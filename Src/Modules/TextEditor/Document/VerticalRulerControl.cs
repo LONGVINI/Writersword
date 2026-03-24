@@ -226,19 +226,8 @@ namespace Writersword.Modules.TextEditor.Document
 
                 canvas.DrawLine(w - tickW, (float)yPx, w, (float)yPx, paint);
 
-                // Подпись на основных делениях + ноль синим.
                 if (!isMajor) continue;
-                if (Math.Abs(unitValue) <= majorInterval * 0.1)
-                {
-                    // Рисуем "0" синим.
-                    using var zeroP = new SKPaint { Color = ColZeroLabel, IsAntialias = true };
-                    using var save0 = new SKAutoCanvasRestore(canvas, true);
-                    canvas.Translate(w - (float)MajorTickWidthPx - 2f, (float)yPx);
-                    canvas.RotateDegrees(-90);
-                    float zW = font.MeasureText("0");
-                    canvas.DrawText("0", -zW / 2f, 0, font, zeroP);
-                    continue;
-                }
+                if (Math.Abs(unitValue) <= majorInterval * 0.1) continue; // не рисуем "0"
 
                 // Отображаем расстояние от начала текстовой зоны (или от поля).
                 double displayValue;
@@ -357,6 +346,7 @@ namespace Writersword.Modules.TextEditor.Document
             _isDraggingMargin = false;
             e.Pointer.Capture(null);
             Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Arrow);
+            _vm?.CommitMarginChange();
             InvalidateVisual();
             e.Handled = true;
         }
