@@ -90,17 +90,19 @@ namespace Writersword.Core.Models.Rendering
             charIndex = Math.Clamp(charIndex, 0, TextLength);
 
             if (Lines.Count == 0)
-                return new SKCaretRect { X = LeftIndentPt, Y = 0, Height = 14f, Baseline = 11f };
+                return new SKCaretRect { X = LeftIndentPt + FirstLineIndentPt, Y = 0, Height = 14f, Baseline = 11f };
 
+            int lineIdx = 0;
             foreach (var line in Lines)
             {
-                if (charIndex > line.LastCharIndex && !line.IsLastLine) continue;
+                if (charIndex > line.LastCharIndex && !line.IsLastLine) { lineIdx++; continue; }
 
                 float x = GetCaretXInLine(line, charIndex);
+                float lineExtra = (lineIdx == 0) ? FirstLineIndentPt : 0f;
 
                 return new SKCaretRect
                 {
-                    X = LeftIndentPt + x,
+                    X = LeftIndentPt + lineExtra + x,
                     Y = line.Y,
                     Height = line.Height,
                     Baseline = line.Baseline
@@ -109,10 +111,12 @@ namespace Writersword.Core.Models.Rendering
 
             var lastLine = Lines[^1];
             float lastX = GetCaretXInLine(lastLine, charIndex);
+            // lastLine — последняя строка, никогда не line 0 если строк > 1
+            float lastLineExtra = (Lines.Count == 1) ? FirstLineIndentPt : 0f;
 
             return new SKCaretRect
             {
-                X = LeftIndentPt + lastX,
+                X = LeftIndentPt + lastLineExtra + lastX,
                 Y = lastLine.Y,
                 Height = lastLine.Height,
                 Baseline = lastLine.Baseline
@@ -147,12 +151,15 @@ namespace Writersword.Core.Models.Rendering
                 float x1 = GetCaretXInLine(line, lineFrom);
                 float x2 = GetCaretXInLine(line, lineTo);
 
-                if (x2 < x1) (x1, x2) = (x2, x1);
+                if (x2 < x1) (x2, x1) = (x1, x2);
+
+                // Первая строка параграфа физически сдвинута вправо на FirstLineIndentPt
+                float lineExtra = (i == 0) ? FirstLineIndentPt : 0f;
 
                 result.Add(new SKSelectionRect
                 {
-                    Rect = new SKRect(LeftIndentPt + x1, line.Y,
-                                           LeftIndentPt + x2, line.Y + line.Height),
+                    Rect = new SKRect(LeftIndentPt + lineExtra + x1, line.Y,
+                                           LeftIndentPt + lineExtra + x2, line.Y + line.Height),
                     LineIndex = i
                 });
             }

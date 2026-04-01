@@ -40,6 +40,55 @@ namespace Writersword.Core.Models.Rendering
     }
 
     /// <summary>
+    /// Таблица с её позицией на странице для рендеринга.
+    /// </summary>
+    public sealed class SKPageTable
+    {
+        public SKTableLayout Layout { get; init; } = null!;
+        public float Y { get; init; }
+        public float LeftIndentPt { get; init; }
+        public int RowFrom { get; init; }
+        public int RowTo { get; init; } = -1;
+        public int HeaderRowIndex { get; init; } = -1;
+        public float HeaderRowHeightPt { get; init; } = 0f;
+
+        // ── ByCell split: последняя строка этого слайса разрывается посередине ──
+        /// <summary>
+        /// Если ≥ 0 — последняя строка слайса разрывается в ByCell режиме.
+        /// Значение = высота видимой части разорванной строки в pt (сколько показываем на этой странице).
+        /// -1 = строка целиком (ByRow режим).
+        /// </summary>
+        public float LastRowVisibleHeightPt { get; init; } = -1f;
+
+        /// <summary>
+        /// Для продолжения разорванной строки: смещение Y внутри ячейки откуда начинаем рисовать.
+        /// 0 = начало ячейки, >0 = содержимое продолжается с этой точки.
+        /// </summary>
+        public float LastRowContentOffsetPt { get; init; } = 0f;
+
+        // ── Метки ─────────────────────────────────────────────────────────
+        /// <summary>Текст под таблицей перед разрывом страницы. Null = не рисовать.</summary>
+        public string? BreakLabel { get; init; }
+
+        /// <summary>Текст над продолжением таблицы. Null = не рисовать.</summary>
+        public string? ContinuationLabel { get; init; }
+
+        /// <summary>
+        /// True если это продолжение разорванной строки (ByCell).
+        /// Первая строка слайса не рисует верхнюю границу — она "продолжает" строку предыдущей страницы.
+        /// </summary>
+        public bool IsContinuation { get; init; } = false;
+
+        /// <summary>
+        /// Смещение контента внутри первой строки слайса-продолжения (ByCell).
+        /// При рендеринге первой строки следующей страницы
+        /// содержимое ячейки сдвигается вверх на это значение.
+        /// 0 = начало строки (нет смещения).
+        /// </summary>
+        public float FirstRowContentOffsetPt { get; init; } = 0f;
+    }
+
+    /// <summary>
     /// Одна страница документа после вёрстки.
     /// Содержит список параграфов которые на неё попали.
     /// </summary>
@@ -47,6 +96,9 @@ namespace Writersword.Core.Models.Rendering
     {
         /// <summary>Параграфы страницы в порядке следования сверху вниз.</summary>
         public List<SKPageParagraph> Paragraphs { get; } = new();
+
+        /// <summary>Таблицы страницы в порядке следования сверху вниз.</summary>
+        public List<SKPageTable> Tables { get; } = new();
 
         /// <summary>
         /// Физическая ширина страницы в pt (включая поля).

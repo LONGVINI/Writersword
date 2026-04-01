@@ -1,0 +1,140 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
+             xmlns:models="using:Writersword.Modules.Characters.Models"
+             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             xmlns:conv="using:Writersword.Modules.Characters.Converters"
+             x:Class="Writersword.Modules.Characters.Views.Card.Tabs.CharacterPersonalTimelineTabView"
+             x:DataType="tabs:CharacterPersonalTimelineTabViewModel">
+
+    <UserControl.Resources>
+        <conv:IntIsZeroConverter x:Key="IntIsZeroConverter"/>
+        <conv:BoolToAccentConverter x:Key="BoolToAccentConverter"/>
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- Заголовок -->
+        <Border Grid.Row="0"
+                Padding="12,8"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                BorderThickness="0,0,0,1">
+            <TextBlock Text="{x:Static loc:CharactersStrings.Tab_PersonalTimeline}"
+                       FontSize="12"
+                       FontWeight="Medium"
+                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+        </Border>
+
+        <!-- Список событий -->
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="1" Margin="0,4">
+
+                <TextBlock Text="{x:Static loc:CharactersStrings.Placeholder_NoEvents}"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           HorizontalAlignment="Center"
+                           Margin="0,24,0,0"
+                           IsVisible="{Binding Events.Count, Converter={StaticResource IntIsZeroConverter}}"/>
+
+                <ItemsControl ItemsSource="{Binding Events}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="models:CharacterPersonalEvent">
+                            <Border Background="{DynamicResource BgPanelBrush}"
+                                    CornerRadius="4"
+                                    Margin="8,2"
+                                    Padding="10,8">
+                                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto">
+
+                                    <!-- Ключевое событие + временная метка -->
+                                    <Border Grid.Column="0" Grid.Row="0"
+                                            Width="8"
+                                            Height="8"
+                                            CornerRadius="4"
+                                            Margin="0,6,10,0"
+                                            VerticalAlignment="Top"
+                                            Background="{Binding AccentColor, FallbackValue=#607D8B}"/>
+
+                                    <StackPanel Grid.Column="1" Grid.Row="0" Spacing="4">
+                                        <!-- Временная метка -->
+                                        <TextBox Text="{Binding Timestamp}"
+                                                 FontSize="11"
+                                                 Foreground="{DynamicResource AccentDefaultBrush}"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 Padding="0"
+                                                 Watermark="{x:Static loc:CharactersStrings.Field_EventTimestamp}"/>
+
+                                        <!-- Название события -->
+                                        <TextBox Text="{Binding Title}"
+                                                 FontSize="12"
+                                                 FontWeight="Medium"
+                                                 Foreground="{DynamicResource TextPrimaryBrush}"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 Padding="0"
+                                                 Watermark="{x:Static loc:CharactersStrings.Field_EventTitle}"/>
+                                    </StackPanel>
+
+                                    <!-- Кнопки: ключевое + удалить -->
+                                    <StackPanel Grid.Column="2" Grid.Row="0"
+                                                Orientation="Horizontal"
+                                                Spacing="4"
+                                                VerticalAlignment="Top">
+                                        <Button Command="{Binding $parent[ItemsControl].((tabs:CharacterPersonalTimelineTabViewModel)DataContext).ToggleKeyEventCommand}"
+                                                CommandParameter="{Binding Id}"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Padding="4,2"
+                                                FontSize="12"
+                                                ToolTip.Tip="Ключевое событие"
+                                                Foreground="{Binding IsKeyEvent, Converter={StaticResource BoolToAccentConverter}}">
+                                            <Button.Content>
+                                                <TextBlock Text="?"/>
+                                            </Button.Content>
+                                        </Button>
+                                        <Button Content="x"
+                                                Command="{Binding $parent[ItemsControl].((tabs:CharacterPersonalTimelineTabViewModel)DataContext).RemoveEventCommand}"
+                                                CommandParameter="{Binding Id}"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Padding="4,2"
+                                                FontSize="10"
+                                                Foreground="#F44336"/>
+                                    </StackPanel>
+
+                                    <!-- Описание события -->
+                                    <TextBox Grid.Column="1" Grid.Row="1"
+                                             Grid.ColumnSpan="2"
+                                             Text="{Binding Description}"
+                                             FontSize="11"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             MinHeight="32"
+                                             Foreground="{DynamicResource TextSecondaryBrush}"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             Padding="0,4,0,0"
+                                             Watermark="{x:Static loc:CharactersStrings.Field_EventDescription}"/>
+
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Кнопка добавления -->
+        <Button Grid.Row="2"
+                Content="{x:Static loc:CharactersStrings.Button_AddEvent}"
+                Command="{Binding AddEventCommand}"
+                HorizontalAlignment="Stretch"
+                Margin="8"
+                Padding="8,6"
+                FontSize="12"
+                Background="{DynamicResource AccentDefaultBrush}"
+                Foreground="White"
+                CornerRadius="4"/>
+
+    </Grid>
+</UserControl>

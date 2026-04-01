@@ -1,0 +1,208 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
+             xmlns:models="using:Writersword.Modules.Characters.Models"
+             xmlns:enums="using:Writersword.Modules.Characters.Models.Enums"
+             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             xmlns:conv="using:Writersword.Modules.Characters.Converters"
+             x:Class="Writersword.Modules.Characters.Views.Card.Tabs.CharacterParametersTabView"
+             x:DataType="tabs:CharacterParametersTabViewModel">
+
+	<UserControl.Resources>
+		<conv:IsNumericConverter x:Key="IsNumericConverter"/>
+		<conv:IsTextConverter x:Key="IsTextConverter"/>
+		<conv:IsStateListConverter x:Key="IsStateListConverter"/>
+		<conv:IsBooleanConverter x:Key="IsBooleanConverter"/>
+		<conv:IsNotStateListConverter x:Key="IsNotStateListConverter"/>
+		<conv:IntIsZeroConverter x:Key="IntIsZeroConverter"/>
+		<conv:BoolToLabelConverter x:Key="BoolToLabelConverter"/>
+	</UserControl.Resources>
+
+	<Grid RowDefinitions="Auto,*,Auto">
+
+		<!-- Панель инструментов -->
+		<Border Grid.Row="0"
+                Padding="8,6"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                BorderThickness="0,0,0,1">
+			<Grid ColumnDefinitions="*,Auto">
+				<!-- Кнопки добавления параметров -->
+				<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+					<Button Content="{x:Static loc:CharactersStrings.Button_AddParameter}"
+                            Command="{Binding AddNumericParameterCommand}"
+                            FontSize="11"
+                            Padding="8,4"
+                            ToolTip.Tip="{x:Static loc:CharactersStrings.HotKey_AddParameterNumeric}"/>
+					<Button Content="# Числовой"
+                            Command="{Binding AddNumericParameterCommand}"
+                            FontSize="10"
+                            Padding="6,3"
+                            Background="{DynamicResource BgPanelBrush}"
+                            Foreground="{DynamicResource TextSecondaryBrush}"/>
+					<Button Content="T Текст"
+                            Command="{Binding AddTextParameterCommand}"
+                            FontSize="10"
+                            Padding="6,3"
+                            Background="{DynamicResource BgPanelBrush}"
+                            Foreground="{DynamicResource TextSecondaryBrush}"/>
+					<Button Content="= Список"
+                            Command="{Binding AddStateListParameterCommand}"
+                            FontSize="10"
+                            Padding="6,3"
+                            Background="{DynamicResource BgPanelBrush}"
+                            Foreground="{DynamicResource TextSecondaryBrush}"/>
+					<Button Content="? Да/Нет"
+                            Command="{Binding AddBooleanParameterCommand}"
+                            FontSize="10"
+                            Padding="6,3"
+                            Background="{DynamicResource BgPanelBrush}"
+                            Foreground="{DynamicResource TextSecondaryBrush}"/>
+				</StackPanel>
+
+				<!-- Применить анкету -->
+				<ComboBox Grid.Column="1"
+                          ItemsSource="{Binding AvailableAnketas}"
+                          PlaceholderText="{x:Static loc:CharactersStrings.Anketa_SelectPrompt}"
+                          FontSize="11"
+                          MinWidth="140">
+					<ComboBox.ItemTemplate>
+						<DataTemplate DataType="models:CharacterAnketa">
+							<TextBlock Text="{Binding Name}" FontSize="11"/>
+						</DataTemplate>
+					</ComboBox.ItemTemplate>
+				</ComboBox>
+			</Grid>
+		</Border>
+
+		<!-- Список параметров -->
+		<ScrollViewer Grid.Row="1">
+			<StackPanel Spacing="1" Margin="0,4">
+
+				<!-- Заглушка если нет параметров -->
+				<TextBlock Text="{x:Static loc:CharactersStrings.Placeholder_NoParameters}"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           HorizontalAlignment="Center"
+                           Margin="0,24,0,0"
+                           IsVisible="{Binding Parameters.Count, Converter={StaticResource IntIsZeroConverter}}"/>
+
+				<ItemsControl ItemsSource="{Binding Parameters}">
+					<ItemsControl.ItemTemplate>
+						<DataTemplate DataType="models:CharacterParameter">
+							<Border Background="{DynamicResource BgPanelBrush}"
+                                    CornerRadius="4"
+                                    Margin="8,2"
+                                    Padding="10,8">
+								<Grid RowDefinitions="Auto,Auto,Auto">
+
+									<!-- Строка заголовка: имя + тип + кнопки -->
+									<Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto">
+										<TextBox Grid.Column="0"
+                                                 Text="{Binding Name}"
+                                                 FontSize="12"
+                                                 FontWeight="Medium"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 Padding="0"
+                                                 Foreground="{DynamicResource TextPrimaryBrush}"/>
+										<TextBlock Grid.Column="1"
+                                                   Text="{Binding GroupName}"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0"/>
+										<Button Grid.Column="2"
+                                                Content="^"
+                                                Command="{ReflectionBinding $parent[ItemsControl].DataContext.MoveParameterUpCommand}"
+                                                CommandParameter="{Binding Id}"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Padding="4,2"
+                                                FontSize="10"/>
+										<Button Grid.Column="3"
+                                                Content="x"
+                                                Command="{ReflectionBinding $parent[ItemsControl].DataContext.RemoveParameterCommand}"
+                                                CommandParameter="{Binding Id}"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Padding="4,2"
+                                                FontSize="10"
+                                                Foreground="#F44336"/>
+									</Grid>
+
+									<!-- Описание (тултип) -->
+									<TextBox Grid.Row="1"
+                                             Text="{Binding Description}"
+                                             FontSize="10"
+                                             Foreground="{DynamicResource TextSecondaryBrush}"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             Padding="0,2,0,4"
+                                             Watermark="Описание параметра (подсказка)"
+                                             IsVisible="{Binding Type, Converter={StaticResource IsNotStateListConverter}}"/>
+
+									<!-- Числовой: слайдер + мин/макс -->
+									<Grid Grid.Row="2"
+                                          ColumnDefinitions="Auto,*,Auto"
+                                          IsVisible="{Binding Type, Converter={StaticResource IsNumericConverter}}">
+										<StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+											<TextBlock Text="{Binding MinValue}" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"/>
+											<TextBox Text="{Binding MinDescription}" FontSize="9" Foreground="{DynamicResource TextSecondaryBrush}" Background="Transparent" BorderThickness="0" Padding="0" MaxWidth="60" Watermark="мин"/>
+										</StackPanel>
+										<Slider Grid.Column="1"
+                                                Minimum="{Binding MinValue}"
+                                                Maximum="{Binding MaxValue}"
+                                                Value="{Binding NumericValue}"
+                                                TickFrequency="{Binding Step}"
+                                                Margin="8,0"
+                                                VerticalAlignment="Center"/>
+										<StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+											<TextBlock Text="{Binding MaxValue}" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"/>
+											<TextBox Text="{Binding MaxDescription}" FontSize="9" Foreground="{DynamicResource TextSecondaryBrush}" Background="Transparent" BorderThickness="0" Padding="0" MaxWidth="60" Watermark="макс"/>
+										</StackPanel>
+									</Grid>
+
+									<!-- Текстовый -->
+									<TextBox Grid.Row="2"
+                                             Text="{Binding TextValue}"
+                                             FontSize="12"
+                                             Background="{DynamicResource BgSurfaceBrush}"
+                                             Foreground="{DynamicResource TextPrimaryBrush}"
+                                             BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                             BorderThickness="1"
+                                             CornerRadius="4"
+                                             Padding="6,4"
+                                             IsVisible="{Binding Type, Converter={StaticResource IsTextConverter}}"/>
+
+									<!-- Список состояний -->
+									<ComboBox Grid.Row="2"
+                                              ItemsSource="{Binding States}"
+                                              SelectedIndex="{Binding CurrentStateIndex}"
+                                              HorizontalAlignment="Stretch"
+                                              FontSize="12"
+                                              Background="{DynamicResource BgSurfaceBrush}"
+                                              IsVisible="{Binding Type, Converter={StaticResource IsStateListConverter}}"/>
+
+									<!-- Булевый -->
+									<CheckBox Grid.Row="2"
+                                              IsChecked="{Binding BoolValue}"
+                                              FontSize="12"
+                                              Foreground="{DynamicResource TextPrimaryBrush}"
+                                              IsVisible="{Binding Type, Converter={StaticResource IsBooleanConverter}}">
+										<CheckBox.Content>
+											<TextBlock Text="{Binding BoolValue, Converter={StaticResource BoolToLabelConverter}}"
+                                                       FontSize="12"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+										</CheckBox.Content>
+									</CheckBox>
+
+								</Grid>
+							</Border>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+			</StackPanel>
+		</ScrollViewer>
+
+	</Grid>
+</UserControl>

@@ -1,0 +1,71 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Onboarding"
+             x:Class="Writersword.Modules.Characters.Views.Onboarding.CharactersOnboardingView"
+             x:DataType="vm:CharactersOnboardingViewModel">
+
+    <Border Background="{DynamicResource BgPanelBrush}"
+            CornerRadius="12"
+            Padding="28"
+            BoxShadow="0 8 32 0 #AA000000">
+        <StackPanel Spacing="20">
+
+            <StackPanel Spacing="4">
+                <TextBlock Text="Настройка модуля Персонажи"
+                           FontSize="18" FontWeight="Bold"
+                           Foreground="{DynamicResource TextPrimaryBrush}"/>
+                <TextBlock Text="Ответьте на несколько вопросов — система подберёт подходящие шаблоны параметров для новых персонажей."
+                           FontSize="12"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <ItemsControl ItemsSource="{Binding Questions}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:OnboardingQuestionViewModel">
+                        <StackPanel Spacing="8" Margin="0,0,0,12">
+                            <TextBlock Text="{Binding Label}"
+                                       FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                            <ItemsControl ItemsSource="{Binding Options}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="vm:OnboardingOptionViewModel">
+                                        <CheckBox IsChecked="{Binding IsSelected}"
+                                                  Content="{Binding Label}"
+                                                  FontSize="12"
+                                                  Margin="0,0,12,6"
+                                                  Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Grid ColumnDefinitions="*,Auto,Auto">
+                <Button Grid.Column="1"
+                        Content="Пропустить"
+                        Command="{Binding SkipCommand}"
+                        FontSize="12" Padding="12,6"
+                        Background="Transparent"
+                        Foreground="{DynamicResource TextSecondaryBrush}"
+                        BorderThickness="1"
+                        BorderBrush="{DynamicResource BorderDefaultBrush}"
+                        CornerRadius="4" Margin="0,0,8,0"/>
+                <Button Grid.Column="2"
+                        Content="Применить шаблоны"
+                        Command="{Binding CompleteCommand}"
+                        FontSize="12" Padding="12,6"
+                        Background="{DynamicResource AccentDefaultBrush}"
+                        Foreground="White" CornerRadius="4"/>
+            </Grid>
+
+        </StackPanel>
+    </Border>
+</UserControl>

@@ -82,10 +82,8 @@ namespace Writersword.Modules.TextEditor.Contracts
 
         /// <summary>Увеличить масштаб на один шаг.</summary>
         void ZoomIn();
-
         /// <summary>Уменьшить масштаб на один шаг.</summary>
         void ZoomOut();
-
         /// <summary>Сбросить масштаб к 100%.</summary>
         void ZoomReset();
 
@@ -104,21 +102,68 @@ namespace Writersword.Modules.TextEditor.Contracts
         void ExportToTxt();
         void ExportToMarkdown();
 
-        // ── Операции с таблицей ───────────────────────────────────────────
+        // ── Структурные операции с таблицей ──────────────────────────────
 
         /// <summary>Добавить строку выше (above=true) или ниже (above=false) текущей.</summary>
         void TableAddRow(bool above);
-
         /// <summary>Добавить столбец слева (left=true) или справа (left=false) от текущего.</summary>
         void TableAddColumn(bool left);
-
         /// <summary>Удалить текущую строку таблицы.</summary>
         void TableDeleteRow();
-
         /// <summary>Удалить текущий столбец таблицы.</summary>
         void TableDeleteColumn();
-
         /// <summary>Удалить всю таблицу.</summary>
         void TableDelete();
+
+        // ── Объединение / разбиение ячеек ─────────────────────────────────
+        /// <summary>Объединить выделенные ячейки (или все ячейки в текущей строке).</summary>
+        void TableMergeCells();
+        /// <summary>Разбить текущую объединённую ячейку на исходные.</summary>
+        void TableSplitCell();
+
+        // ── Выравнивание содержимого ячейки ──────────────────────────────
+        /// <summary>Выравнивание по горизонтали внутри ячейки.</summary>
+        void TableSetCellHAlign(Writersword.Modules.TextEditor.Models.Styles.TextAlignment align);
+        /// <summary>Выравнивание по вертикали внутри ячейки (0=Top,1=Middle,2=Bottom).</summary>
+        void TableSetCellVAlign(int vAlign);
+
+        // ── Оформление ячейки ─────────────────────────────────────────────
+        /// <summary>Заливка фона ячейки. null — убрать заливку.</summary>
+        void TableSetCellBackground(string? color);
+        /// <summary>Установить стиль границы ячейки (all/top/bottom/left/right/inner/outer).</summary>
+        void TableSetCellBorder(string side, BorderStyle style, double thicknessPt, string? color);
+
+        // ── Размер ячейки ─────────────────────────────────────────────────
+        /// <summary>Задать ширину текущего столбца в мм.</summary>
+        void TableSetColumnWidth(double widthMm);
+        /// <summary>Задать высоту текущей строки в pt (0 = авто).</summary>
+        void TableSetRowHeight(double heightPt);
+        /// <summary>Автоподбор ширины столбцов по содержимому.</summary>
+        void TableAutoFit();
+        /// <summary>Растянуть все столбцы равномерно по ширине таблицы.</summary>
+        void TableDistributeColumns();
+        /// <summary>Выровнять высоты всех строк равномерно.</summary>
+        void TableDistributeRows();
+
+        // ── Сортировка ────────────────────────────────────────────────────
+        /// <summary>Сортировать таблицу по указанному столбцу.</summary>
+        void TableSort(int columnIndex, bool ascending);
+
+        // ── Заголовок ─────────────────────────────────────────────────────
+        /// <summary>Переключить повторение первой строки как заголовка на каждой странице.</summary>
+        void TableToggleRepeatHeader();
+        /// <summary>Возвращает текущее состояние повторения заголовка.</summary>
+        bool TableGetRepeatHeader();
+
+        // ── Режим разбивки ────────────────────────────────────────────────
+        /// <summary>Переключить режим разбивки: ByRow / ByCell.</summary>
+        void TableToggleSplitMode();
+        bool TableGetSplitModeByCell();
+
+        // ── Метки продолжения ─────────────────────────────────────────────
+        void TableSetBreakLabel(string? text);
+        void TableSetContinuationLabel(string? text);
+        string? TableGetBreakLabel();
+        string? TableGetContinuationLabel();
     }
 }

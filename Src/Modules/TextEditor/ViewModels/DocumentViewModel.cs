@@ -33,21 +33,52 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private ParagraphViewModel? _activeParagraph;
 
         /// <summary>
+        /// Активный параграф внутри ячейки таблицы.
+        /// Устанавливается в FireTableCellCursorContext, сбрасывается в SetActiveParagraph.
+        /// ApplyParaProperty применяет форматирование к нему когда каретка в таблице.
+        /// </summary>
+        public ParagraphBlock? TableActiveCellParagraph { get; private set; }
+
+        /// <summary>
         /// Абзацы попавшие в текущее выделение (может быть несколько).
-        /// Заполняется DocumentCanvas после каждого изменения выделения.
-        /// Используется ApplyParaProperty чтобы применять форматирование
-        /// ко всем выделенным абзацам, а не только к активному.
         /// </summary>
         public List<ParagraphViewModel> SelectionParagraphs { get; } = new();
 
         // ── Делегаты таблицы (устанавливаются DocumentCanvas) ─────────────
-        // DocumentCanvas устанавливает их при входе каретки в таблицу (EnterTableMode)
-        // и обнуляет при выходе (SwitchToNormalMode).
         public Action<bool>? TableAddRowDelegate { get; set; }
         public Action<bool>? TableAddColDelegate { get; set; }
         public Action? TableDeleteRowDelegate { get; set; }
         public Action? TableDeleteColDelegate { get; set; }
         public Action? TableDeleteDelegate { get; set; }
+
+        // ── Делегат сдвига левого края таблицы ───────────────────────────
+        /// <summary>
+        /// Устанавливается DocumentCanvas при входе каретки в таблицу.
+        /// Параметр — новый отступ таблицы в pt от начала текстовой области.
+        /// </summary>
+        public Action<double>? TableSetLeftEdgeDelegate { get; set; }
+
+        /// <summary>
+        /// Активная таблица — та в которой стоит каретка.
+        /// Устанавливается из DocumentCanvas при входе каретки в таблицу.
+        /// Используется линейкой для применения изменений ширины и отступа
+        /// к правильной таблице (а не к первой найденной через FindTable).
+        /// </summary>
+        public TableBlock? ActiveTable { get; set; }
+
+        // ── Делегаты: оформление / структура ─────────────────────────────
+        public Action? TableMergeCellsDelegate { get; set; }
+        public Action? TableSplitCellDelegate { get; set; }
+        public Action<Writersword.Modules.TextEditor.Models.Styles.TextAlignment>? TableSetCellHAlignDelegate { get; set; }
+        public Action<int>? TableSetCellVAlignDelegate { get; set; }
+        public Action<string?>? TableSetCellBackgroundDelegate { get; set; }
+        public Action<string, BorderStyle, double, string?>? TableSetCellBorderDelegate { get; set; }
+        public Action<double>? TableSetColumnWidthDelegate { get; set; }
+        public Action<double>? TableSetRowHeightDelegate { get; set; }
+        public Action? TableAutoFitDelegate { get; set; }
+        public Action? TableDistributeColsDelegate { get; set; }
+        public Action? TableDistributeRowsDelegate { get; set; }
+        public Action<int, bool>? TableSortDelegate { get; set; }
 
         public DocumentModel Document => _document;
 
@@ -57,8 +88,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public event Action<CursorContext>? CursorContextChanged;
 
         /// <summary>
-        /// Поднимается когда изменилось форматирование параграфа (отступы, стиль, выравнивание).
-        /// DocumentCanvas подписывается чтобы сбросить кеш лейаутов и перестроить.
+        /// Поднимается когда изменилось форматирование параграфа.
+        /// DocumentCanvas подписывается чтобы сбросить кеш лейаутов.
         /// </summary>
         public event Action? ParagraphFormatChanged;
 
@@ -122,6 +153,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void SetActiveParagraph(ParagraphViewModel vm)
         {
+            // Выходим из режима таблицы при клике на обычный параграф.
+            TableActiveCellParagraph = null;
             _activeParagraph = vm;
             FireCursorContextChanged();
         }
@@ -130,6 +163,17 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (_activeParagraph is null) return;
             CursorContextChanged?.Invoke(BuildCursorContext(_activeParagraph));
+        }
+
+        /// <summary>
+        /// Обновляет контекст линейки/риббона для параграфа внутри ячейки таблицы.
+        /// Вызывается из DocumentCanvas при каждом изменении позиции каретки в таблице.
+        /// </summary>
+        public void FireTableCellCursorContext(ParagraphBlock cellPara)
+        {
+            TableActiveCellParagraph = cellPara;
+            var tempVm = new ParagraphViewModel(cellPara);
+            CursorContextChanged?.Invoke(BuildCursorContext(tempVm));
         }
 
         private CursorContext BuildCursorContext(ParagraphViewModel pvm)
@@ -278,7 +322,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetTextColor(string color) => ApplyCharProperty(p => p.TextColor = color);
         public void SetHighlightColor(string? color) => ApplyCharProperty(p => p.HighlightColor = color);
         public void SetFontFamily(string font) => ApplyCharProperty(p => p.FontFamily = font);
-
         public void SetFontSize(double size)
             => ApplyCharProperty(p => p.FontSize = size > 0 ? size : (double?)null);
 
@@ -389,19 +432,69 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertTOC() { }
         public void InsertComment(string text) => AddAnnotation(InlineAnnotationType.Comment, content: text);
 
-        // ── ITextEditorCommandTarget: контекстные операции с таблицей ─────
+        // ── Таблица ───────────────────────────────────────────────────────
         public void TableAddRow(bool above) => TableAddRowDelegate?.Invoke(above);
         public void TableAddColumn(bool left) => TableAddColDelegate?.Invoke(left);
         public void TableDeleteRow() => TableDeleteRowDelegate?.Invoke();
         public void TableDeleteColumn() => TableDeleteColDelegate?.Invoke();
         public void TableDelete() => TableDeleteDelegate?.Invoke();
 
-        // ── Публичный враппер пересборки параграфов ───────────────────────
-        public void RebuildParagraphViewModelsPublic() => RebuildParagraphViewModels();
+        public void TableMergeCells() => TableMergeCellsDelegate?.Invoke();
+        public void TableSplitCell() => TableSplitCellDelegate?.Invoke();
+        public void TableSetCellHAlign(Writersword.Modules.TextEditor.Models.Styles.TextAlignment align)
+            => TableSetCellHAlignDelegate?.Invoke(align);
+        public void TableSetCellVAlign(int vAlign) => TableSetCellVAlignDelegate?.Invoke(vAlign);
+        public void TableSetCellBackground(string? color) => TableSetCellBackgroundDelegate?.Invoke(color);
+        public void TableSetCellBorder(string side, BorderStyle style, double thicknessPt, string? color)
+            => TableSetCellBorderDelegate?.Invoke(side, style, thicknessPt, color);
+        public void TableSetColumnWidth(double widthMm) => TableSetColumnWidthDelegate?.Invoke(widthMm);
+        public void TableSetRowHeight(double heightPt) => TableSetRowHeightDelegate?.Invoke(heightPt);
+        public void TableAutoFit() => TableAutoFitDelegate?.Invoke();
+        public void TableDistributeColumns() => TableDistributeColsDelegate?.Invoke();
+        public void TableDistributeRows() => TableDistributeRowsDelegate?.Invoke();
+        public void TableSort(int columnIndex, bool ascending) => TableSortDelegate?.Invoke(columnIndex, ascending);
 
+        public void TableToggleRepeatHeader()
+        {
+            var table = ActiveTable;
+            if (table is null) return;
+            table.RepeatHeader = !table.RepeatHeader;
+            FireParagraphFormatChanged();
+        }
+
+        public bool TableGetRepeatHeader() => ActiveTable?.RepeatHeader ?? false;
+
+        public void TableToggleSplitMode()
+        {
+            var table = ActiveTable;
+            if (table is null) return;
+            table.SplitMode = table.SplitMode == Models.Document.TableSplitMode.ByRow
+                ? Models.Document.TableSplitMode.ByCell
+                : Models.Document.TableSplitMode.ByRow;
+            FireParagraphFormatChanged();
+        }
+        public bool TableGetSplitModeByCell() =>
+            ActiveTable?.SplitMode == Models.Document.TableSplitMode.ByCell;
+
+        public void TableSetBreakLabel(string? text)
+        {
+            var table = ActiveTable; if (table is null) return;
+            table.BreakLabel = string.IsNullOrWhiteSpace(text) ? null : text;
+            FireParagraphFormatChanged();
+        }
+        public void TableSetContinuationLabel(string? text)
+        {
+            var table = ActiveTable; if (table is null) return;
+            table.ContinuationLabel = string.IsNullOrWhiteSpace(text) ? null : text;
+            FireParagraphFormatChanged();
+        }
+        public string? TableGetBreakLabel() => ActiveTable?.BreakLabel;
+        public string? TableGetContinuationLabel() => ActiveTable?.ContinuationLabel;
+
+        public void RebuildParagraphViewModelsPublic() => RebuildParagraphViewModels();
         public void FireParagraphFormatChanged() => ParagraphFormatChanged?.Invoke();
 
-        // ── Операции с таблицами ──────────────────────────────────────────
+        // ── Операции с таблицами (модель) ─────────────────────────────────
 
         public void TableAddRowBelow(TableBlock table, int afterRow)
         {
@@ -655,8 +748,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void ApplyParaProperty(Action<ParagraphProperties> mutate)
         {
-            // Если есть мульти-абзацное выделение — применяем ко всем.
-            // Иначе — только к активному абзацу (обычный случай).
+            // Режим таблицы: применяем к параграфу активной ячейки.
+            if (TableActiveCellParagraph is not null)
+            {
+                mutate(TableActiveCellParagraph.Properties);
+                // Обновляем контекст — создаём временный VM.
+                var tempVm = new ParagraphViewModel(TableActiveCellParagraph);
+                CursorContextChanged?.Invoke(BuildCursorContext(tempVm));
+                ParagraphFormatChanged?.Invoke();
+                return;
+            }
+
+            // Обычный режим.
             if (SelectionParagraphs.Count > 0)
             {
                 foreach (var pvm in SelectionParagraphs)
@@ -711,8 +814,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             var table = new TableBlock { RowCount = rows, ColumnCount = columns };
             for (int c = 0; c < columns; c++)
-                table.Columns.Add(new TableColumnDefinition
-                { WidthType = TableColumnWidthType.Auto });
+                table.Columns.Add(new TableColumnDefinition { WidthType = TableColumnWidthType.Auto });
             for (int r = 0; r < rows; r++)
                 for (int c = 0; c < columns; c++)
                     table.Cells.Add(new TableCell { Row = r, Column = c });
@@ -796,6 +898,95 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     await clipboard.SetTextAsync(text);
             }
             catch { }
+        }
+
+        // ── Расширенные методы модели таблицы ────────────────────────────
+
+        public void TableCellSetBackground(TableCell cell, string? color)
+        {
+            cell.BackgroundColor = color;
+            ParagraphFormatChanged?.Invoke();
+        }
+
+        public static void TableCellSetBorder(TableCell cell, string side,
+            BorderStyle style, double thicknessPt, string? color)
+        {
+            var b = cell.Borders;
+            if (color is not null) b.Color = color;
+            b.ThicknessPt = thicknessPt > 0 ? thicknessPt : b.ThicknessPt;
+            switch (side)
+            {
+                case "top": b.Top = style; break;
+                case "bottom": b.Bottom = style; break;
+                case "left": b.Left = style; break;
+                case "right": b.Right = style; break;
+                case "all":
+                case "outer": b.Top = b.Bottom = b.Left = b.Right = style; break;
+                case "inner": b.Top = b.Bottom = b.Left = b.Right = style; break;
+            }
+        }
+
+        public void TableCellSetHAlign(TableCell cell,
+            Writersword.Modules.TextEditor.Models.Styles.TextAlignment align)
+        {
+            foreach (var para in cell.Paragraphs)
+                para.Properties.Alignment = align;
+            ParagraphFormatChanged?.Invoke();
+        }
+
+        public void TableCellSetVAlign(TableCell cell, int vAlign)
+        {
+            cell.VerticalAlignment = (VerticalAlignment)vAlign;
+            ParagraphFormatChanged?.Invoke();
+        }
+
+        public void TableAutoFitColumns(TableBlock table)
+        {
+            for (int i = 0; i < table.Columns.Count; i++)
+            {
+                table.Columns[i].WidthType = TableColumnWidthType.Auto;
+                table.Columns[i].WidthValue = 0;
+            }
+            ParagraphFormatChanged?.Invoke();
+        }
+
+        public void TableDistributeColumnsEvenly(TableBlock table)
+        {
+            int cols = table.ColumnCount;
+            if (cols == 0) return;
+            double each = 100.0 / cols;
+            for (int i = 0; i < table.Columns.Count; i++)
+            {
+                table.Columns[i].WidthType = TableColumnWidthType.Percent;
+                table.Columns[i].WidthValue = each;
+            }
+            ParagraphFormatChanged?.Invoke();
+        }
+
+        public void TableSortByColumn(TableBlock table, int col, bool ascending)
+        {
+            if (col < 0 || col >= table.ColumnCount) return;
+
+            var rows = new List<(int RowIdx, string SortKey, List<TableCell> Cells)>();
+            for (int r = 0; r < table.RowCount; r++)
+            {
+                var cells = table.Cells.Where(c => c.Row == r).ToList();
+                var sortCell = table.GetCell(r, col);
+                string key = sortCell is not null ? GetCellPlainText(sortCell) : "";
+                rows.Add((r, key, cells));
+            }
+
+            var sorted = ascending
+                ? rows.OrderBy(x => double.TryParse(x.SortKey, out var d) ? d : double.MaxValue)
+                      .ThenBy(x => x.SortKey, StringComparer.CurrentCulture).ToList()
+                : rows.OrderByDescending(x => double.TryParse(x.SortKey, out var d) ? d : double.MinValue)
+                      .ThenByDescending(x => x.SortKey, StringComparer.CurrentCulture).ToList();
+
+            for (int newRow = 0; newRow < sorted.Count; newRow++)
+                foreach (var cell in sorted[newRow].Cells)
+                    cell.Row = newRow;
+
+            ParagraphFormatChanged?.Invoke();
         }
 
         public void PasteTextAtCursor(string text)

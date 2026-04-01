@@ -1,0 +1,171 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
+             xmlns:enums="using:Writersword.Modules.Characters.Models.Enums"
+             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             xmlns:conv="using:Writersword.Modules.Characters.Converters"
+             x:Class="Writersword.Modules.Characters.Views.Card.Tabs.CharacterRelationshipsTabView"
+             x:DataType="tabs:CharacterRelationshipsTabViewModel">
+
+    <UserControl.Resources>
+        <conv:IntIsZeroConverter x:Key="IntIsZeroConverter"/>
+        <conv:IntIsNotZeroConverter x:Key="IntIsNotZeroConverter"/>
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- Заголовок -->
+        <Border Grid.Row="0"
+                Padding="12,8"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                BorderThickness="0,0,0,1">
+            <TextBlock Text="{x:Static loc:CharactersStrings.Tab_Relationships}"
+                       FontSize="12"
+                       FontWeight="Medium"
+                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+        </Border>
+
+        <!-- Список связей -->
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="1" Margin="0,4">
+
+                <TextBlock Text="{x:Static loc:CharactersStrings.Placeholder_NoRelationships}"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           HorizontalAlignment="Center"
+                           Margin="0,24,0,0"
+                           IsVisible="{Binding Relationships.Count, Converter={StaticResource IntIsZeroConverter}}"/>
+
+                <ItemsControl ItemsSource="{Binding Relationships}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="tabs:CharacterRelationshipItemViewModel">
+                            <Border Background="{DynamicResource BgPanelBrush}"
+                                    CornerRadius="4"
+                                    Margin="8,2"
+                                    Padding="10,8">
+                                <Grid RowDefinitions="Auto,Auto,Auto,Auto">
+
+                                    <!-- Строка 0: цель + кнопка удаления -->
+                                    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6">
+                                        <Border Grid.Column="0"
+                                                Width="20"
+                                                Height="20"
+                                                CornerRadius="10"
+                                                Background="{Binding TargetColor}"
+                                                Margin="0,0,6,0">
+                                            <TextBlock Text="{Binding TargetIcon}"
+                                                       FontSize="10"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="White"/>
+                                        </Border>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding TargetName}"
+                                                   FontSize="12"
+                                                   FontWeight="Medium"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                        <Button Grid.Column="2"
+                                                Content="x"
+                                                Command="{Binding $parent[ItemsControl].((tabs:CharacterRelationshipsTabViewModel)DataContext).RemoveRelationshipCommand}"
+                                                CommandParameter="{Binding RelationshipId}"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Padding="4,2"
+                                                FontSize="10"
+                                                Foreground="#F44336"/>
+                                    </Grid>
+
+                                    <!-- Строка 1: тип связи + двунаправленность -->
+                                    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                                        <TextBox Grid.Column="0"
+                                                 Text="{Binding RelationshipType}"
+                                                 FontSize="12"
+                                                 Background="{DynamicResource BgSurfaceBrush}"
+                                                 Foreground="{DynamicResource TextPrimaryBrush}"
+                                                 BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                                 BorderThickness="1"
+                                                 CornerRadius="4"
+                                                 Padding="6,4"
+                                                 Watermark="{x:Static loc:CharactersStrings.Field_RelationshipType}"/>
+                                        <CheckBox Grid.Column="1"
+                                                  IsChecked="{Binding IsBidirectional}"
+                                                  Content="?"
+                                                  ToolTip.Tip="Двунаправленная связь"
+                                                  Margin="6,0,0,0"
+                                                  FontSize="14"/>
+                                    </Grid>
+
+                                    <!-- Строка 2: контекст + эмоция + сила -->
+                                    <Grid Grid.Row="2" ColumnDefinitions="*,*,Auto" Margin="0,0,0,4">
+                                        <ComboBox Grid.Column="0"
+                                                  SelectedItem="{Binding Context}"
+                                                  FontSize="11"
+                                                  HorizontalAlignment="Stretch"
+                                                  Margin="0,0,4,0"
+                                                  ToolTip.Tip="{x:Static loc:CharactersStrings.Field_RelationshipContext}">
+                                            <enums:CharacterRelationshipContext>Public</enums:CharacterRelationshipContext>
+                                            <enums:CharacterRelationshipContext>Secret</enums:CharacterRelationshipContext>
+                                            <enums:CharacterRelationshipContext>Past</enums:CharacterRelationshipContext>
+                                            <enums:CharacterRelationshipContext>Potential</enums:CharacterRelationshipContext>
+                                            <enums:CharacterRelationshipContext>Unilateral</enums:CharacterRelationshipContext>
+                                        </ComboBox>
+                                        <ComboBox Grid.Column="1"
+                                                  SelectedItem="{Binding Emotion}"
+                                                  FontSize="11"
+                                                  HorizontalAlignment="Stretch"
+                                                  Margin="0,0,4,0"
+                                                  ToolTip.Tip="{x:Static loc:CharactersStrings.Field_RelationshipEmotion}">
+                                            <enums:CharacterRelationshipEmotion>Neutral</enums:CharacterRelationshipEmotion>
+                                            <enums:CharacterRelationshipEmotion>Positive</enums:CharacterRelationshipEmotion>
+                                            <enums:CharacterRelationshipEmotion>Negative</enums:CharacterRelationshipEmotion>
+                                            <enums:CharacterRelationshipEmotion>Ambivalent</enums:CharacterRelationshipEmotion>
+                                        </ComboBox>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
+                                            <TextBlock Text="Сила" FontSize="9" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+                                            <Slider Minimum="0"
+                                                    Maximum="1"
+                                                    Value="{Binding Strength}"
+                                                    Width="60"
+                                                    TickFrequency="0.1"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Строка 3: заметка -->
+                                    <TextBox Grid.Row="3"
+                                             Text="{Binding Note}"
+                                             FontSize="11"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
+                                             MinHeight="32"
+                                             Background="{DynamicResource BgSurfaceBrush}"
+                                             Foreground="{DynamicResource TextPrimaryBrush}"
+                                             BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                             BorderThickness="1"
+                                             CornerRadius="4"
+                                             Padding="6,4"
+                                             Watermark="{x:Static loc:CharactersStrings.Field_RelationshipNote}"/>
+
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Кнопка добавления -->
+        <Button Grid.Row="2"
+                Content="{x:Static loc:CharactersStrings.Button_AddRelationship}"
+                Command="{Binding AddRelationshipCommand}"
+                HorizontalAlignment="Stretch"
+                Margin="8"
+                Padding="8,6"
+                FontSize="12"
+                Background="{DynamicResource AccentDefaultBrush}"
+                Foreground="White"
+                CornerRadius="4"
+                IsEnabled="{Binding AvailableCharacters.Count, Converter={StaticResource IntIsNotZeroConverter}}"/>
+
+    </Grid>
+</UserControl>

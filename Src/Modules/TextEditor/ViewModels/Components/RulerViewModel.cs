@@ -5,80 +5,45 @@ using Writersword.Modules.TextEditor.Models.Settings;
 
 namespace Writersword.Modules.TextEditor.ViewModels.Components
 {
-    /// <summary>
-    /// Режим отображения линейки.
-    /// Переключается автоматически в зависимости от позиции каретки.
-    /// </summary>
     public enum RulerMode
     {
-        /// <summary>Обычный режим — маркеры отступов абзаца.</summary>
         Paragraph = 0,
-
-        /// <summary>Режим таблицы — маркеры колонок таблицы.</summary>
         Table = 1
     }
 
-    /// <summary>
-    /// Маркер отступа абзаца на горизонтальной линейке.
-    /// </summary>
     public sealed class RulerIndentMarker
     {
-        /// <summary>Тип маркера.</summary>
         public RulerIndentMarkerType Type { get; init; }
-
-        /// <summary>
-        /// Позиция маркера в единицах линейки (мм или дюймы)
-        /// относительно начала текстовой области страницы.
-        /// </summary>
         public double Position { get; set; }
     }
 
-    /// <summary>
-    /// Тип маркера отступа на линейке.
-    /// </summary>
     public enum RulerIndentMarkerType
     {
-        /// <summary>Левый отступ абзаца — нижний треугольник слева.</summary>
         LeftIndent = 0,
-
-        /// <summary>Отступ первой строки — верхний треугольник слева.</summary>
         FirstLineIndent = 1,
-
-        /// <summary>Правый отступ абзаца — нижний треугольник справа.</summary>
         RightIndent = 2
     }
 
-    /// <summary>
-    /// Маркер колонки таблицы на горизонтальной линейке.
-    /// Показывается когда каретка находится внутри таблицы.
-    /// </summary>
     public sealed class RulerColumnMarker
     {
-        /// <summary>Индекс колонки (0-based).</summary>
+        /// <summary>Индекс колонки (0-based). -1 = левый край таблицы.</summary>
         public int ColumnIndex { get; init; }
 
         /// <summary>
-        /// X-позиция правого края колонки в единицах линейки
-        /// относительно начала текстовой области страницы.
-        /// Перетаскивание этого маркера изменяет ширину колонки.
+        /// X-позиция правого края колонки в единицах линейки от начала текстовой области.
+        /// Для ColumnIndex=-1 это позиция левого края таблицы.
         /// </summary>
         public double RightEdge { get; set; }
     }
 
-    /// <summary>
-    /// ViewModel горизонтальной и вертикальной линеек редактора.
-    /// Хранит всё состояние необходимое для отрисовки линеек:
-    /// зум, поля страницы, маркеры отступов, маркеры колонок таблицы.
-    /// Обновляется из TextEditorViewModel при смене зума, режима, активного абзаца.
-    /// </summary>
     public sealed class RulerViewModel : ReactiveObject
     {
         private RulerUnits _units;
         private RulerMode _mode;
         private double _zoom = 1.0;
         private bool _isVisible = true;
-
-        // ── Геометрия страницы ────────────────────────────────────────────
+        private bool _isSnapEnabled = true;
+        private int _focusedPageIndex = 0;
 
         private double _pageWidthMm = 210;
         private double _pageHeightMm = 297;
@@ -88,178 +53,132 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         private double _marginBottomMm = 25;
         private double _pageOffsetXPx = 0;
 
-        // ── Отступы активного абзаца ──────────────────────────────────────
-
         private double _leftIndentMm = 0;
         private double _firstLineIndentMm = 0;
         private double _rightIndentMm = 0;
 
-        // ── Скролл (для вертикальной линейки) ─────────────────────────────
-
         private double _scrollOffsetY = 0;
         private double _viewportHeight = 600;
-
-        // ── Drag состояние ────────────────────────────────────────────────
 
         private RulerIndentMarkerType? _draggingIndentMarker;
         private int _draggingColumnIndex = -1;
 
-        // ── Публичные свойства ────────────────────────────────────────────
+        // ── Свойства ──────────────────────────────────────────────────────
 
-        /// <summary>Единицы измерения линейки.</summary>
         public RulerUnits Units
         {
             get => _units;
             set => this.RaiseAndSetIfChanged(ref _units, value);
         }
 
-        /// <summary>Текущий режим линейки — абзац или таблица.</summary>
         public RulerMode Mode
         {
             get => _mode;
             set => this.RaiseAndSetIfChanged(ref _mode, value);
         }
 
-        /// <summary>
-        /// Привязка к сетке (snap to grid).
-        /// Когда включена — маркеры при перетаскивании прилипают к шагу SnapStep единиц.
-        /// </summary>
         public bool IsSnapEnabled
         {
             get => _isSnapEnabled;
             set => this.RaiseAndSetIfChanged(ref _isSnapEnabled, value);
         }
-        private bool _isSnapEnabled = true;
 
-        /// <summary>Шаг привязки в единицах линейки (0.25 см или 0.25 дюйма).</summary>
         public double SnapStep => 0.25;
 
-        /// <summary>Текущий зум редактора. Используется для пересчёта координат.</summary>
         public double Zoom
         {
             get => _zoom;
             set => this.RaiseAndSetIfChanged(ref _zoom, Math.Max(0.25, Math.Min(5.0, value)));
         }
 
-        /// <summary>Видимость линейки. Управляется из настроек.</summary>
         public bool IsVisible
         {
             get => _isVisible;
             set => this.RaiseAndSetIfChanged(ref _isVisible, value);
         }
 
-        // ── Геометрия страницы ────────────────────────────────────────────
+        /// <summary>
+        /// Индекс страницы на которой стоит каретка (0-based).
+        /// Вертикальная линейка отображает шкалу только для этой страницы.
+        /// </summary>
+        public int FocusedPageIndex
+        {
+            get => _focusedPageIndex;
+            set => this.RaiseAndSetIfChanged(ref _focusedPageIndex, Math.Max(0, value));
+        }
 
-        /// <summary>Ширина страницы в мм.</summary>
         public double PageWidthMm
         {
             get => _pageWidthMm;
             set => this.RaiseAndSetIfChanged(ref _pageWidthMm, value);
         }
 
-        /// <summary>Высота страницы в мм.</summary>
         public double PageHeightMm
         {
             get => _pageHeightMm;
             set => this.RaiseAndSetIfChanged(ref _pageHeightMm, value);
         }
 
-        /// <summary>Левое поле страницы в мм.</summary>
         public double MarginLeftMm
         {
             get => _marginLeftMm;
             set => this.RaiseAndSetIfChanged(ref _marginLeftMm, value);
         }
 
-        /// <summary>Правое поле страницы в мм.</summary>
         public double MarginRightMm
         {
             get => _marginRightMm;
             set => this.RaiseAndSetIfChanged(ref _marginRightMm, value);
         }
 
-        /// <summary>Верхнее поле страницы в мм.</summary>
         public double MarginTopMm
         {
             get => _marginTopMm;
             set => this.RaiseAndSetIfChanged(ref _marginTopMm, value);
         }
 
-        /// <summary>Нижнее поле страницы в мм.</summary>
         public double MarginBottomMm
         {
             get => _marginBottomMm;
             set => this.RaiseAndSetIfChanged(ref _marginBottomMm, value);
         }
 
-        /// <summary>
-        /// X-смещение левого края страницы в пикселях относительно ScrollViewer.
-        /// Используется горизонтальной линейкой для выравнивания шкалы под страницей.
-        /// Обновляется при изменении зума и ширины канваса.
-        /// </summary>
         public double PageOffsetXPx
         {
             get => _pageOffsetXPx;
             set => this.RaiseAndSetIfChanged(ref _pageOffsetXPx, value);
         }
 
-        // ── Отступы активного абзаца ──────────────────────────────────────
-
-        /// <summary>Левый отступ активного абзаца в мм.</summary>
         public double LeftIndentMm
         {
             get => _leftIndentMm;
-            set
-            {
-                this.RaiseAndSetIfChanged(ref _leftIndentMm, value);
-                UpdateIndentMarkers();
-            }
+            set { this.RaiseAndSetIfChanged(ref _leftIndentMm, value); UpdateIndentMarkers(); }
         }
 
-        /// <summary>Отступ первой строки активного абзаца в мм.</summary>
         public double FirstLineIndentMm
         {
             get => _firstLineIndentMm;
-            set
-            {
-                this.RaiseAndSetIfChanged(ref _firstLineIndentMm, value);
-                UpdateIndentMarkers();
-            }
+            set { this.RaiseAndSetIfChanged(ref _firstLineIndentMm, value); UpdateIndentMarkers(); }
         }
 
-        /// <summary>Правый отступ активного абзаца в мм.</summary>
         public double RightIndentMm
         {
             get => _rightIndentMm;
-            set
-            {
-                this.RaiseAndSetIfChanged(ref _rightIndentMm, value);
-                UpdateIndentMarkers();
-            }
+            set { this.RaiseAndSetIfChanged(ref _rightIndentMm, value); UpdateIndentMarkers(); }
         }
 
-        // ── Скролл ────────────────────────────────────────────────────────
-
-        /// <summary>Текущее смещение скролла по Y в пикселях.</summary>
         public double ScrollOffsetY
         {
             get => _scrollOffsetY;
             set => this.RaiseAndSetIfChanged(ref _scrollOffsetY, value);
         }
 
-        /// <summary>Высота видимой области в пикселях.</summary>
         public double ViewportHeight
         {
             get => _viewportHeight;
             set => this.RaiseAndSetIfChanged(ref _viewportHeight, value);
         }
 
-        // ── Маркеры ───────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Маркеры отступов абзаца.
-        /// Активны только когда Mode == Paragraph.
-        /// </summary>
         public List<RulerIndentMarker> IndentMarkers { get; } = new()
         {
             new RulerIndentMarker { Type = RulerIndentMarkerType.LeftIndent,      Position = 0 },
@@ -267,23 +186,14 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             new RulerIndentMarker { Type = RulerIndentMarkerType.RightIndent,     Position = 0 }
         };
 
-        /// <summary>
-        /// Маркеры колонок таблицы.
-        /// Активны только когда Mode == Table.
-        /// Заполняются при входе каретки в таблицу.
-        /// </summary>
         public List<RulerColumnMarker> ColumnMarkers { get; } = new();
 
-        // ── Drag ──────────────────────────────────────────────────────────
-
-        /// <summary>Маркер отступа который сейчас перетаскивается. Null — нет drag.</summary>
         public RulerIndentMarkerType? DraggingIndentMarker
         {
             get => _draggingIndentMarker;
             set => this.RaiseAndSetIfChanged(ref _draggingIndentMarker, value);
         }
 
-        /// <summary>Индекс колонки маркер которой перетаскивается. -1 — нет drag.</summary>
         public int DraggingColumnIndex
         {
             get => _draggingColumnIndex;
@@ -292,88 +202,51 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
 
         // ── События ───────────────────────────────────────────────────────
 
-        /// <summary>
-        /// Вызывается когда пользователь перетащил маркер отступа.
-        /// Параметры: тип маркера, новое значение в мм.
-        /// DocumentViewModel применяет значение к активному абзацу.
-        /// </summary>
         public event Action<RulerIndentMarkerType, double>? IndentMarkerChanged;
-
-        /// <summary>
-        /// Вызывается когда пользователь перетащил границу поля на линейке.
-        /// Параметры: (marginLeftMm, marginRightMm).
-        /// TextEditorViewModel применяет новые поля к документу.
-        /// </summary>
-        /// <summary>
-        /// Делегат для получения минимального LeftIndent по всем абзацам документа (в мм).
-        /// Устанавливается TextEditorViewModel при загрузке документа.
-        /// Используется при drag левого поля: поле не может зайти правее ни одного маркера абзаца.
-        /// </summary>
         public Func<double>? GetMinParagraphIndentMm { get; set; }
 
         public event Action<double, double>? MarginChanged;
+        public void NotifyMarginChanged() => MarginChanged?.Invoke(MarginLeftMm, MarginRightMm);
 
-        /// <summary>
-        /// Вызывается при каждом движении drag (живой предпросмотр).
-        /// Обновляет только линейку — тяжёлый пересчёт лейаутов откладывается.
-        /// </summary>
-        public void NotifyMarginChanged()
-            => MarginChanged?.Invoke(MarginLeftMm, MarginRightMm);
-
-        /// <summary>
-        /// Вызывается при отпускании drag — инициирует полный пересчёт лейаутов.
-        /// </summary>
         public event Action<double, double>? MarginCommitted;
+        public void CommitMarginChange() => MarginCommitted?.Invoke(MarginLeftMm, MarginRightMm);
 
-        public void CommitMarginChange()
-            => MarginCommitted?.Invoke(MarginLeftMm, MarginRightMm);
+        public event Action<IReadOnlyDictionary<int, double>>? AllColumnWidthsChanged;
+        public event Action<IReadOnlyDictionary<int, double>>? AllColumnWidthsChanging;
 
-        /// <summary>
-        /// Вызывается когда пользователь перетащил маркер колонки таблицы.
-        /// Параметры: индекс колонки, новая ширина в мм.
-        /// DocumentViewModel применяет значение к таблице.
-        /// </summary>
-        public event Action<int, double>? ColumnWidthChanged;
+        /// <summary>Live-событие: левый край таблицы сдвинулся. Параметр — новый отступ в мм.</summary>
+        public event Action<double>? TableLeftEdgeChanging;
 
-        // ── Вспомогательные методы ────────────────────────────────────────
+        /// <summary>Commit-событие: пользователь отпустил маркер левого края таблицы. Параметр — отступ в мм.</summary>
+        public event Action<double>? TableLeftEdgeChanged;
 
-        /// <summary>
-        /// Конвертирует миллиметры в единицы линейки.
-        /// </summary>
+        /// <summary>Смещение левого края таблицы в единицах линейки от начала текстовой области.</summary>
+        public double TableLeftEdgeUnits { get; private set; }
+
+        /// <summary>Левый край активной ячейки в единицах.</summary>
+        public double ActiveCellLeftUnits { get; private set; }
+
+        /// <summary>Правый край активной ячейки в единицах.</summary>
+        public double ActiveCellRightUnits { get; private set; }
+
+        // ── Конвертация ───────────────────────────────────────────────────
+
         public double MmToUnits(double mm)
             => Units == RulerUnits.Inches ? mm / 25.4 : mm / 10.0;
 
-        /// <summary>
-        /// Конвертирует единицы линейки в миллиметры.
-        /// </summary>
         public double UnitsToMm(double units)
             => Units == RulerUnits.Inches ? units * 25.4 : units * 10.0;
 
-        /// <summary>
-        /// Шаг основных делений линейки в единицах.
-        /// 1 см или 1 дюйм.
-        /// </summary>
         public double MajorTickInterval => 1.0;
 
-        /// <summary>
-        /// Шаг малых делений линейки в единицах.
-        /// 0.5 см или 0.25 дюйма.
-        /// </summary>
         public double MinorTickInterval
             => Units == RulerUnits.Inches ? 0.25 : 0.5;
 
-        /// <summary>
-        /// Шаг мельчайших делений линейки в единицах.
-        /// 0.1 см или 0.125 дюйма.
-        /// </summary>
         public double TinyTickInterval
             => Units == RulerUnits.Inches ? 0.125 : 0.1;
 
-        /// <summary>
-        /// Обновляет геометрию страницы из настроек PageSettings.
-        /// Вызывается из TextEditorViewModel при загрузке документа
-        /// или изменении полей страницы.
-        /// </summary>
+        // ── Методы ────────────────────────────────────────────────────────
+
         public void UpdatePageSettings(
             double widthMm, double heightMm,
             double marginLeftMm, double marginRightMm,
@@ -387,17 +260,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             MarginBottomMm = marginBottomMm;
         }
 
-        /// <summary>
-        /// Обновляет маркеры отступов из свойств активного абзаца.
-        /// Вызывается из TextEditorViewModel при смене активного абзаца.
-        /// Значения в pt конвертируются в мм: 1pt = 25.4/72 мм.
-        /// </summary>
         public void UpdateFromParagraphContext(
             double leftIndentPt,
             double firstLineIndentPt,
             double rightIndentPt)
         {
-            // pt → мм: 1 pt = 25.4 / 72 мм
             const double PtToMm = 25.4 / 72.0;
             _leftIndentMm = leftIndentPt * PtToMm;
             _firstLineIndentMm = firstLineIndentPt * PtToMm;
@@ -408,36 +275,55 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             this.RaisePropertyChanged(nameof(RightIndentMm));
         }
 
-        /// <summary>
-        /// Обновляет маркеры колонок таблицы.
-        /// Вызывается из DocumentCanvas когда каретка входит в таблицу.
-        /// columnOffsetsMm — X-позиции левых краёв колонок в мм относительно текстовой области.
-        /// columnWidthsMm — ширины колонок в мм.
-        /// </summary>
         public void UpdateTableColumns(
             IReadOnlyList<double> columnOffsetsMm,
-            IReadOnlyList<double> columnWidthsMm)
+            IReadOnlyList<double> columnWidthsMm,
+            double tableOffsetMm = 0)
         {
             ColumnMarkers.Clear();
 
+            TableLeftEdgeUnits = MmToUnits(tableOffsetMm);
+            // Маркер левого края таблицы (ColumnIndex = -1).
+            ColumnMarkers.Add(new RulerColumnMarker
+            {
+                ColumnIndex = -1,
+                RightEdge = TableLeftEdgeUnits
+            });
+
             for (int i = 0; i < columnWidthsMm.Count; i++)
             {
-                double rightEdge = (i < columnOffsetsMm.Count ? columnOffsetsMm[i] : 0)
-                                   + columnWidthsMm[i];
+                double leftMm = tableOffsetMm + (i < columnOffsetsMm.Count ? columnOffsetsMm[i] : 0);
                 ColumnMarkers.Add(new RulerColumnMarker
                 {
                     ColumnIndex = i,
-                    RightEdge = MmToUnits(rightEdge)
+                    RightEdge = MmToUnits(leftMm + columnWidthsMm[i])
                 });
             }
 
             Mode = RulerMode.Table;
         }
 
-        /// <summary>
-        /// Переключает линейку в режим абзаца.
-        /// Вызывается из DocumentCanvas когда каретка выходит из таблицы.
-        /// </summary>
+        public void UpdateActiveCellBounds(int columnIndex)
+        {
+            if (columnIndex < 0 || ColumnMarkers.Count == 0) return;
+
+            int markerIdx = -1;
+            for (int i = 0; i < ColumnMarkers.Count; i++)
+                if (ColumnMarkers[i].ColumnIndex == columnIndex) { markerIdx = i; break; }
+
+            if (markerIdx < 0) return;
+
+            // Маркер с ColumnIndex=-1 хранит позицию левого края таблицы в RightEdge.
+            // Левый край ячейки col[n] = правый край маркера col[n-1].
+            ActiveCellLeftUnits = markerIdx > 0
+                ? ColumnMarkers[markerIdx - 1].RightEdge
+                : TableLeftEdgeUnits;
+            ActiveCellRightUnits = ColumnMarkers[markerIdx].RightEdge;
+
+            this.RaisePropertyChanged(nameof(ActiveCellLeftUnits));
+            this.RaisePropertyChanged(nameof(ActiveCellRightUnits));
+        }
+
         public void SwitchToParagraphMode()
         {
             if (Mode == RulerMode.Paragraph) return;
@@ -445,126 +331,131 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             Mode = RulerMode.Paragraph;
         }
 
-        /// <summary>
-        /// Начинает drag маркера отступа.
-        /// Вызывается из HorizontalRulerControl при нажатии на маркер.
-        /// </summary>
         public void BeginIndentDrag(RulerIndentMarkerType markerType)
-        {
-            DraggingIndentMarker = markerType;
-        }
+            => DraggingIndentMarker = markerType;
 
-        /// <summary>
-        /// Обновляет позицию маркера отступа во время drag.
-        /// positionUnits — позиция в единицах линейки относительно начала текстовой области.
-        /// </summary>
-        public void UpdateIndentDrag(double positionUnits)
-        {
-            if (DraggingIndentMarker is null) return;
-
-            var marker = GetIndentMarker(DraggingIndentMarker.Value);
-            if (marker is null) return;
-
-            // Ограничиваем позицию в пределах текстовой области.
-            double textWidthUnits = MmToUnits(PageWidthMm - MarginLeftMm - MarginRightMm);
-            marker.Position = Math.Max(0, Math.Min(positionUnits, textWidthUnits));
-
-            this.RaisePropertyChanged(nameof(IndentMarkers));
-        }
-
-        /// <summary>
-        /// Завершает drag маркера отступа и применяет значение.
-        /// Вызывается из HorizontalRulerControl при отпускании кнопки мыши.
-        /// </summary>
         public void EndIndentDrag()
         {
             if (DraggingIndentMarker is null) return;
-
             var marker = GetIndentMarker(DraggingIndentMarker.Value);
             if (marker is not null)
-                IndentMarkerChanged?.Invoke(DraggingIndentMarker.Value, UnitsToMm(marker.Position));
-
+            {
+                // Применяем snap при отпускании кнопки мыши.
+                double pos = marker.Position;
+                if (IsSnapEnabled)
+                    pos = Math.Round(pos / SnapStep) * SnapStep;
+                marker.Position = pos;
+                this.RaisePropertyChanged(nameof(IndentMarkers));
+                IndentMarkerChanged?.Invoke(DraggingIndentMarker.Value, UnitsToMm(pos));
+            }
             DraggingIndentMarker = null;
         }
 
-        /// <summary>
-        /// Начинает drag маркера колонки таблицы.
-        /// Вызывается из HorizontalRulerControl при нажатии на маркер колонки.
-        /// </summary>
-        public void BeginColumnDrag(int columnIndex)
-        {
-            DraggingColumnIndex = columnIndex;
-        }
+        public void BeginColumnDrag(int listIndex)
+            => DraggingColumnIndex = listIndex;
 
         /// <summary>
-        /// Обновляет позицию маркера колонки во время drag.
-        /// rightEdgeUnits — новый правый край колонки в единицах линейки.
+        /// Drag маркера колонки или левого края таблицы.
+        /// rightEdgeUnits — позиция курсора в единицах линейки от начала текстовой области.
         /// </summary>
         public void UpdateColumnDrag(double rightEdgeUnits)
         {
             if (DraggingColumnIndex < 0 || DraggingColumnIndex >= ColumnMarkers.Count) return;
 
-            // Привязка к сетке.
+            var draggingMarker = ColumnMarkers[DraggingColumnIndex];
+
+            // ── Левый край таблицы: сдвигаем всю таблицу ─────────────────
+            if (draggingMarker.ColumnIndex < 0)
+            {
+                if (IsSnapEnabled)
+                    rightEdgeUnits = Math.Round(rightEdgeUnits / SnapStep) * SnapStep;
+
+                // Левый край таблицы не может уйти левее начала текстовой зоны (0).
+                // Правое ограничение отсутствует.
+                double newLeft = Math.Max(0, rightEdgeUnits);
+                double delta = newLeft - TableLeftEdgeUnits;
+                TableLeftEdgeUnits = newLeft;
+                foreach (var m in ColumnMarkers)
+                    m.RightEdge += delta;
+
+                this.RaisePropertyChanged(nameof(ColumnMarkers));
+                TableLeftEdgeChanging?.Invoke(UnitsToMm(newLeft));
+                return;
+            }
+
+            // ── Маркер ширины колонки ─────────────────────────────────────
             if (IsSnapEnabled)
                 rightEdgeUnits = Math.Round(rightEdgeUnits / SnapStep) * SnapStep;
 
-            double textWidthUnits = MmToUnits(PageWidthMm - MarginLeftMm - MarginRightMm);
-
-            // Минимальная ширина колонки — 5 мм.
-            double minRightEdge = DraggingColumnIndex > 0
+            // Минимальная ширина колонки — 5мм.
+            // Нет максимума: таблица может выходить за правый край страницы.
+            double minRE = DraggingColumnIndex > 0
                 ? ColumnMarkers[DraggingColumnIndex - 1].RightEdge + MmToUnits(5)
-                : MmToUnits(5);
+                : TableLeftEdgeUnits + MmToUnits(5);
 
-            // Максимальный правый край — либо левый край следующего маркера минус 5мм, либо конец.
-            double maxRightEdge = DraggingColumnIndex < ColumnMarkers.Count - 1
+            // Следующий маркер не может оказаться левее текущего + 5мм (порядок колонок).
+            double maxRE = DraggingColumnIndex < ColumnMarkers.Count - 1
                 ? ColumnMarkers[DraggingColumnIndex + 1].RightEdge - MmToUnits(5)
-                : textWidthUnits;
+                : double.MaxValue; // последняя колонка — без правого ограничения
 
             ColumnMarkers[DraggingColumnIndex].RightEdge =
-                Math.Max(minRightEdge, Math.Min(rightEdgeUnits, maxRightEdge));
+                Math.Max(minRE, maxRE == double.MaxValue ? rightEdgeUnits : Math.Min(rightEdgeUnits, maxRE));
 
             this.RaisePropertyChanged(nameof(ColumnMarkers));
+
+            // Строим словарь ширин ВСЕХ колонок и стреляем разом.
+            var allWidths = BuildAllColumnWidths();
+            AllColumnWidthsChanging?.Invoke(allWidths);
         }
 
-        /// <summary>
-        /// Завершает drag маркера колонки и применяет новую ширину.
-        /// Вызывается из HorizontalRulerControl при отпускании кнопки мыши.
-        /// </summary>
         public void EndColumnDrag()
         {
             if (DraggingColumnIndex < 0 || DraggingColumnIndex >= ColumnMarkers.Count) return;
 
-            double leftEdgeMm = DraggingColumnIndex > 0
-                ? UnitsToMm(ColumnMarkers[DraggingColumnIndex - 1].RightEdge)
-                : 0;
-            double rightEdgeMm = UnitsToMm(ColumnMarkers[DraggingColumnIndex].RightEdge);
-            double newWidthMm = rightEdgeMm - leftEdgeMm;
+            var draggingMarker = ColumnMarkers[DraggingColumnIndex];
 
-            ColumnWidthChanged?.Invoke(DraggingColumnIndex, Math.Max(5, newWidthMm));
+            if (draggingMarker.ColumnIndex < 0)
+            {
+                TableLeftEdgeChanged?.Invoke(UnitsToMm(TableLeftEdgeUnits));
+            }
+            else
+            {
+                var allWidths = BuildAllColumnWidths();
+                AllColumnWidthsChanged?.Invoke(allWidths);
+            }
 
             DraggingColumnIndex = -1;
         }
 
-        // ── Внутренние методы ─────────────────────────────────────────────
-
         /// <summary>
-        /// Синхронизирует позиции маркеров с текущими значениями отступов.
+        /// Строит словарь {columnIndex → widthMm} по всем маркерам колонок.
+        /// Используется чтобы зафиксировать ВСЕ колонки при drag одной.
         /// </summary>
+        private Dictionary<int, double> BuildAllColumnWidths()
+        {
+            var result = new Dictionary<int, double>();
+            for (int i = 0; i < ColumnMarkers.Count; i++)
+            {
+                var m = ColumnMarkers[i];
+                if (m.ColumnIndex < 0) continue; // пропускаем маркер левого края
+
+                double leftEdgeMm = i > 0
+                    ? UnitsToMm(ColumnMarkers[i - 1].RightEdge)
+                    : UnitsToMm(TableLeftEdgeUnits);
+                double rightEdgeMm = UnitsToMm(m.RightEdge);
+                result[m.ColumnIndex] = Math.Max(5, rightEdgeMm - leftEdgeMm);
+            }
+            return result;
+        }
+
         private void UpdateIndentMarkers()
         {
-            GetIndentMarker(RulerIndentMarkerType.LeftIndent)!.Position
-                = MmToUnits(_leftIndentMm);
-            GetIndentMarker(RulerIndentMarkerType.FirstLineIndent)!.Position
-                = MmToUnits(_firstLineIndentMm);
-            GetIndentMarker(RulerIndentMarkerType.RightIndent)!.Position
-                = MmToUnits(_rightIndentMm);
+            GetIndentMarker(RulerIndentMarkerType.LeftIndent)!.Position = MmToUnits(_leftIndentMm);
+            GetIndentMarker(RulerIndentMarkerType.FirstLineIndent)!.Position = MmToUnits(_firstLineIndentMm);
+            GetIndentMarker(RulerIndentMarkerType.RightIndent)!.Position = MmToUnits(_rightIndentMm);
             this.RaisePropertyChanged(nameof(IndentMarkers));
         }
 
-        /// <summary>
-        /// Возвращает маркер отступа по типу.
-        /// </summary>
-        /// <summary>Возвращает текущую позицию маркера в единицах линейки.</summary>
         public double GetIndentMarkerPosition(RulerIndentMarkerType type)
             => GetIndentMarker(type)?.Position ?? 0;
 
@@ -576,9 +467,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         }
 
         /// <summary>
-        /// Обновляет позицию маркера отступа без ограничения минимального значения.
-        /// Стреляет IndentMarkerChanged немедленно для живого предпросмотра:
-        /// текст сдвигается прямо во время drag без ожидания EndIndentDrag.
+        /// Drag маркера отступа в режиме абзаца — позиция относительно начала текстовой области.
         /// </summary>
         public void UpdateIndentDragUnclamped(double positionUnits)
         {
@@ -586,51 +475,65 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             var marker = GetIndentMarker(DraggingIndentMarker.Value);
             if (marker is null) return;
 
-            // Привязка к сетке.
-            if (IsSnapEnabled)
-                positionUnits = Math.Round(positionUnits / SnapStep) * SnapStep;
+            // Snap НЕ применяется во время drag — только при EndIndentDrag.
+            // Snap во время drag вызывает визуальное дёргание: маркер прыгает
+            // на 0.25 шаг каждый раз когда курсор едва переходит границу snap-зоны.
 
-            // Только верхний предел — не выходим за правый край страницы.
             double pageWidthUnits = MmToUnits(PageWidthMm);
             positionUnits = Math.Min(positionUnits, pageWidthUnits);
 
-            // Нижний предел зависит от типа маркера:
-            // - LeftIndent/FirstLineIndent: не левее левого края листа (-MarginLeft)
-            // - RightIndent: не правее правого края листа (-MarginRight)
             if (DraggingIndentMarker == RulerIndentMarkerType.RightIndent)
-            {
-                double minRight = -MmToUnits(MarginRightMm);
-                positionUnits = Math.Max(positionUnits, minRight);
-            }
+                positionUnits = Math.Max(positionUnits, -MmToUnits(MarginRightMm));
             else
-            {
-                double minUnits = -MmToUnits(MarginLeftMm);
-                positionUnits = Math.Max(positionUnits, minUnits);
-            }
+                positionUnits = Math.Max(positionUnits, -MmToUnits(MarginLeftMm));
 
-            // Когда двигается LeftIndent — FirstLineIndent тянется за ним
-            // сохраняя расстояние. Но если FirstLineIndent уже упёрся в край листа —
-            // он остаётся там, LeftIndent продолжает двигаться один.
             if (DraggingIndentMarker == RulerIndentMarkerType.LeftIndent)
             {
                 var firstMarker = GetIndentMarker(RulerIndentMarkerType.FirstLineIndent);
                 if (firstMarker is not null)
                 {
                     double leftCurrent = GetIndentMarker(RulerIndentMarkerType.LeftIndent)!.Position;
-                    double offset = firstMarker.Position - leftCurrent; // сохраняем разницу
+                    double offset = firstMarker.Position - leftCurrent;
                     double newFirst = positionUnits + offset;
-                    double minEdge = -MmToUnits(MarginLeftMm);
-                    double maxEdge = pageWidthUnits;
-                    // Прижимаем к краю — но не блокируем LeftIndent
-                    firstMarker.Position = Math.Max(minEdge, Math.Min(maxEdge, newFirst));
+                    firstMarker.Position = Math.Max(-MmToUnits(MarginLeftMm),
+                        Math.Min(pageWidthUnits, newFirst));
                 }
             }
 
             marker.Position = positionUnits;
-
             this.RaisePropertyChanged(nameof(IndentMarkers));
+            IndentMarkerChanged?.Invoke(DraggingIndentMarker.Value, UnitsToMm(marker.Position));
+        }
 
-            // Живой предпросмотр.
+        /// <summary>
+        /// Drag маркера отступа в режиме таблицы.
+        /// positionUnitsFromCellStart — позиция относительно левого края ячейки.
+        /// </summary>
+        public void UpdateTableIndentDragUnclamped(double positionUnitsFromCellStart)
+        {
+            if (DraggingIndentMarker is null) return;
+            var marker = GetIndentMarker(DraggingIndentMarker.Value);
+            if (marker is null) return;
+
+            if (IsSnapEnabled)
+                positionUnitsFromCellStart = Math.Round(positionUnitsFromCellStart / SnapStep) * SnapStep;
+
+            double cellW = ActiveCellRightUnits - ActiveCellLeftUnits;
+            positionUnitsFromCellStart = Math.Max(0, Math.Min(positionUnitsFromCellStart, cellW));
+
+            if (DraggingIndentMarker == RulerIndentMarkerType.LeftIndent)
+            {
+                var firstMarker = GetIndentMarker(RulerIndentMarkerType.FirstLineIndent);
+                if (firstMarker is not null)
+                {
+                    double leftCurrent = GetIndentMarker(RulerIndentMarkerType.LeftIndent)!.Position;
+                    double offset = firstMarker.Position - leftCurrent;
+                    firstMarker.Position = Math.Max(0, Math.Min(cellW, positionUnitsFromCellStart + offset));
+                }
+            }
+
+            marker.Position = positionUnitsFromCellStart;
+            this.RaisePropertyChanged(nameof(IndentMarkers));
             IndentMarkerChanged?.Invoke(DraggingIndentMarker.Value, UnitsToMm(marker.Position));
         }
     }

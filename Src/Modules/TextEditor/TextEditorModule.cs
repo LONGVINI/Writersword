@@ -56,6 +56,12 @@ namespace Writersword.Modules.TextEditor
         private TextEditorSettings _localSettings = new();
 
         private DeltaCachePayload? _lastDeltaPayload;
+        /// <summary>
+        /// Сырые данные загруженные из файла (нормализованные без caret).
+        /// Используется для сравнения в HasUnsavedChanges — пока нет изменений
+        /// GetCustomData должен возвращать точно то же что было загружено.
+        /// </summary>
+        private string? _baselineCustomData;
 
         // Кеш сессионных данных (para, charIdx, scrollY).
         // Обновляется на UI-потоке через UpdateSessionCache() всякий раз когда
@@ -165,25 +171,35 @@ namespace Writersword.Modules.TextEditor
             if (_viewModel?.DocumentViewModel is null) return null;
             DeltaCachePayload payload = _serializer.BuildDeltaPayload(
                 _viewModel.DocumentViewModel.Document, _lastDeltaPayload);
+
+            // Если изменений нет и есть базовая линия — возвращаем её как есть.
+            // Это гарантирует что HasUnsavedChanges вернёт false пока пользователь
+            // ничего не менял (хеш совпадёт с файлом на диске).
+            bool hasChanges = payload.ChangedChunks.Count > 0
+                              || payload.RemovedChunks.Count > 0
+                              || payload.ChangedAnnotations.Count > 0
+                              || payload.RemovedAnnotations.Count > 0;
+
+            if (!hasChanges && _baselineCustomData is not null)
+            {
+                _logger.Debug("GetCustomData: no changes, returning baseline (len={L})", _baselineCustomData.Length);
+                return _baselineCustomData;
+            }
+
             _lastDeltaPayload = payload;
 
             string documentJson = _serializer.Serialize(_viewModel.DocumentViewModel.Document);
             string localSettingsJson = System.Text.Json.JsonSerializer.Serialize(_localSettings);
 
-            // Обновляем кеш сессии с UI-потока (здесь всегда UI-поток — Ctrl+S).
-            // Версия 3 = v2 + поле "caret" с позицией каретки.
-            // Старые файлы v2 читаются без него (caret будет null → позиция 0).
-            if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
-                RefreshSessionCacheOnUIThread();
-
             var envelope = new
             {
-                v = 3,
+                v = 2,
                 doc = documentJson,
                 local = localSettingsJson,
-                caret = _cachedSessionData   // null пока не было UI-вызова
             };
-            return System.Text.Json.JsonSerializer.Serialize(envelope);
+            var result = System.Text.Json.JsonSerializer.Serialize(envelope);
+            _baselineCustomData = null; // сбрасываем — теперь есть реальные изменения
+            return result;
         }
 
         public override void SetCustomData(object? data)
@@ -238,8 +254,22 @@ namespace Writersword.Modules.TextEditor
                         {
                             _viewModel.LoadDocument(doc, _localSettings);
 
+                            // Инициализируем _lastDeltaPayload сразу после загрузки.
+                            _lastDeltaPayload = _serializer.BuildDeltaPayload(doc, null);
+
+                            // Строим baseline без caret — именно это GetCustomData будет
+                            // возвращать пока нет изменений. Файл тоже перезапишется без caret
+                            // при следующем сохранении → хеши совпадут.
+                            _baselineCustomData = System.Text.Json.JsonSerializer.Serialize(new
+                            {
+                                v = 2,
+                                doc = docJson,
+                                local = localJson.Length > 0 ? localJson
+                                        : System.Text.Json.JsonSerializer.Serialize(_localSettings),
+                            });
+
+
                             // Каретку восстанавливаем ПОСЛЕ загрузки документа.
-                            // Откладываем через Dispatcher.Loaded чтобы лейауты успели построиться.
                             if (_cachedSessionData is not null)
                                 RestoreCaretFromCache();
 
@@ -253,6 +283,7 @@ namespace Writersword.Modules.TextEditor
                         if (doc is not null)
                         {
                             _viewModel.LoadDocument(doc, _localSettings);
+                            _lastDeltaPayload = _serializer.BuildDeltaPayload(doc, null);
                             _logger.Debug("Document loaded (legacy), title={Title}", doc.Title);
                             return;
                         }
@@ -302,9 +333,15 @@ namespace Writersword.Modules.TextEditor
                 int docParaIdx = root.TryGetProperty("para", out var p) ? p.GetInt32() : 0;
                 int charIdx = root.TryGetProperty("ch", out var c) ? c.GetInt32() : 0;
                 double scrollY = root.TryGetProperty("scroll", out var s) ? s.GetDouble() : 0;
+                double zoom = root.TryGetProperty("zoom", out var z) ? z.GetDouble() : 0;
 
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                 {
+                    // Восстанавливаем зум до каретки — иначе scroll-offset
+                    // будет пересчитан с неправильным зумом.
+                    if (zoom > 0.01 && _viewModel?.DocumentViewModel is { } dvm)
+                        dvm.Zoom = zoom;
+
                     var canvas = _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
                     canvas?.RestoreCaretState(docParaIdx, charIdx);
 
@@ -330,11 +367,14 @@ namespace Writersword.Modules.TextEditor
             if (canvas is null) return;
 
             var (docParaIdx, charIdx, scrollY) = canvas.GetCaretState();
+            double zoom = _viewModel?.DocumentViewModel?.Zoom ?? 1.0;
+
             _cachedSessionData = System.Text.Json.JsonSerializer.Serialize(new
             {
                 para = docParaIdx,
                 ch = charIdx,
-                scroll = scrollY
+                scroll = scrollY,
+                zoom = zoom
             });
         }
 
@@ -418,11 +458,11 @@ namespace Writersword.Modules.TextEditor
                         canvas.ExecuteNavRight(true); return;
 
                     case "TextEditor.Editing.DeleteBack":
-                        canvas.ExecuteDeleteBack(); return;
+                        canvas.ExecuteDeleteBackSmart(); return;
                     case "TextEditor.Editing.DeleteForward":
-                        canvas.ExecuteDeleteForward(); return;
+                        canvas.ExecuteDeleteForwardSmart(); return;
                     case "TextEditor.Editing.NewParagraph":
-                        canvas.ExecuteNewParagraph(); return;
+                        canvas.ExecuteNewParagraphSmart(); return;
 
                     case "TextEditor.Clipboard.Copy":
                         canvas.ExecuteCopy(); return;

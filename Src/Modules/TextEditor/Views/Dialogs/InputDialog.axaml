@@ -1,0 +1,95 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Writersword.Modules.TextEditor.Views.Dialogs.InputDialog"
+        Title="Ввод"
+        Width="420"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        SystemDecorations="None"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent">
+
+	<Panel>
+		<Grid>
+
+			<!-- Подложка (тень) -->
+			<Border Background="{DynamicResource BgBaseBrush}"
+                    CornerRadius="20"
+                    Margin="-2"/>
+
+			<!-- Контент -->
+			<Border Background="{DynamicResource BgAppBrush}"
+                    CornerRadius="12"
+                    Padding="24 20"
+                    BorderBrush="{DynamicResource BorderDefaultBrush}"
+                    BorderThickness="1"
+                    ClipToBounds="True"
+                    Margin="2">
+
+				<StackPanel Spacing="14">
+
+					<!-- Заголовок -->
+					<TextBlock x:Name="TitleText"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               TextWrapping="Wrap"/>
+
+					<!-- Подсказка / описание -->
+					<TextBlock x:Name="PromptText"
+                               FontSize="12"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               IsVisible="False"/>
+
+					<!-- Поле ввода -->
+					<TextBox x:Name="InputBox"
+                             FontSize="13"
+                             Padding="8 6"
+                             CornerRadius="6"
+                             Background="{DynamicResource BgSurfaceBrush}"
+                             BorderBrush="{DynamicResource BorderDefaultBrush}"
+                             BorderThickness="1"
+                             Foreground="{DynamicResource TextPrimaryBrush}"
+                             CaretBrush="{DynamicResource TextPrimaryBrush}"
+                             MaxLength="500"
+                             AcceptsReturn="False"/>
+
+					<!-- Кнопки -->
+					<StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                Spacing="10"
+                                Margin="0 4 0 0">
+
+						<Button x:Name="CancelBtn"
+                                Content="Отмена"
+                                FontSize="12"
+                                Padding="20 8"
+                                CornerRadius="6"
+                                Cursor="Hand"
+                                Background="{DynamicResource BgSurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                BorderThickness="1"
+                                Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+						<Button x:Name="OkBtn"
+                                Content="OK"
+                                FontSize="12"
+                                FontWeight="SemiBold"
+                                Padding="20 8"
+                                CornerRadius="6"
+                                Cursor="Hand"
+                                Background="{DynamicResource AccentDefaultBrush}"
+                                BorderThickness="0"
+                                Foreground="White"/>
+
+					</StackPanel>
+
+				</StackPanel>
+
+			</Border>
+		</Grid>
+	</Panel>
+
+</Window>

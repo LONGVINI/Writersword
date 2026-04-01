@@ -1,0 +1,417 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!-- 
+    Microsoft ResX Schema 
+    
+    Version 2.0
+    
+    The primary goals of this format is to allow a simple XML format 
+    that is mostly human readable. The generation and parsing of the 
+    various data types are done through the TypeConverter classes 
+    associated with the data types.
+    
+    Example:
+    
+    ... ado.net/XML headers & schema ...
+    <resheader name="resmimetype">text/microsoft-resx</resheader>
+    <resheader name="version">2.0</resheader>
+    <resheader name="reader">System.Resources.ResXResourceReader, System.Windows.Forms, ...</resheader>
+    <resheader name="writer">System.Resources.ResXResourceWriter, System.Windows.Forms, ...</resheader>
+    <data name="Name1"><value>this is my long string</value><comment>this is a comment</comment></data>
+    <data name="Color1" type="System.Drawing.Color, System.Drawing">Blue</data>
+    <data name="Bitmap1" mimetype="application/x-microsoft.net.object.binary.base64">
+        <value>[base64 mime encoded serialized .NET Framework object]</value>
+    </data>
+    <data name="Icon1" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
+        <value>[base64 mime encoded string representing a byte array form of the .NET Framework object]</value>
+        <comment>This is a comment</comment>
+    </data>
+                
+    There are any number of "resheader" rows that contain simple 
+    name/value pairs.
+    
+    Each data row contains a name, and value. The row also contains a 
+    type or mimetype. Type corresponds to a .NET class that support 
+    text/value conversion through the TypeConverter architecture. 
+    Classes that don't support this are serialized and stored with the 
+    mimetype set.
+    
+    The mimetype is used for serialized objects, and tells the 
+    ResXResourceReader how to depersist the object. This is currently not 
+    extensible. For a given mimetype the value must be set accordingly:
+    
+    Note - application/x-microsoft.net.object.binary.base64 is the format 
+    that the ResXResourceWriter will generate, however the reader can 
+    read any of the formats listed below.
+    
+    mimetype: application/x-microsoft.net.object.binary.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Binary.BinaryFormatter
+            : and then encoded with base64 encoding.
+    
+    mimetype: application/x-microsoft.net.object.soap.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Soap.SoapFormatter
+            : and then encoded with base64 encoding.
+
+    mimetype: application/x-microsoft.net.object.bytearray.base64
+    value   : The object must be serialized into a byte array 
+            : using a System.ComponentModel.TypeConverter
+            : and then encoded with base64 encoding.
+    -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="DisplayName" xml:space="preserve">
+    <value>Персонажи</value>
+  </data>
+  <data name="Description" xml:space="preserve">
+    <value>Управление персонажами, связями и шаблонами</value>
+  </data>
+  <data name="Tab_Characters" xml:space="preserve">
+    <value>Персонажи</value>
+  </data>
+  <data name="Tab_Relationships" xml:space="preserve">
+    <value>Связи</value>
+  </data>
+  <data name="Tab_Templates" xml:space="preserve">
+    <value>Шаблоны</value>
+  </data>
+  <data name="Tab_Basics" xml:space="preserve">
+    <value>Основное</value>
+  </data>
+  <data name="Tab_Parameters" xml:space="preserve">
+    <value>Параметры</value>
+  </data>
+  <data name="Tab_Contexts" xml:space="preserve">
+    <value>Контексты</value>
+  </data>
+  <data name="Tab_Notes" xml:space="preserve">
+    <value>Заметки</value>
+  </data>
+  <data name="Tab_PersonalTimeline" xml:space="preserve">
+    <value>Таймлайн</value>
+  </data>
+  <data name="Tab_History" xml:space="preserve">
+    <value>История</value>
+  </data>
+  <data name="ViewMode_List" xml:space="preserve">
+    <value>Список</value>
+  </data>
+  <data name="ViewMode_Grid" xml:space="preserve">
+    <value>Сетка</value>
+  </data>
+  <data name="Button_CreateCharacter" xml:space="preserve">
+    <value>Новый персонаж</value>
+  </data>
+  <data name="Button_CreateRandomized" xml:space="preserve">
+    <value>Создать персонажа с рандомными параметрами</value>
+  </data>
+  <data name="Button_CreateCollective" xml:space="preserve">
+    <value>Создать народ / группу</value>
+  </data>
+  <data name="Button_Save" xml:space="preserve">
+    <value>Сохранить</value>
+  </data>
+  <data name="Button_Delete" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="Button_Duplicate" xml:space="preserve">
+    <value>Дублировать</value>
+  </data>
+  <data name="Button_UploadAvatar" xml:space="preserve">
+    <value>Загрузить аватар</value>
+  </data>
+  <data name="Button_DeleteAvatar" xml:space="preserve">
+    <value>Удалить аватар</value>
+  </data>
+  <data name="Button_AddStatus" xml:space="preserve">
+    <value>Добавить статус</value>
+  </data>
+  <data name="Button_AddParameter" xml:space="preserve">
+    <value>Добавить параметр</value>
+  </data>
+  <data name="Button_AddContext" xml:space="preserve">
+    <value>Добавить контекст</value>
+  </data>
+  <data name="Button_AddRelationship" xml:space="preserve">
+    <value>Добавить связь</value>
+  </data>
+  <data name="Button_AddNote" xml:space="preserve">
+    <value>Добавить заметку</value>
+  </data>
+  <data name="Button_AddEvent" xml:space="preserve">
+    <value>Добавить событие</value>
+  </data>
+  <data name="Button_ApplyAnketa" xml:space="preserve">
+    <value>Применить шаблон</value>
+  </data>
+  <data name="Button_ClearFilters" xml:space="preserve">
+    <value>Сбросить фильтры</value>
+  </data>
+  <data name="Filter_All" xml:space="preserve">
+    <value>Все</value>
+  </data>
+  <data name="Field_Name" xml:space="preserve">
+    <value>Имя</value>
+  </data>
+  <data name="Field_ShortDescription" xml:space="preserve">
+    <value>Краткое описание</value>
+  </data>
+  <data name="Field_Color" xml:space="preserve">
+    <value>Цвет</value>
+  </data>
+  <data name="Field_FallbackIcon" xml:space="preserve">
+    <value>Иконка</value>
+  </data>
+  <data name="Field_ImportanceLevel" xml:space="preserve">
+    <value>Важность</value>
+  </data>
+  <data name="Field_CustomImportanceLabel" xml:space="preserve">
+    <value>Своя метка</value>
+  </data>
+  <data name="Field_NarrativeStartPoint" xml:space="preserve">
+    <value>Первое появление</value>
+  </data>
+  <data name="Field_NarrativeEndPoint" xml:space="preserve">
+    <value>Последнее появление</value>
+  </data>
+  <data name="Field_Tags" xml:space="preserve">
+    <value>Теги</value>
+  </data>
+  <data name="Field_Statuses" xml:space="preserve">
+    <value>Статусы</value>
+  </data>
+  <data name="Field_RelationshipType" xml:space="preserve">
+    <value>Тип</value>
+  </data>
+  <data name="Field_RelationshipStrength" xml:space="preserve">
+    <value>Сила</value>
+  </data>
+  <data name="Field_RelationshipContext" xml:space="preserve">
+    <value>Контекст</value>
+  </data>
+  <data name="Field_RelationshipEmotion" xml:space="preserve">
+    <value>Эмоция</value>
+  </data>
+  <data name="Field_RelationshipNote" xml:space="preserve">
+    <value>Заметка</value>
+  </data>
+  <data name="Field_EventTitle" xml:space="preserve">
+    <value>Заголовок</value>
+  </data>
+  <data name="Field_EventTimestamp" xml:space="preserve">
+    <value>Дата / время</value>
+  </data>
+  <data name="Field_EventDescription" xml:space="preserve">
+    <value>Описание</value>
+  </data>
+  <data name="Search_Placeholder" xml:space="preserve">
+    <value>Поиск персонажей...</value>
+  </data>
+  <data name="Placeholder_SelectCharacter" xml:space="preserve">
+    <value>Выберите персонажа для просмотра</value>
+  </data>
+  <data name="Placeholder_NarrativePoint" xml:space="preserve">
+    <value>Укажите точку нарратива...</value>
+  </data>
+  <data name="Placeholder_NoParameters" xml:space="preserve">
+    <value>Параметров нет. Добавьте или примените шаблон.</value>
+  </data>
+  <data name="Placeholder_NoRelationships" xml:space="preserve">
+    <value>Связей пока нет.</value>
+  </data>
+  <data name="Placeholder_NoNotes" xml:space="preserve">
+    <value>Заметок пока нет.</value>
+  </data>
+  <data name="Placeholder_NoEvents" xml:space="preserve">
+    <value>Событий пока нет.</value>
+  </data>
+  <data name="Placeholder_NoHistory" xml:space="preserve">
+    <value>События проекта не привязаны.</value>
+  </data>
+  <data name="Placeholder_NoCharacters" xml:space="preserve">
+    <value>Персонажей нет. Создайте первого.</value>
+  </data>
+  <data name="Graph_ResetView" xml:space="preserve">
+    <value>Сбросить вид</value>
+  </data>
+  <data name="Graph_ClearFocus" xml:space="preserve">
+    <value>Убрать фокус</value>
+  </data>
+  <data name="Graph_FocusHint" xml:space="preserve">
+    <value>ПКМ по узлу — фокус на персонаже</value>
+  </data>
+  <data name="Anketa_SelectPrompt" xml:space="preserve">
+    <value>Выберите шаблон...</value>
+  </data>
+  <data name="HotKey_CreateCharacter" xml:space="preserve">
+    <value>Создать персонажа</value>
+  </data>
+  <data name="HotKey_CreateRandomized" xml:space="preserve">
+    <value>Создать персонажа с рандомными параметрами</value>
+  </data>
+  <data name="HotKey_CreateCollective" xml:space="preserve">
+    <value>Создать народ / группу</value>
+  </data>
+  <data name="HotKey_OpenCharacters" xml:space="preserve">
+    <value>Открыть вкладку Персонажи</value>
+  </data>
+  <data name="HotKey_OpenRelationships" xml:space="preserve">
+    <value>Открыть вкладку Связи</value>
+  </data>
+  <data name="HotKey_OpenTemplates" xml:space="preserve">
+    <value>Открыть вкладку Шаблоны</value>
+  </data>
+  <data name="HotKey_DeleteCharacter" xml:space="preserve">
+    <value>Удалить персонажа</value>
+  </data>
+  <data name="HotKey_DuplicateCharacter" xml:space="preserve">
+    <value>Дублировать персонажа</value>
+  </data>
+  <data name="HotKey_SaveCard" xml:space="preserve">
+    <value>Сохранить карточку</value>
+  </data>
+  <data name="HotKey_CloseCard" xml:space="preserve">
+    <value>Закрыть карточку</value>
+  </data>
+  <data name="HotKey_FocusSearch" xml:space="preserve">
+    <value>Перейти в поиск</value>
+  </data>
+  <data name="HotKey_ClearFilters" xml:space="preserve">
+    <value>Сбросить фильтры</value>
+  </data>
+  <data name="HotKey_ViewList" xml:space="preserve">
+    <value>Режим: Список</value>
+  </data>
+  <data name="HotKey_ViewGrid" xml:space="preserve">
+    <value>Режим: Сетка</value>
+  </data>
+  <data name="HotKey_TabNext" xml:space="preserve">
+    <value>Следующая вкладка</value>
+  </data>
+  <data name="HotKey_TabPrev" xml:space="preserve">
+    <value>Предыдущая вкладка</value>
+  </data>
+  <data name="HotKey_TabBasics" xml:space="preserve">
+    <value>Перейти на вкладку Основное</value>
+  </data>
+  <data name="HotKey_TabParameters" xml:space="preserve">
+    <value>Перейти на вкладку Параметры</value>
+  </data>
+  <data name="HotKey_TabRelationshipsCard" xml:space="preserve">
+    <value>Перейти на вкладку Связи (карточка)</value>
+  </data>
+  <data name="HotKey_TabContexts" xml:space="preserve">
+    <value>Перейти на вкладку Контексты</value>
+  </data>
+  <data name="HotKey_TabNotes" xml:space="preserve">
+    <value>Перейти на вкладку Заметки</value>
+  </data>
+  <data name="HotKey_TabPersonalTimeline" xml:space="preserve">
+    <value>Перейти на вкладку Таймлайн</value>
+  </data>
+  <data name="HotKey_TabHistory" xml:space="preserve">
+    <value>Перейти на вкладку История</value>
+  </data>
+  <data name="HotKey_AddParameterNumeric" xml:space="preserve">
+    <value>Добавить числовой параметр</value>
+  </data>
+  <data name="HotKey_AddParameterText" xml:space="preserve">
+    <value>Добавить текстовый параметр</value>
+  </data>
+  <data name="HotKey_AddParameterStateList" xml:space="preserve">
+    <value>Добавить параметр-список</value>
+  </data>
+  <data name="HotKey_AddParameterBoolean" xml:space="preserve">
+    <value>Добавить булевый параметр</value>
+  </data>
+  <data name="HotKey_AddContext" xml:space="preserve">
+    <value>Добавить контекст</value>
+  </data>
+  <data name="HotKey_AddRelationship" xml:space="preserve">
+    <value>Добавить связь</value>
+  </data>
+  <data name="HotKey_AddNote" xml:space="preserve">
+    <value>Добавить заметку</value>
+  </data>
+  <data name="HotKey_AddTimelineEvent" xml:space="preserve">
+    <value>Добавить событие таймлайна</value>
+  </data>
+  <data name="HotKey_AddStatus" xml:space="preserve">
+    <value>Добавить статус</value>
+  </data>
+  <data name="HotKey_UploadAvatar" xml:space="preserve">
+    <value>Загрузить аватар</value>
+  </data>
+  <data name="HotKey_DeleteAvatar" xml:space="preserve">
+    <value>Удалить аватар</value>
+  </data>
+  <data name="HotKey_RandomizeParameters" xml:space="preserve">
+    <value>Рандомизировать параметры</value>
+  </data>
+  <data name="HotKey_GraphResetView" xml:space="preserve">
+    <value>Граф: сбросить вид</value>
+  </data>
+  <data name="HotKey_GraphClearFocus" xml:space="preserve">
+    <value>Граф: убрать фокус</value>
+  </data>
+  <data name="Tab_Edit" xml:space="preserve">
+    <value>Редактирование персонажа</value>
+  </data>
+</root>

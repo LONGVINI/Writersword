@@ -594,4 +594,166 @@
   <data name="TextEffect_Title" xml:space="preserve">
     <value>Эффекты текста</value>
   </data>
+  <data name="Ribbon_Table" xml:space="preserve">
+    <value>Работа с таблицами</value>
+  </data>
+  <data name="Table_Group" xml:space="preserve">
+    <value>Таблица</value>
+  </data>
+  <data name="Table_Delete" xml:space="preserve">
+    <value>Удалить таблицу</value>
+  </data>
+  <data name="Table_AutoFit" xml:space="preserve">
+    <value>АвтоПодбор</value>
+  </data>
+  <data name="Table_DistributeColumns" xml:space="preserve">
+    <value>= столбцы</value>
+  </data>
+  <data name="Table_DistributeRows" xml:space="preserve">
+    <value>= строки</value>
+  </data>
+  <data name="Table_Rows_Group" xml:space="preserve">
+    <value>Строки</value>
+  </data>
+  <data name="Table_AddRowAbove" xml:space="preserve">
+    <value>Выше</value>
+  </data>
+  <data name="Table_AddRowBelow" xml:space="preserve">
+    <value>Ниже</value>
+  </data>
+  <data name="Table_DeleteRow" xml:space="preserve">
+    <value>Удалить строку</value>
+  </data>
+  <data name="Table_Columns_Group" xml:space="preserve">
+    <value>Столбцы</value>
+  </data>
+  <data name="Table_AddColumnLeft" xml:space="preserve">
+    <value>Слева</value>
+  </data>
+  <data name="Table_AddColumnRight" xml:space="preserve">
+    <value>Справа</value>
+  </data>
+  <data name="Table_DeleteColumn" xml:space="preserve">
+    <value>Удалить столбец</value>
+  </data>
+  <data name="Table_Cells_Group" xml:space="preserve">
+    <value>Ячейки</value>
+  </data>
+  <data name="Table_MergeCells" xml:space="preserve">
+    <value>Объединить</value>
+  </data>
+  <data name="Table_SplitCell" xml:space="preserve">
+    <value>Разбить</value>
+  </data>
+  <data name="Table_Align_Group" xml:space="preserve">
+    <value>Выравнивание</value>
+  </data>
+  <data name="Table_AlignTopLeft" xml:space="preserve">
+    <value>Сверху слева</value>
+  </data>
+  <data name="Table_AlignTopCenter" xml:space="preserve">
+    <value>Сверху по центру</value>
+  </data>
+  <data name="Table_AlignTopRight" xml:space="preserve">
+    <value>Сверху справа</value>
+  </data>
+  <data name="Table_AlignMiddleLeft" xml:space="preserve">
+    <value>По центру слева</value>
+  </data>
+  <data name="Table_AlignMiddleCenter" xml:space="preserve">
+    <value>По центру</value>
+  </data>
+  <data name="Table_AlignMiddleRight" xml:space="preserve">
+    <value>По центру справа</value>
+  </data>
+  <data name="Table_AlignBottomLeft" xml:space="preserve">
+    <value>Снизу слева</value>
+  </data>
+  <data name="Table_AlignBottomCenter" xml:space="preserve">
+    <value>Снизу по центру</value>
+  </data>
+  <data name="Table_AlignBottomRight" xml:space="preserve">
+    <value>Снизу справа</value>
+  </data>
+  <data name="Table_Style_Group" xml:space="preserve">
+    <value>Оформление</value>
+  </data>
+  <data name="Table_CellColor" xml:space="preserve">
+    <value>Цвет ячейки</value>
+  </data>
+  <data name="Table_ColorNone" xml:space="preserve">
+    <value>Нет заливки</value>
+  </data>
+  <data name="Table_ColorBlue" xml:space="preserve">
+    <value>Голубой</value>
+  </data>
+  <data name="Table_ColorGreen" xml:space="preserve">
+    <value>Зелёный</value>
+  </data>
+  <data name="Table_ColorYellow" xml:space="preserve">
+    <value>Жёлтый</value>
+  </data>
+  <data name="Table_ColorRed" xml:space="preserve">
+    <value>Розовый</value>
+  </data>
+  <data name="Table_ColorGray" xml:space="preserve">
+    <value>Серый</value>
+  </data>
+  <data name="Table_Borders" xml:space="preserve">
+    <value>Границы</value>
+  </data>
+  <data name="Table_BorderAll" xml:space="preserve">
+    <value>Все</value>
+  </data>
+  <data name="Table_BorderNone" xml:space="preserve">
+    <value>Нет</value>
+  </data>
+  <data name="Table_BorderOuter" xml:space="preserve">
+    <value>Внешние</value>
+  </data>
+  <data name="Table_BorderInner" xml:space="preserve">
+    <value>Внутренние</value>
+  </data>
+  <data name="Table_BorderTop" xml:space="preserve">
+    <value>Верхняя</value>
+  </data>
+  <data name="Table_BorderBottom" xml:space="preserve">
+    <value>Нижняя</value>
+  </data>
+  <data name="Table_BorderLeft" xml:space="preserve">
+    <value>Левая</value>
+  </data>
+  <data name="Table_BorderRight" xml:space="preserve">
+    <value>Правая</value>
+  </data>
+  <data name="Table_Sort_Group" xml:space="preserve">
+    <value>Сортировка</value>
+  </data>
+  <data name="Table_SortAsc" xml:space="preserve">
+    <value>А &gt; Я</value>
+  </data>
+  <data name="Table_SortDesc" xml:space="preserve">
+    <value>Я &gt; А</value>
+  </data>
+  <data name="Table_Header_Group" xml:space="preserve">
+    <value>Заголовок</value>
+  </data>
+  <data name="Table_RepeatHeader" xml:space="preserve">
+    <value>Повторять заголовок</value>
+  </data>
+  <data name="Table_Split_Group" xml:space="preserve">
+    <value>Разбивка</value>
+  </data>
+  <data name="Table_SplitByRow" xml:space="preserve">
+    <value>По строке</value>
+  </data>
+  <data name="Table_SplitByCell" xml:space="preserve">
+    <value>По ячейке</value>
+  </data>
+  <data name="Table_BreakLabel" xml:space="preserve">
+    <value>Подпись разрыва</value>
+  </data>
+  <data name="Table_ContinuationLabel" xml:space="preserve">
+    <value>Подпись продолж.</value>
+  </data>
 </root>

@@ -40,8 +40,6 @@ namespace Writersword.Modules.TextEditor.Views
 
         private void WireScroll()
         {
-            // Подписываемся на DataContextChanged — к этому моменту
-            // visual tree уже построен и ScrollViewer точно найдётся.
             DataContextChanged += (_, _) =>
             {
                 if (DataContext is not TextEditorViewModel vm) return;
@@ -49,20 +47,13 @@ namespace Writersword.Modules.TextEditor.Views
                 var scrollViewer = this.FindControl<ScrollViewer>("DocumentScrollViewer");
                 if (scrollViewer is null) return;
 
-                // Устанавливаем начальные значения.
                 vm.Ruler.ScrollOffsetY = scrollViewer.Offset.Y;
                 vm.Ruler.ViewportHeight = scrollViewer.Viewport.Height;
 
-                // Подписываемся на скролл.
                 scrollViewer.ScrollChanged += (_, _) =>
                 {
                     vm.Ruler.ScrollOffsetY = scrollViewer.Offset.Y;
                     vm.Ruler.ViewportHeight = scrollViewer.Viewport.Height;
-
-                    // ВРЕМЕННО
-                    System.Diagnostics.Debug.WriteLine(
-                        $"Scroll: Y={scrollViewer.Offset.Y:F1} " +
-                        $"ViewportH={scrollViewer.Viewport.Height:F1}");
                 };
             };
         }
@@ -91,10 +82,10 @@ namespace Writersword.Modules.TextEditor.Views
             };
 
             // Уведомление о входе/выходе каретки из таблицы.
-            canvas.CaretEnteredTable = (offsets, widths) =>
+            canvas.CaretEnteredTable = (offsets, widths, tableOffsetMm, activeCol) =>
             {
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                    vm.NotifyCaretEnteredTable(offsets, widths),
+                    vm.NotifyCaretEnteredTable(offsets, widths, tableOffsetMm, activeCol),
                     Avalonia.Threading.DispatcherPriority.Background);
             };
 
@@ -103,6 +94,14 @@ namespace Writersword.Modules.TextEditor.Views
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                     vm.NotifyCaretLeftTable(),
                     Avalonia.Threading.DispatcherPriority.Background);
+            };
+
+            // Страница каретки → вертикальная линейка.
+            // Вертикальная линейка использует FocusedPageIndex чтобы отображать
+            // шкалу только для страницы где стоит каретка, как в Word.
+            canvas.CaretPageChanged = pageIndex =>
+            {
+                vm.Ruler.FocusedPageIndex = pageIndex;
             };
 
             _logger.Debug("SyncCanvas: MonitorSizeInches={V}", vm.MonitorSizeInches);

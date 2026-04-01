@@ -1,0 +1,153 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
+             xmlns:models="using:Writersword.Modules.Characters.Models"
+             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             x:Class="Writersword.Modules.Characters.Views.Card.Tabs.CharacterContextsTabView"
+             x:DataType="tabs:CharacterContextsTabViewModel">
+
+    <Grid ColumnDefinitions="180,*">
+
+        <!-- Список контекстов -->
+        <Grid Grid.Column="0"
+              RowDefinitions="*,Auto"
+              Background="{DynamicResource BgPanelBrush}">
+
+            <ScrollViewer Grid.Row="0">
+                <ItemsControl ItemsSource="{Binding Contexts}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="models:CharacterContext">
+                            <Button Command="{Binding $parent[ItemsControl].((tabs:CharacterContextsTabViewModel)DataContext).SelectContextCommand}"
+                                    CommandParameter="{Binding}"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Stretch"
+                                    Padding="0">
+                                <Grid ColumnDefinitions="4,*,Auto" Margin="0,1">
+                                    <Border Grid.Column="0"
+                                            Background="{Binding AccentColor, FallbackValue=#607D8B}"
+                                            Width="4"
+                                            CornerRadius="2,0,0,2"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding Name}"
+                                               FontSize="12"
+                                               Margin="8,6"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <Button Grid.Column="2"
+                                            Content="x"
+                                            Command="{Binding $parent[ItemsControl].((tabs:CharacterContextsTabViewModel)DataContext).RemoveContextCommand}"
+                                            CommandParameter="{Binding Id}"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Padding="6,4"
+                                            FontSize="10"
+                                            Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <Button Grid.Row="1"
+                    Content="{x:Static loc:CharactersStrings.Button_AddContext}"
+                    Command="{Binding AddContextCommand}"
+                    HorizontalAlignment="Stretch"
+                    Margin="8"
+                    Padding="8,5"
+                    FontSize="11"
+                    Background="{DynamicResource AccentDefaultBrush}"
+                    Foreground="White"
+                    CornerRadius="4"/>
+        </Grid>
+
+        <!-- Редактор выбранного контекста -->
+        <ScrollViewer Grid.Column="1" Padding="12">
+            <Panel>
+                <StackPanel Spacing="10"
+                        IsVisible="{Binding SelectedContext, Converter={x:Static ObjectConverters.IsNotNull}}">
+
+                <!-- Название -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Название контекста"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <TextBox Text="{Binding SelectedContext.Name}"
+                             FontSize="13"
+                             FontWeight="Medium"
+                             Background="{DynamicResource BgPanelBrush}"
+                             Foreground="{DynamicResource TextPrimaryBrush}"
+                             BorderBrush="{DynamicResource BorderDefaultBrush}"
+                             BorderThickness="1"
+                             CornerRadius="4"
+                             Padding="8,6"/>
+                </StackPanel>
+
+                <!-- Описание -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Когда активен этот контекст"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <TextBox Text="{Binding SelectedContext.Description}"
+                             FontSize="12"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             MinHeight="60"
+                             Background="{DynamicResource BgPanelBrush}"
+                             Foreground="{DynamicResource TextPrimaryBrush}"
+                             BorderBrush="{DynamicResource BorderDefaultBrush}"
+                             BorderThickness="1"
+                             CornerRadius="4"
+                             Padding="8,6"/>
+                </StackPanel>
+
+                <!-- Цвет -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Цвет контекста (HEX)"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <TextBox Text="{Binding SelectedContext.AccentColor}"
+                             FontSize="12"
+                             Background="{DynamicResource BgPanelBrush}"
+                             Foreground="{DynamicResource TextPrimaryBrush}"
+                             BorderBrush="{DynamicResource BorderDefaultBrush}"
+                             BorderThickness="1"
+                             CornerRadius="4"
+                             Padding="8,6"
+                             Watermark="#607D8B"/>
+                </StackPanel>
+
+                <!-- Заметки контекста -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Заметки"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <TextBox Text="{Binding SelectedContext.Notes}"
+                             FontSize="12"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             MinHeight="80"
+                             Background="{DynamicResource BgPanelBrush}"
+                             Foreground="{DynamicResource TextPrimaryBrush}"
+                             BorderBrush="{DynamicResource BorderDefaultBrush}"
+                             BorderThickness="1"
+                             CornerRadius="4"
+                             Padding="8,6"/>
+                </StackPanel>
+
+            </StackPanel>
+
+            <!-- Заглушка если нет контекстов -->
+            <TextBlock Text="Контексты не созданы. Нажмите «Добавить контекст»."
+                       FontSize="12"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding SelectedContext, Converter={x:Static ObjectConverters.IsNull}}"/>
+            </Panel>
+        </ScrollViewer>
+
+    </Grid>
+</UserControl>

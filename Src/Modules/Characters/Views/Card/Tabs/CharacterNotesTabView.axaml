@@ -1,0 +1,109 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
+             xmlns:models="using:Writersword.Modules.Characters.Models"
+             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             x:Class="Writersword.Modules.Characters.Views.Card.Tabs.CharacterNotesTabView"
+             x:DataType="tabs:CharacterNotesTabViewModel">
+
+    <Grid ColumnDefinitions="160,*">
+
+        <!-- Список заметок -->
+        <Grid Grid.Column="0"
+              RowDefinitions="*,Auto"
+              Background="{DynamicResource BgPanelBrush}">
+
+            <ScrollViewer Grid.Row="0">
+                <ItemsControl ItemsSource="{Binding Notes}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="models:CharacterNote">
+                            <Button Command="{Binding $parent[ItemsControl].((tabs:CharacterNotesTabViewModel)DataContext).SelectNoteCommand}"
+                                    CommandParameter="{Binding}"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    HorizontalAlignment="Stretch"
+                                    HorizontalContentAlignment="Stretch"
+                                    Padding="0">
+                                <Grid ColumnDefinitions="4,*,Auto" Margin="0,1">
+                                    <Border Grid.Column="0"
+                                            Background="{Binding AccentColor, FallbackValue=#607D8B}"
+                                            Width="4"
+                                            CornerRadius="2,0,0,2"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding Title}"
+                                               FontSize="11"
+                                               Margin="8,5"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <Button Grid.Column="2"
+                                            Content="x"
+                                            Command="{Binding $parent[ItemsControl].((tabs:CharacterNotesTabViewModel)DataContext).RemoveNoteCommand}"
+                                            CommandParameter="{Binding Id}"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Padding="6,4"
+                                            FontSize="9"
+                                            Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <Button Grid.Row="1"
+                    Content="{x:Static loc:CharactersStrings.Button_AddNote}"
+                    Command="{Binding AddNoteCommand}"
+                    HorizontalAlignment="Stretch"
+                    Margin="8"
+                    Padding="8,5"
+                    FontSize="11"
+                    Background="{DynamicResource AccentDefaultBrush}"
+                    Foreground="White"
+                    CornerRadius="4"/>
+        </Grid>
+
+        <!-- Редактор выбранной заметки -->
+        <Grid Grid.Column="1"
+              RowDefinitions="Auto,*"
+              Margin="0">
+
+            <!-- Заголовок заметки -->
+            <TextBox Grid.Row="0"
+                     Text="{Binding SelectedNote.Title}"
+                     FontSize="13"
+                     FontWeight="Medium"
+                     Background="{DynamicResource BgSurfaceBrush}"
+                     Foreground="{DynamicResource TextPrimaryBrush}"
+                     BorderBrush="{DynamicResource BorderDefaultBrush}"
+                     BorderThickness="0,0,0,1"
+                     CornerRadius="0"
+                     Padding="12,8"
+                     Watermark="Заголовок заметки"
+                     IsVisible="{Binding SelectedNote, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+            <!-- Текст заметки -->
+            <TextBox Grid.Row="1"
+                     Text="{Binding SelectedNote.Content}"
+                     FontSize="12"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     Background="{DynamicResource BgSurfaceBrush}"
+                     Foreground="{DynamicResource TextPrimaryBrush}"
+                     BorderThickness="0"
+                     Padding="12,10"
+                     Watermark="Текст заметки..."
+                     IsVisible="{Binding SelectedNote, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+            <!-- Заглушка -->
+            <TextBlock Grid.Row="1"
+                       Text="{x:Static loc:CharactersStrings.Placeholder_NoNotes}"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding SelectedNote, Converter={x:Static ObjectConverters.IsNull}}"/>
+        </Grid>
+
+    </Grid>
+</UserControl>

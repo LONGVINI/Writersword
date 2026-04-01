@@ -139,6 +139,26 @@ namespace Writersword.Modules.TextEditor.Models.Document
         public double WidthPercent { get; set; } = 100;
 
         /// <summary>
+        /// Отступ таблицы слева от начала текстовой области в пунктах.
+        /// Сдвигает всю таблицу горизонтально. Управляется через левый маркер линейки в режиме таблицы.
+        /// </summary>
+        public double LeftIndentPt { get; set; } = 0;
+
+        /// <summary>
+        /// Повторять первую строку как заголовок на каждой странице.
+        /// </summary>
+        public bool RepeatHeader { get; set; } = false;
+
+        /// <summary>Режим разбивки таблицы по страницам.</summary>
+        public TableSplitMode SplitMode { get; set; } = TableSplitMode.ByRow;
+
+        /// <summary>Текст после таблицы перед разрывом страницы. Null = не рисовать.</summary>
+        public string? BreakLabel { get; set; }
+
+        /// <summary>Текст перед продолжением таблицы на следующей странице. Null = не рисовать.</summary>
+        public string? ContinuationLabel { get; set; }
+
+        /// <summary>
         /// Возвращает ячейку по индексу строки и столбца.
         /// Учитывает объединённые ячейки (возвращает главную ячейку).
         /// </summary>
@@ -152,5 +172,12 @@ namespace Writersword.Modules.TextEditor.Models.Document
             }
             return null;
         }
+    }
+
+    /// <summary>Режим разбивки таблицы по страницам.</summary>
+    public enum TableSplitMode
+    {
+        ByRow = 0,
+        ByCell = 1
     }
 }

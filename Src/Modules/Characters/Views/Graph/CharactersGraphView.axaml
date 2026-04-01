@@ -1,0 +1,42 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.Characters.ViewModels"
+             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             x:Class="Writersword.Modules.Characters.Views.Graph.CharactersGraphView"
+             x:DataType="vm:CharactersGraphViewModel"
+             Background="{DynamicResource BgSurfaceBrush}">
+
+    <Grid RowDefinitions="Auto,*">
+
+        <Border Grid.Row="0" Padding="8,6"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                BorderThickness="0,0,0,1"
+                Background="{DynamicResource BgPanelBrush}">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0"
+                           Text="{x:Static loc:CharactersStrings.Graph_FocusHint}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                    <Button Content="{x:Static loc:CharactersStrings.Graph_ClearFocus}"
+                            Command="{Binding ClearFocusCommand}"
+                            FontSize="11" Padding="8,4"
+                            IsVisible="{Binding FocusedCharacterId,
+                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    <Button Content="{x:Static loc:CharactersStrings.Graph_ResetView}"
+                            Command="{Binding ResetViewCommand}"
+                            FontSize="11" Padding="8,4"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid x:Name="GraphCanvas"
+              Grid.Row="1"
+              Background="{DynamicResource BgSurfaceBrush}"
+              ClipToBounds="True"
+              HorizontalAlignment="Stretch"
+              VerticalAlignment="Stretch"/>
+
+    </Grid>
+</UserControl>

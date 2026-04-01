@@ -104,6 +104,8 @@ namespace Writersword.Infrastructure.Services
                 _logger.LogDebug("Hash mismatch (Simple mode)");
             }
 
+            //_logger.LogDebug("Hash1={H1}, Hash2={H2}", hash1[..20], hash2[..20]);
+
             return areEqual;
         }
 

@@ -753,4 +753,220 @@
     <value>Text Effects</value>
     <comment>Effects applied to selected text</comment>
   </data>
+  <data name="Ribbon_Table" xml:space="preserve">
+    <value>Work with Tables</value>
+    <comment>Context tab name shown when caret is inside a table</comment>
+  </data>
+  <data name="Table_Group" xml:space="preserve">
+    <value>Table</value>
+    <comment>Ribbon group label — top-level table operations</comment>
+  </data>
+  <data name="Table_Delete" xml:space="preserve">
+    <value>Delete Table</value>
+    <comment>Button label — removes the entire table</comment>
+  </data>
+  <data name="Table_AutoFit" xml:space="preserve">
+    <value>AutoFit</value>
+    <comment>Button label — auto-fits column widths to content</comment>
+  </data>
+  <data name="Table_DistributeColumns" xml:space="preserve">
+    <value>Distribute Columns</value>
+    <comment>Button label — makes all columns equal width</comment>
+  </data>
+  <data name="Table_DistributeRows" xml:space="preserve">
+    <value>Distribute Rows</value>
+    <comment>Button label — makes all rows equal height</comment>
+  </data>
+  <data name="Table_Rows_Group" xml:space="preserve">
+    <value>Rows</value>
+    <comment>Ribbon group label — row operations</comment>
+  </data>
+  <data name="Table_AddRowAbove" xml:space="preserve">
+    <value>Above</value>
+    <comment>Button label — inserts a row above current</comment>
+  </data>
+  <data name="Table_AddRowBelow" xml:space="preserve">
+    <value>Below</value>
+    <comment>Button label — inserts a row below current</comment>
+  </data>
+  <data name="Table_DeleteRow" xml:space="preserve">
+    <value>Delete Row</value>
+    <comment>Button label — removes current row</comment>
+  </data>
+  <data name="Table_Columns_Group" xml:space="preserve">
+    <value>Columns</value>
+    <comment>Ribbon group label — column operations</comment>
+  </data>
+  <data name="Table_AddColumnLeft" xml:space="preserve">
+    <value>Left</value>
+    <comment>Button label — inserts a column to the left</comment>
+  </data>
+  <data name="Table_AddColumnRight" xml:space="preserve">
+    <value>Right</value>
+    <comment>Button label — inserts a column to the right</comment>
+  </data>
+  <data name="Table_DeleteColumn" xml:space="preserve">
+    <value>Delete Column</value>
+    <comment>Button label — removes current column</comment>
+  </data>
+  <data name="Table_Cells_Group" xml:space="preserve">
+    <value>Cells</value>
+    <comment>Ribbon group label — cell merge/split operations</comment>
+  </data>
+  <data name="Table_MergeCells" xml:space="preserve">
+    <value>Merge</value>
+    <comment>Button label — merges all cells in current row</comment>
+  </data>
+  <data name="Table_SplitCell" xml:space="preserve">
+    <value>Split</value>
+    <comment>Button label — splits a merged cell back to original</comment>
+  </data>
+  <data name="Table_Align_Group" xml:space="preserve">
+    <value>Alignment</value>
+    <comment>Ribbon group label — text alignment within cells</comment>
+  </data>
+  <data name="Table_AlignTopLeft" xml:space="preserve">
+    <value>Top Left</value>
+    <comment>Tooltip — align content to top-left of cell</comment>
+  </data>
+  <data name="Table_AlignTopCenter" xml:space="preserve">
+    <value>Top Center</value>
+    <comment>Tooltip — align content to top-center of cell</comment>
+  </data>
+  <data name="Table_AlignTopRight" xml:space="preserve">
+    <value>Top Right</value>
+    <comment>Tooltip — align content to top-right of cell</comment>
+  </data>
+  <data name="Table_AlignMiddleLeft" xml:space="preserve">
+    <value>Middle Left</value>
+    <comment>Tooltip — align content to middle-left of cell</comment>
+  </data>
+  <data name="Table_AlignMiddleCenter" xml:space="preserve">
+    <value>Middle Center</value>
+    <comment>Tooltip — align content to center of cell</comment>
+  </data>
+  <data name="Table_AlignMiddleRight" xml:space="preserve">
+    <value>Middle Right</value>
+    <comment>Tooltip — align content to middle-right of cell</comment>
+  </data>
+  <data name="Table_AlignBottomLeft" xml:space="preserve">
+    <value>Bottom Left</value>
+    <comment>Tooltip — align content to bottom-left of cell</comment>
+  </data>
+  <data name="Table_AlignBottomCenter" xml:space="preserve">
+    <value>Bottom Center</value>
+    <comment>Tooltip — align content to bottom-center of cell</comment>
+  </data>
+  <data name="Table_AlignBottomRight" xml:space="preserve">
+    <value>Bottom Right</value>
+    <comment>Tooltip — align content to bottom-right of cell</comment>
+  </data>
+  <data name="Table_Style_Group" xml:space="preserve">
+    <value>Style</value>
+    <comment>Ribbon group label — cell color and border styling</comment>
+  </data>
+  <data name="Table_CellColor" xml:space="preserve">
+    <value>Cell Color</value>
+    <comment>Small label above color swatches</comment>
+  </data>
+  <data name="Table_ColorNone" xml:space="preserve">
+    <value>No Fill</value>
+    <comment>Tooltip — removes cell background color</comment>
+  </data>
+  <data name="Table_ColorBlue" xml:space="preserve">
+    <value>Blue</value>
+    <comment>Tooltip — applies light blue fill (#BDD7EE)</comment>
+  </data>
+  <data name="Table_ColorGreen" xml:space="preserve">
+    <value>Green</value>
+    <comment>Tooltip — applies light green fill (#C6EFCE)</comment>
+  </data>
+  <data name="Table_ColorYellow" xml:space="preserve">
+    <value>Yellow</value>
+    <comment>Tooltip — applies light yellow fill (#FFEB9C)</comment>
+  </data>
+  <data name="Table_ColorRed" xml:space="preserve">
+    <value>Red</value>
+    <comment>Tooltip — applies light red fill (#FFC7CE)</comment>
+  </data>
+  <data name="Table_ColorGray" xml:space="preserve">
+    <value>Gray</value>
+    <comment>Tooltip — applies light gray fill (#D9D9D9)</comment>
+  </data>
+  <data name="Table_Borders" xml:space="preserve">
+    <value>Borders</value>
+    <comment>Small label above border buttons</comment>
+  </data>
+  <data name="Table_BorderAll" xml:space="preserve">
+    <value>All</value>
+    <comment>Button label — applies borders to all sides of all cells</comment>
+  </data>
+  <data name="Table_BorderNone" xml:space="preserve">
+    <value>None</value>
+    <comment>Button label — removes all borders</comment>
+  </data>
+  <data name="Table_BorderOuter" xml:space="preserve">
+    <value>Outer</value>
+    <comment>Button label — applies border to table outer edge only</comment>
+  </data>
+  <data name="Table_BorderInner" xml:space="preserve">
+    <value>Inner</value>
+    <comment>Button label — applies borders to inner cell dividers only</comment>
+  </data>
+  <data name="Table_BorderTop" xml:space="preserve">
+    <value>Top</value>
+    <comment>Tooltip — applies top border to current cell</comment>
+  </data>
+  <data name="Table_BorderBottom" xml:space="preserve">
+    <value>Bottom</value>
+    <comment>Tooltip — applies bottom border to current cell</comment>
+  </data>
+  <data name="Table_BorderLeft" xml:space="preserve">
+    <value>Left</value>
+    <comment>Tooltip — applies left border to current cell</comment>
+  </data>
+  <data name="Table_BorderRight" xml:space="preserve">
+    <value>Right</value>
+    <comment>Tooltip — applies right border to current cell</comment>
+  </data>
+  <data name="Table_Sort_Group" xml:space="preserve">
+    <value>Sort</value>
+    <comment>Ribbon group label — table sorting operations</comment>
+  </data>
+  <data name="Table_SortAsc" xml:space="preserve">
+    <value>A &gt; Z</value>
+    <comment>Button label — sorts current column ascending</comment>
+  </data>
+  <data name="Table_SortDesc" xml:space="preserve">
+    <value>Z &gt; A</value>
+    <comment>Button label — sorts current column descending</comment>
+  </data>
+  <data name="Table_Header_Group" xml:space="preserve">
+    <value>Header</value>
+    <comment>Ribbon group label — repeat header row</comment>
+  </data>
+  <data name="Table_RepeatHeader" xml:space="preserve">
+    <value>Repeat header</value>
+    <comment>Button label — repeat first row as header on each page</comment>
+  </data>
+  <data name="Table_Split_Group" xml:space="preserve">
+    <value>Page break</value>
+    <comment>Ribbon group label — table page-break behavior</comment>
+  </data>
+  <data name="Table_SplitByRow" xml:space="preserve">
+    <value>By row</value>
+    <comment>Button — row moves to next page intact</comment>
+  </data>
+  <data name="Table_SplitByCell" xml:space="preserve">
+    <value>By cell</value>
+    <comment>Button — row splits mid-cell across pages</comment>
+  </data>
+  <data name="Table_BreakLabel" xml:space="preserve">
+    <value>Break label</value>
+    <comment>Button — toggle bottom continuation text</comment>
+  </data>
+  <data name="Table_ContinuationLabel" xml:space="preserve">
+    <value>Cont. label</value>
+    <comment>Button — toggle top continuation text on next page</comment>
+  </data>
 </root>

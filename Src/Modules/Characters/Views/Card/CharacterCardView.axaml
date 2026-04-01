@@ -1,0 +1,41 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.Characters.ViewModels"
+             xmlns:tabs="using:Writersword.Modules.Characters.Views.Card.Tabs"
+             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             x:Class="Writersword.Modules.Characters.Views.CharacterCardView"
+             x:DataType="vm:CharacterCardViewModel">
+
+	<!-- Вкладки карточки — без собственного заголовка, он в CharactersView -->
+	<TabControl SelectedIndex="{Binding SelectedTabIndex}" Padding="0">
+
+		<TabItem Header="{x:Static loc:CharactersStrings.Tab_Basics}">
+			<tabs:CharacterBasicsTabView DataContext="{Binding BasicsTab}"/>
+		</TabItem>
+
+		<TabItem Header="{x:Static loc:CharactersStrings.Tab_Parameters}">
+			<tabs:CharacterParametersTabView DataContext="{Binding ParametersTab}"/>
+		</TabItem>
+
+		<TabItem Header="{x:Static loc:CharactersStrings.Tab_Relationships}">
+			<tabs:CharacterRelationshipsTabView DataContext="{Binding RelationshipsTab}"/>
+		</TabItem>
+
+		<TabItem Header="{x:Static loc:CharactersStrings.Tab_Contexts}">
+			<tabs:CharacterContextsTabView DataContext="{Binding ContextsTab}"/>
+		</TabItem>
+
+		<TabItem Header="{x:Static loc:CharactersStrings.Tab_Notes}">
+			<tabs:CharacterNotesTabView DataContext="{Binding NotesTab}"/>
+		</TabItem>
+
+		<TabItem Header="{x:Static loc:CharactersStrings.Tab_PersonalTimeline}">
+			<tabs:CharacterPersonalTimelineTabView DataContext="{Binding PersonalTimelineTab}"/>
+		</TabItem>
+
+		<TabItem Header="{x:Static loc:CharactersStrings.Tab_History}">
+			<tabs:CharacterHistoryTabView DataContext="{Binding HistoryTab}"/>
+		</TabItem>
+
+	</TabControl>
+</UserControl>

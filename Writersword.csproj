@@ -110,9 +110,11 @@
 
 	<!-- ========================================
        ЛОКАЛИЗАЦИЯ (resx файлы)
-       LogicalName — правильное имя embedded resource без Src для runtime.
-       CustomToolNamespace — правильный namespace для Designer.cs.
-       После изменений: ПКМ на каждый .resx -> Run Custom Tool.
+       Базовые файлы (.resx) подхватываются автоматически из Src/**
+       LogicalName вычисляется динамически — убирает "Src." из пути.
+       Это означает что любой новый модуль с *Strings.resx в папке Resources
+       будет автоматически включён в сборку без правки csproj.
+       Культурные файлы (*.ru.resx и т.д.) включаются отдельным паттерном.
        ======================================== -->
 	<ItemGroup>
 		<!-- Основная локализация приложения -->
@@ -124,86 +126,13 @@
 			<DependentUpon>Strings.resx</DependentUpon>
 		</EmbeddedResource>
 
-		<!-- Модуль Notes -->
-		<EmbeddedResource Include="Src\Modules\Notes\Resources\NotesStrings.resx">
-			<Generator>PublicResXFileCodeGenerator</Generator>
-			<LastGenOutput>NotesStrings.Designer.cs</LastGenOutput>
-			<LogicalName>Writersword.Modules.Notes.Resources.NotesStrings.resources</LogicalName>
-			<CustomToolNamespace>Writersword.Modules.Notes.Resources</CustomToolNamespace>
-		</EmbeddedResource>
-		<EmbeddedResource Include="Src\Modules\Notes\Resources\NotesStrings.ru.resx" />
+		<!-- Базовые resx модулей и типов проектов.
+		     LogicalName не задаётся — MSBuild использует путь с Src. по умолчанию.
+		     Designer.cs также должны содержать Src. в имени ResourceManager. -->
+		<EmbeddedResource Include="Src\**\Resources\*Strings.resx" />
 
-		<!-- Модуль Synonyms -->
-		<EmbeddedResource Include="Src\Modules\Synonyms\Resources\SynonymsStrings.resx">
-			<Generator>PublicResXFileCodeGenerator</Generator>
-			<LastGenOutput>SynonymsStrings.Designer.cs</LastGenOutput>
-			<LogicalName>Writersword.Modules.Synonyms.Resources.SynonymsStrings.resources</LogicalName>
-			<CustomToolNamespace>Writersword.Modules.Synonyms.Resources</CustomToolNamespace>
-		</EmbeddedResource>
-		<EmbeddedResource Include="Src\Modules\Synonyms\Resources\SynonymsStrings.ru.resx" />
-
-		<!-- Модуль TextEditor -->
-		<EmbeddedResource Include="Src\Modules\TextEditor\Resources\TextEditorStrings.resx">
-			<Generator>PublicResXFileCodeGenerator</Generator>
-			<LastGenOutput>TextEditorStrings.Designer.cs</LastGenOutput>
-			<LogicalName>Writersword.Modules.TextEditor.Resources.TextEditorStrings.resources</LogicalName>
-			<CustomToolNamespace>Writersword.Modules.TextEditor.Resources</CustomToolNamespace>
-		</EmbeddedResource>
-		<EmbeddedResource Include="Src\Modules\TextEditor\Resources\TextEditorStrings.ru.resx" />
-
-		<!-- Модуль Timer -->
-		<EmbeddedResource Include="Src\Modules\Timer\Resources\TimerStrings.resx">
-			<Generator>PublicResXFileCodeGenerator</Generator>
-			<LastGenOutput>TimerStrings.Designer.cs</LastGenOutput>
-			<LogicalName>Writersword.Modules.Timer.Resources.TimerStrings.resources</LogicalName>
-			<CustomToolNamespace>Writersword.Modules.Timer.Resources</CustomToolNamespace>
-		</EmbeddedResource>
-		<EmbeddedResource Include="Src\Modules\Timer\Resources\TimerStrings.ru.resx" />
-
-		<!-- Тип проекта GameDesign -->
-		<EmbeddedResource Include="Src\ProjectTypes\GameDesign\Resources\GameDesignStrings.resx">
-			<Generator>ResXFileCodeGenerator</Generator>
-			<LastGenOutput>GameDesignStrings.Designer.cs</LastGenOutput>
-			<LogicalName>Writersword.ProjectTypes.GameDesign.Resources.GameDesignStrings.resources</LogicalName>
-			<CustomToolNamespace>Writersword.ProjectTypes.GameDesign.Resources</CustomToolNamespace>
-		</EmbeddedResource>
-		<EmbeddedResource Include="Src\ProjectTypes\GameDesign\Resources\GameDesignStrings.ru.resx" />
-
-		<!-- Тип проекта Translation -->
-		<EmbeddedResource Include="Src\ProjectTypes\Translation\Resources\TranslationStrings.resx">
-			<Generator>ResXFileCodeGenerator</Generator>
-			<LastGenOutput>TranslationStrings.Designer.cs</LastGenOutput>
-			<LogicalName>Writersword.ProjectTypes.Translation.Resources.TranslationStrings.resources</LogicalName>
-			<CustomToolNamespace>Writersword.ProjectTypes.Translation.Resources</CustomToolNamespace>
-		</EmbeddedResource>
-		<EmbeddedResource Include="Src\ProjectTypes\Translation\Resources\TranslationStrings.ru.resx" />
-
-		<!-- Тип проекта Poetry -->
-		<EmbeddedResource Include="Src\ProjectTypes\Poetry\Resources\PoetryStrings.resx">
-			<Generator>ResXFileCodeGenerator</Generator>
-			<LastGenOutput>PoetryStrings.Designer.cs</LastGenOutput>
-			<LogicalName>Writersword.ProjectTypes.Poetry.Resources.PoetryStrings.resources</LogicalName>
-			<CustomToolNamespace>Writersword.ProjectTypes.Poetry.Resources</CustomToolNamespace>
-		</EmbeddedResource>
-		<EmbeddedResource Include="Src\ProjectTypes\Poetry\Resources\PoetryStrings.ru.resx" />
-
-		<!-- Тип проекта Screenplay -->
-		<EmbeddedResource Include="Src\ProjectTypes\Screenplay\Resources\ScreenplayStrings.resx">
-			<Generator>ResXFileCodeGenerator</Generator>
-			<LastGenOutput>ScreenplayStrings.Designer.cs</LastGenOutput>
-			<LogicalName>Writersword.ProjectTypes.Screenplay.Resources.ScreenplayStrings.resources</LogicalName>
-			<CustomToolNamespace>Writersword.ProjectTypes.Screenplay.Resources</CustomToolNamespace>
-		</EmbeddedResource>
-		<EmbeddedResource Include="Src\ProjectTypes\Screenplay\Resources\ScreenplayStrings.ru.resx" />
-
-		<!-- Тип проекта Novel -->
-		<EmbeddedResource Include="Src\ProjectTypes\Novel\Resources\NovelStrings.resx">
-			<Generator>ResXFileCodeGenerator</Generator>
-			<LastGenOutput>NovelStrings.Designer.cs</LastGenOutput>
-			<LogicalName>Writersword.ProjectTypes.Novel.Resources.NovelStrings.resources</LogicalName>
-			<CustomToolNamespace>Writersword.ProjectTypes.Novel.Resources</CustomToolNamespace>
-		</EmbeddedResource>
-		<EmbeddedResource Include="Src\ProjectTypes\Novel\Resources\NovelStrings.ru.resx" />
+		<!-- Культурно-специфичные resx модулей и типов проектов -->
+		<EmbeddedResource Include="Src\**\Resources\*Strings.*.resx" />
 
 		<Compile Update="Resources\Localization\Strings.Designer.cs">
 			<DesignTime>True</DesignTime>
@@ -245,6 +174,9 @@
 		<Folder Include="Docs\UserGuide\" />
 		<Folder Include="Models\" />
 		<Folder Include="Src\Core\Models\Modules\" />
+		<Folder Include="Src\Modules\Characters\Views\Graph\" />
+		<Folder Include="Src\Modules\Characters\Views\Grid\" />
+		<Folder Include="Src\Modules\Characters\Views\List\" />
 		<Folder Include="Src\Modules\TextEditor\Views\Document\" />
 		<Folder Include="Src\WorkModes\Branching\" />
 		<Folder Include="Src\WorkModes\Dialogues\" />
@@ -255,71 +187,14 @@
 		<Folder Include="Src\WorkModes\Poetry\" />
 	</ItemGroup>
 
-	<!-- ========================================
-       ЗАВИСИМОСТИ АВТО-ГЕНЕРИРУЕМЫХ ФАЙЛОВ
-       ======================================== -->
-	<ItemGroup>
-		<Compile Update="Src\Modules\Notes\Resources\NotesStrings.Designer.cs">
-		  <DesignTime>True</DesignTime>
-		  <AutoGen>True</AutoGen>
-		  <DependentUpon>NotesStrings.resx</DependentUpon>
-		</Compile>
-		<Compile Update="Src\Modules\Synonyms\Resources\SynonymsStrings.Designer.cs">
-			<DesignTime>True</DesignTime>
-			<AutoGen>True</AutoGen>
-			<DependentUpon>SynonymsStrings.resx</DependentUpon>
-		</Compile>
-		<Compile Update="Src\Modules\TextEditor\Resources\TextEditorStrings.Designer.cs">
-			<DesignTime>True</DesignTime>
-			<AutoGen>True</AutoGen>
-			<DependentUpon>TextEditorStrings.resx</DependentUpon>
-		</Compile>
-		<Compile Update="Src\Modules\Timer\Resources\TimerStrings.Designer.cs">
-			<DesignTime>True</DesignTime>
-			<AutoGen>True</AutoGen>
-			<DependentUpon>TimerStrings.resx</DependentUpon>
-		</Compile>
-		<Compile Update="Src\ProjectTypes\GameDesign\Resources\GameDesignStrings.Designer.cs">
-			<DesignTime>True</DesignTime>
-			<AutoGen>True</AutoGen>
-			<DependentUpon>GameDesignStrings.resx</DependentUpon>
-		</Compile>
-		<Compile Update="Src\ProjectTypes\Poetry\Resources\PoetryStrings.Designer.cs">
-			<DesignTime>True</DesignTime>
-			<AutoGen>True</AutoGen>
-			<DependentUpon>PoetryStrings.resx</DependentUpon>
-		</Compile>
-		<Compile Update="Src\ProjectTypes\Screenplay\Resources\ScreenplayStrings.Designer.cs">
-			<DesignTime>True</DesignTime>
-			<AutoGen>True</AutoGen>
-			<DependentUpon>ScreenplayStrings.resx</DependentUpon>
-		</Compile>
-		<Compile Update="Src\ProjectTypes\Novel\Resources\NovelStrings.Designer.cs">
-			<DesignTime>True</DesignTime>
-			<AutoGen>True</AutoGen>
-			<DependentUpon>NovelStrings.resx</DependentUpon>
-		</Compile>
-		<Compile Update="Src\ProjectTypes\Translation\Resources\TranslationStrings.Designer.cs">
-			<DesignTime>True</DesignTime>
-			<AutoGen>True</AutoGen>
-			<DependentUpon>TranslationStrings.resx</DependentUpon>
-		</Compile>
-		<Compile Update="Views\Components\RecoveryBannerView.axaml.cs">
-			<DependentUpon>RecoveryBannerView.axaml</DependentUpon>
-		</Compile>
-		<Compile Update="Views\FloatingWindowView.axaml.cs">
-			<DependentUpon>FloatingWindowView.axaml</DependentUpon>
-		</Compile>
-		<Compile Update="Views\MainWindowView.axaml.cs">
-			<DependentUpon>MainWindowView.axaml</DependentUpon>
-		</Compile>
-		<Compile Update="Views\MessageBoxView.axaml.cs">
-			<DependentUpon>MessageBoxView.axaml</DependentUpon>
-		</Compile>
-	</ItemGroup>
 
 	<!-- MenuBar Sections -->
 	<ItemGroup>
+		<Compile Update="Src\Modules\Characters\Resources\CharactersStrings.Designer.cs">
+		  <DesignTime>True</DesignTime>
+		  <AutoGen>True</AutoGen>
+		  <DependentUpon>CharactersStrings.resx</DependentUpon>
+		</Compile>
 		<Compile Update="Views\Components\MenuBar\Sections\MenuBarView.File.axaml.cs">
 			<DependentUpon>MenuBarView.File.axaml</DependentUpon>
 		</Compile>
@@ -344,6 +219,12 @@
 		<Compile Update="Views\Settings\SettingButtons.axaml.cs">
 			<DependentUpon>SettingButtons.axaml</DependentUpon>
 		</Compile>
+	</ItemGroup>
+	<ItemGroup>
+	  <EmbeddedResource Update="Src\Modules\Characters\Resources\CharactersStrings.resx">
+	    <Generator>PublicResXFileCodeGenerator</Generator>
+	    <LastGenOutput>CharactersStrings.Designer.cs</LastGenOutput>
+	  </EmbeddedResource>
 	</ItemGroup>
 
 	<ProjectExtensions>

@@ -1,0 +1,516 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!-- 
+    Microsoft ResX Schema 
+    
+    Version 2.0
+    
+    The primary goals of this format is to allow a simple XML format 
+    that is mostly human readable. The generation and parsing of the 
+    various data types are done through the TypeConverter classes 
+    associated with the data types.
+    
+    Example:
+    
+    ... ado.net/XML headers & schema ...
+    <resheader name="resmimetype">text/microsoft-resx</resheader>
+    <resheader name="version">2.0</resheader>
+    <resheader name="reader">System.Resources.ResXResourceReader, System.Windows.Forms, ...</resheader>
+    <resheader name="writer">System.Resources.ResXResourceWriter, System.Windows.Forms, ...</resheader>
+    <data name="Name1"><value>this is my long string</value><comment>this is a comment</comment></data>
+    <data name="Color1" type="System.Drawing.Color, System.Drawing">Blue</data>
+    <data name="Bitmap1" mimetype="application/x-microsoft.net.object.binary.base64">
+        <value>[base64 mime encoded serialized .NET Framework object]</value>
+    </data>
+    <data name="Icon1" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
+        <value>[base64 mime encoded string representing a byte array form of the .NET Framework object]</value>
+        <comment>This is a comment</comment>
+    </data>
+                
+    There are any number of "resheader" rows that contain simple 
+    name/value pairs.
+    
+    Each data row contains a name, and value. The row also contains a 
+    type or mimetype. Type corresponds to a .NET class that support 
+    text/value conversion through the TypeConverter architecture. 
+    Classes that don't support this are serialized and stored with the 
+    mimetype set.
+    
+    The mimetype is used for serialized objects, and tells the 
+    ResXResourceReader how to depersist the object. This is currently not 
+    extensible. For a given mimetype the value must be set accordingly:
+    
+    Note - application/x-microsoft.net.object.binary.base64 is the format 
+    that the ResXResourceWriter will generate, however the reader can 
+    read any of the formats listed below.
+    
+    mimetype: application/x-microsoft.net.object.binary.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Binary.BinaryFormatter
+            : and then encoded with base64 encoding.
+    
+    mimetype: application/x-microsoft.net.object.soap.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Soap.SoapFormatter
+            : and then encoded with base64 encoding.
+
+    mimetype: application/x-microsoft.net.object.bytearray.base64
+    value   : The object must be serialized into a byte array 
+            : using a System.ComponentModel.TypeConverter
+            : and then encoded with base64 encoding.
+    -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="DisplayName" xml:space="preserve">
+    <value>Characters</value>
+    <comment>Module display name</comment>
+  </data>
+  <data name="Description" xml:space="preserve">
+    <value>Manage characters, relationships and templates</value>
+    <comment>Module description</comment>
+  </data>
+  <data name="Tab_Characters" xml:space="preserve">
+    <value>Characters</value>
+    <comment>Main tab label</comment>
+  </data>
+  <data name="Tab_Relationships" xml:space="preserve">
+    <value>Relationships</value>
+    <comment>Relationships tab label</comment>
+  </data>
+  <data name="Tab_Templates" xml:space="preserve">
+    <value>Templates</value>
+    <comment>Templates tab label</comment>
+  </data>
+  <data name="Tab_Basics" xml:space="preserve">
+    <value>Basics</value>
+    <comment>Card tab</comment>
+  </data>
+  <data name="Tab_Parameters" xml:space="preserve">
+    <value>Parameters</value>
+    <comment>Card tab</comment>
+  </data>
+  <data name="Tab_Contexts" xml:space="preserve">
+    <value>Contexts</value>
+    <comment>Card tab</comment>
+  </data>
+  <data name="Tab_Notes" xml:space="preserve">
+    <value>Notes</value>
+    <comment>Card tab</comment>
+  </data>
+  <data name="Tab_PersonalTimeline" xml:space="preserve">
+    <value>Timeline</value>
+    <comment>Card tab</comment>
+  </data>
+  <data name="Tab_History" xml:space="preserve">
+    <value>History</value>
+    <comment>Card tab</comment>
+  </data>
+  <data name="ViewMode_List" xml:space="preserve">
+    <value>List</value>
+    <comment>List view mode</comment>
+  </data>
+  <data name="ViewMode_Grid" xml:space="preserve">
+    <value>Grid</value>
+    <comment>Grid view mode</comment>
+  </data>
+  <data name="Button_CreateCharacter" xml:space="preserve">
+    <value>New character</value>
+    <comment>Create button</comment>
+  </data>
+  <data name="Button_CreateRandomized" xml:space="preserve">
+    <value>Create randomized character</value>
+    <comment>Randomize button tooltip</comment>
+  </data>
+  <data name="Button_CreateCollective" xml:space="preserve">
+    <value>Create group / people</value>
+    <comment>Collective button tooltip</comment>
+  </data>
+  <data name="Button_Save" xml:space="preserve">
+    <value>Save</value>
+    <comment>Save card button</comment>
+  </data>
+  <data name="Button_Delete" xml:space="preserve">
+    <value>Delete</value>
+    <comment>Delete button</comment>
+  </data>
+  <data name="Button_Duplicate" xml:space="preserve">
+    <value>Duplicate</value>
+    <comment>Duplicate button</comment>
+  </data>
+  <data name="Button_UploadAvatar" xml:space="preserve">
+    <value>Upload avatar</value>
+    <comment>Avatar upload</comment>
+  </data>
+  <data name="Button_DeleteAvatar" xml:space="preserve">
+    <value>Delete avatar</value>
+    <comment>Avatar delete</comment>
+  </data>
+  <data name="Button_AddStatus" xml:space="preserve">
+    <value>Add status</value>
+    <comment>Add status</comment>
+  </data>
+  <data name="Button_AddParameter" xml:space="preserve">
+    <value>Add parameter</value>
+    <comment>Add parameter</comment>
+  </data>
+  <data name="Button_AddContext" xml:space="preserve">
+    <value>Add context</value>
+    <comment>Add context</comment>
+  </data>
+  <data name="Button_AddRelationship" xml:space="preserve">
+    <value>Add relationship</value>
+    <comment>Add relationship</comment>
+  </data>
+  <data name="Button_AddNote" xml:space="preserve">
+    <value>Add note</value>
+    <comment>Add note</comment>
+  </data>
+  <data name="Button_AddEvent" xml:space="preserve">
+    <value>Add event</value>
+    <comment>Add event</comment>
+  </data>
+  <data name="Button_ApplyAnketa" xml:space="preserve">
+    <value>Apply template</value>
+    <comment>Apply anketa button</comment>
+  </data>
+  <data name="Button_ClearFilters" xml:space="preserve">
+    <value>Clear filters</value>
+    <comment>Clear filters</comment>
+  </data>
+  <data name="Filter_All" xml:space="preserve">
+    <value>All</value>
+    <comment>All filter chip</comment>
+  </data>
+  <data name="Field_Name" xml:space="preserve">
+    <value>Name</value>
+    <comment>Character name field</comment>
+  </data>
+  <data name="Field_ShortDescription" xml:space="preserve">
+    <value>Short description</value>
+    <comment>Short description</comment>
+  </data>
+  <data name="Field_Color" xml:space="preserve">
+    <value>Color</value>
+    <comment>Color field</comment>
+  </data>
+  <data name="Field_FallbackIcon" xml:space="preserve">
+    <value>Icon</value>
+    <comment>Fallback icon</comment>
+  </data>
+  <data name="Field_ImportanceLevel" xml:space="preserve">
+    <value>Importance</value>
+    <comment>Importance level</comment>
+  </data>
+  <data name="Field_CustomImportanceLabel" xml:space="preserve">
+    <value>Custom label</value>
+    <comment>Custom importance label</comment>
+  </data>
+  <data name="Field_NarrativeStartPoint" xml:space="preserve">
+    <value>First appearance</value>
+    <comment>Narrative start</comment>
+  </data>
+  <data name="Field_NarrativeEndPoint" xml:space="preserve">
+    <value>Last appearance</value>
+    <comment>Narrative end</comment>
+  </data>
+  <data name="Field_Tags" xml:space="preserve">
+    <value>Tags</value>
+    <comment>Tags field</comment>
+  </data>
+  <data name="Field_Statuses" xml:space="preserve">
+    <value>Statuses</value>
+    <comment>Statuses field</comment>
+  </data>
+  <data name="Field_RelationshipType" xml:space="preserve">
+    <value>Type</value>
+    <comment>Relationship type</comment>
+  </data>
+  <data name="Field_RelationshipStrength" xml:space="preserve">
+    <value>Strength</value>
+    <comment>Relationship strength</comment>
+  </data>
+  <data name="Field_RelationshipContext" xml:space="preserve">
+    <value>Context</value>
+    <comment>Relationship context</comment>
+  </data>
+  <data name="Field_RelationshipEmotion" xml:space="preserve">
+    <value>Emotion</value>
+    <comment>Relationship emotion</comment>
+  </data>
+  <data name="Field_RelationshipNote" xml:space="preserve">
+    <value>Note</value>
+    <comment>Relationship note</comment>
+  </data>
+  <data name="Field_EventTitle" xml:space="preserve">
+    <value>Title</value>
+    <comment>Event title</comment>
+  </data>
+  <data name="Field_EventTimestamp" xml:space="preserve">
+    <value>Date / time</value>
+    <comment>Event timestamp</comment>
+  </data>
+  <data name="Field_EventDescription" xml:space="preserve">
+    <value>Description</value>
+    <comment>Event description</comment>
+  </data>
+  <data name="Search_Placeholder" xml:space="preserve">
+    <value>Search characters...</value>
+    <comment>Search box placeholder</comment>
+  </data>
+  <data name="Placeholder_SelectCharacter" xml:space="preserve">
+    <value>Select a character to view details</value>
+    <comment>Empty right panel</comment>
+  </data>
+  <data name="Placeholder_NarrativePoint" xml:space="preserve">
+    <value>Enter narrative point...</value>
+    <comment>Narrative point placeholder</comment>
+  </data>
+  <data name="Placeholder_NoParameters" xml:space="preserve">
+    <value>No parameters yet. Add one or apply a template.</value>
+    <comment>Empty parameters</comment>
+  </data>
+  <data name="Placeholder_NoRelationships" xml:space="preserve">
+    <value>No relationships yet.</value>
+    <comment>Empty relationships</comment>
+  </data>
+  <data name="Placeholder_NoNotes" xml:space="preserve">
+    <value>No notes yet.</value>
+    <comment>Empty notes</comment>
+  </data>
+  <data name="Placeholder_NoEvents" xml:space="preserve">
+    <value>No events yet.</value>
+    <comment>Empty timeline</comment>
+  </data>
+  <data name="Placeholder_NoHistory" xml:space="preserve">
+    <value>No project events linked.</value>
+    <comment>Empty history</comment>
+  </data>
+  <data name="Placeholder_NoCharacters" xml:space="preserve">
+    <value>No characters yet. Create the first one.</value>
+    <comment>Empty list</comment>
+  </data>
+  <data name="Graph_ResetView" xml:space="preserve">
+    <value>Reset view</value>
+    <comment>Graph reset view button</comment>
+  </data>
+  <data name="Graph_ClearFocus" xml:space="preserve">
+    <value>Clear focus</value>
+    <comment>Graph clear focus button</comment>
+  </data>
+  <data name="Graph_FocusHint" xml:space="preserve">
+    <value>Right-click a node to focus</value>
+    <comment>Graph hint text</comment>
+  </data>
+  <data name="Anketa_SelectPrompt" xml:space="preserve">
+    <value>Select a template...</value>
+    <comment>Anketa select prompt</comment>
+  </data>
+  <data name="HotKey_CreateCharacter" xml:space="preserve">
+    <value>Create Character</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_CreateRandomized" xml:space="preserve">
+    <value>Create Randomized Character</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_CreateCollective" xml:space="preserve">
+    <value>Create Group / People</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_OpenCharacters" xml:space="preserve">
+    <value>Open Characters tab</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_OpenRelationships" xml:space="preserve">
+    <value>Open Relationships tab</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_OpenTemplates" xml:space="preserve">
+    <value>Open Templates tab</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_DeleteCharacter" xml:space="preserve">
+    <value>Delete Character</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_DuplicateCharacter" xml:space="preserve">
+    <value>Duplicate Character</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_SaveCard" xml:space="preserve">
+    <value>Save Card</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_CloseCard" xml:space="preserve">
+    <value>Close Card</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_FocusSearch" xml:space="preserve">
+    <value>Focus Search</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_ClearFilters" xml:space="preserve">
+    <value>Clear Filters</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_ViewList" xml:space="preserve">
+    <value>Switch to List View</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_ViewGrid" xml:space="preserve">
+    <value>Switch to Grid View</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_TabNext" xml:space="preserve">
+    <value>Next Tab</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_TabPrev" xml:space="preserve">
+    <value>Previous Tab</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_TabBasics" xml:space="preserve">
+    <value>Go to Basics tab</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_TabParameters" xml:space="preserve">
+    <value>Go to Parameters tab</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_TabRelationshipsCard" xml:space="preserve">
+    <value>Go to Relationships tab</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_TabContexts" xml:space="preserve">
+    <value>Go to Contexts tab</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_TabNotes" xml:space="preserve">
+    <value>Go to Notes tab</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_TabPersonalTimeline" xml:space="preserve">
+    <value>Go to Timeline tab</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_TabHistory" xml:space="preserve">
+    <value>Go to History tab</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_AddParameterNumeric" xml:space="preserve">
+    <value>Add Numeric Parameter</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_AddParameterText" xml:space="preserve">
+    <value>Add Text Parameter</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_AddParameterStateList" xml:space="preserve">
+    <value>Add State List Parameter</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_AddParameterBoolean" xml:space="preserve">
+    <value>Add Boolean Parameter</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_AddContext" xml:space="preserve">
+    <value>Add Context</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_AddRelationship" xml:space="preserve">
+    <value>Add Relationship</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_AddNote" xml:space="preserve">
+    <value>Add Note</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_AddTimelineEvent" xml:space="preserve">
+    <value>Add Timeline Event</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_AddStatus" xml:space="preserve">
+    <value>Add Status</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_UploadAvatar" xml:space="preserve">
+    <value>Upload Avatar</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_DeleteAvatar" xml:space="preserve">
+    <value>Delete Avatar</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_RandomizeParameters" xml:space="preserve">
+    <value>Randomize Parameters</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_GraphResetView" xml:space="preserve">
+    <value>Graph: Reset View</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="HotKey_GraphClearFocus" xml:space="preserve">
+    <value>Graph: Clear Focus</value>
+    <comment>Hotkey label</comment>
+  </data>
+  <data name="Tab_Edit" xml:space="preserve">
+    <value>Character Editor</value>
+    <comment>Character editor tab</comment>
+  </data>
+</root>

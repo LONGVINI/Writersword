@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
+             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             x:Class="Writersword.Modules.Characters.Views.Card.Tabs.CharacterHistoryTabView"
+             x:DataType="tabs:CharacterHistoryTabViewModel">
+
+    <Grid>
+        <!-- Заглушка — заполняется когда появится таймлайн проекта -->
+        <StackPanel VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Spacing="8"
+                    IsVisible="{Binding HasNoHistory}">
+            <TextBlock Text="{x:Static loc:CharactersStrings.Placeholder_NoHistory}"
+                       FontSize="13"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       MaxWidth="280"/>
+        </StackPanel>
+
+        <!-- Список Id связанных событий (до появления полного UI таймлайна) -->
+        <ScrollViewer IsVisible="{Binding !HasNoHistory}">
+            <ItemsControl ItemsSource="{Binding LinkedProjectEventIds}"
+                          Margin="12">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{DynamicResource BgPanelBrush}"
+                                CornerRadius="4"
+                                Margin="0,2"
+                                Padding="10,6">
+                            <TextBlock Text="{Binding}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontFamily="Monospace"/>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

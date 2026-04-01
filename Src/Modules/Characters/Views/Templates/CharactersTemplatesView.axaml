@@ -1,0 +1,182 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Templates"
+             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             xmlns:conv="using:Writersword.Modules.Characters.Converters"
+             x:Class="Writersword.Modules.Characters.Views.Templates.CharactersTemplatesView"
+             x:DataType="vm:CharactersTemplatesViewModel"
+             Background="{DynamicResource BgSurfaceBrush}">
+
+    <UserControl.Resources>
+        <conv:IntIsZeroConverter x:Key="IntIsZeroConverter"/>
+        <conv:BoolToActiveBrushConverter x:Key="BoolToActiveBrushConverter"/>
+        <conv:BoolToActiveTemplateConverter x:Key="BoolToActiveTemplateConverter"/>
+    </UserControl.Resources>
+
+    <Grid ColumnDefinitions="200,*">
+
+        <!-- Левая колонка: фильтры -->
+        <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto"
+              Background="{DynamicResource BgPanelBrush}">
+
+            <TextBlock Grid.Row="0"
+                       Text="ЧТО НУЖНО?"
+                       FontSize="11" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       Margin="12,10,12,6"/>
+
+            <ScrollViewer Grid.Row="1">
+                <ItemsControl ItemsSource="{Binding Filters}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="vm:TemplateFilterItemViewModel">
+                            <CheckBox IsChecked="{Binding IsChecked}"
+                                      Content="{Binding Label}"
+                                      FontSize="12"
+                                      Foreground="{DynamicResource TextPrimaryBrush}"
+                                      Margin="8,4"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- Незаметная кнопка перепройти онбординг -->
+            <Button Grid.Row="2"
+                    Content="Настроить заново..."
+                    Command="{Binding RestartOnboardingCommand}"
+                    HorizontalAlignment="Left"
+                    Margin="8,8"
+                    Padding="6,3"
+                    FontSize="10"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Foreground="{DynamicResource TextSecondaryBrush}"
+                    Opacity="0.5"/>
+        </Grid>
+
+        <!-- Правая колонка: шаблоны -->
+        <ScrollViewer Grid.Column="1" Padding="12">
+            <StackPanel Spacing="16">
+
+                <!-- Встроенные -->
+                <StackPanel Spacing="6">
+                    <TextBlock Text="ВСТРОЕННЫЕ ШАБЛОНЫ"
+                               FontSize="11" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+                    <ItemsControl ItemsSource="{Binding FilteredTemplates}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="vm:TemplateItemViewModel">
+                                <Border Background="{DynamicResource BgPanelBrush}"
+                                        CornerRadius="6" Margin="0,0,0,4" Padding="12,10">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Grid.Column="0" Spacing="2">
+                                            <TextBlock Text="{Binding Name}"
+                                                       FontSize="13" FontWeight="Medium"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="{Binding Description}"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       TextWrapping="Wrap"/>
+                                            <TextBlock FontSize="10"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       Margin="0,2,0,0">
+                                                <Run Text="{Binding FieldCount}"/>
+                                                <Run Text=" параметров"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1"
+                                                    Orientation="Horizontal" Spacing="6"
+                                                    VerticalAlignment="Center" Margin="12,0,0,0">
+                                            <Button Content="Копировать"
+                                                    Command="{ReflectionBinding $parent[UserControl].DataContext.DuplicateTemplateCommand}"
+                                                    CommandParameter="{Binding AnketaId}"
+                                                    FontSize="11" Padding="8,4"/>
+                                            <Button FontSize="11" Padding="8,4"
+                                                    Command="{ReflectionBinding $parent[UserControl].DataContext.ToggleTemplateCommand}"
+                                                    CommandParameter="{Binding AnketaId}"
+                                                    Background="{Binding IsActive, Converter={StaticResource BoolToActiveBrushConverter}}"
+                                                    Foreground="White">
+                                                <Button.Content>
+                                                    <TextBlock Text="{Binding IsActive, Converter={StaticResource BoolToActiveTemplateConverter}}"/>
+                                                </Button.Content>
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <Separator Background="{DynamicResource BorderDefaultBrush}"/>
+
+                <!-- Мои шаблоны -->
+                <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0"
+                                   Text="МОИ ШАБЛОНЫ"
+                                   FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+                        <Button Grid.Column="1"
+                                Content="+ Создать шаблон"
+                                Command="{Binding CreateCustomTemplateCommand}"
+                                FontSize="11" Padding="8,3"/>
+                    </Grid>
+
+                    <TextBlock Text="Своих шаблонов пока нет."
+                               FontSize="12"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               IsVisible="{Binding CustomTemplates.Count,
+                                   Converter={StaticResource IntIsZeroConverter}}"
+                               Margin="0,4"/>
+
+                    <ItemsControl ItemsSource="{Binding CustomTemplates}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="vm:TemplateItemViewModel">
+                                <Border Background="{DynamicResource BgPanelBrush}"
+                                        CornerRadius="6" Margin="0,0,0,4" Padding="12,10"
+                                        BorderBrush="{DynamicResource AccentDefaultBrush}"
+                                        BorderThickness="1">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Grid.Column="0" Spacing="2">
+                                            <TextBlock Text="{Binding Name}"
+                                                       FontSize="13" FontWeight="Medium"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                            <TextBlock FontSize="10"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}">
+                                                <Run Text="{Binding FieldCount}"/>
+                                                <Run Text=" параметров"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1"
+                                                    Orientation="Horizontal" Spacing="6"
+                                                    VerticalAlignment="Center" Margin="12,0,0,0">
+                                            <Button Content="Удалить"
+                                                    Command="{ReflectionBinding $parent[UserControl].DataContext.DeleteCustomTemplateCommand}"
+                                                    CommandParameter="{Binding AnketaId}"
+                                                    FontSize="11" Padding="8,4"
+                                                    Foreground="#F44336"
+                                                    Background="Transparent"
+                                                    BorderThickness="1" BorderBrush="#F44336"/>
+                                            <Button FontSize="11" Padding="8,4"
+                                                    Command="{ReflectionBinding $parent[UserControl].DataContext.ToggleTemplateCommand}"
+                                                    CommandParameter="{Binding AnketaId}"
+                                                    Background="{Binding IsActive, Converter={StaticResource BoolToActiveBrushConverter}}"
+                                                    Foreground="White">
+                                                <Button.Content>
+                                                    <TextBlock Text="{Binding IsActive, Converter={StaticResource BoolToActiveTemplateConverter}}"/>
+                                                </Button.Content>
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+            </StackPanel>
+        </ScrollViewer>
+
+    </Grid>
+</UserControl>

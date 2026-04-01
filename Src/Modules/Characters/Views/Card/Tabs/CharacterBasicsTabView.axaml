@@ -1,0 +1,248 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
+             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             xmlns:enums="using:Writersword.Modules.Characters.Models.Enums"
+             xmlns:conv="using:Writersword.Modules.Characters.Converters"
+             x:Class="Writersword.Modules.Characters.Views.Card.Tabs.CharacterBasicsTabView"
+             x:DataType="tabs:CharacterBasicsTabViewModel">
+
+	<UserControl.Resources>
+		<conv:IsCustomImportanceConverter x:Key="IsCustomImportanceConverter"/>
+	</UserControl.Resources>
+
+	<ScrollViewer Padding="12">
+		<StackPanel Spacing="12">
+
+			<!-- Аватар -->
+			<StackPanel Spacing="6" HorizontalAlignment="Center">
+				<Border Width="80"
+                        Height="80"
+                        CornerRadius="40"
+                        Background="{Binding Color}"
+                        HorizontalAlignment="Center">
+					<TextBlock Text="{Binding FallbackIcon}"
+                               FontSize="36"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Foreground="White"/>
+				</Border>
+				<StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+					<Button Content="{x:Static loc:CharactersStrings.Button_UploadAvatar}"
+                            Command="{Binding UploadAvatarCommand}"
+                            FontSize="11"
+                            Padding="8,4"/>
+					<Button Content="{x:Static loc:CharactersStrings.Button_DeleteAvatar}"
+                            Command="{Binding DeleteAvatarCommand}"
+                            FontSize="11"
+                            Padding="8,4"
+                            IsVisible="{Binding AvatarPath, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+				</StackPanel>
+			</StackPanel>
+
+			<!-- Имя -->
+			<StackPanel Spacing="4">
+				<TextBlock Text="{x:Static loc:CharactersStrings.Field_Name}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+				<TextBox Text="{Binding Name, Mode=TwoWay}"
+                         FontSize="13"
+                         FontWeight="Medium"
+                         Background="{DynamicResource BgPanelBrush}"
+                         Foreground="{DynamicResource TextPrimaryBrush}"
+                         BorderBrush="{DynamicResource BorderDefaultBrush}"
+                         BorderThickness="1"
+                         CornerRadius="4"
+                         Padding="8,6"/>
+			</StackPanel>
+
+			<!-- Краткое описание -->
+			<StackPanel Spacing="4">
+				<TextBlock Text="{x:Static loc:CharactersStrings.Field_ShortDescription}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+				<TextBox Text="{Binding ShortDescription, Mode=TwoWay}"
+                         FontSize="12"
+                         Background="{DynamicResource BgPanelBrush}"
+                         Foreground="{DynamicResource TextPrimaryBrush}"
+                         BorderBrush="{DynamicResource BorderDefaultBrush}"
+                         BorderThickness="1"
+                         CornerRadius="4"
+                         Padding="8,6"/>
+			</StackPanel>
+
+			<!-- Цвет персонажа -->
+			<StackPanel Spacing="4">
+				<TextBlock Text="{x:Static loc:CharactersStrings.Field_Color}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+				<TextBox Text="{Binding Color, Mode=TwoWay}"
+                         FontSize="12"
+                         Background="{DynamicResource BgPanelBrush}"
+                         Foreground="{DynamicResource TextPrimaryBrush}"
+                         BorderBrush="{DynamicResource BorderDefaultBrush}"
+                         BorderThickness="1"
+                         CornerRadius="4"
+                         Padding="8,6"
+                         Watermark="#607D8B"/>
+			</StackPanel>
+
+			<!-- Иконка-символ -->
+			<StackPanel Spacing="4">
+				<TextBlock Text="{x:Static loc:CharactersStrings.Field_FallbackIcon}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+				<TextBox Text="{Binding FallbackIcon, Mode=TwoWay}"
+                         FontSize="12"
+                         Background="{DynamicResource BgPanelBrush}"
+                         Foreground="{DynamicResource TextPrimaryBrush}"
+                         BorderBrush="{DynamicResource BorderDefaultBrush}"
+                         BorderThickness="1"
+                         CornerRadius="4"
+                         Padding="8,6"
+                         MaxLength="4"
+                         Watermark="?"/>
+			</StackPanel>
+
+			<!-- Уровень важности -->
+			<StackPanel Spacing="4">
+				<TextBlock Text="{x:Static loc:CharactersStrings.Field_ImportanceLevel}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+				<ComboBox SelectedItem="{Binding ImportanceLevel}"
+                          FontSize="12"
+                          HorizontalAlignment="Stretch"
+                          Background="{DynamicResource BgPanelBrush}"
+                          Foreground="{DynamicResource TextPrimaryBrush}">
+					<enums:CharacterImportanceLevel>Primary</enums:CharacterImportanceLevel>
+					<enums:CharacterImportanceLevel>Secondary</enums:CharacterImportanceLevel>
+					<enums:CharacterImportanceLevel>Tertiary</enums:CharacterImportanceLevel>
+					<enums:CharacterImportanceLevel>Custom</enums:CharacterImportanceLevel>
+				</ComboBox>
+			</StackPanel>
+
+			<!-- Кастомная метка важности -->
+			<StackPanel Spacing="4"
+                        IsVisible="{Binding ImportanceLevel, Converter={StaticResource IsCustomImportanceConverter}}">
+				<TextBlock Text="{x:Static loc:CharactersStrings.Field_CustomImportanceLabel}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+				<TextBox Text="{Binding CustomImportanceLabel, Mode=TwoWay}"
+                         FontSize="12"
+                         Background="{DynamicResource BgPanelBrush}"
+                         Foreground="{DynamicResource TextPrimaryBrush}"
+                         BorderBrush="{DynamicResource BorderDefaultBrush}"
+                         BorderThickness="1"
+                         CornerRadius="4"
+                         Padding="8,6"/>
+			</StackPanel>
+
+			<!-- Нарративные точки -->
+			<StackPanel Spacing="4">
+				<TextBlock Text="{x:Static loc:CharactersStrings.Field_NarrativeStartPoint}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+				<TextBox Text="{Binding NarrativeStartPoint, Mode=TwoWay}"
+                         FontSize="12"
+                         Background="{DynamicResource BgPanelBrush}"
+                         Foreground="{DynamicResource TextPrimaryBrush}"
+                         BorderBrush="{DynamicResource BorderDefaultBrush}"
+                         BorderThickness="1"
+                         CornerRadius="4"
+                         Padding="8,6"
+                         Watermark="{x:Static loc:CharactersStrings.Placeholder_NarrativePoint}"/>
+			</StackPanel>
+
+			<StackPanel Spacing="4">
+				<TextBlock Text="{x:Static loc:CharactersStrings.Field_NarrativeEndPoint}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+				<TextBox Text="{Binding NarrativeEndPoint, Mode=TwoWay}"
+                         FontSize="12"
+                         Background="{DynamicResource BgPanelBrush}"
+                         Foreground="{DynamicResource TextPrimaryBrush}"
+                         BorderBrush="{DynamicResource BorderDefaultBrush}"
+                         BorderThickness="1"
+                         CornerRadius="4"
+                         Padding="8,6"
+                         Watermark="{x:Static loc:CharactersStrings.Placeholder_NarrativePoint}"/>
+			</StackPanel>
+
+			<!-- Теги -->
+			<StackPanel Spacing="4">
+				<TextBlock Text="{x:Static loc:CharactersStrings.Field_Tags}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+				<ItemsControl ItemsSource="{Binding Tags}">
+					<ItemsControl.ItemsPanel>
+						<ItemsPanelTemplate>
+							<WrapPanel Orientation="Horizontal"/>
+						</ItemsPanelTemplate>
+					</ItemsControl.ItemsPanel>
+					<ItemsControl.ItemTemplate>
+						<DataTemplate>
+							<Border Background="{DynamicResource AccentSubtleBrush}"
+									CornerRadius="10"
+									Padding="8,3"
+									Margin="0,0,4,4">
+								<StackPanel Orientation="Horizontal" Spacing="4">
+									<TextBlock Text="{Binding}"
+											   FontSize="11"
+											   Foreground="{DynamicResource TextPrimaryBrush}"/>
+									<Button Content="x"
+											Command="{Binding $parent[UserControl].((tabs:CharacterBasicsTabViewModel)DataContext).RemoveTagCommand}"
+											CommandParameter="{Binding}"
+											Background="Transparent"
+											BorderThickness="0"
+											Padding="0"
+											FontSize="10"/>
+								</StackPanel>
+							</Border>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+			</StackPanel>
+
+			<!-- Статусы -->
+			<StackPanel Spacing="4">
+				<TextBlock Text="{x:Static loc:CharactersStrings.Field_Statuses}"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+				<ItemsControl ItemsSource="{Binding ActiveStatuses}">
+					<ItemsControl.ItemTemplate>
+						<DataTemplate>
+							<Grid ColumnDefinitions="Auto,*,Auto"
+                                  Margin="0,2">
+								<Border Grid.Column="0"
+                                        Width="16"
+                                        Height="16"
+                                        CornerRadius="8"
+                                        Background="{Binding Color}"
+                                        Margin="0,0,6,0"/>
+								<TextBlock Grid.Column="1"
+                                           Text="{Binding Name}"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"/>
+								<Button Grid.Column="2"
+                                        Content="x"
+                                        Command="{Binding $parent[UserControl].((tabs:CharacterBasicsTabViewModel)DataContext).RemoveStatusCommand}"
+                                        CommandParameter="{Binding Id}"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Padding="4,0"
+                                        FontSize="10"/>
+							</Grid>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+				<Button Content="{x:Static loc:CharactersStrings.Button_AddStatus}"
+                        Command="{Binding AddStatusCommand}"
+                        FontSize="11"
+                        Padding="8,4"
+                        Margin="0,4,0,0"/>
+			</StackPanel>
+
+		</StackPanel>
+	</ScrollViewer>
+</UserControl>

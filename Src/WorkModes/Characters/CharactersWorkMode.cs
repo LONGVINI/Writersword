@@ -5,12 +5,16 @@ using Writersword.WorkModes.Common;
 
 namespace Writersword.WorkModes.Characters
 {
+    /// <summary>
+    /// WorkMode "Персонажи" — работа с персонажами проекта.
+    /// Необязательный режим, можно закрыть.
+    /// </summary>
     public class CharactersWorkMode : IWorkMode
     {
         public string Id => "characters";
         public string DisplayName => "Персонажи";
         public string Icon => "👥";
-        public string Description => "Управление персонажами";
+        public string Description => "Управление персонажами, связями и параметрами";
         public bool IsCloseable => true;
         public int Order => 2;
 
@@ -26,26 +30,26 @@ namespace Writersword.WorkModes.Characters
                 IsCloseable = IsCloseable,
                 ModuleCategories = new Dictionary<string, ModuleCategory>
                 {
-                    { "TextEditor", ModuleCategory.Required }
+                    { "Characters", ModuleCategory.Required }
                 },
                 ModuleSlots = new List<ModuleSlot>
                 {
                     new ModuleSlot
                     {
-                        ModuleType = "TextEditor",
+                        ModuleType = "Characters",
                         PreferredPosition = PreferredDockPosition.Left,
                         Category = ModuleCategory.Required
                     },
                     new ModuleSlot
                     {
-                        ModuleType = "Synonyms",
+                        ModuleType = "Notes",
                         PreferredPosition = PreferredDockPosition.RightAsTab,
                         Category = ModuleCategory.Optional
                     },
                     new ModuleSlot
                     {
-                        ModuleType = "Notes",
-                        PreferredPosition = PreferredDockPosition.RightAsTab,
+                        ModuleType = "Timer",
+                        PreferredPosition = PreferredDockPosition.Bottom,
                         Category = ModuleCategory.Optional
                     }
                 },
