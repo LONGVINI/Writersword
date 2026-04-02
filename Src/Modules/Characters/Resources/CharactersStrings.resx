@@ -513,4 +513,28 @@
     <value>Character Editor</value>
     <comment>Character editor tab</comment>
   </data>
+  <data name="Folder_NewName" xml:space="preserve">
+    <value>New Folder</value>
+    <comment>Default name for a newly created folder</comment>
+  </data>
+  <data name="Folder_FallbackName" xml:space="preserve">
+    <value>Folder</value>
+    <comment>Fallback name when folder name is cleared</comment>
+  </data>
+  <data name="Folder_DefaultMain" xml:space="preserve">
+    <value>Main Characters</value>
+    <comment>Default folder name for main characters</comment>
+  </data>
+  <data name="Folder_DefaultSecondary" xml:space="preserve">
+    <value>Secondary Characters</value>
+    <comment>Default folder name for secondary characters</comment>
+  </data>
+  <data name="Folder_Ungrouped" xml:space="preserve">
+    <value>Ungrouped</value>
+    <comment>Virtual folder for characters without a folder</comment>
+  </data>
+  <data name="Character_DefaultName" xml:space="preserve">
+    <value>Unnamed</value>
+    <comment>Default character name when inline naming is confirmed empty</comment>
+  </data>
 </root>

@@ -8,6 +8,7 @@ using System.Reactive;
 using Writersword.Modules.Characters.Interfaces;
 using Writersword.Modules.Characters.Models;
 using Writersword.Modules.Characters.Models.Enums;
+using Writersword.Modules.Characters.Resources;
 using Writersword.Modules.Characters.ViewModels.Onboarding;
 using Writersword.Modules.Characters.ViewModels.Templates;
 
@@ -287,8 +288,8 @@ namespace Writersword.Modules.Characters.ViewModels
         {
             var anketas = GetActiveAnketas();
             var character = anketas.Count > 0
-                ? _characterService.CreateFromAnketas("Безымянный", anketas, randomize: false)
-                : _characterService.Create("Безымянный");
+                ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: false)
+                : _characterService.Create(CharactersStrings.Character_DefaultName);
 
             // Добавляем в активную папку (или первую)
             AddCharacterToActiveFolder(character.Id);
@@ -303,8 +304,8 @@ namespace Writersword.Modules.Characters.ViewModels
         {
             var anketas = GetActiveAnketas();
             var character = anketas.Count > 0
-                ? _characterService.CreateFromAnketas("Безымянный", anketas, randomize: true)
-                : _characterService.Create("Безымянный");
+                ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: true)
+                : _characterService.Create(CharactersStrings.Character_DefaultName);
 
             AddCharacterToActiveFolder(character.Id);
             RefreshFolderViewModels(inlineBeingNamedId: character.Id);
@@ -317,7 +318,7 @@ namespace Writersword.Modules.Characters.ViewModels
             var anketas = collective != null
                 ? new[] { collective }
                 : System.Array.Empty<CharacterAnketa>();
-            var character = _characterService.CreateCollective("Безымянный", anketas);
+            var character = _characterService.CreateCollective(CharactersStrings.Character_DefaultName, anketas);
             AddCharacterToActiveFolder(character.Id);
             RefreshFolderViewModels(inlineBeingNamedId: character.Id);
             ApplyFilters();
@@ -392,7 +393,7 @@ namespace Writersword.Modules.Characters.ViewModels
                 if (item != null)
                 {
                     newName = string.IsNullOrWhiteSpace(item.InlineName)
-                        ? "Безымянный"
+                        ? CharactersStrings.Character_DefaultName
                         : item.InlineName.Trim();
                     item.IsBeingNamed = false;
                     break;
@@ -443,8 +444,10 @@ namespace Writersword.Modules.Characters.ViewModels
 
         public void RefreshAll()
         {
+            _logger.Debug("RefreshAll called, folders in model: {Count}", _folders.Count);
             RefreshTags();
             ApplyFilters();
+            RefreshFolderViewModels();
             GraphViewModel.Refresh();
         }
 
@@ -545,7 +548,7 @@ namespace Writersword.Modules.Characters.ViewModels
                 _folders.Add(new CharacterFolder
                 {
                     Id = "default_main",
-                    Name = "Главные герои",
+                    Name = CharactersStrings.Folder_DefaultMain,
                     Comment = string.Empty,
                     Color = "#E07B39",
                     Order = 0
@@ -553,11 +556,12 @@ namespace Writersword.Modules.Characters.ViewModels
                 _folders.Add(new CharacterFolder
                 {
                     Id = "default_secondary",
-                    Name = "Второстепенные персонажи",
+                    Name = CharactersStrings.Folder_DefaultSecondary,
                     Comment = string.Empty,
                     Color = "#607D8B",
                     Order = 1
                 });
+                _logger.Debug("Default folders created");
             }
             RefreshFolderViewModels();
             if (ActiveFolderId == null)
@@ -569,6 +573,9 @@ namespace Writersword.Modules.Characters.ViewModels
             var allChars = _characterService.GetAll().ToList();
             var assignedIds = _folders.SelectMany(f => f.CharacterIds).ToHashSet();
             var unassigned = allChars.Where(c => !assignedIds.Contains(c.Id)).ToList();
+
+            _logger.Debug("RefreshFolderViewModels: {FolderCount} folders, {CharCount} characters, {UnassignedCount} unassigned",
+                _folders.Count, allChars.Count, unassigned.Count);
 
             Folders.Clear();
             foreach (var folder in _folders.OrderBy(f => f.Order))
@@ -593,13 +600,12 @@ namespace Writersword.Modules.Characters.ViewModels
                 Folders.Add(vm);
             }
 
-            // Персонажи без папки
             if (unassigned.Count > 0)
             {
                 var ungrouped = new CharacterFolderViewModel(new CharacterFolder
                 {
                     Id = "ungrouped",
-                    Name = "Без папки",
+                    Name = CharactersStrings.Folder_Ungrouped,
                     Comment = string.Empty,
                     Color = "#455A64",
                     Order = 999
@@ -625,7 +631,7 @@ namespace Writersword.Modules.Characters.ViewModels
             var folder = new CharacterFolder
             {
                 Id = Guid.NewGuid().ToString(),
-                Name = "Новая папка",
+                Name = CharactersStrings.Folder_NewName,
                 Order = _folders.Count
             };
             _folders.Add(folder);
@@ -650,17 +656,57 @@ namespace Writersword.Modules.Characters.ViewModels
 
             RefreshFolderViewModels();
         }
+
+        public List<CharacterFolder> GetFolders()
+        {
+            _logger.Debug("GetFolders: returning {Count} folders: {Names}",
+                _folders.Count,
+                string.Join(", ", _folders.Select(f => $"'{f.Name}'[{f.CharacterIds.Count}]")));
+            return _folders.ToList();
+        }
+
+        public void CommitAllPendingEdits()
+        {
+            foreach (var folder in Folders)
+            {
+                if (folder.IsRenaming)
+                    folder.ConfirmRenameCommand.Execute().Subscribe();
+                if (folder.IsEditingComment)
+                    folder.ConfirmCommentCommand.Execute().Subscribe();
+            }
+
+            var beingNamed = Folders
+                .SelectMany(f => f.Characters)
+                .Where(c => c.IsBeingNamed)
+                .ToList();
+
+            foreach (var character in beingNamed)
+                ConfirmInlineNameCommand.Execute(character.Id).Subscribe();
+        }
+
+        public void LoadFolders(List<CharacterFolder> folders)
+        {
+            _logger.Debug("LoadFolders: loading {Count} folders: {Names}",
+                folders.Count,
+                string.Join(", ", folders.Select(f => $"'{f.Name}'[{f.CharacterIds.Count}]")));
+            _folders.Clear();
+            _folders.AddRange(folders);
+        }
     }
 
     // ── Folder ViewModel ─────────────────────────────────────────────────
 
     public class CharacterFolderViewModel : ReactiveObject
     {
+        private static readonly ILogger _logger = Log.ForContext<CharacterFolderViewModel>();
+
         private bool _isExpanded = true;
         private bool _isRenaming = false;
         private bool _isEditingComment = false;
         private string _name;
         private string _comment;
+
+        private readonly CharacterFolder _folder;
 
         public string FolderId { get; }
         public string Color { get; }
@@ -684,13 +730,21 @@ namespace Writersword.Modules.Characters.ViewModels
         public string Name
         {
             get => _name;
-            set => this.RaiseAndSetIfChanged(ref _name, value);
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _name, value);
+                _folder.Name = value;
+            }
         }
 
         public string Comment
         {
             get => _comment;
-            set => this.RaiseAndSetIfChanged(ref _comment, value);
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _comment, value);
+                _folder.Comment = value;
+            }
         }
 
         public bool IsExpanded
@@ -715,22 +769,28 @@ namespace Writersword.Modules.Characters.ViewModels
 
         public CharacterFolderViewModel(CharacterFolder folder)
         {
+            _folder = folder;
             FolderId = folder.Id;
             _name = folder.Name;
             _comment = folder.Comment;
             Color = folder.Color;
             IsSystem = folder.Id.StartsWith("default_") || folder.Id == "ungrouped";
-            _isRenaming = folder.Name == "Новая папка";
+            _isRenaming = folder.Name == CharactersStrings.Folder_NewName;
 
             ToggleExpandCommand = ReactiveCommand.Create(() => { IsExpanded = !IsExpanded; });
             StartRenameCommand = ReactiveCommand.Create(() => { IsRenaming = true; });
             ConfirmRenameCommand = ReactiveCommand.Create(() =>
             {
-                if (string.IsNullOrWhiteSpace(Name)) Name = "Папка";
+                if (string.IsNullOrWhiteSpace(Name)) Name = CharactersStrings.Folder_FallbackName;
                 IsRenaming = false;
+                _logger.Debug("Folder renamed: {Id} = '{Name}'", FolderId, Name);
             });
             StartEditCommentCommand = ReactiveCommand.Create(() => { IsEditingComment = true; });
-            ConfirmCommentCommand = ReactiveCommand.Create(() => { IsEditingComment = false; });
+            ConfirmCommentCommand = ReactiveCommand.Create(() =>
+            {
+                IsEditingComment = false;
+                _logger.Debug("Folder comment saved: {Id} = '{Comment}'", FolderId, Comment);
+            });
         }
     }
 }

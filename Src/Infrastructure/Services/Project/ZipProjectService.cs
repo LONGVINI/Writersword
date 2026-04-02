@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
+п»їusing Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System;
@@ -13,11 +13,11 @@ using Writersword.Shared.Helpers;
 namespace Writersword.Infrastructure.Services.Project
 {
     /// <summary>
-    /// Сервис для работы с проектами в формате ZIP
-    /// Не использует временные папки — работает с ZIP напрямую
-    /// Отвечает только за project.json и modules/*.json
-    /// workspace.json управляется через IWorkspaceConfigService
-    /// Ключ данных модуля — moduleType (строка), не InstanceId
+    /// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ ZIP
+    /// пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ ZIP пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+    /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ project.json пїЅ modules/*.json
+    /// workspace.json пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ IWorkspaceConfigService
+    /// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ moduleType (пїЅпїЅпїЅпїЅпїЅпїЅ), пїЅпїЅ InstanceId
     /// </summary>
     public class ZipProjectService
     {
@@ -29,8 +29,8 @@ namespace Writersword.Infrastructure.Services.Project
         }
 
         /// <summary>
-        /// Сохранить проект в ZIP архив
-        /// Создаёт новый ZIP или обновляет существующий
+        /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ ZIP пїЅпїЅпїЅпїЅпїЅ
+        /// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ ZIP пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
         /// </summary>
         public async Task<bool> SaveToZipAsync(ProjectFile project, string filePath)
         {
@@ -42,31 +42,16 @@ namespace Writersword.Infrastructure.Services.Project
                 if (!string.IsNullOrEmpty(directory))
                     Directory.CreateDirectory(directory);
 
-                bool fileExists = File.Exists(filePath);
-                ZipArchiveMode mode = fileExists ? ZipArchiveMode.Update : ZipArchiveMode.Create;
-                FileMode fileMode = fileExists ? FileMode.Open : FileMode.Create;
+                // РђС‚РѕРјР°СЂРЅР°СЏ Р·Р°РїРёСЃСЊ С‡РµСЂРµР· РІСЂРµРјРµРЅРЅС‹Р№ С„Р°Р№Р»: СЃРЅР°С‡Р°Р»Р° РїРёС€РµРј РІРѕ РІСЂРµРјРµРЅРЅС‹Р№ С„Р°Р№Р»,
+                // Р·Р°С‚РµРј Р°С‚РѕРјР°СЂРЅРѕ Р·Р°РјРµРЅСЏРµРј С†РµР»РµРІРѕР№ С„Р°Р№Р». Р­С‚Рѕ РіР°СЂР°РЅС‚РёСЂСѓРµС‚ С‡С‚Рѕ РїСЂРё Р»СЋР±РѕРј СЃР±РѕРµ
+                // РІ РїСЂРѕС†РµСЃСЃРµ Р·Р°РїРёСЃРё РѕСЂРёРіРёРЅР°Р»СЊРЅС‹Р№ С„Р°Р№Р» РѕСЃС‚Р°С‘С‚СЃСЏ РЅРµС‚СЂРѕРЅСѓС‚С‹Рј.
+                string tempPath = filePath + ".tmp";
 
-                _logger.LogDebug("Mode: {Mode}, FileExists: {FileExists}", mode, fileExists);
+                _logger.LogDebug("Writing to temp file: {TempPath}", tempPath);
 
-                using (var fileStream = new FileStream(filePath, fileMode, FileAccess.ReadWrite))
-                using (var archive = new ZipArchive(fileStream, mode))
+                using (var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.ReadWrite))
+                using (var archive = new ZipArchive(fileStream, ZipArchiveMode.Create))
                 {
-                    if (mode == ZipArchiveMode.Update)
-                    {
-                        var projectEntry = archive.GetEntry("project.json");
-                        projectEntry?.Delete();
-
-                        var oldModules = archive.Entries
-                            .Where(e => e.FullName.StartsWith("modules/", StringComparison.OrdinalIgnoreCase))
-                            .ToList();
-
-                        foreach (var entry in oldModules)
-                            entry.Delete();
-
-                        if (oldModules.Count > 0)
-                            _logger.LogDebug("Deleted {Count} old module entries", oldModules.Count);
-                    }
-
                     var projectMeta = new
                     {
                         project.Title,
@@ -119,6 +104,9 @@ namespace Writersword.Infrastructure.Services.Project
                     }
                 }
 
+                // Р—Р°РїРёСЃСЊ Р·Р°РІРµСЂС€РµРЅР° СѓСЃРїРµС€РЅРѕ вЂ” Р·Р°РјРµРЅСЏРµРј С†РµР»РµРІРѕР№ С„Р°Р№Р» Р°С‚РѕРјР°СЂРЅРѕ.
+                File.Move(tempPath, filePath, overwrite: true);
+
                 var fileSize = new FileInfo(filePath).Length / 1024;
                 _logger.LogDebug("ZIP saved: {FilePath} ({FileSize} KB)", filePath, fileSize);
 
@@ -127,13 +115,23 @@ namespace Writersword.Infrastructure.Services.Project
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Save error");
+
+                // РЈРґР°Р»СЏРµРј РІСЂРµРјРµРЅРЅС‹Р№ С„Р°Р№Р» РµСЃР»Рё РѕРЅ РѕСЃС‚Р°Р»СЃСЏ РїРѕСЃР»Рµ СЃР±РѕСЏ.
+                try
+                {
+                    string tempPath = filePath + ".tmp";
+                    if (File.Exists(tempPath))
+                        File.Delete(tempPath);
+                }
+                catch { }
+
                 return false;
             }
         }
 
         /// <summary>
-        /// Загрузить проект из ZIP архива
-        /// Читает метаданные и данные модулей напрямую из ZIP
+        /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ ZIP пїЅпїЅпїЅпїЅпїЅпїЅ
+        /// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ ZIP
         /// </summary>
         public async Task<ProjectFile?> LoadFromZipAsync(string filePath)
         {

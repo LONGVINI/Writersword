@@ -1354,6 +1354,12 @@ namespace Writersword.Modules.TextEditor.Document
             foreach (var te in tables)
             {
                 if (te.PageIndex < firstPage || te.PageIndex > lastPage) continue;
+                // Клип по правому краю страницы: таблица может выходить за край,
+                // но видна только в пределах страницы.
+                // По вертикали клипуем по полной высоте страницы (включая поля),
+                // а не по текстовой зоне — иначе нижняя граница последней ByRow-строки
+                // (расположенная точно на textBottom) обрезается исключающим клипом.
+                // Корректное отсечение лишних линий обеспечивают suppressBottom/visibleH.
                 if (te.PageIndex < pages.Count)
                 {
                     var pg = pages[te.PageIndex];
@@ -1382,6 +1388,8 @@ namespace Writersword.Modules.TextEditor.Document
                 var pl = layouts[i];
                 if (pl.PageIndex < firstPage || pl.PageIndex > lastPage) continue;
 
+                // Для ячеек таблицы дополнительно клипуем по правому краю страницы
+                // (ячейка может выходить за край, текст должен быть обрезан).
                 if (pl.Cell != null && pl.PageIndex < pages.Count)
                 {
                     var pg = pages[pl.PageIndex];

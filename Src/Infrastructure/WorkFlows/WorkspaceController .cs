@@ -11,22 +11,23 @@ using System.Threading.Tasks;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
-using Writersword.Core.Models.WorkModes;
-using Writersword.Modules.Common;
 using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Core.Interfaces.WorkModes;
 using Writersword.Core.Interfaces.Workspace;
+using Writersword.Core.Models.WorkModes;
 using Writersword.Infrastructure.Dock;
 using Writersword.Infrastructure.Services.WorkModes;
+using Writersword.Modules.Common;
 using Writersword.ViewModels;
 
 namespace Writersword.Infrastructure.Workspace
 {
     /// <summary>
-    /// Контроллер workspace для вкладки документа
-    /// Управляет WorkModes, модулями и Dock layout
-    /// Модули создаются исключительно в DockFactory при построении layout
-    /// Dock.Avalonia управляет своим состоянием самостоятельно
+    /// Контроллер workspace для вкладки документа.
+    /// Управляет WorkModes, модулями и Dock layout.
+    /// Модули создаются исключительно в DockFactory при построении layout.
+    /// Dock.Avalonia управляет своим состоянием самостоятельно.
     /// </summary>
     public class WorkspaceController : IWorkspaceController
     {
@@ -55,7 +56,7 @@ namespace Writersword.Infrastructure.Workspace
              List<WorkMode> loadedWorkModes,
              DockFactory dockFactory,
              IWorkspaceAutoSaveService autoSave,
-             IProjectFileStorage? fileStorage = null)  
+             IProjectFileStorage? fileStorage = null)
         {
             _logger = App.Services.GetService<ILogger<WorkspaceController>>()!;
             _tab = tab;
@@ -84,8 +85,8 @@ namespace Writersword.Infrastructure.Workspace
         public WorkMode GetActiveWorkMode() => _activeWorkMode;
 
         /// <summary>
-        /// Получить список активных модулей текущего WorkMode
-        /// Сканирует реальный UI (dock + float окна)
+        /// Получить список активных модулей текущего WorkMode.
+        /// Сканирует реальный UI (dock + float окна).
         /// </summary>
         public List<IModule> GetActiveModules()
         {
@@ -118,7 +119,7 @@ namespace Writersword.Infrastructure.Workspace
         }
 
         /// <summary>
-        /// Обновить все модули из контекста
+        /// Обновить все модули из контекста.
         /// </summary>
         public void RefreshModulesFromContext()
         {
@@ -130,13 +131,14 @@ namespace Writersword.Infrastructure.Workspace
         }
 
         /// <summary>
-        /// Переключить WorkMode
-        /// 1. Сериализуем текущий layout
-        /// 2. Закрываем float окна
-        /// 3. Переключаем флаги IsActive
-        /// 4. Очищаем модули старого WorkMode из контекста
-        /// 5. Сбрасываем внутреннее состояние Factory (ClearCurrentLayout)
-        /// 6. Создаём новый layout (DockFactory создаст нужные модули сам)
+        /// Переключить WorkMode.
+        /// 1. Сбрасываем кеш модулей (пока они живы).
+        /// 2. Сериализуем текущий layout.
+        /// 3. Закрываем float окна.
+        /// 4. Переключаем флаги IsActive.
+        /// 5. Очищаем модули старого WorkMode из контекста.
+        /// 6. Сбрасываем внутреннее состояние Factory (ClearCurrentLayout).
+        /// 7. Создаём новый layout (DockFactory создаст нужные модули сам).
         /// </summary>
         public void SwitchWorkMode(WorkMode newMode)
         {
@@ -156,6 +158,32 @@ namespace Writersword.Infrastructure.Workspace
                 else
                 {
                     _logger.LogWarning("Failed to serialize layout for WorkMode: {Title}", _activeWorkMode.Title);
+                }
+            }
+
+            // Сохраняем все живые модули в кеш на диск синхронно ДО разрушения layout.
+            // Это гарантирует что данные любого модуля (TextEditor, Characters и т.д.)
+            // будут доступны при восстановлении следующего WorkMode через кеш.
+            // Модули без данных (Timer, Notes) просто не попадают в кеш — это нормально.
+            var allModulesNow = _tab.ModuleContext.GetAllModules();
+            if (allModulesNow.Count > 0)
+            {
+                var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
+                var cacheService = App.Services.GetRequiredService<IZipCacheService>();
+                var (customData, sessionData) = stateCollector.CollectAllData(allModulesNow);
+
+                if (customData.Count > 0)
+                {
+                    var project = _tab.GetProject();
+                    // Синхронное сохранение — блокируем UI thread до завершения записи.
+                    // Без этого CreateLayout читает кеш до того как запись завершилась.
+                    cacheService.SaveCacheAsync(_projectPath, project.Id, customData, sessionData)
+                        .GetAwaiter().GetResult();
+                    _logger.LogDebug("Cache saved synchronously before WorkMode switch: {Count} modules", customData.Count);
+                }
+                else
+                {
+                    _logger.LogWarning("No module data collected before WorkMode switch — cache not updated");
                 }
             }
 
@@ -182,7 +210,7 @@ namespace Writersword.Infrastructure.Workspace
         }
 
         /// <summary>
-        /// Добавить модуль в текущий WorkMode
+        /// Добавить модуль в текущий WorkMode.
         /// </summary>
         public void AddModule(string moduleType)
         {
@@ -235,7 +263,8 @@ namespace Writersword.Infrastructure.Workspace
                     Category = category
                 };
 
-                _logger.LogDebug("Created new slot for {moduleType}: Category={Category}, IsCloseable={IsCloseable}", moduleType, newSlot.Category, newSlot.IsCloseable);
+                _logger.LogDebug("Created new slot for {moduleType}: Category={Category}, IsCloseable={IsCloseable}",
+                    moduleType, newSlot.Category, newSlot.IsCloseable);
 
                 _activeWorkMode.ModuleSlots.Add(newSlot);
                 existingSlot = newSlot;
@@ -269,7 +298,7 @@ namespace Writersword.Infrastructure.Workspace
         }
 
         /// <summary>
-        /// Удалить модуль из текущего WorkMode
+        /// Удалить модуль из текущего WorkMode.
         /// </summary>
         public void RemoveModule(string moduleType)
         {
@@ -288,7 +317,7 @@ namespace Writersword.Infrastructure.Workspace
         }
 
         /// <summary>
-        /// Вернуть Required модуль обратно в dock
+        /// Вернуть Required модуль обратно в dock.
         /// </summary>
         public void ReturnRequiredModuleToDock(string moduleType)
         {
@@ -315,7 +344,7 @@ namespace Writersword.Infrastructure.Workspace
         }
 
         /// <summary>
-        /// Обработчик реального закрытия модуля — вызывается из DockFactory.CloseDockable
+        /// Обработчик реального закрытия модуля — вызывается из DockFactory.CloseDockable.
         /// </summary>
         public void HandleModuleClosedInDock(string moduleType)
         {
@@ -326,7 +355,6 @@ namespace Writersword.Infrastructure.Workspace
             if (_activeWorkMode == null) return;
 
             var slot = _activeWorkMode.ModuleSlots.FirstOrDefault(s => s.ModuleType == moduleType);
-
 
             _logger.LogDebug("HandleModuleClosed: {moduleType}, slot={SlotFound}, category={Category}, isCloseable={IsCloseable}",
                 moduleType,
@@ -349,7 +377,7 @@ namespace Writersword.Infrastructure.Workspace
         }
 
         /// <summary>
-        /// Получить список всех открытых модулей в текущем WorkMode
+        /// Получить список всех открытых модулей в текущем WorkMode.
         /// </summary>
         public HashSet<string> GetOpenModuleIds()
         {
@@ -387,7 +415,7 @@ namespace Writersword.Infrastructure.Workspace
         }
 
         /// <summary>
-        /// Сохранить workspace асинхронно
+        /// Сохранить workspace асинхронно.
         /// </summary>
         public async Task SaveWorkspaceAsync()
         {
@@ -396,10 +424,10 @@ namespace Writersword.Infrastructure.Workspace
         }
 
         /// <summary>
-        /// Активировать workspace
-        /// Конфиг уже загружен и передан в конструктор — повторная загрузка не нужна
+        /// Активировать workspace.
+        /// Конфиг уже загружен и передан в конструктор — повторная загрузка не нужна.
         /// Перед созданием layout сбрасывает испорченный serializedDockLayout
-        /// (все слоты ведут в центр при наличии нескольких модулей)
+        /// (все слоты ведут в центр при наличии нескольких модулей).
         /// </summary>
         public void Activate()
         {
@@ -417,13 +445,11 @@ namespace Writersword.Infrastructure.Workspace
             if (!string.IsNullOrEmpty(_projectPath))
                 _autoSave.Start(_projectPath, _tab.GetProject());
 
-            // Применяем локальные настройки ПОСЛЕ создания layout — теперь модули живые
             if (_fileStorage != null)
                 ApplyLocalSettingsToModules(_fileStorage);
 
             _logger.LogDebug("Workspace activated");
         }
-
 
         private void ApplyLocalSettingsToModules(IProjectFileStorage storage)
         {
@@ -451,59 +477,67 @@ namespace Writersword.Infrastructure.Workspace
         }
 
         /// <summary>
-        /// Деактивировать workspace
-        /// Сохраняет, закрывает float окна, очищает модули и layout
+        /// Деактивировать workspace.
+        /// Сбрасывает кеш модулей, сохраняет layout, закрывает float окна, очищает модули.
         /// </summary>
         public void Deactivate()
-{
-    _logger.LogDebug("Deactivating workspace");
-    _isDeactivating = true;
-
-    try
-    {
-        // Сериализуем текущий layout в память ПЕРЕД остановкой
-        // чтобы при следующей Activate() использовался актуальный layout
-        if (_dockLayout != null)
         {
-            var (serializedLayout, updatedSlots) = _dockFactory.SerializeCurrentLayout(
-                _dockLayout, _activeWorkMode, _tab.ModuleContext);
+            _logger.LogDebug("Deactivating workspace");
+            _isDeactivating = true;
 
-            if (serializedLayout != null)
+            try
             {
-                _activeWorkMode.SerializedDockLayout = serializedLayout;
-                _activeWorkMode.ModuleSlots = updatedSlots;
-                _logger.LogDebug("Serialized layout saved to memory for WorkMode: {Title}", _activeWorkMode.Title);
+                if (_dockLayout != null)
+                {
+                    var (serializedLayout, updatedSlots) = _dockFactory.SerializeCurrentLayout(
+                        _dockLayout, _activeWorkMode, _tab.ModuleContext);
+
+                    if (serializedLayout != null)
+                    {
+                        _activeWorkMode.SerializedDockLayout = serializedLayout;
+                        _activeWorkMode.ModuleSlots = updatedSlots;
+                        _logger.LogDebug("Serialized layout saved to memory for WorkMode: {Title}", _activeWorkMode.Title);
+                    }
+                }
+
+                _autoSave.Stop();
+                CloseAllFloatWindows();
+
+                var cacheService = App.Services.GetRequiredService<ICacheUpdateService>();
+                cacheService.SaveToCache();
+                _logger.LogDebug("Cache flushed before deactivation");
+
+                _dockFactory.DetachViewsFromLayout(_dockLayout);
+                ClearAllModulesFromContext();
+                _dockFactory.OnModuleClosed = null;
+                _dockLayout = null!;
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during deactivation");
+                throw;
+            }
+            finally
+            {
+                _isDeactivating = false;
+            }
+
+            _logger.LogDebug("Workspace deactivated");
         }
 
-        _autoSave.Stop();
-        CloseAllFloatWindows();
-        _dockFactory.DetachViewsFromLayout(_dockLayout);
-        ClearAllModulesFromContext();
-        _dockFactory.OnModuleClosed = null;
-        _dockLayout = null!;
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Error during deactivation");
-        throw;
-    }
-    finally
-    {
-        _isDeactivating = false;
-    }
-
-    _logger.LogDebug("Workspace deactivated");
-}
-
         /// <summary>
-        /// Освободить ресурсы
+        /// Освободить ресурсы.
         /// </summary>
         public void Dispose()
         {
             _logger.LogDebug("Disposing");
 
             _autoSave.Stop();
+
+            var cacheService = App.Services.GetRequiredService<ICacheUpdateService>();
+            cacheService.SaveToCache();
+            _logger.LogDebug("Cache flushed before dispose");
+
             CloseAllFloatWindows();
             ClearAllModulesFromContext();
 
@@ -511,7 +545,7 @@ namespace Writersword.Infrastructure.Workspace
         }
 
         /// <summary>
-        /// Сбросить WorkMode до конфигурации по умолчанию
+        /// Сбросить WorkMode до конфигурации по умолчанию.
         /// </summary>
         public void ResetWorkModeToDefault(WorkMode workMode, WorkMode defaultConfig)
         {
@@ -528,10 +562,7 @@ namespace Writersword.Infrastructure.Workspace
 
             workMode.ModuleCategories = new Dictionary<string, ModuleCategory>(defaultConfig.ModuleCategories);
 
-            // Деактивируем — сохраняет, детачит Views, очищает модули
             Deactivate();
-
-            // Активируем заново — точно как при первом открытии вкладки
             Activate();
 
             _autoSave.NotifyChange();
@@ -540,8 +571,7 @@ namespace Writersword.Infrastructure.Workspace
 
         /// <summary>
         /// Сбросить serializedDockLayout если все слоты WorkMode ведут в центр
-        /// при наличии более одного слота — такой layout вырожден:
-        /// все модули оказываются вкладками в одном DocumentDock
+        /// при наличии более одного слота — такой layout вырожден.
         /// </summary>
         private void ResetDegenerateSerializedLayoutIfNeeded(WorkMode workMode)
         {
@@ -572,7 +602,7 @@ namespace Writersword.Infrastructure.Workspace
         }
 
         /// <summary>
-        /// Очистить все модули из контекста
+        /// Очистить все модули из контекста.
         /// </summary>
         private void ClearAllModulesFromContext()
         {
@@ -584,8 +614,8 @@ namespace Writersword.Infrastructure.Workspace
         }
 
         /// <summary>
-        /// Очистить из контекста модули которых НЕТ в новом WorkMode
-        /// Позволяет переиспользовать общие модули (например Timer) между WorkMode
+        /// Очистить из контекста модули которых НЕТ в новом WorkMode.
+        /// Позволяет переиспользовать общие модули (например Timer) между WorkMode.
         /// </summary>
         private void ClearModulesNotInNewWorkMode(WorkMode newWorkMode)
         {
@@ -737,8 +767,7 @@ namespace Writersword.Infrastructure.Workspace
 
             _dockFactory.OnModuleClosed = (moduleType) =>
             {
-                Dispatcher.UIThread.Post(
-                    () => HandleModuleClosedInDock(moduleType));
+                Dispatcher.UIThread.Post(() => HandleModuleClosedInDock(moduleType));
             };
 
             if (!string.IsNullOrEmpty(_tab.FilePath))

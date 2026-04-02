@@ -414,4 +414,22 @@
   <data name="Tab_Edit" xml:space="preserve">
     <value>Редактирование персонажа</value>
   </data>
+  <data name="Folder_NewName" xml:space="preserve">
+    <value>Новая папка</value>
+  </data>
+  <data name="Folder_FallbackName" xml:space="preserve">
+    <value>Папка</value>
+  </data>
+  <data name="Folder_DefaultMain" xml:space="preserve">
+    <value>Главные герои</value>
+  </data>
+  <data name="Folder_DefaultSecondary" xml:space="preserve">
+    <value>Второстепенные персонажи</value>
+  </data>
+  <data name="Folder_Ungrouped" xml:space="preserve">
+    <value>Без папки</value>
+  </data>
+  <data name="Character_DefaultName" xml:space="preserve">
+    <value>Безымянный</value>
+  </data>
 </root>

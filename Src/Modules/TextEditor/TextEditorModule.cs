@@ -168,38 +168,57 @@ namespace Writersword.Modules.TextEditor
 
         public override object? GetCustomData()
         {
-            if (_viewModel?.DocumentViewModel is null) return null;
-            DeltaCachePayload payload = _serializer.BuildDeltaPayload(
-                _viewModel.DocumentViewModel.Document, _lastDeltaPayload);
-
-            // Если изменений нет и есть базовая линия — возвращаем её как есть.
-            // Это гарантирует что HasUnsavedChanges вернёт false пока пользователь
-            // ничего не менял (хеш совпадёт с файлом на диске).
-            bool hasChanges = payload.ChangedChunks.Count > 0
-                              || payload.RemovedChunks.Count > 0
-                              || payload.ChangedAnnotations.Count > 0
-                              || payload.RemovedAnnotations.Count > 0;
-
-            if (!hasChanges && _baselineCustomData is not null)
+            if (_viewModel?.DocumentViewModel is null)
             {
-                _logger.Debug("GetCustomData: no changes, returning baseline (len={L})", _baselineCustomData.Length);
-                return _baselineCustomData;
+                // Логируем Warning чтобы зафиксировать факт возврата null.
+                // Если это происходит при сохранении — данные TextEditor не попадут в файл.
+                // ViewModel null означает что CreateView() не был вызван для этого модуля.
+                _logger.Warning("GetCustomData: _viewModel or DocumentViewModel is null — returning null. " +
+                    "Module type: {Type}", moduleType);
+                return null;
             }
 
-            _lastDeltaPayload = payload;
-
-            string documentJson = _serializer.Serialize(_viewModel.DocumentViewModel.Document);
-            string localSettingsJson = System.Text.Json.JsonSerializer.Serialize(_localSettings);
-
-            var envelope = new
+            try
             {
-                v = 2,
-                doc = documentJson,
-                local = localSettingsJson,
-            };
-            var result = System.Text.Json.JsonSerializer.Serialize(envelope);
-            _baselineCustomData = null; // сбрасываем — теперь есть реальные изменения
-            return result;
+                DeltaCachePayload payload = _serializer.BuildDeltaPayload(
+                    _viewModel.DocumentViewModel.Document, _lastDeltaPayload);
+
+                // Если изменений нет и есть базовая линия — возвращаем её как есть.
+                // Это гарантирует что HasUnsavedChanges вернёт false пока пользователь
+                // ничего не менял (хеш совпадёт с файлом на диске).
+                bool hasChanges = payload.ChangedChunks.Count > 0
+                                  || payload.RemovedChunks.Count > 0
+                                  || payload.ChangedAnnotations.Count > 0
+                                  || payload.RemovedAnnotations.Count > 0;
+
+                if (!hasChanges && _baselineCustomData is not null)
+                {
+                    _logger.Debug("GetCustomData: no changes, returning baseline (len={L})", _baselineCustomData.Length);
+                    return _baselineCustomData;
+                }
+
+                _lastDeltaPayload = payload;
+
+                string documentJson = _serializer.Serialize(_viewModel.DocumentViewModel.Document);
+                string localSettingsJson = System.Text.Json.JsonSerializer.Serialize(_localSettings);
+
+                var envelope = new
+                {
+                    v = 2,
+                    doc = documentJson,
+                    local = localSettingsJson,
+                };
+                var result = System.Text.Json.JsonSerializer.Serialize(envelope);
+                _baselineCustomData = null; // сбрасываем — теперь есть реальные изменения
+                _logger.Debug("GetCustomData: serialized document, len={L}", result.Length);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                // Логируем Error с полным стектрейсом — это позволит найти причину при следующем возникновении.
+                _logger.Error(ex, "GetCustomData: exception during serialization — returning null. Data will NOT be saved!");
+                return null;
+            }
         }
 
         public override void SetCustomData(object? data)

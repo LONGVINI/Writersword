@@ -170,5 +170,15 @@ namespace Writersword.Modules.Characters.Resources
         // ── Горячие клавиши — Граф ───────────────────────────────────────
         public static string HotKey_GraphResetView => ResourceManager.GetString("HotKey_GraphResetView", resourceCulture);
         public static string HotKey_GraphClearFocus => ResourceManager.GetString("HotKey_GraphClearFocus", resourceCulture);
+
+        // ── Папки ─────────────────────────────────────────────────────────
+        public static string Folder_NewName => ResourceManager.GetString("Folder_NewName", resourceCulture);
+        public static string Folder_FallbackName => ResourceManager.GetString("Folder_FallbackName", resourceCulture);
+        public static string Folder_DefaultMain => ResourceManager.GetString("Folder_DefaultMain", resourceCulture);
+        public static string Folder_DefaultSecondary => ResourceManager.GetString("Folder_DefaultSecondary", resourceCulture);
+        public static string Folder_Ungrouped => ResourceManager.GetString("Folder_Ungrouped", resourceCulture);
+
+        // ── Персонажи — значения по умолчанию ────────────────────────────
+        public static string Character_DefaultName => ResourceManager.GetString("Character_DefaultName", resourceCulture);
     }
 }

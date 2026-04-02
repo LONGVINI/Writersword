@@ -42,7 +42,7 @@ namespace Writersword.Infrastructure.Services.Modules
 
                     if (IsDataEmpty(data))
                     {
-                        _logger.LogDebug("Module is empty: {moduleType}", module.moduleType);
+                        _logger.LogWarning("Module returned empty data: {moduleType} — will NOT be included in save", module.moduleType);
                         continue;
                     }
 
@@ -51,7 +51,7 @@ namespace Writersword.Infrastructure.Services.Modules
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error collecting CustomData from {moduleType}", module.moduleType);
+                    _logger.LogError(ex, "Exception in GetCustomData for {moduleType} — module will NOT be saved!", module.moduleType);
                 }
             }
 

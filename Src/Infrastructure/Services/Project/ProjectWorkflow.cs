@@ -643,6 +643,28 @@ namespace Writersword.Infrastructure.Services.Project
                     foreach (var kvp in activeCustomData)
                         allData[kvp.Key] = kvp.Value;
 
+                    // Защита от потери данных: если модуль присутствовал в ZIP на диске,
+                    // но не попал в allData (GetCustomData вернул null или бросил исключение,
+                    // а кеш пуст) — берём старое значение из ZIP.
+                    // Это предотвращает затирание данных при временном сбое сбора.
+                    tab.Context.CloseZipStorage();
+                    var savedProject = await _projectService.LoadAsync(filePath);
+                    tab.Context.ReopenZipStorage();
+
+                    if (savedProject != null)
+                    {
+                        foreach (var kvp in savedProject.ModulesData)
+                        {
+                            if (!allData.ContainsKey(kvp.Key) && kvp.Value != null
+                                && !(kvp.Value is string s0 && string.IsNullOrWhiteSpace(s0)))
+                            {
+                                allData[kvp.Key] = kvp.Value;
+                                _logger.LogWarning(
+                                    "Module {M} missing from collected data — preserved from ZIP", kvp.Key);
+                            }
+                        }
+                    }
+
                     project.ModulesData = allData;
                     project.LastModified = DateTime.Now;
 
@@ -676,6 +698,26 @@ namespace Writersword.Infrastructure.Services.Project
                     allData = new Dictionary<string, object?>();
                     foreach (var kvp in cache)
                         allData[kvp.Key] = kvp.Value;
+
+                    // Защита от потери данных: если модуль был в ZIP но не попал в кеш —
+                    // берём старое значение из ZIP.
+                    tab.Context.CloseZipStorage();
+                    var savedProject = await _projectService.LoadAsync(filePath);
+                    tab.Context.ReopenZipStorage();
+
+                    if (savedProject != null)
+                    {
+                        foreach (var kvp in savedProject.ModulesData)
+                        {
+                            if (!allData.ContainsKey(kvp.Key) && kvp.Value != null
+                                && !(kvp.Value is string s1 && string.IsNullOrWhiteSpace(s1)))
+                            {
+                                allData[kvp.Key] = kvp.Value;
+                                _logger.LogWarning(
+                                    "Module {M} missing from cache — preserved from ZIP (inactive tab)", kvp.Key);
+                            }
+                        }
+                    }
 
                     project.ModulesData = allData;
                     project.LastModified = DateTime.Now;

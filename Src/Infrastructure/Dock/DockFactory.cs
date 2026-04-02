@@ -398,6 +398,9 @@ namespace Writersword.Infrastructure.Dock
                     _logger.LogDebug("Using project file data for: {moduleType}", moduleType);
                 }
 
+                if (customDataToRestore == null)
+                    _logger.LogWarning("No data found for module: {moduleType} — will load empty", moduleType);
+
                 var module = tab.ModuleContext.CreateModule(moduleType);
 
                 if (module?.ViewModel == null)
@@ -806,6 +809,9 @@ namespace Writersword.Infrastructure.Dock
                 customDataToRestore = fileData;
                 _logger.LogDebug("Using project file data for: {ModuleType}", slot.ModuleType);
             }
+
+            if (customDataToRestore == null)
+                _logger.LogWarning("No data found for module: {ModuleType} — will load empty", slot.ModuleType);
 
             var module = tab.ModuleContext.CreateModule(slot.ModuleType);
 

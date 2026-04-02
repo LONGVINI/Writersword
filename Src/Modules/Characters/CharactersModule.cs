@@ -160,12 +160,16 @@ namespace Writersword.Modules.Characters
 
         public override object? GetCustomData()
         {
+            _viewModel?.CommitAllPendingEdits();
             var data = _characterService.GetModuleData();
             data.Relationships = _relationshipService.GetAll().ToList();
             data.ActiveTemplateIds = _viewModel?.ActiveTemplateIds.ToList() ?? new List<string>();
+            data.Folders = _viewModel?.GetFolders() ?? new List<CharacterFolder>();
             data.IsFirstLaunch = false;
             if (_anketaService is CharacterAnketaService as_)
                 data.CustomAnketas = as_.GetCustom().ToList();
+            _logger.Debug("GetCustomData: {CharCount} characters, {FolderCount} folders, {RelCount} relationships",
+                data.Characters.Count, data.Folders.Count, data.Relationships.Count);
             return data;
         }
 
@@ -176,12 +180,20 @@ namespace Writersword.Modules.Characters
             try
             {
                 CharactersModuleData? moduleData = data is CharactersModuleData d ? d
-                    : JsonConvert.DeserializeObject<CharactersModuleData>(JsonConvert.SerializeObject(data));
+                    : data is string s
+                        ? JsonConvert.DeserializeObject<CharactersModuleData>(s)
+                        : JsonConvert.DeserializeObject<CharactersModuleData>(JsonConvert.SerializeObject(data));
 
                 if (moduleData == null) return;
 
                 _moduleData = moduleData;
                 bool isFirst = moduleData.IsFirstLaunch;
+
+                _logger.Debug("SetCustomData: {CharCount} characters, {FolderCount} folders, {RelCount} relationships, isFirst={IsFirst}",
+                    moduleData.Characters?.Count ?? 0,
+                    moduleData.Folders?.Count ?? 0,
+                    moduleData.Relationships?.Count ?? 0,
+                    isFirst);
 
                 if (_relationshipService is RelationshipService rs)
                     rs.LoadRelationships(moduleData.Relationships ?? new List<CharacterRelationship>());
@@ -193,11 +205,22 @@ namespace Writersword.Modules.Characters
 
                 if (_viewModel != null)
                 {
+                    if (moduleData.Folders != null && moduleData.Folders.Count > 0)
+                    {
+                        _viewModel.LoadFolders(moduleData.Folders);
+                        _logger.Debug("Folders loaded into ViewModel: {Count}", moduleData.Folders.Count);
+                    }
+                    else
+                    {
+                        _logger.Warning("SetCustomData: no folders in module data, default folders will be used");
+                    }
+
                     _viewModel.ActiveTemplateIds.Clear();
                     foreach (var id in moduleData.ActiveTemplateIds ?? new List<string>())
                         _viewModel.ActiveTemplateIds.Add(id);
 
                     _viewModel.RefreshAll();
+                    _logger.Debug("ViewModel refreshed after SetCustomData");
 
                     if (isFirst)
                         _viewModel.InitializeFirstLaunch();

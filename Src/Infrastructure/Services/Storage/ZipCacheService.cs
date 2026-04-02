@@ -221,8 +221,10 @@ namespace Writersword.Infrastructure.Services.Storage
         }
 
         /// <summary>
-        /// Сохранить кеш проекта
-        /// customDataDict и sessionDataDict используют moduleType как ключ
+        /// Сохранить кеш проекта.
+        /// Использует ZipArchiveMode.Update — обновляет только записи переданных модулей,
+        /// записи остальных модулей остаются нетронутыми.
+        /// Файл кеша удаляется только через DeleteCache() (при Ctrl+S или закрытии проекта).
         /// </summary>
         /// <param name="projectPath">Путь к .writersword файлу</param>
         /// <param name="projectId">ID проекта — записывается в метадату для верификации при загрузке</param>
@@ -238,32 +240,10 @@ namespace Writersword.Infrastructure.Services.Storage
 
             try
             {
-                _logger.LogDebug("Saving cache: {ModulesCount} modules", customDataDict.Count);
+                _logger.LogDebug("Saving cache (update): {ModulesCount} modules", customDataDict.Count);
 
-                ModuleCacheMetadata? oldMetadata = null;
-                if (File.Exists(cachePath))
-                {
-                    oldMetadata = LoadMetadata(cachePath);
-
-                    if (oldMetadata != null && oldMetadata.ProjectId != projectId)
-                    {
-                        _logger.LogWarning(
-                            "Existing cache belongs to different project ({ExistingId}), overwriting with {NewId}",
-                            oldMetadata.ProjectId, projectId);
-                        oldMetadata = null;
-                    }
-                }
-
-                var newMetadata = new ModuleCacheMetadata
-                {
-                    ProjectId = projectId,
-                    ProjectPath = projectPath,
-                    CacheDate = DateTime.Now,
-                    Version = 1,
-                    Modules = new Dictionary<string, ModuleHashMetadata>()
-                };
-
-                var modulesToSave = new Dictionary<string, (object? CustomData, object? SessionData)>();
+                // Подготавливаем данные модулей которые нужно записать.
+                var modulesToSave = new Dictionary<string, (string CustomDataJson, string? SessionDataJson)>();
 
                 foreach (var kvp in customDataDict)
                 {
@@ -276,76 +256,114 @@ namespace Writersword.Infrastructure.Services.Storage
                         continue;
                     }
 
-                    var currentHash = _hashService.ComputeHash(customData);
-                    var customDataJson = JsonConvert.SerializeObject(customData);
-                    var stateSize = Encoding.UTF8.GetByteCount(customDataJson);
+                    var customDataJson = JsonConvert.SerializeObject(customData, Formatting.Indented);
+                    string? sessionDataJson = null;
+                    if (sessionDataDict.TryGetValue(moduleType, out var sessionData) && sessionData != null)
+                        sessionDataJson = JsonConvert.SerializeObject(sessionData, Formatting.Indented);
 
-                    if (oldMetadata?.Modules.TryGetValue(moduleType, out var oldMeta) == true)
+                    modulesToSave[moduleType] = (customDataJson, sessionDataJson);
+                }
+
+                if (modulesToSave.Count == 0)
+                {
+                    _logger.LogDebug("Nothing to save");
+                    return;
+                }
+
+                bool fileExists = File.Exists(cachePath);
+
+                // Если файл принадлежит другому проекту — удаляем и создаём заново.
+                if (fileExists)
+                {
+                    var existingMeta = LoadMetadata(cachePath);
+                    if (existingMeta != null && existingMeta.ProjectId != projectId)
                     {
-                        _logger.LogDebug("Module {moduleType}: {State}",
-                            moduleType, oldMeta.Hash == currentHash ? "unchanged" : "changed");
+                        _logger.LogWarning(
+                            "Cache belongs to different project ({ExistingId}), recreating for {NewId}",
+                            existingMeta.ProjectId, projectId);
+                        File.Delete(cachePath);
+                        fileExists = false;
+                    }
+                }
+
+                var archiveMode = fileExists ? ZipArchiveMode.Update : ZipArchiveMode.Create;
+
+                using (var archive = ZipFile.Open(cachePath, archiveMode))
+                {
+                    // Обновляем метаданные: читаем существующие, дополняем новыми.
+                    ModuleCacheMetadata metadata;
+                    if (fileExists)
+                    {
+                        metadata = LoadMetadataFromArchive(archive) ?? new ModuleCacheMetadata
+                        {
+                            ProjectId = projectId,
+                            ProjectPath = projectPath,
+                            Version = 1,
+                            Modules = new Dictionary<string, ModuleHashMetadata>()
+                        };
                     }
                     else
                     {
-                        _logger.LogDebug("Module new: {moduleType}", moduleType);
+                        metadata = new ModuleCacheMetadata
+                        {
+                            ProjectId = projectId,
+                            ProjectPath = projectPath,
+                            Version = 1,
+                            Modules = new Dictionary<string, ModuleHashMetadata>()
+                        };
                     }
 
-                    newMetadata.Modules[moduleType] = new ModuleHashMetadata
-                    {
-                        Hash = currentHash,
-                        LastModified = DateTime.Now,
-                        Size = stateSize
-                    };
-
-                    sessionDataDict.TryGetValue(moduleType, out var sessionData);
-                    modulesToSave[moduleType] = (customData, sessionData);
-                }
-
-                if (File.Exists(cachePath))
-                    File.Delete(cachePath);
-
-                using (var archive = ZipFile.Open(cachePath, ZipArchiveMode.Create))
-                {
-                    var metadataEntry = archive.CreateEntry("cache.json", CompressionLevel.Optimal);
-                    using (var stream = metadataEntry.Open())
-                    using (var writer = new StreamWriter(stream))
-                    {
-                        var metadataJson = JsonConvert.SerializeObject(newMetadata, Formatting.Indented);
-                        await writer.WriteAsync(metadataJson);
-                    }
+                    metadata.CacheDate = DateTime.Now;
 
                     foreach (var kvp in modulesToSave)
                     {
                         var moduleType = kvp.Key;
-                        var (customData, sessionData) = kvp.Value;
+                        var (customDataJson, sessionDataJson) = kvp.Value;
 
-                        if (customData != null)
+                        var currentHash = _hashService.ComputeHash(customDataJson);
+                        metadata.Modules[moduleType] = new ModuleHashMetadata
                         {
-                            var customDataJson = JsonConvert.SerializeObject(customData, Formatting.Indented);
-                            var customDataEntry = archive.CreateEntry(
-                                $"modules/{moduleType}/customdata.json", CompressionLevel.Optimal);
-                            using (var stream = customDataEntry.Open())
-                            using (var writer = new StreamWriter(stream))
-                            {
-                                await writer.WriteAsync(customDataJson);
-                            }
+                            Hash = currentHash,
+                            LastModified = DateTime.Now,
+                            Size = Encoding.UTF8.GetByteCount(customDataJson)
+                        };
+
+                        // GetEntry/Delete работает только в Update режиме.
+                        if (fileExists)
+                        {
+                            archive.GetEntry($"modules/{moduleType}/customdata.json")?.Delete();
+                            archive.GetEntry($"modules/{moduleType}/sessiondata.json")?.Delete();
                         }
 
-                        if (sessionData != null)
+                        var newCustomEntry = archive.CreateEntry(
+                            $"modules/{moduleType}/customdata.json", CompressionLevel.Optimal);
+                        using (var stream = newCustomEntry.Open())
+                        using (var writer = new StreamWriter(stream))
+                            await writer.WriteAsync(customDataJson);
+
+                        if (sessionDataJson != null)
                         {
-                            var sessionDataJson = JsonConvert.SerializeObject(sessionData, Formatting.Indented);
-                            var sessionDataEntry = archive.CreateEntry(
+                            var newSessionEntry = archive.CreateEntry(
                                 $"modules/{moduleType}/sessiondata.json", CompressionLevel.Optimal);
-                            using (var stream = sessionDataEntry.Open())
+                            using (var stream = newSessionEntry.Open())
                             using (var writer = new StreamWriter(stream))
-                            {
                                 await writer.WriteAsync(sessionDataJson);
-                            }
                         }
+
+                        _logger.LogDebug("Updated cache entry for: {moduleType}", moduleType);
                     }
+
+                    // Перезаписываем метаданные.
+                    if (fileExists)
+                        archive.GetEntry("cache.json")?.Delete();
+
+                    var newMetaEntry = archive.CreateEntry("cache.json", CompressionLevel.Optimal);
+                    using (var stream = newMetaEntry.Open())
+                    using (var writer = new StreamWriter(stream))
+                        await writer.WriteAsync(JsonConvert.SerializeObject(metadata, Formatting.Indented));
                 }
 
-                _logger.LogDebug("Cache saved: {ModulesCount} modules", modulesToSave.Count);
+                _logger.LogDebug("Cache updated: {ModulesCount} modules written", modulesToSave.Count);
             }
             catch (Exception ex)
             {

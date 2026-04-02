@@ -159,39 +159,16 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="vm:CharacterFolderViewModel">
                                         <StackPanel Margin="0,0,0,4">
-
-                                            <!--
-                                                Заголовок папки.
-
-                                                Колонки:
-                                                  Col 0 (Auto)           — кружок цвета, фиксирован
-                                                  Col 1 (Auto, Min=150)  — имя папки: растёт с контентом,
-                                                                            не сжимается пока есть место
-                                                  Col 2 (* , Min=50)     — комментарий: берёт остаток,
-                                                                            сжимается первым
-                                                  Col 3 (Auto)           — счётчик+стрелка, фиксирован
-
-                                                Алгоритм Grid при нехватке места:
-                                                  1. Auto-колонки меряются по контенту.
-                                                  2. * получает остаток (может → 0).
-                                                  3. Если * < MinWidth=50 → берёт MinWidth.
-                                                  4. Если сумма > доступно → Grid клипует Auto-колонны,
-                                                     имя начинает сжиматься только после (2).
-
-                                                Итог: комментарий сжимается до 50px первым,
-                                                      только потом начинает сжиматься имя.
-                                                      Счётчик+стрелка не сжимаются никогда.
-                                            -->
                                             <Border BorderBrush="{DynamicResource BorderDefaultBrush}"
                                                     BorderThickness="0,0,0,1"
                                                     Background="{DynamicResource BgPanelBrush}">
                                                 <Grid MinHeight="36">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                        <ColumnDefinition Width="Auto" MinWidth="150"/>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
+                                                   <Grid.ColumnDefinitions>
+                                                      <ColumnDefinition Width="Auto"/>
+                                                      <ColumnDefinition Width="Auto" MinWidth="150" MaxWidth="280"/>
+                                                      <ColumnDefinition Width="*" MinWidth="40"/>
+                                                      <ColumnDefinition Width="Auto"/>
+                                                   </Grid.ColumnDefinitions>
 
                                                     <!-- Цветной кружок -->
                                                     <Border Grid.Column="0"
@@ -202,7 +179,7 @@
 
                                                     <!--
                                                         Имя папки — Col 1 (Auto, MinWidth=150).
-                                                        TextBlock и TextBox оба имеют MinWidth=150
+  
                                                         чтобы ширина колонки не прыгала при
                                                         переключении между режимами отображения.
                                                         Margin="0,0,16,0" — отступ справа.
@@ -226,7 +203,8 @@
                                                                  FontSize="13" FontWeight="SemiBold"
                                                                  MinWidth="150"
                                                                  VerticalAlignment="Center"
-                                                                 IsVisible="{Binding IsRenaming}"/>
+                                                                 IsVisible="{Binding IsRenaming}"
+                                                                 behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"/>
                                                     </Panel>
 
                                                     <!-- Col 2: TextBox комментария — right-aligned, растёт влево -->
@@ -238,7 +216,8 @@
                                                              HorizontalAlignment="Right"
                                                              MinWidth="190"
                                                              VerticalAlignment="Center"
-                                                             IsVisible="{Binding IsEditingComment}"/>
+                                                             IsVisible="{Binding IsEditingComment}"
+                                                             behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsEditingComment}"/>
 
                                                     <!-- Col 3: иконка комментария + счётчик + стрелка -->
                                                     <StackPanel Grid.Column="3"

@@ -38,6 +38,7 @@ namespace Writersword.Modules.Characters.Views
 
             AddHandler(TextBox.LostFocusEvent, OnTextBoxLostFocus, RoutingStrategies.Bubble);
             AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Bubble);
+            AddHandler(PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel);
         }
 
         private void OnDataContextChanged(object? sender, EventArgs e)
@@ -63,20 +64,44 @@ namespace Writersword.Modules.Characters.Views
             if (_tab3 != null) _tab3.IsVisible = index == 3;
         }
 
+        // ── PointerPressed: клик мимо TextBox — сбросить фокус ───────────
+
+        private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
+            if (focused is not TextBox) return;
+
+            // Проверяем через визуальное дерево — e.Source в Tunnel может быть
+            // внутренним элементом TextBox (TextPresenter, ScrollViewer и т.д.)
+            Visual? v = e.Source as Visual;
+            while (v != null)
+            {
+                if (v is TextBox) return;
+                v = v.GetVisualParent();
+            }
+
+            TopLevel.GetTopLevel(this)?.FocusManager?.ClearFocus();
+        }
+
         // ── LostFocus: сохранить и закрыть поле ──────────────────────────
 
         private void OnTextBoxLostFocus(object? sender, RoutedEventArgs e)
         {
-            if (e.Source is not Control src) return;
+            if (e.Source is not TextBox src) return;
 
             var folderVm = FindAncestor<ViewModels.CharacterFolderViewModel>(src);
             if (folderVm != null)
             {
                 if (folderVm.IsRenaming)
+                {
                     folderVm.ConfirmRenameCommand.Execute().Subscribe();
-                else if (folderVm.IsEditingComment)
+                    return;
+                }
+                if (folderVm.IsEditingComment)
+                {
                     folderVm.ConfirmCommentCommand.Execute().Subscribe();
-                return;
+                    return;
+                }
             }
 
             var charVm = FindAncestor<ViewModels.CharacterListItemViewModel>(src);
