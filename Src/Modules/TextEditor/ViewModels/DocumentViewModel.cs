@@ -786,13 +786,48 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 if (idx >= 0)
                 {
                     section.Blocks.Insert(idx + 1, block);
+                    NormalizeTableAnchors();
                     RebuildParagraphViewModels();
                     return;
                 }
             }
 
             section.Blocks.Add(block);
+            NormalizeTableAnchors();
             RebuildParagraphViewModels();
+        }
+
+        /// <summary>
+        /// Гарантирует наличие пустого ParagraphBlock до и после каждой TableBlock.
+        /// Якоря невидимы визуально (нулевая высота в layout) но нужны для:
+        /// — позиционирования каретки у края таблицы по клику
+        /// — вставки параграфов выше/ниже таблицы через Enter
+        /// Якорь после таблицы защищён от удаления в DocumentCanvas.
+        /// </summary>
+        private void NormalizeTableAnchors()
+        {
+            if (_document.Sections.Count == 0) return;
+            var blocks = _document.Sections[0].Blocks;
+
+            for (int i = blocks.Count - 1; i >= 0; i--)
+            {
+                if (blocks[i] is not TableBlock) continue;
+
+                // Якорь после таблицы: нужен пустой параграф (без chunks).
+                bool hasAfter = i + 1 < blocks.Count
+                    && blocks[i + 1] is ParagraphBlock afterPb
+                    && afterPb.Chunks.Count == 0;
+                if (!hasAfter)
+                    blocks.Insert(i + 1, new ParagraphBlock());
+
+                // Якорь перед таблицей: нужен пустой параграф (без chunks).
+                // Обычный параграф с текстом не считается якорем.
+                bool hasBefore = i > 0
+                    && blocks[i - 1] is ParagraphBlock beforePb
+                    && beforePb.Chunks.Count == 0;
+                if (!hasBefore)
+                    blocks.Insert(i, new ParagraphBlock());
+            }
         }
 
         private void AddAnnotation(
@@ -841,6 +876,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void RebuildParagraphViewModels()
         {
+            NormalizeTableAnchors();
             Paragraphs.Clear();
             if (_document.Sections.Count == 0) return;
             foreach (var block in _document.Sections[0].Blocks)

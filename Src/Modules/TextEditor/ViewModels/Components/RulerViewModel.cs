@@ -475,9 +475,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             var marker = GetIndentMarker(DraggingIndentMarker.Value);
             if (marker is null) return;
 
-            // Snap НЕ применяется во время drag — только при EndIndentDrag.
-            // Snap во время drag вызывает визуальное дёргание: маркер прыгает
-            // на 0.25 шаг каждый раз когда курсор едва переходит границу snap-зоны.
+            if (IsSnapEnabled)
+                positionUnits = Math.Round(positionUnits / SnapStep) * SnapStep;
 
             double pageWidthUnits = MmToUnits(PageWidthMm);
             positionUnits = Math.Min(positionUnits, pageWidthUnits);
