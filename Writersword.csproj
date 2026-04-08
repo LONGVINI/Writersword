@@ -110,11 +110,6 @@
 
 	<!-- ========================================
        ЛОКАЛИЗАЦИЯ (resx файлы)
-       Базовые файлы (.resx) подхватываются автоматически из Src/**
-       LogicalName вычисляется динамически — убирает "Src." из пути.
-       Это означает что любой новый модуль с *Strings.resx в папке Resources
-       будет автоматически включён в сборку без правки csproj.
-       Культурные файлы (*.ru.resx и т.д.) включаются отдельным паттерном.
        ======================================== -->
 	<ItemGroup>
 		<!-- Основная локализация приложения -->
@@ -126,12 +121,10 @@
 			<DependentUpon>Strings.resx</DependentUpon>
 		</EmbeddedResource>
 
-		<!-- Базовые resx модулей и типов проектов.
-		     LogicalName не задаётся — MSBuild использует путь с Src. по умолчанию.
-		     Designer.cs также должны содержать Src. в имени ResourceManager. -->
+		<!-- Базовые resx модулей -->
 		<EmbeddedResource Include="Src\**\Resources\*Strings.resx" />
 
-		<!-- Культурно-специфичные resx модулей и типов проектов -->
+		<!-- Культурно-специфичные resx модулей -->
 		<EmbeddedResource Include="Src\**\Resources\*Strings.*.resx" />
 
 		<Compile Update="Resources\Localization\Strings.Designer.cs">
@@ -174,9 +167,7 @@
 		<Folder Include="Docs\UserGuide\" />
 		<Folder Include="Models\" />
 		<Folder Include="Src\Core\Models\Modules\" />
-		<Folder Include="Src\Modules\Characters\Views\Graph\" />
-		<Folder Include="Src\Modules\Characters\Views\Grid\" />
-		<Folder Include="Src\Modules\Characters\Views\List\" />
+		<Folder Include="Src\Modules\Characters\Views\Tabs\" />
 		<Folder Include="Src\Modules\TextEditor\Views\Document\" />
 		<Folder Include="Src\WorkModes\Branching\" />
 		<Folder Include="Src\WorkModes\Dialogues\" />
@@ -187,13 +178,12 @@
 		<Folder Include="Src\WorkModes\Poetry\" />
 	</ItemGroup>
 
-
 	<!-- MenuBar Sections -->
 	<ItemGroup>
 		<Compile Update="Src\Modules\Characters\Resources\CharactersStrings.Designer.cs">
-		  <DesignTime>True</DesignTime>
-		  <AutoGen>True</AutoGen>
-		  <DependentUpon>CharactersStrings.resx</DependentUpon>
+			<DesignTime>True</DesignTime>
+			<AutoGen>True</AutoGen>
+			<DependentUpon>CharactersStrings.resx</DependentUpon>
 		</Compile>
 		<Compile Update="Views\Components\MenuBar\Sections\MenuBarView.File.axaml.cs">
 			<DependentUpon>MenuBarView.File.axaml</DependentUpon>
@@ -220,11 +210,12 @@
 			<DependentUpon>SettingButtons.axaml</DependentUpon>
 		</Compile>
 	</ItemGroup>
+
 	<ItemGroup>
-	  <EmbeddedResource Update="Src\Modules\Characters\Resources\CharactersStrings.resx">
-	    <Generator>PublicResXFileCodeGenerator</Generator>
-	    <LastGenOutput>CharactersStrings.Designer.cs</LastGenOutput>
-	  </EmbeddedResource>
+		<EmbeddedResource Update="Src\Modules\Characters\Resources\CharactersStrings.resx">
+			<Generator>PublicResXFileCodeGenerator</Generator>
+			<LastGenOutput>CharactersStrings.Designer.cs</LastGenOutput>
+		</EmbeddedResource>
 	</ItemGroup>
 
 	<ProjectExtensions>

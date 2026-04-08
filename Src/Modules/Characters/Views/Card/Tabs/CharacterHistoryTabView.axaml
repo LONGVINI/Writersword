@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
-             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              x:Class="Writersword.Modules.Characters.Views.Card.Tabs.CharacterHistoryTabView"
              x:DataType="tabs:CharacterHistoryTabViewModel">
 

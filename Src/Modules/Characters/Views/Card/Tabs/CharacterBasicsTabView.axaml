@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
-             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              xmlns:enums="using:Writersword.Modules.Characters.Models.Enums"
              xmlns:conv="using:Writersword.Modules.Characters.Converters"
              x:Class="Writersword.Modules.Characters.Views.Card.Tabs.CharacterBasicsTabView"

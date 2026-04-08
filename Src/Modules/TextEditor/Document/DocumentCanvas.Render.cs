@@ -46,22 +46,31 @@ namespace Writersword.Modules.TextEditor.Document
             int pixelW = (int)Math.Max(Bounds.Width, 1);
             int pixelH = (int)Math.Max(Bounds.Height, 1);
 
-            if (_caretOnlyRedraw
-                && _lastFullRenderBitmap is not null
-                && _lastFullRenderWidth == pixelW
-                && _lastFullRenderHeight == pixelH)
+            if (_caretOnlyRedraw)
             {
-                _caretOnlyRedraw = false;
-                canvas.DrawBitmap(_lastFullRenderBitmap, 0, 0);
-
-                if (_caretVisible)
+                SKBitmap? cached;
+                int cachedW, cachedH;
+                lock (_bitmapLock)
                 {
-                    canvas.Save();
-                    canvas.Scale(scale, scale);
-                    DrawCaretOnCanvas(canvas, layouts, pages, canvasWidth);
-                    canvas.Restore();
+                    cached = _lastFullRenderBitmap;
+                    cachedW = _lastFullRenderWidth;
+                    cachedH = _lastFullRenderHeight;
                 }
-                return;
+
+                if (cached is not null && cachedW == pixelW && cachedH == pixelH)
+                {
+                    _caretOnlyRedraw = false;
+                    canvas.DrawBitmap(cached, 0, 0);
+
+                    if (_caretVisible)
+                    {
+                        canvas.Save();
+                        canvas.Scale(scale, scale);
+                        DrawCaretOnCanvas(canvas, layouts, pages, canvasWidth);
+                        canvas.Restore();
+                    }
+                    return;
+                }
             }
 
             _caretOnlyRedraw = false;
@@ -84,12 +93,19 @@ namespace Writersword.Modules.TextEditor.Document
                 offscreen.Restore();
 
                 using var snapshot = surface.Snapshot();
-                _lastFullRenderBitmap?.Dispose();
-                _lastFullRenderBitmap = SKBitmap.FromImage(snapshot);
-                _lastFullRenderWidth = pixelW;
-                _lastFullRenderHeight = pixelH;
+                var newBitmap = SKBitmap.FromImage(snapshot);
 
-                canvas.DrawBitmap(_lastFullRenderBitmap, 0, 0);
+                SKBitmap? oldBitmap;
+                lock (_bitmapLock)
+                {
+                    oldBitmap = _lastFullRenderBitmap;
+                    _lastFullRenderBitmap = newBitmap;
+                    _lastFullRenderWidth = pixelW;
+                    _lastFullRenderHeight = pixelH;
+                }
+                oldBitmap?.Dispose();
+
+                canvas.DrawBitmap(newBitmap, 0, 0);
 
                 if (_caretVisible)
                 {
@@ -134,19 +150,18 @@ namespace Writersword.Modules.TextEditor.Document
                 bool isFirstRow = row.Row == rowFrom;
                 bool isLastRow = row.Row == effectiveRowTo - 1;
                 float rowShift = isFirstRow ? firstRowContentOffsetPt : 0f;
-                // Эффективная высота строки после вычета уже показанной части сверху.
                 float effectiveRowH = isFirstRow ? row.HeightPt - rowShift : row.HeightPt;
-                // Для последней строки слайса с ByCell-разрывом — ограничиваем снизу.
-                // lastRowVisibleHeightPt уже выражен как высота видимого окна на этой странице,
-                // без вычета firstRowShift, поэтому просто берём его напрямую.
                 float visibleH = (isLastRow && lastRowVisibleHeightPt >= 0f)
                     ? lastRowVisibleHeightPt
                     : effectiveRowH;
 
+                // Для строк после rowFrom в продолжении — смещаем на firstRowContentOffsetPt вверх.
+                float extraShift = isFirstRow ? 0f : firstRowContentOffsetPt;
+
                 foreach (var cell in row.Cells)
                 {
                     float cellX = tableX + cell.Xpt;
-                    float cellY = tableY + cell.Ypt - rowOffsetY - rowShift;
+                    float cellY = tableY + cell.Ypt - rowOffsetY - rowShift - extraShift;
 
                     // Фон — только в пределах видимой части строки
                     if (!string.IsNullOrEmpty(cell.BackgroundColor)
@@ -158,9 +173,12 @@ namespace Writersword.Modules.TextEditor.Document
 
                     // Видимый верхний край (для первой строки продолжения cellY сдвинут вверх).
                     float visibleCellY = cellY + rowShift;
-                    bool suppressBottom = isLastRow && lastRowVisibleHeightPt >= 0f;
+
+                    // Для страницы с продолжением (isContinuation) верхняя граница
+                    // первой строки не подавляется — таблица должна выглядеть целостно.
+                    // Нижнюю границу НЕ подавляем — пусть таблица выглядит закрытой на каждой странице.
                     SKTextRenderer.RenderCellBordersPublic(canvas, cell, cellX, visibleCellY,
-                        visibleH, canvasScale, false, suppressBottom);
+                        visibleH, canvasScale, false, false);
                 }
             }
         }
@@ -181,29 +199,41 @@ namespace Writersword.Modules.TextEditor.Document
             var layout = te.Layout;
             float tableX = te.XPt;
             float tableY = te.Ypt;
-            float tableH = layout.TotalHeightPt;
             float tableW = layout.TotalWidthPt;
 
-            const float HW = 6f;   // half-width ручки в pt
-            const float HH = 4f;   // half-height ручки в pt
+            // Высота видимого слайса — от tableY до конца последней видимой строки.
+            // Используем реальную высоту слайса, а не полную высоту таблицы,
+            // чтобы ручки не выходили за пределы видимой области.
+            float sliceH = 0f;
+            int effectiveRowTo = te.RowTo < 0 ? layout.Rows.Count : te.RowTo;
+            for (int ri = te.RowFrom; ri < effectiveRowTo && ri < layout.Rows.Count; ri++)
+            {
+                float rowH = layout.Rows[ri].HeightPt;
+                if (ri == te.RowFrom) rowH -= te.FirstRowContentOffsetPt;
+                if (ri == effectiveRowTo - 1 && te.LastRowVisibleHeightPt >= 0f)
+                    rowH = te.LastRowVisibleHeightPt;
+                sliceH += rowH;
+            }
+            if (sliceH <= 0f) return;
+
+            const float HW = 6f;
+            const float HH = 4f;
 
             using var fill = new SKPaint { Color = HandleFill, IsAntialias = true };
             using var stroke = new SKPaint { Color = HandleStroke, StrokeWidth = 1f, IsStroke = true, IsAntialias = true };
 
-            // ↔ на каждой внутренней и внешней правой границе колонки (по центру Y таблицы)
-            float midY = tableY + tableH / 2f;
+            // ↔ на каждой внутренней и внешней правой границе колонки (по центру Y слайса)
+            float midY = tableY + sliceH / 2f;
             float accX = tableX;
             for (int i = 0; i < layout.ColumnWidthsPt.Count; i++)
             {
                 accX += layout.ColumnWidthsPt[i];
-                float hx = accX;
-                float hy = midY;
-                DrawHandle(canvas, hx, hy, HW, HH, fill, stroke, horizontal: true);
+                DrawHandle(canvas, accX, midY, HW, HH, fill, stroke, horizontal: true);
             }
 
-            // ↕ на нижнем краю по центру ширины
+            // ↕ на нижнем краю слайса по центру ширины
             float midX = tableX + tableW / 2f;
-            DrawHandle(canvas, midX, tableY + tableH, HH, HW, fill, stroke, horizontal: false);
+            DrawHandle(canvas, midX, tableY + sliceH, HH, HW, fill, stroke, horizontal: false);
 
             // ↔ на левом крае (для сдвига всей таблицы)
             DrawHandle(canvas, tableX, midY, HW, HH, fill, stroke, horizontal: true);

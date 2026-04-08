@@ -43,6 +43,10 @@ namespace Writersword.Modules.TextEditor.Document
         private RulerViewModel? _vm;
         private bool _isDraggingMargin;
         private bool _draggingTopMargin;
+        // Сохраняем геометрию страницы в момент нажатия — не пересчитываем во время drag,
+        // чтобы изменение FocusedPageIndex (смена каретки) не смещало маркер.
+        private double _dragPageTopY;
+        private double _dragPageBotY;
 
         public VerticalRulerControl()
         {
@@ -237,11 +241,12 @@ namespace Writersword.Modules.TextEditor.Document
             if (_vm is null) return;
 
             var pos = e.GetPosition(this);
-            var (_, _, tTopY, tBotY) = ComputePageGeometry();
+            var (pTopY, pBotY, tTopY, tBotY) = ComputePageGeometry();
 
             if (Math.Abs(pos.Y - tTopY) <= MarginHitPx)
             {
                 _isDraggingMargin = true; _draggingTopMargin = true;
+                _dragPageTopY = pTopY; _dragPageBotY = pBotY;
                 e.Pointer.Capture(this);
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
                 e.Handled = true;
@@ -249,6 +254,7 @@ namespace Writersword.Modules.TextEditor.Document
             else if (Math.Abs(pos.Y - tBotY) <= MarginHitPx)
             {
                 _isDraggingMargin = true; _draggingTopMargin = false;
+                _dragPageTopY = pTopY; _dragPageBotY = pBotY;
                 e.Pointer.Capture(this);
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
                 e.Handled = true;
@@ -266,17 +272,17 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (_isDraggingMargin)
             {
-                double clampedY = Math.Max(pTopY, Math.Min(pos.Y, pBotY));
+                double clampedY = Math.Max(_dragPageTopY, Math.Min(pos.Y, _dragPageBotY));
                 if (_draggingTopMargin)
                 {
-                    double newMm = PxToMm(clampedY - pTopY, zoom);
+                    double newMm = PxToMm(clampedY - _dragPageTopY, zoom);
                     if (_vm.IsSnapEnabled) { double s = _vm.UnitsToMm(_vm.SnapStep); newMm = Math.Round(newMm / s) * s; }
                     newMm = Math.Max(0, Math.Min(newMm, _vm.PageHeightMm - _vm.MarginBottomMm - 5));
                     _vm.MarginTopMm = newMm;
                 }
                 else
                 {
-                    double newMm = PxToMm(pBotY - clampedY, zoom);
+                    double newMm = PxToMm(_dragPageBotY - clampedY, zoom);
                     if (_vm.IsSnapEnabled) { double s = _vm.UnitsToMm(_vm.SnapStep); newMm = Math.Round(newMm / s) * s; }
                     newMm = Math.Max(0, Math.Min(newMm, _vm.PageHeightMm - _vm.MarginTopMm - 5));
                     _vm.MarginBottomMm = newMm;

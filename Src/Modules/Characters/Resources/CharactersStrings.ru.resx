@@ -432,4 +432,52 @@
   <data name="Character_DefaultName" xml:space="preserve">
     <value>Безымянный</value>
   </data>
+  <data name="Folder_CreateButton" xml:space="preserve">
+    <value>+ Папка</value>
+  </data>
+  <data name="Folder_CreateTooltip" xml:space="preserve">
+    <value>Создать папку</value>
+  </data>
+  <data name="Folder_CommentTooltip" xml:space="preserve">
+    <value>Добавить комментарий</value>
+  </data>
+  <data name="Folder_CommentPlaceholder" xml:space="preserve">
+    <value>комментарий...</value>
+  </data>
+  <data name="Button_CreateCollectiveShort" xml:space="preserve">
+    <value>Группа</value>
+  </data>
+  <data name="Character_EditTooltip" xml:space="preserve">
+    <value>Редактировать</value>
+  </data>
+  <data name="Character_NamePlaceholder" xml:space="preserve">
+    <value>Безымянный</value>
+  </data>
+  <data name="Templates_FiltersHeader" xml:space="preserve">
+    <value>ЧТО НУЖНО?</value>
+  </data>
+  <data name="Templates_BuiltInHeader" xml:space="preserve">
+    <value>ВСТРОЕННЫЕ ШАБЛОНЫ</value>
+  </data>
+  <data name="Templates_CustomHeader" xml:space="preserve">
+    <value>МОИ ШАБЛОНЫ</value>
+  </data>
+  <data name="Templates_CreateCustom" xml:space="preserve">
+    <value>+ Создать шаблон</value>
+  </data>
+  <data name="Templates_NoCustom" xml:space="preserve">
+    <value>Своих шаблонов пока нет.</value>
+  </data>
+  <data name="Templates_Copy" xml:space="preserve">
+    <value>Копировать</value>
+  </data>
+  <data name="Templates_Delete" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="Templates_FieldCountSuffix" xml:space="preserve">
+    <value>параметров</value>
+  </data>
+  <data name="Templates_RestartOnboarding" xml:space="preserve">
+    <value>Настроить заново...</value>
+  </data>
 </root>

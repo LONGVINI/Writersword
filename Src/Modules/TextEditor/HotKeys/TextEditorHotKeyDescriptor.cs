@@ -177,7 +177,7 @@ namespace Writersword.Modules.TextEditor.HotKeys
                 Id = id,
                 DisplayNameKey = displayNameKey,
                 ModuleType = "TextEditor",
-                Scope = HotKeyScope.Global,
+                Scope = HotKeyScope.Focused,
                 DefaultGesture = new HotKeyGesture(new KeyGesture(key, mods))
             });
         }

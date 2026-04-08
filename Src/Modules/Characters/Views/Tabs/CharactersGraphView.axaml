@@ -1,13 +1,11 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels"
-             xmlns:loc="using:Writersword.Modules.Characters.Resources"
-             x:Class="Writersword.Modules.Characters.Views.Graph.CharactersGraphView"
+             xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
+             x:Class="Writersword.Modules.Characters.Views.Tabs.CharactersGraphView"
              x:DataType="vm:CharactersGraphViewModel"
              Background="{DynamicResource BgSurfaceBrush}">
-
     <Grid RowDefinitions="Auto,*">
-
         <Border Grid.Row="0" Padding="8,6"
                 BorderBrush="{DynamicResource BorderDefaultBrush}"
                 BorderThickness="0,0,0,1"
@@ -30,13 +28,11 @@
                 </StackPanel>
             </Grid>
         </Border>
-
         <Grid x:Name="GraphCanvas"
               Grid.Row="1"
               Background="{DynamicResource BgSurfaceBrush}"
               ClipToBounds="True"
               HorizontalAlignment="Stretch"
               VerticalAlignment="Stretch"/>
-
     </Grid>
 </UserControl>

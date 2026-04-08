@@ -348,8 +348,10 @@ namespace Writersword.Infrastructure.Rendering
 
             foreach (var section in document.Sections)
             {
-                foreach (var block in section.Blocks)
+                var blocks = section.Blocks;
+                for (int bi = 0; bi < blocks.Count; bi++)
                 {
+                    var block = blocks[bi];
                     if (block is BreakBlock bb && bb.BreakType == BreakType.Page)
                     {
                         pageLayout.Pages.Add(currentPage);
@@ -515,6 +517,19 @@ namespace Writersword.Infrastructure.Rendering
 
                     var layout = BuildLayout(para, textWidthPt, styles);
 
+                    // Пропускаем только системные якоря — пустые параграфы стоящие
+                    // непосредственно рядом с таблицей (до или после).
+                    // Пользовательские пустые параграфы между таблицами рендерятся как обычно.
+                    bool prevIsTable = bi > 0 && blocks[bi - 1] is TableBlock;
+                    bool nextIsTable = bi + 1 < blocks.Count && blocks[bi + 1] is TableBlock;
+                    bool isSystemAnchor = string.IsNullOrEmpty(para.GetPlainText())
+                        && (prevIsTable || nextIsTable);
+                    if (isSystemAnchor)
+                    {
+                        paraIndex++;
+                        continue;
+                    }
+
                     if (layout.Lines.Count == 0)
                     {
                         paraIndex++;
@@ -562,8 +577,25 @@ namespace Writersword.Infrastructure.Rendering
                         currentY += line.Height;
 
                         // SpaceAfter добавляем только после последней строки параграфа.
+                        // Исключение: если следующий значимый блок — таблица,
+                        // SpaceAfter не добавляем (таблица примыкает к параграфу вплотную).
                         if (isLastLine)
-                            currentY += layout.SpaceAfterPt;
+                        {
+                            // SpaceAfter не добавляем если следующий значимый блок — таблица.
+                            bool spaceNextIsTable = false;
+                            for (int nb = bi + 1; nb < blocks.Count; nb++)
+                            {
+                                if (blocks[nb] is ParagraphBlock nbp
+                                    && string.IsNullOrEmpty(nbp.GetPlainText())
+                                    && (nb > 0 && blocks[nb - 1] is TableBlock
+                                        || nb + 1 < blocks.Count && blocks[nb + 1] is TableBlock))
+                                    continue;
+                                spaceNextIsTable = blocks[nb] is TableBlock;
+                                break;
+                            }
+                            if (!spaceNextIsTable)
+                                currentY += layout.SpaceAfterPt;
+                        }
                     }
 
                     // Финальный слайс параграфа (остаток или весь параграф).

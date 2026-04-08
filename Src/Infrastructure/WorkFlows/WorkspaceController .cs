@@ -132,13 +132,10 @@ namespace Writersword.Infrastructure.Workspace
 
         /// <summary>
         /// Переключить WorkMode.
-        /// 1. Сбрасываем кеш модулей (пока они живы).
-        /// 2. Сериализуем текущий layout.
-        /// 3. Закрываем float окна.
-        /// 4. Переключаем флаги IsActive.
-        /// 5. Очищаем модули старого WorkMode из контекста.
-        /// 6. Сбрасываем внутреннее состояние Factory (ClearCurrentLayout).
-        /// 7. Создаём новый layout (DockFactory создаст нужные модули сам).
+        /// Данные модулей сохраняются в project.ModulesData (память) и кеш удаляется ДО CreateLayout.
+        /// CreateLayout читает из project.ModulesData как fallback — нет зависимости от файла кеша.
+        /// Async-запись кеша происходит ПОСЛЕ CreateLayout — нет race condition с LoadCacheWithSession.
+        /// UI-поток не блокируется — фокус TextBox не сбрасывается накопленными событиями.
         /// </summary>
         public void SwitchWorkMode(WorkMode newMode)
         {
@@ -161,10 +158,13 @@ namespace Writersword.Infrastructure.Workspace
                 }
             }
 
-            // Сохраняем все живые модули в кеш на диск синхронно ДО разрушения layout.
-            // Это гарантирует что данные любого модуля (TextEditor, Characters и т.д.)
-            // будут доступны при восстановлении следующего WorkMode через кеш.
-            // Модули без данных (Timer, Notes) просто не попадают в кеш — это нормально.
+            // Переменные для async-сохранения кеша объявлены здесь чтобы быть
+            // доступными после CreateLayout — Task.Run должен быть строго после него.
+            string? pendingCachePath = null;
+            string? pendingCacheProjectId = null;
+            Dictionary<string, object?>? pendingCustomData = null;
+            Dictionary<string, object?>? pendingSessionData = null;
+
             var allModulesNow = _tab.ModuleContext.GetAllModules();
             if (allModulesNow.Count > 0)
             {
@@ -175,11 +175,25 @@ namespace Writersword.Infrastructure.Workspace
                 if (customData.Count > 0)
                 {
                     var project = _tab.GetProject();
-                    // Синхронное сохранение — блокируем UI thread до завершения записи.
-                    // Без этого CreateLayout читает кеш до того как запись завершилась.
-                    cacheService.SaveCacheAsync(_projectPath, project.Id, customData, sessionData)
-                        .GetAwaiter().GetResult();
-                    _logger.LogDebug("Cache saved synchronously before WorkMode switch: {Count} modules", customData.Count);
+
+                    // Обновляем project.ModulesData в памяти.
+                    // CreateLayout использует это как fallback когда кеш недоступен —
+                    // модули получат актуальные данные без блокировки UI-потока.
+                    foreach (var kvp in customData)
+                        project.ModulesData[kvp.Key] = kvp.Value;
+
+                    // Удаляем устаревший кеш чтобы CreateLayout читал из project.ModulesData,
+                    // а не из файла с данными на 10 секунд старше только что собранных.
+                    cacheService.DeleteCache(_projectPath);
+
+                    // Запоминаем данные — Task.Run запустим ПОСЛЕ CreateLayout
+                    // чтобы избежать race condition с LoadCacheWithSession (IOException).
+                    pendingCachePath = _projectPath;
+                    pendingCacheProjectId = project.Id;
+                    pendingCustomData = customData;
+                    pendingSessionData = sessionData;
+
+                    _logger.LogDebug("Module data updated in-memory for WorkMode switch: {Count} modules", customData.Count);
                 }
                 else
                 {
@@ -196,7 +210,34 @@ namespace Writersword.Infrastructure.Workspace
             _dockFactory.DetachViewsFromLayout(_dockLayout);
             ClearModulesNotInNewWorkMode(newMode);
 
+            // CreateLayout читает кеш — к этому моменту он уже удалён,
+            // поэтому LoadCacheWithSession вернёт null и модули загрузятся
+            // из project.ModulesData (обновлён выше).
             _dockLayout = _dockFactory.CreateLayout(newMode, _tab);
+
+            // Async-сохранение СТРОГО ПОСЛЕ CreateLayout — здесь нет race condition.
+            // До CreateLayout Task.Run и LoadCacheWithSession конкурировали за .wsasd → IOException.
+            // GetAwaiter().GetResult() здесь замораживал UI на 100-500мс и ломал фокус TextBox.
+            if (pendingCustomData != null && pendingCachePath != null && pendingCacheProjectId != null)
+            {
+                var cacheServiceForSave = App.Services.GetRequiredService<IZipCacheService>();
+                var path = pendingCachePath;
+                var pid = pendingCacheProjectId;
+                var cd = pendingCustomData;
+                var sd = pendingSessionData;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await cacheServiceForSave.SaveCacheAsync(path, pid, cd, sd ?? new Dictionary<string, object?>());
+                        _logger.LogDebug("Cache saved async after WorkMode switch: {Count} modules", cd.Count);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Async cache save failed after WorkMode switch");
+                    }
+                });
+            }
 
             _dockFactory.OnModuleClosed = (moduleType) =>
             {

@@ -220,10 +220,13 @@ namespace Writersword.Infrastructure.Services.Storage
                     _logger.LogError("Cannot get ProjectId, aborting cache update");
                     return;
                 }
-
                 await _cacheService.SaveCacheAsync(projectPath, project.Id, customData, sessionData);
 
-                CacheSaved?.Invoke(this, EventArgs.Empty);
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    CacheSaved?.Invoke(this, EventArgs.Empty);
+                });
+
                 _logger.LogDebug("Cache updated: {Count} modules", customData.Count);
             }
             catch (Exception ex)

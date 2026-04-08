@@ -36,36 +36,23 @@ namespace Writersword.Infrastructure.Services.WorkModes
             _logger = App.Services.GetService<ILogger<WorkspaceAutoSaveService>>()!;
         }
 
-        /// <summary>
-        /// Запустить автосохранение для проекта
-        /// </summary>
         public void Start(string projectPath, ProjectFile project)
         {
             Stop();
-
             _currentProjectPath = projectPath;
             _currentProject = project;
-
             _logger.LogDebug("Started for: {ProjectPath}", projectPath);
         }
 
-        /// <summary>
-        /// Остановить автосохранение
-        /// </summary>
         public void Stop()
         {
             _debounceSubscription?.Dispose();
             _debounceSubscription = null;
-
             _currentProjectPath = null;
             _currentProject = null;
-
             _logger.LogDebug("Stopped");
         }
 
-        /// <summary>
-        /// Уведомить об изменении конфигурации — запускает debounce таймер
-        /// </summary>
         public void NotifyChange()
         {
             if (_isDisposed || _currentProject == null || _currentProjectPath == null)
@@ -81,9 +68,6 @@ namespace Writersword.Infrastructure.Services.WorkModes
             _logger.LogDebug("Change detected, will save in {Seconds} seconds", _debounceDelay.TotalSeconds);
         }
 
-        /// <summary>
-        /// Сохранить конфигурацию немедленно
-        /// </summary>
         public async Task SaveNowAsync()
         {
             if (_isDisposed || _currentProject == null || _currentProjectPath == null)
@@ -129,9 +113,6 @@ namespace Writersword.Infrastructure.Services.WorkModes
             }
         }
 
-        /// <summary>
-        /// Debounce-обработчик сохранения
-        /// </summary>
         private async void SaveConfiguration()
         {
             if (_isDisposed || _currentProject == null || _currentProjectPath == null)
@@ -263,7 +244,6 @@ namespace Writersword.Infrastructure.Services.WorkModes
                         };
 
                         workModesToSave.Add(activeToSave);
-
                         _logger.LogDebug("Active WorkMode: {Title} ({SlotsCount} slots)", wm.Title, updatedSlots.Count);
                     }
                     else
@@ -295,7 +275,6 @@ namespace Writersword.Infrastructure.Services.WorkModes
                         };
 
                         workModesToSave.Add(inactiveToSave);
-
                         _logger.LogDebug("Inactive WorkMode: {Title} ({SlotsCount} slots)", wm.Title, wm.ModuleSlots.Count);
                     }
                 }
@@ -382,7 +361,6 @@ namespace Writersword.Infrastructure.Services.WorkModes
 
             _isDisposed = true;
             Stop();
-
             _logger.LogDebug("Disposed");
         }
     }

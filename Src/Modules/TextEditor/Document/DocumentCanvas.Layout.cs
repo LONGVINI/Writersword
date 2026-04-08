@@ -2,6 +2,7 @@ using Serilog;
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Writersword.Core.Models.Rendering;
 using Writersword.Infrastructure.Rendering;
 using Writersword.Modules.TextEditor.Models.Document;
@@ -60,10 +61,11 @@ namespace Writersword.Modules.TextEditor.Document
                         + cellLayout.PadLeftPt + cellLayout.Borders.Left.WidthPt;
 
                     // Базовая Y ячейки относительно начала этого слайса на странице.
+                    bool isRowFrom = rowLayout.Row == rowFrom;
                     float cellBaseY = tableYPt + cellLayout.Ypt - rowOffsetY;
 
-                    // Для первой строки ByCell-продолжения сдвигаем текст вверх:
-                    // невидимая часть уезжает выше tableYPt и будет отсечена clipY.
+                    // Для всех строк в продолжении (включая строки после rowFrom)
+                    // контент смещён вверх на firstRowOffset.
                     float cellContentY = cellBaseY - firstRowOffset
                         + cellLayout.PadTopPt + cellLayout.Borders.Top.WidthPt;
 
@@ -77,9 +79,6 @@ namespace Writersword.Modules.TextEditor.Document
                     if (isContinuationFirstRow)
                     {
                         // Продолжение ByCell: видимая область начинается прямо от tableYPt.
-                        // Высота клипа = оставшаяся высота строки на этой странице.
-                        // Если строка ещё и разрывается снизу (средняя страница при 3+ разрывах),
-                        // lastRowVisibleH уже выражает высоту видимого окна — вычитать firstRowOffset не нужно.
                         float remaining = isByCellSplit
                             ? lastRowVisibleH
                             : rowLayout.HeightPt - firstRowOffset;
@@ -90,14 +89,16 @@ namespace Writersword.Modules.TextEditor.Document
                     else if (isByCellSplit)
                     {
                         // Последняя разорванная строка: ограничиваем снизу.
-                        clipY = cellBaseY + cellLayout.Borders.Top.WidthPt;
+                        // Для строк после rowFrom учитываем firstRowOffset в clipY.
+                        clipY = cellBaseY - firstRowOffset + cellLayout.Borders.Top.WidthPt;
                         clipH = Math.Max(0f, lastRowVisibleH
                             - cellLayout.Borders.Top.WidthPt - cellLayout.Borders.Bottom.WidthPt);
                     }
                     else
                     {
-                        // Обычная строка (в т.ч. merged cells): полная высота ячейки.
-                        clipY = cellBaseY + cellLayout.Borders.Top.WidthPt;
+                        // Обычная строка или строки после rowFrom в продолжении.
+                        // Для строк после rowFrom: clipY учитывает firstRowOffset.
+                        clipY = cellBaseY - firstRowOffset + cellLayout.Borders.Top.WidthPt;
                         clipH = Math.Max(0f, cellLayout.HeightPt
                             - cellLayout.Borders.Top.WidthPt - cellLayout.Borders.Bottom.WidthPt);
                     }
@@ -146,14 +147,28 @@ namespace Writersword.Modules.TextEditor.Document
                             "[CELLS]   pi={PI} cellContentY={CCY:F1} clipY={CY:F1} clipH={CH:F1} absParaY={APY:F1}",
                             pi, cellContentY, clipY, clipH, absParaY);
 
-                        // Последний параграф ячейки растягивается до нижнего края клип-прямоугольника.
-                        // Без этого у нижней части пустой ячейки Y-расстояние > 0 для всех параграфов
-                        // строки таблицы, и HitTest может выбрать параграф из соседней ячейки.
+                        // Параграфы ячейки должны покрывать весь Y-диапазон без зазоров.
+                        // Зазор возникает из-за SpaceBeforePt следующего параграфа: absParaY
+                        // включает SpaceBefore текущего, но HeightPt его не включает, поэтому
+                        // [absParaY + HeightPt .. nextAbsParaY] остаётся непокрытым.
+                        // Для промежуточных параграфов растягиваем высоту до nextAbsParaY.
+                        // Для последнего — до нижнего края клип-прямоугольника ячейки.
                         bool isLastInCell = (pi == cellLayout.Paragraphs.Count - 1);
                         float cellBottom = clipY + clipH;
-                        float paraHeight = isLastInCell
-                            ? Math.Max(cellPara.Layout.TotalHeightPt, cellBottom - absParaY)
-                            : cellPara.Layout.TotalHeightPt;
+                        float paraHeight;
+                        if (isLastInCell)
+                        {
+                            paraHeight = Math.Max(cellPara.Layout.TotalHeightPt, cellBottom - absParaY);
+                        }
+                        else
+                        {
+                            var nextCellPara = cellLayout.Paragraphs[pi + 1];
+                            float nextAbsParaY = cellContentY
+                                + contentOffsetY
+                                + nextCellPara.Ypt
+                                + nextCellPara.Layout.SpaceBeforePt;
+                            paraHeight = Math.Max(cellPara.Layout.TotalHeightPt, nextAbsParaY - absParaY);
+                        }
 
                         newLayouts.Add(new ParaLayout(
                             vm,
@@ -224,21 +239,10 @@ namespace Writersword.Modules.TextEditor.Document
                     bool byCell = tableBlock.SplitMode == TableSplitMode.ByCell;
                     float fullPageH = pageHeightPt - mt - mb;
 
-                    float tableAvailable = pageBottomPt - contentYPt;
-                    bool tableAtPageTop = contentYPt <= pageYPt + mt + 0.5f;
-                    if (!tableAtPageTop && tableLayout.TotalHeightPt > tableAvailable
-                        && tableLayout.TotalHeightPt <= fullPageH)
-                    {
-                        pageYPt = pageYPt + pageHeightPt + PageGapPt;
-                        pageBottomPt = pageYPt + pageHeightPt - mb;
-                        contentYPt = pageYPt + mt;
-                        pageIdx++;
-                        newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
-                    }
+                    // Таблица НИКОГДА не переносится целиком на другую страницу.
+                    // Она всегда начинается там где поставлена.
 
                     float sliceFirstRowOffset = 0f;
-                    // Offset первой строки текущего слайса — сохраняется при старте слайса,
-                    // не обнуляется в else-ветке (в отличие от sliceFirstRowOffset).
                     float sliceStartOffset = 0f;
                     int rowFrom = 0;
                     float sliceStartY = contentYPt;
@@ -263,12 +267,54 @@ namespace Writersword.Modules.TextEditor.Document
                             ri, row.HeightPt, sliceFirstRowOffset, effectiveH,
                             available, atPageTop, contentYPt, pageBottomPt);
 
-                        if (effectiveH > available && !atPageTop)
+                        if (effectiveH > available && (!atPageTop || sliceFirstRowOffset > 0f || effectiveH > fullPageH))
                         {
-                            if (byCell && available > 5f && effectiveH <= fullPageH)
+                            // Строка 0 всегда остаётся на месте — разрывается постранично (ByCell-стиль).
+                            // Строки 1+ в ByRow: переносятся целиком на следующую страницу.
+                            //   Исключение: если строка выше целой страницы — разрывается постранично.
+                            // Строки 1+ в ByCell: разрываются постранично.
+                            bool forceByCell = ri == 0 || byCell || effectiveH > fullPageH;
+
+                            if (forceByCell && available > 5f)
                             {
-                                // ByCell: видим часть строки ri, остаток на следующей странице
+                                // Разрыв по границе абзаца — находим последний абзац,
+                                // который целиком помещается в available.
+                                // Берём первую ячейку строки как референс высот параграфов.
                                 float visibleH = available;
+                                // Используем ячейку с наибольшим содержимым как референс для snap.
+                                // Cells[0] может быть пустой — тогда snap вернёт высоту пустого
+                                // параграфа (~23.5pt) и отрежет в неправильном месте.
+                                SKTableCellLayout? refCell = null;
+                                if (row.Cells.Count > 0)
+                                {
+                                    refCell = row.Cells[0];
+                                    for (int ci = 1; ci < row.Cells.Count; ci++)
+                                    {
+                                        if (row.Cells[ci].ContentHeightPt > refCell.ContentHeightPt)
+                                            refCell = row.Cells[ci];
+                                    }
+                                }
+                                if (refCell != null && refCell.Paragraphs.Count > 0)
+                                {
+                                    // para.Ypt в координатах контента ячейки (после PadTop+BorderTop).
+                                    // available и sliceFirstRowOffset — в координатах строки (от верха строки).
+                                    // Чтобы сравнивать в одних координатах добавляем cellPadTop.
+                                    float cellPadTop = refCell.PadTopPt + refCell.Borders.Top.WidthPt;
+                                    float paraSnapH = 0f;
+                                    foreach (var para in refCell.Paragraphs)
+                                    {
+                                        float paraBottom = cellPadTop
+                                            + para.Ypt + para.Layout.BlockHeightPt
+                                            - sliceFirstRowOffset;
+                                        if (paraBottom <= available)
+                                            paraSnapH = paraBottom;
+                                        else
+                                            break;
+                                    }
+                                    if (paraSnapH > 5f)
+                                        visibleH = paraSnapH;
+                                }
+
                                 float nextOffset = sliceFirstRowOffset + visibleH;
 
                                 _logger.Debug(
@@ -281,11 +327,11 @@ namespace Writersword.Modules.TextEditor.Document
                                     sliceStartY, tableXPt, pageIdx,
                                     RowFrom: rowFrom, RowTo: ri + 1,
                                     LastRowVisibleHeightPt: visibleH,
-                                    FirstRowContentOffsetPt: sliceFirstRowOffset,
+                                    FirstRowContentOffsetPt: sliceStartOffset,
                                     IsContinuation: !isFirstSlice));
                                 AddCellParasToLayouts(newLayouts, tableBlock, tableLayout,
                                     teIdx, tableXPt, sliceStartY, pageIdx,
-                                    rowFrom, ri + 1, sliceFirstRowOffset, visibleH);
+                                    rowFrom, ri + 1, sliceStartOffset, visibleH);
 
                                 pageYPt = pageYPt + pageHeightPt + PageGapPt;
                                 pageBottomPt = pageYPt + pageHeightPt - mb;
@@ -305,9 +351,9 @@ namespace Writersword.Modules.TextEditor.Document
                                 ri--;  // повторяем строку ri на новой странице
                                 continue;
                             }
-                            else
+                            else if (!forceByCell)
                             {
-                                // ByRow: строка ri целиком на следующую страницу
+                                // ByRow (строки 1+): переносим строку ri целиком на следующую страницу.
                                 _logger.Debug(
                                     "[TBL] BYROW-SPLIT ri={RI} sliceStartY={SSY:F1} rowFrom={RF} pageIdx={PI}",
                                     ri, sliceStartY, rowFrom, pageIdx);
@@ -337,6 +383,7 @@ namespace Writersword.Modules.TextEditor.Document
                                 sliceFirstRowOffset = 0f;
                                 isFirstSlice = false;
                             }
+                            // else: available <= 5f — нет места для разрыва, строка просто рендерится как есть
                         }
                         else
                         {

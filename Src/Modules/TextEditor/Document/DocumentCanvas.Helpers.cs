@@ -262,20 +262,24 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (Math.Abs(yDist - bestYDist) > 0.5f) continue; // не с минимальным Y
 
-                // Ширина текстовой зоны: для ячейки — ширина ячейки из CellInfo,
-                // для параграфа — полная ширина через layout.
-                float layoutW;
+                // Для ячейки используем полный X-диапазон clip-прямоугольника (включая границы),
+                // иначе клик в области границы между ячейками даёт xDist>0 для всех
+                // и выигрывает всегда крайняя левая ячейка.
+                float xLeft, xRight;
                 if (pl.Cell != null)
-                    layoutW = pl.Cell.ClipW;  // ширина клип-прямоугольника ячейки
+                {
+                    xLeft = pl.Cell.ClipX;
+                    xRight = pl.Cell.ClipX + pl.Cell.ClipW;
+                }
                 else
-                    layoutW = pl.Layout.LeftIndentPt + pl.Layout.RightIndentPt
-                              + (pl.Layout.Lines.Count > 0
-                                  ? pl.Layout.Lines.Max(l => l.Segments.Count > 0
-                                      ? l.Segments[^1].X + l.Segments[^1].Width : 0f)
-                                  : 100f);
+                {
+                    xLeft = pl.AbsXPt;
+                    xRight = pl.AbsXPt + (pl.Layout.Lines.Count > 0
+                        ? pl.Layout.Lines.Max(l => l.Segments.Count > 0
+                            ? l.Segments[^1].X + l.Segments[^1].Width : 0f)
+                        : 100f);
+                }
 
-                float xLeft = pl.AbsXPt;
-                float xRight = pl.AbsXPt + layoutW;
                 float xDist = xPt < xLeft ? xLeft - xPt
                              : xPt > xRight ? xPt - xRight
                              : 0f;
@@ -401,8 +405,18 @@ namespace Writersword.Modules.TextEditor.Document
                 double zoom = Zoom;
                 var pl = _layouts[_caretPara];
 
-                // Якорный параграф у края таблицы — не прокручиваем к нему.
-                if (string.IsNullOrEmpty(pl.Vm.PlainText)) return;
+                // Пустой якорь у края таблицы — не прокручиваем.
+                // Пустой якорь разрыва страницы — прокручиваем по Ypt параграфа.
+                if (string.IsNullOrEmpty(pl.Vm.PlainText))
+                {
+                    if (pl.Cell is null && IsBreakAnchor(pl.Vm.Model))
+                    {
+                        double yPx = pl.Ypt * PtToPx * zoom;
+                        double hPx = FallbackLinePt * PtToPx * zoom;
+                        this.BringIntoView(new Rect(0, yPx - 10, 20, hPx + 20));
+                    }
+                    return;
+                }
 
                 int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
                 var caret = pl.Layout.HitTestPosition(pos);
@@ -412,10 +426,53 @@ namespace Writersword.Modules.TextEditor.Document
 
                 // Используем AbsXPt который одинаково правильный для ячеек и параграфов
                 double xPx = (pl.AbsXPt + caret.X) * PtToPx * zoom;
-                double yPx = (pl.Ypt + (caret.Y - yBase)) * PtToPx * zoom;
-                double hPx = caret.Height * PtToPx * zoom;
+                double yPx2 = (pl.Ypt + (caret.Y - yBase)) * PtToPx * zoom;
+                double hPx2 = caret.Height * PtToPx * zoom;
 
-                this.BringIntoView(new Rect(xPx - 10, yPx - 10, 20, hPx + 20));
+                this.BringIntoView(new Rect(xPx - 10, yPx2 - 10, 20, hPx2 + 20));
+            }, DispatcherPriority.Render);
+        }
+
+        /// <summary>
+        /// Центрирует каретку вертикально в видимой области viewport.
+        /// Используется при навигации с большим прыжком (вставка разрыва страницы и т.п.)
+        /// чтобы каретка не оказывалась на самом краю экрана.
+        /// </summary>
+        private void ScrollToCenterCaret()
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_parentScrollViewer is null) return;
+                if (_caretPara < 0 || _caretPara >= _layouts.Count) return;
+
+                double zoom = Zoom;
+                var pl = _layouts[_caretPara];
+
+                double caretYPx;
+                double caretHPx;
+
+                if (string.IsNullOrEmpty(pl.Vm.PlainText))
+                {
+                    caretYPx = pl.Ypt * PtToPx * zoom;
+                    caretHPx = FallbackLinePt * PtToPx * zoom;
+                }
+                else
+                {
+                    int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
+                    var caret = pl.Layout.HitTestPosition(pos);
+                    float yBase = pl.LineFrom < pl.Layout.Lines.Count
+                        ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
+                    caretYPx = (pl.Ypt + (caret.Y - yBase)) * PtToPx * zoom;
+                    caretHPx = caret.Height * PtToPx * zoom;
+                }
+
+                double viewportH = _parentScrollViewer.Viewport.Height;
+                double targetOffsetY = caretYPx + caretHPx / 2.0 - viewportH / 2.0;
+                targetOffsetY = Math.Max(0, targetOffsetY);
+
+                _parentScrollViewer.Offset = new Avalonia.Vector(
+                    _parentScrollViewer.Offset.X, targetOffsetY);
+
             }, DispatcherPriority.Render);
         }
 
@@ -434,9 +491,28 @@ namespace Writersword.Modules.TextEditor.Document
             if (paragraphIndex < 0 || DocVm is null) return 0;
             if (paragraphIndex >= DocVm.Paragraphs.Count) return _layouts.Count - 1;
             var target = DocVm.Paragraphs[paragraphIndex];
+            int first = -1;
             for (int i = 0; i < _layouts.Count; i++)
-                if (_layouts[i].Vm == target) return i;
-            return 0;
+            {
+                if (_layouts[i].Vm != target) continue;
+                if (first < 0) first = i;
+
+                // Для ячеек таблицы выбираем слайс, в котором каретка (по символу _caretChar)
+                // попадает в видимый clip-прямоугольник. Это предотвращает невидимую каретку
+                // когда параграф ячейки разорван на несколько страниц.
+                var pl = _layouts[i];
+                if (pl.Cell != null)
+                {
+                    var caret = pl.Layout.HitTestPosition(Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0));
+                    float yBase = pl.LineFrom < pl.Layout.Lines.Count ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
+                    float caretAbsY = pl.Ypt + (caret.Y - yBase);
+                    float clipTop = pl.Cell.ClipY;
+                    float clipBot = pl.Cell.ClipY + pl.Cell.ClipH;
+                    if (caretAbsY >= clipTop - 0.5f && caretAbsY < clipBot + 0.5f)
+                        return i;
+                }
+            }
+            return first >= 0 ? first : 0;
         }
 
         private void InvalidateFull()
@@ -470,6 +546,32 @@ namespace Writersword.Modules.TextEditor.Document
             var blocks = DocVm.Document.Sections[0].Blocks;
             int idx = blocks.IndexOf(block);
             return idx > 0 && blocks[idx - 1] is TableBlock;
+        }
+
+        /// <summary>
+        /// Возвращает true если block — пустой параграф расположенный сразу перед TableBlock.
+        /// Такие параграфы защищены от удаления: Backspace должен удалять символ в предыдущем
+        /// параграфе, а не сам якорь.
+        /// </summary>
+        private bool IsBlockBeforeTable(BlockModel block)
+        {
+            if (DocVm is null) return false;
+            var blocks = DocVm.Document.Sections[0].Blocks;
+            int idx = blocks.IndexOf(block);
+            return idx >= 0 && idx + 1 < blocks.Count && blocks[idx + 1] is TableBlock;
+        }
+
+        /// <summary>
+        /// Возвращает true если block — пустой параграф-якорь расположенный сразу после BreakBlock
+        /// с типом Page. Такие параграфы являются единственным способом выделить и удалить разрыв
+        /// страницы: Backspace в начале якоря удаляет и якорь, и сам BreakBlock.
+        /// </summary>
+        private bool IsBreakAnchor(BlockModel block)
+        {
+            if (DocVm is null) return false;
+            var blocks = DocVm.Document.Sections[0].Blocks;
+            int idx = blocks.IndexOf(block);
+            return idx > 0 && blocks[idx - 1] is BreakBlock { BreakType: BreakType.Page };
         }
 
         private void UpdateSelectionContext()

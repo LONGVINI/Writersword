@@ -3,7 +3,7 @@
              xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
              xmlns:models="using:Writersword.Modules.Characters.Models"
              xmlns:enums="using:Writersword.Modules.Characters.Models.Enums"
-             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              xmlns:conv="using:Writersword.Modules.Characters.Converters"
              x:Class="Writersword.Modules.Characters.Views.Card.Tabs.CharacterParametersTabView"
              x:DataType="tabs:CharacterParametersTabViewModel">

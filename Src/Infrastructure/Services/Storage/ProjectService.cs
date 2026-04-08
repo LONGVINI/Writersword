@@ -13,9 +13,13 @@ using Writersword.Infrastructure.Services.Project;
 namespace Writersword.Infrastructure.Services.Storage
 {
     /// <summary>
-    /// Реализация сервиса работы с проектами
-    /// Каждая вкладка = отдельный проект
-    /// Теперь работает с ZIP архивами вместо JSON
+    /// Реализация сервиса работы с проектами.
+    /// Каждая вкладка = отдельный проект.
+    /// Работает с ZIP архивами через ZipProjectService.
+    ///
+    /// Исправлено: словарь _projectPaths теперь индексируется по project.Id,
+    /// а не по project.Title — иначе два проекта с одинаковым названием
+    /// перезаписывали бы запись друг друга.
     /// </summary>
     public class ProjectService : IProjectService
     {
@@ -24,7 +28,8 @@ namespace Writersword.Infrastructure.Services.Storage
         // Список всех открытых проектов
         private readonly List<ProjectFile> _openProjects = new List<ProjectFile>();
 
-        // Соответствие: ID проекта -> путь к файлу
+        // Соответствие: ID проекта → путь к файлу
+        // Ключ — project.Id (GUID), не project.Title
         private readonly Dictionary<string, string> _projectPaths = new Dictionary<string, string>();
 
         private readonly ZipProjectService _zipService;
@@ -44,13 +49,13 @@ namespace Writersword.Infrastructure.Services.Storage
             var projectId = _projectPaths.FirstOrDefault(x => x.Value == filePath).Key;
             if (projectId == null) return null;
 
-            return _openProjects.FirstOrDefault(p => p.Title == projectId);
+            return _openProjects.FirstOrDefault(p => p.Id == projectId);
         }
 
         /// <summary>Получить путь к файлу проекта</summary>
         public string? GetProjectPath(ProjectFile project)
         {
-            return _projectPaths.TryGetValue(project.Title, out var path) ? path : null;
+            return _projectPaths.TryGetValue(project.Id, out var path) ? path : null;
         }
 
         /// <summary>Создать новый проект</summary>
@@ -87,7 +92,7 @@ namespace Writersword.Infrastructure.Services.Storage
                 {
                     _logger.LogDebug("Project already loaded, RE-LOADING from file");
                     _openProjects.Remove(existing);
-                    _projectPaths.Remove(existing.Title);
+                    _projectPaths.Remove(existing.Id);
                 }
 
                 // Загружаем через ZipProjectService
@@ -99,7 +104,7 @@ namespace Writersword.Infrastructure.Services.Storage
 
                     // Добавляем в список открытых проектов
                     _openProjects.Add(project);
-                    _projectPaths[project.Title] = filePath;
+                    _projectPaths[project.Id] = filePath;
                 }
                 else
                 {
@@ -136,13 +141,13 @@ namespace Writersword.Infrastructure.Services.Storage
 
                 _logger.LogDebug("Project saved to: {FilePath}", filePath);
 
-                // Удаляем старый проект с таким же путём
+                // Удаляем старый проект с таким же путём (если это другой объект)
                 var existingProject = GetProjectByPath(filePath);
                 if (existingProject != null && existingProject != project)
                 {
                     _logger.LogDebug("Removing old project from cache: {OldProjectTitle}", existingProject.Title);
                     _openProjects.Remove(existingProject);
-                    _projectPaths.Remove(existingProject.Title);
+                    _projectPaths.Remove(existingProject.Id);
                 }
 
                 // Добавляем в список открытых проектов если его там нет
@@ -152,7 +157,7 @@ namespace Writersword.Infrastructure.Services.Storage
                 }
 
                 // Обновляем путь к файлу
-                _projectPaths[project.Title] = filePath;
+                _projectPaths[project.Id] = filePath;
 
                 return true;
             }
@@ -167,7 +172,7 @@ namespace Writersword.Infrastructure.Services.Storage
         public void CloseProject(ProjectFile project)
         {
             _openProjects.Remove(project);
-            _projectPaths.Remove(project.Title);
+            _projectPaths.Remove(project.Id);
         }
     }
 }

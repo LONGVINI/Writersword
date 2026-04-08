@@ -1,0 +1,112 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.Characters.ViewModels"
+             xmlns:views="using:Writersword.Modules.Characters.Views"
+             xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
+             x:Class="Writersword.Modules.Characters.Views.Tabs.CharacterEditView"
+             x:DataType="vm:CharactersViewModel">
+
+    <Grid ColumnDefinitions="240,*">
+
+        <Border Grid.Column="0"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                BorderThickness="0,0,1,0">
+            <Grid RowDefinitions="Auto,*"
+                  Background="{DynamicResource BgPanelBrush}">
+                <Border Grid.Row="0" Padding="8,8"
+                        BorderBrush="{DynamicResource BorderDefaultBrush}"
+                        BorderThickness="0,0,0,1">
+                    <TextBox Text="{ReflectionBinding SearchQuery}"
+                             Watermark="{x:Static loc:CharactersStrings.Search_Placeholder}"
+                             FontSize="12"
+                             Background="{DynamicResource BgSurfaceBrush}"
+                             Foreground="{DynamicResource TextPrimaryBrush}"
+                             BorderBrush="{DynamicResource BorderDefaultBrush}"
+                             BorderThickness="1" CornerRadius="6" Padding="7,5"/>
+                </Border>
+                <ScrollViewer Grid.Row="1">
+                    <ItemsControl ItemsSource="{Binding FilteredCharacters}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
+                                        CommandParameter="{Binding Id}"
+                                        Background="Transparent" BorderThickness="0"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Stretch"
+                                        Padding="0">
+                                    <Grid ColumnDefinitions="4,34,*" MinHeight="52">
+                                        <Border Grid.Column="0" Background="{Binding Color}"/>
+                                        <Border Grid.Column="1"
+                                                Width="24" Height="24" CornerRadius="12"
+                                                Background="{Binding Color}" Margin="5,0">
+                                            <TextBlock Text="{Binding FallbackIcon}"
+                                                       FontSize="12"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="White"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="2"
+                                                    Margin="0,8,8,8"
+                                                    VerticalAlignment="Center" Spacing="2">
+                                            <TextBlock Text="{Binding Name}"
+                                                       FontSize="12" FontWeight="Medium"
+                                                       MaxLines="2"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="{Binding ShortDescription}"
+                                                       FontSize="10"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       IsVisible="{Binding ShortDescription,
+                                                           Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <Panel Grid.Column="1">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8"
+                        IsVisible="{Binding !IsCardOpen}">
+                <TextBlock Text="{x:Static loc:CharactersStrings.Placeholder_SelectCharacter}"
+                           FontSize="14"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+            <Grid RowDefinitions="Auto,*"
+                  IsVisible="{Binding IsCardOpen, FallbackValue=False}">
+                <Border Grid.Row="0" Padding="12,8"
+                        BorderBrush="{DynamicResource BorderDefaultBrush}"
+                        BorderThickness="0,0,0,1"
+                        Background="{DynamicResource BgPanelBrush}">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <Border Grid.Column="0"
+                                Width="12" Height="12" CornerRadius="6"
+                                Background="{Binding SelectedCharacterCard.Color, FallbackValue='#607D8B'}"
+                                VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding SelectedCharacterCard.DisplayName, FallbackValue=''}"
+                                   FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <Button Grid.Column="2"
+                                Content="{x:Static loc:CharactersStrings.Button_Save}"
+                                Command="{Binding SelectedCharacterCard.SaveCommand}"
+                                FontSize="11" Padding="10,4"
+                                Background="{DynamicResource AccentDefaultBrush}"
+                                Foreground="White" CornerRadius="6"/>
+                    </Grid>
+                </Border>
+                <views:CharacterCardView Grid.Row="1"
+                                         DataContext="{Binding SelectedCharacterCard}"
+                                         Background="{DynamicResource BgSurfaceBrush}"/>
+            </Grid>
+        </Panel>
+    </Grid>
+</UserControl>

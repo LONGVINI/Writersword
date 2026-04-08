@@ -51,6 +51,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Action? TableDeleteColDelegate { get; set; }
         public Action? TableDeleteDelegate { get; set; }
 
+        /// <summary>
+        /// Вызывается после вставки разрыва страницы с блоком-якорём новой страницы.
+        /// DocumentCanvas подписывается и откладывает переход каретки до конца rebuild.
+        /// </summary>
+        public Action<ParagraphBlock>? OnPageBreakInserted { get; set; }
+
         // ── Делегат сдвига левого края таблицы ───────────────────────────
         /// <summary>
         /// Устанавливается DocumentCanvas при входе каретки в таблицу.
@@ -423,7 +429,26 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertImage(string filePath) { }
         public void InsertShape(ShapeType st) { }
         public void InsertFloatingTextBox() { }
-        public void InsertPageBreak() => InsertBlock(new BreakBlock { BreakType = BreakType.Page });
+        public void InsertPageBreak()
+        {
+            InsertBlock(new BreakBlock { BreakType = BreakType.Page });
+            NormalizeBreakAnchors();
+
+            // Уведомляем DocumentCanvas о том какой якорь нужно сфокусировать.
+            // Canvas применит переход ПОСЛЕ перестройки _layouts, поэтому
+            // прямой вызов RequestFocusAtPosition здесь не подходит — _layouts ещё старые.
+            if (_document.Sections.Count == 0) return;
+            var blocks = _document.Sections[0].Blocks;
+            for (int i = 0; i < blocks.Count - 1; i++)
+            {
+                if (blocks[i] is not BreakBlock { BreakType: BreakType.Page }) continue;
+                if (blocks[i + 1] is ParagraphBlock anchorBlock)
+                {
+                    OnPageBreakInserted?.Invoke(anchorBlock);
+                    break;
+                }
+            }
+        }
         public void InsertSectionBreak(BreakType t) => InsertBlock(new BreakBlock { BreakType = t });
         public void InsertFootnote() => AddAnnotation(InlineAnnotationType.Footnote);
         public void InsertEndnote() => AddAnnotation(InlineAnnotationType.Endnote);
@@ -786,14 +811,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 if (idx >= 0)
                 {
                     section.Blocks.Insert(idx + 1, block);
-                    NormalizeTableAnchors();
                     RebuildParagraphViewModels();
                     return;
                 }
             }
 
             section.Blocks.Add(block);
-            NormalizeTableAnchors();
             RebuildParagraphViewModels();
         }
 
@@ -813,21 +836,68 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 if (blocks[i] is not TableBlock) continue;
 
-                // Якорь после таблицы: нужен пустой параграф (без chunks).
+                // Якорь после таблицы: пустой ParagraphBlock (текст пустой).
+                // Проверяем через GetPlainText() — Chunks.Count всегда >= 1 даже у нового блока.
                 bool hasAfter = i + 1 < blocks.Count
                     && blocks[i + 1] is ParagraphBlock afterPb
-                    && afterPb.Chunks.Count == 0;
+                    && string.IsNullOrEmpty(afterPb.GetPlainText());
                 if (!hasAfter)
                     blocks.Insert(i + 1, new ParagraphBlock());
 
-                // Якорь перед таблицей: нужен пустой параграф (без chunks).
+                // Якорь перед таблицей: пустой ParagraphBlock.
                 // Обычный параграф с текстом не считается якорем.
                 bool hasBefore = i > 0
                     && blocks[i - 1] is ParagraphBlock beforePb
-                    && beforePb.Chunks.Count == 0;
+                    && string.IsNullOrEmpty(beforePb.GetPlainText());
                 if (!hasBefore)
                     blocks.Insert(i, new ParagraphBlock());
             }
+        }
+
+        private void NormalizeBreakAnchors()
+        {
+            if (_document.Sections.Count == 0) return;
+            var blocks = _document.Sections[0].Blocks;
+
+            // Проходим с конца чтобы Insert не сдвигал ещё не обработанные индексы.
+            for (int i = blocks.Count - 1; i >= 0; i--)
+            {
+                if (blocks[i] is not BreakBlock { BreakType: BreakType.Page }) continue;
+
+                // Якорь нужен только если после разрыва вообще нет параграфа
+                // (разрыв в конце документа или за ним стоит не-параграф блок).
+                // Если параграф уже есть — он и будет якорём: Backspace в его начале
+                // вызовет DeleteBreakWithAnchor через IsBreakAnchor.
+                bool hasFollowingParagraph = i + 1 < blocks.Count
+                    && blocks[i + 1] is ParagraphBlock;
+                if (!hasFollowingParagraph)
+                    blocks.Insert(i + 1, new ParagraphBlock());
+            }
+        }
+
+        /// <summary>
+        /// Удаляет разрыв страницы вместе с его параграфом-якорем.
+        /// Вызывается из DocumentCanvas при Backspace в начале якоря
+        /// или при Delete в конце параграфа непосредственно перед разрывом.
+        /// </summary>
+        public void DeleteBreakWithAnchor(ParagraphViewModel anchor)
+        {
+            var blocks = _document.Sections[0].Blocks;
+            int anchorIdx = blocks.IndexOf(anchor.Model);
+            if (anchorIdx <= 0 || blocks[anchorIdx - 1] is not BreakBlock) return;
+
+            // Удаляем сначала якорь (больший индекс), потом разрыв (меньший).
+            blocks.RemoveAt(anchorIdx);
+            blocks.RemoveAt(anchorIdx - 1);
+
+            int vmIdx = Paragraphs.IndexOf(anchor);
+            if (vmIdx >= 0) Paragraphs.RemoveAt(vmIdx);
+
+            // Перемещаем каретку в конец предыдущего параграфа.
+            int focusIdx = Math.Max(0, vmIdx - 1);
+            if (focusIdx < Paragraphs.Count)
+                Paragraphs[focusIdx].RequestFocusAtPosition?.Invoke(
+                    Paragraphs[focusIdx].PlainText?.Length ?? 0);
         }
 
         private void AddAnnotation(
@@ -877,6 +947,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private void RebuildParagraphViewModels()
         {
             NormalizeTableAnchors();
+            NormalizeBreakAnchors();
             Paragraphs.Clear();
             if (_document.Sections.Count == 0) return;
             foreach (var block in _document.Sections[0].Blocks)
@@ -892,16 +963,22 @@ namespace Writersword.Modules.TextEditor.ViewModels
             int firstIdx = Paragraphs.IndexOf(toDelete[0]);
             int focusIdx = Math.Max(0, firstIdx - 1);
 
+            var blocks = _document.Sections[0].Blocks;
             foreach (var pvm in toDelete)
             {
-                _document.Sections[0].Blocks.Remove(pvm.Model);
+                // Если удаляемый параграф — якорь разрыва страницы, удаляем и сам BreakBlock.
+                int blockIdx = blocks.IndexOf(pvm.Model);
+                if (blockIdx > 0 && blocks[blockIdx - 1] is BreakBlock { BreakType: BreakType.Page })
+                    blocks.RemoveAt(blockIdx - 1);  // BreakBlock удалён; якорь сместился на -1
+
+                blocks.Remove(pvm.Model);
                 Paragraphs.Remove(pvm);
             }
 
             if (Paragraphs.Count == 0)
             {
                 var empty = new ParagraphBlock();
-                _document.Sections[0].Blocks.Add(empty);
+                blocks.Add(empty);
                 Paragraphs.Add(CreateParagraphViewModel(empty));
             }
 

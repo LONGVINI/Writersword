@@ -2,7 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels"
              xmlns:tabs="using:Writersword.Modules.Characters.Views.Card.Tabs"
-             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              x:Class="Writersword.Modules.Characters.Views.CharacterCardView"
              x:DataType="vm:CharacterCardViewModel">
 

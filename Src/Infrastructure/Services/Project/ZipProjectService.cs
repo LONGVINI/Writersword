@@ -13,11 +13,11 @@ using Writersword.Shared.Helpers;
 namespace Writersword.Infrastructure.Services.Project
 {
     /// <summary>
-    /// ������ ��� ������ � ��������� � ������� ZIP
-    /// �� ���������� ��������� ����� � �������� � ZIP ��������
-    /// �������� ������ �� project.json � modules/*.json
-    /// workspace.json ����������� ����� IWorkspaceConfigService
-    /// ���� ������ ������ � moduleType (������), �� InstanceId
+    /// Сервис для работы с проектами в формате ZIP.
+    /// Не управляет открытыми файлами и папками в ZIP архиве.
+    /// Управляет только project.json и modules/*.json.
+    /// workspace.json управляется через IWorkspaceConfigService.
+    /// Ключ данных модуля — moduleType (строка), не InstanceId.
     /// </summary>
     public class ZipProjectService
     {
@@ -29,8 +29,18 @@ namespace Writersword.Infrastructure.Services.Project
         }
 
         /// <summary>
-        /// ��������� ������ � ZIP �����
-        /// ������ ����� ZIP ��� ��������� ������������
+        /// Сохранить проект в ZIP файл.
+        ///
+        /// Алгоритм атомарной записи:
+        ///   1. Пишем во временный файл (.tmp).
+        ///   2. В новый архив сначала копируем все файлы из СТАРОГО архива,
+        ///      которыми этот метод НЕ управляет (workspace.json, local_settings/*, и т.д.).
+        ///   3. Затем записываем/перезаписываем управляемые файлы:
+        ///      project.json, modules/*/Metadata.json, modules/*/CustomData.json.
+        ///   4. Атомарно заменяем целевой файл временным.
+        ///
+        /// Это гарантирует что workspace.json и local_settings/*.json
+        /// не теряются при каждом Ctrl+S.
         /// </summary>
         public async Task<bool> SaveToZipAsync(ProjectFile project, string filePath)
         {
@@ -42,9 +52,6 @@ namespace Writersword.Infrastructure.Services.Project
                 if (!string.IsNullOrEmpty(directory))
                     Directory.CreateDirectory(directory);
 
-                // Атомарная запись через временный файл: сначала пишем во временный файл,
-                // затем атомарно заменяем целевой файл. Это гарантирует что при любом сбое
-                // в процессе записи оригинальный файл остаётся нетронутым.
                 string tempPath = filePath + ".tmp";
 
                 _logger.LogDebug("Writing to temp file: {TempPath}", tempPath);
@@ -52,6 +59,55 @@ namespace Writersword.Infrastructure.Services.Project
                 using (var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.ReadWrite))
                 using (var archive = new ZipArchive(fileStream, ZipArchiveMode.Create))
                 {
+                    // ── Шаг 1: Копируем все «посторонние» файлы из старого ZIP ──────────────
+                    // К ним относятся: workspace.json, local_settings/*.json и любые другие
+                    // файлы, которые пишутся через ZipFileStorageService (WorkspaceConfigService,
+                    // LocalSettingsStorageService и т.д.).
+                    // Без этого шага все настройки layout и локальные настройки модулей
+                    // уничтожались при каждом сохранении проекта.
+                    if (File.Exists(filePath))
+                    {
+                        try
+                        {
+                            using var oldStream = new FileStream(
+                                filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                            using var oldArchive = new ZipArchive(oldStream, ZipArchiveMode.Read);
+
+                            foreach (var entry in oldArchive.Entries)
+                            {
+                                // Пропускаем файлы, которыми управляет этот метод —
+                                // они будут записаны заново ниже.
+                                bool isManagedByUs =
+                                    entry.FullName.Equals("project.json",
+                                        StringComparison.OrdinalIgnoreCase) ||
+                                    entry.FullName.StartsWith("modules/",
+                                        StringComparison.OrdinalIgnoreCase);
+
+                                if (isManagedByUs)
+                                    continue;
+
+                                // Копируем «посторонний» файл как есть.
+                                var newEntry = archive.CreateEntry(
+                                    entry.FullName, CompressionLevel.Optimal);
+
+                                await using var src = entry.Open();
+                                await using var dst = newEntry.Open();
+                                await src.CopyToAsync(dst);
+
+                                _logger.LogDebug("Preserved extra file: {Entry}", entry.FullName);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            // Если не удалось прочитать старый архив — продолжаем без копирования.
+                            // Это лучше чем потерять весь проект.
+                            _logger.LogWarning(ex,
+                                "Could not read old ZIP for extra-file preservation: {FilePath}",
+                                filePath);
+                        }
+                    }
+
+                    // ── Шаг 2: Записываем project.json ───────────────────────────────────────
                     var projectMeta = new
                     {
                         project.Title,
@@ -63,14 +119,15 @@ namespace Writersword.Infrastructure.Services.Project
                     };
 
                     var projectJson = JsonHelper.Serialize(projectMeta);
-                    var newProjectEntry = archive.CreateEntry("project.json", CompressionLevel.Optimal);
-                    using (var writer = new StreamWriter(newProjectEntry.Open()))
+                    var projectEntry = archive.CreateEntry("project.json", CompressionLevel.Optimal);
+                    using (var writer = new StreamWriter(projectEntry.Open()))
                     {
                         await writer.WriteAsync(projectJson);
                     }
 
                     _logger.LogDebug("Saved project.json");
 
+                    // ── Шаг 3: Записываем данные модулей ─────────────────────────────────────
                     foreach (var moduleEntry in project.ModulesData)
                     {
                         var moduleType = moduleEntry.Key;
@@ -104,7 +161,9 @@ namespace Writersword.Infrastructure.Services.Project
                     }
                 }
 
-                // Запись завершена успешно — заменяем целевой файл атомарно.
+                // ── Шаг 4: Атомарно заменяем целевой файл ────────────────────────────────
+                // Запись завершена успешно — только теперь заменяем оригинал.
+                // При любом сбое выше оригинальный файл остаётся нетронутым.
                 File.Move(tempPath, filePath, overwrite: true);
 
                 var fileSize = new FileInfo(filePath).Length / 1024;
@@ -130,8 +189,8 @@ namespace Writersword.Infrastructure.Services.Project
         }
 
         /// <summary>
-        /// ��������� ������ �� ZIP ������
-        /// ������ ���������� � ������ ������� �������� �� ZIP
+        /// Загрузить проект из ZIP файла.
+        /// Загружает метаданные из project.json и данные модулей из modules/*.json.
         /// </summary>
         public async Task<ProjectFile?> LoadFromZipAsync(string filePath)
         {
@@ -194,7 +253,8 @@ namespace Writersword.Infrastructure.Services.Project
                         }
                     }
 
-                    _logger.LogDebug("Project loaded: {Title}, {Count} modules", project.Title, project.ModulesData.Count);
+                    _logger.LogDebug("Project loaded: {Title}, {Count} modules",
+                        project.Title, project.ModulesData.Count);
                     return project;
                 }
             }

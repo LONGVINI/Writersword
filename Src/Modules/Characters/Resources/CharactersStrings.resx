@@ -537,4 +537,68 @@
     <value>Unnamed</value>
     <comment>Default character name when inline naming is confirmed empty</comment>
   </data>
+  <data name="Folder_CreateButton" xml:space="preserve">
+    <value>+ Folder</value>
+    <comment>Button label in ribbon</comment>
+  </data>
+  <data name="Folder_CreateTooltip" xml:space="preserve">
+    <value>Create folder</value>
+    <comment>Tooltip on folder button</comment>
+  </data>
+  <data name="Folder_CommentTooltip" xml:space="preserve">
+    <value>Add comment</value>
+    <comment>Tooltip on empty comment</comment>
+  </data>
+  <data name="Folder_CommentPlaceholder" xml:space="preserve">
+    <value>comment...</value>
+    <comment>Watermark in comment textbox</comment>
+  </data>
+  <data name="Button_CreateCollectiveShort" xml:space="preserve">
+    <value>Group</value>
+    <comment>Short label on collective button</comment>
+  </data>
+  <data name="Character_EditTooltip" xml:space="preserve">
+    <value>Edit</value>
+    <comment>Tooltip on pencil button</comment>
+  </data>
+  <data name="Character_NamePlaceholder" xml:space="preserve">
+    <value>Unnamed</value>
+    <comment>Watermark in inline name textbox</comment>
+  </data>
+  <data name="Templates_FiltersHeader" xml:space="preserve">
+    <value>WHAT DO YOU NEED?</value>
+    <comment>Left panel header in Templates tab</comment>
+  </data>
+  <data name="Templates_BuiltInHeader" xml:space="preserve">
+    <value>BUILT-IN TEMPLATES</value>
+    <comment>Section header</comment>
+  </data>
+  <data name="Templates_CustomHeader" xml:space="preserve">
+    <value>MY TEMPLATES</value>
+    <comment>Section header</comment>
+  </data>
+  <data name="Templates_CreateCustom" xml:space="preserve">
+    <value>+ Create template</value>
+    <comment>Button</comment>
+  </data>
+  <data name="Templates_NoCustom" xml:space="preserve">
+    <value>No custom templates yet.</value>
+    <comment>Placeholder</comment>
+  </data>
+  <data name="Templates_Copy" xml:space="preserve">
+    <value>Copy</value>
+    <comment>Button on template card</comment>
+  </data>
+  <data name="Templates_Delete" xml:space="preserve">
+    <value>Delete</value>
+    <comment>Button on custom template</comment>
+  </data>
+  <data name="Templates_FieldCountSuffix" xml:space="preserve">
+    <value>parameters</value>
+    <comment>After field count number</comment>
+  </data>
+  <data name="Templates_RestartOnboarding" xml:space="preserve">
+    <value>Reconfigure...</value>
+    <comment>Hidden button at bottom</comment>
+  </data>
 </root>

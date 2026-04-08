@@ -3,13 +3,11 @@
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Onboarding"
              x:Class="Writersword.Modules.Characters.Views.Onboarding.CharactersOnboardingView"
              x:DataType="vm:CharactersOnboardingViewModel">
-
     <Border Background="{DynamicResource BgPanelBrush}"
             CornerRadius="12"
             Padding="28"
             BoxShadow="0 8 32 0 #AA000000">
         <StackPanel Spacing="20">
-
             <StackPanel Spacing="4">
                 <TextBlock Text="Настройка модуля Персонажи"
                            FontSize="18" FontWeight="Bold"
@@ -19,7 +17,6 @@
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            TextWrapping="Wrap"/>
             </StackPanel>
-
             <ItemsControl ItemsSource="{Binding Questions}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="vm:OnboardingQuestionViewModel">
@@ -47,7 +44,6 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-
             <Grid ColumnDefinitions="*,Auto,Auto">
                 <Button Grid.Column="1"
                         Content="Пропустить"
@@ -65,7 +61,6 @@
                         Background="{DynamicResource AccentDefaultBrush}"
                         Foreground="White" CornerRadius="4"/>
             </Grid>
-
         </StackPanel>
     </Border>
 </UserControl>

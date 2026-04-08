@@ -41,24 +41,32 @@ namespace Writersword.Modules.TextEditor.Document
                 var te = tables[ti];
                 float tX = te.XPt;
                 float tY = te.Ypt;
-                float tH = te.Layout.TotalHeightPt;
                 float tW = te.Layout.TotalWidthPt;
                 float r = TableLineHitPt;
 
-                // Грубая проверка — вне таблицы совсем
-                if (yPt < tY - r || yPt > tY + tH + r) continue;
+                // Вычисляем реальную высоту слайса (не полную высоту таблицы).
+                int effectiveRowTo = te.RowTo < 0 ? te.Layout.Rows.Count : te.RowTo;
+                float sliceH = 0f;
+                for (int ri = te.RowFrom; ri < effectiveRowTo && ri < te.Layout.Rows.Count; ri++)
+                {
+                    float rowH = te.Layout.Rows[ri].HeightPt;
+                    if (ri == te.RowFrom) rowH -= te.FirstRowContentOffsetPt;
+                    if (ri == effectiveRowTo - 1 && te.LastRowVisibleHeightPt >= 0f)
+                        rowH = te.LastRowVisibleHeightPt;
+                    sliceH += rowH;
+                }
+
+                // Грубая проверка по слайсу.
+                if (yPt < tY - r || yPt > tY + sliceH + r) continue;
                 if (xPt < tX - r || xPt > tX + tW + r) continue;
 
-                // Вертикальные линии — только если курсор НА линии по X
-                // И внутри вертикального диапазона таблицы по Y
-                bool onTableY = yPt >= tY - r && yPt <= tY + tH + r;
+                // Вертикальные линии (ColResize, TableMove) — по всей высоте слайса.
+                bool onTableY = yPt >= tY - r && yPt <= tY + sliceH + r;
                 if (onTableY)
                 {
-                    // Левый край таблицы
                     if (Math.Abs(xPt - tX) <= r)
                         return new TableHandleHit { Type = TableHandleType.TableMove, EntryIdx = ti };
 
-                    // Правые края колонок
                     float accX = tX;
                     for (int i = 0; i < te.Layout.ColumnWidthsPt.Count; i++)
                     {
@@ -73,21 +81,24 @@ namespace Writersword.Modules.TextEditor.Document
                     }
                 }
 
-                // Горизонтальные линии — только если курсор НА линии по Y
-                // И внутри горизонтального диапазона таблицы по X
+                // Горизонтальные линии (RowResize) — позиции строк с учётом смещения слайса.
                 bool onTableX = xPt >= tX - r && xPt <= tX + tW + r;
                 if (onTableX)
                 {
                     float accY = tY;
-                    foreach (var row in te.Layout.Rows)
+                    for (int ri = te.RowFrom; ri < effectiveRowTo && ri < te.Layout.Rows.Count; ri++)
                     {
-                        accY += row.HeightPt;
+                        float rowH = te.Layout.Rows[ri].HeightPt;
+                        if (ri == te.RowFrom) rowH -= te.FirstRowContentOffsetPt;
+                        if (ri == effectiveRowTo - 1 && te.LastRowVisibleHeightPt >= 0f)
+                            rowH = te.LastRowVisibleHeightPt;
+                        accY += rowH;
                         if (Math.Abs(yPt - accY) <= r)
                             return new TableHandleHit
                             {
                                 Type = TableHandleType.RowResize,
                                 EntryIdx = ti,
-                                ColIndex = row.Row
+                                ColIndex = te.Layout.Rows[ri].Row
                             };
                     }
                 }
@@ -849,7 +860,13 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             _cellLayoutCache.Clear();
+            double oldCanvasH = _canvasHeight;
             RebuildLayouts();
+
+            // Если высота канваса изменилась (таблица выросла или уменьшилась) —
+            // нужно уведомить ScrollViewer о новом размере.
+            if (Math.Abs(_canvasHeight - oldCanvasH) > 0.5)
+                InvalidateMeasure();
 
             // Snap: найти слайс с targetBlock
             if (targetBlock != null && _cellVmCache.TryGetValue(targetBlock, out var targetVm))
@@ -907,7 +924,44 @@ namespace Writersword.Modules.TextEditor.Document
                 _caretChar = p - 1;
             }
             else if (_caretChar == 0 && _caretPara > 0 && !IsInCell(_caretPara))
-                DocVm?.MergeParagraphWithPrevious(pvm, text);
+            {
+                if (string.IsNullOrEmpty(text) && IsBreakAnchor(pvm.Model))
+                {
+                    // Backspace на якоре разрыва страницы — удаляем разрыв.
+                    DocVm?.DeleteBreakWithAnchor(pvm);
+                }
+                else if (IsBlockAfterTable(pvm.Model))
+                {
+                    // Правый якорь таблицы — защищён полностью, Backspace ничего не делает.
+                    // Он нужен только для позиционирования каретки, не для редактирования.
+                }
+                else if (string.IsNullOrEmpty(text) && IsBlockBeforeTable(pvm.Model))
+                {
+                    // Левый якорь таблицы — переходим в предыдущий параграф
+                    // и удаляем там последний символ, сам якорь не трогаем.
+                    var prevVm = GetVmAt(_caretPara - 1);
+                    if (prevVm is not null)
+                    {
+                        string prevText = prevVm.PlainText ?? "";
+                        if (prevText.Length > 0)
+                        {
+                            prevVm.PlainText = prevText[..^1];
+                            _caretPara--;
+                            _caretChar = prevVm.PlainText.Length;
+                        }
+                        else
+                        {
+                            // Предыдущий тоже пустой — просто переходим туда.
+                            _caretPara--;
+                            _caretChar = 0;
+                        }
+                    }
+                }
+                else
+                {
+                    DocVm?.MergeParagraphWithPrevious(pvm, text);
+                }
+            }
             CommitEdit();
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
@@ -931,12 +985,32 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 var next = GetVmAt(_caretPara + 1);
                 // Не сливаем параграф со следующим если следующий — якорь после таблицы.
-                // Якорь после таблицы — пустой параграф стоящий сразу после TableBlock.
                 bool nextIsPostTableAnchor = next is not null
                     && string.IsNullOrEmpty(next.PlainText)
                     && DocVm is not null
                     && IsBlockAfterTable(next.Model);
-                if (next is not null && !IsInCell(_caretPara + 1) && !nextIsPostTableAnchor)
+                // Delete в конце параграфа перед разрывом страницы = удаление разрыва.
+                bool nextIsBreakAnchor = next is not null
+                    && string.IsNullOrEmpty(next.PlainText)
+                    && DocVm is not null
+                    && IsBreakAnchor(next.Model);
+                // Текущий параграф — правый якорь таблицы: Delete ничего не делает.
+                // Он защищён симметрично Backspace — нельзя слить его со следующим.
+                bool currentIsPostTableAnchor = string.IsNullOrEmpty(text)
+                    && DocVm is not null
+                    && IsBlockAfterTable(pvm.Model);
+                // Текущий параграф — левый якорь таблицы: Delete ничего не делает,
+                // следующий блок — таблица, к ней нельзя ничего присоединять.
+                bool currentIsPreTableAnchor = string.IsNullOrEmpty(text)
+                    && DocVm is not null
+                    && IsBlockBeforeTable(pvm.Model);
+                if (currentIsPostTableAnchor || currentIsPreTableAnchor)
+                {
+                    // Delete на любом якоре таблицы ничего не делает.
+                }
+                else if (nextIsBreakAnchor)
+                    DocVm?.DeleteBreakWithAnchor(next!);
+                else if (next is not null && !IsInCell(_caretPara + 1) && !nextIsPostTableAnchor)
                 { pvm.PlainText += next.PlainText; DocVm?.DeleteParagraph(next); }
             }
             CommitEdit();

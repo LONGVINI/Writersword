@@ -1,9 +1,9 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Templates"
-             xmlns:loc="using:Writersword.Modules.Characters.Resources"
+             xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              xmlns:conv="using:Writersword.Modules.Characters.Converters"
-             x:Class="Writersword.Modules.Characters.Views.Templates.CharactersTemplatesView"
+             x:Class="Writersword.Modules.Characters.Views.Tabs.CharactersTemplatesView"
              x:DataType="vm:CharactersTemplatesViewModel"
              Background="{DynamicResource BgSurfaceBrush}">
 
@@ -15,16 +15,13 @@
 
     <Grid ColumnDefinitions="200,*">
 
-        <!-- Левая колонка: фильтры -->
         <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto"
               Background="{DynamicResource BgPanelBrush}">
-
             <TextBlock Grid.Row="0"
-                       Text="ЧТО НУЖНО?"
+                       Text="{x:Static loc:CharactersStrings.Templates_FiltersHeader}"
                        FontSize="11" FontWeight="SemiBold"
                        Foreground="{DynamicResource TextSecondaryBrush}"
                        Margin="12,10,12,6"/>
-
             <ScrollViewer Grid.Row="1">
                 <ItemsControl ItemsSource="{Binding Filters}">
                     <ItemsControl.ItemTemplate>
@@ -38,31 +35,23 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
-
-            <!-- Незаметная кнопка перепройти онбординг -->
             <Button Grid.Row="2"
-                    Content="Настроить заново..."
+                    Content="{x:Static loc:CharactersStrings.Templates_RestartOnboarding}"
                     Command="{Binding RestartOnboardingCommand}"
                     HorizontalAlignment="Left"
-                    Margin="8,8"
-                    Padding="6,3"
-                    FontSize="10"
-                    Background="Transparent"
-                    BorderThickness="0"
+                    Margin="8,8" Padding="6,3" FontSize="10"
+                    Background="Transparent" BorderThickness="0"
                     Foreground="{DynamicResource TextSecondaryBrush}"
                     Opacity="0.5"/>
         </Grid>
 
-        <!-- Правая колонка: шаблоны -->
         <ScrollViewer Grid.Column="1" Padding="12">
             <StackPanel Spacing="16">
 
-                <!-- Встроенные -->
                 <StackPanel Spacing="6">
-                    <TextBlock Text="ВСТРОЕННЫЕ ШАБЛОНЫ"
+                    <TextBlock Text="{x:Static loc:CharactersStrings.Templates_BuiltInHeader}"
                                FontSize="11" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextSecondaryBrush}"/>
-
                     <ItemsControl ItemsSource="{Binding FilteredTemplates}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="vm:TemplateItemViewModel">
@@ -81,13 +70,13 @@
                                                        Foreground="{DynamicResource TextSecondaryBrush}"
                                                        Margin="0,2,0,0">
                                                 <Run Text="{Binding FieldCount}"/>
-                                                <Run Text=" параметров"/>
+                                                <Run Text="{x:Static loc:CharactersStrings.Templates_FieldCountSuffix}"/>
                                             </TextBlock>
                                         </StackPanel>
                                         <StackPanel Grid.Column="1"
                                                     Orientation="Horizontal" Spacing="6"
                                                     VerticalAlignment="Center" Margin="12,0,0,0">
-                                            <Button Content="Копировать"
+                                            <Button Content="{x:Static loc:CharactersStrings.Templates_Copy}"
                                                     Command="{ReflectionBinding $parent[UserControl].DataContext.DuplicateTemplateCommand}"
                                                     CommandParameter="{Binding AnketaId}"
                                                     FontSize="11" Padding="8,4"/>
@@ -96,9 +85,7 @@
                                                     CommandParameter="{Binding AnketaId}"
                                                     Background="{Binding IsActive, Converter={StaticResource BoolToActiveBrushConverter}}"
                                                     Foreground="White">
-                                                <Button.Content>
-                                                    <TextBlock Text="{Binding IsActive, Converter={StaticResource BoolToActiveTemplateConverter}}"/>
-                                                </Button.Content>
+                                                <TextBlock Text="{Binding IsActive, Converter={StaticResource BoolToActiveTemplateConverter}}"/>
                                             </Button>
                                         </StackPanel>
                                     </Grid>
@@ -110,26 +97,23 @@
 
                 <Separator Background="{DynamicResource BorderDefaultBrush}"/>
 
-                <!-- Мои шаблоны -->
                 <StackPanel Spacing="6">
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Grid.Column="0"
-                                   Text="МОИ ШАБЛОНЫ"
+                                   Text="{x:Static loc:CharactersStrings.Templates_CustomHeader}"
                                    FontSize="11" FontWeight="SemiBold"
                                    Foreground="{DynamicResource TextSecondaryBrush}"/>
                         <Button Grid.Column="1"
-                                Content="+ Создать шаблон"
+                                Content="{x:Static loc:CharactersStrings.Templates_CreateCustom}"
                                 Command="{Binding CreateCustomTemplateCommand}"
                                 FontSize="11" Padding="8,3"/>
                     </Grid>
-
-                    <TextBlock Text="Своих шаблонов пока нет."
+                    <TextBlock Text="{x:Static loc:CharactersStrings.Templates_NoCustom}"
                                FontSize="12"
                                Foreground="{DynamicResource TextSecondaryBrush}"
                                IsVisible="{Binding CustomTemplates.Count,
                                    Converter={StaticResource IntIsZeroConverter}}"
                                Margin="0,4"/>
-
                     <ItemsControl ItemsSource="{Binding CustomTemplates}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="vm:TemplateItemViewModel">
@@ -145,13 +129,13 @@
                                             <TextBlock FontSize="10"
                                                        Foreground="{DynamicResource TextSecondaryBrush}">
                                                 <Run Text="{Binding FieldCount}"/>
-                                                <Run Text=" параметров"/>
+                                                <Run Text="{x:Static loc:CharactersStrings.Templates_FieldCountSuffix}"/>
                                             </TextBlock>
                                         </StackPanel>
                                         <StackPanel Grid.Column="1"
                                                     Orientation="Horizontal" Spacing="6"
                                                     VerticalAlignment="Center" Margin="12,0,0,0">
-                                            <Button Content="Удалить"
+                                            <Button Content="{x:Static loc:CharactersStrings.Templates_Delete}"
                                                     Command="{ReflectionBinding $parent[UserControl].DataContext.DeleteCustomTemplateCommand}"
                                                     CommandParameter="{Binding AnketaId}"
                                                     FontSize="11" Padding="8,4"
@@ -163,9 +147,7 @@
                                                     CommandParameter="{Binding AnketaId}"
                                                     Background="{Binding IsActive, Converter={StaticResource BoolToActiveBrushConverter}}"
                                                     Foreground="White">
-                                                <Button.Content>
-                                                    <TextBlock Text="{Binding IsActive, Converter={StaticResource BoolToActiveTemplateConverter}}"/>
-                                                </Button.Content>
+                                                <TextBlock Text="{Binding IsActive, Converter={StaticResource BoolToActiveTemplateConverter}}"/>
                                             </Button>
                                         </StackPanel>
                                     </Grid>
@@ -177,6 +159,5 @@
 
             </StackPanel>
         </ScrollViewer>
-
     </Grid>
 </UserControl>

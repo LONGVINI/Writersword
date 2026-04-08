@@ -8,7 +8,7 @@ using System.Reactive;
 using Writersword.Modules.Characters.Interfaces;
 using Writersword.Modules.Characters.Models;
 using Writersword.Modules.Characters.Models.Enums;
-using Writersword.Modules.Characters.Resources;
+using Writersword.Src.Modules.Characters.Resources;
 using Writersword.Modules.Characters.ViewModels.Onboarding;
 using Writersword.Modules.Characters.ViewModels.Templates;
 
@@ -663,6 +663,22 @@ namespace Writersword.Modules.Characters.ViewModels
                 _folders.Count,
                 string.Join(", ", _folders.Select(f => $"'{f.Name}'[{f.CharacterIds.Count}]")));
             return _folders.ToList();
+        }
+
+        // Используется при аутосейве — синхронизирует данные в модель без закрытия TextBox.
+        // Name и Comment папок актуальны в _folder через сеттеры (two-way binding),
+        // поэтому нужна только проверка пустого имени при переименовании.
+        public void EnsureValidNamesForSave()
+        {
+            _logger.Debug("EnsureValidNamesForSave: checking {Count} folders", Folders.Count);
+            foreach (var folder in Folders)
+            {
+                if (folder.IsRenaming && string.IsNullOrWhiteSpace(folder.Name))
+                {
+                    _logger.Debug("EnsureValidNamesForSave: fixed empty name for folder {Id}", folder.FolderId);
+                    folder.Name = CharactersStrings.Folder_FallbackName;
+                }
+            }
         }
 
         public void CommitAllPendingEdits()

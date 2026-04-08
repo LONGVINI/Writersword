@@ -172,6 +172,7 @@ namespace Writersword.Modules.TextEditor.Document
         private bool _isSelecting;
 
         // ── Bitmap-кеш для мигания каретки ────────────────────────────────
+        private readonly object _bitmapLock = new();
         private SKBitmap? _lastFullRenderBitmap;
         private int _lastFullRenderWidth;
         private int _lastFullRenderHeight;
@@ -205,6 +206,10 @@ namespace Writersword.Modules.TextEditor.Document
         private DocumentViewModel? _docVm;
         private DocumentViewModel? DocVm => _docVm;
         private double Zoom => DocVm?.Zoom ?? 1.0;
+
+        // Блок-якорь на который нужно переместить каретку после ближайшего rebuild.
+        // Устанавливается при вставке разрыва страницы, потребляется в ScheduleRebuild.
+        private ParagraphBlock? _pendingFocusBlock;
 
         // ── Callbacks ────────────────────────────────────────────────────
         public Action<double>? RecommendedZoomChanged { get; set; }
@@ -315,8 +320,11 @@ namespace Writersword.Modules.TextEditor.Document
         {
             base.OnDetachedFromVisualTree(e);
             UnsubscribeFromScrollViewer();
-            _lastFullRenderBitmap?.Dispose();
-            _lastFullRenderBitmap = null;
+            lock (_bitmapLock)
+            {
+                _lastFullRenderBitmap?.Dispose();
+                _lastFullRenderBitmap = null;
+            }
         }
 
         protected override void OnGotFocus(GotFocusEventArgs e)
@@ -396,6 +404,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.Paragraphs.CollectionChanged -= OnParagraphsChanged;
                 _docVm.PropertyChanged -= OnDocVmPropertyChanged;
                 _docVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
+                _docVm.OnPageBreakInserted = null;
             }
 
             _docVm = DataContext as DocumentViewModel;
@@ -410,6 +419,7 @@ namespace Writersword.Modules.TextEditor.Document
                 DocVm.Paragraphs.CollectionChanged += OnParagraphsChanged;
                 DocVm.PropertyChanged += OnDocVmPropertyChanged;
                 DocVm.ParagraphFormatChanged += OnParagraphFormatChanged;
+                DocVm.OnPageBreakInserted = block => _pendingFocusBlock = block;
                 foreach (var pvm in DocVm.Paragraphs)
                     WirePvm(pvm);
             }
@@ -557,6 +567,30 @@ namespace Writersword.Modules.TextEditor.Document
                 RebuildLayouts();
                 SnapCaretToCorrectSlice();
                 _caretLineHint = -1;
+
+                // Если после предыдущего rebuild был запрошен переход к якорю разрыва —
+                // применяем его сейчас, когда _layouts актуальны.
+                if (_pendingFocusBlock is not null && DocVm is not null)
+                {
+                    var anchorVm = DocVm.Paragraphs.FirstOrDefault(p => p.Model == _pendingFocusBlock);
+                    _pendingFocusBlock = null;
+                    if (anchorVm is not null)
+                    {
+                        int pvmIdx = DocVm.Paragraphs.IndexOf(anchorVm);
+                        _caretPara = FindFirstSliceForDocVmParagraph(pvmIdx);
+                        _caretChar = 0;
+                        NotifyLeftCell();
+                        SnapCaretToCorrectSlice();
+                        UpdatePreferredX();
+                        SyncSel();
+                        _caretVisible = true;
+                        _caretTimer.Stop();
+                        _caretTimer.Start();
+                        if (_caretPara >= 0 && _caretPara < _layouts.Count)
+                            CaretPageChanged?.Invoke(_layouts[_caretPara].PageIndex);
+                        ScrollToCenterCaret();
+                    }
+                }
 
                 if (Math.Abs(_canvasHeight - oldCanvasH) > 0.5)
                     InvalidateMeasure();

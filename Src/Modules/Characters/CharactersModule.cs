@@ -12,11 +12,12 @@ using Writersword.Core.Services;
 using Writersword.Modules.Characters.Interfaces;
 using Writersword.Modules.Characters.Models;
 using Writersword.Modules.Characters.Models.Enums;
-using Writersword.Modules.Characters.Resources;
+using Writersword.Src.Modules.Characters.Resources;
 using Writersword.Modules.Characters.Services;
 using Writersword.Modules.Characters.ViewModels;
 using Writersword.Modules.Characters.Views;
 using Writersword.Modules.Common;
+
 
 namespace Writersword.Modules.Characters
 {
@@ -55,7 +56,7 @@ namespace Writersword.Modules.Characters
         }
 
         public override Control? CreateView() =>
-            new CharactersView { DataContext = _viewModel };
+            new CharactersModuleView { DataContext = _viewModel };
 
         // ── Горячие клавиши ───────────────────────────────────────────────
 
@@ -160,7 +161,11 @@ namespace Writersword.Modules.Characters
 
         public override object? GetCustomData()
         {
-            _viewModel?.CommitAllPendingEdits();
+            // CommitAllPendingEdits здесь не вызываем — он ставит IsRenaming/IsEditingComment = false,
+            // что закрывает TextBox прямо во время ввода пользователя (аутосейв срабатывает в фоне).
+            // Name и Comment уже актуальны в модели через two-way binding.
+            // Проверяем только пустые имена при переименовании.
+            _viewModel?.EnsureValidNamesForSave();
             var data = _characterService.GetModuleData();
             data.Relationships = _relationshipService.GetAll().ToList();
             data.ActiveTemplateIds = _viewModel?.ActiveTemplateIds.ToList() ?? new List<string>();
