@@ -236,35 +236,71 @@ namespace Writersword.Modules.TextEditor.Document
 
             int lineIdx = layout.GetLineIndexForChar(_caretChar);
 
+            // Для ByCell-split ячейки в _layouts присутствуют два слайса с одинаковым VM,
+            // LineFrom=0 и LineTo=lineCount — стандартное совпадение по диапазону строк
+            // всегда выбирает первый (страница 1). Используем clip-Y как тай-брейкер:
+            // правильным является тот слайс, в чьём clip-прямоугольнике находится каретка.
+            bool InClip(int idx)
+            {
+                var pl = _layouts[idx];
+                if (pl.Cell == null) return true; // обычный параграф — всегда подходит
+                int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
+                var caretRect = pl.Layout.HitTestPosition(pos);
+                float yBase = pl.LineFrom < pl.Layout.Lines.Count
+                    ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
+                float caretAbsY = pl.Ypt + (caretRect.Y - yBase);
+                return caretAbsY >= pl.Cell.ClipY - 0.5f
+                    && caretAbsY < pl.Cell.ClipY + pl.Cell.ClipH + 0.5f;
+            }
+
+            void CommitSlice(int idx)
+            {
+                _caretPara = idx;
+                var snapped = _layouts[idx];
+                int actualLine = snapped.Layout.GetLineIndexForChar(
+                    Clamp(_caretChar, 0, snapped.Vm.PlainText?.Length ?? 0));
+                _caretLineHint = (actualLine >= snapped.LineFrom && actualLine < snapped.LineTo)
+                    ? actualLine
+                    : (snapped.LineFrom < snapped.LineTo ? snapped.LineFrom : -1);
+            }
+
             if (_caretLineHint >= 0)
             {
+                int firstHintMatch = -1;
                 for (int i = 0; i < _layouts.Count; i++)
                 {
                     var pl = _layouts[i];
-                    if (pl.Vm == targetVm
-                        && _caretLineHint >= pl.LineFrom
-                        && _caretLineHint < pl.LineTo)
-                    {
-                        _caretPara = i;
-                        return;
-                    }
+                    if (pl.Vm != targetVm) continue;
+                    if (_caretLineHint < pl.LineFrom || _caretLineHint >= pl.LineTo) continue;
+
+                    if (firstHintMatch < 0) firstHintMatch = i;
+                    if (InClip(i)) { CommitSlice(i); return; }
                 }
+                if (firstHintMatch >= 0) { CommitSlice(firstHintMatch); return; }
             }
 
+            // Проверяем текущий слайс — если он уже правильный и каретка в его clip, выходим.
             var currentPl = _layouts[_caretPara];
-            if (currentPl.Vm == targetVm && lineIdx >= currentPl.LineFrom && lineIdx < currentPl.LineTo)
+            if (currentPl.Vm == targetVm
+                && lineIdx >= currentPl.LineFrom && lineIdx < currentPl.LineTo
+                && InClip(_caretPara))
+            {
+                _caretLineHint = lineIdx;
                 return;
+            }
 
+            // Полный перебор: ищем слайс с совпадением по диапазону строк и clip-Y.
+            int firstLineMatch = -1;
             for (int i = 0; i < _layouts.Count; i++)
             {
                 var pl = _layouts[i];
                 if (pl.Vm != targetVm) continue;
-                if (lineIdx >= pl.LineFrom && lineIdx < pl.LineTo)
-                {
-                    _caretPara = i;
-                    return;
-                }
+                if (lineIdx < pl.LineFrom || lineIdx >= pl.LineTo) continue;
+
+                if (firstLineMatch < 0) firstLineMatch = i;
+                if (InClip(i)) { _caretPara = i; _caretLineHint = lineIdx; return; }
             }
+            if (firstLineMatch >= 0) { _caretPara = firstLineMatch; _caretLineHint = lineIdx; }
         }
 
     }

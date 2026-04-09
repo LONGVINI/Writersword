@@ -1,9 +1,11 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.Reactive.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using ReactiveUI;
 using Serilog;
@@ -17,6 +19,7 @@ namespace Writersword.Modules.Characters.Views
         private static readonly ILogger _log = Log.ForContext<CharactersModuleView>();
 
         private IDisposable? _subscription;
+        private readonly List<IDisposable> _folderSubscriptions = new();
         private TopLevel? _topLevel;
 
         private CharactersListView? _listView;
@@ -67,6 +70,10 @@ namespace Writersword.Modules.Characters.Views
         private void OnDataContextChanged(object? sender, EventArgs e)
         {
             _subscription?.Dispose();
+
+            foreach (var d in _folderSubscriptions) d.Dispose();
+            _folderSubscriptions.Clear();
+
             _listView = null;
             _editView = null;
             _graphView = null;
@@ -76,7 +83,65 @@ namespace Writersword.Modules.Characters.Views
             {
                 vm.SearchFocusRequested += OnSearchFocusRequested;
                 _subscription = vm.WhenAnyValue(x => x.MainTabIndex).Subscribe(SwitchTab);
+
+                foreach (var folder in vm.Folders)
+                    SubscribeToFolderCommentEditing(folder);
+
+                vm.Folders.CollectionChanged += (_, args) =>
+                {
+                    if (args.NewItems != null)
+                        foreach (CharacterFolderViewModel f in args.NewItems)
+                            SubscribeToFolderCommentEditing(f);
+                };
             }
+        }
+
+        private void SubscribeToFolderCommentEditing(CharacterFolderViewModel folder)
+        {
+            var sub = folder.WhenAnyValue(f => f.IsEditingComment)
+                .Where(editing => editing)
+                .Subscribe(_ =>
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        var box = FindCommentBoxForFolder(folder);
+                        if (box == null || !box.IsVisible)
+                        {
+                            _log.Debug("FolderCommentEditing: box not visible for {Id}", folder.FolderId);
+                            return;
+                        }
+                        _log.Debug("FolderCommentEditing: focusing FolderCommentBox for {Id}", folder.FolderId);
+                        box.Focus();
+                    }, DispatcherPriority.Render);
+                });
+            _folderSubscriptions.Add(sub);
+        }
+
+        private TextBox? FindCommentBoxForFolder(CharacterFolderViewModel folder)
+        {
+            return FindDescendantWithDataContext<TextBox>(this, folder, "FolderCommentBox");
+        }
+
+        private static T? FindDescendantWithDataContext<T>(Visual root, object dataContext, string name)
+            where T : Control
+        {
+            foreach (var child in root.GetVisualChildren())
+            {
+                if (child is T typed && typed.Name == name)
+                {
+                    Visual? v = typed;
+                    while (v != null)
+                    {
+                        if (v is Control c && c.DataContext == dataContext)
+                            return typed;
+                        v = v.GetVisualParent();
+                        if (ReferenceEquals(v, root)) break;
+                    }
+                }
+                var found = FindDescendantWithDataContext<T>(child, dataContext, name);
+                if (found != null) return found;
+            }
+            return null;
         }
 
         private void SwitchTab(int index)
@@ -88,9 +153,9 @@ namespace Writersword.Modules.Characters.Views
 
             Control? content = index switch
             {
-                0 => _listView      ??= new CharactersListView(),
-                1 => _editView      ??= new CharacterEditView(),
-                2 => _graphView     ??= new CharactersGraphView { DataContext = vm?.GraphViewModel },
+                0 => _listView ??= new CharactersListView(),
+                1 => _editView ??= new CharacterEditView(),
+                2 => _graphView ??= new CharactersGraphView { DataContext = vm?.GraphViewModel },
                 3 => _templatesView ??= new CharactersTemplatesView { DataContext = vm?.TemplatesViewModel },
                 _ => null
             };
@@ -113,18 +178,53 @@ namespace Writersword.Modules.Characters.Views
             }
         }
 
+        // ── PointerPressed ────────────────────────────────────────────────
+
         private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
         {
+            if (DataContext is CharactersViewModel vm)
+            {
+                foreach (var folder in vm.Folders)
+                {
+                    if (!folder.IsEditingComment) continue;
+
+                    Visual? outermostFolderVisual = null;
+                    Visual? v = e.Source as Visual;
+                    while (v != null && !ReferenceEquals(v, this))
+                    {
+                        if (v is Control c && c.DataContext == folder)
+                            outermostFolderVisual = v;
+                        v = v.GetVisualParent();
+                    }
+
+                    bool clickedInsideFolder = outermostFolderVisual != null;
+
+                    if (!clickedInsideFolder)
+                    {
+                        _log.Debug("OnPointerPressed: closing comment editor for folder {Id}", folder.FolderId);
+                        folder.ConfirmCommentCommand.Execute().Subscribe();
+                    }
+
+                    return;
+                }
+            }
+
+            // Снимаем фокус если клик вне любого TextBox или Button
             var focused = _topLevel?.FocusManager?.GetFocusedElement();
             if (focused is not TextBox) return;
-            Visual? v = e.Source as Visual;
-            while (v != null)
+
+            Visual? src = e.Source as Visual;
+            while (src != null)
             {
-                if (v is TextBox) return;
-                v = v.GetVisualParent();
+                if (src is TextBox) return;
+                if (src is Button) return;
+                src = src.GetVisualParent();
             }
+
             _topLevel?.FocusManager?.ClearFocus();
         }
+
+        // ── LostFocus TextBox ─────────────────────────────────────────────
 
         private void OnTextBoxLostFocus(object? sender, RoutedEventArgs e)
         {
@@ -134,14 +234,36 @@ namespace Writersword.Modules.Characters.Views
             var folderVm = FindAncestor<CharacterFolderViewModel>(src);
             if (folderVm != null)
             {
-                if (folderVm.IsRenaming) { folderVm.ConfirmRenameCommand.Execute().Subscribe(); return; }
-                if (folderVm.IsEditingComment) { folderVm.ConfirmCommentCommand.Execute().Subscribe(); return; }
+                if (folderVm.IsRenaming)
+                {
+                    folderVm.ConfirmRenameCommand.Execute().Subscribe();
+                    return;
+                }
+
+                if (folderVm.IsEditingComment)
+                {
+                    // Что-то украло фокус у FolderCommentBox.
+                    // Восстанавливаем через Dispatcher — к этому моменту все bounce-события
+                    // уже обработаны. Если пользователь кликнул вне папки — OnPointerPressed
+                    // уже вызвал ConfirmCommentCommand и IsEditingComment будет false.
+                    var box = src;
+                    _log.Debug("OnTextBoxLostFocus: scheduling re-focus for {Name}", src.Name);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (!folderVm.IsEditingComment || !box.IsVisible) return;
+                        _log.Debug("OnTextBoxLostFocus: re-focusing {Name}", box.Name);
+                        box.Focus();
+                    }, DispatcherPriority.Input);
+                    return;
+                }
             }
 
             var charVm = FindAncestor<CharacterListItemViewModel>(src);
             if (charVm?.IsBeingNamed == true && DataContext is CharactersViewModel mainVm)
                 mainVm.ConfirmInlineNameCommand.Execute(charVm.Id).Subscribe();
         }
+
+        // ── KeyDown ───────────────────────────────────────────────────────
 
         private void OnKeyDown(object? sender, KeyEventArgs e)
         {
@@ -173,6 +295,8 @@ namespace Writersword.Modules.Characters.Views
                 e.Handled = true;
             }
         }
+
+        // ── Helpers ───────────────────────────────────────────────────────
 
         private static T? FindAncestor<T>(Control ctrl) where T : class
         {

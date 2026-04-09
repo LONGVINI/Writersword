@@ -7,47 +7,48 @@ namespace Writersword.Infrastructure.Behaviours
     public static class FocusOnVisibleBehavior
     {
         public static readonly AttachedProperty<bool> EnabledProperty =
-            AvaloniaProperty.RegisterAttached<TextBox, bool>(
+            AvaloniaProperty.RegisterAttached<Control, bool>(
                 "Enabled",
                 typeof(FocusOnVisibleBehavior));
 
         static FocusOnVisibleBehavior()
         {
-            EnabledProperty.Changed.AddClassHandler<TextBox>(OnEnabledChanged);
+            EnabledProperty.Changed.AddClassHandler<Control>(OnEnabledChanged);
         }
 
-        public static bool GetEnabled(TextBox element) => element.GetValue(EnabledProperty);
-        public static void SetEnabled(TextBox element, bool value) => element.SetValue(EnabledProperty, value);
+        public static bool GetEnabled(Control element) => element.GetValue(EnabledProperty);
+        public static void SetEnabled(Control element, bool value) => element.SetValue(EnabledProperty, value);
 
-        private static void OnEnabledChanged(TextBox textBox, AvaloniaPropertyChangedEventArgs e)
+        private static void OnEnabledChanged(Control control, AvaloniaPropertyChangedEventArgs e)
         {
-            if (e.NewValue is true && textBox.IsVisible)
-                FocusAndMoveCaret(textBox);
-            else
-                textBox.PropertyChanged -= OnTextBoxPropertyChanged;
-
             if (e.NewValue is true)
-                textBox.PropertyChanged += OnTextBoxPropertyChanged;
+            {
+                control.PropertyChanged += OnControlPropertyChanged;
+                if (control.IsVisible)
+                    FocusAndMoveCaret(control);
+            }
+            else
+            {
+                control.PropertyChanged -= OnControlPropertyChanged;
+            }
         }
 
-        private static void OnTextBoxPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+        private static void OnControlPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
         {
-            if (sender is not TextBox textBox) return;
+            if (sender is not Control control) return;
             if (e.Property != Visual.IsVisibleProperty) return;
             if (e.NewValue is not true) return;
-
-            FocusAndMoveCaret(textBox);
+            FocusAndMoveCaret(control);
         }
 
-        private static void FocusAndMoveCaret(TextBox textBox)
+        private static void FocusAndMoveCaret(Control control)
         {
-            // Dispatcher.UIThread.Post — даём Avalonia завершить layout-проход
-            // прежде чем запрашивать фокус, иначе Focus() игнорируется
             Dispatcher.UIThread.Post(() =>
             {
-                if (!textBox.IsVisible) return;
-                textBox.Focus();
-                textBox.CaretIndex = textBox.Text?.Length ?? 0;
+                if (!control.IsVisible) return;
+                control.Focus();
+                if (control is TextBox tb)
+                    tb.CaretIndex = tb.Text?.Length ?? 0;
             }, DispatcherPriority.Loaded);
         }
     }

@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+		xmlns:infra="using:Writersword.Infrastructure.Controls">
 	<!-- Базовые стили поля ввода -->
 	<Style Selector="TextBox">
 		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
@@ -64,5 +65,9 @@
 	<Style Selector="TextBox.editor:disabled /template/ Border#PART_BorderElement">
 		<Setter Property="Background" Value="White"/>
 		<Setter Property="BorderBrush" Value="Transparent"/>
+	</Style>
+
+	<Style Selector="TextBox.italic /template/ TextPresenter#PART_TextPresenter">
+		<Setter Property="Margin" Value="0,0,6,0"/>
 	</Style>
 </Styles>

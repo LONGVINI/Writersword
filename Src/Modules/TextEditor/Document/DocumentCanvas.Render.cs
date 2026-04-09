@@ -151,6 +151,26 @@ namespace Writersword.Modules.TextEditor.Document
                 bool isLastRow = row.Row == effectiveRowTo - 1;
                 float rowShift = isFirstRow ? firstRowContentOffsetPt : 0f;
                 float effectiveRowH = isFirstRow ? row.HeightPt - rowShift : row.HeightPt;
+
+                // Для первой строки продолжения ByCell ограничиваем высоту реальным контентом.
+                // Без этого рамка таблицы занимает всё оставшееся место (row.HeightPt - offset),
+                // даже если ячейки показывают лишь пару строк текста.
+                if (isFirstRow && isContinuation && firstRowContentOffsetPt > 0f)
+                {
+                    float maxCellH = 0f;
+                    foreach (var cell in row.Cells)
+                    {
+                        float cPadTop = cell.PadTopPt + cell.Borders.Top.WidthPt;
+                        float cPadBot = cell.PadBottomPt + cell.Borders.Bottom.WidthPt;
+                        float consumed = Math.Max(0f, firstRowContentOffsetPt - cPadTop);
+                        float cellRemaining = Math.Max(0f, cell.ContentHeightPt - consumed);
+                        if (cellRemaining > 0f)
+                            maxCellH = Math.Max(maxCellH, cPadTop + cellRemaining + cPadBot);
+                    }
+                    if (maxCellH > 0f && maxCellH < effectiveRowH)
+                        effectiveRowH = maxCellH;
+                }
+
                 float visibleH = (isLastRow && lastRowVisibleHeightPt >= 0f)
                     ? lastRowVisibleHeightPt
                     : effectiveRowH;

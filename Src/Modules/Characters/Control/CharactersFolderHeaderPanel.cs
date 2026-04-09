@@ -59,6 +59,7 @@ public sealed class CharactersFolderHeaderPanel : Panel
 
     private double _nameAlloc;
     private double _commentAlloc;
+    private const double VisualBuffer = 12.0;
 
     private readonly List<IDisposable> _childSubscriptions = new();
 
@@ -79,17 +80,10 @@ public sealed class CharactersFolderHeaderPanel : Panel
         ClearSubscriptions();
         foreach (var child in Children)
         {
-            // Видимость прямого дочернего элемента
             _childSubscriptions.Add(
                 child.GetObservable(IsVisibleProperty)
                      .Subscribe(_ => InvalidateMeasure()));
 
-            // Заходим внутрь дочерних Panel для подписки на TextBox-внуков.
-            // Именно они меняют содержимое во время ввода текста, но их изменения
-            // не проталкивают InvalidateMeasure вверх до этой панели — только
-            // InvalidateArrange. Из-за этого MeasureOverride не вызывается при
-            // наборе текста, _nameAlloc/_commentAlloc остаются устаревшими,
-            // и бокс не растёт. Явная подписка на TextProperty это исправляет.
             if (child is Panel childPanel)
             {
                 foreach (Control grandchild in childPanel.Children)
@@ -98,13 +92,7 @@ public sealed class CharactersFolderHeaderPanel : Panel
                         grandchild.GetObservable(IsVisibleProperty)
                                   .Subscribe(_ => InvalidateMeasure()));
 
-                    if (grandchild is TextBox textBox)
-                    {
-                        _childSubscriptions.Add(
-                            textBox.GetObservable(TextBox.TextProperty)
-                                   .Subscribe(_ => Dispatcher.UIThread.Post(
-                                       InvalidateMeasure, DispatcherPriority.Render)));
-                    }
+                    // ПОДПИСКА НА ТЕКСТ УДАЛЕНА, ЧТОБЫ УБРАТЬ ДЕРГАНИЕ
                 }
             }
         }
@@ -139,11 +127,7 @@ public sealed class CharactersFolderHeaderPanel : Panel
         commentChild.Measure(infinite);
 
         double nameNatural = Math.Max(nameChild.DesiredSize.Width, LeftPreferredWidth);
-        // Комментарий: зона = реальный размер текста без preferred-floor.
-        // Это гарантирует что commentAlloc меняется при каждом символе →
-        // InvalidateArrange вызывается → commentLeft обновляется → зона растёт влево.
-        // Preferred используется только как порог сжатия (ниже).
-        double commentNatural = commentChild.DesiredSize.Width;
+        double commentNatural = commentChild.DesiredSize.Width + VisualBuffer;
 
         double available = double.IsInfinity(availableSize.Width)
             ? nameNatural + commentNatural
@@ -151,37 +135,30 @@ public sealed class CharactersFolderHeaderPanel : Panel
 
         if (nameNatural + commentNatural <= available)
         {
-            // Оба влезают — свободное пространство между ними
             _nameAlloc = nameNatural;
             _commentAlloc = commentNatural;
         }
         else
         {
-            double spaceForComment = available - nameNatural;
+            double availableForComment = available - nameNatural;
 
-            if (spaceForComment >= RightMinWidth)
+            if (availableForComment >= RightMinWidth + VisualBuffer)
             {
-                // Имя целиком, комментарий сжат (выше минимума)
                 _nameAlloc = nameNatural;
-                _commentAlloc = spaceForComment;
+                _commentAlloc = availableForComment;
             }
             else
             {
-                // Комментарий на минимуме, сжимается имя
-                _commentAlloc = RightMinWidth;
+                _commentAlloc = RightMinWidth + VisualBuffer;
                 _nameAlloc = Math.Max(LeftMinWidth, available - _commentAlloc);
             }
         }
-
-        _log.Debug(
-            "Measure: available={Available:F0} nameDesired={ND:F0} commentDesired={CD:F0} → nameAlloc={NA:F0} commentAlloc={CA:F0}",
-            availableSize.Width, nameChild.DesiredSize.Width, commentChild.DesiredSize.Width, _nameAlloc, _commentAlloc);
 
         nameChild.Measure(new Size(_nameAlloc, availableSize.Height));
         commentChild.Measure(new Size(_commentAlloc, availableSize.Height));
 
         double height = Math.Max(nameChild.DesiredSize.Height, commentChild.DesiredSize.Height);
-        return new Size(_nameAlloc + _commentAlloc, height);
+        return new Size(available, height);
     }
 
     protected override Size ArrangeOverride(Size finalSize)
@@ -195,9 +172,6 @@ public sealed class CharactersFolderHeaderPanel : Panel
             return finalSize;
         }
 
-        // Имя — у левого края, ширина _nameAlloc.
-        // Комментарий — у правого края finalSize, ширина _commentAlloc.
-        // Между ними: finalSize.Width - _nameAlloc - _commentAlloc (свободное пространство).
         double nameWidth = Math.Max(0, _nameAlloc);
         double commentLeft = Math.Max(nameWidth, finalSize.Width - _commentAlloc);
         double commentWidth = Math.Max(0, finalSize.Width - commentLeft);

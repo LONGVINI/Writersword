@@ -42,6 +42,10 @@ namespace Writersword.Modules.TextEditor.Document
         // Отступ каретки якоря от границы таблицы — чтобы не перекрывалась рамкой.
         private const float AnchorMarginPt = 4f;
 
+        // Дополнительный отступ сверху для строк параграфа, продолжающегося на новой странице.
+        // Добавляется к lineGroupYPt при переносе — чтобы первая строка не прилипала к полю.
+        private const float PageContinuationTopPadPt = 4f;
+
         // ── CellInfo: metadata для параграфа ячейки таблицы ──────────────
         // Таблица — это просто "параграфы в тюрьме": параграфы ячеек
         // добавляются в _layouts рядом с обычными параграфами. Каретка,
@@ -565,8 +569,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                 double oldCanvasH = _canvasHeight;
                 RebuildLayouts();
-                SnapCaretToCorrectSlice();
-                _caretLineHint = -1;
+                SnapCaretToCorrectSlice(); // обновляет _caretLineHint по актуальному положению каретки
 
                 // Если после предыдущего rebuild был запрошен переход к якорю разрыва —
                 // применяем его сейчас, когда _layouts актуальны.

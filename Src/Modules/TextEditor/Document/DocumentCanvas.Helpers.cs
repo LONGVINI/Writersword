@@ -235,13 +235,31 @@ namespace Writersword.Modules.TextEditor.Document
             float yPt = (float)(ptLogPx.Y / zoom * PxToPt);
 
             // ── Двухпроходной поиск ───────────────────────────────────────
+            // Для ячеек таблицы берём пересечение Y-диапазона параграфа и клип-прямоугольника.
+            // Без клипа ByCell-split создаёт два слайса с одинаковым HeightPt (полная высота
+            // параграфа), оба покрывают область второй страницы, и всегда выигрывает первый.
+            // Клип в одиночку тоже не работает: все параграфы ячейки делят один ClipY/ClipH,
+            // поэтому Y-дистанция до всех одинакова и побеждает первый параграф.
+            // Пересечение устраняет оба случая: каждый слайс виден только в своём clip-окне,
+            // а параграфы внутри ячейки сохраняют собственные Ypt/HeightPt.
+            static (float top, float bot) GetYRange(ParaLayout pl)
+            {
+                float top = pl.Ypt;
+                float bot = pl.Ypt + pl.HeightPt;
+                if (pl.Cell != null)
+                {
+                    top = Math.Max(top, pl.Cell.ClipY);
+                    bot = Math.Min(bot, pl.Cell.ClipY + pl.Cell.ClipH);
+                }
+                return (top, bot);
+            }
+
             // Проход 1: находим минимальное Y-расстояние.
             float bestYDist = float.MaxValue;
             for (int i = 0; i < layouts.Count; i++)
             {
                 var pl = layouts[i];
-                float top = pl.Ypt;
-                float bot = pl.Ypt + pl.HeightPt;
+                var (top, bot) = GetYRange(pl);
                 float dist = yPt < top ? top - yPt : yPt > bot ? yPt - bot : 0f;
                 if (dist < bestYDist) bestYDist = dist;
             }
@@ -256,8 +274,7 @@ namespace Writersword.Modules.TextEditor.Document
             for (int i = 0; i < layouts.Count; i++)
             {
                 var pl = layouts[i];
-                float top = pl.Ypt;
-                float bot = pl.Ypt + pl.HeightPt;
+                var (top, bot) = GetYRange(pl);
                 float yDist = yPt < top ? top - yPt : yPt > bot ? yPt - bot : 0f;
 
                 if (Math.Abs(yDist - bestYDist) > 0.5f) continue; // не с минимальным Y
