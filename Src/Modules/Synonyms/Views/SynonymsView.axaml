@@ -13,7 +13,7 @@
                        FontWeight="Bold"
                        Foreground="{DynamicResource TextPrimaryBrush}"/>
 			<TextBox Text="{Binding SearchText}"
-                     Watermark="{x:Static loc:SynonymsStrings.SearchWatermark}"
+                     PlaceholderText="{x:Static loc:SynonymsStrings.SearchWatermark}"
                      Background="{DynamicResource BgPanelBrush}"
                      Foreground="{DynamicResource TextPrimaryBrush}"
                      BorderBrush="{DynamicResource AccentDefaultBrush}"

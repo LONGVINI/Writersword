@@ -11,12 +11,6 @@ using Writersword.Views;
 
 namespace Writersword.Infrastructure.Dock
 {
-    /// <summary>
-    /// Реализация IHostWindow для Float окон
-    /// Управляет жизненным циклом плавающих окон модулей
-    /// Dock.Avalonia сам управляет регистрацией DockWindow в rootDock.Windows —
-    /// ручное добавление не требуется и приводит к дублированию окон
-    /// </summary>
     public class HostWindow : IHostWindow
     {
         private readonly ILogger<HostWindow> _logger;
@@ -38,10 +32,6 @@ namespace Writersword.Infrastructure.Dock
             _logger = App.Services.GetService<ILogger<HostWindow>>()!;
         }
 
-        /// <summary>
-        /// Показать Float окно
-        /// Dock.Avalonia самостоятельно регистрирует DockWindow в rootDock.Windows
-        /// </summary>
         public void Present(bool isDialog)
         {
             _logger.LogDebug("Present() called, hasLayout={HasLayout}", _pendingLayout != null);
@@ -73,26 +63,17 @@ namespace Writersword.Infrastructure.Dock
             _logger.LogDebug("Present() complete");
         }
 
-        /// <summary>
-        /// Закрыть Float окно
-        /// </summary>
         public void Exit()
         {
             _window?.Close();
             _window = null;
         }
 
-        /// <summary>
-        /// Установить позицию окна
-        /// </summary>
         public void SetPosition(double x, double y)
         {
             _pendingPosition = new PixelPoint((int)x, (int)y);
         }
 
-        /// <summary>
-        /// Получить позицию окна
-        /// </summary>
         public void GetPosition(out double x, out double y)
         {
             if (_window != null)
@@ -107,9 +88,6 @@ namespace Writersword.Infrastructure.Dock
             }
         }
 
-        /// <summary>
-        /// Установить размер окна
-        /// </summary>
         public void SetSize(double width, double height)
         {
             if (_window != null)
@@ -119,9 +97,6 @@ namespace Writersword.Infrastructure.Dock
             }
         }
 
-        /// <summary>
-        /// Получить размер окна
-        /// </summary>
         public void GetSize(out double width, out double height)
         {
             if (_window != null)
@@ -136,16 +111,21 @@ namespace Writersword.Infrastructure.Dock
             }
         }
 
-        /// <summary>
-        /// Установить заголовок окна
-        /// </summary>
+        public void SetWindowState(DockWindowState windowState)
+        {
+            if (_window != null)
+                _window.WindowState = windowState;
+        }
+
+        public DockWindowState GetWindowState()
+        {
+            return _window?.WindowState ?? DockWindowState.Normal;
+        }
+
         public void SetTitle(string? title)
         {
         }
 
-        /// <summary>
-        /// Установить Layout для окна
-        /// </summary>
         public void SetLayout(IDock layout)
         {
             _pendingLayout = layout;
@@ -161,19 +141,11 @@ namespace Writersword.Infrastructure.Dock
             }
         }
 
-        /// <summary>
-        /// Активировать окно
-        /// </summary>
         public void SetActive()
         {
             _window?.Activate();
         }
 
-        /// <summary>
-        /// Обработчик закрытия Float окна
-        /// Уведомляет WorkspaceController о закрытии каждого модуля в окне
-        /// Удаляет DockWindow из rootDock.Windows — это единственное место где мы чистим коллекцию
-        /// </summary>
         private void OnWindowClosed(object? sender, EventArgs e)
         {
             _logger.LogDebug("Float window closed");
@@ -257,9 +229,6 @@ namespace Writersword.Infrastructure.Dock
             _logger.LogDebug("Float window cleanup complete");
         }
 
-        /// <summary>
-        /// Вернуть обязательный модуль из Float окна обратно в Dock
-        /// </summary>
         private void ReturnRequiredModuleToDock(string moduleType)
         {
             _logger.LogDebug("Returning required module to dock: {moduleType}", moduleType);
@@ -272,49 +241,33 @@ namespace Writersword.Infrastructure.Dock
             }
 
             tabCollection.ActiveTab.Workspace.ReturnRequiredModuleToDock(moduleType);
-
             _logger.LogDebug("Module {moduleType} returned to dock", moduleType);
         }
 
-        /// <summary>
-        /// Найти DocumentDock внутри Layout
-        /// </summary>
         private DocumentDock? FindDocumentDockInLayout(IDock? layout)
         {
             if (layout == null) return null;
-
             if (layout is DocumentDock dd) return dd;
 
             if (layout is IRootDock rootDock && rootDock.VisibleDockables != null)
-            {
                 foreach (var child in rootDock.VisibleDockables)
-                {
                     if (child is DocumentDock docDock)
                         return docDock;
-                }
-            }
 
             if (layout.VisibleDockables != null)
-            {
                 foreach (var child in layout.VisibleDockables)
                 {
-                    if (child is DocumentDock docDock)
-                        return docDock;
-
+                    if (child is DocumentDock docDock) return docDock;
                     if (child is IDock childDock)
                     {
                         var found = FindDocumentDockInLayout(childDock);
                         if (found != null) return found;
                     }
                 }
-            }
 
             return null;
         }
 
-        /// <summary>
-        /// Найти RootDock в иерархии
-        /// </summary>
         private IRootDock? FindRootDock(IDock? layout)
         {
             if (layout == null) return null;
@@ -326,16 +279,9 @@ namespace Writersword.Infrastructure.Dock
                 if (current is IRootDock rootDock) return rootDock;
                 current = current.Owner;
             }
-
             return null;
         }
 
-        /// <summary>
-        /// Получить FloatingWindowView (для фокусировки из MainWindowViewModel)
-        /// </summary>
-        public FloatingWindowView? GetWindow()
-        {
-            return _window;
-        }
+        public FloatingWindowView? GetWindow() => _window;
     }
 }

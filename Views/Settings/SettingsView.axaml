@@ -13,7 +13,7 @@
         WindowStartupLocation="CenterOwner"
         CanResize="True"
         SizeToContent="Manual"
-        SystemDecorations="None"
+        WindowDecorations="None"
         TransparencyLevelHint="Transparent"
         Background="Transparent">
 

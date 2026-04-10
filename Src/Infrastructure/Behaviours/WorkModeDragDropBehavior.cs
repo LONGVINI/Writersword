@@ -4,7 +4,6 @@ using Avalonia.Controls.Presenters;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.VisualTree;
-using Avalonia.Xaml.Interactivity;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
@@ -18,26 +17,66 @@ using Writersword.ViewModels.Components;
 namespace Writersword.Behaviors
 {
     /// <summary>
-    /// Behavior для перетаскивания кнопок WorkMode с визуальной анимацией
+    /// Behavior для перетаскивания кнопок WorkMode с визуальной анимацией.
+    /// Использует AttachedProperty вместо Avalonia.Xaml.Interactivity.
+    /// Применение в XAML: behaviors:WorkModeDragDropBehavior.IsEnabled="True"
     /// </summary>
-    public class WorkModeDragDropBehavior : Behavior<ItemsControl>
+    public class WorkModeDragDropBehavior
     {
+        // ── AttachedProperty API ──────────────────────────────────────────
+
+        public static readonly AttachedProperty<bool> IsEnabledProperty =
+            AvaloniaProperty.RegisterAttached<ItemsControl, bool>(
+                "IsEnabled", typeof(WorkModeDragDropBehavior));
+
+        private static readonly AttachedProperty<WorkModeDragDropBehavior?> InstanceProperty =
+            AvaloniaProperty.RegisterAttached<ItemsControl, WorkModeDragDropBehavior?>(
+                "Instance", typeof(WorkModeDragDropBehavior));
+
+        static WorkModeDragDropBehavior()
+        {
+            IsEnabledProperty.Changed.AddClassHandler<ItemsControl>(OnIsEnabledChanged);
+        }
+
+        public static bool GetIsEnabled(ItemsControl element) =>
+            element.GetValue(IsEnabledProperty);
+
+        public static void SetIsEnabled(ItemsControl element, bool value) =>
+            element.SetValue(IsEnabledProperty, value);
+
+        private static void OnIsEnabledChanged(ItemsControl control,
+            AvaloniaPropertyChangedEventArgs e)
+        {
+            if (e.NewValue is true)
+            {
+                var behavior = new WorkModeDragDropBehavior(control);
+                control.SetValue(InstanceProperty, behavior);
+                behavior.Attach();
+            }
+            else
+            {
+                var behavior = control.GetValue(InstanceProperty);
+                behavior?.Detach();
+                control.SetValue(InstanceProperty, null);
+            }
+        }
+
+        // ── Состояние экземпляра ──────────────────────────────────────────
+
+        private readonly ItemsControl _control;
+        private ILogger<WorkModeDragDropBehavior>? _logger;
+
         private const double DRAG_THRESHOLD = 10;
         private const double BUTTON_SPACING = 5;
 
         public static bool IsDragging { get; private set; } = false;
-
-        private ILogger<WorkModeDragDropBehavior>? _logger;
 
         private Point _dragStartPoint;
         private double _currentOffsetX = 0;
         private bool _isDragging = false;
         private bool _isSwapping = false;
 
-        // Храним WorkMode объект — он не меняется при перестройке ItemsControl
         private WorkMode? _draggedWorkMode = null;
-
-        // _draggedButton обновляется каждый кадр через _draggedWorkMode
         private Button? _draggedButton = null;
         private ContentPresenter? _draggedPresenter = null;
 
@@ -46,38 +85,36 @@ namespace Writersword.Behaviors
         private double _draggedWidth = 0;
         private double[] _buttonWidths = Array.Empty<double>();
 
-        private Dictionary<TranslateTransform, CancellationTokenSource> _activeAnimations = new();
-        private Dictionary<TranslateTransform, double> _targetPositions = new();
+        private readonly Dictionary<TranslateTransform, CancellationTokenSource> _activeAnimations = new();
+        private readonly Dictionary<TranslateTransform, double> _targetPositions = new();
 
-        protected override void OnAttached()
+        private WorkModeDragDropBehavior(ItemsControl control)
         {
-            base.OnAttached();
+            _control = control;
+        }
 
+        private void Attach()
+        {
             _logger = App.Services.GetService<ILogger<WorkModeDragDropBehavior>>();
 
-            if (AssociatedObject != null)
-            {
-                AssociatedObject.AddHandler(InputElement.PointerPressedEvent, OnPointerPressed, handledEventsToo: true);
-                AssociatedObject.AddHandler(InputElement.PointerMovedEvent, OnPointerMoved, handledEventsToo: true);
-                AssociatedObject.AddHandler(InputElement.PointerReleasedEvent, OnPointerReleased, handledEventsToo: true);
-                _logger?.LogDebug("Behavior attached");
-            }
+            _control.AddHandler(InputElement.PointerPressedEvent, OnPointerPressed, handledEventsToo: true);
+            _control.AddHandler(InputElement.PointerMovedEvent, OnPointerMoved, handledEventsToo: true);
+            _control.AddHandler(InputElement.PointerReleasedEvent, OnPointerReleased, handledEventsToo: true);
+            _logger?.LogDebug("WorkModeDragDropBehavior attached");
         }
 
-        protected override void OnDetaching()
+        private void Detach()
         {
-            base.OnDetaching();
-            if (AssociatedObject != null)
-            {
-                AssociatedObject.RemoveHandler(InputElement.PointerPressedEvent, OnPointerPressed);
-                AssociatedObject.RemoveHandler(InputElement.PointerMovedEvent, OnPointerMoved);
-                AssociatedObject.RemoveHandler(InputElement.PointerReleasedEvent, OnPointerReleased);
-            }
+            _control.RemoveHandler(InputElement.PointerPressedEvent, OnPointerPressed);
+            _control.RemoveHandler(InputElement.PointerMovedEvent, OnPointerMoved);
+            _control.RemoveHandler(InputElement.PointerReleasedEvent, OnPointerReleased);
         }
+
+        // ── Обработчики событий ───────────────────────────────────────────
 
         private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
         {
-            if (_isSwapping || !e.GetCurrentPoint(AssociatedObject).Properties.IsLeftButtonPressed)
+            if (_isSwapping || !e.GetCurrentPoint(_control).Properties.IsLeftButtonPressed)
                 return;
 
             var button = FindWorkModeButton(e.Source);
@@ -86,28 +123,29 @@ namespace Writersword.Behaviors
             _draggedWorkMode = button.DataContext as WorkMode;
             _draggedButton = button;
             _draggedPresenter = button.FindAncestorOfType<ContentPresenter>();
-            _dragStartPoint = e.GetPosition(AssociatedObject);
+            _dragStartPoint = e.GetPosition(_control);
             _currentOffsetX = 0;
             _originalIndex = GetWorkModeIndex(button);
             _currentVisualIndex = _originalIndex;
             _isDragging = false;
 
-            _logger?.LogDebug("Pointer pressed - Index: {Index}, Button width: {Width}", _originalIndex, button.Bounds.Width);
+            _logger?.LogDebug("Pointer pressed - Index: {Index}, Button width: {Width}",
+                _originalIndex, button.Bounds.Width);
 
             button.Classes.Add("dragging");
             _logger?.LogDebug("Added class 'dragging'");
 
-            // Активируем WorkMode сразу при нажатии
+            // Активируем WorkMode сразу при нажатии.
             // После этого LoadWorkModes может пересоздать кнопки —
-            // в UpdateDraggedButton мы найдём актуальную кнопку по _draggedWorkMode
+            // в UpdateDraggedButton мы найдём актуальную кнопку по _draggedWorkMode.
             ActivateWorkModeImmediately();
         }
 
         private void OnPointerMoved(object? sender, PointerEventArgs e)
         {
-            if (_draggedWorkMode == null || AssociatedObject == null) return;
+            if (_draggedWorkMode == null) return;
 
-            var currentPoint = e.GetPosition(AssociatedObject);
+            var currentPoint = e.GetPosition(_control);
             var rawOffsetX = currentPoint.X - _dragStartPoint.X;
 
             if (!_isDragging)
@@ -120,7 +158,7 @@ namespace Writersword.Behaviors
                 return;
             }
 
-            var viewModel = AssociatedObject.DataContext as WorkModeBarViewModel;
+            var viewModel = _control.DataContext as WorkModeBarViewModel;
             if (viewModel == null) return;
 
             var leftLimit = CalculateOffsetToIndex(0);
@@ -133,7 +171,6 @@ namespace Writersword.Behaviors
 
         private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
-            // Убираем класс dragging с актуальной кнопки
             var currentButton = GetCurrentDraggedButton();
             if (currentButton != null)
             {
@@ -143,7 +180,6 @@ namespace Writersword.Behaviors
 
             if (!_isDragging)
             {
-                // Просто клик без drag — WorkMode уже активирован в OnPointerPressed
                 ResetState();
                 return;
             }
@@ -167,7 +203,7 @@ namespace Writersword.Behaviors
                 button.Transitions = null;
             }
 
-            var viewModel = AssociatedObject?.DataContext as WorkModeBarViewModel;
+            var viewModel = _control.DataContext as WorkModeBarViewModel;
             if (viewModel == null)
             {
                 _logger?.LogError("ViewModel is null");
@@ -179,7 +215,8 @@ namespace Writersword.Behaviors
 
             if (_currentVisualIndex != _originalIndex)
             {
-                _logger?.LogDebug("Applying swap: {Original} -> {Visual}", _originalIndex, _currentVisualIndex);
+                _logger?.LogDebug("Applying swap: {Original} -> {Visual}",
+                    _originalIndex, _currentVisualIndex);
 
                 if (_currentVisualIndex > _originalIndex)
                 {
@@ -210,6 +247,8 @@ namespace Writersword.Behaviors
             _isSwapping = false;
             _logger?.LogDebug("Drag complete");
         }
+
+        // ── Вспомогательные методы ────────────────────────────────────────
 
         private void ResetState()
         {
@@ -278,8 +317,11 @@ namespace Writersword.Behaviors
                 var presenter = button.FindAncestorOfType<ContentPresenter>();
                 if (presenter != null) presenter.ZIndex = 0;
 
-                var t = button.RenderTransform as TranslateTransform;
-                if (t != null) { t.X = 0; t.Y = 0; }
+                if (button.RenderTransform is TranslateTransform t)
+                {
+                    t.X = 0;
+                    t.Y = 0;
+                }
                 button.Transitions = null;
             }
         }
@@ -297,7 +339,6 @@ namespace Writersword.Behaviors
 
         private void UpdateDraggedButton()
         {
-            // Обновляем ссылку на актуальную кнопку каждый кадр
             var current = GetCurrentDraggedButton();
             if (current == null) return;
 
@@ -310,9 +351,9 @@ namespace Writersword.Behaviors
 
         private void UpdateVisualPositions()
         {
-            if (_originalIndex == -1 || AssociatedObject == null) return;
+            if (_originalIndex == -1) return;
 
-            var viewModel = AssociatedObject.DataContext as WorkModeBarViewModel;
+            var viewModel = _control.DataContext as WorkModeBarViewModel;
             if (viewModel == null) return;
 
             var allButtons = GetAllButtons();
@@ -346,7 +387,8 @@ namespace Writersword.Behaviors
                         targetOffset = _draggedWidth + BUTTON_SPACING;
                 }
 
-                if (!_targetPositions.ContainsKey(transform) || Math.Abs(_targetPositions[transform] - targetOffset) > 0.1)
+                if (!_targetPositions.ContainsKey(transform) ||
+                    Math.Abs(_targetPositions[transform] - targetOffset) > 0.1)
                 {
                     _logger?.LogDebug("Button {Index}: {Old:F1} -> {New:F1}", i,
                         _targetPositions.ContainsKey(transform) ? _targetPositions[transform] : transform.X,
@@ -379,7 +421,7 @@ namespace Writersword.Behaviors
         {
             if (_originalIndex == -1 || _buttonWidths.Length == 0) return _originalIndex;
 
-            var viewModel = AssociatedObject?.DataContext as WorkModeBarViewModel;
+            var viewModel = _control.DataContext as WorkModeBarViewModel;
             if (viewModel == null) return _originalIndex;
 
             double accumulated = 0;
@@ -387,7 +429,8 @@ namespace Writersword.Behaviors
 
             if (_currentOffsetX > 0)
             {
-                for (int i = _originalIndex + 1; i < viewModel.WorkModes.Count && i < _buttonWidths.Length; i++)
+                for (int i = _originalIndex + 1;
+                     i < viewModel.WorkModes.Count && i < _buttonWidths.Length; i++)
                 {
                     accumulated += _buttonWidths[i] + BUTTON_SPACING;
                     if (_currentOffsetX >= accumulated * 0.5)
@@ -461,9 +504,9 @@ namespace Writersword.Behaviors
 
         private void ActivateWorkModeImmediately()
         {
-            if (_draggedWorkMode == null || AssociatedObject == null) return;
+            if (_draggedWorkMode == null) return;
 
-            var viewModel = AssociatedObject.DataContext as WorkModeBarViewModel;
+            var viewModel = _control.DataContext as WorkModeBarViewModel;
             if (viewModel == null) return;
 
             _logger?.LogDebug("Activating WorkMode: {Title}", _draggedWorkMode.Title);
@@ -491,7 +534,7 @@ namespace Writersword.Behaviors
 
         private int GetWorkModeIndex(Button button)
         {
-            if (AssociatedObject?.DataContext is not WorkModeBarViewModel viewModel) return -1;
+            if (_control.DataContext is not WorkModeBarViewModel viewModel) return -1;
             var workMode = button.DataContext as WorkMode;
             if (workMode == null) return -1;
             return viewModel.WorkModes.IndexOf(workMode);
@@ -499,8 +542,7 @@ namespace Writersword.Behaviors
 
         private List<Button> GetAllButtons()
         {
-            if (AssociatedObject == null) return new List<Button>();
-            var panel = AssociatedObject.ItemsPanelRoot as StackPanel;
+            var panel = _control.ItemsPanelRoot as StackPanel;
             if (panel == null) return new List<Button>();
 
             var buttons = new List<Button>();

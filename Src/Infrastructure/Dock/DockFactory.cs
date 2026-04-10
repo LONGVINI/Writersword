@@ -37,11 +37,13 @@ namespace Writersword.Infrastructure.Dock
         /// Callback вызывается когда пользователь закрывает модуль через крестик в Dock
         /// Единственное надёжное место для перехвата реального закрытия (не drag)
         /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
         public Action<string>? OnModuleClosed { get; set; }
 
         /// <summary>
         /// Callback вызывается когда пользователь переключается на другой модуль в Dock
         /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
         public Action<string>? OnModuleFocused { get; set; }
 
         public DockFactory()
@@ -71,8 +73,6 @@ namespace Writersword.Infrastructure.Dock
             DockableLocator = new Dictionary<string, Func<IDockable?>>();
 
             _logger.LogDebug("Initialized with custom HostWindow");
-
-            DockDiagnostics.InspectFactoryMethods();
         }
 
         /// <summary>
@@ -137,7 +137,7 @@ namespace Writersword.Infrastructure.Dock
                 return _dockSerializer;
 
             _logger.LogDebug("Creating Dock.Serializer");
-            _dockSerializer = new DockSerializer();
+            _dockSerializer = new DockSerializer(App.Services);
             _logger.LogDebug("Dock.Serializer created successfully");
             return _dockSerializer;
         }
@@ -604,47 +604,6 @@ namespace Writersword.Infrastructure.Dock
 
             InitLayout(rootDock);
             ValidateAndRemoveDuplicates(rootDock);
-
-            try
-            {
-                var serializer = GetSerializer();
-                string json;
-
-                using (var writeStream = new System.IO.MemoryStream())
-                {
-                    serializer.Save(writeStream, rootDock);
-                    json = System.Text.Encoding.UTF8.GetString(writeStream.ToArray());
-                }
-
-                if (!string.IsNullOrEmpty(json))
-                {
-                    IRootDock? sanitized = null;
-                    using (var readStream = new System.IO.MemoryStream(
-                        System.Text.Encoding.UTF8.GetBytes(json)))
-                    {
-                        sanitized = serializer.Load<RootDock>(readStream);
-                    }
-
-                    if (sanitized != null)
-                    {
-                        FixRootDockActiveState(sanitized);
-                        DetachViewsFromLayout(rootDock);
-                        int count = RestoreModulesInLayout(sanitized, workMode, ownerTab);
-                        NormalizeProportionsRecursive(sanitized);
-                        sanitized.Factory = this;
-                        InitLayout(sanitized);
-                        ValidateAndRemoveDuplicates(sanitized);
-
-                        _logger.LogDebug("Layout sanitized via serializer: {Count} modules", count);
-                        _currentRootDock = sanitized;
-                        return sanitized;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to sanitize layout, using raw version");
-            }
 
             _logger.LogDebug("Layout built manually with {Count} documents", documents.Count);
             _currentRootDock = rootDock;

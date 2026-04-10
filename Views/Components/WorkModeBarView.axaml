@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.ViewModels.Components"
              xmlns:converters="using:Writersword.Infrastructure.Converters"
-             xmlns:i="clr-namespace:Avalonia.Xaml.Interactivity;assembly=Avalonia.Xaml.Interactivity"
              xmlns:behaviors="using:Writersword.Behaviors"
              x:Class="Writersword.Views.Components.WorkModeBarView"
              x:DataType="vm:WorkModeBarViewModel"
@@ -36,11 +35,10 @@
             BorderThickness="0,0,0,1"
             Padding="10,5">
 
-		<ItemsControl ItemsSource="{Binding WorkModes}">
+		<ItemsControl   behaviors:WorkModeDragDropBehavior.IsEnabled="True"
+						ItemsSource="{Binding WorkModes}">
 
-			<i:Interaction.Behaviors>
-				<behaviors:WorkModeDragDropBehavior />
-			</i:Interaction.Behaviors>
+
 
 			<ItemsControl.ItemsPanel>
 				<ItemsPanelTemplate>

@@ -1,8 +1,4 @@
-﻿using Avalonia;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Input;
-using Avalonia.Xaml.Interactivity;
-using Dock.Model.Avalonia.Controls;
+﻿using Avalonia.Input;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,7 +25,6 @@ using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Infrastructure.Dock;
 using Writersword.ViewModels.Components;
 using Writersword.ViewModels.Components.MenuBar;
-using Writersword.Views;
 using Writersword.WorkModes.Common;
 
 namespace Writersword.ViewModels

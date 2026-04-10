@@ -1,7 +1,6 @@
 ﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.ViewModels.Components"
-             xmlns:i="clr-namespace:Avalonia.Xaml.Interactivity;assembly=Avalonia.Xaml.Interactivity"
              xmlns:behaviors="using:Writersword.Behaviors"
              x:Class="Writersword.Views.Components.TabBarView"
              x:DataType="vm:TabBarViewModel"
@@ -40,12 +39,9 @@
 
 			<StackPanel Orientation="Horizontal" Spacing="4">
 
-				<ItemsControl ItemsSource="{Binding Tabs}"
+				<ItemsControl behaviors:TabDragDropBehavior.IsEnabled="True"
+					          ItemsSource="{Binding Tabs}"
                               x:Name="TabsItemsControl">
-
-					<i:Interaction.Behaviors>
-						<behaviors:TabDragDropBehavior />
-					</i:Interaction.Behaviors>
 
 					<ItemsControl.ItemsPanel>
 						<ItemsPanelTemplate>

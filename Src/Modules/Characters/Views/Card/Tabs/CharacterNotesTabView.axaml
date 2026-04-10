@@ -79,7 +79,7 @@
                      BorderThickness="0,0,0,1"
                      CornerRadius="0"
                      Padding="12,8"
-                     Watermark="Заголовок заметки"
+                     PlaceholderText="Заголовок заметки"
                      IsVisible="{Binding SelectedNote, Converter={x:Static ObjectConverters.IsNotNull}}"/>
 
             <!-- Текст заметки -->
@@ -92,7 +92,7 @@
                      Foreground="{DynamicResource TextPrimaryBrush}"
                      BorderThickness="0"
                      Padding="12,10"
-                     Watermark="Текст заметки..."
+                     PlaceholderText ="Текст заметки..."
                      IsVisible="{Binding SelectedNote, Converter={x:Static ObjectConverters.IsNotNull}}"/>
 
             <!-- Заглушка -->

@@ -43,7 +43,7 @@ namespace Writersword.Modules.Characters.Views
             AddHandler(TextBox.LostFocusEvent, OnTextBoxLostFocus, RoutingStrategies.Bubble);
             AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Bubble);
             AddHandler(PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel);
-            _log.Debug("CharactersModuleView attached to {Root}", e.Root?.GetType().Name);
+            _log.Debug("CharactersModuleView attached to visual tree");
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -209,7 +209,8 @@ namespace Writersword.Modules.Characters.Views
                 }
             }
 
-            // Снимаем фокус если клик вне любого TextBox или Button
+            // Снимаем фокус если клик вне любого TextBox или Button.
+            // В Avalonia 12 IFocusManager.ClearFocus() удалён — используем Focus() на TopLevel.
             var focused = _topLevel?.FocusManager?.GetFocusedElement();
             if (focused is not TextBox) return;
 
@@ -221,7 +222,7 @@ namespace Writersword.Modules.Characters.Views
                 src = src.GetVisualParent();
             }
 
-            _topLevel?.FocusManager?.ClearFocus();
+            _topLevel?.Focus();
         }
 
         // ── LostFocus TextBox ─────────────────────────────────────────────
@@ -242,10 +243,6 @@ namespace Writersword.Modules.Characters.Views
 
                 if (folderVm.IsEditingComment)
                 {
-                    // Что-то украло фокус у FolderCommentBox.
-                    // Восстанавливаем через Dispatcher — к этому моменту все bounce-события
-                    // уже обработаны. Если пользователь кликнул вне папки — OnPointerPressed
-                    // уже вызвал ConfirmCommentCommand и IsEditingComment будет false.
                     var box = src;
                     _log.Debug("OnTextBoxLostFocus: scheduling re-focus for {Name}", src.Name);
                     Dispatcher.UIThread.Post(() =>

@@ -9,10 +9,6 @@ using System.Linq;
 
 namespace Writersword.Views
 {
-    /// <summary>
-    /// Плавающее окно для отображения модулей в Float режиме.
-    /// Независимое окно, не привязанное к главному окну приложения.
-    /// </summary>
     public partial class FloatingWindowView : Window, IDockWindow
     {
         private readonly ILogger<FloatingWindowView> _logger;
@@ -26,48 +22,32 @@ namespace Writersword.Views
 
             _logger.LogDebug("FloatingWindowView created, ID: {Id}", Id);
 
-            // Логирование активации окна
             Activated += (s, e) =>
             {
                 _logger.LogDebug("FloatingWindowView activated: {Title}", Title);
             };
 
-            // Логирование деактивации окна
             Deactivated += (s, e) =>
             {
                 _logger.LogDebug("FloatingWindowView deactivated: {Title}", Title);
             };
 
-            // Отслеживание изменений свойств окна
             PropertyChanged += (s, e) =>
             {
                 if (e.Property.Name == nameof(IsVisible))
-                {
                     _logger.LogDebug("IsVisible changed: {IsVisible} for {Title}", IsVisible, Title);
-                }
                 if (e.Property.Name == nameof(WindowState))
-                {
                     _logger.LogDebug("WindowState changed: {WindowState} for {Title}", WindowState, Title);
-                }
             };
 
-            // Обработка закрытия окна
             Closing += (s, e) =>
             {
                 _logger.LogDebug("FloatingWindowView closing: {Title}", Title);
-
-                // Проверяем можно ли закрыть окно
                 bool canClose = OnClose();
-
                 if (!canClose)
                 {
                     _logger.LogDebug("Close blocked - contains uncloseable content");
-
-                    // Не блокируем закрытие окна!
-                    // Вместо этого возвращаем модуль обратно в главное окно
-                    e.Cancel = false;  // Разрешаем закрытие окна
-
-                    // Модуль автоматически вернётся в Dock когда окно закроется
+                    e.Cancel = false;
                 }
             };
 
@@ -77,7 +57,7 @@ namespace Writersword.Views
             };
         }
 
-        // IDockWindow свойства
+        // ── IDockWindow ───────────────────────────────────────────────────
         public string Id { get; set; }
 
         public double X
@@ -98,6 +78,34 @@ namespace Writersword.Views
             set => base.Title = value;
         }
 
+        // Новые члены Dock 12
+        public new DockWindowState WindowState
+        {
+            get => base.WindowState switch
+            {
+                Avalonia.Controls.WindowState.Minimized => DockWindowState.Minimized,
+                Avalonia.Controls.WindowState.Maximized => DockWindowState.Maximized,
+                Avalonia.Controls.WindowState.FullScreen => DockWindowState.FullScreen,
+                _ => DockWindowState.Normal
+            };
+            set => base.WindowState = value switch
+            {
+                DockWindowState.Minimized => Avalonia.Controls.WindowState.Minimized,
+                DockWindowState.Maximized => Avalonia.Controls.WindowState.Maximized,
+                DockWindowState.FullScreen => Avalonia.Controls.WindowState.FullScreen,
+                _ => Avalonia.Controls.WindowState.Normal
+            };
+        }
+
+        public bool IsModal { get; set; }
+        public DockWindowOwnerMode OwnerMode { get; set; }
+        public IDockWindow? ParentWindow { get; set; }
+
+        public new bool? ShowInTaskbar
+        {
+            get => base.ShowInTaskbar;
+            set => base.ShowInTaskbar = value ?? true;
+        }
 
         public new IDockable? Owner { get; set; }
         public IFactory? Factory { get; set; }
@@ -110,39 +118,22 @@ namespace Writersword.Views
 
         public IHostWindow? Host { get; set; }
 
-        // IDockWindow методы
-        /// <summary>
-        /// Обработчик закрытия окна
-        /// </summary>
+        // ── IDockWindow методы ────────────────────────────────────────────
         public bool OnClose()
         {
-            // Проверяем можно ли закрыть содержимое окна
             bool canCloseContent = CanCloseFloatingContent();
-
             if (!canCloseContent)
-            {
                 _logger.LogDebug("Window contains uncloseable modules - will return to dock");
-            }
-
-            // Всегда разрешаем закрытие ОКНА
-            // Модуль вернется в Dock автоматически через DockFactory
             return true;
         }
 
-        /// <summary>
-        /// Проверить можно ли закрыть содержимое Float окна
-        /// Возвращает false если в окне есть модули с CanClose = false
-        /// </summary>
         private bool CanCloseFloatingContent()
         {
             if (Layout == null) return true;
 
-            // Ищем все Document в Layout
             var documents = FindAllDockables(Layout);
-
             foreach (var dockable in documents)
             {
-                // Проверяем CanClose через рефлексию (т.к. Document может быть недоступен)
                 var canCloseProperty = dockable.GetType().GetProperty("CanClose");
                 if (canCloseProperty != null)
                 {
@@ -154,81 +145,34 @@ namespace Writersword.Views
                     }
                 }
             }
-
             return true;
         }
 
-        /// <summary>
-        /// Рекурсивно найти все IDockable в Layout
-        /// </summary>
         private List<IDockable> FindAllDockables(IDockable dockable)
         {
             var result = new List<IDockable>();
-
-            // Добавляем текущий элемент
             result.Add(dockable);
-
-            // Рекурсивно обходим детей
             if (dockable is IDock dock && dock.VisibleDockables != null)
-            {
                 foreach (var child in dock.VisibleDockables)
-                {
                     result.AddRange(FindAllDockables(child));
-                }
-            }
-
             return result;
         }
 
-        /// <summary>
-        /// Начало перетаскивания окна
-        /// </summary>
-        public bool OnMoveDragBegin()
-        {
-            return true;
-        }
+        public bool OnMoveDragBegin() => true;
+        public void OnMoveDrag() { }
+        public void OnMoveDragEnd() { }
+        public void Save() { }
 
-        /// <summary>
-        /// Процесс перетаскивания окна
-        /// </summary>
-        public void OnMoveDrag()
-        {
-        }
-
-        /// <summary>
-        /// Завершение перетаскивания окна
-        /// </summary>
-        public void OnMoveDragEnd()
-        {
-        }
-
-        /// <summary>
-        /// Сохранить состояние окна
-        /// </summary>
-        public void Save()
-        {
-        }
-
-        /// <summary>
-        /// Показать окно
-        /// </summary>
         public void Present(bool isDialog)
         {
-            // Показываем окно (НЕ используется, управление через HostWindow)
             Show();
         }
 
-        /// <summary>
-        /// Закрыть окно
-        /// </summary>
         public void Exit()
         {
             Close();
         }
 
-        /// <summary>
-        /// Активировать окно (передать фокус)
-        /// </summary>
         public void SetActive()
         {
             Activate();

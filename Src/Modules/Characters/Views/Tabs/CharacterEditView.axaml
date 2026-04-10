@@ -17,7 +17,7 @@
                         BorderBrush="{DynamicResource BorderDefaultBrush}"
                         BorderThickness="0,0,0,1">
                     <TextBox Text="{ReflectionBinding SearchQuery}"
-                             Watermark="{x:Static loc:CharactersStrings.Search_Placeholder}"
+                             PlaceholderText="{x:Static loc:CharactersStrings.Search_Placeholder}"
                              FontSize="12"
                              Background="{DynamicResource BgSurfaceBrush}"
                              Foreground="{DynamicResource TextPrimaryBrush}"

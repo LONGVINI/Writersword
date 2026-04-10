@@ -5,7 +5,7 @@
         SizeToContent="WidthAndHeight"
         WindowStartupLocation="CenterScreen"
         CanResize="False"
-        SystemDecorations="None"
+        WindowDecorations="None"
         TransparencyLevelHint="Transparent"
         Background="Transparent">
 

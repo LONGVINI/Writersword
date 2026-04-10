@@ -84,7 +84,7 @@
                          BorderThickness="1"
                          CornerRadius="4"
                          Padding="8,6"
-                         Watermark="#607D8B"/>
+                         PlaceholderText ="#607D8B"/>
 			</StackPanel>
 
 			<!-- Иконка-символ -->
@@ -101,7 +101,7 @@
                          CornerRadius="4"
                          Padding="8,6"
                          MaxLength="4"
-                         Watermark="?"/>
+                         PlaceholderText = "?"/>
 			</StackPanel>
 
 			<!-- Уровень важности -->
@@ -150,7 +150,7 @@
                          BorderThickness="1"
                          CornerRadius="4"
                          Padding="8,6"
-                         Watermark="{x:Static loc:CharactersStrings.Placeholder_NarrativePoint}"/>
+                         PlaceholderText ="{x:Static loc:CharactersStrings.Placeholder_NarrativePoint}"/>
 			</StackPanel>
 
 			<StackPanel Spacing="4">
@@ -165,7 +165,7 @@
                          BorderThickness="1"
                          CornerRadius="4"
                          Padding="8,6"
-                         Watermark="{x:Static loc:CharactersStrings.Placeholder_NarrativePoint}"/>
+                         PlaceholderText ="{x:Static loc:CharactersStrings.Placeholder_NarrativePoint}"/>
 			</StackPanel>
 
 			<!-- Теги -->

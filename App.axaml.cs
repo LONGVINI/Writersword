@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Diagnostics;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -201,7 +202,7 @@ namespace Writersword
                 MainWindow = mainWindow;
 
 #if DEBUG
-                mainWindow.AttachDevTools();
+                this.AttachDeveloperTools();
 #endif
 
                 var dialogService = Services.GetRequiredService<IDialogService>() as DialogService;
@@ -275,6 +276,14 @@ namespace Writersword
             }
 
             base.OnFrameworkInitializationCompleted();
+        }
+
+        public static ILogger<T> GetLogger<T>()
+        {
+            if (Services == null)
+                return Microsoft.Extensions.Logging.Abstractions.NullLogger<T>.Instance;
+            return Services.GetService<ILogger<T>>()
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<T>.Instance;
         }
 
         /// <summary>

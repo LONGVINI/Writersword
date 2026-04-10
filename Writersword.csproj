@@ -17,6 +17,11 @@
 		<Description>Multi-modal writing application for writers, poets, screenwriters, and game developers</Description>
 		<ApplicationIcon>Resources\Images\icon.ico</ApplicationIcon>
 
+		<!-- Отключаем скомпилированные привязки по умолчанию
+		КРАЙНЕ ОПАСНО! ЭТО РЕФЛЕКСИВНЫЕ БИНДИНГИ ПРИ КАЖДОМ ОБНОВЛЕНИИ UI И ЯВЛЯЕТСЯ НЕ ОЧЕНЬ ХОРОШИМ РЕШЕНИЕМ!!!
+		-->
+		<AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+
 		<!-- Отключаем автоматическое включение .resx (управляем вручную) -->
 		<EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
 	</PropertyGroup>
@@ -35,20 +40,20 @@
        ======================================== -->
 	<ItemGroup>
 		<PackageReference Include="AnimatedImage.Avalonia" Version="2.1.4" />
-		<PackageReference Include="Avalonia" Version="11.3.10" />
-		<PackageReference Include="Avalonia.Desktop" Version="11.3.10" />
+		<PackageReference Include="Avalonia" Version="12.0.0" />
+		<PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
+		<PackageReference Include="Avalonia.Desktop" Version="12.0.0" />
 		<PackageReference Include="Avalonia.Svg.Skia" Version="11.3.0" />
-		<PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.10" />
-		<PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.10" />
-		<PackageReference Include="Avalonia.Diagnostics" Version="11.3.10" />
+		<PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.0" />
+		<PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.0" />
+		<PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.0" />
 		<PackageReference Include="Avalonia.ReactiveUI" Version="11.3.8" />
-		<PackageReference Include="Avalonia.Xaml.Interactivity" Version="11.3.0.6" />
-		<PackageReference Include="Dock.Avalonia" Version="11.3.8" />
-		<PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="11.3.8" />
-		<PackageReference Include="Dock.Model" Version="11.3.8" />
-		<PackageReference Include="Dock.Model.Avalonia" Version="11.3.8" />
-		<PackageReference Include="Dock.Serializer.Newtonsoft" Version="11.3.8" />
-		<PackageReference Include="Dock.Settings" Version="11.3.8" />
+		<PackageReference Include="Dock.Avalonia" Version="12.0.0" />
+		<PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="12.0.0" />
+		<PackageReference Include="Dock.Model" Version="12.0.0" />
+		<PackageReference Include="Dock.Model.Avalonia" Version="12.0.0" />
+		<PackageReference Include="Dock.Serializer.Newtonsoft" Version="12.0.0" />
+		<PackageReference Include="Dock.Settings" Version="12.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.2" />
 		<PackageReference Include="Serilog" Version="4.3.0" />
 		<PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
@@ -72,6 +77,7 @@
 	<ItemGroup>
 		<PackageReference Include="System.Resources.Extensions" Version="8.0.0" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+		<PackageReference Include="Tmds.DBus.Protocol" Version="0.92.0" />
 	</ItemGroup>
 
 	<!-- ========================================

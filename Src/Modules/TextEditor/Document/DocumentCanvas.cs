@@ -1,6 +1,7 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Media;
 using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
@@ -262,6 +263,7 @@ namespace Writersword.Modules.TextEditor.Document
                 InvalidateVisual();
             };
             _caretTimer.Start();
+            GotFocus += OnGotFocusHandler;
         }
 
         // ── HotKey ───────────────────────────────────────────────────────
@@ -331,9 +333,8 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
-        protected override void OnGotFocus(GotFocusEventArgs e)
+        private void OnGotFocusHandler(object? sender, Avalonia.Input.FocusChangedEventArgs e)
         {
-            base.OnGotFocus(e);
             _ = PrefetchClipboardAsync();
         }
 
@@ -344,7 +345,7 @@ namespace Writersword.Modules.TextEditor.Document
                 var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
                 if (clipboard is null) return;
 #pragma warning disable CS0618
-                _clipboardCache = await clipboard.GetTextAsync();
+                _clipboardCache = await clipboard.TryGetTextAsync();
 #pragma warning restore CS0618
             }
             catch { }

@@ -87,7 +87,7 @@
                                                  BorderThickness="1"
                                                  CornerRadius="4"
                                                  Padding="6,4"
-                                                 Watermark="{x:Static loc:CharactersStrings.Field_RelationshipType}"/>
+                                                 PlaceholderText="{x:Static loc:CharactersStrings.Field_RelationshipType}"/>
                                         <CheckBox Grid.Column="1"
                                                   IsChecked="{Binding IsBidirectional}"
                                                   Content="?"
@@ -144,7 +144,7 @@
                                              BorderThickness="1"
                                              CornerRadius="4"
                                              Padding="6,4"
-                                             Watermark="{x:Static loc:CharactersStrings.Field_RelationshipNote}"/>
+                                             PlaceholderText="{x:Static loc:CharactersStrings.Field_RelationshipNote}"/>
 
                                 </Grid>
                             </Border>

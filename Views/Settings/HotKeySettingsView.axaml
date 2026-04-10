@@ -249,7 +249,7 @@
                                    TextWrapping="Wrap" TextAlignment="Center"/>
 					</Button>
 					<TextBox Text="{Binding FilterText}"
-                             Watermark="{x:Static loc:Strings.HotKey_Filter_Watermark}"
+                             PlaceholderText="{x:Static loc:Strings.HotKey_Filter_Watermark}"
                              FontSize="13"/>
 				</DockPanel>
 
@@ -783,7 +783,7 @@
 											<TextBox IsVisible="{Binding IsEditingComment}"
                                                      Text="{Binding Comment, Mode=TwoWay}"
                                                      Tag="{Binding}" FontSize="12"
-                                                     Watermark="{x:Static loc:Strings.HotKey_Prefix_CommentPlaceholder}"
+                                                     PlaceholderText="{x:Static loc:Strings.HotKey_Prefix_CommentPlaceholder}"
                                                      Padding="6,3"/>
 										</Grid>
 

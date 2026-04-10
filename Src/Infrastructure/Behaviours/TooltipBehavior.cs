@@ -5,6 +5,7 @@ using Avalonia.Controls.Primitives.PopupPositioning;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using System;
@@ -372,13 +373,13 @@ namespace Writersword.Infrastructure.Behaviours
 
             popup.Opened += (_, _) =>
             {
-                if (popup.Host is PopupRoot popupRoot)
+                if (TopLevel.GetTopLevel(view) is PopupRoot popupRoot)
                 {
                     popupRoot.Background = Brushes.Transparent;
                     popupRoot.TransparencyLevelHint = new[]
                     {
-                    WindowTransparencyLevel.Transparent
-                };
+                        WindowTransparencyLevel.Transparent
+                    };
                 }
 
                 var topLevel = TopLevel.GetTopLevel(element);
@@ -388,7 +389,6 @@ namespace Writersword.Infrastructure.Behaviours
                         element.GetType().Name);
                     return;
                 }
-
 
                 var pos = element.TranslatePoint(new Point(0, 0), topLevel);
                 if (pos is null) return;

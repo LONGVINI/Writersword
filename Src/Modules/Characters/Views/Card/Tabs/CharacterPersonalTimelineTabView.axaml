@@ -62,7 +62,7 @@
                                                  Background="Transparent"
                                                  BorderThickness="0"
                                                  Padding="0"
-                                                 Watermark="{x:Static loc:CharactersStrings.Field_EventTimestamp}"/>
+                                                 PlaceholderText="{x:Static loc:CharactersStrings.Field_EventTimestamp}"/>
 
                                         <!-- Название события -->
                                         <TextBox Text="{Binding Title}"
@@ -72,7 +72,7 @@
                                                  Background="Transparent"
                                                  BorderThickness="0"
                                                  Padding="0"
-                                                 Watermark="{x:Static loc:CharactersStrings.Field_EventTitle}"/>
+                                                 PlaceholderText="{x:Static loc:CharactersStrings.Field_EventTitle}"/>
                                     </StackPanel>
 
                                     <!-- Кнопки: ключевое + удалить -->
@@ -114,7 +114,7 @@
                                              Background="Transparent"
                                              BorderThickness="0"
                                              Padding="0,4,0,0"
-                                             Watermark="{x:Static loc:CharactersStrings.Field_EventDescription}"/>
+                                             PlaceholderText="{x:Static loc:CharactersStrings.Field_EventDescription}"/>
 
                                 </Grid>
                             </Border>

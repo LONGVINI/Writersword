@@ -4,7 +4,6 @@ using Avalonia.Controls.Presenters;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.VisualTree;
-using Avalonia.Xaml.Interactivity;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
@@ -17,11 +16,54 @@ using Writersword.ViewModels.Components;
 namespace Writersword.Behaviors
 {
     /// <summary>
-    /// Behavior для Drag and Drop вкладок в TabBar
-    /// Smooth reorder как в Chrome
+    /// Behavior для Drag and Drop вкладок в TabBar.
+    /// Smooth reorder как в Chrome.
+    /// Использует AttachedProperty вместо Avalonia.Xaml.Interactivity.
+    /// Применение в XAML: behaviors:TabDragDropBehavior.IsEnabled="True"
     /// </summary>
-    public class TabDragDropBehavior : Behavior<ItemsControl>
+    public class TabDragDropBehavior
     {
+        // ── AttachedProperty API ──────────────────────────────────────────
+
+        public static readonly AttachedProperty<bool> IsEnabledProperty =
+            AvaloniaProperty.RegisterAttached<ItemsControl, bool>(
+                "IsEnabled", typeof(TabDragDropBehavior));
+
+        private static readonly AttachedProperty<TabDragDropBehavior?> InstanceProperty =
+            AvaloniaProperty.RegisterAttached<ItemsControl, TabDragDropBehavior?>(
+                "Instance", typeof(TabDragDropBehavior));
+
+        static TabDragDropBehavior()
+        {
+            IsEnabledProperty.Changed.AddClassHandler<ItemsControl>(OnIsEnabledChanged);
+        }
+
+        public static bool GetIsEnabled(ItemsControl element) =>
+            element.GetValue(IsEnabledProperty);
+
+        public static void SetIsEnabled(ItemsControl element, bool value) =>
+            element.SetValue(IsEnabledProperty, value);
+
+        private static void OnIsEnabledChanged(ItemsControl control,
+            AvaloniaPropertyChangedEventArgs e)
+        {
+            if (e.NewValue is true)
+            {
+                var behavior = new TabDragDropBehavior(control);
+                control.SetValue(InstanceProperty, behavior);
+                behavior.Attach();
+            }
+            else
+            {
+                var behavior = control.GetValue(InstanceProperty);
+                behavior?.Detach();
+                control.SetValue(InstanceProperty, null);
+            }
+        }
+
+        // ── Состояние экземпляра ──────────────────────────────────────────
+
+        private readonly ItemsControl _control;
         private readonly ILogger<TabDragDropBehavior> _logger;
 
         private const double TAB_SPACING = 4;
@@ -37,46 +79,38 @@ namespace Writersword.Behaviors
         private int _currentVisualIndex = -1;
         private double _tabWidth = 180;
 
-        private Dictionary<TranslateTransform, CancellationTokenSource> _activeAnimations = new Dictionary<TranslateTransform, CancellationTokenSource>();
-        private Dictionary<TranslateTransform, double> _targetPositions = new Dictionary<TranslateTransform, double>();
+        private readonly Dictionary<TranslateTransform, CancellationTokenSource> _activeAnimations = new();
+        private readonly Dictionary<TranslateTransform, double> _targetPositions = new();
 
-        public TabDragDropBehavior()
+        private TabDragDropBehavior(ItemsControl control)
         {
+            _control = control;
             _logger = App.Services.GetService<ILogger<TabDragDropBehavior>>()!;
         }
 
-        protected override void OnAttached()
+        private void Attach()
         {
-            base.OnAttached();
-
-            if (AssociatedObject != null)
-            {
-                AssociatedObject.AddHandler(InputElement.PointerPressedEvent, OnPointerPressed, handledEventsToo: true);
-                AssociatedObject.AddHandler(InputElement.PointerMovedEvent, OnPointerMoved, handledEventsToo: true);
-                AssociatedObject.AddHandler(InputElement.PointerReleasedEvent, OnPointerReleased, handledEventsToo: true);
-
-                _logger.LogDebug("Behavior attached");
-            }
+            _control.AddHandler(InputElement.PointerPressedEvent, OnPointerPressed, handledEventsToo: true);
+            _control.AddHandler(InputElement.PointerMovedEvent, OnPointerMoved, handledEventsToo: true);
+            _control.AddHandler(InputElement.PointerReleasedEvent, OnPointerReleased, handledEventsToo: true);
+            _logger.LogDebug("TabDragDropBehavior attached");
         }
 
-        protected override void OnDetaching()
+        private void Detach()
         {
-            base.OnDetaching();
-
-            if (AssociatedObject != null)
-            {
-                AssociatedObject.RemoveHandler(InputElement.PointerPressedEvent, OnPointerPressed);
-                AssociatedObject.RemoveHandler(InputElement.PointerMovedEvent, OnPointerMoved);
-                AssociatedObject.RemoveHandler(InputElement.PointerReleasedEvent, OnPointerReleased);
-            }
+            _control.RemoveHandler(InputElement.PointerPressedEvent, OnPointerPressed);
+            _control.RemoveHandler(InputElement.PointerMovedEvent, OnPointerMoved);
+            _control.RemoveHandler(InputElement.PointerReleasedEvent, OnPointerReleased);
         }
+
+        // ── Обработчики событий ───────────────────────────────────────────
 
         /// <summary>
         /// Обработчик нажатия кнопки мыши
         /// </summary>
         private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
         {
-            if (_isSwapping || !e.GetCurrentPoint(AssociatedObject).Properties.IsLeftButtonPressed)
+            if (_isSwapping || !e.GetCurrentPoint(_control).Properties.IsLeftButtonPressed)
                 return;
 
             var button = FindTabButton(e.Source);
@@ -86,7 +120,7 @@ namespace Writersword.Behaviors
                 return;
             }
 
-            _dragStartPoint = e.GetPosition(AssociatedObject);
+            _dragStartPoint = e.GetPosition(_control);
             _currentOffsetX = 0;
             _draggedButton = button;
             _draggedPresenter = button.FindAncestorOfType<ContentPresenter>();
@@ -95,7 +129,8 @@ namespace Writersword.Behaviors
             _tabWidth = button.Bounds.Width;
             _isDragging = false;
 
-            _logger.LogDebug("Pointer pressed - Index: {Index}, Tab width: {Width}, Start point: {Point}", _originalIndex, _tabWidth, _dragStartPoint);
+            _logger.LogDebug("Pointer pressed - Index: {Index}, Tab width: {Width}, Start point: {Point}",
+                _originalIndex, _tabWidth, _dragStartPoint);
         }
 
         /// <summary>
@@ -103,10 +138,10 @@ namespace Writersword.Behaviors
         /// </summary>
         private void OnPointerMoved(object? sender, PointerEventArgs e)
         {
-            if (_isSwapping || _draggedButton == null || AssociatedObject == null)
+            if (_isSwapping || _draggedButton == null)
                 return;
 
-            var currentPoint = e.GetPosition(AssociatedObject);
+            var currentPoint = e.GetPosition(_control);
             var rawOffsetX = currentPoint.X - _dragStartPoint.X;
 
             if (!_isDragging)
@@ -119,7 +154,7 @@ namespace Writersword.Behaviors
                 return;
             }
 
-            var viewModel = AssociatedObject.DataContext as TabBarViewModel;
+            var viewModel = _control.DataContext as TabBarViewModel;
             if (viewModel == null)
                 return;
 
@@ -155,9 +190,7 @@ namespace Writersword.Behaviors
 
             _logger.LogDebug("Cancelling {Count} active animations", _activeAnimations.Count);
             foreach (var cts in _activeAnimations.Values)
-            {
                 cts.Cancel();
-            }
             _activeAnimations.Clear();
             _targetPositions.Clear();
 
@@ -166,12 +199,11 @@ namespace Writersword.Behaviors
             _logger.LogDebug("Found {Count} buttons", allButtons.Count);
             foreach (var button in allButtons)
             {
-                _logger.LogDebug("Removing transform from button");
                 button.RenderTransform = null;
                 button.Transitions = null;
             }
 
-            var viewModel = AssociatedObject?.DataContext as TabBarViewModel;
+            var viewModel = _control.DataContext as TabBarViewModel;
             if (viewModel == null)
             {
                 _logger.LogError("ViewModel is null");
@@ -187,7 +219,6 @@ namespace Writersword.Behaviors
 
                 if (_currentVisualIndex > _originalIndex)
                 {
-                    _logger.LogDebug("Direction: RIGHT (forward swaps)");
                     for (int i = _originalIndex; i < _currentVisualIndex; i++)
                     {
                         _logger.LogDebug("Swap: {I} <-> {Next}", i, i + 1);
@@ -196,7 +227,6 @@ namespace Writersword.Behaviors
                 }
                 else
                 {
-                    _logger.LogDebug("Direction: LEFT (backward swaps)");
                     for (int i = _originalIndex; i > _currentVisualIndex; i--)
                     {
                         _logger.LogDebug("Swap: {I} <-> {Prev}", i, i - 1);
@@ -216,6 +246,8 @@ namespace Writersword.Behaviors
             _isSwapping = false;
             _logger.LogDebug("Drag complete");
         }
+
+        // ── Вспомогательные методы ────────────────────────────────────────
 
         /// <summary>
         /// Сбросить состояние поведения
@@ -242,15 +274,12 @@ namespace Writersword.Behaviors
 
             _logger.LogDebug("Start dragging");
 
-            _logger.LogDebug("Cancelling {Count} previous animations", _activeAnimations.Count);
             foreach (var cts in _activeAnimations.Values)
-            {
                 cts.Cancel();
-            }
             _activeAnimations.Clear();
             _targetPositions.Clear();
 
-            var viewModel = AssociatedObject?.DataContext as TabBarViewModel;
+            var viewModel = _control.DataContext as TabBarViewModel;
             if (viewModel != null && _draggedButton.DataContext is DocumentTabViewModel tab)
             {
                 viewModel.ActiveTab = tab;
@@ -287,9 +316,7 @@ namespace Writersword.Behaviors
             {
                 var presenter = button.FindAncestorOfType<ContentPresenter>();
                 if (presenter != null)
-                {
                     presenter.ZIndex = 0;
-                }
             }
 
             _logger.LogDebug("Stop complete");
@@ -313,10 +340,10 @@ namespace Writersword.Behaviors
         /// </summary>
         private void UpdateVisualPositions()
         {
-            if (_originalIndex == -1 || AssociatedObject == null)
+            if (_originalIndex == -1)
                 return;
 
-            var viewModel = AssociatedObject.DataContext as TabBarViewModel;
+            var viewModel = _control.DataContext as TabBarViewModel;
             if (viewModel == null)
                 return;
 
@@ -328,7 +355,8 @@ namespace Writersword.Behaviors
 
             if (newVisualIndex != _currentVisualIndex)
             {
-                _logger.LogDebug("Visual index changed - From: {From}, To: {To}, Offset: {Offset:F1}px", _currentVisualIndex, newVisualIndex, _currentOffsetX);
+                _logger.LogDebug("Visual index changed - From: {From}, To: {To}, Offset: {Offset:F1}px",
+                    _currentVisualIndex, newVisualIndex, _currentOffsetX);
                 _currentVisualIndex = newVisualIndex;
             }
 
@@ -345,21 +373,19 @@ namespace Writersword.Behaviors
                 if (_currentVisualIndex > _originalIndex)
                 {
                     if (i > _originalIndex && i <= _currentVisualIndex)
-                    {
                         targetOffset = -(_tabWidth + TAB_SPACING);
-                    }
                 }
                 else if (_currentVisualIndex < _originalIndex)
                 {
                     if (i >= _currentVisualIndex && i < _originalIndex)
-                    {
                         targetOffset = _tabWidth + TAB_SPACING;
-                    }
                 }
 
-                if (!_targetPositions.ContainsKey(transform) || Math.Abs(_targetPositions[transform] - targetOffset) > 0.1)
+                if (!_targetPositions.ContainsKey(transform) ||
+                    Math.Abs(_targetPositions[transform] - targetOffset) > 0.1)
                 {
-                    var oldTarget = _targetPositions.ContainsKey(transform) ? _targetPositions[transform] : transform.X;
+                    var oldTarget = _targetPositions.ContainsKey(transform)
+                        ? _targetPositions[transform] : transform.X;
                     _logger.LogDebug("Button {Index}: animating {Old:F1} -> {New:F1}", i, oldTarget, targetOffset);
                     _targetPositions[transform] = targetOffset;
                     AnimateTransform(transform, targetOffset);
@@ -412,38 +438,30 @@ namespace Writersword.Behaviors
             finally
             {
                 if (_activeAnimations.ContainsKey(transform))
-                {
                     _activeAnimations.Remove(transform);
-                }
             }
         }
 
         /// <summary>
         /// Easing функция Cubic Out
         /// </summary>
-        private double EaseOutCubic(double t)
-        {
-            return 1 - Math.Pow(1 - t, 3);
-        }
+        private double EaseOutCubic(double t) => 1 - Math.Pow(1 - t, 3);
 
         /// <summary>
         /// Рассчитать новый визуальный индекс на основе смещения
         /// </summary>
         private int CalculateNewVisualIndex()
         {
-            if (_originalIndex == -1 || AssociatedObject == null)
+            if (_originalIndex == -1)
                 return _originalIndex;
 
-            var viewModel = AssociatedObject.DataContext as TabBarViewModel;
+            var viewModel = _control.DataContext as TabBarViewModel;
             if (viewModel == null)
                 return _originalIndex;
 
             var tabsCount = viewModel.Tabs.Count;
-
             var positionsOffset = _currentOffsetX / (_tabWidth + TAB_SPACING);
-
             int newIndex = _originalIndex + (int)Math.Round(positionsOffset);
-
             newIndex = Math.Max(0, Math.Min(newIndex, tabsCount - 1));
 
             return newIndex;
@@ -471,13 +489,10 @@ namespace Writersword.Behaviors
 
             while (current != null)
             {
-                if (current is Button button && button.DataContext is DocumentTabViewModel)
-                {
-                    if (button.Bounds.Width > 50)
-                    {
-                        return button;
-                    }
-                }
+                if (current is Button button &&
+                    button.DataContext is DocumentTabViewModel &&
+                    button.Bounds.Width > 50)
+                    return button;
 
                 current = current.Parent as Control;
             }
@@ -490,7 +505,7 @@ namespace Writersword.Behaviors
         /// </summary>
         private int GetTabIndex(Button button)
         {
-            if (AssociatedObject?.DataContext is not TabBarViewModel viewModel)
+            if (_control.DataContext is not TabBarViewModel viewModel)
                 return -1;
 
             var tab = button.DataContext as DocumentTabViewModel;
@@ -505,10 +520,7 @@ namespace Writersword.Behaviors
         /// </summary>
         private List<Button> GetAllButtons()
         {
-            if (AssociatedObject == null)
-                return new List<Button>();
-
-            var panel = AssociatedObject.ItemsPanelRoot as StackPanel;
+            var panel = _control.ItemsPanelRoot as StackPanel;
             if (panel == null)
                 return new List<Button>();
 
