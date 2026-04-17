@@ -187,7 +187,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             UpdateSelectionContext();
-            ResetCaret(); InvalidateFull();
+            ResetCaretNoScroll(); InvalidateFull();
             e.Handled = true;
         }
 
@@ -863,46 +863,22 @@ namespace Writersword.Modules.TextEditor.Document
             double oldCanvasH = _canvasHeight;
             RebuildLayouts();
 
-            // Если высота канваса изменилась (таблица выросла или уменьшилась) —
-            // нужно уведомить ScrollViewer о новом размере.
             if (Math.Abs(_canvasHeight - oldCanvasH) > 0.5)
                 InvalidateMeasure();
 
-            // Snap: найти слайс с targetBlock.
-            // Для ByCell-разреза одна и та же VM присутствует в двух слайсах (страница 1
-            // и страница 2). Берём слайс, в clip-прямоугольник которого попадает каретка,
-            // иначе ResetCaret → ScrollToCaret прыгает на страницу 1 вместо страницы 2.
+            // Snap: находим нужный слайс через SnapCaretToCorrectSlice.
+            // Ищет слайс по диапазону строк (LineFrom/LineTo), а не по ClipY/ClipH,
+            // поэтому корректно работает при переходе на новую страницу во время печати.
+            // Предварительно устанавливаем _caretPara на любой слайс нужной VM —
+            // SnapCaretToCorrectSlice начинает поиск от targetVm = GetVmAt(_caretPara).
             if (targetBlock != null && _cellVmCache.TryGetValue(targetBlock, out var targetVm))
             {
-                int bestSlice = -1;
                 for (int i = 0; i < _layouts.Count; i++)
                 {
-                    if (_layouts[i].Vm != targetVm) continue;
-                    if (bestSlice < 0) bestSlice = i; // запасной: первый найденный слайс
-
-                    var pl = _layouts[i];
-                    if (pl.Cell != null)
-                    {
-                        // Проверяем, попадает ли каретка в видимую область данного слайса.
-                        int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
-                        var caretRect = pl.Layout.HitTestPosition(pos);
-                        float yBase = pl.LineFrom < pl.Layout.Lines.Count
-                            ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
-                        float caretAbsY = pl.Ypt + (caretRect.Y - yBase);
-                        if (caretAbsY >= pl.Cell.ClipY - 0.5f
-                            && caretAbsY < pl.Cell.ClipY + pl.Cell.ClipH + 0.5f)
-                        {
-                            bestSlice = i;
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        break; // не ячейка — первый слайс однозначно верный
-                    }
+                    if (_layouts[i].Vm == targetVm) { _caretPara = i; break; }
                 }
-                if (bestSlice >= 0) _caretPara = bestSlice;
             }
+            SnapCaretToCorrectSlice();
 
             NotifyCaretEnteredTableCallback();
 

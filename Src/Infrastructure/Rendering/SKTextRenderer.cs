@@ -30,14 +30,18 @@ namespace Writersword.Infrastructure.Rendering
         /// <summary>
         /// Строит вёрстку одного параграфа.
         /// Вызывается DocumentCanvas для каждого параграфа при изменении текста или ширины.
+        /// isCell = true подавляет дефолтный SpaceAfter/SpaceBefore из StyleResolver:
+        /// внутри ячейки интервалы применяются только если заданы явно в свойствах параграфа.
         /// </summary>
         /// <param name="para">Блок параграфа из модели документа.</param>
         /// <param name="availableWidthPt">Ширина текстовой области в pt.</param>
         /// <param name="styles">Резолвер стилей документа.</param>
+        /// <param name="isCell">true — параграф внутри ячейки таблицы.</param>
         public SKTextLayout BuildLayout(
             ParagraphBlock para,
             float availableWidthPt,
-            StyleResolver styles)
+            StyleResolver styles,
+            bool isCell = false)
         {
             string? styleName = para.Properties.StyleName;
 
@@ -46,10 +50,14 @@ namespace Writersword.Infrastructure.Rendering
             float rightIndentPt = (float)(para.Properties.RightIndent
                                         ?? styles.ResolveRightIndent(styleName));
             float firstLineIndentPt = (float)(para.Properties.FirstLineIndent ?? 0.0);
+
+            // Внутри ячейки дефолтный SpaceBefore/SpaceAfter = 0.
+            // Интервал применяется только если явно задан в свойствах параграфа.
             float spaceBeforePt = (float)(para.Properties.SpaceBefore
-                                        ?? styles.ResolveSpaceBefore(styleName));
+                                        ?? (isCell ? 0.0 : (double)styles.ResolveSpaceBefore(styleName)));
             float spaceAfterPt = (float)(para.Properties.SpaceAfter
-                                        ?? styles.ResolveSpaceAfter(styleName));
+                                        ?? (isCell ? 0.0 : (double)styles.ResolveSpaceAfter(styleName)));
+
             float lineSpacing = para.Properties.LineSpacingValue.HasValue
                                         ? (float)para.Properties.LineSpacingValue.Value
                                         : styles.ResolveLineSpacing(styleName);
@@ -173,12 +181,12 @@ namespace Writersword.Infrastructure.Rendering
                         Borders = BuildCellBorderLayout(cell.Borders)
                     };
 
-                    // Верстаем параграфы ячейки.
+                    // Верстаем параграфы ячейки с isCell = true — подавляем дефолтный SpaceAfter.
                     float cellContentY = 0f;
                     for (int pi = 0; pi < cell.Paragraphs.Count; pi++)
                     {
                         var para = cell.Paragraphs[pi];
-                        var paraLayout = BuildLayout(para, contentWidthPt, styles);
+                        var paraLayout = BuildLayout(para, contentWidthPt, styles, isCell: true);
 
                         cellLayout.Paragraphs.Add(new SKTableParaLayout
                         {
@@ -380,20 +388,13 @@ namespace Writersword.Infrastructure.Rendering
                         int rowFrom = 0;
                         float tableSliceStartY = currentY;
                         bool isFirstSlice = true;
-                        // Смещение откуда начинать рисовать первую строку текущего слайса.
-                        // Ненулевое только если предыдущий слайс разорвал строку ByCell.
                         float sliceFirstRowOffset = 0f;
-                        // Фиксирует sliceFirstRowOffset на момент начала слайса.
-                        // В отличие от sliceFirstRowOffset не сбрасывается else-веткой при обработке
-                        // первой строки слайса — используется в FirstRowContentOffsetPt при закрытии слайса.
                         float sliceStartOffset = 0f;
 
                         for (int ri = 0; ri < tableLayout.Rows.Count; ri++)
                         {
                             var row = tableLayout.Rows[ri];
 
-                            // Для первой строки слайса её "эффективная" высота уменьшена
-                            // на ту часть которая уже была показана на предыдущей странице.
                             float effectiveH = row.HeightPt - sliceFirstRowOffset;
 
                             if (repeatHeader && ri == 0 && !isFirstSlice) continue;
@@ -407,9 +408,7 @@ namespace Writersword.Infrastructure.Rendering
                             {
                                 if (byCell && available > 5f)
                                 {
-                                    // ByCell: разрываем строку ri — показываем доступную высоту
                                     float visibleH = available;
-                                    // На следующей странице: пропускаем уже показанный контент
                                     float nextOffset = sliceFirstRowOffset + visibleH;
 
                                     currentPage.Tables.Add(new SKPageTable
@@ -437,16 +436,11 @@ namespace Writersword.Infrastructure.Rendering
                                     sliceFirstRowOffset = nextOffset;
                                     sliceStartOffset = nextOffset;
                                     isFirstSlice = false;
-                                    // Не делаем continue: ri остаётся тем же — переходим на следующую страницу
-                                    // и повторяем проверку для этой же строки с новым offset.
-                                    // Это позволяет корректно обрабатывать строки больше двух страниц.
                                     ri--;
                                     continue;
                                 }
                                 else
                                 {
-                                    // ByRow: строка ri целиком уходит на следующую страницу.
-                                    // Либо ByCell но места < 5pt — тоже переносим целиком.
                                     if (ri > rowFrom)
                                     {
                                         currentPage.Tables.Add(new SKPageTable
@@ -477,7 +471,6 @@ namespace Writersword.Infrastructure.Rendering
                             }
                             else
                             {
-                                // Строка помещается: сбрасываем offset — следующая строка рисуется с начала
                                 sliceFirstRowOffset = 0f;
                             }
 
@@ -517,9 +510,6 @@ namespace Writersword.Infrastructure.Rendering
 
                     var layout = BuildLayout(para, textWidthPt, styles);
 
-                    // Пропускаем только системные якоря — пустые параграфы стоящие
-                    // непосредственно рядом с таблицей (до или после).
-                    // Пользовательские пустые параграфы между таблицами рендерятся как обычно.
                     bool prevIsTable = bi > 0 && blocks[bi - 1] is TableBlock;
                     bool nextIsTable = bi + 1 < blocks.Count && blocks[bi + 1] is TableBlock;
                     bool isSystemAnchor = string.IsNullOrEmpty(para.GetPlainText())
@@ -536,7 +526,6 @@ namespace Writersword.Infrastructure.Rendering
                         continue;
                     }
 
-                    // SpaceBefore добавляем только перед первым слайсом параграфа.
                     currentY += layout.SpaceBeforePt;
 
                     int lineFrom = 0;
@@ -547,12 +536,9 @@ namespace Writersword.Infrastructure.Rendering
                         var line = layout.Lines[li];
                         bool isLastLine = li == layout.Lines.Count - 1;
 
-                        // Если строка не влезает и на текущей странице уже есть контент —
-                        // закрываем слайс, добавляем страницу, продолжаем тот же параграф.
                         if (currentY + line.Height > textHeightPt
                             && (currentPage.Paragraphs.Count > 0 || li > lineFrom))
                         {
-                            // Записываем накопленный слайс если в нём есть строки.
                             if (li > lineFrom)
                             {
                                 currentPage.Paragraphs.Add(new SKPageParagraph
@@ -576,12 +562,8 @@ namespace Writersword.Infrastructure.Rendering
 
                         currentY += line.Height;
 
-                        // SpaceAfter добавляем только после последней строки параграфа.
-                        // Исключение: если следующий значимый блок — таблица,
-                        // SpaceAfter не добавляем (таблица примыкает к параграфу вплотную).
                         if (isLastLine)
                         {
-                            // SpaceAfter не добавляем если следующий значимый блок — таблица.
                             bool spaceNextIsTable = false;
                             for (int nb = bi + 1; nb < blocks.Count; nb++)
                             {
@@ -598,7 +580,6 @@ namespace Writersword.Infrastructure.Rendering
                         }
                     }
 
-                    // Финальный слайс параграфа (остаток или весь параграф).
                     currentPage.Paragraphs.Add(new SKPageParagraph
                     {
                         Layout = layout,
@@ -726,9 +707,7 @@ namespace Writersword.Infrastructure.Rendering
 
                 float headerOffset = pageTable.HeaderRowHeightPt;
 
-                // Последняя строка слайса может быть видна частично (ByCell).
                 bool hasLastRowClip = pageTable.LastRowVisibleHeightPt >= 0f;
-                // Первая строка слайса-продолжения начинает рисоваться со смещения.
                 bool hasFirstRowOffset = pageTable.IsContinuation && pageTable.FirstRowContentOffsetPt > 0f;
 
                 foreach (var row in layout.Rows)
@@ -738,11 +717,6 @@ namespace Writersword.Infrastructure.Rendering
                     bool isLastRow = (row.Row == rowTo - 1);
                     bool isFirstRow = (row.Row == rowFrom);
 
-                    // Видимая высота ячейки для этой строки.
-                    // Для первой строки продолжения — высота уменьшена сверху на firstRowShift.
-                    // Для последней строки слайса с ByCell-разрывом — ограничиваем снизу.
-                    // lastRowVisibleHeightPt выражен как высота видимого окна на данной странице
-                    // и имеет приоритет над вычислением из firstRowShift.
                     float visibleRowH = row.HeightPt;
                     float firstRowShift = 0f;
 
@@ -758,12 +732,8 @@ namespace Writersword.Infrastructure.Rendering
                     foreach (var cell in row.Cells)
                     {
                         float cellX = tableX + cell.Xpt;
-                        // cellY — верхний край прямоугольника ячейки на странице.
-                        // Для первой строки продолжения сдвигаем вверх на firstRowShift,
-                        // чтобы обрезанная часть "уехала" за верхний край страницы.
                         float cellY = tableBaseY + headerOffset + cell.Ypt - rowOffsetY - firstRowShift;
 
-                        // Фон рисуем только в пределах видимой части.
                         if (!string.IsNullOrEmpty(cell.BackgroundColor)
                             && SKColor.TryParse(cell.BackgroundColor, out var bgColor))
                         {
@@ -771,17 +741,13 @@ namespace Writersword.Infrastructure.Rendering
                             canvas.DrawRect(cellX, cellY + firstRowShift, cell.WidthPt, visibleRowH, bgPaint);
                         }
 
-                        // Для последней строки слайса не рисуем нижнюю границу
-                        // (она продолжится на следующей странице).
                         bool suppressBottom = isLastRow && hasLastRowClip;
-                        // Видимый верхний край ячейки (для первой строки продолжения cellY сдвинут вверх).
                         float visibleCellY = cellY + firstRowShift;
                         RenderCellBorders(canvas, cell, cellX, visibleCellY, visibleRowH, canvasScale, false, suppressBottom);
 
                         float contentX = cellX + cell.PadLeftPt + cell.Borders.Left.WidthPt;
                         float contentY = cellY + cell.PadTopPt + cell.Borders.Top.WidthPt;
 
-                        // Клип-регион: ограничиваем видимой частью строки.
                         float clipTop = cellY + firstRowShift + cell.Borders.Top.WidthPt;
                         float clipBottom = cellY + firstRowShift + visibleRowH - cell.Borders.Bottom.WidthPt;
 
@@ -959,7 +925,6 @@ namespace Writersword.Infrastructure.Rendering
             {
                 if (wordBuffer.Count == 0) return;
 
-                // Слово целиком помещается — стандартный путь.
                 if (currentW + wordWidth <= lineWidth || currentLine.Segments.Count == 0 && wordWidth <= lineWidth)
                 {
                     if (currentW + wordWidth > lineWidth && currentLine.Segments.Count > 0)
@@ -978,10 +943,6 @@ namespace Writersword.Infrastructure.Rendering
                     return;
                 }
 
-                // Слово не помещается ни в остаток текущей строки, ни в целую строку.
-                // Переносим по символам (принудительный разрыв).
-
-                // Если на текущей строке уже что-то есть — сначала завершаем её.
                 if (currentLine.Segments.Count > 0)
                 {
                     FinalizeLine(currentLine, layout, lineSpacing);
@@ -993,7 +954,6 @@ namespace Writersword.Infrastructure.Rendering
                     };
                 }
 
-                // Раскладываем символы слова посимвольно, разбивая на строки.
                 foreach (var (ch, format, globalIdx) in wordBuffer)
                 {
                     float charWidth = MeasureChar(ch, format);
@@ -1220,7 +1180,6 @@ namespace Writersword.Infrastructure.Rendering
                 switch (col.WidthType)
                 {
                     case TableColumnWidthType.Fixed:
-                        // Fixed ширина не ограничивается — таблица может выходить за страницу.
                         widths[i] = MmToPt(col.WidthValue);
                         usedFixedPt += widths[i];
                         break;
@@ -1234,13 +1193,10 @@ namespace Writersword.Infrastructure.Rendering
                 }
             }
 
-            // Auto-колонки (только при создании новой таблицы): равномерно делим страницу.
-            // Если суммарная желаемая ширина > страницы — масштабируем вниз.
             if (autoCount > 0)
             {
                 float available = Math.Max(textAreaWidthPt - usedFixedPt, autoCount * 10f);
                 float autoWidth = available / autoCount;
-                // Масштабирование вниз если не влезают
                 float totalWanted = usedFixedPt + autoWidth * autoCount;
                 if (totalWanted > textAreaWidthPt && textAreaWidthPt > 0)
                     autoWidth = Math.Max(10f, (textAreaWidthPt - usedFixedPt) / autoCount);
@@ -1253,10 +1209,7 @@ namespace Writersword.Infrastructure.Rendering
         }
 
         /// <summary>
-        /// Рендерит границы одной ячейки таблицы.
-        /// </summary>
-        /// <summary>
-        /// Рисует границы ячейки. Публичный для DocumentCanvas (рендерит структуру таблицы отдельно от содержимого).
+        /// Публичная обёртка RenderCellBorders для DocumentCanvas.
         /// </summary>
         public static void RenderCellBordersPublic(
             SKCanvas canvas, SKTableCellLayout cell,
@@ -1295,9 +1248,6 @@ namespace Writersword.Infrastructure.Rendering
                 cellX + cell.WidthPt, cellY + visibleH, canvasScale);
         }
 
-        /// <summary>
-        /// Рисует одну линию границы ячейки с учётом стиля и толщины.
-        /// </summary>
         private static void DrawBorderLine(
             SKCanvas canvas,
             SKTableBorderLineLayout border,
@@ -1309,14 +1259,9 @@ namespace Writersword.Infrastructure.Rendering
             if (!SKColor.TryParse(border.Color, out var color))
                 color = SKColors.Black;
 
-            // Минимальная ширина = 1 физический пиксель независимо от DPI и зума.
-            // canvasScale переводит pt → px. Минимум 1px = 1/canvasScale pt.
             float minWidthPt = canvasScale > 0f ? 1f / canvasScale : 0.75f;
             float strokeWidth = Math.Max(minWidthPt, border.WidthPt > 0f ? border.WidthPt : minWidthPt);
 
-            // Pixel-snapping в пиксельном пространстве:
-            // переводим в px, округляем до ближайшего 0.5px, переводим обратно в pt.
-            // Это гарантирует чёткую линию на любом разрешении (HD, 4K, Retina).
             if (Math.Abs(x1 - x2) < 0.01f) // вертикальная
             {
                 float xPx = (float)Math.Round(x1 * canvasScale - 0.5f) + 0.5f;
@@ -1343,9 +1288,6 @@ namespace Writersword.Infrastructure.Rendering
             canvas.DrawLine(x1, y1, x2, y2, paint);
         }
 
-        /// <summary>
-        /// Строит SKTableCellBorderLayout из модели CellBorders.
-        /// </summary>
         private static SKTableCellBorderLayout BuildCellBorderLayout(CellBorders borders)
         {
             return new SKTableCellBorderLayout
@@ -1357,9 +1299,6 @@ namespace Writersword.Infrastructure.Rendering
             };
         }
 
-        /// <summary>
-        /// Конвертирует BorderStyle + толщину в SKTableBorderLineLayout.
-        /// </summary>
         private static SKTableBorderLineLayout BorderLineToLayout(
             BorderStyle style, double thicknessPt, string? color)
         {
@@ -1377,9 +1316,6 @@ namespace Writersword.Infrastructure.Rendering
             };
         }
 
-        /// <summary>
-        /// Возвращает толщину границы в pt для расчёта внутренних отступов ячейки.
-        /// </summary>
         private static float BorderToPt(CellBorders borders)
             => (float)borders.ThicknessPt;
 
@@ -1478,10 +1414,6 @@ namespace Writersword.Infrastructure.Rendering
                 float lineY = paraY + (line.Y - yBase);
                 float offsetX = ComputeAlignmentOffset(layout, line);
 
-                // Первая физическая строка параграфа (i == 0) сдвигается вправо
-                // на FirstLineIndentPt — это классический отступ первой строки.
-                // Ширина этой строки была уже уменьшена на FirstLineIndentPt в WrapTokensToLines,
-                // поэтому текст корректно вписывается без выхода за правый край.
                 float firstLineExtra = (i == 0) ? layout.FirstLineIndentPt : 0f;
 
                 foreach (var seg in line.Segments)

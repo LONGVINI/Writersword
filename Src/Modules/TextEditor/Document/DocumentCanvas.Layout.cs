@@ -36,6 +36,17 @@ namespace Writersword.Modules.TextEditor.Document
             float rowOffsetY = rowFrom > 0 && rowFrom < tableLayout.Rows.Count
                 ? tableLayout.Rows[rowFrom].Ypt : 0f;
 
+            // Верхний паддинг строки rowFrom — синхронно с RenderTableStructureOnly.
+            // Используется для корректировки позиций строк ПОСЛЕ rowFrom: они сдвигаются вверх
+            // не на firstRowOffset, а на (firstRowOffset - maxCellPadTop), что соответствует
+            // увеличенной effectiveRowH строки rowFrom (она выше на maxCellPadTop).
+            float maxCellPadTop = 0f;
+            if (firstRowOffset > 0f && rowFrom < tableLayout.Rows.Count)
+            {
+                foreach (var cl in tableLayout.Rows[rowFrom].Cells)
+                    maxCellPadTop = Math.Max(maxCellPadTop, cl.PadTopPt + cl.Borders.Top.WidthPt);
+            }
+
             _logger.Debug(
                 "[CELLS] tableYPt={TY:F1} rowFrom={RF} rowTo={RT} effectiveRowTo={ERT} rowOffsetY={ROY:F1} firstRowOffset={FRO:F1} lastRowVisH={LRV:F1}",
                 tableYPt, rowFrom, rowTo, effectiveRowTo, rowOffsetY, firstRowOffset, lastRowVisibleH);
@@ -47,6 +58,12 @@ namespace Writersword.Modules.TextEditor.Document
                 bool isLastRow = rowLayout.Row == effectiveRowTo - 1;
                 bool isByCellSplit = isLastRow && lastRowVisibleH >= 0f;
                 bool isContinuationFirstRow = rowLayout.Row == rowFrom && firstRowOffset > 0f;
+
+                // effectiveOffset — смещение контента уже показанного на предыдущих страницах.
+                // Актуально ТОЛЬКО для первой строки слайса (rowFrom): она является продолжением
+                // разрыва ByCell. Все строки после rowFrom начинаются с нуля — применение
+                // firstRowOffset к ним ломает clipH и P, делая их контент невидимым.
+                float effectiveOffset = isContinuationFirstRow ? firstRowOffset : 0f;
 
                 foreach (var cellLayout in rowLayout.Cells)
                 {
@@ -66,7 +83,12 @@ namespace Writersword.Modules.TextEditor.Document
                         + cellLayout.PadLeftPt + cellLayout.Borders.Left.WidthPt;
 
                     // cellBaseY — Y верха этой строки на текущей странице.
-                    float cellBaseY = tableYPt + cellLayout.Ypt - rowOffsetY;
+                    // Для строк после rowFrom: строка rowFrom имеет effectiveRowH увеличенный
+                    // на maxCellPadTop (см. RenderTableStructureOnly), поэтому сдвигаем на
+                    // (firstRowOffset - maxCellPadTop) вместо firstRowOffset.
+                    float extraOffset = rowLayout.Row != rowFrom && firstRowOffset > 0f
+                        ? firstRowOffset - maxCellPadTop : 0f;
+                    float cellBaseY = tableYPt + cellLayout.Ypt - rowOffsetY - extraOffset;
 
                     float clipX = tableXPt + cellLayout.Xpt + cellLayout.Borders.Left.WidthPt;
                     float clipW = cellLayout.WidthPt
@@ -75,16 +97,19 @@ namespace Writersword.Modules.TextEditor.Document
                     // pageVisibleRow — высота строки, видимая на этой странице (в координатах строки).
                     float pageVisibleRow = isByCellSplit
                         ? lastRowVisibleH
-                        : (rowLayout.HeightPt - firstRowOffset);
+                        : (rowLayout.HeightPt - effectiveOffset);
 
-                    // Clip под верхней рамкой. Высота = PadTop + контент + PadBottom.
+                    // clipY — начало видимой области контента (за верхней рамкой).
+                    // clipH покрывает текст: pageVisibleRow за вычетом рамок.
+                    // Паддинги (top/bottom) не включаются в clip — там нет текста,
+                    // только пустое пространство которое создаётся смещением absParaY и границами рамки.
                     float clipY = cellBaseY + cellBT;
                     float clipH = Math.Max(0f, pageVisibleRow - cellBT - cellBB);
 
                     // P — нижняя граница видимости в координатах контента ячейки (0 = верх контента).
                     // Строки ЗАКАНЧИВАЮЩИЕСЯ до P были показаны на предыдущих страницах.
                     // Отрицательное P на первой странице означает "все строки видны снизу".
-                    float P = firstRowOffset - cellPadTopTotal;
+                    float P = effectiveOffset - cellPadTopTotal;
 
                     // contentCutY — верхняя граница видимости (в координатах контента).
                     // Строки НАЧИНАЮЩИЕСЯ после contentCutY уйдут на следующую страницу.
@@ -109,8 +134,8 @@ namespace Writersword.Modules.TextEditor.Document
 
                     // Базовый Y контента на странице:
                     // верх строки → cellBaseY, контент-область → + cellPadTopTotal,
-                    // предыдущие страницы → - firstRowOffset.
-                    float cellContentY = cellBaseY - firstRowOffset + cellPadTopTotal;
+                    // предыдущие страницы → - effectiveOffset (только для строки rowFrom).
+                    float cellContentY = cellBaseY - effectiveOffset + cellPadTopTotal;
 
                     float cellBottom = clipY + clipH;
 
@@ -192,6 +217,16 @@ namespace Writersword.Modules.TextEditor.Document
                         float spaceBefore = lineFrom > 0 ? 0f : cellPara.Layout.SpaceBeforePt;
 
                         float absParaY = cellContentY + contentOffsetY + cellPara.Ypt + spaceBefore;
+
+                        // На странице продолжения текст начинается в tableY + cellPadTopTotal
+                        // (за верхней рамкой + верхний паддинг). effectiveRowH строки rowFrom
+                        // увеличен на cellPadTopTotal (в RenderTableStructureOnly), поэтому
+                        // нижний паддинг cellPadBotTotal тоже полностью виден.
+                        if (effectiveOffset > 0f)
+                        {
+                            float consumedContent = effectiveOffset - cellPadTopTotal;
+                            absParaY += effectiveOffset - Math.Min(cellPara.Ypt, consumedContent);
+                        }
 
                         _logger.Debug(
                             "[CELLS]   pi={PI} P={P:F1} cCutY={CCY:F1} lineFrom={LF} lineTo={LT} absParaY={APY:F1}",

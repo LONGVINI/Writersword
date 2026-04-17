@@ -246,6 +246,9 @@ namespace Writersword.Modules.TextEditor.Document
                 if (pl.Cell == null) return true; // обычный параграф — всегда подходит
                 int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
                 var caretRect = pl.Layout.HitTestPosition(pos);
+                // RenderParagraphLines рендерит строки со смещением (line.Y - lines[lineFrom].Y).
+                // Нужно применять тот же yBase иначе caretAbsY указывает на неправильную
+                // страницу и SnapCaretToCorrectSlice выбирает слайс первой страницы вместо второй.
                 float yBase = pl.LineFrom < pl.Layout.Lines.Count
                     ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
                 float caretAbsY = pl.Ypt + (caretRect.Y - yBase);
@@ -257,8 +260,21 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 _caretPara = idx;
                 var snapped = _layouts[idx];
-                int actualLine = snapped.Layout.GetLineIndexForChar(
-                    Clamp(_caretChar, 0, snapped.Vm.PlainText?.Length ?? 0));
+                int pos = Clamp(_caretChar, 0, snapped.Vm.PlainText?.Length ?? 0);
+                int actualLine = snapped.Layout.GetLineIndexForChar(pos);
+
+                // GetLineIndexForChar для pos = line[N].LastCharIndex + 1 возвращает N+1,
+                // потому что позиция формально принадлежит следующей строке.
+                // Но визуально каретка должна стоять в КОНЦЕ строки N, а не в начале N+1.
+                // Проверяем: если предыдущая строка заканчивается ровно на pos-1 и не является
+                // последней — возвращаемся на неё. DrawCaret с таким hint рисует в конце строки N.
+                if (actualLine > 0 && actualLine < snapped.Layout.Lines.Count)
+                {
+                    var prevLine = snapped.Layout.Lines[actualLine - 1];
+                    if (!prevLine.IsLastLine && pos == prevLine.LastCharIndex + 1)
+                        actualLine--;
+                }
+
                 _caretLineHint = (actualLine >= snapped.LineFrom && actualLine < snapped.LineTo)
                     ? actualLine
                     : (snapped.LineFrom < snapped.LineTo ? snapped.LineFrom : -1);

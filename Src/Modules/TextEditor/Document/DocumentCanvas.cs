@@ -152,6 +152,14 @@ namespace Writersword.Modules.TextEditor.Document
         private float _preferredCaretXPt = 0f;
         private readonly DispatcherTimer _caretTimer;
 
+        // ── Анимация скролла ──────────────────────────────────────────────
+        private DispatcherTimer? _scrollAnimTimer;
+        private double _scrollAnimFrom;
+        private double _scrollAnimTo;
+        private double _scrollAnimElapsedMs;
+        private const double ScrollAnimDurationMs = 130.0;
+        private const double ScrollAnimTickMs = 8.0;
+
         // ── Активная таблица (для структурных операций AddRow и т.д.) ────
         private TableBlock? _activeTableBlock;
         private int _activeCellRow = 0;

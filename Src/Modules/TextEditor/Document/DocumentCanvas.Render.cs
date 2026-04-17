@@ -143,6 +143,17 @@ namespace Writersword.Modules.TextEditor.Document
             float rowOffsetY = rowFrom > 0 && rowFrom < tableLayout.Rows.Count
                 ? tableLayout.Rows[rowFrom].Ypt : 0f;
 
+            // maxPadTop — верхний паддинг первой строки продолжения.
+            // Используется сразу в двух местах: увеличивает effectiveRowH строки rowFrom
+            // (чтобы нижний паддинг был виден) и уменьшает extraShift последующих строк
+            // (чтобы они не отрывались от первой строки). Оба изменения должны быть одинаковыми.
+            float maxPadTop = 0f;
+            if (isContinuation && firstRowContentOffsetPt > 0f && rowFrom < tableLayout.Rows.Count)
+            {
+                foreach (var cell in tableLayout.Rows[rowFrom].Cells)
+                    maxPadTop = Math.Max(maxPadTop, cell.PadTopPt + cell.Borders.Top.WidthPt);
+            }
+
             foreach (var row in tableLayout.Rows)
             {
                 if (row.Row < rowFrom || row.Row >= effectiveRowTo) continue;
@@ -150,40 +161,23 @@ namespace Writersword.Modules.TextEditor.Document
                 bool isFirstRow = row.Row == rowFrom;
                 bool isLastRow = row.Row == effectiveRowTo - 1;
                 float rowShift = isFirstRow ? firstRowContentOffsetPt : 0f;
-                float effectiveRowH = isFirstRow ? row.HeightPt - rowShift : row.HeightPt;
-
-                // Для первой строки продолжения ByCell ограничиваем высоту реальным контентом.
-                // Без этого рамка таблицы занимает всё оставшееся место (row.HeightPt - offset),
-                // даже если ячейки показывают лишь пару строк текста.
-                if (isFirstRow && isContinuation && firstRowContentOffsetPt > 0f)
-                {
-                    float maxCellH = 0f;
-                    foreach (var cell in row.Cells)
-                    {
-                        float cPadTop = cell.PadTopPt + cell.Borders.Top.WidthPt;
-                        float cPadBot = cell.PadBottomPt + cell.Borders.Bottom.WidthPt;
-                        float consumed = Math.Max(0f, firstRowContentOffsetPt - cPadTop);
-                        float cellRemaining = Math.Max(0f, cell.ContentHeightPt - consumed);
-                        if (cellRemaining > 0f)
-                            maxCellH = Math.Max(maxCellH, cPadTop + cellRemaining + cPadBot);
-                    }
-                    if (maxCellH > 0f && maxCellH < effectiveRowH)
-                        effectiveRowH = maxCellH;
-                }
+                float effectiveRowH = isFirstRow
+                    ? row.HeightPt - rowShift + maxPadTop
+                    : row.HeightPt;
 
                 float visibleH = (isLastRow && lastRowVisibleHeightPt >= 0f)
                     ? lastRowVisibleHeightPt
                     : effectiveRowH;
 
-                // Для строк после rowFrom в продолжении — смещаем на firstRowContentOffsetPt вверх.
-                float extraShift = isFirstRow ? 0f : firstRowContentOffsetPt;
+                // Для строк после rowFrom сдвигаем вверх на (firstRowContentOffsetPt - maxPadTop),
+                // чтобы верхняя граница строки N совпадала с нижней границей строки rowFrom.
+                float extraShift = isFirstRow ? 0f : (firstRowContentOffsetPt - maxPadTop);
 
                 foreach (var cell in row.Cells)
                 {
                     float cellX = tableX + cell.Xpt;
                     float cellY = tableY + cell.Ypt - rowOffsetY - rowShift - extraShift;
 
-                    // Фон — только в пределах видимой части строки
                     if (!string.IsNullOrEmpty(cell.BackgroundColor)
                         && SKColor.TryParse(cell.BackgroundColor, out var bgColor))
                     {
@@ -191,12 +185,8 @@ namespace Writersword.Modules.TextEditor.Document
                         canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, visibleH, bgPaint);
                     }
 
-                    // Видимый верхний край (для первой строки продолжения cellY сдвинут вверх).
                     float visibleCellY = cellY + rowShift;
 
-                    // Для страницы с продолжением (isContinuation) верхняя граница
-                    // первой строки не подавляется — таблица должна выглядеть целостно.
-                    // Нижнюю границу НЕ подавляем — пусть таблица выглядит закрытой на каждой странице.
                     SKTextRenderer.RenderCellBordersPublic(canvas, cell, cellX, visibleCellY,
                         visibleH, canvasScale, false, false);
                 }
@@ -461,17 +451,27 @@ namespace Writersword.Modules.TextEditor.Document
             var pl = layouts[_caretPara];
             float xPt = pl.AbsXPt;
 
+            // В page-режиме применяем page-level клип (как RenderPageMode делает для параграфов),
+            // иначе каретка на последней строке может выходить за нижнюю рамку таблицы/страницы.
+            bool hasPageClip = pages.Count > 0 && pl.PageIndex < pages.Count;
+            if (hasPageClip)
+            {
+                var pg = pages[pl.PageIndex];
+                canvas.Save();
+                canvas.ClipRect(new SKRect(0, pg.Ypt, pg.PadLeftPt + pg.WidthPt, pg.Ypt + pg.HeightPt));
+            }
+
             bool isCell = pl.Cell != null;
             if (isCell)
             {
-                canvas.Save();
+                if (!hasPageClip) canvas.Save();
                 var c = pl.Cell!;
                 canvas.ClipRect(new SKRect(c.ClipX, c.ClipY, c.ClipX + c.ClipW, c.ClipY + c.ClipH));
             }
 
             DrawCaret(canvas, pl, xPt, pl.Ypt);
 
-            if (isCell) canvas.Restore();
+            if (isCell || hasPageClip) canvas.Restore();
         }
 
         private (int first, int last) GetVisiblePageRange(List<PageRect> pages)
@@ -515,17 +515,13 @@ namespace Writersword.Modules.TextEditor.Document
             if (from == to && len == 0)
             {
                 float lineH = pl.Layout.Lines.Count > 0 ? pl.Layout.Lines[0].Height : FallbackLinePt;
-                float yBase = pl.LineFrom < pl.Layout.Lines.Count ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
                 using var ep2 = new SKPaint { Color = SelectionColor };
-                canvas.DrawRect(xPt, yPt + (0 - yBase), 5f, lineH, ep2);
+                canvas.DrawRect(xPt, yPt, 5f, lineH, ep2);
                 return;
             }
 
             var rects = pl.Layout.HitTestRange(from, to);
             if (rects.Count == 0) return;
-
-            float yBase2 = pl.LineFrom < pl.Layout.Lines.Count
-                ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
 
             using var paint = new SKPaint { Color = SelectionColor };
             foreach (var r in rects)
@@ -533,7 +529,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (r.LineIndex < pl.LineFrom || r.LineIndex >= pl.LineTo) continue;
                 canvas.DrawRect(
                     xPt + r.Rect.Left,
-                    yPt + (r.Rect.Top - yBase2),
+                    yPt + r.Rect.Top,
                     r.Rect.Width, r.Rect.Height, paint);
             }
         }
@@ -549,9 +545,6 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
-
-            float yBase = pl.LineFrom < pl.Layout.Lines.Count
-                ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
 
             int drawLineIdx;
             SKCaretRect caret;
@@ -588,7 +581,12 @@ namespace Writersword.Modules.TextEditor.Document
                 drawLineIdx = pl.Layout.GetLineIndexForChar(pos);
             }
 
-            // caret.X уже включает FirstLineIndentPt для строки 0 (из HitTestPosition).
+            // RenderParagraphLines рендерит строки со смещением: line.Y - lines[lineFrom].Y.
+            // DrawCaret должен использовать тот же yBase, иначе каретка окажется ниже текста
+            // на величину lines[lineFrom].Y — что особенно заметно на страницах продолжения.
+            float yBase = pl.LineFrom < pl.Layout.Lines.Count
+                ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
+
             using var paint = new SKPaint { Color = SKColors.Black, StrokeWidth = 1.1f, IsAntialias = false };
             float cx = xPt + caret.X;
             float cy = yPt + (caret.Y - yBase);

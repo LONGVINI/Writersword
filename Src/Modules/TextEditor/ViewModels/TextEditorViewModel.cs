@@ -250,15 +250,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void OnRulerIndentMarkerChanged(RulerIndentMarkerType markerType, double valueMm)
         {
-            // В режиме таблицы маркер позиционируется относительно левого края ячейки.
-            // SetLeftIndentPt/SetFirstLineIndentPt ожидают значение относительно начала текстовой зоны.
-            // Добавляем смещение ячейки чтобы перевести в абсолютные координаты.
-            if (Ruler.Mode == RulerMode.Table)
-            {
-                double cellOffsetMm = Ruler.UnitsToMm(Ruler.ActiveCellLeftUnits);
-                if (markerType != RulerIndentMarkerType.RightIndent)
-                    valueMm += cellOffsetMm;
-            }
+            // valueMm приходит уже в правильной системе координат:
+            //   - режим абзаца: смещение от начала текстовой зоны страницы
+            //   - режим таблицы: смещение от левого края контентной области ячейки
+            //
+            // Properties.LeftIndent / FirstLineIndent параграфа хранятся тоже в системе
+            // координат своего контейнера (страница или ячейка), поэтому дополнительного
+            // пересчёта не требуется — используем valueMm напрямую.
 
             double valuePt = valueMm * 72.0 / 25.4;
 
@@ -266,12 +264,21 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 case RulerIndentMarkerType.LeftIndent:
                     {
+                        // Ruler.LeftIndentMm и Ruler.FirstLineIndentMm не обновляются
+                        // в процессе drag (DraggingIndentMarker != null блокирует UpdateFromParagraphContext),
+                        // поэтому oldLeftMm всегда содержит исходное значение до начала drag.
+                        // Ruler.FirstLineIndentMm = leftIndent + firstLineRelative (абсолютная позиция
+                        // первой строки в системе координат контейнера).
                         double oldLeftMm = Ruler.LeftIndentMm;
                         double absFirstMm = Ruler.FirstLineIndentMm;
                         double newLeftMm = valueMm;
                         double newAbsFirstMm = absFirstMm + (newLeftMm - oldLeftMm);
-                        double pageLeftMm = -Ruler.MarginLeftMm;
-                        newAbsFirstMm = Math.Max(newAbsFirstMm, pageLeftMm);
+
+                        // В режиме таблицы первая строка не может уйти левее края ячейки (0).
+                        // В режиме абзаца — не левее левого поля страницы.
+                        double floorMm = Ruler.Mode == RulerMode.Table ? 0.0 : -Ruler.MarginLeftMm;
+                        newAbsFirstMm = Math.Max(newAbsFirstMm, floorMm);
+
                         double newFirstRelMm = newAbsFirstMm - newLeftMm;
                         DocumentViewModel?.SetLeftIndentPt(newLeftMm * 72.0 / 25.4);
                         DocumentViewModel?.SetFirstLineIndentPt(newFirstRelMm * 72.0 / 25.4);
@@ -279,6 +286,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     }
                 case RulerIndentMarkerType.FirstLineIndent:
                     {
+                        // valueMm — абсолютная позиция маркера первой строки в системе координат
+                        // контейнера. Ruler.LeftIndentMm содержит исходный левый отступ (не
+                        // обновляется во время drag). Разность даёт относительный отступ.
                         double leftIndentPt = Ruler.LeftIndentMm * 72.0 / 25.4;
                         DocumentViewModel?.SetFirstLineIndentPt(valuePt - leftIndentPt);
                         break;

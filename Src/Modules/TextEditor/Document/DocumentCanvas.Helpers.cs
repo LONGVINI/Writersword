@@ -235,72 +235,102 @@ namespace Writersword.Modules.TextEditor.Document
             float xPt = (float)(ptLogPx.X / zoom * PxToPt);
             float yPt = (float)(ptLogPx.Y / zoom * PxToPt);
 
-            // ── Двухпроходной поиск ───────────────────────────────────────
-            // Проход 1: находим минимальное Y-расстояние.
-            float bestYDist = float.MaxValue;
-            for (int i = 0; i < layouts.Count; i++)
-            {
-                var pl = layouts[i];
-                float top = pl.Ypt;
-                float bot = pl.Ypt + pl.HeightPt;
-                float dist = yPt < top ? top - yPt : yPt > bot ? yPt - bot : 0f;
-                if (dist < bestYDist) bestYDist = dist;
-            }
-
-            // Проход 2: среди всех кандидатов с минимальным Y-расстоянием
-            // выбираем тот, чей X-диапазон [AbsXPt .. AbsXPt + layoutWidth] ближайший к клику.
-            // Это решает проблему таблиц: ячейки одной строки имеют dist==0 по Y,
-            // и без X-проверки всегда выбирается первая (самая левая) ячейка.
-            int bestIdx = 0;
-            float bestXDist = float.MaxValue;
+            // ── Фаза 0: приоритет clip-прямоугольника ячейки ──────────────
+            // Клик в любой точке внутри clip-области ячейки (включая пустое пространство
+            // ниже текста, padding, область между параграфами) должен попасть в эту ячейку,
+            // а не в соседнюю с yDist=0. Ищем ячейку по clip-прямоугольнику, затем внутри
+            // неё — ближайший параграф по Y.
+            int clipBestIdx = -1;
+            float clipBestYDist = float.MaxValue;
 
             for (int i = 0; i < layouts.Count; i++)
             {
                 var pl = layouts[i];
+                if (pl.Cell == null) continue;
+
+                var c = pl.Cell;
+                if (xPt < c.ClipX || xPt > c.ClipX + c.ClipW) continue;
+                if (yPt < c.ClipY || yPt > c.ClipY + c.ClipH) continue;
+
+                // Клик внутри clip этой ячейки — вычисляем расстояние до параграфа.
                 float top = pl.Ypt;
                 float bot = pl.Ypt + pl.HeightPt;
                 float yDist = yPt < top ? top - yPt : yPt > bot ? yPt - bot : 0f;
 
-                if (Math.Abs(yDist - bestYDist) > 0.5f) continue; // не с минимальным Y
-
-                // Для ячейки используем полный X-диапазон clip-прямоугольника (включая границы),
-                // иначе клик в области границы между ячейками даёт xDist>0 для всех
-                // и выигрывает всегда крайняя левая ячейка.
-                float xLeft, xRight;
-                if (pl.Cell != null)
+                if (yDist < clipBestYDist)
                 {
-                    xLeft = pl.Cell.ClipX;
-                    xRight = pl.Cell.ClipX + pl.Cell.ClipW;
+                    clipBestYDist = yDist;
+                    clipBestIdx = i;
                 }
-                else
+            }
+
+            int bestIdx;
+
+            if (clipBestIdx >= 0)
+            {
+                bestIdx = clipBestIdx;
+            }
+            else
+            {
+                // ── Двухпроходной поиск (клик вне любого clip ячейки) ─────────
+                // Проход 1: находим минимальное Y-расстояние.
+                float bestYDist = float.MaxValue;
+                for (int i = 0; i < layouts.Count; i++)
                 {
-                    xLeft = pl.AbsXPt;
-                    xRight = pl.AbsXPt + (pl.Layout.Lines.Count > 0
-                        ? pl.Layout.Lines.Max(l => l.Segments.Count > 0
-                            ? l.Segments[^1].X + l.Segments[^1].Width : 0f)
-                        : 100f);
+                    var pl = layouts[i];
+                    float top = pl.Ypt;
+                    float bot = pl.Ypt + pl.HeightPt;
+                    float dist = yPt < top ? top - yPt : yPt > bot ? yPt - bot : 0f;
+                    if (dist < bestYDist) bestYDist = dist;
                 }
 
-                float xDist = xPt < xLeft ? xLeft - xPt
-                             : xPt > xRight ? xPt - xRight
-                             : 0f;
+                // Проход 2: среди кандидатов с минимальным Y выбираем ближайший по X.
+                bestIdx = 0;
+                float bestXDist = float.MaxValue;
 
-                if (xDist < bestXDist)
+                for (int i = 0; i < layouts.Count; i++)
                 {
-                    bestXDist = xDist;
-                    bestIdx = i;
+                    var pl = layouts[i];
+                    float top = pl.Ypt;
+                    float bot = pl.Ypt + pl.HeightPt;
+                    float yDist = yPt < top ? top - yPt : yPt > bot ? yPt - bot : 0f;
+
+                    if (Math.Abs(yDist - bestYDist) > 0.5f) continue;
+
+                    float xLeft, xRight;
+                    if (pl.Cell != null)
+                    {
+                        xLeft = pl.Cell.ClipX;
+                        xRight = pl.Cell.ClipX + pl.Cell.ClipW;
+                    }
+                    else
+                    {
+                        xLeft = pl.AbsXPt;
+                        xRight = pl.AbsXPt + (pl.Layout.Lines.Count > 0
+                            ? pl.Layout.Lines.Max(l => l.Segments.Count > 0
+                                ? l.Segments[^1].X + l.Segments[^1].Width : 0f)
+                            : 100f);
+                    }
+
+                    float xDist = xPt < xLeft ? xLeft - xPt
+                                 : xPt > xRight ? xPt - xRight
+                                 : 0f;
+
+                    if (xDist < bestXDist)
+                    {
+                        bestXDist = xDist;
+                        bestIdx = i;
+                    }
                 }
             }
 
             var best = layouts[bestIdx];
 
-            _logger.Debug("[HIT] bestIdx={BI} Cell={C} bestXDist={XD:F1} xPt={X:F1} yPt={Y:F1}",
+            _logger.Debug("[HIT] bestIdx={BI} Cell={C} clipBest={CB} xPt={X:F1} yPt={Y:F1}",
                 bestIdx, best.Cell != null ? $"row={best.Cell.Cell?.Row} col={best.Cell.Cell?.Column}" : "null",
-                bestXDist, xPt, yPt);
+                clipBestIdx, xPt, yPt);
 
             // ── Якоря таблицы: клик снаружи таблицы по X ─────────────────
-            // Если двухпроходной поиск выбрал ячейку таблицы, но клик по X
-            // находится левее или правее таблицы — перенаправляем на якорь.
             if (best.Cell != null)
             {
                 foreach (var te in tables)
@@ -310,13 +340,9 @@ namespace Writersword.Modules.TextEditor.Document
                     float tableLeft = te.XPt;
                     float tableRight = te.XPt + te.Layout.TotalWidthPt;
 
-                    _logger.Debug("[HIT] table xPt={X:F1} tableLeft={TL:F1} tableRight={TR:F1}",
-                        xPt, tableLeft, tableRight);
-
-                    if (xPt >= tableLeft && xPt <= tableRight) break; // клик внутри — норм
+                    if (xPt >= tableLeft && xPt <= tableRight) break;
 
                     bool clickedLeft = xPt < tableLeft;
-                    _logger.Debug("[HIT] clickedLeft={CL}", clickedLeft);
 
                     int anchorIdx = -1;
                     if (clickedLeft)
@@ -338,12 +364,6 @@ namespace Writersword.Modules.TextEditor.Document
                         }
                     }
 
-                    _logger.Debug("[HIT] anchorIdx={AI} anchorYpt={AY:F1} anchorAbsX={AX:F1} anchorLines={AL}",
-                        anchorIdx,
-                        anchorIdx >= 0 ? layouts[anchorIdx].Ypt : -1f,
-                        anchorIdx >= 0 ? layouts[anchorIdx].AbsXPt : -1f,
-                        anchorIdx >= 0 ? layouts[anchorIdx].Layout.Lines.Count : -1);
-
                     if (anchorIdx >= 0)
                     {
                         var anchor = layouts[anchorIdx];
@@ -359,11 +379,13 @@ namespace Writersword.Modules.TextEditor.Document
 
             float padXPt = best.AbsXPt;
 
-            float yBase = best.LineFrom < best.Layout.Lines.Count
-                ? best.Layout.Lines[best.LineFrom].Y : 0f;
-
             float localX = xPt - padXPt - best.Layout.LeftIndentPt;
-            float localY = yPt - best.Ypt + yBase;
+            // localY: переводим screen-Y в координаты лейаута.
+            // RenderParagraphLines рисует строку i в точке absY + (lines[i].Y - lines[lineFrom].Y),
+            // поэтому: layout_Y = (screenY - pl.Ypt) + lines[lineFrom].Y.
+            float hitYBase = best.LineFrom < best.Layout.Lines.Count
+                ? best.Layout.Lines[best.LineFrom].Y : 0f;
+            float localY = yPt - best.Ypt + hitYBase;
 
             if (best.LineFrom < best.Layout.Lines.Count)
             {
@@ -384,14 +406,24 @@ namespace Writersword.Modules.TextEditor.Document
                     hitX -= best.Layout.FirstLineIndentPt;
             }
 
-            var hit = best.Layout.HitTestPoint(hitX, localY);
-
+            // Определяем целевую строку по localY.
+            // Если клик правее текста строки — возвращаем конец строки напрямую,
+            // не вызывая HitTestPoint: тот пересчитывает строку по localY внутри
+            // и при hitX > TextWidth всё равно уходит на начало следующей.
             _caretLineHint = -1;
             for (int li = best.LineFrom; li < Math.Min(best.LineTo, best.Layout.Lines.Count); li++)
             {
                 var ln = best.Layout.Lines[li];
-                if (localY <= ln.Y + ln.Height) { _caretLineHint = li; break; }
+                if (localY <= ln.Y + ln.Height)
+                {
+                    _caretLineHint = li;
+                    if (hitX >= ln.TextWidth)
+                        return (bestIdx, ln.LastCharIndex + 1);
+                    break;
+                }
             }
+
+            var hit = best.Layout.HitTestPoint(hitX, localY);
 
             return (bestIdx, hit.CharIndex);
         }
@@ -401,37 +433,100 @@ namespace Writersword.Modules.TextEditor.Document
         {
             Dispatcher.UIThread.Post(() =>
             {
+                if (_parentScrollViewer is null) return;
                 if (_caretPara < 0 || _caretPara >= _layouts.Count) return;
 
                 double zoom = Zoom;
                 var pl = _layouts[_caretPara];
 
-                // Пустой якорь у края таблицы — не прокручиваем.
-                // Пустой якорь разрыва страницы — прокручиваем по Ypt параграфа.
+                double caretYPx;
+                double caretHPx;
+
                 if (string.IsNullOrEmpty(pl.Vm.PlainText))
                 {
                     if (pl.Cell is null && IsBreakAnchor(pl.Vm.Model))
                     {
-                        double yPx = pl.Ypt * PtToPx * zoom;
-                        double hPx = FallbackLinePt * PtToPx * zoom;
-                        this.BringIntoView(new Rect(0, yPx - 10, 20, hPx + 20));
+                        caretYPx = pl.Ypt * PtToPx * zoom;
+                        caretHPx = FallbackLinePt * PtToPx * zoom;
                     }
-                    return;
+                    else return;
+                }
+                else
+                {
+                    int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
+                    var caret = pl.Layout.HitTestPosition(pos);
+
+                    float yBase = pl.LineFrom < pl.Layout.Lines.Count
+                        ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
+
+                    caretYPx = (pl.Ypt + (caret.Y - yBase)) * PtToPx * zoom;
+                    caretHPx = caret.Height * PtToPx * zoom;
                 }
 
-                int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
-                var caret = pl.Layout.HitTestPosition(pos);
+                double scrollY = _parentScrollViewer.Offset.Y;
+                double viewportH = _parentScrollViewer.Viewport.Height;
 
-                float yBase = pl.LineFrom < pl.Layout.Lines.Count
-                    ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
+                bool caretVisible = caretYPx >= scrollY && caretYPx + caretHPx <= scrollY + viewportH;
+                if (caretVisible) return;
 
-                // Используем AbsXPt который одинаково правильный для ячеек и параграфов
-                double xPx = (pl.AbsXPt + caret.X) * PtToPx * zoom;
-                double yPx2 = (pl.Ypt + (caret.Y - yBase)) * PtToPx * zoom;
-                double hPx2 = caret.Height * PtToPx * zoom;
+                double margin = caretHPx * 2.0;
+                double newOffsetY;
+                if (caretYPx < scrollY)
+                    newOffsetY = caretYPx - margin;
+                else
+                    newOffsetY = caretYPx + caretHPx + margin - viewportH;
 
-                this.BringIntoView(new Rect(xPx - 10, yPx2 - 10, 20, hPx2 + 20));
+                newOffsetY = Math.Max(0, newOffsetY);
+
+                SmoothScrollTo(newOffsetY);
+
             }, DispatcherPriority.Render);
+        }
+
+        // Запускает плавную анимацию скролла к targetOffsetY за ScrollAnimDurationMs мс
+        // с ease-out кривой (кубическая: f(t) = 1 - (1-t)^3).
+        private void SmoothScrollTo(double targetOffsetY)
+        {
+            if (_parentScrollViewer is null) return;
+
+            double currentY = _parentScrollViewer.Offset.Y;
+            if (Math.Abs(targetOffsetY - currentY) < 1.0)
+                return;
+
+            // Если анимация уже идёт — продолжаем от текущей позиции к новой цели.
+            _scrollAnimFrom = currentY;
+            _scrollAnimTo = targetOffsetY;
+            _scrollAnimElapsedMs = 0.0;
+
+            if (_scrollAnimTimer is null)
+            {
+                _scrollAnimTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(ScrollAnimTickMs)
+                };
+                _scrollAnimTimer.Tick += OnScrollAnimTick;
+            }
+
+            _scrollAnimTimer.Stop();
+            _scrollAnimTimer.Start();
+        }
+
+        private void OnScrollAnimTick(object? sender, EventArgs e)
+        {
+            if (_parentScrollViewer is null) { _scrollAnimTimer?.Stop(); return; }
+
+            _scrollAnimElapsedMs += ScrollAnimTickMs;
+            double t = Math.Min(_scrollAnimElapsedMs / ScrollAnimDurationMs, 1.0);
+
+            // Ease-out cubic: f(t) = 1 - (1-t)^3
+            double eased = 1.0 - Math.Pow(1.0 - t, 3.0);
+            double newY = _scrollAnimFrom + (_scrollAnimTo - _scrollAnimFrom) * eased;
+
+            _parentScrollViewer.Offset = new Avalonia.Vector(
+                _parentScrollViewer.Offset.X, newY);
+
+            if (t >= 1.0)
+                _scrollAnimTimer!.Stop();
         }
 
         /// <summary>
@@ -461,9 +556,7 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
                     var caret = pl.Layout.HitTestPosition(pos);
-                    float yBase = pl.LineFrom < pl.Layout.Lines.Count
-                        ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
-                    caretYPx = (pl.Ypt + (caret.Y - yBase)) * PtToPx * zoom;
+                    caretYPx = (pl.Ypt + caret.Y) * PtToPx * zoom;
                     caretHPx = caret.Height * PtToPx * zoom;
                 }
 
@@ -471,8 +564,7 @@ namespace Writersword.Modules.TextEditor.Document
                 double targetOffsetY = caretYPx + caretHPx / 2.0 - viewportH / 2.0;
                 targetOffsetY = Math.Max(0, targetOffsetY);
 
-                _parentScrollViewer.Offset = new Avalonia.Vector(
-                    _parentScrollViewer.Offset.X, targetOffsetY);
+                SmoothScrollTo(targetOffsetY);
 
             }, DispatcherPriority.Render);
         }
@@ -505,8 +597,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (pl.Cell != null)
                 {
                     var caret = pl.Layout.HitTestPosition(Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0));
-                    float yBase = pl.LineFrom < pl.Layout.Lines.Count ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
-                    float caretAbsY = pl.Ypt + (caret.Y - yBase);
+                    float caretAbsY = pl.Ypt + caret.Y;
                     float clipTop = pl.Cell.ClipY;
                     float clipBot = pl.Cell.ClipY + pl.Cell.ClipH;
                     if (caretAbsY >= clipTop - 0.5f && caretAbsY < clipBot + 0.5f)
@@ -530,6 +621,19 @@ namespace Writersword.Modules.TextEditor.Document
             ScrollToCaret();
 
             // Уведомляем вертикальную линейку о странице каретки
+            if (_caretPara >= 0 && _caretPara < _layouts.Count)
+                CaretPageChanged?.Invoke(_layouts[_caretPara].PageIndex);
+        }
+
+        // Сброс каретки без прокрутки — используется при клике мышью.
+        // Каретка ставится в позицию клика (может быть вне viewport),
+        // скролл произойдёт только когда пользователь начнёт печатать.
+        private void ResetCaretNoScroll()
+        {
+            _caretVisible = true;
+            _caretTimer.Stop();
+            _caretTimer.Start();
+
             if (_caretPara >= 0 && _caretPara < _layouts.Count)
                 CaretPageChanged?.Invoke(_layouts[_caretPara].PageIndex);
         }
