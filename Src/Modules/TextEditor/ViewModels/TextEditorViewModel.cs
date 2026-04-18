@@ -250,13 +250,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void OnRulerIndentMarkerChanged(RulerIndentMarkerType markerType, double valueMm)
         {
-            // valueMm приходит уже в правильной системе координат:
-            //   - режим абзаца: смещение от начала текстовой зоны страницы
-            //   - режим таблицы: смещение от левого края контентной области ячейки
-            //
-            // Properties.LeftIndent / FirstLineIndent параграфа хранятся тоже в системе
-            // координат своего контейнера (страница или ячейка), поэтому дополнительного
-            // пересчёта не требуется — используем valueMm напрямую.
+            // В режиме таблицы маркер позиционируется относительно левого края ячейки.
+            // SetLeftIndentPt/SetFirstLineIndentPt ожидают значение относительно начала текстовой зоны.
+            // Добавляем смещение ячейки чтобы перевести в абсолютные координаты.
+            if (Ruler.Mode == RulerMode.Table)
+            {
+                double cellOffsetMm = Ruler.UnitsToMm(Ruler.ActiveCellLeftUnits);
+                if (markerType != RulerIndentMarkerType.RightIndent)
+                    valueMm += cellOffsetMm;
+            }
 
             double valuePt = valueMm * 72.0 / 25.4;
 
@@ -264,21 +266,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 case RulerIndentMarkerType.LeftIndent:
                     {
-                        // Ruler.LeftIndentMm и Ruler.FirstLineIndentMm не обновляются
-                        // в процессе drag (DraggingIndentMarker != null блокирует UpdateFromParagraphContext),
-                        // поэтому oldLeftMm всегда содержит исходное значение до начала drag.
-                        // Ruler.FirstLineIndentMm = leftIndent + firstLineRelative (абсолютная позиция
-                        // первой строки в системе координат контейнера).
                         double oldLeftMm = Ruler.LeftIndentMm;
                         double absFirstMm = Ruler.FirstLineIndentMm;
                         double newLeftMm = valueMm;
                         double newAbsFirstMm = absFirstMm + (newLeftMm - oldLeftMm);
-
-                        // В режиме таблицы первая строка не может уйти левее края ячейки (0).
-                        // В режиме абзаца — не левее левого поля страницы.
-                        double floorMm = Ruler.Mode == RulerMode.Table ? 0.0 : -Ruler.MarginLeftMm;
-                        newAbsFirstMm = Math.Max(newAbsFirstMm, floorMm);
-
+                        double pageLeftMm = -Ruler.MarginLeftMm;
+                        newAbsFirstMm = Math.Max(newAbsFirstMm, pageLeftMm);
                         double newFirstRelMm = newAbsFirstMm - newLeftMm;
                         DocumentViewModel?.SetLeftIndentPt(newLeftMm * 72.0 / 25.4);
                         DocumentViewModel?.SetFirstLineIndentPt(newFirstRelMm * 72.0 / 25.4);
@@ -286,9 +279,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     }
                 case RulerIndentMarkerType.FirstLineIndent:
                     {
-                        // valueMm — абсолютная позиция маркера первой строки в системе координат
-                        // контейнера. Ruler.LeftIndentMm содержит исходный левый отступ (не
-                        // обновляется во время drag). Разность даёт относительный отступ.
                         double leftIndentPt = Ruler.LeftIndentMm * 72.0 / 25.4;
                         DocumentViewModel?.SetFirstLineIndentPt(valuePt - leftIndentPt);
                         break;
@@ -302,6 +292,16 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private void OnRulerMarginChanged(double marginLeftMm, double marginRightMm)
         {
             if (DocumentViewModel is null) return;
+
+            // Фиксируем Auto-колонки всех таблиц до изменения поля.
+            // Без этого ComputeColumnWidths пересчитывает их под новую ширину текстовой зоны
+            // и таблица визуально растягивается/сжимается.
+            var ps = DocumentViewModel.Document.PageSettings;
+            double oldTextWidthMm = ps.GetPhysicalWidthMm()
+                - ps.MarginLeftMm - ps.MarginGutterMm - ps.MarginRightMm;
+            double oldTextWidthPt = oldTextWidthMm * 72.0 / 25.4;
+            FreezeAutoColumns(oldTextWidthPt);
+
             DocumentViewModel.SetPageMargins(
                 Ruler.MarginTopMm, Ruler.MarginBottomMm,
                 marginLeftMm, marginRightMm);
@@ -311,6 +311,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var doc = DocumentViewModel.Document;
             foreach (var section in doc.Sections)
                 foreach (var block in section.Blocks)
+                {
                     if (block is Writersword.Modules.TextEditor.Models.Document.ParagraphBlock p)
                     {
                         double li = p.Properties.LeftIndent ?? 0;
@@ -328,11 +329,69 @@ namespace Writersword.Modules.TextEditor.ViewModels
                             changed = true;
                         }
                     }
+                    else if (block is TableBlock t)
+                    {
+                        // Таблица не может уйти левее левого края страницы.
+                        if (t.LeftIndentPt < minIndentPt)
+                        {
+                            t.LeftIndentPt = minIndentPt;
+                            changed = true;
+                        }
+                    }
+                }
 
             if (changed)
                 DocumentViewModel.FireParagraphFormatChanged();
 
             SyncRulerToDocument(DocumentViewModel.Document);
+        }
+
+        // Конвертирует все Auto-колонки всех таблиц в Fixed с текущими вычисленными значениями.
+        // Вызывается перед изменением полей страницы чтобы таблицы не меняли размер.
+        private void FreezeAutoColumns(double textWidthPt)
+        {
+            if (DocumentViewModel is null) return;
+            foreach (var section in DocumentViewModel.Document.Sections)
+                foreach (var block in section.Blocks)
+                {
+                    if (block is not TableBlock table) continue;
+                    int colCount = table.Columns.Count;
+                    if (colCount == 0) continue;
+
+                    float usedPt = 0f;
+                    int autoCount = 0;
+                    var fixedPt = new float[colCount];
+
+                    for (int i = 0; i < colCount; i++)
+                    {
+                        var col = table.Columns[i];
+                        if (col.WidthType == TableColumnWidthType.Fixed)
+                        {
+                            fixedPt[i] = (float)(col.WidthValue * 72.0 / 25.4);
+                            usedPt += fixedPt[i];
+                        }
+                        else if (col.WidthType == TableColumnWidthType.Percent)
+                        {
+                            fixedPt[i] = (float)(textWidthPt * col.WidthValue / 100.0);
+                            usedPt += fixedPt[i];
+                        }
+                        else
+                        {
+                            autoCount++;
+                        }
+                    }
+
+                    if (autoCount == 0) continue;
+
+                    float autoWidth = (float)Math.Max(10.0, (textWidthPt - usedPt) / autoCount);
+                    for (int i = 0; i < colCount; i++)
+                    {
+                        if (table.Columns[i].WidthType != TableColumnWidthType.Auto)
+                            continue;
+                        table.Columns[i].WidthType = TableColumnWidthType.Fixed;
+                        table.Columns[i].WidthValue = autoWidth * 25.4 / 72.0;
+                    }
+                }
         }
 
         private void OnRulerMarginCommitted(double marginLeftMm, double marginRightMm)

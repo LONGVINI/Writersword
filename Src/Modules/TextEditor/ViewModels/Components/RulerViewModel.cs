@@ -370,9 +370,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
                 if (IsSnapEnabled)
                     rightEdgeUnits = Math.Round(rightEdgeUnits / SnapStep) * SnapStep;
 
-                // Левый край таблицы не может уйти левее начала текстовой зоны (0).
+                // Левый край таблицы не может уйти левее левого края страницы (-MarginLeft).
                 // Правое ограничение отсутствует.
-                double newLeft = Math.Max(0, rightEdgeUnits);
+                double newLeft = Math.Max(-MmToUnits(MarginLeftMm), rightEdgeUnits);
                 double delta = newLeft - TableLeftEdgeUnits;
                 TableLeftEdgeUnits = newLeft;
                 foreach (var m in ColumnMarkers)
