@@ -410,16 +410,22 @@ namespace Writersword.Modules.TextEditor.Document
                             if (forceByCell && snapH > 5f)
                             {
                                 // Нашли строку текста для разреза — выполняем ByCell split.
-                                // visibleH включает PadBottom+Border_bottom для корректной рамки таблицы.
-                                // nextOffset основан только на snapH — без cellPadBottom,
+                                // visibleH включает PadBottom + Border_bottom для корректной рамки.
+                                // Для страниц продолжения (sliceFirstRowOffset > 0) snapAvailable уже
+                                // резервировал cellPadTop — теперь добавляем его в visibleH, чтобы
+                                // нижний паддинг был виден (без этого gap = 0 из-за yBase offset).
+                                // nextOffset основан только на snapH — без cellPadBottom/Top,
                                 // чтобы продолжение на следующей странице корректно выровнялось.
                                 float splitCellPadBottom = 0f;
+                                float splitCellPadTop = 0f;
                                 if (row.Cells.Count > 0)
                                 {
                                     var sc = row.Cells[0];
                                     splitCellPadBottom = sc.PadBottomPt + sc.Borders.Bottom.WidthPt;
+                                    if (sliceFirstRowOffset > 0f)
+                                        splitCellPadTop = sc.PadTopPt + sc.Borders.Top.WidthPt;
                                 }
-                                float visibleH = snapH + splitCellPadBottom;
+                                float visibleH = snapH + splitCellPadBottom + splitCellPadTop;
                                 float nextOffset = sliceFirstRowOffset + snapH;
 
                                 _logger.Debug(

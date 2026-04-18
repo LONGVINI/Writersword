@@ -271,7 +271,11 @@ namespace Writersword.Modules.TextEditor.Document
                 if (actualLine > 0 && actualLine < snapped.Layout.Lines.Count)
                 {
                     var prevLine = snapped.Layout.Lines[actualLine - 1];
-                    if (!prevLine.IsLastLine && pos == prevLine.LastCharIndex + 1)
+                    // Применяем коррекцию только если _caretLineHint не указывает на actualLine.
+                    // Левый клик: HitTest ставит hint=N и pos=FirstCharIndex_N = LastCharIndex_(N-1)+1.
+                    // Без проверки hint коррекция переводила бы на конец строки N-1 вместо начала N.
+                    if (!prevLine.IsLastLine && pos == prevLine.LastCharIndex + 1
+                        && _caretLineHint != actualLine)
                         actualLine--;
                 }
 
