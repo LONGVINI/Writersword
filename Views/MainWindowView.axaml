@@ -14,7 +14,7 @@
         WindowState="Maximized"
         Background="Transparent"
 		ExtendClientAreaToDecorationsHint="True"
-		WindowDecorations="None"
+		WindowDecorations="BorderOnly"
 		ExtendClientAreaTitleBarHeightHint="-1">
 
 	<Grid Background="{DynamicResource BgAppBrush}"

@@ -9,6 +9,8 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.ComponentModel;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Threading;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Resources.Localization;
@@ -26,6 +28,88 @@ namespace Writersword.Views
         private bool _isClosing = false;
         private CancellationTokenSource? _paddingDebounce;
 
+        private WndProcDelegate? _wndProcDelegate;
+        private IntPtr _originalWndProc = IntPtr.Zero;
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        private delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        [SupportedOSPlatform("windows")]
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool ReleaseCapture();
+
+        [SupportedOSPlatform("windows")]
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        [SupportedOSPlatform("windows")]
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+        [SupportedOSPlatform("windows")]
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+        [SupportedOSPlatform("windows")]
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
+            int x, int y, int cx, int cy, uint uFlags);
+
+        [SupportedOSPlatform("windows")]
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool GetWindowRect(IntPtr hWnd, out Win32Rect lpRect);
+
+        [SupportedOSPlatform("windows")]
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+        [SupportedOSPlatform("windows")]
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfo lpmi);
+
+        [SupportedOSPlatform("windows")]
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetrics(int nIndex);
+
+        [SupportedOSPlatform("windows")]
+        [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetWindowLongPtrW")]
+        private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+        [SupportedOSPlatform("windows")]
+        [DllImport("user32.dll")]
+        private static extern IntPtr CallWindowProc(IntPtr lpPrevWndFunc, IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct Win32Rect
+        {
+            public int Left, Top, Right, Bottom;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MonitorInfo
+        {
+            public int cbSize;
+            public Win32Rect rcMonitor;
+            public Win32Rect rcWork;
+            public uint dwFlags;
+        }
+
+        private const uint WM_NCLBUTTONDOWN = 0x00A1;
+        private const uint WM_NCCALCSIZE = 0x0083;
+        private const int HTCAPTION = 2;
+        private const int GWL_STYLE = -16;
+        private const int GWLP_WNDPROC = -4;
+        private const int WS_THICKFRAME = 0x00040000;
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOZORDER = 0x0004;
+        private const uint SWP_FRAMECHANGED = 0x0020;
+        private const uint MONITOR_DEFAULTTONEAREST = 0x00000002;
+        private const int SM_CXFRAME = 32;
+        private const int SM_CYFRAME = 33;
+        private const int SM_CXPADDEDBORDER = 92;
+        private const double AnomalousPaddingThreshold = 100.0;
+
         public MainWindowView()
         {
             _logger = App.Services.GetService<ILogger<MainWindowView>>()!;
@@ -36,6 +120,8 @@ namespace Writersword.Views
             {
                 _logger.LogDebug("MainWindowView opened - DataContext: {DataContextType}", DataContext?.GetType().Name);
 
+                EnsureThickFrameAndSubclass();
+
                 if (WindowState == WindowState.Maximized)
                     ScheduleMaximizedPadding();
             };
@@ -43,12 +129,56 @@ namespace Writersword.Views
             Closing += OnClosing;
 
             this.AddHandler(
-                 KeyDownEvent,
-                 OnKeyDown,
-                 Avalonia.Interactivity.RoutingStrategies.Tunnel
-             );
+                KeyDownEvent,
+                OnKeyDown,
+                Avalonia.Interactivity.RoutingStrategies.Tunnel
+            );
 
             InitializeTitleBar();
+        }
+
+        /// <summary>
+        /// Выставляет WS_THICKFRAME для Aero Snap и субклассирует WndProc.
+        /// WM_NCCALCSIZE перехватывается и возвращает 0 — нативная рамка
+        /// не отрисовывается, но Snap и resize-хитзоны продолжают работать.
+        /// </summary>
+        private void EnsureThickFrameAndSubclass()
+        {
+            if (!OperatingSystem.IsWindows()) return;
+
+            var hwnd = TryGetPlatformHandle()?.Handle;
+            if (!hwnd.HasValue || hwnd.Value == IntPtr.Zero) return;
+
+            var style = GetWindowLong(hwnd.Value, GWL_STYLE);
+
+            if ((style & WS_THICKFRAME) == 0)
+            {
+                SetWindowLong(hwnd.Value, GWL_STYLE, style | WS_THICKFRAME);
+                _logger.LogDebug("EnsureThickFrameAndSubclass: WS_THICKFRAME set, 0x{Old:X8} -> 0x{New:X8}",
+                    style, style | WS_THICKFRAME);
+            }
+
+            if (_originalWndProc == IntPtr.Zero)
+            {
+                _wndProcDelegate = CustomWndProc;
+                var newProc = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate);
+                _originalWndProc = SetWindowLongPtr(hwnd.Value, GWLP_WNDPROC, newProc);
+                _logger.LogDebug("EnsureThickFrameAndSubclass: WndProc subclassed, original=0x{Orig:X}", _originalWndProc);
+            }
+
+            SetWindowPos(hwnd.Value, IntPtr.Zero, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+        }
+
+        [SupportedOSPlatform("windows")]
+        private IntPtr CustomWndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
+        {
+            // Возвращаем 0 при WM_NCCALCSIZE — весь прямоугольник окна становится
+            // клиентской областью, нативная рамка не рисуется, но Snap работает.
+            if (msg == WM_NCCALCSIZE && wParam != IntPtr.Zero)
+                return IntPtr.Zero;
+
+            return CallWindowProc(_originalWndProc, hwnd, msg, wParam, lParam);
         }
 
         /// <summary>Инициализация кнопок и перетаскивания.</summary>
@@ -79,16 +209,33 @@ namespace Writersword.Views
         /// <summary>Перетаскивание окна — только в зоне заголовка (первые 32px), не по кнопкам.</summary>
         private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
         {
-            if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+            if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+                return;
 
             var pos = e.GetCurrentPoint(this).Position;
-            if (pos.Y > 32) return;
+            if (pos.Y > 32)
+                return;
 
             var source = e.Source as Control;
             while (source != null)
             {
-                if (source is Button) return;
+                if (source is Button)
+                    return;
                 source = source.Parent as Control;
+            }
+
+            if (OperatingSystem.IsWindows())
+            {
+                var hwnd = TryGetPlatformHandle()?.Handle;
+                if (hwnd.HasValue && hwnd.Value != IntPtr.Zero)
+                {
+                    ReleaseCapture();
+                    SendMessage(hwnd.Value, WM_NCLBUTTONDOWN, new IntPtr(HTCAPTION), IntPtr.Zero);
+                    e.Handled = true;
+                    return;
+                }
+
+                _logger.LogWarning("TitleBar drag: hwnd is null, falling back to BeginMoveDrag");
             }
 
             BeginMoveDrag(e);
@@ -128,19 +275,116 @@ namespace Writersword.Views
             }, TimeSpan.FromMilliseconds(150));
         }
 
-        /// <summary>
-        /// При максимизации NoChrome-окна Windows выдвигает его за края экрана на ширину системной рамки.
-        /// Паддинг компенсирует это через сравнение Bounds окна с WorkingArea экрана с учётом DPI.
-        /// </summary>
         private void ApplyMaximizedPadding()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                var hwnd = TryGetPlatformHandle()?.Handle;
+                if (hwnd.HasValue && hwnd.Value != IntPtr.Zero)
+                {
+                    ApplyMaximizedPaddingWin32(hwnd.Value);
+                    return;
+                }
+            }
+
+            ApplyMaximizedPaddingAvalonia();
+        }
+
+        /// <summary>
+        /// Считает паддинг через Win32 GetWindowRect + MonitorFromWindow + GetMonitorInfo —
+        /// все три в физических пикселях, без расхождений координат на мультимониторе с разным DPI.
+        /// </summary>
+        [SupportedOSPlatform("windows")]
+        private void ApplyMaximizedPaddingWin32(IntPtr hwnd)
+        {
+            if (!GetWindowRect(hwnd, out var winRect))
+            {
+                _logger.LogWarning("ApplyMaximizedPaddingWin32: GetWindowRect failed, falling back to Avalonia");
+                ApplyMaximizedPaddingAvalonia();
+                return;
+            }
+
+            var hMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            if (hMonitor == IntPtr.Zero)
+            {
+                _logger.LogWarning("ApplyMaximizedPaddingWin32: MonitorFromWindow returned null, falling back to Avalonia");
+                ApplyMaximizedPaddingAvalonia();
+                return;
+            }
+
+            var mi = new MonitorInfo { cbSize = Marshal.SizeOf<MonitorInfo>() };
+            if (!GetMonitorInfo(hMonitor, ref mi))
+            {
+                _logger.LogWarning("ApplyMaximizedPaddingWin32: GetMonitorInfo failed, falling back to Avalonia");
+                ApplyMaximizedPaddingAvalonia();
+                return;
+            }
+
+            var avaloniaScreen = Screens.All.FirstOrDefault(s =>
+                Math.Abs(s.Bounds.X - mi.rcMonitor.Left) < 10 &&
+                Math.Abs(s.Bounds.Y - mi.rcMonitor.Top) < 10);
+
+            var scaling = avaloniaScreen?.Scaling ?? 1.0;
+
+            var padLeft = Math.Max(0.0, (mi.rcWork.Left - winRect.Left) / scaling);
+            var padTop = Math.Max(0.0, (mi.rcWork.Top - winRect.Top) / scaling);
+            var padRight = Math.Max(0.0, (winRect.Right - mi.rcWork.Right) / scaling);
+            var padBottom = Math.Max(0.0, (winRect.Bottom - mi.rcWork.Bottom) / scaling);
+
+            _logger.LogDebug(
+                "ApplyMaximizedPaddingWin32: winRect=({WL},{WT},{WR},{WB}), rcWork=({ML},{MT},{MR},{MB}), scaling={S}, padding={PL},{PT},{PR},{PB}",
+                winRect.Left, winRect.Top, winRect.Right, winRect.Bottom,
+                mi.rcWork.Left, mi.rcWork.Top, mi.rcWork.Right, mi.rcWork.Bottom,
+                scaling, padLeft, padTop, padRight, padBottom);
+
+            // Avalonia 12 на левом мониторе иногда помещает окно на ~1920px левее нужного.
+            // Детектируем по аномально большому padLeft/padRight и принудительно
+            // перемещаем окно на корректную позицию через Win32.
+            if (padLeft > AnomalousPaddingThreshold || padRight > AnomalousPaddingThreshold)
+            {
+                int frameX = GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+                int frameY = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+
+                int correctX = mi.rcMonitor.Left - frameX;
+                int correctY = mi.rcMonitor.Top - frameY;
+                int correctW = (mi.rcMonitor.Right - mi.rcMonitor.Left) + frameX * 2;
+                int correctH = (mi.rcMonitor.Bottom - mi.rcMonitor.Top) + frameY * 2;
+
+                _logger.LogWarning(
+                    "ApplyMaximizedPaddingWin32: anomalous padding detected, correcting position to ({X},{Y},{W},{H})",
+                    correctX, correctY, correctW, correctH);
+
+                SetWindowPos(hwnd, IntPtr.Zero, correctX, correctY, correctW, correctH,
+                    SWP_NOZORDER | SWP_FRAMECHANGED);
+
+                if (!GetWindowRect(hwnd, out winRect))
+                {
+                    _logger.LogWarning("ApplyMaximizedPaddingWin32: GetWindowRect after correction failed");
+                    return;
+                }
+
+                padLeft = Math.Max(0.0, (mi.rcWork.Left - winRect.Left) / scaling);
+                padTop = Math.Max(0.0, (mi.rcWork.Top - winRect.Top) / scaling);
+                padRight = Math.Max(0.0, (winRect.Right - mi.rcWork.Right) / scaling);
+                padBottom = Math.Max(0.0, (winRect.Bottom - mi.rcWork.Bottom) / scaling);
+
+                _logger.LogDebug(
+                    "ApplyMaximizedPaddingWin32: corrected padding={PL},{PT},{PR},{PB}",
+                    padLeft, padTop, padRight, padBottom);
+            }
+
+            var padding = new Thickness(padLeft, padTop, padRight, padBottom);
+            Padding = padding;
+            ApplyButtonsPadding();
+        }
+
+        /// <summary>Fallback для не-Windows платформ.</summary>
+        private void ApplyMaximizedPaddingAvalonia()
         {
             var screen = Screens.ScreenFromWindow(this);
             if (screen == null)
             {
-                _logger.LogWarning("ApplyMaximizedPadding: screen not found, using fallback 8px");
-                var fallback = new Thickness(8);
-                Padding = fallback;
-                CompensateButtonsPadding(fallback);
+                _logger.LogWarning("ApplyMaximizedPaddingAvalonia: screen not found, padding not applied");
                 return;
             }
 
@@ -164,28 +408,20 @@ namespace Writersword.Views
             var padRight = Math.Max(0, winRight - workRight);
             var padBottom = Math.Max(0, winBottom - workBottom);
 
-            var padding = new Thickness(padLeft, padTop, padRight, padBottom);
-            Padding = padding;
-            CompensateButtonsPadding(padding);
-
-            _logger.LogDebug(
-                "ApplyMaximizedPadding: workArea={WorkArea}, window=({WinLeft},{WinTop},{WinRight},{WinBottom}), padding={Padding}",
-                workArea, winLeft, winTop, winRight, winBottom, padding);
+            Padding = new Thickness(padLeft, padTop, padRight, padBottom);
+            ApplyButtonsPadding();
         }
 
-        /// <summary>В максимизированном режиме компенсируем правый Window.Padding.
-        private void CompensateButtonsPadding(Thickness padding)
+        /// <summary>
+        /// Устанавливает Margin кнопок заголовка.
+        /// -1 сверху: чтобы мышь попадала в угол экрана при максимизации.
+        /// </summary>
+        private void ApplyButtonsPadding()
         {
             var buttonPanel = this.FindControl<StackPanel>("WindowButtonsPanel");
             if (buttonPanel == null) return;
 
-            var rightMargin = WindowState == WindowState.Maximized ? -padding.Right + 7 : 0;
-            var margin = new Thickness(0, -1, rightMargin, 0); // -1 Сверху попадание мыши в угол экрана и его срабатывании
-
-            _logger.LogDebug("CompensateButtonsPadding: state={State}, padding={Padding}, margin={Margin}",
-                WindowState, padding, margin);
-
-            buttonPanel.Margin = margin;
+            buttonPanel.Margin = new Thickness(0, -1, 0, 0);
         }
 
         /// <summary>Обновляет паддинг и иконку кнопки максимизации при смене состояния окна.</summary>
@@ -198,7 +434,7 @@ namespace Writersword.Views
             else
             {
                 Padding = new Thickness(0);
-                CompensateButtonsPadding(new Thickness(0));
+                ApplyButtonsPadding();
             }
 
             var maximizeIcon = this.FindControl<Rectangle>("MaximizeIcon");
@@ -247,7 +483,7 @@ namespace Writersword.Views
 
             if (tabCollection.Tabs.Count == 0)
             {
-                _logger.LogDebug("No tabs, showing welcome");
+                _logger.LogDebug("No tabs open, showing welcome screen");
                 _isClosing = false;
                 await App.ShowWelcomeScreen(this);
                 return;
@@ -280,7 +516,7 @@ namespace Writersword.Views
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error caching active tab");
+                    _logger.LogError(ex, "Error caching active tab on close");
                 }
             }
 
@@ -298,10 +534,7 @@ namespace Writersword.Views
             foreach (var tab in tabs)
             {
                 if (!await projectWorkflow.HasUnsavedChanges(tab))
-                {
-                    _logger.LogDebug("Tab {Title} - no changes", tab.Title);
                     continue;
-                }
 
                 _logger.LogDebug("Tab {Title} has unsaved changes", tab.Title);
 
@@ -311,8 +544,6 @@ namespace Writersword.Views
                     MessageBoxType.Question,
                     MessageBoxButtons.YesNoCancel
                 );
-
-                _logger.LogDebug("User choice for {Title}: {Result}", tab.Title, result);
 
                 if (result == MessageBoxResult.Cancel)
                 {
@@ -330,7 +561,6 @@ namespace Writersword.Views
                         _isClosing = false;
                         return;
                     }
-                    _logger.LogDebug("Tab saved: {Title}", tab.Title);
                 }
                 else if (result == MessageBoxResult.No)
                 {
@@ -338,7 +568,6 @@ namespace Writersword.Views
                     {
                         var cacheService = App.Services.GetRequiredService<IZipCacheService>();
                         cacheService.DeleteCache(tab.FilePath);
-                        _logger.LogDebug("Cache deleted for: {Title}", tab.Title);
                     }
                 }
             }
