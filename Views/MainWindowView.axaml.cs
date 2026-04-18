@@ -94,9 +94,18 @@ namespace Writersword.Views
             public uint dwFlags;
         }
 
-        private const uint WM_NCLBUTTONDOWN = 0x00A1;
         private const uint WM_NCCALCSIZE = 0x0083;
+        private const uint WM_NCHITTEST = 0x0084;
+        private const int HTCLIENT = 1;
         private const int HTCAPTION = 2;
+        private const int HTLEFT = 10;
+        private const int HTRIGHT = 11;
+        private const int HTTOP = 12;
+        private const int HTTOPLEFT = 13;
+        private const int HTTOPRIGHT = 14;
+        private const int HTBOTTOM = 15;
+        private const int HTBOTTOMLEFT = 16;
+        private const int HTBOTTOMRIGHT = 17;
         private const int GWL_STYLE = -16;
         private const int GWLP_WNDPROC = -4;
         private const int WS_THICKFRAME = 0x00040000;
@@ -109,6 +118,18 @@ namespace Writersword.Views
         private const int SM_CYFRAME = 33;
         private const int SM_CXPADDEDBORDER = 92;
         private const double AnomalousPaddingThreshold = 100.0;
+
+        // Высота тайтлбара в логических пикселях
+        private const int TitleBarHeight = 32;
+
+        // Ширина зоны иконки — единственная область где возвращаем HTCAPTION.
+        // Иконка: Margin="10,8,8,0" + Width="16" = ~34px.
+        // Только здесь нет интерактивных контролов, поэтому HTCAPTION безопасен.
+        // Правее стоит MenuBar, клики туда должны уходить в Avalonia (HTCLIENT).
+        private const int IconDragZoneWidth = 34;
+
+        // Ширина зоны resize по краям окна в физических пикселях
+        private const int ResizeBorderSize = 8;
 
         public MainWindowView()
         {
@@ -139,8 +160,9 @@ namespace Writersword.Views
 
         /// <summary>
         /// Выставляет WS_THICKFRAME для Aero Snap и субклассирует WndProc.
-        /// WM_NCCALCSIZE перехватывается и возвращает 0 — нативная рамка
-        /// не отрисовывается, но Snap и resize-хитзоны продолжают работать.
+        /// WM_NCCALCSIZE возвращает 0 — нативная рамка не рисуется.
+        /// WM_NCHITTEST возвращает HTCAPTION только для зоны иконки (~34px слева)
+        /// чтобы drag и Snap работали не мешая кликам по меню.
         /// </summary>
         private void EnsureThickFrameAndSubclass()
         {
@@ -173,23 +195,59 @@ namespace Writersword.Views
         [SupportedOSPlatform("windows")]
         private IntPtr CustomWndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
         {
-            // Возвращаем 0 при WM_NCCALCSIZE — весь прямоугольник окна становится
-            // клиентской областью, нативная рамка не рисуется, но Snap работает.
             if (msg == WM_NCCALCSIZE && wParam != IntPtr.Zero)
                 return IntPtr.Zero;
+
+            if (msg == WM_NCHITTEST)
+            {
+                if (!GetWindowRect(hwnd, out var winRect))
+                    return CallWindowProc(_originalWndProc, hwnd, msg, wParam, lParam);
+
+                int screenX = (short)(lParam.ToInt32() & 0xFFFF);
+                int screenY = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
+
+                int relX = screenX - winRect.Left;
+                int relY = screenY - winRect.Top;
+                int winW = winRect.Right - winRect.Left;
+                int winH = winRect.Bottom - winRect.Top;
+
+                // Resize-зоны по краям — только для не-максимизированного окна
+                if (WindowState != WindowState.Maximized)
+                {
+                    bool onLeft = relX < ResizeBorderSize;
+                    bool onRight = relX > winW - ResizeBorderSize;
+                    bool onTop = relY < ResizeBorderSize;
+                    bool onBottom = relY > winH - ResizeBorderSize;
+
+                    if (onTop && onLeft) return new IntPtr(HTTOPLEFT);
+                    if (onTop && onRight) return new IntPtr(HTTOPRIGHT);
+                    if (onBottom && onLeft) return new IntPtr(HTBOTTOMLEFT);
+                    if (onBottom && onRight) return new IntPtr(HTBOTTOMRIGHT);
+                    if (onTop) return new IntPtr(HTTOP);
+                    if (onBottom) return new IntPtr(HTBOTTOM);
+                    if (onLeft) return new IntPtr(HTLEFT);
+                    if (onRight) return new IntPtr(HTRIGHT);
+                }
+
+                var scaling = Screens.ScreenFromWindow(this)?.Scaling ?? 1.0;
+                int titleBarHeightPx = (int)(TitleBarHeight * scaling);
+                int iconDragZoneWidthPx = (int)(IconDragZoneWidth * scaling);
+
+                // HTCAPTION только в зоне иконки — там нет контролов Avalonia,
+                // drag и Aero Snap работают. Весь остальной тайтлбар — HTCLIENT,
+                // чтобы клики по меню доходили до Avalonia.
+                if (relY < titleBarHeightPx && relX < iconDragZoneWidthPx)
+                    return new IntPtr(HTCAPTION);
+
+                return new IntPtr(HTCLIENT);
+            }
 
             return CallWindowProc(_originalWndProc, hwnd, msg, wParam, lParam);
         }
 
-        /// <summary>Инициализация кнопок и перетаскивания.</summary>
+        /// <summary>Инициализация кнопок заголовка.</summary>
         private void InitializeTitleBar()
         {
-            this.AddHandler(
-                InputElement.PointerPressedEvent,
-                OnTitleBarPointerPressed,
-                Avalonia.Interactivity.RoutingStrategies.Tunnel
-            );
-
             var minimizeButton = this.FindControl<Button>("MinimizeButton");
             if (minimizeButton != null)
                 minimizeButton.Click += (_, _) => WindowState = WindowState.Minimized;
@@ -204,41 +262,6 @@ namespace Writersword.Views
 
             PropertyChanged += OnWindowPropertyChanged;
             PositionChanged += OnWindowPositionChanged;
-        }
-
-        /// <summary>Перетаскивание окна — только в зоне заголовка (первые 32px), не по кнопкам.</summary>
-        private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
-        {
-            if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
-                return;
-
-            var pos = e.GetCurrentPoint(this).Position;
-            if (pos.Y > 32)
-                return;
-
-            var source = e.Source as Control;
-            while (source != null)
-            {
-                if (source is Button)
-                    return;
-                source = source.Parent as Control;
-            }
-
-            if (OperatingSystem.IsWindows())
-            {
-                var hwnd = TryGetPlatformHandle()?.Handle;
-                if (hwnd.HasValue && hwnd.Value != IntPtr.Zero)
-                {
-                    ReleaseCapture();
-                    SendMessage(hwnd.Value, WM_NCLBUTTONDOWN, new IntPtr(HTCAPTION), IntPtr.Zero);
-                    e.Handled = true;
-                    return;
-                }
-
-                _logger.LogWarning("TitleBar drag: hwnd is null, falling back to BeginMoveDrag");
-            }
-
-            BeginMoveDrag(e);
         }
 
         private void ToggleMaximize()
@@ -373,8 +396,7 @@ namespace Writersword.Views
                     padLeft, padTop, padRight, padBottom);
             }
 
-            var padding = new Thickness(padLeft, padTop, padRight, padBottom);
-            Padding = padding;
+            Padding = new Thickness(padLeft, padTop, padRight, padBottom);
             ApplyButtonsPadding();
         }
 
@@ -403,19 +425,16 @@ namespace Writersword.Views
             var winRight = winLeft + windowBounds.Width;
             var winBottom = winTop + windowBounds.Height;
 
-            var padLeft = Math.Max(0, workLeft - winLeft);
-            var padTop = Math.Max(0, workTop - winTop);
-            var padRight = Math.Max(0, winRight - workRight);
-            var padBottom = Math.Max(0, winBottom - workBottom);
+            Padding = new Thickness(
+                Math.Max(0, workLeft - winLeft),
+                Math.Max(0, workTop - winTop),
+                Math.Max(0, winRight - workRight),
+                Math.Max(0, winBottom - workBottom));
 
-            Padding = new Thickness(padLeft, padTop, padRight, padBottom);
             ApplyButtonsPadding();
         }
 
-        /// <summary>
-        /// Устанавливает Margin кнопок заголовка.
-        /// -1 сверху: чтобы мышь попадала в угол экрана при максимизации.
-        /// </summary>
+        /// <summary>-1 сверху: чтобы мышь попадала в угол экрана при максимизации.</summary>
         private void ApplyButtonsPadding()
         {
             var buttonPanel = this.FindControl<StackPanel>("WindowButtonsPanel");
