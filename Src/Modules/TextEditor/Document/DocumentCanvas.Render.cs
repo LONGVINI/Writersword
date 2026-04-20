@@ -193,6 +193,61 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
+        private void RenderCellRangeSelection(SKCanvas canvas, List<TableEntry> tables)
+        {
+            int minRow = Math.Min(_cellSelStartRow, _cellSelEndRow);
+            int maxRow = Math.Max(_cellSelStartRow, _cellSelEndRow);
+            int minCol = Math.Min(_cellSelStartCol, _cellSelEndCol);
+            int maxCol = Math.Max(_cellSelStartCol, _cellSelEndCol);
+
+            using var paint = new SKPaint { Color = SelectionColor };
+
+            foreach (var te in tables)
+            {
+                if (te.Table != _cellSelTable) continue;
+
+                int effectiveRowTo = te.RowTo < 0 ? te.Layout.Rows.Count : te.RowTo;
+                float rowOffsetY = te.RowFrom > 0 && te.RowFrom < te.Layout.Rows.Count
+                    ? te.Layout.Rows[te.RowFrom].Ypt : 0f;
+
+                // Синхронно с RenderTableStructureOnly — учитываем maxPadTop.
+                float maxPadTop = 0f;
+                if (te.IsContinuation && te.FirstRowContentOffsetPt > 0f
+                    && te.RowFrom < te.Layout.Rows.Count)
+                {
+                    foreach (var cell in te.Layout.Rows[te.RowFrom].Cells)
+                        maxPadTop = Math.Max(maxPadTop, cell.PadTopPt + cell.Borders.Top.WidthPt);
+                }
+
+                foreach (var row in te.Layout.Rows)
+                {
+                    if (row.Row < te.RowFrom || row.Row >= effectiveRowTo) continue;
+                    if (row.Row < minRow || row.Row > maxRow) continue;
+
+                    bool isFirstRow = row.Row == te.RowFrom;
+                    float rowShift = isFirstRow ? te.FirstRowContentOffsetPt : 0f;
+                    float extraShift = isFirstRow ? 0f : (te.FirstRowContentOffsetPt - maxPadTop);
+                    float effectiveRowH = isFirstRow
+                        ? row.HeightPt - rowShift + maxPadTop
+                        : row.HeightPt;
+
+                    float visibleH = (row.Row == effectiveRowTo - 1 && te.LastRowVisibleHeightPt >= 0f)
+                        ? te.LastRowVisibleHeightPt
+                        : effectiveRowH;
+
+                    foreach (var cell in row.Cells)
+                    {
+                        if (cell.Column < minCol || cell.Column > maxCol) continue;
+
+                        float cellX = te.XPt + cell.Xpt;
+                        float cellY = te.Ypt + cell.Ypt - rowOffsetY - rowShift - extraShift;
+
+                        canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, visibleH, paint);
+                    }
+                }
+            }
+        }
+
         // Цвета ручек
         private static readonly SKColor HandleFill = new(0x22, 0x99, 0xFF, 0xCC);
         private static readonly SKColor HandleStroke = new(0xFF, 0xFF, 0xFF, 0xCC);
@@ -365,6 +420,10 @@ namespace Writersword.Modules.TextEditor.Document
                     RenderParaLayout(canvas, i, pl, layouts, drawCaret);
                 }
             }
+
+            // Рисуем выделение нескольких ячеек поверх всего.
+            if (_isCellRangeSelecting && _cellSelTable != null)
+                RenderCellRangeSelection(canvas, tables);
         }
 
         private void RenderFlowMode(
@@ -499,6 +558,10 @@ namespace Writersword.Modules.TextEditor.Document
             SKCanvas canvas, int sliceIdx, ParaLayout pl,
             float xPt, float yPt, List<ParaLayout> layouts)
         {
+            // В режиме выделения нескольких ячеек текстовое выделение внутри ячеек не рисуем —
+            // весь фон закрашивает RenderCellRangeSelection.
+            if (_isCellRangeSelecting && pl.Cell != null) return;
+
             if (!HasSel()) return;
 
             var (sp, sc, ep, ec) = NormalizeSelection();

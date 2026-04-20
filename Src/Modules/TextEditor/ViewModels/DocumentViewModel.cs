@@ -40,6 +40,21 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// </summary>
         public ParagraphBlock? TableActiveCellParagraph { get; private set; }
 
+        // Текущее выделение внутри активного параграфа.
+        // Устанавливается из DocumentCanvas перед каждым применением форматирования.
+        private int _selectionStart;
+        private int _selectionEnd;
+
+        /// <summary>
+        /// Устанавливает диапазон выделения для активного параграфа.
+        /// Вызывается из DocumentCanvas перед применением форматирования.
+        /// </summary>
+        public void SetSelection(int start, int end)
+        {
+            _selectionStart = start;
+            _selectionEnd = end;
+        }
+
         /// <summary>
         /// Абзацы попавшие в текущее выделение (может быть несколько).
         /// </summary>
@@ -64,6 +79,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// Параметр — новый отступ таблицы в pt от начала текстовой области.
         /// </summary>
         public Action<double>? TableSetLeftEdgeDelegate { get; set; }
+
+        // Устанавливается DocumentCanvas — пробрасывает вызов в UndoStack.
+        public Action? UndoDelegate { get; set; }
+        public Action? RedoDelegate { get; set; }
 
         /// <summary>
         /// Активная таблица — та в которой стоит каретка.
@@ -421,8 +440,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void Paste() { _activeParagraph?.RequestFocus(); }
 
         void ITextEditorCommandTarget.SelectAll() => SelectAll();
-        public void Undo() { }
-        public void Redo() { }
+        public void Undo() => UndoDelegate?.Invoke();
+        public void Redo() => RedoDelegate?.Invoke();
 
         // ── ITextEditorCommandTarget: вставка ─────────────────────────────
 
@@ -737,11 +756,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void ApplyCharProperty(Action<RunProperties> mutate, bool clearAll = false)
         {
-            if (_activeParagraph is null) return;
+            // В режиме таблицы применяем к параграфу активной ячейки.
+            var block = TableActiveCellParagraph ?? _activeParagraph?.Model;
+            if (block is null) return;
 
-            var block = _activeParagraph.Model;
-            int selStart = _activeParagraph.SelectionStart;
-            int selEnd = _activeParagraph.SelectionEnd;
+            int selStart = _selectionStart;
+            int selEnd = _selectionEnd;
             bool hasSelection = selEnd > selStart;
             int globalOffset = 0;
 
@@ -770,6 +790,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             }
 
             FireCursorContextChanged();
+            ParagraphFormatChanged?.Invoke();
         }
 
         private void ApplyParaProperty(Action<ParagraphProperties> mutate)

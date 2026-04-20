@@ -184,6 +184,17 @@ namespace Writersword.Modules.TextEditor.Document
         private int _selEndChar = 0;
         private bool _isSelecting;
 
+        // ── Выделение нескольких ячеек ────────────────────────────────────
+        // Активно когда drag пересёк границу ячейки.
+        // _cellSelTable — таблица в которой идёт выделение.
+        // _cellSelStartRow/Col и _cellSelEndRow/Col — прямоугольник выделенных ячеек.
+        private bool _isCellRangeSelecting = false;
+        private TableBlock? _cellSelTable;
+        private int _cellSelStartRow = -1;
+        private int _cellSelStartCol = -1;
+        private int _cellSelEndRow = -1;
+        private int _cellSelEndCol = -1;
+
         // ── Bitmap-кеш для мигания каретки ────────────────────────────────
         private readonly object _bitmapLock = new();
         private SKBitmap? _lastFullRenderBitmap;
@@ -433,6 +444,8 @@ namespace Writersword.Modules.TextEditor.Document
                 DocVm.PropertyChanged += OnDocVmPropertyChanged;
                 DocVm.ParagraphFormatChanged += OnParagraphFormatChanged;
                 DocVm.OnPageBreakInserted = block => _pendingFocusBlock = block;
+                DocVm.UndoDelegate = ExecuteUndo;
+                DocVm.RedoDelegate = ExecuteRedo;
                 foreach (var pvm in DocVm.Paragraphs)
                     WirePvm(pvm);
             }

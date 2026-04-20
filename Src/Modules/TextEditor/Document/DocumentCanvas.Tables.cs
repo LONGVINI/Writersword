@@ -11,6 +11,7 @@ namespace Writersword.Modules.TextEditor.Document
         private void ExecuteTableAddRow(bool above)
         {
             if (_activeTableBlock is null) return;
+            BeginEdit("Add row");
             int insertRow = above ? _activeCellRow : _activeCellRow + 1;
             foreach (var cell in _activeTableBlock.Cells)
                 if (cell.Row >= insertRow) cell.Row++;
@@ -18,6 +19,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _activeTableBlock.Cells.Add(new TableCell { Row = insertRow, Column = c });
             _activeTableBlock.RowCount++;
             if (above) _activeCellRow++;
+            CommitEdit();
             _cellLayoutCache.Clear();
             RebuildLayouts();
             InvalidateFull();
@@ -26,11 +28,13 @@ namespace Writersword.Modules.TextEditor.Document
         private void ExecuteTableDeleteRow()
         {
             if (_activeTableBlock is null) return;
+            BeginEdit("Delete row");
             int deleteRow = _activeCellRow;
             _activeTableBlock.Cells.RemoveAll(c => c.Row == deleteRow);
             foreach (var cell in _activeTableBlock.Cells)
                 if (cell.Row > deleteRow) cell.Row--;
             _activeTableBlock.RowCount--;
+            CommitEdit();
             if (_activeTableBlock.RowCount <= 0) { ExecuteTableDelete(); return; }
             _activeCellRow = Clamp(_activeCellRow, 0, _activeTableBlock.RowCount - 1);
             _cellLayoutCache.Clear();
@@ -41,6 +45,7 @@ namespace Writersword.Modules.TextEditor.Document
         private void ExecuteTableAddColumn(bool left)
         {
             if (_activeTableBlock is null) return;
+            BeginEdit("Add column");
             int insertCol = left ? _activeCellCol : _activeCellCol + 1;
             foreach (var cell in _activeTableBlock.Cells)
                 if (cell.Column >= insertCol) cell.Column++;
@@ -53,6 +58,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _activeTableBlock.Columns.Add(colDef);
             _activeTableBlock.ColumnCount++;
             if (left) _activeCellCol++;
+            CommitEdit();
             _cellLayoutCache.Clear();
             RebuildLayouts();
             InvalidateFull();
@@ -61,6 +67,7 @@ namespace Writersword.Modules.TextEditor.Document
         private void ExecuteTableDeleteColumn()
         {
             if (_activeTableBlock is null) return;
+            BeginEdit("Delete column");
             int deleteCol = _activeCellCol;
             _activeTableBlock.Cells.RemoveAll(c => c.Column == deleteCol);
             foreach (var cell in _activeTableBlock.Cells)
@@ -68,6 +75,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (deleteCol < _activeTableBlock.Columns.Count)
                 _activeTableBlock.Columns.RemoveAt(deleteCol);
             _activeTableBlock.ColumnCount--;
+            CommitEdit();
             if (_activeTableBlock.ColumnCount <= 0) { ExecuteTableDelete(); return; }
             _activeCellCol = Clamp(_activeCellCol, 0, _activeTableBlock.ColumnCount - 1);
             _cellLayoutCache.Clear();
@@ -78,7 +86,9 @@ namespace Writersword.Modules.TextEditor.Document
         private void ExecuteTableDelete()
         {
             if (_activeTableBlock is null || DocVm is null) return;
+            BeginEdit("Delete table");
             DocVm.Document.Sections[0].Blocks.Remove(_activeTableBlock);
+            CommitEdit();
             _cellVmCache.Clear();
             _cellLayoutCache.Clear();
             DocVm.RebuildParagraphViewModelsPublic();

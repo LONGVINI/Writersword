@@ -410,6 +410,27 @@ namespace Writersword.Infrastructure.Workspace
                 return;
             }
 
+            // Снимаем данные с модуля и сохраняем в project.ModulesData ДО удаления.
+            // Иначе при переключении в другой WorkMode с тем же модулем данные будут потеряны.
+            var module = _tab.ModuleContext.GetModule(moduleType);
+            if (module != null)
+            {
+                try
+                {
+                    var customData = module.GetCustomData();
+                    if (customData != null)
+                    {
+                        var project = _tab.GetProject();
+                        project.ModulesData[moduleType] = customData;
+                        _logger.LogDebug("Module data saved before close: {moduleType}", moduleType);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to save module data before close: {moduleType}", moduleType);
+                }
+            }
+
             _tab.ModuleContext.RemoveModule(moduleType);
             _dockFactory.CleanupEmptyContainersInLayout(_dockLayout);
 

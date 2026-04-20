@@ -613,10 +613,13 @@ namespace Writersword.Views
                 return;
             }
 
-            // Блокируем нативные жесты которые модуль объявил своими
-            if (DataContext is MainWindowViewModel vm)
+            // Блокируем нативные жесты которые модуль объявил своими.
+            // Получаем модуль напрямую через focusedModuleType.
+            if (focusedModuleType != null && DataContext is MainWindowViewModel vm)
             {
-                var module = vm.GetFocusedUndoableModule();
+                var activeTab = vm.TabBar.ActiveTab;
+                var module = activeTab?.ModuleContext.GetModule(focusedModuleType)
+                    as Writersword.Core.Interfaces.Modules.IUndoableModule;
                 if (module?.BlockedNativeGestures.Any(g =>
                     g.Key == e.Key && g.KeyModifiers == e.KeyModifiers) == true)
                 {

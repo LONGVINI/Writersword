@@ -23,21 +23,68 @@ namespace Writersword.Modules.TextEditor.Document
         // ── Undo ─────────────────────────────────────────────────────────
         private void BeginEdit(string description)
         {
-            if (DocVm is null) return;
+            if (DocVm is null) { _logger.Warning("[UNDO] BeginEdit({D}): DocVm is null", description); return; }
+            _logger.Debug("[UNDO] BeginEdit: {D}", description);
             _pendingSnapshot = new DocumentSnapshotCommand(DocVm, description);
         }
 
         private void CommitEdit()
         {
-            if (_pendingSnapshot is null || UndoStack is null) return;
+            if (_pendingSnapshot is null) { _logger.Warning("[UNDO] CommitEdit: no pending snapshot"); return; }
+            if (UndoStack is null) { _logger.Warning("[UNDO] CommitEdit: UndoStack is null"); return; }
             _pendingSnapshot.Commit();
             UndoStack.Push(_pendingSnapshot);
+            _logger.Debug("[UNDO] CommitEdit: pushed '{D}', stackSize={S}", _pendingSnapshot.Description, UndoStack.CanUndo);
             _pendingSnapshot = null;
         }
 
         // ── Selection ────────────────────────────────────────────────────
         private bool HasSel() =>
             _selStartPara != _selEndPara || _selStartChar != _selEndChar;
+
+        private bool HasCellRangeSel() => _isCellRangeSelecting && _cellSelTable != null;
+
+        private bool IsCellSelected(TableCell cell)
+        {
+            if (!HasCellRangeSel()) return false;
+            int minRow = Math.Min(_cellSelStartRow, _cellSelEndRow);
+            int maxRow = Math.Max(_cellSelStartRow, _cellSelEndRow);
+            int minCol = Math.Min(_cellSelStartCol, _cellSelEndCol);
+            int maxCol = Math.Max(_cellSelStartCol, _cellSelEndCol);
+            return cell.Row >= minRow && cell.Row <= maxRow
+                && cell.Column >= minCol && cell.Column <= maxCol;
+        }
+
+        // Очищает содержимое всех выделенных ячеек и сбрасывает cell-range режим.
+        private void ClearCellRangeSelection()
+        {
+            if (_cellSelTable is null) return;
+
+            BeginEdit("Delete cell contents");
+
+            int minRow = Math.Min(_cellSelStartRow, _cellSelEndRow);
+            int maxRow = Math.Max(_cellSelStartRow, _cellSelEndRow);
+            int minCol = Math.Min(_cellSelStartCol, _cellSelEndCol);
+            int maxCol = Math.Max(_cellSelStartCol, _cellSelEndCol);
+
+            foreach (var cell in _cellSelTable.Cells)
+            {
+                if (cell.Row < minRow || cell.Row > maxRow) continue;
+                if (cell.Column < minCol || cell.Column > maxCol) continue;
+
+                // Оставляем один пустой параграф — минимальная структура ячейки.
+                cell.Paragraphs.Clear();
+                cell.Paragraphs.Add(new Writersword.Modules.TextEditor.Models.Document.ParagraphBlock());
+            }
+
+            _isCellRangeSelecting = false;
+            _cellSelTable = null;
+
+            CommitEdit();
+            _cellLayoutCache.Clear();
+            RebuildLayouts();
+            InvalidateFull();
+        }
 
         private (int sp, int sc, int ep, int ec) NormalizeSelection()
         {
@@ -146,11 +193,21 @@ namespace Writersword.Modules.TextEditor.Document
         {
             BeginEdit("Cut");
             await CopyAsync();
-            DeleteSelection();
-            CommitEdit();
-            SnapCaretToCorrectSlice();
-            UpdatePreferredX();
-            SyncSel(); ResetCaret(); InvalidateFull();
+
+            if (IsInCell(_caretPara))
+            {
+                CellDeleteSelection();
+                CommitEdit();
+                RebuildAfterCellEdit();
+            }
+            else
+            {
+                DeleteSelection();
+                CommitEdit();
+                SnapCaretToCorrectSlice();
+                UpdatePreferredX();
+                SyncSel(); ResetCaret(); InvalidateFull();
+            }
         }
 
         private async Task PasteAsync()
@@ -683,14 +740,33 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (DocVm is null) return;
             DocVm.SelectionParagraphs.Clear();
+
+            var (sp, sc, ep, ec) = NormalizeSelection();
+
+            // Синхронизируем выделение в DocVm для ApplyCharProperty.
+            // Для ячеек: sp может != ep если ячейка разбита на несколько слайсов,
+            // но sc/ec — это char-индексы внутри VM одного параграфа ячейки.
+            // Если начало и конец выделения в одном VM — передаём sc/ec напрямую.
+            if (HasSel())
+            {
+                var startVm = sp < _layouts.Count ? GetVmAt(sp) : null;
+                var endVm = ep < _layouts.Count ? GetVmAt(ep) : null;
+                if (startVm != null && startVm == endVm)
+                    DocVm.SetSelection(sc, ec);
+                else
+                    DocVm.SetSelection(0, 0);
+            }
+            else
+            {
+                DocVm.SetSelection(0, 0);
+            }
+
             if (!HasSel()) return;
 
-            var (sp, _, ep, _) = NormalizeSelection();
             var seen = new HashSet<ParagraphViewModel>();
             for (int i = sp; i <= ep && i < _layouts.Count; i++)
             {
                 var pvm = GetVmAt(i);
-                // Добавляем только VM из DocVm.Paragraphs (не ячеечные)
                 if (pvm is not null && seen.Add(pvm) && DocVm.Paragraphs.Contains(pvm))
                     DocVm.SelectionParagraphs.Add(pvm);
             }

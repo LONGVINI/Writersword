@@ -115,7 +115,6 @@ namespace Writersword.ViewModels.Components.MenuBar
             ResetWorkspaceToGlobalCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToGlobal);
             ResetWorkspaceToDefaultCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToDefault);
 
-            InitializeEditCommands();
             LoadRecentProjects();
 
             _logger.LogDebug("Initialized");

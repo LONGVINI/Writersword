@@ -2,20 +2,12 @@
 using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Threading;
 using Serilog;
 
 namespace Writersword.Modules.Characters.Controls;
 
 /// <summary>
 /// Горизонтальная панель заголовка папки персонажей с последовательным сжатием.
-///
-/// Поведение:
-/// - Имя — у левого края, natural/preferred ширина, растёт вправо.
-/// - Комментарий — у правого края (finalSize), natural/preferred ширина, растёт влево.
-/// - Между ними свободное пространство, которое исчезает по мере роста текста.
-/// - Пространство исчезло → сначала сжимается комментарий до RightMinWidth.
-/// - Комментарий на минимуме → сжимается имя до LeftMinWidth.
 /// </summary>
 public sealed class CharactersFolderHeaderPanel : Panel
 {
@@ -61,6 +53,11 @@ public sealed class CharactersFolderHeaderPanel : Panel
     private double _commentAlloc;
     private const double VisualBuffer = 12.0;
 
+    // Запас сверх измеренного контента TextBox чтобы гарантировать scroll=0.
+    // TextBox.DesiredSize включает padding; без запаса рендер может дать на 1-2px
+    // меньше чем нужно тексту → TextBox скроллит вправо → Г обрезается слева.
+    private const double TextBoxScrollBuffer = 8.0;
+
     private readonly List<IDisposable> _childSubscriptions = new();
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -82,7 +79,10 @@ public sealed class CharactersFolderHeaderPanel : Panel
         {
             _childSubscriptions.Add(
                 child.GetObservable(IsVisibleProperty)
-                     .Subscribe(_ => InvalidateMeasure()));
+                     .Subscribe(_ =>
+                     {
+                         InvalidateMeasure();
+                     }));
 
             if (child is Panel childPanel)
             {
@@ -90,9 +90,23 @@ public sealed class CharactersFolderHeaderPanel : Panel
                 {
                     _childSubscriptions.Add(
                         grandchild.GetObservable(IsVisibleProperty)
-                                  .Subscribe(_ => InvalidateMeasure()));
+                                  .Subscribe(_ =>
+                                  {
+                                      InvalidateMeasure();
+                                  }));
 
-                    // ПОДПИСКА НА ТЕКСТ УДАЛЕНА, ЧТОБЫ УБРАТЬ ДЕРГАНИЕ
+                    if (grandchild is TextBox tb)
+                    {
+                        // TextChanged event вместо GetObservable(TextProperty):
+                        // GetObservable на AvaloniaProperty не всегда стреляет при
+                        // пользовательском вводе в сочетании с ReflectionBinding.
+                        void OnTextChanged(object? s, TextChangedEventArgs _)
+                        {
+                            InvalidateMeasure();
+                        }
+                        tb.TextChanged += OnTextChanged;
+                        _childSubscriptions.Add(new ActionDisposable(() => tb.TextChanged -= OnTextChanged));
+                    }
                 }
             }
         }
@@ -103,6 +117,14 @@ public sealed class CharactersFolderHeaderPanel : Panel
         foreach (var sub in _childSubscriptions)
             sub.Dispose();
         _childSubscriptions.Clear();
+    }
+
+    private static bool HasVisibleTextBox(Control container)
+    {
+        if (container is Panel panel)
+            foreach (Control child in panel.Children)
+                if (child is TextBox && child.IsVisible) return true;
+        return false;
     }
 
     protected override Size MeasureOverride(Size availableSize)
@@ -126,31 +148,61 @@ public sealed class CharactersFolderHeaderPanel : Panel
         nameChild.Measure(infinite);
         commentChild.Measure(infinite);
 
-        double nameNatural = Math.Max(nameChild.DesiredSize.Width, LeftPreferredWidth);
-        double commentNatural = commentChild.DesiredSize.Width + VisualBuffer;
-
         double available = double.IsInfinity(availableSize.Width)
-            ? nameNatural + commentNatural
+            ? LeftPreferredWidth + RightPreferredWidth
             : availableSize.Width;
 
-        if (nameNatural + commentNatural <= available)
-        {
-            _nameAlloc = nameNatural;
-            _commentAlloc = commentNatural;
-        }
-        else
-        {
-            double availableForComment = available - nameNatural;
+        bool nameEditing = HasVisibleTextBox(nameChild);
 
-            if (availableForComment >= RightMinWidth + VisualBuffer)
+
+        if (nameEditing)
+        {
+            double nameDesired = Math.Max(nameChild.DesiredSize.Width + TextBoxScrollBuffer, LeftPreferredWidth);
+            double commentNatural = commentChild.DesiredSize.Width + VisualBuffer;
+
+            if (nameDesired + commentNatural <= available)
             {
-                _nameAlloc = nameNatural;
-                _commentAlloc = availableForComment;
+                // Оба влезают на своих натуральных размерах.
+                _nameAlloc = nameDesired;
+                _commentAlloc = commentNatural;
+            }
+            else if (nameDesired + RightMinWidth + VisualBuffer <= available)
+            {
+                // Имя на желаемом размере, комментарий сжимается.
+                _nameAlloc = nameDesired;
+                _commentAlloc = available - nameDesired;
             }
             else
             {
+                // Панель очень узкая: комментарий на минимуме, имя берёт остаток.
                 _commentAlloc = RightMinWidth + VisualBuffer;
                 _nameAlloc = Math.Max(LeftMinWidth, available - _commentAlloc);
+            }
+        }
+        else
+        {
+            double nameNatural = Math.Max(nameChild.DesiredSize.Width, LeftPreferredWidth);
+            double commentNatural = commentChild.DesiredSize.Width + VisualBuffer;
+
+            if (nameNatural + commentNatural <= available)
+            {
+                _nameAlloc = nameNatural;
+                _commentAlloc = commentNatural;
+            }
+            else
+            {
+                double availableForComment = available - nameNatural;
+
+                if (availableForComment >= RightMinWidth + VisualBuffer)
+                {
+                    _nameAlloc = nameNatural;
+                    _commentAlloc = availableForComment;
+                }
+                else
+                {
+                    _commentAlloc = RightMinWidth + VisualBuffer;
+                    _nameAlloc = Math.Max(LeftMinWidth, available - _commentAlloc);
+                }
             }
         }
 
@@ -180,5 +232,13 @@ public sealed class CharactersFolderHeaderPanel : Panel
         Children[1].Arrange(new Rect(commentLeft, 0, commentWidth, finalSize.Height));
 
         return finalSize;
+    }
+
+    // Вспомогательный класс для хранения event-подписки в виде IDisposable.
+    private sealed class ActionDisposable : IDisposable
+    {
+        private Action? _action;
+        public ActionDisposable(Action action) => _action = action;
+        public void Dispose() { _action?.Invoke(); _action = null; }
     }
 }

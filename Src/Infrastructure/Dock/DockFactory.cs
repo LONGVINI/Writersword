@@ -46,6 +46,14 @@ namespace Writersword.Infrastructure.Dock
         [Newtonsoft.Json.JsonIgnore]
         public Action<string>? OnModuleFocused { get; set; }
 
+        /// <summary>
+        /// Callback вызывается после перемещения модуля когда нужно обновить DockLayout в UI.
+        /// В Dock 12 изменение Content существующих Document-ов не обновляет DockControl —
+        /// требуется полный пересоздание через null+reassign DockLayout.
+        /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public Action? OnNeedRerender { get; set; }
+
         public DockFactory()
         {
             _logger = App.Services.GetService<ILogger<DockFactory>>()!;
@@ -100,6 +108,19 @@ namespace Writersword.Infrastructure.Dock
                 base.CloseDockable(dockable);
                 OnModuleClosed?.Invoke(moduleType);
 
+                // После закрытия Dock 12 перестраивает визуальное дерево —
+                // оставшиеся модули теряют ContentPresenter. Пересоздаём View-шки.
+                if (_currentRootDock != null)
+                {
+                    var root = _currentRootDock;
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    {
+                        var tab = App.Services.GetRequiredService<ITabCollection>().ActiveTab;
+                        if (tab != null)
+                            RecreateDocumentViews(root, tab);
+                    }, Avalonia.Threading.DispatcherPriority.Loaded);
+                }
+
             }
             else
             {
@@ -123,9 +144,48 @@ namespace Writersword.Infrastructure.Dock
             {
                 var rootToNormalize = _currentRootDock;
                 Avalonia.Threading.Dispatcher.UIThread.Post(
-                    () => NormalizeProportionsRecursive(rootToNormalize),
+                    () =>
+                    {
+                        NormalizeProportionsRecursive(rootToNormalize);
+                        // В Dock 12 View нельзя переиспользовать после перемещения между
+                        // ContentPresenter-ами — VisualParent остаётся на старом CP.
+                        // Единственное решение — пересоздать View через module.CreateView().
+                        // ViewModel остаётся той же → данные модуля не теряются.
+                        var tab = App.Services.GetRequiredService<ITabCollection>().ActiveTab;
+                        if (tab != null)
+                            RecreateDocumentViews(rootToNormalize, tab);
+                    },
                     Avalonia.Threading.DispatcherPriority.Loaded);
             }
+        }
+
+        /// <summary>
+        /// Пересоздаёт View для каждого Document через module.CreateView().
+        /// Используется после MoveDockable — в Dock 12 существующий View не рендерится
+        /// после перемещения между DocumentDock-ами.
+        /// </summary>
+        private void RecreateDocumentViews(IDockable dockable, DocumentTabViewModel tab)
+        {
+            if (dockable is Document doc && doc.Id?.StartsWith("Module_") == true)
+            {
+                var moduleType = doc.Id.Replace("Module_", "");
+                var module = tab.ModuleContext.GetModule(moduleType);
+                if (module != null)
+                {
+                    var newView = module.CreateView();
+                    if (newView != null)
+                    {
+                        doc.Content = null;
+                        doc.Content = newView;
+                        _logger.LogDebug("View recreated for: {moduleType}", moduleType);
+                    }
+                }
+                return;
+            }
+
+            if (dockable is IDock dock && dock.VisibleDockables != null)
+                foreach (var child in dock.VisibleDockables.ToList())
+                    RecreateDocumentViews(child, tab);
         }
 
         /// <summary>

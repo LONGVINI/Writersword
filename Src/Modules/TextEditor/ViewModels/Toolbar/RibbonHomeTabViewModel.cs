@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Input;
 using ReactiveUI;
+using SkiaSharp;
 using Writersword.Modules.TextEditor.Models.Styles;
 using Writersword.Modules.TextEditor.Contracts;
 
@@ -293,18 +294,23 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         // --- Доступные значения ---
 
-        public IReadOnlyList<string> AvailableFonts { get; } = new[]
+        public IReadOnlyList<string> AvailableFonts { get; } = LoadSystemFonts();
+
+        private static IReadOnlyList<string> LoadSystemFonts()
         {
-            "Arial",
-            "Times New Roman",
-            "Calibri",
-            "Georgia",
-            "Verdana",
-            "Tahoma",
-            "Trebuchet MS",
-            "Consolas",
-            "Courier New"
-        };
+            try
+            {
+                var families = SKFontManager.Default.FontFamilies;
+                return families
+                    .Where(f => !string.IsNullOrWhiteSpace(f))
+                    .OrderBy(f => f, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+            }
+            catch
+            {
+                return new[] { "Arial", "Times New Roman", "Calibri", "Georgia", "Verdana" };
+            }
+        }
 
         /// <summary>
         /// Стандартный набор размеров шрифта как в Word.

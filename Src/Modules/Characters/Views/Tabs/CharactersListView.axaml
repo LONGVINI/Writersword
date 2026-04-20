@@ -142,7 +142,8 @@
                                                          Padding="4,2,16,2"
                                                          VerticalAlignment="Center"
                                                          IsVisible="{Binding IsRenaming}"
-                                                         behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"/>
+                                                         behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"
+                                                         behaviors:ClickOutsideBehavior.Command="{ReflectionBinding ConfirmRenameCommand}"/>
 											</Panel>
 
 											<!-- Child[1]: комментарий -->
@@ -190,7 +191,8 @@
                                                          HorizontalAlignment="Stretch"
                                                          VerticalAlignment="Center"
                                                          IsVisible="{Binding IsEditingComment}"
-                                                         behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsEditingComment}"/>
+                                                         behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsEditingComment}"
+                                                         behaviors:ClickOutsideBehavior.Command="{ReflectionBinding ConfirmCommentCommand}"/>
 											</Grid>
 
 										</controls:CharactersFolderHeaderPanel>

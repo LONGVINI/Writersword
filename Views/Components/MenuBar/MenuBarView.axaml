@@ -19,7 +19,6 @@
 		</Menu.ItemsPanel>
 
 		<sections:MenuBarFile        DataContext="{Binding}"/>
-		<sections:MenuBarEdit        DataContext="{Binding}"/>
 		<sections:MenuBarViewSection DataContext="{Binding}"/>
 		<sections:MenuBarWorkspace   DataContext="{Binding}"/>
 		<sections:MenuBarTools       DataContext="{Binding}"/>

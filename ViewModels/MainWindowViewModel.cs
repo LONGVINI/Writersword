@@ -238,8 +238,9 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>
-        /// Обработчик изменений Workspace
-        /// Единственное место где DockLayout обновляется после начальной активации
+        /// Обработчик изменений Workspace.
+        /// DockLayout переприсваивается только если layout объект сменился —
+        /// при перемещении модулей layout тот же объект и трогать его не нужно.
         /// </summary>
         private void OnWorkspaceChanged(object? sender, EventArgs e)
         {
@@ -254,11 +255,7 @@ namespace Writersword.ViewModels
             {
                 DockLayout = null;
                 DockLayout = newLayout;
-                _logger.LogDebug("DockLayout updated from WorkspaceChanged (new layout object)");
-            }
-            else
-            {
-                _logger.LogDebug("DockLayout unchanged (same object), skipping reassign");
+                _logger.LogDebug("DockLayout updated (new layout object)");
             }
 
             var activeWorkMode = activeTab.Workspace.GetActiveWorkMode();
@@ -492,6 +489,19 @@ namespace Writersword.ViewModels
                 _logger.LogDebug("Last focused module: {moduleType}", moduleType);
             };
 
+            // В Dock 12 изменение Content существующих Document-ов не обновляет DockControl.
+            // После перемещения модуля нужен полный пересоздание через null+reassign.
+            // Content к этому моменту уже восстановлен из бэкапа (Views detached перед move),
+            // поэтому null не вызовет "already has visual parent" при повторном назначении.
+            _dockFactory.OnNeedRerender = () =>
+            {
+                var layout = TabBar.ActiveTab?.Workspace?.GetCurrentLayout();
+                if (layout == null) return;
+                DockLayout = null;
+                DockLayout = layout;
+                _logger.LogDebug("DockLayout rerendered after module move");
+            };
+
             _logger.LogDebug("Dock factory initialized");
         }
 
@@ -596,27 +606,6 @@ namespace Writersword.ViewModels
                 Scope = HotKeyScope.Global,
                 DefaultGesture = new HotKeyGesture(new KeyGesture(Key.F11))
             }, MenuBar.ToggleFullscreenCommand);
-
-            _hotKeyService.Register("HotKey_Edit_Undo", new HotKey
-            {
-                DisplayNameKey = Strings.HotKey_Edit_Undo,
-                Category = HotKeyCategory.Edit,
-                Scope = HotKeyScope.Global,
-                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.Z, KeyModifiers.Control))
-            }, MenuBar.UndoCommand);
-
-            _hotKeyService.Register("HotKey_Edit_Redo", new HotKey
-            {
-                DisplayNameKey = Strings.HotKey_Edit_Redo,
-                Category = HotKeyCategory.Edit,
-                Scope = HotKeyScope.Global,
-                DefaultGesture = new HotKeyGesture(new KeyGesture(Key.Y, KeyModifiers.Control)),
-                DefaultGestures = new List<HotKeyGesture>
-                {
-                    new HotKeyGesture(new KeyGesture(Key.Y, KeyModifiers.Control)),
-                    new HotKeyGesture(new KeyGesture(Key.Z, KeyModifiers.Control | KeyModifiers.Shift))
-                }
-            }, MenuBar.RedoCommand);
 
             _hotKeyService.LoadSettings();
 

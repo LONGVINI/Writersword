@@ -167,6 +167,8 @@ namespace Writersword.Modules.TextEditor.Document
             _selStartPara = pi; _selStartChar = ci;
             _selEndPara = pi; _selEndChar = ci;
             _isSelecting = true;
+            _isCellRangeSelecting = false;
+            _cellSelTable = null;
 
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
@@ -286,15 +288,39 @@ namespace Writersword.Modules.TextEditor.Document
 
             var (pi, ci) = HitTest(rawPt);
 
-            // Выделение только внутри одной ячейки (или только вне ячеек)
             bool startInCell = IsInCell(_selStartPara);
             bool nowInCell = pi >= 0 && pi < _layouts.Count && _layouts[pi].Cell != null;
-            if (startInCell != nowInCell) { e.Handled = true; return; }
+
+            // Если начали в ячейке и перешли в другую ячейку той же таблицы — cell-range режим.
             if (startInCell && nowInCell)
             {
-                var startCell = _layouts[_selStartPara].Cell;
-                var endCell = _layouts[pi].Cell;
-                if (startCell?.Cell != endCell?.Cell) { e.Handled = true; return; }
+                var startCell = _layouts[_selStartPara].Cell!;
+                var endCell = _layouts[pi].Cell!;
+
+                if (startCell.Table == endCell.Table && startCell.Cell != endCell.Cell)
+                {
+                    _isCellRangeSelecting = true;
+                    _cellSelTable = startCell.Table;
+                    _cellSelStartRow = startCell.Cell.Row;
+                    _cellSelStartCol = startCell.Cell.Column;
+                    _cellSelEndRow = endCell.Cell.Row;
+                    _cellSelEndCol = endCell.Cell.Column;
+                    InvalidateFull();
+                    e.Handled = true;
+                    return;
+                }
+
+                // Та же ячейка — обычное текстовое выделение внутри ячейки.
+                _isCellRangeSelecting = false;
+            }
+            else if (startInCell != nowInCell)
+            {
+                e.Handled = true;
+                return;
+            }
+            else
+            {
+                _isCellRangeSelecting = false;
             }
 
             _selEndPara = pi; _selEndChar = ci;
@@ -694,24 +720,31 @@ namespace Writersword.Modules.TextEditor.Document
             var cell = GetCurrentCell();
             if (cell is null) return;
 
-            // Сначала удаляем выделение если оно есть
+            BeginEdit("Type text");
+
             if (HasSel()) { CellDeleteSelection(); RebuildAfterCellEdit(); }
 
-            // Перечитываем cell после rebuild
             cell = GetCurrentCell();
-            if (cell is null) return;
+            if (cell is null) { CommitEdit(); return; }
 
             string t = cell.ParaBlock.GetPlainText();
             int pos = Clamp(_caretChar, 0, t.Length);
             SetCellParaText(cell.Cell, cell.CellParaIndex, t[..pos] + text + t[pos..]);
             _caretChar = pos + text.Length;
 
+            CommitEdit();
             RebuildAfterCellEdit();
         }
 
         public void ExecuteDeleteBackSmart()
         {
             _caretLineHint = -1;
+
+            if (_isCellRangeSelecting)
+            {
+                ClearCellRangeSelection();
+                return;
+            }
 
             if (IsInCell(_caretPara))
             {
@@ -724,6 +757,12 @@ namespace Writersword.Modules.TextEditor.Document
         public void ExecuteDeleteForwardSmart()
         {
             _caretLineHint = -1;
+
+            if (_isCellRangeSelecting)
+            {
+                ClearCellRangeSelection();
+                return;
+            }
 
             if (IsInCell(_caretPara))
             {
@@ -748,9 +787,12 @@ namespace Writersword.Modules.TextEditor.Document
             var cell = GetCurrentCell();
             if (cell is null) return;
 
+            BeginEdit("Delete");
+
             if (HasSel())
             {
                 CellDeleteSelection();
+                CommitEdit();
                 RebuildAfterCellEdit();
                 return;
             }
@@ -765,16 +807,15 @@ namespace Writersword.Modules.TextEditor.Document
             }
             else if (cell.CellParaIndex > 0)
             {
-                // Объединяем с предыдущим параграфом той же ячейки
                 var prev = cell.Cell.Paragraphs[cell.CellParaIndex - 1];
                 string pt = prev.GetPlainText();
                 SetCellParaText(cell.Cell, cell.CellParaIndex - 1, pt + t);
                 cell.Cell.Paragraphs.RemoveAt(cell.CellParaIndex);
                 _caretChar = pt.Length;
-                // Обновляем cell paraIndex → после rebuild snap найдёт нужный слайс
             }
             // else: начало первого параграфа ячейки — блокируем (нельзя выйти)
 
+            CommitEdit();
             RebuildAfterCellEdit();
         }
 
@@ -783,9 +824,12 @@ namespace Writersword.Modules.TextEditor.Document
             var cell = GetCurrentCell();
             if (cell is null) return;
 
+            BeginEdit("Delete");
+
             if (HasSel())
             {
                 CellDeleteSelection();
+                CommitEdit();
                 RebuildAfterCellEdit();
                 return;
             }
@@ -799,7 +843,6 @@ namespace Writersword.Modules.TextEditor.Document
             }
             else if (cell.CellParaIndex < cell.Cell.Paragraphs.Count - 1)
             {
-                // Объединяем со следующим параграфом ячейки
                 var next = cell.Cell.Paragraphs[cell.CellParaIndex + 1];
                 string nt = next.GetPlainText();
                 SetCellParaText(cell.Cell, cell.CellParaIndex, t + nt);
@@ -807,12 +850,14 @@ namespace Writersword.Modules.TextEditor.Document
             }
             // else: конец последнего параграфа ячейки — блокируем
 
+            CommitEdit();
             RebuildAfterCellEdit();
         }
 
         private void CellNewParagraph()
         {
-            // Сначала удаляем выделение если оно есть
+            BeginEdit("New paragraph");
+
             if (HasSel())
             {
                 CellDeleteSelection();
@@ -820,7 +865,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             var cell = GetCurrentCell();
-            if (cell is null) return;
+            if (cell is null) { CommitEdit(); return; }
 
             string t = cell.ParaBlock.GetPlainText();
             int pos = Clamp(_caretChar, 0, t.Length);
@@ -837,7 +882,7 @@ namespace Writersword.Modules.TextEditor.Document
             cell.Cell.Paragraphs.Insert(cell.CellParaIndex + 1, newPara);
             _caretChar = 0;
 
-            // Снапимся явно на новый параграф, а не на текущий.
+            CommitEdit();
             RebuildAfterCellEdit(newPara);
         }
 
@@ -1169,13 +1214,19 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteUndo()
         {
-            UndoStack?.Undo();
+            if (UndoStack is null) { _logger.Warning("[UNDO] ExecuteUndo: UndoStack is null"); return; }
+            if (!UndoStack.CanUndo) { _logger.Debug("[UNDO] ExecuteUndo: nothing to undo"); return; }
+            _logger.Debug("[UNDO] ExecuteUndo: '{D}'", UndoStack.UndoDescription);
+            UndoStack.Undo();
             ClampCaret(); SyncSel(); ResetCaret(); InvalidateFull();
         }
 
         public void ExecuteRedo()
         {
-            UndoStack?.Redo();
+            if (UndoStack is null) { _logger.Warning("[UNDO] ExecuteRedo: UndoStack is null"); return; }
+            if (!UndoStack.CanRedo) { _logger.Debug("[UNDO] ExecuteRedo: nothing to redo"); return; }
+            _logger.Debug("[UNDO] ExecuteRedo: '{D}'", UndoStack.RedoDescription);
+            UndoStack.Redo();
             ClampCaret(); SyncSel(); ResetCaret(); InvalidateFull();
         }
 

@@ -195,9 +195,6 @@
 		<Compile Update="Views\Components\MenuBar\Sections\MenuBarView.File.axaml.cs">
 			<DependentUpon>MenuBarView.File.axaml</DependentUpon>
 		</Compile>
-		<Compile Update="Views\Components\MenuBar\Sections\MenuBarView.Edit.axaml.cs">
-			<DependentUpon>MenuBarView.Edit.axaml</DependentUpon>
-		</Compile>
 		<Compile Update="Views\Components\MenuBar\Sections\MenuBarView.View.axaml.cs">
 			<DependentUpon>MenuBarView.View.axaml</DependentUpon>
 		</Compile>

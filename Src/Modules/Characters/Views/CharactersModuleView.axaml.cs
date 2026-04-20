@@ -20,7 +20,6 @@ namespace Writersword.Modules.Characters.Views
 
         private IDisposable? _subscription;
         private readonly List<IDisposable> _folderSubscriptions = new();
-        private TopLevel? _topLevel;
 
         private CharactersListView? _listView;
         private CharacterEditView? _editView;
@@ -39,21 +38,17 @@ namespace Writersword.Modules.Characters.Views
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnAttachedToVisualTree(e);
-            _topLevel = TopLevel.GetTopLevel(this);
             AddHandler(TextBox.LostFocusEvent, OnTextBoxLostFocus, RoutingStrategies.Bubble);
             AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Bubble);
-            AddHandler(PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel);
             _log.Debug("CharactersModuleView attached to visual tree");
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnDetachedFromVisualTree(e);
-            _topLevel = null;
             CommitAllPendingEdits();
             RemoveHandler(TextBox.LostFocusEvent, OnTextBoxLostFocus);
             RemoveHandler(KeyDownEvent, OnKeyDown);
-            RemoveHandler(PointerPressedEvent, OnPointerPressed);
             _log.Debug("CharactersModuleView detached");
         }
 
@@ -104,7 +99,7 @@ namespace Writersword.Modules.Characters.Views
                 {
                     Dispatcher.UIThread.Post(() =>
                     {
-                        var box = FindCommentBoxForFolder(folder);
+                        var box = FindDescendantWithDataContext<TextBox>(this, folder, "FolderCommentBox");
                         if (box == null || !box.IsVisible)
                         {
                             _log.Debug("FolderCommentEditing: box not visible for {Id}", folder.FolderId);
@@ -115,11 +110,6 @@ namespace Writersword.Modules.Characters.Views
                     }, DispatcherPriority.Render);
                 });
             _folderSubscriptions.Add(sub);
-        }
-
-        private TextBox? FindCommentBoxForFolder(CharacterFolderViewModel folder)
-        {
-            return FindDescendantWithDataContext<TextBox>(this, folder, "FolderCommentBox");
         }
 
         private static T? FindDescendantWithDataContext<T>(Visual root, object dataContext, string name)
@@ -178,54 +168,10 @@ namespace Writersword.Modules.Characters.Views
             }
         }
 
-        // ── PointerPressed ────────────────────────────────────────────────
-
-        private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
-        {
-            if (DataContext is CharactersViewModel vm)
-            {
-                foreach (var folder in vm.Folders)
-                {
-                    if (!folder.IsEditingComment) continue;
-
-                    Visual? outermostFolderVisual = null;
-                    Visual? v = e.Source as Visual;
-                    while (v != null && !ReferenceEquals(v, this))
-                    {
-                        if (v is Control c && c.DataContext == folder)
-                            outermostFolderVisual = v;
-                        v = v.GetVisualParent();
-                    }
-
-                    bool clickedInsideFolder = outermostFolderVisual != null;
-
-                    if (!clickedInsideFolder)
-                    {
-                        _log.Debug("OnPointerPressed: closing comment editor for folder {Id}", folder.FolderId);
-                        folder.ConfirmCommentCommand.Execute().Subscribe();
-                    }
-
-                    return;
-                }
-            }
-
-            // Снимаем фокус если клик вне любого TextBox или Button.
-            // В Avalonia 12 IFocusManager.ClearFocus() удалён — используем Focus() на TopLevel.
-            var focused = _topLevel?.FocusManager?.GetFocusedElement();
-            if (focused is not TextBox) return;
-
-            Visual? src = e.Source as Visual;
-            while (src != null)
-            {
-                if (src is TextBox) return;
-                if (src is Button) return;
-                src = src.GetVisualParent();
-            }
-
-            _topLevel?.Focus();
-        }
-
-        // ── LostFocus TextBox ─────────────────────────────────────────────
+        // ── LostFocus ─────────────────────────────────────────────────────
+        // Safety net for cases where focus leaves the window entirely
+        // (Alt+Tab, window minimize, etc.). Normal click-outside is handled
+        // by ClickOutsideBehavior directly on each TextBox.
 
         private void OnTextBoxLostFocus(object? sender, RoutedEventArgs e)
         {
@@ -236,23 +182,10 @@ namespace Writersword.Modules.Characters.Views
             if (folderVm != null)
             {
                 if (folderVm.IsRenaming)
-                {
                     folderVm.ConfirmRenameCommand.Execute().Subscribe();
-                    return;
-                }
-
-                if (folderVm.IsEditingComment)
-                {
-                    var box = src;
-                    _log.Debug("OnTextBoxLostFocus: scheduling re-focus for {Name}", src.Name);
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        if (!folderVm.IsEditingComment || !box.IsVisible) return;
-                        _log.Debug("OnTextBoxLostFocus: re-focusing {Name}", box.Name);
-                        box.Focus();
-                    }, DispatcherPriority.Input);
-                    return;
-                }
+                else if (folderVm.IsEditingComment)
+                    folderVm.ConfirmCommentCommand.Execute().Subscribe();
+                return;
             }
 
             var charVm = FindAncestor<CharacterListItemViewModel>(src);
