@@ -6,39 +6,40 @@
         xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
         xmlns:components="using:Writersword.Views.Components"
         x:Class="Writersword.Views.MainWindowView"
-		xmlns:menubar="using:Writersword.Views.Components.MenuBar"
+        xmlns:menubar="using:Writersword.Views.Components.MenuBar"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding Title}"
         Width="1400"
         Height="900"
         WindowState="Maximized"
         Background="Transparent"
-		ExtendClientAreaToDecorationsHint="True"
-		WindowDecorations="BorderOnly"
-		ExtendClientAreaTitleBarHeightHint="-1">
+        ExtendClientAreaToDecorationsHint="True"
+        WindowDecorations="BorderOnly"
+        ExtendClientAreaTitleBarHeightHint="-1">
 
 	<Grid Background="{DynamicResource BgAppBrush}"
           RowDefinitions="Auto,Auto,Auto,Auto,*">
 
 		<!-- Строка заголовка -->
 		<Grid Grid.Row="0"
-				   x:Name="TitleBarGrid"
-				   Background="{DynamicResource BgPanelBrush}"
-				   UseLayoutRounding="True">
+              x:Name="TitleBarGrid"
+              Background="{DynamicResource BgPanelBrush}"
+              UseLayoutRounding="True">
 
-			<DockPanel Margin="0,0,138,0" VerticalAlignment="Top">
-				<Image DockPanel.Dock="Left"
-                       Source="avares://Writersword/Resources/Images/icon.ico"
+			<!-- Иконка и меню занимают ровно столько места, сколько нужно пунктам -->
+			<StackPanel x:Name="TitleBarContent"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top">
+				<Image Source="avares://Writersword/Resources/Images/icon.ico"
                        Width="16" Height="16"
                        Margin="10,8,8,0"
                        VerticalAlignment="Top"
                        RenderOptions.BitmapInterpolationMode="HighQuality"/>
+				<menubar:MenuBarView VerticalAlignment="Top"/>
+			</StackPanel>
 
-				<menubar:MenuBarView DataContext="{Binding MenuBar}"
-							HorizontalAlignment="Stretch"
-							VerticalAlignment="Top"/>
-			</DockPanel>
-
+			<!-- Кнопки окна -->
 			<StackPanel x:Name="WindowButtonsPanel"
                         Orientation="Horizontal"
                         HorizontalAlignment="Right"
@@ -69,10 +70,11 @@
 				</Button>
 			</StackPanel>
 		</Grid>
+
 		<!-- Панель вкладок -->
 		<components:TabBarView Grid.Row="1"
-                       x:Name="TabBarViewRoot"
-                       DataContext="{Binding TabBar}"/>
+                               x:Name="TabBarViewRoot"
+                               DataContext="{Binding TabBar}"/>
 
 		<!-- Панель WorkModes -->
 		<components:WorkModeBarView Grid.Row="2"
@@ -99,8 +101,6 @@
                    VerticalAlignment="Stretch"
                    IsHitTestVisible="False"/>
 		</Panel>
-
-
 
 	</Grid>
 </Window>

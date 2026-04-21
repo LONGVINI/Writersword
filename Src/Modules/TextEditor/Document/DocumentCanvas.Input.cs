@@ -311,148 +311,35 @@ namespace Writersword.Modules.TextEditor.Document
             if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
 
             var (pi, ci) = HitTest(rawPt);
-            bool startInCell = IsInCell(_selStartPara);
             bool nowInCell = pi >= 0 && pi < _layouts.Count && _layouts[pi].Cell != null;
 
-            // Случай 1: оба конца внутри ОДНОЙ таблицы.
-            // Якорь — та ячейка, где была нажата кнопка мыши (_pressCellRow/Col).
-            if (nowInCell)
+            // Нажатие было в ячейке — ТОЛЬКО геометрический поиск для конца выделения.
+            // HitTest ненадёжен для пустых ячеек: возвращает ближайший layout-entry
+            // другой строки, что ломает якорь.
+            if (_pressCellTable != null)
             {
-                var endCell = _layouts[pi].Cell!;
-                if (_pressCellTable != null && endCell.Table == _pressCellTable)
+                var geoEnd = HitTestTableCellGeometric(xPt, yPt);
+                if (geoEnd.HasValue && geoEnd.Value.table == _pressCellTable)
                 {
                     _isCellRangeSelecting = true;
                     _cellSelTable = _pressCellTable;
                     _tableSelections.Clear();
                     _tableSelections[_pressCellTable] = (
                         _pressCellRow, _pressCellCol,
-                        endCell.Cell.Row, endCell.Cell.Column);
-
+                        geoEnd.Value.row, geoEnd.Value.col);
                     _cellSelStartRow = _pressCellRow;
                     _cellSelStartCol = _pressCellCol;
-                    _cellSelEndRow = endCell.Cell.Row;
-                    _cellSelEndCol = endCell.Cell.Column;
-
+                    _cellSelEndRow = geoEnd.Value.row;
+                    _cellSelEndCol = geoEnd.Value.col;
                     InvalidateFull();
                     e.Handled = true;
                     return;
                 }
-            }
 
-            // Случай 2: drag начался вне ячейки — геометрический поиск таблицы.
-            // Якорь = te.RowFrom (первая строка видимого слайса на этой странице).
-            if (_pressCellTable == null && !nowInCell)
-            {
-                var geoCell = HitTestTableCellGeometric(xPt, yPt);
-                if (geoCell.HasValue)
-                {
-                    var (gTable, gRow, gCol, gEntryIdx) = geoCell.Value;
-                    nowInCell = true;
-                    _isCellRangeSelecting = true;
-                    _cellSelTable = gTable;
-
-                    if (_tableSelections.TryGetValue(gTable, out var existing))
-                        _tableSelections[gTable] = (existing.sr, existing.sc, gRow, gCol);
-                    else
-                    {
-                        float selStartYPt = _selStartPara >= 0 && _selStartPara < _layouts.Count
-                            ? _layouts[_selStartPara].Ypt : 0f;
-                        bool fromAbove = selStartYPt <= yPt;
-
-                        List<TableEntry> gTables;
-                        lock (_renderLock) { gTables = _tables; }
-                        int anchorRow = fromAbove ? 0 : gTable.RowCount - 1;
-                        int anchorCol = fromAbove ? 0 : gTable.ColumnCount - 1;
-                        if (gEntryIdx >= 0 && gEntryIdx < gTables.Count)
-                        {
-                            var te = gTables[gEntryIdx];
-                            anchorRow = fromAbove ? te.RowFrom
-                                : (te.RowTo < 0 ? gTable.RowCount - 1 : Math.Max(te.RowFrom, te.RowTo - 1));
-                        }
-                        _tableSelections[gTable] = (anchorRow, anchorCol, gRow, gCol);
-                    }
-
-                    _cellSelStartRow = _tableSelections[gTable].sr;
-                    _cellSelStartCol = _tableSelections[gTable].sc;
-                    _cellSelEndRow = _tableSelections[gTable].er;
-                    _cellSelEndCol = _tableSelections[gTable].ec;
-                    InvalidateFull();
-                    e.Handled = true;
-                    return;
-                }
-            }
-
-            // Случай 3: drag начался вне ячейки, курсор вошёл в ячейку через HitTest.
-            if (_pressCellTable == null && nowInCell)
-            {
-                var endCell = _layouts[pi].Cell!;
-                _isCellRangeSelecting = true;
-                _cellSelTable = endCell.Table;
-
-                if (_tableSelections.TryGetValue(endCell.Table, out var existing))
-                    _tableSelections[endCell.Table] = (existing.sr, existing.sc,
-                        endCell.Cell.Row, endCell.Cell.Column);
-                else
-                {
-                    float selStartYPt = _selStartPara >= 0 && _selStartPara < _layouts.Count
-                        ? _layouts[_selStartPara].Ypt : 0f;
-                    bool fromAbove = selStartYPt <= _layouts[pi].Ypt;
-
-                    int eIdx = endCell.TableEntryIdx;
-                    List<TableEntry> eTables;
-                    lock (_renderLock) { eTables = _tables; }
-                    int anchorRow = fromAbove ? 0 : endCell.Table.RowCount - 1;
-                    int anchorCol = fromAbove ? 0 : endCell.Table.ColumnCount - 1;
-                    if (eIdx >= 0 && eIdx < eTables.Count)
-                    {
-                        var te = eTables[eIdx];
-                        anchorRow = fromAbove ? te.RowFrom
-                            : (te.RowTo < 0 ? endCell.Table.RowCount - 1 : Math.Max(te.RowFrom, te.RowTo - 1));
-                    }
-                    _tableSelections[endCell.Table] = (anchorRow, anchorCol,
-                        endCell.Cell.Row, endCell.Cell.Column);
-                }
-
-                _cellSelStartRow = _tableSelections[endCell.Table].sr;
-                _cellSelStartCol = _tableSelections[endCell.Table].sc;
-                _cellSelEndRow = _tableSelections[endCell.Table].er;
-                _cellSelEndCol = _tableSelections[endCell.Table].ec;
-                InvalidateFull();
-                e.Handled = true;
-                return;
-            }
-
-            // Случай 1.5: HitTest не нашёл ячейку под курсором — пробуем геометрический поиск.
-            // Покрывает пустые continuation-ячейки и курсор правее текста ячейки.
-            if (!nowInCell && _pressCellTable != null)
-            {
-                var geoCell = HitTestTableCellGeometric(xPt, yPt);
-                if (geoCell.HasValue && geoCell.Value.table == _pressCellTable)
-                {
-                    var (gTable, gRow, gCol, _) = geoCell.Value;
-                    _isCellRangeSelecting = true;
-                    _cellSelTable = gTable;
-                    _tableSelections.Clear();
-                    _tableSelections[gTable] = (
-                        _pressCellRow, _pressCellCol,
-                        gRow, gCol);
-                    _cellSelStartRow = _pressCellRow;
-                    _cellSelStartCol = _pressCellCol;
-                    _cellSelEndRow = gRow;
-                    _cellSelEndCol = gCol;
-                    InvalidateFull();
-                    e.Handled = true;
-                    return;
-                }
-            }
-
-            // Курсор вне ячейки, drag начался вне ячейки — обычное параграфное выделение.
-            // Таблицы, которые были полностью пройдены, остаются в _tableSelections.
-            if (_pressCellTable == null)
-            {
+                // Курсор вышел за пределы таблицы — сбрасываем.
                 _isCellRangeSelecting = false;
                 _cellSelTable = null;
-                PruneTableSelectionsByParaRange(pi);
+                _tableSelections.Clear();
                 _selEndPara = pi; _selEndChar = ci;
                 _caretPara = pi; _caretChar = ci;
                 UpdateSelectionContext();
@@ -460,19 +347,29 @@ namespace Writersword.Modules.TextEditor.Document
                 e.Handled = true;
                 return;
             }
+            // Drag начался вне таблицы — геометрический поиск таблицы под курсором.
+            // Если найдена — добавляем в _tableSelections целиком и продолжаем параграфное выделение.
+            {
+                var geoCell = HitTestTableCellGeometric(xPt, yPt);
+                if (geoCell.HasValue)
+                {
+                    var gTable = geoCell.Value.table;
+                    if (!_tableSelections.ContainsKey(gTable))
+                        _tableSelections[gTable] = (0, 0, gTable.RowCount - 1, gTable.ColumnCount - 1);
+                }
+            }
 
-            // Drag начался в ячейке, курсор вышел за пределы таблицы — сбрасываем.
+            // Параграфное выделение — таблицы вне диапазона прунятся.
             _isCellRangeSelecting = false;
             _cellSelTable = null;
-            _tableSelections.Clear();
-
+            PruneTableSelectionsByParaRange(pi);
             _selEndPara = pi; _selEndChar = ci;
             _caretPara = pi; _caretChar = ci;
-
             UpdateSelectionContext();
             InvalidateFull();
             e.Handled = true;
         }
+            
 
         protected override void OnPointerReleased(PointerReleasedEventArgs e)
         {
@@ -1426,10 +1323,12 @@ namespace Writersword.Modules.TextEditor.Document
                 var te = tables[ti];
                 float tableRight = te.XPt + te.Layout.TotalWidthPt;
 
-                // Пропускаем таблицы левее курсора.
-                // Курсор правее таблицы — зажимаем X к правому краю: выбираем последнюю ячейку в строке.
-                if (xPt < te.XPt) continue;
-                float effectiveX = xPt > tableRight ? tableRight - 0.001f : xPt;
+                // Курсор левее или правее таблицы — зажимаем X к ближайшему краю.
+                // Это гарантирует что при drag за пределами страницы таблицы всё равно
+                // попадают в выделение по Y-диапазону строк.
+                float effectiveX = xPt < te.XPt ? te.XPt + 0.001f
+                                 : xPt > tableRight ? tableRight - 0.001f
+                                 : xPt;
 
                 int effectiveRowTo = te.RowTo < 0 ? te.Layout.Rows.Count : te.RowTo;
                 float rowOffsetY = te.RowFrom > 0 && te.RowFrom < te.Layout.Rows.Count

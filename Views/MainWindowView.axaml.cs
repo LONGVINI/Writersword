@@ -31,6 +31,11 @@ namespace Writersword.Views
         private WndProcDelegate? _wndProcDelegate;
         private IntPtr _originalWndProc = IntPtr.Zero;
 
+        // Реальная ширина зоны иконка+MenuBar в логических пикселях.
+        // Обновляется через LayoutUpdated TitleBarContent.
+        // Правее этой зоны — свободная область тайтлбара с HTCAPTION для drag/restore.
+        private double _titleBarContentWidth = 300.0;
+
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         private delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
 
@@ -79,6 +84,10 @@ namespace Writersword.Views
         [DllImport("user32.dll")]
         private static extern IntPtr CallWindowProc(IntPtr lpPrevWndFunc, IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
+        [SupportedOSPlatform("windows")]
+        [DllImport("user32.dll")]
+        private static extern uint GetDpiForWindow(IntPtr hwnd);
+
         [StructLayout(LayoutKind.Sequential)]
         private struct Win32Rect
         {
@@ -122,13 +131,10 @@ namespace Writersword.Views
         // Высота тайтлбара в логических пикселях
         private const int TitleBarHeight = 32;
 
-        // Ширина зоны иконки — единственная область где возвращаем HTCAPTION.
-        // Иконка: Margin="10,8,8,0" + Width="16" = ~34px.
-        // Только здесь нет интерактивных контролов, поэтому HTCAPTION безопасен.
-        // Правее стоит MenuBar, клики туда должны уходить в Avalonia (HTCLIENT).
-        private const int IconDragZoneWidth = 34;
+        // Ширина кнопок окна (3 кнопки по 46px) в логических пикселях
+        private const int WindowButtonsWidth = 138;
 
-        // Ширина зоны resize по краям окна в физических пикселях
+        // Ширина зоны resize по краям окна в логических пикселях
         private const int ResizeBorderSize = 8;
 
         public MainWindowView()
@@ -161,8 +167,8 @@ namespace Writersword.Views
         /// <summary>
         /// Выставляет WS_THICKFRAME для Aero Snap и субклассирует WndProc.
         /// WM_NCCALCSIZE возвращает 0 — нативная рамка не рисуется.
-        /// WM_NCHITTEST возвращает HTCAPTION только для зоны иконки (~34px слева)
-        /// чтобы drag и Snap работали не мешая кликам по меню.
+        /// WM_NCHITTEST: HTCLIENT для иконки и MenuBar, HTCAPTION для свободной
+        /// зоны правее MenuBar (drag и double-click restore), HTCLIENT для кнопок окна.
         /// </summary>
         private void EnsureThickFrameAndSubclass()
         {
@@ -203,21 +209,26 @@ namespace Writersword.Views
                 if (!GetWindowRect(hwnd, out var winRect))
                     return CallWindowProc(_originalWndProc, hwnd, msg, wParam, lParam);
 
-                int screenX = (short)(lParam.ToInt32() & 0xFFFF);
-                int screenY = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
+                long lparam = lParam.ToInt64();
+                int screenX = (int)(short)(lparam & 0xFFFF);
+                int screenY = (int)(short)((lparam >> 16) & 0xFFFF);
 
                 int relX = screenX - winRect.Left;
                 int relY = screenY - winRect.Top;
                 int winW = winRect.Right - winRect.Left;
                 int winH = winRect.Bottom - winRect.Top;
 
-                // Resize-зоны по краям — только для не-максимизированного окна
+                uint dpi = GetDpiForWindow(hwnd);
+                double scaling = dpi > 0 ? dpi / 96.0 : 1.0;
+
+                int resizeBorderPx = (int)(ResizeBorderSize * scaling);
+
                 if (WindowState != WindowState.Maximized)
                 {
-                    bool onLeft = relX < ResizeBorderSize;
-                    bool onRight = relX > winW - ResizeBorderSize;
-                    bool onTop = relY < ResizeBorderSize;
-                    bool onBottom = relY > winH - ResizeBorderSize;
+                    bool onLeft = relX < resizeBorderPx;
+                    bool onRight = relX > winW - resizeBorderPx;
+                    bool onTop = relY < resizeBorderPx;
+                    bool onBottom = relY > winH - resizeBorderPx;
 
                     if (onTop && onLeft) return new IntPtr(HTTOPLEFT);
                     if (onTop && onRight) return new IntPtr(HTTOPRIGHT);
@@ -229,15 +240,23 @@ namespace Writersword.Views
                     if (onRight) return new IntPtr(HTRIGHT);
                 }
 
-                var scaling = Screens.ScreenFromWindow(this)?.Scaling ?? 1.0;
                 int titleBarHeightPx = (int)(TitleBarHeight * scaling);
-                int iconDragZoneWidthPx = (int)(IconDragZoneWidth * scaling);
+                int windowButtonsPx = (int)(WindowButtonsWidth * scaling);
+                int contentWidthPx = (int)(_titleBarContentWidth * scaling);
 
-                // HTCAPTION только в зоне иконки — там нет контролов Avalonia,
-                // drag и Aero Snap работают. Весь остальной тайтлбар — HTCLIENT,
-                // чтобы клики по меню доходили до Avalonia.
-                if (relY < titleBarHeightPx && relX < iconDragZoneWidthPx)
+                if (relY < titleBarHeightPx)
+                {
+                    // Зона кнопок окна — Avalonia обрабатывает клики
+                    if (relX >= winW - windowButtonsPx)
+                        return new IntPtr(HTCLIENT);
+
+                    // Зона иконки и MenuBar — Avalonia обрабатывает клики
+                    if (relX < contentWidthPx)
+                        return new IntPtr(HTCLIENT);
+
+                    // Свободная зона правее MenuBar — drag и double-click для restore/maximize
                     return new IntPtr(HTCAPTION);
+                }
 
                 return new IntPtr(HTCLIENT);
             }
@@ -245,7 +264,7 @@ namespace Writersword.Views
             return CallWindowProc(_originalWndProc, hwnd, msg, wParam, lParam);
         }
 
-        /// <summary>Инициализация кнопок заголовка.</summary>
+        /// <summary>Инициализация кнопок заголовка и отслеживание ширины TitleBarContent.</summary>
         private void InitializeTitleBar()
         {
             var minimizeButton = this.FindControl<Button>("MinimizeButton");
@@ -259,6 +278,17 @@ namespace Writersword.Views
             var closeButton = this.FindControl<Button>("CloseButton");
             if (closeButton != null)
                 closeButton.Click += (_, _) => Close();
+
+            // Отслеживаем реальную ширину иконки+MenuBar чтобы WndProc знал,
+            // где заканчивается интерактивная зона и начинается зона HTCAPTION.
+            var titleBarContent = this.FindControl<StackPanel>("TitleBarContent");
+            if (titleBarContent != null)
+            {
+                titleBarContent.LayoutUpdated += (_, _) =>
+                {
+                    _titleBarContentWidth = titleBarContent.Bounds.Width;
+                };
+            }
 
             PropertyChanged += OnWindowPropertyChanged;
             PositionChanged += OnWindowPositionChanged;
@@ -614,7 +644,6 @@ namespace Writersword.Views
             }
 
             // Блокируем нативные жесты которые модуль объявил своими.
-            // Получаем модуль напрямую через focusedModuleType.
             if (focusedModuleType != null && DataContext is MainWindowViewModel vm)
             {
                 var activeTab = vm.TabBar.ActiveTab;
