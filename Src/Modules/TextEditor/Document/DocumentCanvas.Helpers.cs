@@ -42,43 +42,50 @@ namespace Writersword.Modules.TextEditor.Document
         private bool HasSel() =>
             _selStartPara != _selEndPara || _selStartChar != _selEndChar;
 
-        private bool HasCellRangeSel() => _isCellRangeSelecting && _cellSelTable != null;
+        private bool HasCellRangeSel() => _tableSelections.Count > 0;
 
         private bool IsCellSelected(TableCell cell)
         {
-            if (!HasCellRangeSel()) return false;
-            int minRow = Math.Min(_cellSelStartRow, _cellSelEndRow);
-            int maxRow = Math.Max(_cellSelStartRow, _cellSelEndRow);
-            int minCol = Math.Min(_cellSelStartCol, _cellSelEndCol);
-            int maxCol = Math.Max(_cellSelStartCol, _cellSelEndCol);
-            return cell.Row >= minRow && cell.Row <= maxRow
-                && cell.Column >= minCol && cell.Column <= maxCol;
+            foreach (var kv in _tableSelections)
+            {
+                int minRow = Math.Min(kv.Value.sr, kv.Value.er);
+                int maxRow = Math.Max(kv.Value.sr, kv.Value.er);
+                int minCol = Math.Min(kv.Value.sc, kv.Value.ec);
+                int maxCol = Math.Max(kv.Value.sc, kv.Value.ec);
+                if (cell.Row >= minRow && cell.Row <= maxRow
+                    && cell.Column >= minCol && cell.Column <= maxCol)
+                    return true;
+            }
+            return false;
         }
 
         // Очищает содержимое всех выделенных ячеек и сбрасывает cell-range режим.
         private void ClearCellRangeSelection()
         {
-            if (_cellSelTable is null) return;
+            if (_tableSelections.Count == 0) return;
 
             BeginEdit("Delete cell contents");
 
-            int minRow = Math.Min(_cellSelStartRow, _cellSelEndRow);
-            int maxRow = Math.Max(_cellSelStartRow, _cellSelEndRow);
-            int minCol = Math.Min(_cellSelStartCol, _cellSelEndCol);
-            int maxCol = Math.Max(_cellSelStartCol, _cellSelEndCol);
-
-            foreach (var cell in _cellSelTable.Cells)
+            foreach (var kv in _tableSelections)
             {
-                if (cell.Row < minRow || cell.Row > maxRow) continue;
-                if (cell.Column < minCol || cell.Column > maxCol) continue;
+                int minRow = Math.Min(kv.Value.sr, kv.Value.er);
+                int maxRow = Math.Max(kv.Value.sr, kv.Value.er);
+                int minCol = Math.Min(kv.Value.sc, kv.Value.ec);
+                int maxCol = Math.Max(kv.Value.sc, kv.Value.ec);
 
-                // Оставляем один пустой параграф — минимальная структура ячейки.
-                cell.Paragraphs.Clear();
-                cell.Paragraphs.Add(new Writersword.Modules.TextEditor.Models.Document.ParagraphBlock());
+                foreach (var cell in kv.Key.Cells)
+                {
+                    if (cell.Row < minRow || cell.Row > maxRow) continue;
+                    if (cell.Column < minCol || cell.Column > maxCol) continue;
+
+                    cell.Paragraphs.Clear();
+                    cell.Paragraphs.Add(new Writersword.Modules.TextEditor.Models.Document.ParagraphBlock());
+                }
             }
 
             _isCellRangeSelecting = false;
             _cellSelTable = null;
+            _tableSelections.Clear();
 
             CommitEdit();
             _cellLayoutCache.Clear();

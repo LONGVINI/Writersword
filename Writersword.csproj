@@ -173,7 +173,6 @@
 		<Folder Include="Docs\UserGuide\" />
 		<Folder Include="Models\" />
 		<Folder Include="Src\Core\Models\Modules\" />
-		<Folder Include="Src\Infrastructure\Controls\" />
 		<Folder Include="Src\Modules\Characters\Views\Tabs\" />
 		<Folder Include="Src\Modules\TextEditor\Views\Document\" />
 		<Folder Include="Src\WorkModes\Branching\" />

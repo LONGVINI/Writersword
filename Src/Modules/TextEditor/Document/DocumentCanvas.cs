@@ -185,15 +185,28 @@ namespace Writersword.Modules.TextEditor.Document
         private bool _isSelecting;
 
         // ── Выделение нескольких ячеек ────────────────────────────────────
-        // Активно когда drag пересёк границу ячейки.
-        // _cellSelTable — таблица в которой идёт выделение.
-        // _cellSelStartRow/Col и _cellSelEndRow/Col — прямоугольник выделенных ячеек.
+        // Единый словарь: TableBlock → (startRow, startCol, endRow, endCol).
+        // Обновляется при движении курсора, очищается при новом клике.
         private bool _isCellRangeSelecting = false;
         private TableBlock? _cellSelTable;
+
+        // Ячейка, в которой было нажатие мыши (якорь cell-range выделения).
+        // Хранится отдельно, т.к. для пустых ячеек без layout-записи HitTest
+        // возвращает неправильный pi (ближайший по Y параграф другой строки).
+        private TableBlock? _pressCellTable;
+        private int _pressCellRow = -1;
+        private int _pressCellCol = -1;
         private int _cellSelStartRow = -1;
         private int _cellSelStartCol = -1;
         private int _cellSelEndRow = -1;
         private int _cellSelEndCol = -1;
+
+        private readonly Dictionary<TableBlock, (int sr, int sc, int er, int ec)> _tableSelections = new();
+
+        private sealed record FrozenTableSelection(
+            TableBlock Table,
+            int StartRow, int StartCol,
+            int EndRow, int EndCol);
 
         // ── Bitmap-кеш для мигания каретки ────────────────────────────────
         private readonly object _bitmapLock = new();

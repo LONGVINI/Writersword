@@ -6,6 +6,7 @@
              xmlns:enums="using:Writersword.Modules.Characters.Models.Enums"
              xmlns:conv="using:Writersword.Modules.Characters.Converters"
              xmlns:behaviors="using:Writersword.Infrastructure.Behaviours"
+             xmlns:infra="using:Writersword.Infrastructure.Controls"
              x:Class="Writersword.Modules.Characters.Views.Tabs.CharactersListView"
              x:DataType="vm:CharactersViewModel">
 
@@ -182,7 +183,7 @@
                                                                ToolTip.Tip="{Binding Comment}"
                                                                ToolTip.ShowDelay="500"/>
 												</Button>
-												<TextBox Name="FolderCommentBox"
+												<infra:ItalicCaretTextBox Name="FolderCommentBox"
                                                          Classes="italic"
                                                          Text="{ReflectionBinding Comment}"
                                                          FontStyle="Italic"

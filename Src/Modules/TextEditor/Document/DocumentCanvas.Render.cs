@@ -193,24 +193,24 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
-        private void RenderCellRangeSelection(SKCanvas canvas, List<TableEntry> tables)
+        private void RenderTableSelection(SKCanvas canvas, List<TableEntry> tables,
+            TableBlock table, int startRow, int startCol, int endRow, int endCol)
         {
-            int minRow = Math.Min(_cellSelStartRow, _cellSelEndRow);
-            int maxRow = Math.Max(_cellSelStartRow, _cellSelEndRow);
-            int minCol = Math.Min(_cellSelStartCol, _cellSelEndCol);
-            int maxCol = Math.Max(_cellSelStartCol, _cellSelEndCol);
+            int minRow = Math.Min(startRow, endRow);
+            int maxRow = Math.Max(startRow, endRow);
+            int minCol = Math.Min(startCol, endCol);
+            int maxCol = Math.Max(startCol, endCol);
 
             using var paint = new SKPaint { Color = SelectionColor };
 
             foreach (var te in tables)
             {
-                if (te.Table != _cellSelTable) continue;
+                if (te.Table != table) continue;
 
                 int effectiveRowTo = te.RowTo < 0 ? te.Layout.Rows.Count : te.RowTo;
                 float rowOffsetY = te.RowFrom > 0 && te.RowFrom < te.Layout.Rows.Count
                     ? te.Layout.Rows[te.RowFrom].Ypt : 0f;
 
-                // Синхронно с RenderTableStructureOnly — учитываем maxPadTop.
                 float maxPadTop = 0f;
                 if (te.IsContinuation && te.FirstRowContentOffsetPt > 0f
                     && te.RowFrom < te.Layout.Rows.Count)
@@ -238,15 +238,16 @@ namespace Writersword.Modules.TextEditor.Document
                     foreach (var cell in row.Cells)
                     {
                         if (cell.Column < minCol || cell.Column > maxCol) continue;
-
                         float cellX = te.XPt + cell.Xpt;
                         float cellY = te.Ypt + cell.Ypt - rowOffsetY - rowShift - extraShift;
-
                         canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, visibleH, paint);
                     }
                 }
             }
         }
+
+        private void RenderFrozenTableSelection(SKCanvas canvas, List<TableEntry> tables, FrozenTableSelection frozen)
+            => RenderTableSelection(canvas, tables, frozen.Table, frozen.StartRow, frozen.StartCol, frozen.EndRow, frozen.EndCol);
 
         // Цвета ручек
         private static readonly SKColor HandleFill = new(0x22, 0x99, 0xFF, 0xCC);
@@ -421,9 +422,9 @@ namespace Writersword.Modules.TextEditor.Document
                 }
             }
 
-            // Рисуем выделение нескольких ячеек поверх всего.
-            if (_isCellRangeSelecting && _cellSelTable != null)
-                RenderCellRangeSelection(canvas, tables);
+            // Рисуем выделения всех таблиц из единого словаря.
+            foreach (var kv in _tableSelections)
+                RenderTableSelection(canvas, tables, kv.Key, kv.Value.sr, kv.Value.sc, kv.Value.er, kv.Value.ec);
         }
 
         private void RenderFlowMode(
@@ -558,9 +559,8 @@ namespace Writersword.Modules.TextEditor.Document
             SKCanvas canvas, int sliceIdx, ParaLayout pl,
             float xPt, float yPt, List<ParaLayout> layouts)
         {
-            // В режиме выделения нескольких ячеек текстовое выделение внутри ячеек не рисуем —
-            // весь фон закрашивает RenderCellRangeSelection.
-            if (_isCellRangeSelecting && pl.Cell != null) return;
+            // Ячейки таблицы: их выделение рисуется отдельно через RenderTableSelection.
+            if (pl.Cell != null) return;
 
             if (!HasSel()) return;
 
@@ -568,6 +568,13 @@ namespace Writersword.Modules.TextEditor.Document
             if (sliceIdx < sp || sliceIdx > ep) return;
 
             int len = pl.Vm.PlainText?.Length ?? 0;
+
+            // Пустые параграфы-якоря вокруг таблиц при активном табличном выделении
+            // пропускаем — они дают тонкую полосу выделения вплотную к рамке таблицы.
+            if (len == 0 && _tableSelections.Count > 0
+                && (IsBlockBeforeTable(pl.Vm.Model) || IsBlockAfterTable(pl.Vm.Model)))
+                return;
+
             int from = sliceIdx == sp ? sc : 0;
             int to = sliceIdx == ep ? ec : len;
 
