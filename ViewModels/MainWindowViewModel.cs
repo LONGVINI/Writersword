@@ -186,7 +186,25 @@ namespace Writersword.ViewModels
 
                     if (!success)
                     {
-                        _logger.LogError("Failed to initialize workspace for: {Title}", tab.Title);
+                        _logger.LogDebug("Workspace init cancelled for: {Title}, rolling back to previous tab", tab.Title);
+
+                        if (previousTab != null && _tabCollection.Tabs.Contains(previousTab))
+                        {
+                            // SilentRevertActiveTab меняет _activeTab и IsActive флаги
+                            // без стрельбы ActiveTabChanged — избегаем рекурсии.
+                            _tabCollection.SilentRevertActiveTab(previousTab);
+
+                            if (previousTab.Workspace != null)
+                            {
+                                previousTab.Workspace.Activate();
+                                DockLayout = previousTab.Workspace.GetCurrentLayout();
+                                WorkModeBar.LoadWorkModes(previousTab.Workspace.GetAvailableWorkModes());
+                                var wm = previousTab.Workspace.GetActiveWorkMode();
+                                if (wm != null) ModulePanel.LoadModulesForWorkMode(wm);
+                                UpdateWorkModeMenuItems();
+                                UpdateModuleMenuItems();
+                            }
+                        }
                         return;
                     }
                 }
@@ -489,10 +507,6 @@ namespace Writersword.ViewModels
                 _logger.LogDebug("Last focused module: {moduleType}", moduleType);
             };
 
-            // В Dock 12 изменение Content существующих Document-ов не обновляет DockControl.
-            // После перемещения модуля нужен полный пересоздание через null+reassign.
-            // Content к этому моменту уже восстановлен из бэкапа (Views detached перед move),
-            // поэтому null не вызовет "already has visual parent" при повторном назначении.
             _dockFactory.OnNeedRerender = () =>
             {
                 var layout = TabBar.ActiveTab?.Workspace?.GetCurrentLayout();

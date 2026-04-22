@@ -559,8 +559,8 @@ namespace Writersword.Modules.TextEditor.Document
             SKCanvas canvas, int sliceIdx, ParaLayout pl,
             float xPt, float yPt, List<ParaLayout> layouts)
         {
-            // Ячейки таблицы: их выделение рисуется отдельно через RenderTableSelection.
-            if (pl.Cell != null) return;
+            // Ячейки при активном cell-range или табличном выделении: рисуется через RenderTableSelection.
+            if (pl.Cell != null && (_isCellRangeSelecting || _tableSelections.ContainsKey(pl.Cell.Table))) return;
 
             if (!HasSel()) return;
 

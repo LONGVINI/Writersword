@@ -16,6 +16,12 @@ namespace Writersword.Core.Interfaces.WorkFlows
         /// <summary>Активная вкладка (текущая)</summary>
         DocumentTabViewModel? ActiveTab { get; set; }
 
+        /// <summary>
+        /// Откатить активную вкладку без стрельбы ActiveTabChanged.
+        /// Используется при отмене загрузки (Cancel в Recovery dialog).
+        /// </summary>
+        void SilentRevertActiveTab(DocumentTabViewModel tab);
+
         /// <summary>Добавить вкладку в коллекцию</summary>
         void Add(DocumentTabViewModel tab);
 

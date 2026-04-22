@@ -7,6 +7,7 @@ using SkiaSharp;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Writersword.Core.Models.Rendering;
 using Writersword.Infrastructure.Rendering;
@@ -163,37 +164,197 @@ namespace Writersword.Modules.TextEditor.Document
         // ── Clipboard ────────────────────────────────────────────────────
         private async Task CopyAsync()
         {
-            if (!HasSel()) return;
-            var (sp, sc, ep, ec) = NormalizeSelection();
-            var sVm = GetVmAt(sp);
-            var eVm = GetVmAt(ep);
-            if (sVm is null || eVm is null) return;
+            _internalClipboardJson = null;
+            _clipboardCache = null;
 
-            var lines = new List<string>();
-            var seenVms = new HashSet<ParagraphViewModel>();
+            bool hasSel = HasSel();
+            bool hasCells = _tableSelections.Count > 0;
+            if (!hasSel && !hasCells) return;
 
-            for (int i = sp; i <= ep && i < _layouts.Count; i++)
+            var (sp, sc, ep, ec) = hasSel ? NormalizeSelection() : (0, 0, 0, 0);
+
+            var blocks = new List<ClipboardBlock>();
+            var plainParts = new List<string>();
+
+            var seenParaVms = new HashSet<ParagraphViewModel>();
+            var seenTables = new HashSet<TableBlock>();
+
+            // Единый проход по layouts в порядке документа.
+            // При наличии только табличного выделения берём весь диапазон layouts.
+            int rangeStart = hasSel ? sp : 0;
+            int rangeEnd = hasSel ? ep : _layouts.Count - 1;
+            if (hasCells && hasSel)
             {
-                var pvm = GetVmAt(i);
-                if (pvm is null || !seenVms.Add(pvm)) continue;
-
-                string t = pvm.PlainText ?? "";
-                int from = (i == sp) ? Clamp(sc, 0, t.Length) : 0;
-                int to = (i == ep) ? Clamp(ec, 0, t.Length) : t.Length;
-                if (from > to) to = from;
-                lines.Add(t[from..to]);
+                // Расширяем диапазон до первого/последнего layout выделенных таблиц.
+                foreach (var tbl in _tableSelections.Keys)
+                {
+                    for (int i = 0; i < _layouts.Count; i++)
+                    {
+                        if (_layouts[i].Cell?.Table != tbl) continue;
+                        if (i < rangeStart) rangeStart = i;
+                        if (i > rangeEnd) rangeEnd = i;
+                    }
+                }
+            }
+            else if (hasCells && !hasSel)
+            {
+                rangeStart = 0; rangeEnd = _layouts.Count - 1;
             }
 
-            string result = string.Join(Environment.NewLine, lines);
-            _clipboardCache = result;
+            for (int i = rangeStart; i <= rangeEnd && i < _layouts.Count; i++)
+            {
+                var pl = _layouts[i];
+                var pvm = GetVmAt(i);
+
+                if (pl.Cell != null)
+                {
+                    // Ячейка таблицы.
+                    var tbl = pl.Cell.Table;
+
+                    if (_tableSelections.ContainsKey(tbl))
+                    {
+                        // Cell-range выделение — копируем таблицу (слайс) один раз.
+                        if (!seenTables.Add(tbl)) continue;
+                        var copied = SliceTable(tbl, _tableSelections[tbl].sr, _tableSelections[tbl].sc,
+                            _tableSelections[tbl].er, _tableSelections[tbl].ec);
+                        blocks.Add(new ClipboardBlock { Kind = ClipboardBlockKind.Table, Table = copied });
+                        for (int r = 0; r < copied.RowCount; r++)
+                        {
+                            var rowCells = new List<string>();
+                            for (int c = 0; c < copied.ColumnCount; c++)
+                            {
+                                var cell = copied.GetCell(r, c);
+                                rowCells.Add(cell != null
+                                    ? string.Join(" ", cell.Paragraphs.Select(p => p.GetPlainText()))
+                                    : "");
+                            }
+                            plainParts.Add(string.Join("\t", rowCells));
+                        }
+                        plainParts.Add("");
+                    }
+                    else if (hasSel)
+                    {
+                        // Текстовое выделение внутри ячейки — копируем как обычный параграф.
+                        if (pvm is null || !seenParaVms.Add(pvm)) continue;
+                        string t2 = pvm.PlainText ?? "";
+                        int from2 = (i == sp) ? Clamp(sc, 0, t2.Length) : 0;
+                        int to2 = (i == ep) ? Clamp(ec, 0, t2.Length) : t2.Length;
+                        if (from2 > to2) to2 = from2;
+                        string txt2 = t2[from2..to2];
+                        blocks.Add(new ClipboardBlock { Kind = ClipboardBlockKind.Paragraph, Text = txt2 });
+                        plainParts.Add(txt2);
+                    }
+                    continue;
+                }
+
+                // Обычный параграф.
+                if (pvm is null || !seenParaVms.Add(pvm)) continue;
+                // Якорные параграфы вокруг таблиц не включаем.
+                if (IsBlockBeforeTable(pvm.Model) || IsBlockAfterTable(pvm.Model)) continue;
+
+                string t = pvm.PlainText ?? "";
+                int from = (i == sp && hasSel) ? Clamp(sc, 0, t.Length) : 0;
+                int to = (i == ep && hasSel) ? Clamp(ec, 0, t.Length) : t.Length;
+                if (from > to) to = from;
+                string text = t[from..to];
+
+                blocks.Add(new ClipboardBlock { Kind = ClipboardBlockKind.Paragraph, Text = text });
+                plainParts.Add(text);
+            }
+
+            if (blocks.Count == 0) return;
+
+            // Убираем пустые строки в конце plain text.
+            while (plainParts.Count > 0 && plainParts[^1] == "") plainParts.RemoveAt(plainParts.Count - 1);
+
+            var opts = new JsonSerializerOptions { WriteIndented = false };
+            _internalClipboardJson = JsonSerializer.Serialize(blocks, opts);
+
+            string plain = string.Join(Environment.NewLine, plainParts);
+            _clipboardCache = plain;
 
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
             if (clipboard is not null)
             {
 #pragma warning disable CS0618
-                await clipboard.SetTextAsync(result);
+                await clipboard.SetTextAsync(plain);
 #pragma warning restore CS0618
             }
+        }
+
+        /// <summary>
+        /// Создаёт новый TableBlock содержащий только ячейки в диапазоне
+        /// [minRow..maxRow] × [minCol..maxCol] с перенумерованными строками/столбцами.
+        /// </summary>
+        private static TableBlock SliceTable(TableBlock src,
+            int sr, int sc, int er, int ec)
+        {
+            int minRow = Math.Min(sr, er); int maxRow = Math.Max(sr, er);
+            int minCol = Math.Min(sc, ec); int maxCol = Math.Max(sc, ec);
+
+            var dst = new TableBlock
+            {
+                RowCount = maxRow - minRow + 1,
+                ColumnCount = maxCol - minCol + 1,
+                LeftIndentPt = src.LeftIndentPt,
+                WidthPercent = src.WidthPercent,
+                SplitMode = src.SplitMode,
+                StyleName = src.StyleName,
+            };
+
+            // Колонки.
+            for (int c = minCol; c <= maxCol && c < src.Columns.Count; c++)
+            {
+                var srcCol = src.Columns[c];
+                dst.Columns.Add(new TableColumnDefinition
+                {
+                    WidthType = srcCol.WidthType,
+                    WidthValue = srcCol.WidthValue,
+                });
+            }
+            while (dst.Columns.Count < dst.ColumnCount)
+                dst.Columns.Add(new TableColumnDefinition());
+
+            // Ячейки.
+            foreach (var srcCell in src.Cells)
+            {
+                if (srcCell.Row < minRow || srcCell.Row > maxRow) continue;
+                if (srcCell.Column < minCol || srcCell.Column > maxCol) continue;
+
+                var dstCell = new TableCell
+                {
+                    Id = Guid.NewGuid(),
+                    Row = srcCell.Row - minRow,
+                    Column = srcCell.Column - minCol,
+                    RowSpan = Math.Min(srcCell.RowSpan, maxRow - srcCell.Row + 1),
+                    ColSpan = Math.Min(srcCell.ColSpan, maxCol - srcCell.Column + 1),
+                    BackgroundColor = srcCell.BackgroundColor,
+                    Borders = srcCell.Borders.Clone(),
+                    PaddingTopPt = srcCell.PaddingTopPt,
+                    PaddingBottomPt = srcCell.PaddingBottomPt,
+                    PaddingLeftPt = srcCell.PaddingLeftPt,
+                    PaddingRightPt = srcCell.PaddingRightPt,
+                };
+                dstCell.Paragraphs.Clear();
+                foreach (var para in srcCell.Paragraphs)
+                {
+                    var newPara = new ParagraphBlock();
+                    newPara.Chunks.Clear();
+                    foreach (var chunk in para.Chunks)
+                    {
+                        var newChunk = new TextChunk();
+                        foreach (var run in chunk.Runs)
+                            newChunk.Runs.Add(new RunModel { Text = run.Text });
+                        newPara.Chunks.Add(newChunk);
+                    }
+                    dstCell.Paragraphs.Add(newPara);
+                }
+                if (dstCell.Paragraphs.Count == 0)
+                    dstCell.Paragraphs.Add(new ParagraphBlock());
+                dst.Cells.Add(dstCell);
+            }
+
+            return dst;
         }
 
         private async Task CutAsync()
@@ -219,6 +380,73 @@ namespace Writersword.Modules.TextEditor.Document
 
         private async Task PasteAsync()
         {
+            // Приоритет: внутренний буфер (параграфы + таблицы в порядке документа).
+            if (!string.IsNullOrEmpty(_internalClipboardJson) && DocVm is not null)
+            {
+                var opts = new JsonSerializerOptions();
+                var blocks = JsonSerializer.Deserialize<List<ClipboardBlock>>(_internalClipboardJson, opts);
+                if (blocks != null && blocks.Count > 0)
+                {
+                    BeginEdit("Paste");
+
+                    // Удаляем выделение перед вставкой.
+                    if (_isCellRangeSelecting)
+                        ClearCellRangeSelection();
+                    else if (HasSel())
+                        DeleteSelection();
+
+                    bool firstBlock = true;
+                    foreach (var block in blocks)
+                    {
+                        if (block.Kind == ClipboardBlockKind.Table && block.Table != null)
+                        {
+                            // Новые Id ячейкам.
+                            foreach (var cell in block.Table.Cells)
+                                cell.Id = Guid.NewGuid();
+                            DocVm.InsertTableBlock(block.Table);
+                        }
+                        else if (block.Kind == ClipboardBlockKind.Paragraph)
+                        {
+                            string blockText = block.Text ?? "";
+                            if (firstBlock)
+                            {
+                                var caretPvm = GetVmAt(_caretPara);
+                                if (caretPvm != null)
+                                {
+                                    string cur = caretPvm.PlainText ?? "";
+                                    int pos = Clamp(_caretChar, 0, cur.Length);
+                                    caretPvm.PlainText = cur[..pos] + blockText + cur[pos..];
+                                    _caretChar = pos + blockText.Length;
+                                }
+                            }
+                            else
+                            {
+                                var prev = GetVmAt(_caretPara);
+                                if (prev != null)
+                                {
+                                    var nv = DocVm.AddParagraphAfter(prev);
+                                    if (nv != null)
+                                    {
+                                        nv.PlainText = blockText;
+                                        for (int li = 0; li < _layouts.Count; li++)
+                                            if (_layouts[li].Vm == nv) { _caretPara = li; break; }
+                                        _caretChar = blockText.Length;
+                                    }
+                                }
+                            }
+                        }
+                        firstBlock = false;
+                    }
+
+                    CommitEdit();
+                    _cellLayoutCache.Clear();
+                    RebuildLayouts();
+                    SnapCaretToCorrectSlice();
+                    SyncSel(); ResetCaret(); InvalidateFull();
+                }
+                return;
+            }
+
             string? text = _clipboardCache;
             if (string.IsNullOrEmpty(text))
             {
@@ -234,7 +462,6 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (IsInCell(_caretPara))
             {
-                // Вставка в ячейку — только первая строка (без разбиения ячейки на параграфы для простоты TODO)
                 string firstLine = text.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n')[0];
                 CellInsertText(firstLine);
                 return;
@@ -247,15 +474,15 @@ namespace Writersword.Modules.TextEditor.Document
             var pvm = GetVmAt(_caretPara);
             if (pvm is null) return;
 
-            string cur = pvm.PlainText ?? "";
-            int pos = Clamp(_caretChar, 0, cur.Length);
-            string before = cur[..pos];
-            string after = cur[pos..];
+            string cur2 = pvm.PlainText ?? "";
+            int pos2 = Clamp(_caretChar, 0, cur2.Length);
+            string before = cur2[..pos2];
+            string after = cur2[pos2..];
 
             if (lines.Length == 1)
             {
                 pvm.PlainText = before + lines[0] + after;
-                _caretChar = pos + lines[0].Length;
+                _caretChar = pos2 + lines[0].Length;
             }
             else
             {

@@ -31,7 +31,8 @@
                          Background="{DynamicResource BgSurfaceBrush}"
                          Foreground="{DynamicResource TextPrimaryBrush}"
                          BorderBrush="{DynamicResource BorderDefaultBrush}"
-                         BorderThickness="1" CornerRadius="6" Padding="7,4"/>
+                         BorderThickness="1" CornerRadius="6" Padding="7,4"
+                         behaviors:ClickOutsideBehavior.Command="{ReflectionBinding UnfocusSearchCommand}"/>
 				<Button Grid.Column="1"
                         Command="{ReflectionBinding CreateFolderCommand}"
                         Margin="6,0,0,0" Padding="8,4"
@@ -270,7 +271,8 @@
                                                              Foreground="{DynamicResource TextPrimaryBrush}"
                                                              VerticalAlignment="Center"
                                                              IsVisible="{Binding IsBeingNamed}"
-                                                             behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsBeingNamed}"/>
+                                                             behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsBeingNamed}"
+                                                             behaviors:ClickOutsideBehavior.Command="{ReflectionBinding NoOpCommand}"/>
 													<Button Grid.Row="1"
                                                             Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
                                                             CommandParameter="{Binding Id}"

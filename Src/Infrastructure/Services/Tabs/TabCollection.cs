@@ -99,6 +99,21 @@ namespace Writersword.Infrastructure.Services.Tabs
             }
         }
 
+        /// <summary>
+        /// Откатить активную вкладку без стрельбы ActiveTabChanged.
+        /// Используется при отмене загрузки чтобы избежать рекурсии в OnTabActivatedAsync.
+        /// </summary>
+        public void SilentRevertActiveTab(DocumentTabViewModel tab)
+        {
+            if (_activeTab != null)
+                _activeTab.IsActive = false;
+
+            _activeTab = tab;
+            _activeTab.IsActive = true;
+
+            _logger.LogDebug("Active tab silently reverted to: {Title}", tab.Title);
+        }
+
         /// <summary>Найти вкладку по пути к файлу проекта</summary>
         public DocumentTabViewModel? FindByPath(string filePath)
         {

@@ -155,6 +155,7 @@ namespace Writersword.Modules.Characters.ViewModels
         public ReactiveCommand<string, Unit> SelectFolderCommand { get; }
         public ReactiveCommand<Unit, Unit> CloseCardCommand { get; }
         public ReactiveCommand<Unit, Unit> FocusSearchCommand { get; }
+        public ReactiveCommand<Unit, Unit> UnfocusSearchCommand { get; }
         public ReactiveCommand<Unit, Unit> ClearFiltersCommand { get; }
         public ReactiveCommand<string, Unit> ToggleTagFilterCommand { get; }
         public ReactiveCommand<CharactersViewMode, Unit> SwitchViewModeCommand { get; }
@@ -237,6 +238,7 @@ namespace Writersword.Modules.Characters.ViewModels
             SelectFolderCommand = ReactiveCommand.Create<string>(id => ActiveFolderId = id);
             CloseCardCommand = ReactiveCommand.Create(() => { IsCardOpen = false; SelectedCharacterCard = null; });
             FocusSearchCommand = ReactiveCommand.Create(() => SearchFocusRequested?.Invoke());
+            UnfocusSearchCommand = ReactiveCommand.Create(() => { });
             ClearFiltersCommand = ReactiveCommand.Create(ClearFilters);
             ToggleTagFilterCommand = ReactiveCommand.Create<string>(ToggleTagFilter);
             SwitchViewModeCommand = ReactiveCommand.Create<CharactersViewMode>(m => ViewMode = m);

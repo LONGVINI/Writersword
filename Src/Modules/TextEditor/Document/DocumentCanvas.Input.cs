@@ -313,14 +313,32 @@ namespace Writersword.Modules.TextEditor.Document
             var (pi, ci) = HitTest(rawPt);
             bool nowInCell = pi >= 0 && pi < _layouts.Count && _layouts[pi].Cell != null;
 
-            // Нажатие было в ячейке — ТОЛЬКО геометрический поиск для конца выделения.
-            // HitTest ненадёжен для пустых ячеек: возвращает ближайший layout-entry
-            // другой строки, что ломает якорь.
+            // Нажатие было в ячейке таблицы.
             if (_pressCellTable != null)
             {
                 var geoEnd = HitTestTableCellGeometric(xPt, yPt);
+                bool sameCell = geoEnd.HasValue
+                    && geoEnd.Value.table == _pressCellTable
+                    && geoEnd.Value.row == _pressCellRow
+                    && geoEnd.Value.col == _pressCellCol;
+
+                if (sameCell)
+                {
+                    // Курсор в той же ячейке — обычное текстовое выделение внутри ячейки.
+                    _isCellRangeSelecting = false;
+                    _cellSelTable = null;
+                    _tableSelections.Clear();
+                    _selEndPara = pi; _selEndChar = ci;
+                    _caretPara = pi; _caretChar = ci;
+                    UpdateSelectionContext();
+                    InvalidateFull();
+                    e.Handled = true;
+                    return;
+                }
+
                 if (geoEnd.HasValue && geoEnd.Value.table == _pressCellTable)
                 {
+                    // Курсор перешёл в другую ячейку той же таблицы — cell-range.
                     _isCellRangeSelecting = true;
                     _cellSelTable = _pressCellTable;
                     _tableSelections.Clear();
@@ -336,40 +354,70 @@ namespace Writersword.Modules.TextEditor.Document
                     return;
                 }
 
-                // Курсор вышел за пределы таблицы — сбрасываем.
+                // Курсор вышел за пределы таблицы — переходим в параграфный режим.
                 _isCellRangeSelecting = false;
                 _cellSelTable = null;
                 _tableSelections.Clear();
-                _selEndPara = pi; _selEndChar = ci;
-                _caretPara = pi; _caretChar = ci;
-                UpdateSelectionContext();
-                InvalidateFull();
-                e.Handled = true;
-                return;
+                // Не делаем return — продолжаем в Y-range блок.
             }
-            // Drag начался вне таблицы — геометрический поиск таблицы под курсором.
-            // Если найдена — добавляем в _tableSelections целиком и продолжаем параграфное выделение.
+            // Drag начался вне таблицы — все таблицы в Y-диапазоне выделяются целиком.
             {
-                var geoCell = HitTestTableCellGeometric(xPt, yPt);
-                if (geoCell.HasValue)
+                float selStartYPt = _selStartPara >= 0 && _selStartPara < _layouts.Count
+                    ? _layouts[_selStartPara].Ypt : 0f;
+                float selEndYPt = pi >= 0 && pi < _layouts.Count
+                    ? _layouts[pi].Ypt + _layouts[pi].HeightPt : 0f;
+                float selMinY = Math.Min(selStartYPt, selEndYPt);
+                float selMaxY = Math.Max(selStartYPt, selEndYPt);
+
+                List<TableEntry> allTables;
+                lock (_renderLock) { allTables = _tables; }
+
+                var seenTables = new HashSet<TableBlock>();
+                var toRemove = new List<TableBlock>();
+
+                foreach (var te in allTables)
                 {
-                    var gTable = geoCell.Value.table;
-                    if (!_tableSelections.ContainsKey(gTable))
-                        _tableSelections[gTable] = (0, 0, gTable.RowCount - 1, gTable.ColumnCount - 1);
+                    if (!seenTables.Add(te.Table)) continue;
+
+                    float tblMinY = float.MaxValue;
+                    float tblMaxY = float.MinValue;
+                    foreach (var t2 in allTables)
+                    {
+                        if (t2.Table != te.Table) continue;
+                        int effectiveRowTo = t2.RowTo < 0 ? t2.Layout.Rows.Count : t2.RowTo;
+                        float sliceH = 0f;
+                        for (int ri = t2.RowFrom; ri < effectiveRowTo && ri < t2.Layout.Rows.Count; ri++)
+                        {
+                            float rh = t2.Layout.Rows[ri].HeightPt;
+                            if (ri == t2.RowFrom) rh -= t2.FirstRowContentOffsetPt;
+                            if (ri == effectiveRowTo - 1 && t2.LastRowVisibleHeightPt >= 0f) rh = t2.LastRowVisibleHeightPt;
+                            sliceH += rh;
+                        }
+                        tblMinY = Math.Min(tblMinY, t2.Ypt);
+                        tblMaxY = Math.Max(tblMaxY, t2.Ypt + sliceH);
+                    }
+
+                    if (tblMaxY < selMinY || tblMinY > selMaxY)
+                        toRemove.Add(te.Table);
+                    else
+                        _tableSelections[te.Table] = (0, 0, te.Table.RowCount - 1, te.Table.ColumnCount - 1);
                 }
+
+                foreach (var t in toRemove) _tableSelections.Remove(t);
+
+                var knownTables = new HashSet<TableBlock>(allTables.Select(t => t.Table));
+                foreach (var t in _tableSelections.Keys.Where(k => !knownTables.Contains(k)).ToList())
+                    _tableSelections.Remove(t);
             }
 
-            // Параграфное выделение — таблицы вне диапазона прунятся.
             _isCellRangeSelecting = false;
             _cellSelTable = null;
-            PruneTableSelectionsByParaRange(pi);
             _selEndPara = pi; _selEndChar = ci;
             _caretPara = pi; _caretChar = ci;
             UpdateSelectionContext();
             InvalidateFull();
             e.Handled = true;
         }
-            
 
         protected override void OnPointerReleased(PointerReleasedEventArgs e)
         {
@@ -823,6 +871,13 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // Параграфное выделение захватило таблицы — удаляем их из документа.
+            if (_tableSelections.Count > 0 && DocVm is not null)
+            {
+                DeleteSelectedTablesAndText();
+                return;
+            }
+
             if (IsInCell(_caretPara))
             {
                 CellDeleteBack();
@@ -838,6 +893,13 @@ namespace Writersword.Modules.TextEditor.Document
             if (_isCellRangeSelecting)
             {
                 ClearCellRangeSelection();
+                return;
+            }
+
+            // Параграфное выделение захватило таблицы — удаляем их из документа.
+            if (_tableSelections.Count > 0 && DocVm is not null)
+            {
+                DeleteSelectedTablesAndText();
                 return;
             }
 
@@ -876,7 +938,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             string t = cell.ParaBlock.GetPlainText();
 
-            if (_caretChar > 0)
+            if (_caretChar > 0 && t.Length > 0)
             {
                 int p = Clamp(_caretChar, 1, t.Length);
                 SetCellParaText(cell.Cell, cell.CellParaIndex, t[..(p - 1)] + t[p..]);
@@ -1383,6 +1445,37 @@ namespace Writersword.Modules.TextEditor.Document
                 }
             }
             return null;
+        }
+
+        private void DeleteSelectedTablesAndText()
+        {
+            if (DocVm is null) return;
+            BeginEdit("Delete");
+
+            var blocks = DocVm.Document.Sections[0].Blocks;
+
+            // Удаляем все выделенные таблицы.
+            foreach (var tbl in _tableSelections.Keys.ToList())
+                blocks.Remove(tbl);
+
+            // Удаляем выделенный текст параграфов (если есть параграфное выделение).
+            if (HasSel())
+                DeleteSelection();
+
+            _tableSelections.Clear();
+            _isCellRangeSelecting = false;
+            _cellSelTable = null;
+
+            CommitEdit();
+            _cellVmCache.Clear();
+            _cellLayoutCache.Clear();
+            DocVm.RebuildParagraphViewModelsPublic();
+            _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
+            _caretChar = 0;
+            RebuildLayouts();
+            SyncSel();
+            ResetCaret();
+            InvalidateFull();
         }
 
         private int FindFirstCellLayoutOf(TableBlock table)

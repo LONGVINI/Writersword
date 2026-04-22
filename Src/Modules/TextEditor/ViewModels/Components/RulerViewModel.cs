@@ -269,6 +269,18 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             _leftIndentMm = leftIndentPt * PtToMm;
             _firstLineIndentMm = firstLineIndentPt * PtToMm;
             _rightIndentMm = rightIndentPt * PtToMm;
+
+            // В режиме таблицы маркеры уже стоят в cell-relative координатах
+            // (они переведены в UpdateActiveCellBounds). Не перезаписываем их абсолютными
+            // значениями — иначе drag внутри ячейки будет использовать неверную начальную позицию.
+            if (Mode == RulerMode.Table)
+            {
+                this.RaisePropertyChanged(nameof(LeftIndentMm));
+                this.RaisePropertyChanged(nameof(FirstLineIndentMm));
+                this.RaisePropertyChanged(nameof(RightIndentMm));
+                return;
+            }
+
             UpdateIndentMarkers();
             this.RaisePropertyChanged(nameof(LeftIndentMm));
             this.RaisePropertyChanged(nameof(FirstLineIndentMm));
@@ -319,6 +331,21 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
                 ? ColumnMarkers[markerIdx - 1].RightEdge
                 : TableLeftEdgeUnits;
             ActiveCellRightUnits = ColumnMarkers[markerIdx].RightEdge;
+
+            // Перевод маркеров отступа в cell-relative координаты.
+            // UpdateFromParagraphContext записывает абсолютные значения (от начала текстовой зоны),
+            // но в таблице все drag-операции работают в координатах от начала ячейки.
+            // Вычитаем смещение ячейки чтобы маркеры стояли корректно внутри ячейки.
+            var leftMarker = GetIndentMarker(RulerIndentMarkerType.LeftIndent);
+            var firstMarker = GetIndentMarker(RulerIndentMarkerType.FirstLineIndent);
+            var rightMarker = GetIndentMarker(RulerIndentMarkerType.RightIndent);
+            double cellW = ActiveCellRightUnits - ActiveCellLeftUnits;
+            if (leftMarker is not null)
+                leftMarker.Position = Math.Max(0, Math.Min(cellW, leftMarker.Position - ActiveCellLeftUnits));
+            if (firstMarker is not null)
+                firstMarker.Position = Math.Max(0, Math.Min(cellW, firstMarker.Position - ActiveCellLeftUnits));
+            if (rightMarker is not null)
+                rightMarker.Position = Math.Max(0, Math.Min(cellW, rightMarker.Position - ActiveCellLeftUnits));
 
             this.RaisePropertyChanged(nameof(ActiveCellLeftUnits));
             this.RaisePropertyChanged(nameof(ActiveCellRightUnits));

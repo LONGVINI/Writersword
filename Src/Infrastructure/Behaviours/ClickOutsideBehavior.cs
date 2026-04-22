@@ -105,6 +105,25 @@ namespace Writersword.Infrastructure.Behaviours
                 var parameter = box.GetValue(CommandParameterProperty);
                 if (command.CanExecute(parameter))
                     command.Execute(parameter);
+
+                // Ищем ближайший focusable элемент вверх по дереву от источника клика.
+                // Это гарантирует что TextBox теряет фокус: если кликнули на Button —
+                // Button получает фокус; если на нефокусируемый фон — TopLevel.
+                Visual? walk = args.Source as Visual;
+                IInputElement? focusTarget = null;
+                while (walk != null)
+                {
+                    if (walk is IInputElement ie && ie.Focusable && !ReferenceEquals(walk, box))
+                    {
+                        focusTarget = ie;
+                        break;
+                    }
+                    walk = walk.GetVisualParent();
+                }
+                if (focusTarget != null)
+                    focusTarget.Focus();
+                else
+                    TopLevel.GetTopLevel(box)?.Focus();
             };
 
             _states.AddOrUpdate(box, state);

@@ -17,6 +17,7 @@ using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Services.Input;
 using Writersword.Core.Models.Print;
 using Writersword.Core.Models.Rendering;
+using System.Text.Json;
 using Writersword.Infrastructure.Rendering;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.Commands;
@@ -217,6 +218,18 @@ namespace Writersword.Modules.TextEditor.Document
 
         // ── Буфер обмена ─────────────────────────────────────────────────
         private string? _clipboardCache;
+
+        // Внутренний буфер: JSON-массив ClipboardBlock (параграфы + таблицы в порядке документа).
+        // Заполняется при Copy, используется при Paste для точного воспроизведения структуры.
+        private string? _internalClipboardJson;
+
+        private enum ClipboardBlockKind { Paragraph, Table }
+        private sealed class ClipboardBlock
+        {
+            public ClipboardBlockKind Kind { get; set; }
+            public string? Text { get; set; }       // для Paragraph
+            public TableBlock? Table { get; set; }  // для Table (уже слайснутая)
+        }
 
         // ── Рендеринг ─────────────────────────────────────────────────────
         private readonly SKTextRenderer _renderer = new();

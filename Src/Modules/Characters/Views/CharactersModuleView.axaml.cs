@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Reactive.Linq;
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -9,6 +6,10 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using ReactiveUI;
 using Serilog;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reactive.Linq;
 using Writersword.Modules.Characters.ViewModels;
 using Writersword.Modules.Characters.Views.Tabs;
 
@@ -21,6 +22,7 @@ namespace Writersword.Modules.Characters.Views
         private IDisposable? _subscription;
         private readonly List<IDisposable> _folderSubscriptions = new();
 
+        private TopLevel? _topLevel;
         private CharactersListView? _listView;
         private CharacterEditView? _editView;
         private CharactersGraphView? _graphView;
@@ -38,6 +40,7 @@ namespace Writersword.Modules.Characters.Views
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnAttachedToVisualTree(e);
+            _topLevel = TopLevel.GetTopLevel(this);
             AddHandler(TextBox.LostFocusEvent, OnTextBoxLostFocus, RoutingStrategies.Bubble);
             AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Bubble);
             _log.Debug("CharactersModuleView attached to visual tree");
@@ -46,6 +49,7 @@ namespace Writersword.Modules.Characters.Views
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnDetachedFromVisualTree(e);
+            _topLevel = null;
             CommitAllPendingEdits();
             RemoveHandler(TextBox.LostFocusEvent, OnTextBoxLostFocus);
             RemoveHandler(KeyDownEvent, OnKeyDown);
@@ -156,22 +160,23 @@ namespace Writersword.Modules.Characters.Views
         private void CommitAllPendingEdits()
         {
             if (DataContext is not CharactersViewModel vm) return;
-            foreach (var folder in vm.Folders)
+            // Итерируем по копиям — команды могут модифицировать коллекции
+            // прямо во время enumeration, что вызывает InvalidOperationException.
+            foreach (var folder in vm.Folders.ToList())
             {
                 if (folder.IsRenaming)
                     folder.ConfirmRenameCommand.Execute().Subscribe();
                 if (folder.IsEditingComment)
                     folder.ConfirmCommentCommand.Execute().Subscribe();
-                foreach (var character in folder.Characters)
+                foreach (var character in folder.Characters.ToList())
                     if (character.IsBeingNamed)
                         vm.ConfirmInlineNameCommand.Execute(character.Id).Subscribe();
             }
         }
 
         // ── LostFocus ─────────────────────────────────────────────────────
-        // Safety net for cases where focus leaves the window entirely
-        // (Alt+Tab, window minimize, etc.). Normal click-outside is handled
-        // by ClickOutsideBehavior directly on each TextBox.
+        // Срабатывает когда глобальный обработчик в MainWindowView переводит
+        // фокус на окно, а также при Alt+Tab, сворачивании и т.д.
 
         private void OnTextBoxLostFocus(object? sender, RoutedEventArgs e)
         {

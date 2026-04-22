@@ -1,3 +1,4 @@
+using System.Reactive;
 using ReactiveUI;
 
 namespace Writersword.Modules.Characters.ViewModels
@@ -36,6 +37,8 @@ namespace Writersword.Modules.Characters.ViewModels
             get => _isSelected;
             set => this.RaiseAndSetIfChanged(ref _isSelected, value);
         }
+
+        public ReactiveCommand<Unit, Unit> NoOpCommand { get; } = ReactiveCommand.Create(() => { });
 
         public CharacterListItemViewModel(
             Models.Character character,

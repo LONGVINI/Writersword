@@ -446,6 +446,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // ── ITextEditorCommandTarget: вставка ─────────────────────────────
 
         public void InsertTable(int rows, int columns) => InsertBlock(BuildEmptyTable(rows, columns));
+
+        public void InsertTableBlock(TableBlock table) => InsertBlock(table);
         public void InsertImage(string filePath) { }
         public void InsertShape(ShapeType st) { }
         public void InsertFloatingTextBox() { }

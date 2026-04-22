@@ -266,12 +266,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 case RulerIndentMarkerType.LeftIndent:
                     {
-                        double oldLeftMm = Ruler.LeftIndentMm;
-                        double absFirstMm = Ruler.FirstLineIndentMm;
+                        // Читаем текущие позиции маркеров напрямую — они актуальны во время drag,
+                        // тогда как LeftIndentMm/FirstLineIndentMm обновляются только вне drag.
+                        double absFirstMm = Ruler.UnitsToMm(
+                            Ruler.GetIndentMarkerPosition(RulerIndentMarkerType.FirstLineIndent));
                         double newLeftMm = valueMm;
-                        double newAbsFirstMm = absFirstMm + (newLeftMm - oldLeftMm);
                         double pageLeftMm = -Ruler.MarginLeftMm;
-                        newAbsFirstMm = Math.Max(newAbsFirstMm, pageLeftMm);
+                        double newAbsFirstMm = Math.Max(absFirstMm, pageLeftMm);
                         double newFirstRelMm = newAbsFirstMm - newLeftMm;
                         DocumentViewModel?.SetLeftIndentPt(newLeftMm * 72.0 / 25.4);
                         DocumentViewModel?.SetFirstLineIndentPt(newFirstRelMm * 72.0 / 25.4);
@@ -279,8 +280,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     }
                 case RulerIndentMarkerType.FirstLineIndent:
                     {
-                        double leftIndentPt = Ruler.LeftIndentMm * 72.0 / 25.4;
-                        DocumentViewModel?.SetFirstLineIndentPt(valuePt - leftIndentPt);
+                        double leftMm = Ruler.UnitsToMm(
+                            Ruler.GetIndentMarkerPosition(RulerIndentMarkerType.LeftIndent));
+                        DocumentViewModel?.SetFirstLineIndentPt((valuePt - leftMm * 72.0 / 25.4));
                         break;
                     }
                 case RulerIndentMarkerType.RightIndent:

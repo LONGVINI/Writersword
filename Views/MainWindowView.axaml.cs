@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
@@ -13,11 +14,11 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
 using Writersword.Core.Interfaces.Services;
-using Writersword.Resources.Localization;
 using Writersword.Core.Interfaces.Services.Input;
 using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Interfaces.WorkFlows;
+using Writersword.Resources.Localization;
 using Writersword.ViewModels;
 
 namespace Writersword.Views
@@ -161,7 +162,35 @@ namespace Writersword.Views
                 Avalonia.Interactivity.RoutingStrategies.Tunnel
             );
 
+            // Глобальный обработчик: снимает фокус с любого TextBox при клике вне него.
+            // Регистрируется один раз на уровне окна и покрывает всё приложение.
+            this.AddHandler(
+                PointerPressedEvent,
+                OnGlobalPointerPressed,
+                Avalonia.Interactivity.RoutingStrategies.Tunnel
+            );
+
             InitializeTitleBar();
+        }
+
+        // ── Глобальный анфокус TextBox ────────────────────────────────────
+        // Туннельный обработчик на уровне окна — ловит все клики.
+        // Если в момент клика сфокусирован TextBox, и клик произошёл вне него,
+        // фокус переводится на окно. Работает для TextBox и любых наследников.
+
+        private void OnGlobalPointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            var focused = FocusManager?.GetFocusedElement();
+            if (focused is not TextBox focusedBox) return;
+
+            Visual? src = e.Source as Visual;
+            while (src != null)
+            {
+                if (ReferenceEquals(src, focusedBox)) return;
+                src = src.GetVisualParent();
+            }
+
+            Focus();
         }
 
         /// <summary>
