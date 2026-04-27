@@ -214,6 +214,9 @@ namespace Writersword.Modules.TextEditor.Document
         private SKBitmap? _lastFullRenderBitmap;
         private int _lastFullRenderWidth;
         private int _lastFullRenderHeight;
+        // Бitmaps ожидающие освобождения — не диспозим сразу чтобы избежать
+        // race condition когда рендер-тред ещё использует bitmap который UI-тред заменил.
+        private readonly System.Collections.Concurrent.ConcurrentQueue<SKBitmap> _bitmapDisposeQueue = new();
         private bool _caretOnlyRedraw = false;
 
         // ── Буфер обмена ─────────────────────────────────────────────────
@@ -373,8 +376,11 @@ namespace Writersword.Modules.TextEditor.Document
             UnsubscribeFromScrollViewer();
             lock (_bitmapLock)
             {
-                _lastFullRenderBitmap?.Dispose();
-                _lastFullRenderBitmap = null;
+                if (_lastFullRenderBitmap is not null)
+                {
+                    _bitmapDisposeQueue.Enqueue(_lastFullRenderBitmap);
+                    _lastFullRenderBitmap = null;
+                }
             }
         }
 

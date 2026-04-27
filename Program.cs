@@ -1,5 +1,5 @@
 using Avalonia;
-using Avalonia.ReactiveUI;
+using ReactiveUI.Avalonia;
 using System;
 
 namespace Writersword;
@@ -24,6 +24,6 @@ class Program
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()           // Автоматическое определение платформы (Windows/Linux/macOS)
             .WithInterFont()               // Подключение шрифта Inter
-            .UseReactiveUI()               // Поддержка ReactiveUI для MVVM
+            .UseReactiveUI(_ => { })              // Поддержка ReactiveUI для MVVM
             .LogToTrace();                 // Логирование в Debug консоль
 }

@@ -259,6 +259,33 @@ namespace Writersword.Src.Modules.Characters.Resources {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на » will be deleted. All characters in it will become unassigned..
+        /// </summary>
+        public static string Dialog_DeleteFolder_After {
+            get {
+                return ResourceManager.GetString("Dialog_DeleteFolder_After", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Folder «.
+        /// </summary>
+        public static string Dialog_DeleteFolder_Before {
+            get {
+                return ResourceManager.GetString("Dialog_DeleteFolder_Before", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Delete folder?.
+        /// </summary>
+        public static string Dialog_DeleteFolder_Title {
+            get {
+                return ResourceManager.GetString("Dialog_DeleteFolder_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Characters.
         /// </summary>
         public static string DisplayName {

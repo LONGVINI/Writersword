@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
+using System.Reactive.Concurrency;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,6 +13,7 @@ using Writersword.Core.Models.Settings;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Infrastructure.Dock;
+using Avalonia.Threading;
 
 namespace Writersword.Infrastructure.Services.WorkModes
 {
@@ -62,8 +64,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
 
             _debounceSubscription = Observable
                 .Timer(_debounceDelay)
-                .ObserveOn(RxApp.MainThreadScheduler)
-                .Subscribe(_ => SaveConfiguration());
+                .Subscribe(_ => Avalonia.Threading.Dispatcher.UIThread.Post(() => SaveConfiguration()));
 
             _logger.LogDebug("Change detected, will save in {Seconds} seconds", _debounceDelay.TotalSeconds);
         }

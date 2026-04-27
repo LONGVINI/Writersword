@@ -77,6 +77,20 @@
 		<Setter Property="Margin" Value="4,2"/>
 	</Style>
 
+	<!-- Avalonia 12 применяет :disabled к корневым MenuItem без Command.
+	     Переопределяем визуальное состояние чтобы они выглядели как активные. -->
+	<Style Selector="Menu > MenuItem:disabled">
+		<Setter Property="Opacity" Value="1"/>
+	</Style>
+	<Style Selector="Menu > MenuItem:disabled /template/ ContentPresenter#PART_HeaderPresenter">
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="Opacity" Value="1"/>
+	</Style>
+	<Style Selector="Menu > MenuItem:disabled /template/ Border#PART_LayoutRoot">
+		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+		<Setter Property="Opacity" Value="1"/>
+	</Style>
+
 	<!-- ========================================
          COMBOBOX — фон попапа и элементов
          ======================================== -->

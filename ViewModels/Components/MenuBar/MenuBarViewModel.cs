@@ -6,14 +6,15 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Reactive;
+using System.Reactive.Linq;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Core.Interfaces.WorkModes;
 using Writersword.ProjectTypes.Common;
-using Writersword.WorkModes.Common;
 using Writersword.ViewModels.Components;
+using Writersword.WorkModes.Common;
 
 namespace Writersword.ViewModels.Components.MenuBar
 {
@@ -114,6 +115,20 @@ namespace Writersword.ViewModels.Components.MenuBar
             SaveWorkspaceGlobalCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceGlobal);
             ResetWorkspaceToGlobalCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToGlobal);
             ResetWorkspaceToDefaultCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToDefault);
+
+#if DEBUG
+            OpenSettingsCommand.CanExecute.Subscribe(can =>
+            {
+                System.Diagnostics.Debug.WriteLine($"[MENU] OpenSettingsCommand CanExecute: {can}");
+                _logger.LogDebug("OpenSettingsCommand CanExecute: {Can}", can);
+            });
+            OpenSettingsCommand.Subscribe(_ =>
+                System.Diagnostics.Debug.WriteLine("[MENU] OpenSettingsCommand EXECUTED"));
+            SaveProjectCommand.CanExecute.Subscribe(can =>
+                System.Diagnostics.Debug.WriteLine($"[MENU] SaveProjectCommand CanExecute: {can}"));
+            CloseTabCommand.CanExecute.Subscribe(can =>
+                System.Diagnostics.Debug.WriteLine($"[MENU] CloseTabCommand CanExecute: {can}"));
+#endif
 
             LoadRecentProjects();
 

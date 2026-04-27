@@ -94,6 +94,7 @@ namespace Writersword.ViewModels.Components.MenuBar
 
         private async Task SaveAllProjects()
         {
+            System.Diagnostics.Debug.WriteLine("[MENU] SaveAllProjects CALLED");
             _logger.LogDebug("SaveAllProjects called");
 
             var allTabs = _tabCollection.Tabs;
@@ -177,6 +178,7 @@ namespace Writersword.ViewModels.Components.MenuBar
 
         private async Task OpenSettings()
         {
+            System.Diagnostics.Debug.WriteLine("OpenSettings CALLED");
             _logger.LogDebug("OpenSettings called");
 
             if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop

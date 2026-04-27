@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Writersword.Styles.UserControls.ColorPickerButton"
+             x:Name="Root">
+
+	<Button x:Name="TriggerButton"
+            Width="20" Height="20"
+            Padding="0" CornerRadius="10"
+            BorderThickness="1.5"
+            BorderBrush="{DynamicResource BorderSubtleBrush}"
+            Background="{Binding HexColor, ElementName=Root}"
+            VerticalAlignment="Center"
+            HorizontalAlignment="Center"
+            ToolTip.Tip="Изменить цвет">
+		<Button.Styles>
+			<Style Selector="Button">
+				<Setter Property="Template">
+					<ControlTemplate>
+						<Border CornerRadius="10"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Width="20" Height="20"/>
+					</ControlTemplate>
+				</Setter>
+			</Style>
+			<Style Selector="Button:pointerover /template/ Border">
+				<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+				<Setter Property="BorderThickness" Value="2"/>
+			</Style>
+		</Button.Styles>
+		<Button.Flyout>
+			<Flyout Placement="BottomEdgeAlignedLeft" ShowMode="Standard">
+				<Flyout.FlyoutPresenterTheme>
+					<ControlTheme TargetType="FlyoutPresenter">
+						<Setter Property="Padding" Value="0"/>
+						<Setter Property="Background" Value="Transparent"/>
+						<Setter Property="BorderThickness" Value="0"/>
+						<Setter Property="CornerRadius" Value="8"/>
+					</ControlTheme>
+				</Flyout.FlyoutPresenterTheme>
+				<Border Background="{DynamicResource BgPanelBrush}"
+                        BorderBrush="{DynamicResource BorderDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="12">
+					<StackPanel Spacing="8" Width="280">
+
+						<TextBlock Text="Выбор цвета"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+						<!-- Preset swatches — binding через ElementName, минуя DataContext -->
+						<ItemsControl ItemsSource="{Binding PresetColors, ElementName=Root}">
+							<ItemsControl.ItemsPanel>
+								<ItemsPanelTemplate>
+									<WrapPanel Orientation="Horizontal"/>
+								</ItemsPanelTemplate>
+							</ItemsControl.ItemsPanel>
+							<ItemsControl.ItemTemplate>
+								<DataTemplate>
+									<Button Width="26" Height="26" Margin="2"
+                                            Padding="0"
+                                            Command="{Binding SelectPresetCommand, ElementName=Root}"
+                                            CommandParameter="{Binding}">
+										<Button.Styles>
+											<Style Selector="Button">
+												<Setter Property="Template">
+													<ControlTemplate>
+														<Border CornerRadius="13"
+                                                                Background="{Binding}"
+                                                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                                                BorderThickness="1.5"
+                                                                Width="26" Height="26"/>
+													</ControlTemplate>
+												</Setter>
+											</Style>
+											<Style Selector="Button:pointerover /template/ Border">
+												<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+												<Setter Property="BorderThickness" Value="2.5"/>
+											</Style>
+										</Button.Styles>
+									</Button>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
+
+						<Border Height="1"
+                                Background="{DynamicResource BorderSubtleBrush}"
+                                Margin="0,2"/>
+
+						<ColorView x:Name="ColorViewControl"
+                                   IsAlphaVisible="False"/>
+
+					</StackPanel>
+				</Border>
+			</Flyout>
+		</Button.Flyout>
+	</Button>
+
+</UserControl>

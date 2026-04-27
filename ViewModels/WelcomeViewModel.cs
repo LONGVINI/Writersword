@@ -1,18 +1,19 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
+using ReactiveUI.Avalonia;
 using System;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
-using Writersword.Core.Models.Project;
-using Writersword.Resources.Localization;
 using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Interfaces.WorkFlows;
+using Writersword.Core.Models.Project;
 using Writersword.ProjectTypes.Common;
+using Writersword.Resources.Localization;
 using Writersword.Views;
 
 namespace Writersword.ViewModels
@@ -73,17 +74,17 @@ namespace Writersword.ViewModels
 
             NewProjectCommand = ReactiveCommand.CreateFromTask(
                 CreateNewProject,
-                outputScheduler: RxApp.MainThreadScheduler
+                outputScheduler: AvaloniaScheduler.Instance
             );
 
             OpenProjectCommand = ReactiveCommand.CreateFromTask(
                 OpenExistingProject,
-                outputScheduler: RxApp.MainThreadScheduler
+                outputScheduler: AvaloniaScheduler.Instance
             );
 
             OpenRecentCommand = ReactiveCommand.Create<RecentProject>(
                 OpenRecentProject,
-                outputScheduler: RxApp.MainThreadScheduler
+                outputScheduler: AvaloniaScheduler.Instance
             );
 
             RecentProjects = new ObservableCollection<RecentProject>();

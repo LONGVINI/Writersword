@@ -4,14 +4,18 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reactive.Linq;
+using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Modules.Characters.ViewModels;
 using Writersword.Modules.Characters.Views.Tabs;
+using Writersword.Src.Modules.Characters.Resources;
+using Writersword.Views;
 
 namespace Writersword.Modules.Characters.Views
 {
@@ -81,6 +85,7 @@ namespace Writersword.Modules.Characters.Views
             if (DataContext is CharactersViewModel vm)
             {
                 vm.SearchFocusRequested += OnSearchFocusRequested;
+                vm.FolderDeleteRequested += OnFolderDeleteRequested;
                 _subscription = vm.WhenAnyValue(x => x.MainTabIndex).Subscribe(SwitchTab);
 
                 foreach (var folder in vm.Folders)
@@ -93,6 +98,23 @@ namespace Writersword.Modules.Characters.Views
                             SubscribeToFolderCommentEditing(f);
                 };
             }
+        }
+
+        // ── Диалог подтверждения удаления папки ──────────────────────────
+        // Вызывается из CharactersViewModel при DeleteFolderCommand.
+        // Показывает системный диалог и при подтверждении выполняет фактическое удаление.
+
+        private async void OnFolderDeleteRequested(string folderId, string folderName)
+        {
+            var dialogService = App.Services.GetRequiredService<IDialogService>();
+            var result = await dialogService.ShowMessageAsync(
+                CharactersStrings.Dialog_DeleteFolder_Title,
+                CharactersStrings.Dialog_DeleteFolder_Before + folderName + CharactersStrings.Dialog_DeleteFolder_After,
+                MessageBoxType.Warning,
+                MessageBoxButtons.YesNo
+            );
+            if (result == MessageBoxResult.Yes && DataContext is CharactersViewModel vm)
+                vm.ConfirmDeleteFolderCommand.Execute(folderId).Subscribe();
         }
 
         private void SubscribeToFolderCommentEditing(CharacterFolderViewModel folder)
@@ -175,8 +197,10 @@ namespace Writersword.Modules.Characters.Views
         }
 
         // ── LostFocus ─────────────────────────────────────────────────────
-        // Срабатывает когда глобальный обработчик в MainWindowView переводит
-        // фокус на окно, а также при Alt+Tab, сворачивании и т.д.
+        // Срабатывает когда FocusManager в MainWindowView снимает фокус с TextBox,
+        // а также при Alt+Tab, сворачивании и т.д.
+        // ReflectionBinding обновляет источник по LostFocus — принудительно
+        // синхронизируем из src.Text до вызова команды чтобы избежать race condition.
 
         private void OnTextBoxLostFocus(object? sender, RoutedEventArgs e)
         {
@@ -187,15 +211,24 @@ namespace Writersword.Modules.Characters.Views
             if (folderVm != null)
             {
                 if (folderVm.IsRenaming)
+                {
+                    folderVm.Name = src.Text ?? folderVm.Name;
                     folderVm.ConfirmRenameCommand.Execute().Subscribe();
+                }
                 else if (folderVm.IsEditingComment)
+                {
+                    folderVm.Comment = src.Text ?? folderVm.Comment;
                     folderVm.ConfirmCommentCommand.Execute().Subscribe();
+                }
                 return;
             }
 
             var charVm = FindAncestor<CharacterListItemViewModel>(src);
             if (charVm?.IsBeingNamed == true && DataContext is CharactersViewModel mainVm)
+            {
+                charVm.InlineName = src.Text ?? string.Empty;
                 mainVm.ConfirmInlineNameCommand.Execute(charVm.Id).Subscribe();
+            }
         }
 
         // ── KeyDown ───────────────────────────────────────────────────────

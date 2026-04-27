@@ -14,12 +14,13 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
 using Writersword.Core.Interfaces.Services;
+using Writersword.Resources.Localization;
 using Writersword.Core.Interfaces.Services.Input;
 using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Interfaces.WorkFlows;
-using Writersword.Resources.Localization;
 using Writersword.ViewModels;
+using Writersword.Core.Interfaces.Modules;
 
 namespace Writersword.Views
 {
@@ -32,10 +33,11 @@ namespace Writersword.Views
         private WndProcDelegate? _wndProcDelegate;
         private IntPtr _originalWndProc = IntPtr.Zero;
 
-        // Реальная ширина зоны иконка+MenuBar в логических пикселях.
-        // Обновляется через LayoutUpdated TitleBarContent.
-        // Правее этой зоны — свободная область тайтлбара с HTCAPTION для drag/restore.
         private double _titleBarContentWidth = 300.0;
+
+        // Невидимый focusable элемент — приёмник фокуса при кликах на нефокусируемые области.
+        // Нужен потому что Window.Focusable == false в Avalonia 11 и Focus() на окне не работает.
+        private Panel? _focusSink;
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         private delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
@@ -129,13 +131,8 @@ namespace Writersword.Views
         private const int SM_CXPADDEDBORDER = 92;
         private const double AnomalousPaddingThreshold = 100.0;
 
-        // Высота тайтлбара в логических пикселях
         private const int TitleBarHeight = 32;
-
-        // Ширина кнопок окна (3 кнопки по 46px) в логических пикселях
         private const int WindowButtonsWidth = 138;
-
-        // Ширина зоны resize по краям окна в логических пикселях
         private const int ResizeBorderSize = 8;
 
         public MainWindowView()
@@ -144,12 +141,12 @@ namespace Writersword.Views
 
             InitializeComponent();
 
+            _focusSink = this.FindControl<Panel>("FocusSink");
+
             this.Opened += (s, e) =>
             {
                 _logger.LogDebug("MainWindowView opened - DataContext: {DataContextType}", DataContext?.GetType().Name);
-
                 EnsureThickFrameAndSubclass();
-
                 if (WindowState == WindowState.Maximized)
                     ScheduleMaximizedPadding();
             };
@@ -173,16 +170,18 @@ namespace Writersword.Views
             InitializeTitleBar();
         }
 
-        // ── Глобальный анфокус TextBox ────────────────────────────────────
-        // Туннельный обработчик на уровне окна — ловит все клики.
-        // Если в момент клика сфокусирован TextBox, и клик произошёл вне него,
-        // фокус переводится на окно. Работает для TextBox и любых наследников.
+        // ── Глобальный анфокус TextBox ─────────────────────────────────────
+        // Туннельный обработчик на уровне окна — ловит все клики раньше дочерних элементов.
+        // Если сфокусирован TextBox и клик произошёл вне него — фокусируем FocusSink,
+        // что гарантированно триггерит LostFocus на TextBox.
+        // Window.Focusable == false в Avalonia 11, поэтому Focus() на окне не работает.
 
         private void OnGlobalPointerPressed(object? sender, PointerPressedEventArgs e)
         {
             var focused = FocusManager?.GetFocusedElement();
             if (focused is not TextBox focusedBox) return;
 
+            // Клик внутри самого TextBox — не трогаем.
             Visual? src = e.Source as Visual;
             while (src != null)
             {
@@ -190,14 +189,14 @@ namespace Writersword.Views
                 src = src.GetVisualParent();
             }
 
-            Focus();
+            // Уводим фокус в FocusSink — это триггерит LostFocus на TextBox.
+            // Если источник клика сам focusable (кнопка и т.д.), Avalonia
+            // дополнительно переведёт фокус на него в ходе обработки события.
+            _focusSink?.Focus();
         }
 
         /// <summary>
         /// Выставляет WS_THICKFRAME для Aero Snap и субклассирует WndProc.
-        /// WM_NCCALCSIZE возвращает 0 — нативная рамка не рисуется.
-        /// WM_NCHITTEST: HTCLIENT для иконки и MenuBar, HTCAPTION для свободной
-        /// зоны правее MenuBar (drag и double-click restore), HTCLIENT для кнопок окна.
         /// </summary>
         private void EnsureThickFrameAndSubclass()
         {
@@ -275,15 +274,10 @@ namespace Writersword.Views
 
                 if (relY < titleBarHeightPx)
                 {
-                    // Зона кнопок окна — Avalonia обрабатывает клики
                     if (relX >= winW - windowButtonsPx)
                         return new IntPtr(HTCLIENT);
-
-                    // Зона иконки и MenuBar — Avalonia обрабатывает клики
                     if (relX < contentWidthPx)
                         return new IntPtr(HTCLIENT);
-
-                    // Свободная зона правее MenuBar — drag и double-click для restore/maximize
                     return new IntPtr(HTCAPTION);
                 }
 
@@ -308,8 +302,6 @@ namespace Writersword.Views
             if (closeButton != null)
                 closeButton.Click += (_, _) => Close();
 
-            // Отслеживаем реальную ширину иконки+MenuBar чтобы WndProc знал,
-            // где заканчивается интерактивная зона и начинается зона HTCAPTION.
             var titleBarContent = this.FindControl<StackPanel>("TitleBarContent");
             if (titleBarContent != null)
             {
@@ -330,14 +322,12 @@ namespace Writersword.Views
                 : WindowState.Maximized;
         }
 
-        /// <summary>Windows двигает окно в несколько шагов при максимизации — откладываем расчёт паддинга.</summary>
         private void OnWindowPositionChanged(object? sender, PixelPointEventArgs e)
         {
             if (WindowState == WindowState.Maximized)
                 ScheduleMaximizedPadding();
         }
 
-        /// <summary>Debounce 150мс — берём паддинг только по финальной позиции окна.</summary>
         private void ScheduleMaximizedPadding()
         {
             _paddingDebounce?.Cancel();
@@ -351,9 +341,7 @@ namespace Writersword.Views
             {
                 if (cts.IsCancellationRequested) return;
                 if (WindowState != WindowState.Maximized) return;
-
                 ApplyMaximizedPadding();
-
             }, TimeSpan.FromMilliseconds(150));
         }
 
@@ -372,10 +360,6 @@ namespace Writersword.Views
             ApplyMaximizedPaddingAvalonia();
         }
 
-        /// <summary>
-        /// Считает паддинг через Win32 GetWindowRect + MonitorFromWindow + GetMonitorInfo —
-        /// все три в физических пикселях, без расхождений координат на мультимониторе с разным DPI.
-        /// </summary>
         [SupportedOSPlatform("windows")]
         private void ApplyMaximizedPaddingWin32(IntPtr hwnd)
         {
@@ -419,9 +403,6 @@ namespace Writersword.Views
                 mi.rcWork.Left, mi.rcWork.Top, mi.rcWork.Right, mi.rcWork.Bottom,
                 scaling, padLeft, padTop, padRight, padBottom);
 
-            // Avalonia 12 на левом мониторе иногда помещает окно на ~1920px левее нужного.
-            // Детектируем по аномально большому padLeft/padRight и принудительно
-            // перемещаем окно на корректную позицию через Win32.
             if (padLeft > AnomalousPaddingThreshold || padRight > AnomalousPaddingThreshold)
             {
                 int frameX = GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
@@ -459,7 +440,6 @@ namespace Writersword.Views
             ApplyButtonsPadding();
         }
 
-        /// <summary>Fallback для не-Windows платформ.</summary>
         private void ApplyMaximizedPaddingAvalonia()
         {
             var screen = Screens.ScreenFromWindow(this);
@@ -493,16 +473,13 @@ namespace Writersword.Views
             ApplyButtonsPadding();
         }
 
-        /// <summary>-1 сверху: чтобы мышь попадала в угол экрана при максимизации.</summary>
         private void ApplyButtonsPadding()
         {
             var buttonPanel = this.FindControl<StackPanel>("WindowButtonsPanel");
             if (buttonPanel == null) return;
-
             buttonPanel.Margin = new Thickness(0, -1, 0, 0);
         }
 
-        /// <summary>Обновляет паддинг и иконку кнопки максимизации при смене состояния окна.</summary>
         private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
         {
             if (e.Property != WindowStateProperty) return;
@@ -525,7 +502,6 @@ namespace Writersword.Views
                 restoreIcon.IsVisible = WindowState == WindowState.Maximized;
         }
 
-        /// <summary>Проверяет несохранённые изменения во всех вкладках перед закрытием.</summary>
         private async void OnClosing(object? sender, CancelEventArgs e)
         {
             if (_isClosing)
@@ -659,25 +635,28 @@ namespace Writersword.Views
             }
         }
 
-        /// <summary>Передаёт нажатие клавиш в HotKeyService с учётом модуля в фокусе.</summary>
         private void OnKeyDown(object? sender, KeyEventArgs e)
         {
+#if DEBUG
+            _logger.LogDebug("KeyDown: Key={Key}, Modifiers={Modifiers}, Handled={Handled}", e.Key, e.KeyModifiers, e.Handled);
+#endif
+
             var hotKeyService = App.Services.GetRequiredService<IHotKeyService>();
             var gesture = new KeyGesture(e.Key, e.KeyModifiers);
             var focusedModuleType = GetFocusedModuleType();
 
             if (hotKeyService.HandleKeyPress(gesture, focusedModuleType))
             {
+                _logger.LogDebug("KeyDown: handled by HotKeyService, Key={Key}", e.Key);
                 e.Handled = true;
                 return;
             }
 
-            // Блокируем нативные жесты которые модуль объявил своими.
             if (focusedModuleType != null && DataContext is MainWindowViewModel vm)
             {
                 var activeTab = vm.TabBar.ActiveTab;
                 var module = activeTab?.ModuleContext.GetModule(focusedModuleType)
-                    as Writersword.Core.Interfaces.Modules.IUndoableModule;
+                    as IUndoableModule;
                 if (module?.BlockedNativeGestures.Any(g =>
                     g.Key == e.Key && g.KeyModifiers == e.KeyModifiers) == true)
                 {
@@ -686,7 +665,6 @@ namespace Writersword.Views
             }
         }
 
-        /// <summary>Поднимается по дереву фокуса до Control у которого Tag содержит moduleType.</summary>
         private string? GetFocusedModuleType()
         {
             var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Control;

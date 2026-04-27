@@ -10,15 +10,9 @@ namespace Writersword.Views.Components
     /// </summary>
     public partial class ModulePanelView : UserControl
     {
-        private readonly ILogger<ModulePanelView> _logger;
-
         public ModulePanelView()
         {
-            _logger = App.Services.GetService<ILogger<ModulePanelView>>()!;
-
             InitializeComponent();
-
-            _logger.LogDebug("ModulePanelView created");
         }
     }
 }

@@ -26,14 +26,19 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (DocVm is null) { _logger.Warning("[UNDO] BeginEdit({D}): DocVm is null", description); return; }
             _logger.Debug("[UNDO] BeginEdit: {D}", description);
-            _pendingSnapshot = new DocumentSnapshotCommand(DocVm, description);
+            _pendingSnapshot = new DocumentSnapshotCommand(DocVm, description, _caretPara, _caretChar);
+            _pendingSnapshot.RestoreCaretCallback = (para, ch) =>
+            {
+                _caretPara = Clamp(para, 0, Math.Max(0, _layouts.Count - 1));
+                _caretChar = ch;
+            };
         }
 
         private void CommitEdit()
         {
             if (_pendingSnapshot is null) { _logger.Warning("[UNDO] CommitEdit: no pending snapshot"); return; }
             if (UndoStack is null) { _logger.Warning("[UNDO] CommitEdit: UndoStack is null"); return; }
-            _pendingSnapshot.Commit();
+            _pendingSnapshot.Commit(_caretPara, _caretChar);
             UndoStack.Push(_pendingSnapshot);
             _logger.Debug("[UNDO] CommitEdit: pushed '{D}', stackSize={S}", _pendingSnapshot.Description, UndoStack.CanUndo);
             _pendingSnapshot = null;
@@ -120,7 +125,23 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void DeleteSelection()
         {
-            if (!HasSel()) return;
+            bool hasSel = HasSel();
+            bool hasTables = _tableSelections.Count > 0;
+            if (!hasSel && !hasTables) return;
+
+            // Удаляем выделенные таблицы из документа.
+            if (hasTables && DocVm is not null)
+            {
+                var blocks = DocVm.Document.Sections[0].Blocks;
+                foreach (var tbl in _tableSelections.Keys.ToList())
+                    blocks.Remove(tbl);
+                _tableSelections.Clear();
+                _isCellRangeSelecting = false;
+                _cellSelTable = null;
+            }
+
+            if (!hasSel) { _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1)); return; }
+
             var (sp, sc, ep, ec) = NormalizeSelection();
             var sVm = GetVmAt(sp);
             var eVm = GetVmAt(ep);
@@ -136,7 +157,6 @@ namespace Writersword.Modules.TextEditor.Document
             }
             else if (!IsInCell(sp) && !IsInCell(ep))
             {
-                // Обычное межпараграфное удаление
                 string st = sVm.PlainText ?? "";
                 string et = eVm.PlainText ?? "";
                 int s2 = Clamp(sc, 0, st.Length);
@@ -380,71 +400,62 @@ namespace Writersword.Modules.TextEditor.Document
 
         private async Task PasteAsync()
         {
-            // Приоритет: внутренний буфер (параграфы + таблицы в порядке документа).
+            // Внутренний буфер используется только когда есть таблицы.
+            // Вставка только параграфов идёт через plain-text путь — он проверен и работает.
             if (!string.IsNullOrEmpty(_internalClipboardJson) && DocVm is not null)
             {
                 var opts = new JsonSerializerOptions();
                 var blocks = JsonSerializer.Deserialize<List<ClipboardBlock>>(_internalClipboardJson, opts);
-                if (blocks != null && blocks.Count > 0)
+                bool hasTable = blocks?.Any(b => b.Kind == ClipboardBlockKind.Table && b.Table != null) == true;
+
+                if (hasTable && blocks != null)
                 {
                     BeginEdit("Paste");
 
-                    // Удаляем выделение перед вставкой.
                     if (_isCellRangeSelecting)
                         ClearCellRangeSelection();
                     else if (HasSel())
                         DeleteSelection();
 
-                    bool firstBlock = true;
+                    _rebuildCts.Cancel();
+                    _rebuildCts = new System.Threading.CancellationTokenSource();
+
                     foreach (var block in blocks)
                     {
                         if (block.Kind == ClipboardBlockKind.Table && block.Table != null)
                         {
-                            // Новые Id ячейкам.
                             foreach (var cell in block.Table.Cells)
                                 cell.Id = Guid.NewGuid();
                             DocVm.InsertTableBlock(block.Table);
                         }
                         else if (block.Kind == ClipboardBlockKind.Paragraph)
                         {
-                            string blockText = block.Text ?? "";
-                            if (firstBlock)
+                            var blockPvm = GetVmAt(_caretPara);
+                            if (blockPvm != null)
                             {
-                                var caretPvm = GetVmAt(_caretPara);
-                                if (caretPvm != null)
+                                var nv = DocVm.AddParagraphAfter(blockPvm);
+                                if (nv != null)
                                 {
-                                    string cur = caretPvm.PlainText ?? "";
-                                    int pos = Clamp(_caretChar, 0, cur.Length);
-                                    caretPvm.PlainText = cur[..pos] + blockText + cur[pos..];
-                                    _caretChar = pos + blockText.Length;
-                                }
-                            }
-                            else
-                            {
-                                var prev = GetVmAt(_caretPara);
-                                if (prev != null)
-                                {
-                                    var nv = DocVm.AddParagraphAfter(prev);
-                                    if (nv != null)
-                                    {
-                                        nv.PlainText = blockText;
-                                        for (int li = 0; li < _layouts.Count; li++)
-                                            if (_layouts[li].Vm == nv) { _caretPara = li; break; }
-                                        _caretChar = blockText.Length;
-                                    }
+                                    nv.PlainText = block.Text ?? "";
+                                    for (int li = 0; li < _layouts.Count; li++)
+                                        if (_layouts[li].Vm == nv) { _caretPara = li; break; }
+                                    _caretChar = nv.PlainText.Length;
                                 }
                             }
                         }
-                        firstBlock = false;
                     }
 
                     CommitEdit();
                     _cellLayoutCache.Clear();
+
+                    _rebuildCts.Cancel();
+                    _rebuildCts = new System.Threading.CancellationTokenSource();
+
                     RebuildLayouts();
                     SnapCaretToCorrectSlice();
                     SyncSel(); ResetCaret(); InvalidateFull();
+                    return;
                 }
-                return;
             }
 
             string? text = _clipboardCache;
@@ -462,13 +473,62 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (IsInCell(_caretPara))
             {
-                string firstLine = text.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n')[0];
-                CellInsertText(firstLine);
+                var cellInfo = GetCurrentCell();
+                if (cellInfo is null) return;
+
+                string[] cellLines = text.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
+                BeginEdit("Paste");
+                if (HasSel()) { CellDeleteSelection(); RebuildAfterCellEdit(); }
+
+                cellInfo = GetCurrentCell();
+                if (cellInfo is null) { CommitEdit(); return; }
+
+                string cur = cellInfo.ParaBlock.GetPlainText();
+                int pos = Clamp(_caretChar, 0, cur.Length);
+                string cellBefore = cur[..pos];
+                string cellAfter = cur[pos..];
+
+                if (cellLines.Length == 1)
+                {
+                    SetCellParaText(cellInfo.Cell, cellInfo.CellParaIndex, cellBefore + cellLines[0] + cellAfter);
+                    _caretChar = pos + cellLines[0].Length;
+                    CommitEdit();
+                    RebuildAfterCellEdit();
+                }
+                else
+                {
+                    SetCellParaText(cellInfo.Cell, cellInfo.CellParaIndex, cellBefore + cellLines[0]);
+                    int insertIdx = cellInfo.CellParaIndex + 1;
+
+                    for (int li = 1; li < cellLines.Length - 1; li++)
+                    {
+                        var np = new ParagraphBlock();
+                        np.SetPlainText(cellLines[li]);
+                        cellInfo.Cell.Paragraphs.Insert(insertIdx++, np);
+                    }
+
+                    var lastPara = new ParagraphBlock();
+                    lastPara.SetPlainText(cellLines[^1] + cellAfter);
+                    cellInfo.Cell.Paragraphs.Insert(insertIdx, lastPara);
+                    _caretChar = cellLines[^1].Length;
+
+                    CommitEdit();
+                    RebuildAfterCellEdit(lastPara);
+                }
                 return;
             }
 
             BeginEdit("Paste");
             DeleteSelection();
+
+            // Если удалили таблицы — нужен rebuild перед вставкой текста.
+            if (_tableSelections.Count == 0 && DocVm is not null)
+            {
+                _cellLayoutCache.Clear();
+                DocVm.RebuildParagraphViewModelsPublic();
+                RebuildLayouts();
+                _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
+            }
 
             string[] lines = text.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
             var pvm = GetVmAt(_caretPara);

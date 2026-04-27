@@ -601,4 +601,16 @@
     <value>Reconfigure...</value>
     <comment>Hidden button at bottom</comment>
   </data>
+  <data name="Dialog_DeleteFolder_Title" xml:space="preserve">
+    <value>Delete folder?</value>
+    <comment>Title of folder deletion confirmation dialog</comment>
+  </data>
+  <data name="Dialog_DeleteFolder_Before" xml:space="preserve">
+    <value>Folder «</value>
+    <comment>Text before folder name</comment>
+  </data>
+  <data name="Dialog_DeleteFolder_After" xml:space="preserve">
+    <value>» will be deleted. All characters in it will become unassigned.</value>
+    <comment>Text after folder name</comment>
+  </data>
 </root>

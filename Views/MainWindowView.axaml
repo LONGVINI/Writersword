@@ -12,7 +12,7 @@
         Width="1400"
         Height="900"
         WindowState="Maximized"
-        Background="Transparent"
+        Background="{DynamicResource BgAppBrush}"
         ExtendClientAreaToDecorationsHint="True"
         WindowDecorations="BorderOnly"
         ExtendClientAreaTitleBarHeightHint="-1">
@@ -26,7 +26,6 @@
               Background="{DynamicResource BgPanelBrush}"
               UseLayoutRounding="True">
 
-			<!-- Иконка и меню занимают ровно столько места, сколько нужно пунктам -->
 			<StackPanel x:Name="TitleBarContent"
                         Orientation="Horizontal"
                         HorizontalAlignment="Left"
@@ -36,10 +35,9 @@
                        Margin="10,8,8,0"
                        VerticalAlignment="Top"
                        RenderOptions.BitmapInterpolationMode="HighQuality"/>
-				<menubar:MenuBarView VerticalAlignment="Top"/>
+				<menubar:MenuBarView VerticalAlignment="Top" DataContext="{Binding MenuBar}"/>
 			</StackPanel>
 
-			<!-- Кнопки окна -->
 			<StackPanel x:Name="WindowButtonsPanel"
                         Orientation="Horizontal"
                         HorizontalAlignment="Right"
@@ -47,7 +45,6 @@
                         Height="32"
                         Margin="0,2,0,0"
                         ZIndex="1">
-
 				<Button x:Name="MinimizeButton" Width="46" Height="32" Padding="8,0,8,0" Background="Transparent" BorderThickness="0" CornerRadius="0" Classes="TitleBarWindowButton" ToolTip.Tip="Свернуть">
 					<Canvas Width="10" Height="1" HorizontalAlignment="Center" VerticalAlignment="Center">
 						<Line StartPoint="0,0.5" EndPoint="10,0.5" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1"/>
@@ -100,6 +97,19 @@
                    HorizontalAlignment="Stretch"
                    VerticalAlignment="Stretch"
                    IsHitTestVisible="False"/>
+			<!--
+                Невидимый приёмник фокуса. Получает фокус программно когда пользователь
+                кликает вне TextBox на нефокусируемую область. IsHitTestVisible="False"
+                исключает его из хит-теста мыши, поэтому на UX не влияет.
+                Window.Focusable == false в Avalonia 11, поэтому Focus() на окне
+                ничего не делает — нужен этот элемент.
+            -->
+			<Panel x:Name="FocusSink"
+                   Focusable="True"
+                   IsHitTestVisible="False"
+                   Width="0" Height="0"
+                   Opacity="0"
+                   ZIndex="-1"/>
 		</Panel>
 
 	</Grid>

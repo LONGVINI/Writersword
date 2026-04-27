@@ -480,4 +480,13 @@
   <data name="Templates_RestartOnboarding" xml:space="preserve">
     <value>Настроить заново...</value>
   </data>
+  <data name="Dialog_DeleteFolder_Title" xml:space="preserve">
+    <value>Удалить папку?</value>
+  </data>
+  <data name="Dialog_DeleteFolder_Before" xml:space="preserve">
+    <value>Папка «</value>
+  </data>
+  <data name="Dialog_DeleteFolder_After" xml:space="preserve">
+    <value>» будет удалена. Все персонажи из неё станут нераспределёнными.</value>
+  </data>
 </root>

@@ -75,6 +75,10 @@ namespace Writersword.Modules.TextEditor.Document
 
             _caretOnlyRedraw = false;
 
+            // Освобождаем накопившиеся старые bitmaps — теперь рендер-тред точно их не использует.
+            while (_bitmapDisposeQueue.TryDequeue(out var stale))
+                stale.Dispose();
+
             using var surface = SKSurface.Create(
                 new SKImageInfo(pixelW, pixelH, SKColorType.Bgra8888, SKAlphaType.Premul));
 
@@ -103,7 +107,10 @@ namespace Writersword.Modules.TextEditor.Document
                     _lastFullRenderWidth = pixelW;
                     _lastFullRenderHeight = pixelH;
                 }
-                oldBitmap?.Dispose();
+                // Не диспозим oldBitmap сразу — другой рендер-кадр может ещё его рисовать.
+                // Добавляем в очередь, освободится в начале следующего кадра.
+                if (oldBitmap is not null)
+                    _bitmapDisposeQueue.Enqueue(oldBitmap);
 
                 canvas.DrawBitmap(newBitmap, 0, 0);
 

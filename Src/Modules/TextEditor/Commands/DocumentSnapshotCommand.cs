@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Modules.TextEditor.Models.Document;
@@ -23,31 +24,49 @@ namespace Writersword.Modules.TextEditor.Commands
         private readonly string _before;
         private string? _after;
 
+        // Позиции каретки до и после операции.
+        // Хранятся как индекс параграфа в Paragraphs + символьная позиция.
+        private readonly int _caretParaBefore;
+        private readonly int _caretCharBefore;
+        private int _caretParaAfter;
+        private int _caretCharAfter;
+
+        // Callback для восстановления каретки после undo/redo.
+        public Action<int, int>? RestoreCaretCallback { get; set; }
+
         public string Description { get; }
 
-        public DocumentSnapshotCommand(DocumentViewModel docVm, string description)
+        public DocumentSnapshotCommand(DocumentViewModel docVm, string description,
+            int caretPara, int caretChar)
         {
             _docVm = docVm;
             Description = description;
             _before = Serialize(docVm.Document);
+            _caretParaBefore = caretPara;
+            _caretCharBefore = caretChar;
         }
 
-        /// <summary>
-        /// Фиксирует состояние ПОСЛЕ операции.
-        /// Вызывать сразу по завершении изменений, до следующего rebuild.
-        /// </summary>
-        public void Commit()
+        public void Commit(int caretPara, int caretChar)
         {
             _after = Serialize(_docVm.Document);
+            _caretParaAfter = caretPara;
+            _caretCharAfter = caretChar;
         }
 
         public void Execute()
         {
             if (_after is not null)
+            {
                 Restore(_after);
+                RestoreCaretCallback?.Invoke(_caretParaAfter, _caretCharAfter);
+            }
         }
 
-        public void Undo() => Restore(_before);
+        public void Undo()
+        {
+            Restore(_before);
+            RestoreCaretCallback?.Invoke(_caretParaBefore, _caretCharBefore);
+        }
 
         private void Restore(string json)
         {
@@ -56,8 +75,6 @@ namespace Writersword.Modules.TextEditor.Commands
 
             var doc = _docVm.Document;
 
-            // Восстанавливаем содержимое — заменяем разделы и настройки на месте,
-            // не создавая новый объект DocumentModel (ссылки во ViewModels остаются живыми).
             doc.Sections.Clear();
             foreach (var section in restored.Sections)
                 doc.Sections.Add(section);
@@ -71,7 +88,6 @@ namespace Writersword.Modules.TextEditor.Commands
             doc.PageSettings.MarginLeftMm = restored.PageSettings.MarginLeftMm;
             doc.PageSettings.MarginRightMm = restored.PageSettings.MarginRightMm;
 
-            // Перестраиваем VM-список параграфов под новую структуру блоков.
             _docVm.RebuildParagraphViewModelsPublic();
             _docVm.FireParagraphFormatChanged();
         }

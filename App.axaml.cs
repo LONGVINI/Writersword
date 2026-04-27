@@ -1,7 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Diagnostics;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -64,6 +63,18 @@ namespace Writersword
         public override void Initialize()
         {
             AvaloniaXamlLoader.Load(this);
+
+#if DEBUG
+            try
+            {
+                this.AttachDevTools();
+                Log.ForContext<App>().Debug("DevTools attached successfully");
+            }
+            catch (Exception ex)
+            {
+                Log.ForContext<App>().Error(ex, "Failed to attach DevTools");
+            }
+#endif
         }
 
         /// <summary>
@@ -200,10 +211,6 @@ namespace Writersword
                 };
 
                 MainWindow = mainWindow;
-
-#if DEBUG
-                this.AttachDeveloperTools();
-#endif
 
                 var dialogService = Services.GetRequiredService<IDialogService>() as DialogService;
                 dialogService?.SetMainWindow(mainWindow);

@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
+using ReactiveUI.Avalonia;
 using System;
 using System.Reactive;
 using System.Reactive.Linq;
@@ -123,7 +124,7 @@ namespace Writersword.ViewModels.Components
             var hideDelay = duration ?? TimeSpan.FromSeconds(3);
             _hideTimer = Observable
                 .Timer(hideDelay)
-                .ObserveOn(RxApp.MainThreadScheduler)
+                .ObserveOn(AvaloniaScheduler.Instance)
                 .Subscribe(_ => Hide());
         }
 

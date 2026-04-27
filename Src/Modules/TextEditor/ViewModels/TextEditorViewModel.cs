@@ -1,4 +1,5 @@
 using ReactiveUI;
+using ReactiveUI.Avalonia;
 using Serilog;
 using System;
 using System.Collections.Generic;
@@ -648,7 +649,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             _autoSaveSubscription = Observable
                 .Interval(TimeSpan.FromSeconds(intervalSeconds))
-                .ObserveOn(RxApp.MainThreadScheduler)
+                .ObserveOn(AvaloniaScheduler.Instance)
                 .Subscribe(_ => OnAutoSaveTick());
         }
 
@@ -704,7 +705,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private IDisposable SubscribeToParagraphChanges(DocumentViewModel docVm)
         {
-            var subs = new System.Collections.Generic.Dictionary<Guid, IDisposable>();
+            var subs = new Dictionary<Guid, IDisposable>();
 
             void Subscribe(ParagraphViewModel pvm)
             {
@@ -713,7 +714,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     .WhenAnyValue(p => p.PlainText)
                     .Skip(1)
                     .Throttle(TimeSpan.FromMilliseconds(300))
-                    .ObserveOn(RxApp.MainThreadScheduler)
+                    .ObserveOn(AvaloniaScheduler.Instance)
                     .Subscribe(_ => { IsModified = true; RefreshStatusBar(); });
             }
 

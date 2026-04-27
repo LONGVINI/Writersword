@@ -1044,6 +1044,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             _cellLayoutCache.Clear();
+            _cellVmCache.Clear();
             double oldCanvasH = _canvasHeight;
             RebuildLayouts();
 
@@ -1356,8 +1357,13 @@ namespace Writersword.Modules.TextEditor.Document
             if (UndoStack is null) { _logger.Warning("[UNDO] ExecuteUndo: UndoStack is null"); return; }
             if (!UndoStack.CanUndo) { _logger.Debug("[UNDO] ExecuteUndo: nothing to undo"); return; }
             _logger.Debug("[UNDO] ExecuteUndo: '{D}'", UndoStack.UndoDescription);
+            _cellLayoutCache.Clear();
+            _cellVmCache.Clear();
             UndoStack.Undo();
-            ClampCaret(); SyncSel(); ResetCaret(); InvalidateFull();
+            RebuildLayouts();
+            _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
+            _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
+            SyncSel(); ResetCaret(); InvalidateFull();
         }
 
         public void ExecuteRedo()
@@ -1365,8 +1371,13 @@ namespace Writersword.Modules.TextEditor.Document
             if (UndoStack is null) { _logger.Warning("[UNDO] ExecuteRedo: UndoStack is null"); return; }
             if (!UndoStack.CanRedo) { _logger.Debug("[UNDO] ExecuteRedo: nothing to redo"); return; }
             _logger.Debug("[UNDO] ExecuteRedo: '{D}'", UndoStack.RedoDescription);
+            _cellLayoutCache.Clear();
+            _cellVmCache.Clear();
             UndoStack.Redo();
-            ClampCaret(); SyncSel(); ResetCaret(); InvalidateFull();
+            RebuildLayouts();
+            _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
+            _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
+            SyncSel(); ResetCaret(); InvalidateFull();
         }
 
         /// <summary>
