@@ -16,12 +16,12 @@ namespace Writersword.Infrastructure.Services.UI
 
         public event Action? LanguageChanged;
 
-        /// <summary>Получить строку из ресурсов</summary>
+        /// <summary>Получить строку по ресурсному ключу</summary>
         public string GetString(string key)
         {
             try
             {
-                // Теперь просто Strings (не Resources.Localization.Strings)
+                // Читает строки Strings (из Resources.Localization.Strings)
                 var value = Strings.ResourceManager.GetString(key, Strings.Culture);
                 return value ?? $"[{key}]";
             }
@@ -37,6 +37,13 @@ namespace Writersword.Infrastructure.Services.UI
             _currentLanguage = languageCode;
 
             var culture = new CultureInfo(languageCode);
+
+            // DefaultThreadCurrent* применяется глобально ко всем потокам,
+            // включая пул потоков и async-контексты — это необходимо чтобы
+            // модули, создающие вью асинхронно, получали правильную культуру.
+            CultureInfo.DefaultThreadCurrentUICulture = culture;
+            CultureInfo.DefaultThreadCurrentCulture = culture;
+
             CultureInfo.CurrentUICulture = culture;
             CultureInfo.CurrentCulture = culture;
 

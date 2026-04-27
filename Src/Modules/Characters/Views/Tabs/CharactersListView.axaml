@@ -17,6 +17,7 @@
 
 	<Grid RowDefinitions="Auto,*,Auto">
 
+		<!-- Панель поиска и инструментов -->
 		<Border Grid.Row="0"
                 Background="{DynamicResource BgPanelBrush}"
                 BorderBrush="{DynamicResource BorderDefaultBrush}"
@@ -42,11 +43,9 @@
                         ToolTip.Tip="{x:Static loc:CharactersStrings.Folder_CreateTooltip}">
 					<StackPanel Orientation="Horizontal" Spacing="5">
 						<PathIcon Data="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
-                                  Width="14" Height="14"
-                                  Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                  Width="14" Height="14" Foreground="{DynamicResource TextPrimaryBrush}"/>
 						<TextBlock Text="{x:Static loc:CharactersStrings.Folder_CreateButton}"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="12" Foreground="{DynamicResource TextPrimaryBrush}"
                                    VerticalAlignment="Center"/>
 					</StackPanel>
 				</Button>
@@ -59,8 +58,7 @@
                         BorderThickness="1" CornerRadius="6"
                         ToolTip.Tip="{x:Static loc:CharactersStrings.ViewMode_List}">
 					<PathIcon Data="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"
-                              Width="14" Height="14"
-                              Foreground="{DynamicResource TextSecondaryBrush}"/>
+                              Width="14" Height="14" Foreground="{DynamicResource TextSecondaryBrush}"/>
 				</Button>
 				<Button Grid.Column="3"
                         Command="{ReflectionBinding SwitchViewModeCommand}"
@@ -71,12 +69,12 @@
                         BorderThickness="1" CornerRadius="6"
                         ToolTip.Tip="{x:Static loc:CharactersStrings.ViewMode_Grid}">
 					<PathIcon Data="M3 3h8v8H3zm0 10h8v8H3zm10-10h8v8h-8zm0 10h8v8h-8z"
-                              Width="14" Height="14"
-                              Foreground="{DynamicResource TextSecondaryBrush}"/>
+                              Width="14" Height="14" Foreground="{DynamicResource TextSecondaryBrush}"/>
 				</Button>
 			</Grid>
 		</Border>
 
+		<!-- Список папок и персонажей -->
 		<ScrollViewer Grid.Row="1" Focusable="False">
 			<StackPanel>
 
@@ -85,21 +83,19 @@
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            HorizontalAlignment="Center"
                            Margin="32,32" TextWrapping="Wrap" TextAlignment="Center"
-                           IsVisible="{Binding Folders.Count,
-                               Converter={StaticResource IntIsZeroConverter}}"/>
+                           IsVisible="{Binding Folders.Count, Converter={StaticResource IntIsZeroConverter}}"/>
 
 				<ItemsControl ItemsSource="{Binding Folders}">
 					<ItemsControl.ItemTemplate>
 						<DataTemplate DataType="vm:CharacterFolderViewModel">
 							<StackPanel Margin="0,0,0,4">
 
+								<!-- Заголовок папки -->
 								<Border BorderBrush="{DynamicResource BorderDefaultBrush}"
                                         BorderThickness="0,0,0,1"
                                         Background="{DynamicResource BgPanelBrush}">
 									<Panel>
-										<Border IsVisible="{Binding IsSelected}"
-                                                Background="#22FFFFFF"/>
-
+										<Border IsVisible="{Binding IsSelected}" Background="#22FFFFFF"/>
 										<Grid MinHeight="36">
 											<Grid.ColumnDefinitions>
 												<ColumnDefinition Width="Auto"/>
@@ -120,14 +116,14 @@
                                                                               RightPreferredWidth="210">
 
 												<!-- Child[0]: имя папки.
-                                                     Кнопка занимает только ширину текста (HorizontalAlignment="Left"),
-                                                     остальное пространство — пустая область для клика/выбора папки. -->
+                                                     SelectOrRenameCommand: первый клик выбирает папку,
+                                                     повторный клик на уже выбранной — начинает переименование. -->
 												<Panel Margin="0,0,12,0" ClipToBounds="True">
-													<Button Command="{Binding StartRenameCommand}"
+													<Button Command="{Binding SelectOrRenameCommand}"
                                                             Background="Transparent" BorderThickness="0"
                                                             Padding="0" VerticalAlignment="Center"
-                                                            HorizontalAlignment="Left"
-                                                            HorizontalContentAlignment="Left"
+                                                            HorizontalAlignment="Stretch"
+                                                            HorizontalContentAlignment="Stretch"
                                                             IsVisible="{Binding !IsRenaming}">
 														<Button.Styles>
 															<Style Selector="Button:pointerover /template/ ContentPresenter">
@@ -161,8 +157,7 @@
                                                             Padding="4,0" VerticalAlignment="Center"
                                                             HorizontalAlignment="Right"
                                                             ToolTip.Tip="{x:Static loc:CharactersStrings.Folder_CommentTooltip}"
-                                                            IsVisible="{Binding Comment,
-                                                                Converter={x:Static StringConverters.IsNullOrEmpty}}">
+                                                            IsVisible="{Binding Comment, Converter={x:Static StringConverters.IsNullOrEmpty}}">
 														<PathIcon Data="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"
                                                                   Width="12" Height="12"
                                                                   Foreground="{DynamicResource TextMutedBrush}"
@@ -171,10 +166,9 @@
 													<Button Command="{Binding StartEditCommentCommand}"
                                                             Background="Transparent" BorderThickness="0"
                                                             Padding="0" VerticalAlignment="Center"
-                                                            HorizontalAlignment="Left"
-                                                            HorizontalContentAlignment="Left"
-                                                            IsVisible="{Binding Comment,
-                                                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                                            HorizontalAlignment="Stretch"
+                                                            HorizontalContentAlignment="Stretch"
+                                                            IsVisible="{Binding Comment, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
 														<Button.Styles>
 															<Style Selector="Button:pointerover /template/ ContentPresenter">
 																<Setter Property="Background" Value="Transparent"/>
@@ -202,7 +196,6 @@
                                                          behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsEditingComment}"
                                                          behaviors:ClickOutsideBehavior.Command="{ReflectionBinding ConfirmCommentCommand}"/>
 												</Grid>
-
 											</controls:CharactersFolderHeaderPanel>
 
 											<StackPanel Grid.Column="2"
@@ -214,6 +207,7 @@
                                                            VerticalAlignment="Center"
                                                            Margin="12,0,4,0"/>
 
+												<!-- Корзина для папки -->
 												<Button Command="{Binding RequestDeleteCommand}"
                                                         Background="Transparent" BorderThickness="0"
                                                         Padding="6,0" Height="36"
@@ -235,8 +229,7 @@
                                                         Background="Transparent" BorderThickness="0"
                                                         Padding="8,0" Margin="0,0,4,0"
                                                         VerticalAlignment="Stretch">
-													<TextBlock Text="{Binding IsExpanded,
-                                                                   Converter={x:Static conv:BoolToCollapseArrowConverter.Instance}}"
+													<TextBlock Text="{Binding IsExpanded, Converter={x:Static conv:BoolToCollapseArrowConverter.Instance}}"
                                                                FontSize="10"
                                                                Foreground="{DynamicResource TextSecondaryBrush}"
                                                                VerticalAlignment="Center"/>
@@ -246,6 +239,7 @@
 									</Panel>
 								</Border>
 
+								<!-- Карточки персонажей -->
 								<ItemsControl ItemsSource="{Binding Characters}"
                                               Margin="12,8"
                                               IsVisible="{Binding IsExpanded}">
@@ -261,64 +255,136 @@
                                                     BorderBrush="{Binding Color}"
                                                     BorderThickness="2"
                                                     ClipToBounds="True"
-                                                    Margin="6">
-												<Grid RowDefinitions="Auto,40">
-													<Grid Grid.Row="0" Height="60">
-														<Border Background="{Binding Color}">
-															<TextBlock Text="{Binding FallbackIcon}"
-                                                                       FontSize="30"
-                                                                       HorizontalAlignment="Center"
+                                                    Margin="6"
+                                                    Cursor="Hand">
+
+												<Grid RowDefinitions="60,Auto">
+
+													<!-- Верхняя цветная область -->
+													<Panel Grid.Row="0">
+														<Border Background="{Binding Color}"/>
+
+														<TextBlock Text="{Binding FallbackIcon}"
+                                                                   FontSize="30"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   Foreground="White"
+                                                                   IsHitTestVisible="False"/>
+
+														<!-- Выбор цвета — сверху-слева -->
+														<colorControls:ColorPickerButton
+                                                            HexColor="{Binding Color, Mode=TwoWay}"
+                                                            HorizontalAlignment="Left"
+                                                            VerticalAlignment="Top"
+                                                            Margin="5"
+                                                            Width="20" Height="20"
+                                                            ToolTip.Tip="Изменить цвет"/>
+
+														<!-- Редактировать + крестик удаления — сверху-справа -->
+														<StackPanel Orientation="Horizontal"
+                                                                    Spacing="2"
+                                                                    HorizontalAlignment="Right"
+                                                                    VerticalAlignment="Top"
+                                                                    Margin="4"
+                                                                    IsVisible="{Binding IsShowingNameDisplay}">
+															<Button Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
+                                                                    CommandParameter="{Binding Id}"
+                                                                    Padding="4,3"
+                                                                    Background="#88000000"
+                                                                    BorderThickness="0" CornerRadius="4"
+                                                                    ToolTip.Tip="{x:Static loc:CharactersStrings.Character_EditTooltip}">
+																<PathIcon Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+                                                                          Width="11" Height="11" Foreground="White"/>
+															</Button>
+															<!-- Крестик для персонажа -->
+															<Button Command="{Binding RequestDeleteCommand}"
+                                                                    Padding="4,3"
+                                                                    Background="#88000000"
+                                                                    BorderThickness="0" CornerRadius="4"
+                                                                    ToolTip.Tip="Удалить персонажа">
+																<Button.Styles>
+																	<Style Selector="Button:pointerover /template/ ContentPresenter">
+																		<Setter Property="Background" Value="#BB660000"/>
+																	</Style>
+																</Button.Styles>
+																<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                                                                          Width="11" Height="11" Foreground="White"/>
+															</Button>
+														</StackPanel>
+													</Panel>
+
+													<!-- Нижняя зона имени -->
+													<Panel Grid.Row="1" MinHeight="40">
+
+														<!-- Состояние 1: ввод имени нового персонажа.
+                                                             Без ClickOutsideBehavior — сохранение через LostFocus в code-behind. -->
+														<TextBox Text="{ReflectionBinding InlineName}"
+                                                                 PlaceholderText="{x:Static loc:CharactersStrings.Character_NamePlaceholder}"
+                                                                 FontSize="12" FontWeight="Medium"
+                                                                 TextAlignment="Center"
+                                                                 Background="{DynamicResource BgPanelBrush}"
+                                                                 BorderBrush="{DynamicResource AccentDefaultBrush}"
+                                                                 BorderThickness="0,1,0,0"
+                                                                 CornerRadius="0,0,8,8"
+                                                                 Padding="8,0"
+                                                                 Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                 VerticalAlignment="Stretch"
+                                                                 MinHeight="40"
+                                                                 IsVisible="{Binding IsBeingNamed}"
+                                                                 behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsBeingNamed}"/>
+
+														<!-- Состояние 2: переименование существующего персонажа.
+                                                             Без ClickOutsideBehavior — сохранение через LostFocus в code-behind. -->
+														<TextBox Text="{ReflectionBinding PendingRename}"
+                                                                 FontSize="12" FontWeight="Medium"
+                                                                 TextAlignment="Center"
+                                                                 Background="{DynamicResource BgPanelBrush}"
+                                                                 BorderBrush="{DynamicResource AccentDefaultBrush}"
+                                                                 BorderThickness="0,1,0,0"
+                                                                 CornerRadius="0,0,8,8"
+                                                                 Padding="8,0"
+                                                                 Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                 VerticalAlignment="Stretch"
+                                                                 MinHeight="40"
+                                                                 IsVisible="{Binding IsRenaming}"
+                                                                 behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"/>
+
+														<!-- Состояние 3: нормальное отображение, клик = переименование -->
+														<Button Command="{Binding StartRenameCommand}"
+                                                                Background="Transparent"
+                                                                BorderThickness="0"
+                                                                Padding="6,4"
+                                                                HorizontalAlignment="Stretch"
+                                                                VerticalAlignment="Stretch"
+                                                                HorizontalContentAlignment="Center"
+                                                                IsVisible="{Binding IsShowingNameDisplay}"
+                                                                ToolTip.Tip="Нажмите для переименования">
+															<Button.Styles>
+																<Style Selector="Button:pointerover /template/ ContentPresenter">
+																	<Setter Property="Background" Value="Transparent"/>
+																</Style>
+																<Style Selector="Button:pressed /template/ ContentPresenter">
+																	<Setter Property="Background" Value="Transparent"/>
+																</Style>
+															</Button.Styles>
+															<TextBlock Text="{Binding Name}"
+                                                                       FontSize="12" FontWeight="Medium"
+                                                                       TextWrapping="NoWrap"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       TextAlignment="Center"
                                                                        VerticalAlignment="Center"
-                                                                       Foreground="White"/>
-														</Border>
-														<Button Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
-                                                                CommandParameter="{Binding Id}"
-                                                                HorizontalAlignment="Right"
-                                                                VerticalAlignment="Top"
-                                                                Margin="4" Padding="4,2"
-                                                                Background="#88000000"
-                                                                BorderThickness="0" CornerRadius="4"
-                                                                ToolTip.Tip="{x:Static loc:CharactersStrings.Character_EditTooltip}"
-                                                                IsVisible="{Binding !IsBeingNamed}">
-															<PathIcon Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                                                                      Width="11" Height="11" Foreground="White"/>
+                                                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                       ToolTip.Tip="{Binding Name}"
+                                                                       ToolTip.ShowDelay="600"/>
 														</Button>
-													</Grid>
-													<TextBox Grid.Row="1"
-                                                             Text="{ReflectionBinding InlineName}"
-                                                             PlaceholderText="{x:Static loc:CharactersStrings.Character_NamePlaceholder}"
-                                                             FontSize="12" FontWeight="Medium"
-                                                             TextAlignment="Center"
-                                                             Background="Transparent"
-                                                             BorderBrush="{DynamicResource AccentDefaultBrush}"
-                                                             BorderThickness="0,0,0,1" CornerRadius="0"
-                                                             Padding="6,0" Margin="4,0"
-                                                             Foreground="{DynamicResource TextPrimaryBrush}"
-                                                             VerticalAlignment="Center"
-                                                             IsVisible="{Binding IsBeingNamed}"
-                                                             behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsBeingNamed}"
-                                                             behaviors:ClickOutsideBehavior.Command="{ReflectionBinding NoOpCommand}"/>
-													<Button Grid.Row="1"
-                                                            Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
-                                                            CommandParameter="{Binding Id}"
-                                                            Background="Transparent" BorderThickness="0" Padding="0"
-                                                            HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                                                            HorizontalContentAlignment="Center"
-                                                            IsVisible="{Binding !IsBeingNamed}">
-														<TextBlock Text="{Binding Name}"
-                                                                   FontSize="12" FontWeight="Medium"
-                                                                   TextWrapping="Wrap" TextAlignment="Center"
-                                                                   MaxLines="2" TextTrimming="CharacterEllipsis"
-                                                                   Margin="8,0" VerticalAlignment="Center"
-                                                                   Foreground="{DynamicResource TextPrimaryBrush}"
-                                                                   ToolTip.Tip="{Binding Name}"
-                                                                   ToolTip.ShowDelay="500"/>
-													</Button>
+
+													</Panel>
 												</Grid>
 											</Border>
 										</DataTemplate>
 									</ItemsControl.ItemTemplate>
 								</ItemsControl>
+
 							</StackPanel>
 						</DataTemplate>
 					</ItemsControl.ItemTemplate>
@@ -326,6 +392,7 @@
 			</StackPanel>
 		</ScrollViewer>
 
+		<!-- Кнопки создания -->
 		<Border Grid.Row="2"
                 BorderBrush="{DynamicResource BorderDefaultBrush}"
                 BorderThickness="0,1,0,0"
@@ -360,5 +427,25 @@
 				</Button>
 			</Grid>
 		</Border>
+
+		<!-- Призрак перетаскивания — поверх всего, не перехватывает клики -->
+		<Canvas x:Name="DragGhostCanvas"
+                Grid.Row="0" Grid.RowSpan="3"
+                IsHitTestVisible="False"
+                IsVisible="False">
+			<Border x:Name="DragGhostBorder"
+                    Width="140" Height="36"
+                    CornerRadius="8" Opacity="0.88"
+                    BorderBrush="#88FFFFFF" BorderThickness="1.5">
+				<TextBlock x:Name="DragGhostText"
+                           FontSize="12" FontWeight="Medium"
+                           Foreground="White"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           Margin="10,0"/>
+			</Border>
+		</Canvas>
+
 	</Grid>
 </UserControl>

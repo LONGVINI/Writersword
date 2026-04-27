@@ -18,7 +18,7 @@ public sealed class CharactersFolderHeaderPanel : Panel
         AvaloniaProperty.Register<CharactersFolderHeaderPanel, double>(nameof(RightMinWidth), 63.0);
 
     public static readonly StyledProperty<double> LeftPreferredWidthProperty =
-        AvaloniaProperty.Register<CharactersFolderHeaderPanel, double>(nameof(LeftPreferredWidth), 260.0);
+        AvaloniaProperty.Register<CharactersFolderHeaderPanel, double>(nameof(LeftPreferredWidth), 250.0);
 
     public static readonly StyledProperty<double> RightPreferredWidthProperty =
         AvaloniaProperty.Register<CharactersFolderHeaderPanel, double>(nameof(RightPreferredWidth), 210.0);
@@ -50,12 +50,18 @@ public sealed class CharactersFolderHeaderPanel : Panel
     private static readonly ILogger _log = Log.ForContext<CharactersFolderHeaderPanel>();
 
     private const double VisualBuffer = 12.0;
+
+    // Запас сверх измеренного контента TextBox чтобы гарантировать scroll=0.
+    // TextBox.DesiredSize включает padding; без запаса рендер может дать на 1-2px
+    // меньше чем нужно тексту → TextBox скроллит вправо → Г обрезается слева.
     private const double TextBoxScrollBuffer = 8.0;
 
-    // Минимальная ширина блока имени в режиме просмотра (не редактирования).
-    // Если текст короче — блок всё равно занимает минимум этого пространства,
-    // давая пользователю удобную зону для клика.
-    private const double NameViewMinWidth = 250.0;
+    // Кешируем натуральные (infinite) ширины детей из MeasureOverride,
+    // чтобы ArrangeOverride не зависел от DesiredSize после constrained-меры.
+    // При star-колонке в ScrollViewer Measure получает 0px, Arrange — реальную ширину;
+    // без кеша стаканированный DesiredSize даёт неверные nameAlloc в Arrange.
+    private double _naturalNameWidth;
+    private double _naturalCommentWidth;
 
     private readonly List<IDisposable> _childSubscriptions = new();
 
@@ -90,6 +96,9 @@ public sealed class CharactersFolderHeaderPanel : Panel
 
                     if (grandchild is TextBox tb)
                     {
+                        // TextChanged event вместо GetObservable(TextProperty):
+                        // GetObservable на AvaloniaProperty не всегда стреляет при
+                        // пользовательском вводе в сочетании с ReflectionBinding.
                         void OnTextChanged(object? s, TextChangedEventArgs _) => InvalidateMeasure();
                         tb.TextChanged += OnTextChanged;
                         _childSubscriptions.Add(new ActionDisposable(() => tb.TextChanged -= OnTextChanged));
@@ -114,10 +123,15 @@ public sealed class CharactersFolderHeaderPanel : Panel
         return false;
     }
 
+    // Вычисляет ширины для имени и комментария по заданному available.
+    // Принимает натуральные (unconstrained) ширины детей, а не DesiredSize после
+    // constrained-меры — это критично для корректной работы в star-колонке Grid
+    // внутри ScrollViewer, где Arrange получает реальную ширину, а Measure — нет.
+
     private (double nameAlloc, double commentAlloc) ComputeAllocations(
         double available,
-        double nameDesiredWidth,
-        double commentDesiredWidth,
+        double nameNaturalWidth,
+        double commentNaturalWidth,
         bool nameEditing)
     {
         double nameAlloc;
@@ -125,13 +139,15 @@ public sealed class CharactersFolderHeaderPanel : Panel
 
         if (nameEditing)
         {
-            double nameDesired = Math.Max(nameDesiredWidth + TextBoxScrollBuffer, LeftPreferredWidth);
-            double commentNatural = commentDesiredWidth + VisualBuffer;
+            // Минимум LeftPreferredWidth (250px), растёт по контенту.
+            // nameAlloc = ровно столько, сколько нужно тексту — не заполняет строку целиком.
+            double nameDesired = Math.Max(nameNaturalWidth + TextBoxScrollBuffer, LeftPreferredWidth);
+            double commentNatural = commentNaturalWidth + VisualBuffer;
 
             if (nameDesired + commentNatural <= available)
             {
+                nameAlloc = nameDesired;
                 commentAlloc = commentNatural;
-                nameAlloc = available - commentAlloc;
             }
             else if (nameDesired + RightMinWidth + VisualBuffer <= available)
             {
@@ -146,25 +162,24 @@ public sealed class CharactersFolderHeaderPanel : Panel
         }
         else
         {
-            double commentNatural = commentDesiredWidth + VisualBuffer;
+            double nameNatural = nameNaturalWidth;
+            double commentNatural = commentNaturalWidth + VisualBuffer;
 
-            // Имя занимает максимум из натурального размера текста и минимума 250px.
-            // При росте текста блок увеличивается вместе с ним.
-            // Ограничиваем сверху чтобы не вытеснить комментарий за экран.
-            double nameIdeal = Math.Max(nameDesiredWidth, NameViewMinWidth);
-
-            if (nameIdeal + commentNatural <= available)
+            if (nameNatural + commentNatural <= available)
             {
-                nameAlloc = nameIdeal;
+                // Имя занимает ровно свой контент — Button НЕ растягивается на всю строку.
+                // Клик в пустое пространство правее текста не попадает в Button и не
+                // запускает StartRenameCommand.
+                nameAlloc = nameNatural;
                 commentAlloc = commentNatural;
             }
-            else if (nameDesiredWidth + RightMinWidth + VisualBuffer <= available)
+            else
             {
-                // Текст не влезает с минимальным комментарием — сжимаем имя до натурального
-                double availableForComment = available - nameDesiredWidth;
+                double availableForComment = available - nameNatural;
+
                 if (availableForComment >= RightMinWidth + VisualBuffer)
                 {
-                    nameAlloc = nameDesiredWidth;
+                    nameAlloc = nameNatural;
                     commentAlloc = availableForComment;
                 }
                 else
@@ -172,11 +187,6 @@ public sealed class CharactersFolderHeaderPanel : Panel
                     commentAlloc = RightMinWidth + VisualBuffer;
                     nameAlloc = Math.Max(LeftMinWidth, available - commentAlloc);
                 }
-            }
-            else
-            {
-                commentAlloc = RightMinWidth + VisualBuffer;
-                nameAlloc = Math.Max(LeftMinWidth, available - commentAlloc);
             }
         }
 
@@ -201,17 +211,33 @@ public sealed class CharactersFolderHeaderPanel : Panel
         nameChild.Measure(infinite);
         commentChild.Measure(infinite);
 
+        // Сохраняем натуральные ширины до constrained-меры — они нужны в ArrangeOverride.
+        _naturalNameWidth = nameChild.DesiredSize.Width;
+        _naturalCommentWidth = commentChild.DesiredSize.Width;
+
+        // Если пришла бесконечная ширина (star-колонка в ScrollViewer) — используем
+        // preferred суммарную ширину как оценку для первого прохода Measure.
+        // Реальная раскладка будет пересчитана в ArrangeOverride по finalSize.
         double available = double.IsInfinity(availableSize.Width)
             ? LeftPreferredWidth + RightPreferredWidth
             : availableSize.Width;
 
         bool nameEditing = HasVisibleTextBox(nameChild);
 
+        _log.Debug(
+            "FolderHeaderPanel Measure: availableSize.W={AW}, available={A}, nameEditing={NE}, naturalName={NN}, naturalComment={NC}",
+            availableSize.Width, available, nameEditing,
+            _naturalNameWidth, _naturalCommentWidth);
+
         var (nameAlloc, commentAlloc) = ComputeAllocations(
             available,
-            nameChild.DesiredSize.Width,
-            commentChild.DesiredSize.Width,
+            _naturalNameWidth,
+            _naturalCommentWidth,
             nameEditing);
+
+        _log.Debug(
+            "FolderHeaderPanel Measure result: nameAlloc={NA}, commentAlloc={CA}",
+            nameAlloc, commentAlloc);
 
         nameChild.Measure(new Size(nameAlloc, availableSize.Height));
         commentChild.Measure(new Size(commentAlloc, availableSize.Height));
@@ -234,23 +260,35 @@ public sealed class CharactersFolderHeaderPanel : Panel
         var nameChild = Children[0];
         var commentChild = Children[1];
 
+        // Используем кешированные натуральные ширины, а не DesiredSize после constrained-меры.
+        // Пересчитываем аллокации по реальному finalSize.Width — он отличается от available
+        // в Measure когда панель находится в star-колонке Grid внутри ScrollViewer.
         bool nameEditing = HasVisibleTextBox(nameChild);
 
         var (nameAlloc, commentAlloc) = ComputeAllocations(
             finalSize.Width,
-            nameChild.DesiredSize.Width,
-            commentChild.DesiredSize.Width,
+            _naturalNameWidth,
+            _naturalCommentWidth,
             nameEditing);
 
         double commentLeft = Math.Max(nameAlloc, finalSize.Width - commentAlloc);
         double commentWidth = Math.Max(0, finalSize.Width - commentLeft);
 
-        Children[0].Arrange(new Rect(0, 0, commentLeft, finalSize.Height));
+        _log.Debug(
+            "FolderHeaderPanel Arrange: finalSize.W={FW}, nameEditing={NE}, naturalName={NN}, naturalComment={NC}, nameAlloc={NA}, commentAlloc={CA}, commentLeft={CL}, commentWidth={CW}",
+            finalSize.Width, nameEditing,
+            _naturalNameWidth, _naturalCommentWidth,
+            nameAlloc, commentAlloc, commentLeft, commentWidth);
+
+        // nameChild arrangeится строго по nameAlloc — и при редактировании, и при отображении
+        // Button не растягивается на всю строку, занимает ровно столько, сколько нужно тексту.
+        Children[0].Arrange(new Rect(0, 0, nameAlloc, finalSize.Height));
         Children[1].Arrange(new Rect(commentLeft, 0, commentWidth, finalSize.Height));
 
         return finalSize;
     }
 
+    // Вспомогательный класс для хранения event-подписки в виде IDisposable.
     private sealed class ActionDisposable : IDisposable
     {
         private Action? _action;

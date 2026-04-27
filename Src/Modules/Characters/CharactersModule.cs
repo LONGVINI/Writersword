@@ -1,12 +1,15 @@
 using Avalonia.Controls;
+using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using Serilog;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reactive;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
+using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Models.Settings;
 using Writersword.Core.Services;
 using Writersword.Modules.Characters.Interfaces;
@@ -30,6 +33,9 @@ namespace Writersword.Modules.Characters
         private readonly IRelationshipService _relationshipService;
         private readonly ICharacterAnketaService _anketaService;
 
+        // Хранится для последующей отписки в Dispose().
+        private Action? _onLanguageChanged;
+
         public CharactersModule() : base()
         {
             _relationshipService = new RelationshipService();
@@ -46,6 +52,19 @@ namespace Writersword.Modules.Characters
         {
             if (_characterService is CharacterService cs) cs.SetContext(Context);
             _viewModel = new CharactersViewModel(_characterService, _relationshipService, _anketaService);
+
+            // Синхронизируем культуру модуля с текущим языком приложения.
+            // CharactersStrings имеет собственный статический Culture, который
+            // LocalizationService не трогает — поэтому выставляем его здесь
+            // и подписываемся на смену языка, чтобы обновлять при Settings.
+            var locService = App.Services.GetRequiredService<ILocalizationService>();
+            CharactersStrings.Culture = new CultureInfo(locService.CurrentLanguage);
+
+            _onLanguageChanged = () =>
+                CharactersStrings.Culture = new CultureInfo(locService.CurrentLanguage);
+
+            locService.LanguageChanged += _onLanguageChanged;
+
             base.Initialize();
             _logger.Debug("Initialized");
         }
@@ -256,6 +275,16 @@ namespace Writersword.Modules.Characters
 
         public override void Dispose()
         {
+            // Отписываемся от смены языка чтобы не удерживать ссылку на модуль
+            // через синглтон LocalizationService после уничтожения модуля.
+            if (_onLanguageChanged != null)
+            {
+                var locService = App.Services.GetService<ILocalizationService>();
+                if (locService != null)
+                    locService.LanguageChanged -= _onLanguageChanged;
+                _onLanguageChanged = null;
+            }
+
             base.Dispose();
             _logger.Debug("Disposed");
         }

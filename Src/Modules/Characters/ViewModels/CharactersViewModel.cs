@@ -17,12 +17,9 @@ namespace Writersword.Modules.Characters.ViewModels
     public class CharactersViewModel : ReactiveObject
     {
         private static readonly ILogger _logger = Log.ForContext<CharactersViewModel>();
-
         private readonly ICharacterService _characterService;
         private readonly IRelationshipService _relationshipService;
         private readonly ICharacterAnketaService _anketaService;
-
-        // ── Вкладки модуля ────────────────────────────────────────────────
 
         private int _mainTabIndex = 0;
         public int MainTabIndex
@@ -37,7 +34,6 @@ namespace Writersword.Modules.Characters.ViewModels
                 this.RaisePropertyChanged(nameof(IsTab3Active));
             }
         }
-
         public bool IsTab0Active => _mainTabIndex == 0;
         public bool IsTab1Active => _mainTabIndex == 1;
         public bool IsTab2Active => _mainTabIndex == 2;
@@ -48,18 +44,15 @@ namespace Writersword.Modules.Characters.ViewModels
         public ReactiveCommand<Unit, Unit> GoToEditCommand { get; }
         public ReactiveCommand<Unit, Unit> GoToRelationshipsCommand { get; }
         public ReactiveCommand<Unit, Unit> GoToTemplatesCommand { get; }
-
         public ReactiveCommand<Unit, Unit> FilterPrimaryCommand { get; }
         public ReactiveCommand<Unit, Unit> FilterSecondaryCommand { get; }
         public ReactiveCommand<Unit, Unit> FilterTertiaryCommand { get; }
         public ReactiveCommand<Unit, Unit> FilterCollectiveCommand { get; }
         public ReactiveCommand<Unit, Unit> ClearImportanceFilterCommand { get; }
-
         public ReactiveCommand<Unit, Unit> CreateFolderCommand { get; }
         public ReactiveCommand<string, Unit> DeleteFolderCommand { get; }
         public ReactiveCommand<string, Unit> ConfirmDeleteFolderCommand { get; }
         public ReactiveCommand<string, Unit> ToggleFolderCommand { get; }
-
         public event Action<string, string>? FolderDeleteRequested;
 
         public CharactersTemplatesViewModel TemplatesViewModel { get; }
@@ -71,7 +64,6 @@ namespace Writersword.Modules.Characters.ViewModels
             get => _showOnboarding;
             set => this.RaiseAndSetIfChanged(ref _showOnboarding, value);
         }
-
         public CharactersOnboardingViewModel OnboardingViewModel { get; }
 
         public ObservableCollection<string> ActiveTemplateIds { get; } = new();
@@ -105,9 +97,13 @@ namespace Writersword.Modules.Characters.ViewModels
         public CharactersViewMode ViewMode
         {
             get => _viewMode;
-            set { this.RaiseAndSetIfChanged(ref _viewMode, value); this.RaisePropertyChanged(nameof(IsListMode)); this.RaisePropertyChanged(nameof(IsGridMode)); }
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _viewMode, value);
+                this.RaisePropertyChanged(nameof(IsListMode));
+                this.RaisePropertyChanged(nameof(IsGridMode));
+            }
         }
-
         public bool IsListMode => ViewMode == CharactersViewMode.List;
         public bool IsGridMode => ViewMode == CharactersViewMode.Grid;
 
@@ -141,7 +137,6 @@ namespace Writersword.Modules.Characters.ViewModels
         public ReactiveCommand<Unit, Unit> ClearFiltersCommand { get; }
         public ReactiveCommand<string, Unit> ToggleTagFilterCommand { get; }
         public ReactiveCommand<CharactersViewMode, Unit> SwitchViewModeCommand { get; }
-
         public event Action? SearchFocusRequested;
 
         private string? _activeFolderId;
@@ -178,6 +173,7 @@ namespace Writersword.Modules.Characters.ViewModels
             {
                 if (int.TryParse(s, out var idx)) MainTabIndex = idx;
             });
+
             GoToCharactersCommand = ReactiveCommand.Create(() => { MainTabIndex = 0; });
             GoToEditCommand = ReactiveCommand.Create(() => { MainTabIndex = 1; });
             GoToRelationshipsCommand = ReactiveCommand.Create(() => { MainTabIndex = 2; });
@@ -190,15 +186,21 @@ namespace Writersword.Modules.Characters.ViewModels
 
             FilterPrimaryCommand = ReactiveCommand.Create(() =>
             {
-                FilterImportance = FilterImportance == CharacterImportanceLevel.Primary ? (CharacterImportanceLevel?)null : CharacterImportanceLevel.Primary;
+                FilterImportance = FilterImportance == CharacterImportanceLevel.Primary
+                    ? (CharacterImportanceLevel?)null
+                    : CharacterImportanceLevel.Primary;
             });
             FilterSecondaryCommand = ReactiveCommand.Create(() =>
             {
-                FilterImportance = FilterImportance == CharacterImportanceLevel.Secondary ? (CharacterImportanceLevel?)null : CharacterImportanceLevel.Secondary;
+                FilterImportance = FilterImportance == CharacterImportanceLevel.Secondary
+                    ? (CharacterImportanceLevel?)null
+                    : CharacterImportanceLevel.Secondary;
             });
             FilterTertiaryCommand = ReactiveCommand.Create(() =>
             {
-                FilterImportance = FilterImportance == CharacterImportanceLevel.Tertiary ? (CharacterImportanceLevel?)null : CharacterImportanceLevel.Tertiary;
+                FilterImportance = FilterImportance == CharacterImportanceLevel.Tertiary
+                    ? (CharacterImportanceLevel?)null
+                    : CharacterImportanceLevel.Tertiary;
             });
             FilterCollectiveCommand = ReactiveCommand.Create(() =>
             {
@@ -229,7 +231,6 @@ namespace Writersword.Modules.Characters.ViewModels
             SwitchViewModeCommand = ReactiveCommand.Create<CharactersViewMode>(m => ViewMode = m);
 
             CreateFolderCommand = ReactiveCommand.Create(CreateFolder);
-
             DeleteFolderCommand = ReactiveCommand.Create<string>(id =>
             {
                 var folder = _folders.FirstOrDefault(f => f.Id == id);
@@ -237,7 +238,6 @@ namespace Writersword.Modules.Characters.ViewModels
                     FolderDeleteRequested?.Invoke(id, folder.Name);
             });
             ConfirmDeleteFolderCommand = ReactiveCommand.Create<string>(ConfirmDeleteFolder);
-
             ToggleFolderCommand = ReactiveCommand.Create<string>(id =>
             {
                 var folder = Folders.FirstOrDefault(f => f.FolderId == id);
@@ -257,7 +257,6 @@ namespace Writersword.Modules.Characters.ViewModels
         private void OnOnboardingCompleted(bool completed)
         {
             ShowOnboarding = false;
-
             if (completed)
             {
                 var tags = OnboardingViewModel.GetSelectedTags().ToList();
@@ -270,7 +269,6 @@ namespace Writersword.Modules.Characters.ViewModels
                 TemplatesViewModel.Refresh();
                 _logger.Debug("Onboarding completed, applied {Count} templates", ActiveTemplateIds.Count);
             }
-
             _logger.Information("Onboarding dismissed — can restart via Templates tab");
         }
 
@@ -280,7 +278,6 @@ namespace Writersword.Modules.Characters.ViewModels
             var character = anketas.Count > 0
                 ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: false)
                 : _characterService.Create(CharactersStrings.Character_DefaultName);
-
             AddCharacterToActiveFolder(character.Id);
             RefreshFolderViewModels(inlineBeingNamedId: character.Id);
             ApplyFilters();
@@ -293,7 +290,6 @@ namespace Writersword.Modules.Characters.ViewModels
             var character = anketas.Count > 0
                 ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: true)
                 : _characterService.Create(CharactersStrings.Character_DefaultName);
-
             AddCharacterToActiveFolder(character.Id);
             RefreshFolderViewModels(inlineBeingNamedId: character.Id);
             ApplyFilters();
@@ -322,7 +318,7 @@ namespace Writersword.Modules.Characters.ViewModels
             }
         }
 
-        private System.Collections.Generic.List<CharacterAnketa> GetActiveAnketas() =>
+        private List<CharacterAnketa> GetActiveAnketas() =>
             ActiveTemplateIds
                 .Select(id => _anketaService.GetById(id))
                 .Where(a => a != null)
@@ -334,10 +330,8 @@ namespace Writersword.Modules.Characters.ViewModels
             foreach (var folder in Folders)
                 foreach (var item in folder.Characters)
                     item.IsSelected = item.Id == characterId;
-
             foreach (var item in FilteredCharacters)
                 item.IsSelected = item.Id == characterId;
-
             _logger.Debug("Character selected: {Id}", characterId);
         }
 
@@ -345,7 +339,6 @@ namespace Writersword.Modules.Characters.ViewModels
         {
             var character = _characterService.GetById(characterId);
             if (character == null) return;
-
             SelectedCharacterCard = new CharacterCardViewModel(
                 _characterService, _relationshipService, _anketaService, character);
             IsCardOpen = true;
@@ -355,11 +348,11 @@ namespace Writersword.Modules.Characters.ViewModels
 
         public void OpenCharacter(string characterId) => EditCharacter(characterId);
 
+        // Оставлен для совместимости — теперь также делегирует колбэкам через BindCharacterItemCallbacks
         private void ConfirmInlineName(string characterId)
         {
             var character = _characterService.GetById(characterId);
             if (character == null) return;
-
             string? newName = null;
             foreach (var folder in Folders)
             {
@@ -373,13 +366,11 @@ namespace Writersword.Modules.Characters.ViewModels
                     break;
                 }
             }
-
             if (newName != null)
             {
                 character.Name = newName;
                 _characterService.Update(character);
             }
-
             RefreshFolderViewModels();
             ApplyFilters();
             _logger.Debug("Inline name confirmed: {Id} = '{Name}'", characterId, newName);
@@ -431,21 +422,16 @@ namespace Writersword.Modules.Characters.ViewModels
         private void ApplyFilters()
         {
             IReadOnlyList<Character> all;
-
             if (!string.IsNullOrWhiteSpace(SearchQuery))
                 all = _characterService.Search(SearchQuery);
             else
                 all = _characterService.GetAll();
-
             if (ActiveTagFilters.Any())
                 all = all.Where(c => c.Tags.Any(t => ActiveTagFilters.Contains(t))).ToList().AsReadOnly();
-
             if (FilterImportance.HasValue)
                 all = all.Where(c => c.ImportanceLevel == FilterImportance.Value).ToList().AsReadOnly();
-
             if (FilterCollectiveOnly)
                 all = all.Where(c => c.IsCollective).ToList().AsReadOnly();
-
             FilteredCharacters.Clear();
             foreach (var c in all)
             {
@@ -485,28 +471,20 @@ namespace Writersword.Modules.Characters.ViewModels
         {
             if (Enum.TryParse<CharactersViewMode>(session.LastViewMode, out var mode))
                 ViewMode = mode;
-
             MainTabIndex = session.MainTabIndex;
             SearchQuery = session.LastSearchQuery ?? string.Empty;
-
             ActiveTagFilters.Clear();
             foreach (var tag in session.ActiveTagFilters) ActiveTagFilters.Add(tag);
-
             ActiveTemplateIds.Clear();
             foreach (var id in session.ActiveTemplateIds) ActiveTemplateIds.Add(id);
-
             TemplatesViewModel.Refresh();
             ApplyFilters();
-
             if (!string.IsNullOrEmpty(session.LastOpenedCharacterId))
                 OpenCharacter(session.LastOpenedCharacterId);
-
             GraphViewModel.OffsetX = session.GraphOffsetX;
             GraphViewModel.OffsetY = session.GraphOffsetY;
             GraphViewModel.Scale = session.GraphScale;
         }
-
-        // ── Папки ─────────────────────────────────────────────────────────
 
         private readonly List<CharacterFolder> _folders = new();
 
@@ -537,16 +515,11 @@ namespace Writersword.Modules.Characters.ViewModels
                 ActiveFolderId = _folders.FirstOrDefault()?.Id;
         }
 
-        // newlyCreatedFolderId — ID только что созданной папки.
-        // Передаётся из CreateFolder чтобы ВМ этой папки сразу открылся в режиме переименования.
-        // Все остальные папки IsRenaming = false независимо от их имени.
-
         private void RefreshFolderViewModels(string? inlineBeingNamedId = null, string? newlyCreatedFolderId = null)
         {
             var allChars = _characterService.GetAll().ToList();
             var assignedIds = _folders.SelectMany(f => f.CharacterIds).ToHashSet();
             var unassigned = allChars.Where(c => !assignedIds.Contains(c.Id)).ToList();
-
             _logger.Debug("RefreshFolderViewModels: {FolderCount} folders, {CharCount} characters, {UnassignedCount} unassigned",
                 _folders.Count, allChars.Count, unassigned.Count);
 
@@ -573,7 +546,9 @@ namespace Writersword.Modules.Characters.ViewModels
                     {
                         var relCount = _relationshipService.GetAllForCharacter(c.Id).Count;
                         var isNaming = c.Id == inlineBeingNamedId;
-                        vm.Characters.Add(new CharacterListItemViewModel(c, relCount, isNaming));
+                        var item = new CharacterListItemViewModel(c, relCount, isNaming);
+                        BindCharacterItemCallbacks(item);
+                        vm.Characters.Add(item);
                     }
                 }
                 Folders.Add(vm);
@@ -603,10 +578,46 @@ namespace Writersword.Modules.Characters.ViewModels
                 {
                     var relCount = _relationshipService.GetAllForCharacter(c.Id).Count;
                     var isNaming = c.Id == inlineBeingNamedId;
-                    ungrouped.Characters.Add(new CharacterListItemViewModel(c, relCount, isNaming));
+                    var item = new CharacterListItemViewModel(c, relCount, isNaming);
+                    BindCharacterItemCallbacks(item);
+                    ungrouped.Characters.Add(item);
                 }
                 Folders.Add(ungrouped);
             }
+        }
+
+        private void BindCharacterItemCallbacks(CharacterListItemViewModel item)
+        {
+            item.OnConfirmName = (id, name) =>
+            {
+                var character = _characterService.GetById(id);
+                if (character == null) return;
+                character.Name = name;
+                _characterService.Update(character);
+                ApplyFilters();
+                _logger.Debug("Character name saved via callback: {Id} = '{Name}'", id, name);
+            };
+
+            item.OnCancelNewCharacter = (id) =>
+            {
+                _characterService.Delete(id);
+                foreach (var f in _folders)
+                    f.CharacterIds.Remove(id);
+                RefreshFolderViewModels();
+                ApplyFilters();
+                _logger.Debug("New character creation cancelled, deleted: {Id}", id);
+            };
+
+            item.OnDeleteRequested = (id) => DeleteCharacter(id);
+
+            item.OnColorChanged = (id, color) =>
+            {
+                var character = _characterService.GetById(id);
+                if (character == null) return;
+                character.Color = color;
+                _characterService.Update(character);
+                _logger.Debug("Character color changed via callback: {Id} = {Color}", id, color);
+            };
         }
 
         private void CreateFolder()
@@ -619,7 +630,6 @@ namespace Writersword.Modules.Characters.ViewModels
             };
             _folders.Add(folder);
             ActiveFolderId = folder.Id;
-            // Передаём ID новой папки — только она откроется в режиме переименования.
             RefreshFolderViewModels(newlyCreatedFolderId: folder.Id);
             _logger.Debug("Folder created: {Id}", folder.Id);
         }
@@ -628,16 +638,10 @@ namespace Writersword.Modules.Characters.ViewModels
         {
             var folder = _folders.FirstOrDefault(f => f.Id == folderId);
             if (folder == null) return;
-
-            // Персонажей из удаляемой папки НЕ перемещаем — они становятся unassigned
-            // и автоматически отображаются в папке "Нераспределённые".
             _logger.Debug("Folder {Id}: {Count} characters become unassigned", folderId, folder.CharacterIds.Count);
-
             _folders.Remove(folder);
-
             if (ActiveFolderId == folderId)
                 ActiveFolderId = _folders.FirstOrDefault()?.Id;
-
             RefreshFolderViewModels();
             _logger.Debug("Folder deleted: {Id}", folderId);
         }
@@ -646,10 +650,23 @@ namespace Writersword.Modules.Characters.ViewModels
         {
             foreach (var f in _folders)
                 f.CharacterIds.Remove(characterId);
-
             var target = _folders.FirstOrDefault(f => f.Id == folderId);
             if (target != null && !target.CharacterIds.Contains(characterId))
                 target.CharacterIds.Add(characterId);
+            RefreshFolderViewModels();
+        }
+
+        public void MoveCharacterBeforeInFolder(string characterId, string targetCharId)
+        {
+            var targetFolder = _folders.FirstOrDefault(f => f.CharacterIds.Contains(targetCharId));
+            if (targetFolder == null) return;
+
+            foreach (var f in _folders)
+                f.CharacterIds.Remove(characterId);
+
+            var idx = targetFolder.CharacterIds.IndexOf(targetCharId);
+            if (idx < 0) idx = targetFolder.CharacterIds.Count;
+            targetFolder.CharacterIds.Insert(idx, characterId);
 
             RefreshFolderViewModels();
         }
@@ -684,14 +701,14 @@ namespace Writersword.Modules.Characters.ViewModels
                 if (folder.IsEditingComment)
                     folder.ConfirmCommentCommand.Execute().Subscribe();
             }
-
-            var beingNamed = Folders
-                .SelectMany(f => f.Characters)
-                .Where(c => c.IsBeingNamed)
-                .ToList();
-
-            foreach (var character in beingNamed)
-                ConfirmInlineNameCommand.Execute(character.Id).Subscribe();
+            var allChars = Folders.SelectMany(f => f.Characters).ToList();
+            foreach (var character in allChars)
+            {
+                if (character.IsBeingNamed)
+                    character.ConfirmNameCommand.Execute().Subscribe();
+                else if (character.IsRenaming)
+                    character.ConfirmRenameCommand.Execute().Subscribe();
+            }
         }
 
         public void LoadFolders(List<CharacterFolder> folders)
@@ -704,12 +721,9 @@ namespace Writersword.Modules.Characters.ViewModels
         }
     }
 
-    // ── Folder ViewModel ─────────────────────────────────────────────────
-
     public class CharacterFolderViewModel : ReactiveObject
     {
         private static readonly ILogger _logger = Log.ForContext<CharacterFolderViewModel>();
-
         private bool _isExpanded = true;
         private bool _isRenaming = false;
         private bool _isEditingComment = false;
@@ -717,18 +731,13 @@ namespace Writersword.Modules.Characters.ViewModels
         private string _name;
         private string _comment;
         private string _color;
-
         private readonly CharacterFolder _folder;
 
         public string FolderId { get; }
         public bool IsSystem { get; }
-
-        // IsUngrouped — папка "Нераспределённые", создаётся автоматически.
-        // Не имеет кнопки удаления, исчезает когда в ней не остаётся персонажей.
         public bool IsUngrouped { get; }
 
         public Action<string>? OnSelectRequested { get; set; }
-
         public ReactiveCommand<string, Unit>? EditCommand { get; set; }
         public ReactiveCommand<string, Unit>? ConfirmCommand { get; set; }
         public ReactiveCommand<string, Unit>? CancelCommand { get; set; }
@@ -810,14 +819,9 @@ namespace Writersword.Modules.Characters.ViewModels
             _color = folder.Color;
             IsSystem = folder.Id.StartsWith("default_") || folder.Id == "ungrouped";
             IsUngrouped = folder.Id == "ungrouped";
-
-            // IsRenaming устанавливается снаружи через свойство, а не через сравнение имени.
-            // Сравнение имени ненадёжно: если папка сохранена с именем совпадающим с Folder_NewName,
-            // она бы ошибочно открывалась в режиме переименования при каждой загрузке.
             _isRenaming = false;
 
             ToggleExpandCommand = ReactiveCommand.Create(() => { IsExpanded = !IsExpanded; });
-
             SelectOrRenameCommand = ReactiveCommand.Create(() =>
             {
                 if (IsSelected)
@@ -825,7 +829,6 @@ namespace Writersword.Modules.Characters.ViewModels
                 else
                     OnSelectRequested?.Invoke(FolderId);
             });
-
             StartRenameCommand = ReactiveCommand.Create(() => { IsRenaming = true; });
             ConfirmRenameCommand = ReactiveCommand.Create(() =>
             {
