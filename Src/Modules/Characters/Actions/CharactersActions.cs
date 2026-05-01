@@ -1,0 +1,170 @@
+﻿using Writersword.Core.Interfaces.Modules;
+using System;
+
+namespace Writersword.Modules.Characters.Actions
+{
+    // Переименование персонажа
+    public class RenameCharacterCommand : IUndoableCommand
+    {
+        private readonly string _characterId;
+        private readonly string _oldName;
+        private readonly string _newName;
+        private readonly Action<string, string> _applyName; // (id, name)
+
+        public string Description => $"переименование «{_oldName}»";
+
+        public RenameCharacterCommand(
+            string characterId,
+            string oldName,
+            string newName,
+            Action<string, string> applyName)
+        {
+            _characterId = characterId;
+            _oldName = oldName;
+            _newName = newName;
+            _applyName = applyName;
+        }
+
+        public void Execute() => _applyName(_characterId, _newName);
+        public void Undo() => _applyName(_characterId, _oldName);
+    }
+
+    // Переименование папки
+    public class RenameFolderCommand : IUndoableCommand
+    {
+        private readonly string _folderId;
+        private readonly string _oldName;
+        private readonly string _newName;
+        private readonly Action<string, string> _applyName;
+
+        public string Description => $"переименование папки «{_oldName}»";
+
+        public RenameFolderCommand(
+            string folderId,
+            string oldName,
+            string newName,
+            Action<string, string> applyName)
+        {
+            _folderId = folderId;
+            _oldName = oldName;
+            _newName = newName;
+            _applyName = applyName;
+        }
+
+        public void Execute() => _applyName(_folderId, _newName);
+        public void Undo() => _applyName(_folderId, _oldName);
+    }
+
+    // Удаление персонажа — Undo восстанавливает из корзины, Redo удаляет снова
+    public class DeleteCharacterCommand : IUndoableCommand
+    {
+        private readonly string _characterId;
+        private readonly string _characterName;
+        private readonly Action<string> _delete;  // удалить (переместить в корзину)
+        private readonly Action<string> _restore; // восстановить из корзины
+
+        public string Description => $"удаление «{_characterName}»";
+
+        public DeleteCharacterCommand(
+            string characterId,
+            string characterName,
+            Action<string> delete,
+            Action<string> restore)
+        {
+            _characterId = characterId;
+            _characterName = characterName;
+            _delete = delete;
+            _restore = restore;
+        }
+
+        public void Execute() => _delete(_characterId);
+        public void Undo() => _restore(_characterId);
+    }
+
+    // Перемещение персонажа (drag-and-drop)
+    public class MoveCharacterCommand : IUndoableCommand
+    {
+        private readonly string _characterId;
+        private readonly string _characterName;
+        private readonly string _fromFolderId;
+        private readonly int _fromIndex;
+        private readonly string _toFolderId;
+        private readonly int _toIndex;
+        private readonly Action<string, string, int> _applyMove; // (charId, folderId, index)
+
+        public string Description => $"перемещение «{_characterName}»";
+
+        public MoveCharacterCommand(
+            string characterId,
+            string characterName,
+            string fromFolderId,
+            int fromIndex,
+            string toFolderId,
+            int toIndex,
+            Action<string, string, int> applyMove)
+        {
+            _characterId = characterId;
+            _characterName = characterName;
+            _fromFolderId = fromFolderId;
+            _fromIndex = fromIndex;
+            _toFolderId = toFolderId;
+            _toIndex = toIndex;
+            _applyMove = applyMove;
+        }
+
+        public void Execute() => _applyMove(_characterId, _toFolderId, _toIndex);
+        public void Undo() => _applyMove(_characterId, _fromFolderId, _fromIndex);
+    }
+
+    // Изменение цвета персонажа
+    public class ChangeCharacterColorCommand : IUndoableCommand
+    {
+        private readonly string _characterId;
+        private readonly string _characterName;
+        private readonly string _oldColor;
+        private readonly string _newColor;
+        private readonly Action<string, string> _applyColor; // (id, color)
+
+        public string Description => $"изменение цвета «{_characterName}»";
+
+        public ChangeCharacterColorCommand(
+            string characterId,
+            string characterName,
+            string oldColor,
+            string newColor,
+            Action<string, string> applyColor)
+        {
+            _characterId = characterId;
+            _characterName = characterName;
+            _oldColor = oldColor;
+            _newColor = newColor;
+            _applyColor = applyColor;
+        }
+
+        public void Execute() => _applyColor(_characterId, _newColor);
+        public void Undo() => _applyColor(_characterId, _oldColor);
+    }
+
+    // Создание папки — Undo удаляет, Redo пересоздаёт с тем же id
+    public class CreateFolderCommand : IUndoableCommand
+    {
+        private readonly string _folderId;
+        private readonly Action<string> _create; // создать папку с конкретным id
+        private readonly Action<string> _delete; // удалить папку по id
+
+        public string Description => "создание папки";
+
+        public CreateFolderCommand(
+            string folderId,
+            Action<string> create,
+            Action<string> delete)
+        {
+            _folderId = folderId;
+            _create = create;
+            _delete = delete;
+        }
+
+        public void Execute() => _create(_folderId);
+        public void Undo() => _delete(_folderId);
+    }
+}

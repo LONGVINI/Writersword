@@ -1,3 +1,4 @@
+using Avalonia.Input;
 using ReactiveUI;
 using Serilog;
 using System;
@@ -5,21 +6,58 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
+using Writersword.Core.Interfaces.Modules;
+using Writersword.Modules.Characters.Actions;
 using Writersword.Modules.Characters.Interfaces;
 using Writersword.Modules.Characters.Models;
 using Writersword.Modules.Characters.Models.Enums;
+using Writersword.Modules.Characters.Services;
+using Writersword.Modules.Common;
 using Writersword.Src.Modules.Characters.Resources;
 using Writersword.Modules.Characters.ViewModels.Onboarding;
 using Writersword.Modules.Characters.ViewModels.Templates;
 
 namespace Writersword.Modules.Characters.ViewModels
 {
-    public class CharactersViewModel : ReactiveObject
+    public class CharactersViewModel : ReactiveObject, IUndoableModule
     {
         private static readonly ILogger _logger = Log.ForContext<CharactersViewModel>();
         private readonly ICharacterService _characterService;
         private readonly IRelationshipService _relationshipService;
         private readonly ICharacterAnketaService _anketaService;
+        private readonly UndoRedoStack _undoRedoStack = new(maxSteps: 100);
+        private readonly CharactersTrashService _trash;
+
+        // публичный доступ для биндинга и code-behind
+        public CharactersTrashService Trash => _trash;
+
+        // Сообщение для тоста после удаления — пустая строка = тост скрыт
+        private string _undoToastMessage = string.Empty;
+        public string UndoToastMessage
+        {
+            get => _undoToastMessage;
+            private set => this.RaiseAndSetIfChanged(ref _undoToastMessage, value);
+        }
+
+        public void ShowUndoToast(string message) => UndoToastMessage = message;
+        public void HideUndoToast() => UndoToastMessage = string.Empty;
+
+        // ── IUndoableModule ────────────────────────────────────────────────
+        public bool CanUndo => _undoRedoStack.CanUndo;
+        public bool CanRedo => _undoRedoStack.CanRedo;
+        public string? UndoDescription => _undoRedoStack.UndoDescription;
+        public string? RedoDescription => _undoRedoStack.RedoDescription;
+        public void Undo() => _undoRedoStack.Undo();
+        public void Redo() => _undoRedoStack.Redo();
+        public void PushCommand(IUndoableCommand command) => _undoRedoStack.Push(command);
+
+        // Ctrl+Z и Ctrl+Y перехватываем сами чтобы TextBox не обрабатывал их дважды
+        private static readonly IReadOnlyList<KeyGesture> _blockedGestures = new[]
+        {
+            new KeyGesture(Key.Z, KeyModifiers.Control),
+            new KeyGesture(Key.Y, KeyModifiers.Control)
+        };
+        public IReadOnlyList<KeyGesture> BlockedNativeGestures => _blockedGestures;
 
         private int _mainTabIndex = 0;
         public int MainTabIndex
@@ -151,14 +189,21 @@ namespace Writersword.Modules.Characters.ViewModels
             }
         }
 
+        // ── состояние preview-drag ─────────────────────────────────────────
+        private string? _previewDragCharId;
+        private string? _previewDragOriginalFolderId;
+        private int _previewDragOriginalIndex;
+
         public CharactersViewModel(
             ICharacterService characterService,
             IRelationshipService relationshipService,
-            ICharacterAnketaService anketaService)
+            ICharacterAnketaService anketaService,
+            CharactersTrashService trash)
         {
             _characterService = characterService;
             _relationshipService = relationshipService;
             _anketaService = anketaService;
+            _trash = trash;
 
             TemplatesViewModel = new CharactersTemplatesViewModel(anketaService, ActiveTemplateIds);
             TemplatesViewModel.OnboardingRestartRequested += () => ShowOnboarding = true;
@@ -234,14 +279,14 @@ namespace Writersword.Modules.Characters.ViewModels
             DeleteFolderCommand = ReactiveCommand.Create<string>(id =>
             {
                 var folder = _folders.FirstOrDefault(f => f.Id == id);
-                if (folder != null)
+                if (folder is not null)
                     FolderDeleteRequested?.Invoke(id, folder.Name);
             });
             ConfirmDeleteFolderCommand = ReactiveCommand.Create<string>(ConfirmDeleteFolder);
             ToggleFolderCommand = ReactiveCommand.Create<string>(id =>
             {
                 var folder = Folders.FirstOrDefault(f => f.FolderId == id);
-                if (folder != null) folder.IsExpanded = !folder.IsExpanded;
+                if (folder is not null) folder.IsExpanded = !folder.IsExpanded;
             });
 
             RefreshAll();
@@ -278,9 +323,7 @@ namespace Writersword.Modules.Characters.ViewModels
             var character = anketas.Count > 0
                 ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: false)
                 : _characterService.Create(CharactersStrings.Character_DefaultName);
-            AddCharacterToActiveFolder(character.Id);
-            RefreshFolderViewModels(inlineBeingNamedId: character.Id);
-            ApplyFilters();
+            AddCharacterToActiveFolderVm(character, isNaming: true);
             _logger.Debug("Character created (awaiting name): {Id}", character.Id);
         }
 
@@ -290,38 +333,51 @@ namespace Writersword.Modules.Characters.ViewModels
             var character = anketas.Count > 0
                 ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: true)
                 : _characterService.Create(CharactersStrings.Character_DefaultName);
-            AddCharacterToActiveFolder(character.Id);
-            RefreshFolderViewModels(inlineBeingNamedId: character.Id);
-            ApplyFilters();
+            AddCharacterToActiveFolderVm(character, isNaming: true);
         }
 
         private void CreateCollectiveCharacter()
         {
             var collective = _anketaService.GetById("builtin_collective");
-            var anketas = collective != null
+            var anketas = collective is not null
                 ? new[] { collective }
                 : System.Array.Empty<CharacterAnketa>();
             var character = _characterService.CreateCollective(CharactersStrings.Character_DefaultName, anketas);
-            AddCharacterToActiveFolder(character.Id);
-            RefreshFolderViewModels(inlineBeingNamedId: character.Id);
-            ApplyFilters();
+            AddCharacterToActiveFolderVm(character, isNaming: true);
         }
 
-        private void AddCharacterToActiveFolder(string characterId)
+        // Добавляет персонажа напрямую в VM папки без полного RefreshAll.
+        // В ~30 раз быстрее чем пересоздавать всё дерево.
+        private void AddCharacterToActiveFolderVm(Character character, bool isNaming = false)
         {
             var folderId = ActiveFolderId ?? _folders.FirstOrDefault()?.Id;
-            if (folderId != null)
+
+            // синхронизируем в модель
+            var modelFolder = _folders.FirstOrDefault(f => f.Id == folderId);
+            if (modelFolder is not null && !modelFolder.CharacterIds.Contains(character.Id))
+                modelFolder.CharacterIds.Add(character.Id);
+
+            // добавляем прямо в VM папки
+            var folderVm = Folders.FirstOrDefault(f => f.FolderId == folderId);
+            if (folderVm is not null)
             {
-                var folder = _folders.FirstOrDefault(f => f.Id == folderId);
-                if (folder != null && !folder.CharacterIds.Contains(characterId))
-                    folder.CharacterIds.Add(characterId);
+                folderVm.IsExpanded = true;
+                var relCount = _relationshipService.GetAllForCharacter(character.Id).Count;
+                var item = new CharacterListItemViewModel(character, relCount, isNaming);
+                BindCharacterItemCallbacks(item);
+                folderVm.Characters.Add(item);
+            }
+            else
+            {
+                // папка не найдена в VM — полный рефреш как fallback
+                RefreshFolderViewModels(inlineBeingNamedId: character.Id);
             }
         }
 
         private List<CharacterAnketa> GetActiveAnketas() =>
             ActiveTemplateIds
                 .Select(id => _anketaService.GetById(id))
-                .Where(a => a != null)
+                .Where(a => a is not null)
                 .Cast<CharacterAnketa>()
                 .ToList();
 
@@ -338,7 +394,7 @@ namespace Writersword.Modules.Characters.ViewModels
         public void EditCharacter(string characterId)
         {
             var character = _characterService.GetById(characterId);
-            if (character == null) return;
+            if (character is null) return;
             SelectedCharacterCard = new CharacterCardViewModel(
                 _characterService, _relationshipService, _anketaService, character);
             IsCardOpen = true;
@@ -348,16 +404,15 @@ namespace Writersword.Modules.Characters.ViewModels
 
         public void OpenCharacter(string characterId) => EditCharacter(characterId);
 
-        // Оставлен для совместимости — теперь также делегирует колбэкам через BindCharacterItemCallbacks
         private void ConfirmInlineName(string characterId)
         {
             var character = _characterService.GetById(characterId);
-            if (character == null) return;
+            if (character is null) return;
             string? newName = null;
             foreach (var folder in Folders)
             {
                 var item = folder.Characters.FirstOrDefault(c => c.Id == characterId);
-                if (item != null)
+                if (item is not null)
                 {
                     newName = string.IsNullOrWhiteSpace(item.InlineName)
                         ? CharactersStrings.Character_DefaultName
@@ -366,7 +421,7 @@ namespace Writersword.Modules.Characters.ViewModels
                     break;
                 }
             }
-            if (newName != null)
+            if (newName is not null)
             {
                 character.Name = newName;
                 _characterService.Update(character);
@@ -387,6 +442,54 @@ namespace Writersword.Modules.Characters.ViewModels
 
         private void DeleteCharacter(string characterId)
         {
+            var character = _characterService.GetById(characterId);
+            if (character is null) return;
+
+            string? folderId = null;
+            int folderIndex = 0;
+            foreach (var folderVm in Folders)
+            {
+                var item = folderVm.Characters.FirstOrDefault(c => c.Id == characterId);
+                if (item is not null)
+                {
+                    folderId = folderVm.FolderId;
+                    folderIndex = folderVm.Characters.IndexOf(item);
+                    break;
+                }
+            }
+
+            // folderId из VM; если папка не найдена в VM — берём из модели
+            if (folderId is null)
+                folderId = _folders.FirstOrDefault(f => f.CharacterIds.Contains(characterId))?.Id;
+
+            _trash.Add(character, folderId, folderIndex);
+            DeleteCharacterCore(characterId);
+
+            PushCommand(new DeleteCharacterCommand(
+                characterId,
+                character.Name,
+                id => DeleteCharacterAndAddToTrash(id),
+                id => RestoreFromTrash(id)));
+
+            ShowUndoToast($"«{character.Name}» удалён — Ctrl+Z чтобы вернуть");
+        }
+
+        // Удаляет персонажа, сначала добавив в корзину — используется для Redo
+        private void DeleteCharacterAndAddToTrash(string characterId)
+        {
+            var character = _characterService.GetById(characterId);
+            if (character is null) return;
+            var folderId = _folders.FirstOrDefault(f => f.CharacterIds.Contains(characterId))?.Id;
+            var folderIdx = 0;
+            var folder = _folders.FirstOrDefault(f => f.Id == folderId);
+            if (folder is not null) folderIdx = folder.CharacterIds.IndexOf(characterId);
+            _trash.Add(character, folderId, folderIdx);
+            DeleteCharacterCore(characterId);
+        }
+
+        // Собственно удаление из сервиса и папок — без пуша в стек
+        private void DeleteCharacterCore(string characterId)
+        {
             _characterService.Delete(characterId);
             foreach (var f in _folders) f.CharacterIds.Remove(characterId);
             if (SelectedCharacterCard?.CharacterId == characterId)
@@ -395,6 +498,26 @@ namespace Writersword.Modules.Characters.ViewModels
                 SelectedCharacterCard = null;
             }
             RefreshAll();
+            _logger.Debug("Character deleted (core): {Id}", characterId);
+        }
+
+        // Восстановление персонажа из корзины (вызывается из undo и из TrashView)
+        public void RestoreFromTrash(string characterId)
+        {
+            var result = _trash.Restore(characterId);
+            if (result is null) return;
+            var (character, origFolderId, origIndex) = result.Value;
+
+            var targetFolder = _folders.FirstOrDefault(f => f.Id == origFolderId)
+                ?? _folders.FirstOrDefault();
+            if (targetFolder is not null)
+            {
+                var clampedIdx = Math.Min(origIndex, targetFolder.CharacterIds.Count);
+                targetFolder.CharacterIds.Insert(clampedIdx, character.Id);
+            }
+
+            RefreshAll();
+            _logger.Debug("Character restored from trash: {Id}", characterId);
         }
 
         private void DuplicateCharacter(string characterId)
@@ -486,6 +609,168 @@ namespace Writersword.Modules.Characters.ViewModels
             GraphViewModel.Scale = session.GraphScale;
         }
 
+        // ── drag preview API — вызывается из code-behind ──────────────────
+
+        // Начало drag: сохраняем исходную позицию и помечаем карточку как перетаскиваемую
+        public void BeginDragPreview(string charId)
+        {
+            _previewDragCharId = charId;
+            foreach (var folder in Folders)
+            {
+                var item = folder.Characters.FirstOrDefault(c => c.Id == charId);
+                if (item is not null)
+                {
+                    _previewDragOriginalFolderId = folder.FolderId;
+                    _previewDragOriginalIndex = folder.Characters.IndexOf(item);
+                    item.IsDragging = true;
+                    _logger.Debug("BeginDragPreview: {Id} from folder {Folder} index {Idx}",
+                        charId, folder.FolderId, _previewDragOriginalIndex);
+                    return;
+                }
+            }
+        }
+
+        // Обновление preview: перемещаем карточку в ObservableCollection в реальном времени.
+        // beforeCharId=null означает вставку в конец targetFolderId.
+        public void UpdateDragPreview(string charId, string? beforeCharId, string targetFolderId)
+        {
+            if (_previewDragCharId != charId) return;
+
+            // ищем и извлекаем карточку из текущей папки
+            CharacterListItemViewModel? item = null;
+            foreach (var folder in Folders)
+            {
+                item = folder.Characters.FirstOrDefault(c => c.Id == charId);
+                if (item is not null)
+                {
+                    folder.Characters.Remove(item);
+                    break;
+                }
+            }
+            if (item is null) return;
+
+            // вставляем в целевую папку
+            var targetFolderVm = Folders.FirstOrDefault(f => f.FolderId == targetFolderId);
+            if (targetFolderVm is null)
+            {
+                // папка не найдена — возвращаем на место
+                var origFolderVm = Folders.FirstOrDefault(f => f.FolderId == _previewDragOriginalFolderId);
+                origFolderVm?.Characters.Add(item);
+                return;
+            }
+
+            if (beforeCharId is not null)
+            {
+                var beforeItem = targetFolderVm.Characters.FirstOrDefault(c => c.Id == beforeCharId);
+                var idx = beforeItem is not null
+                    ? targetFolderVm.Characters.IndexOf(beforeItem)
+                    : targetFolderVm.Characters.Count;
+                targetFolderVm.Characters.Insert(Math.Max(0, idx), item);
+            }
+            else
+            {
+                targetFolderVm.Characters.Add(item);
+            }
+        }
+
+        // Отмена drag: возвращаем карточку на исходную позицию
+        public void CancelDragPreview(string charId)
+        {
+            if (_previewDragCharId != charId) return;
+
+            CharacterListItemViewModel? item = null;
+            foreach (var folder in Folders)
+            {
+                item = folder.Characters.FirstOrDefault(c => c.Id == charId);
+                if (item is not null) { folder.Characters.Remove(item); break; }
+            }
+            if (item is null) { _previewDragCharId = null; return; }
+
+            item.IsDragging = false;
+
+            var origFolderVm = Folders.FirstOrDefault(f => f.FolderId == _previewDragOriginalFolderId);
+            if (origFolderVm is not null)
+            {
+                var clampedIdx = Math.Min(_previewDragOriginalIndex, origFolderVm.Characters.Count);
+                origFolderVm.Characters.Insert(clampedIdx, item);
+            }
+
+            _previewDragCharId = null;
+            _logger.Debug("CancelDragPreview: {Id} restored", charId);
+        }
+
+        // Фиксация drop: текущая позиция в ObservableCollection становится постоянной,
+        // синхронизируем в модель _folders
+        public void CommitDragPreview(string charId)
+        {
+            if (_previewDragCharId != charId) return;
+
+            var origFolderId = _previewDragOriginalFolderId;
+            var origIndex = _previewDragOriginalIndex;
+            string? charName = null;
+
+            foreach (var folderVm in Folders)
+            {
+                var item = folderVm.Characters.FirstOrDefault(c => c.Id == charId);
+                if (item is not null)
+                {
+                    item.IsDragging = false;
+                    charName = item.Name;
+                    var idx = folderVm.Characters.IndexOf(item);
+
+                    // синхронизируем в модель только если позиция изменилась
+                    bool posChanged = folderVm.FolderId != origFolderId || idx != origIndex;
+                    if (posChanged)
+                    {
+                        foreach (var f in _folders) f.CharacterIds.Remove(charId);
+                        var modelFolder = _folders.FirstOrDefault(f => f.Id == folderVm.FolderId);
+                        if (modelFolder is not null)
+                        {
+                            var clampedIdx = Math.Min(idx, modelFolder.CharacterIds.Count);
+                            modelFolder.CharacterIds.Insert(clampedIdx, charId);
+                        }
+
+                        // регистрируем отмену перемещения (Undo → исходная позиция, Redo → новая)
+                        if (origFolderId is not null && charName is not null)
+                        {
+                            var capturedOrigFolder = origFolderId;
+                            var capturedOrigIndex = origIndex;
+                            var capturedNewFolder = folderVm.FolderId;
+                            var capturedNewIndex = idx;
+                            PushCommand(new MoveCharacterCommand(
+                                charId, charName,
+                                capturedOrigFolder, capturedOrigIndex,
+                                capturedNewFolder, capturedNewIndex,
+                                (cid, fid, fidx) => RestoreCharacterPosition(cid, fid, fidx)));
+                        }
+
+                        _logger.Debug("CommitDragPreview: {Id} committed to folder {Folder} index {Idx}",
+                            charId, folderVm.FolderId, idx);
+                    }
+                    break;
+                }
+            }
+
+            _previewDragCharId = null;
+        }
+
+        // Восстановление позиции персонажа в папке (для undo перемещения)
+        private void RestoreCharacterPosition(string charId, string folderId, int index)
+        {
+            foreach (var f in _folders) f.CharacterIds.Remove(charId);
+            var targetFolder = _folders.FirstOrDefault(f => f.Id == folderId)
+                ?? _folders.FirstOrDefault();
+            if (targetFolder is not null)
+            {
+                var clampedIdx = Math.Min(index, targetFolder.CharacterIds.Count);
+                targetFolder.CharacterIds.Insert(clampedIdx, charId);
+            }
+            RefreshFolderViewModels();
+            _logger.Debug("RestoreCharacterPosition: {Id} -> folder {Folder} index {Idx}", charId, folderId, index);
+        }
+
+        // ── папки ─────────────────────────────────────────────────────────
+
         private readonly List<CharacterFolder> _folders = new();
 
         private void EnsureDefaultFolders()
@@ -511,7 +796,7 @@ namespace Writersword.Modules.Characters.ViewModels
                 _logger.Debug("Default folders created");
             }
             RefreshFolderViewModels();
-            if (ActiveFolderId == null)
+            if (ActiveFolderId is null)
                 ActiveFolderId = _folders.FirstOrDefault()?.Id;
         }
 
@@ -523,12 +808,22 @@ namespace Writersword.Modules.Characters.ViewModels
             _logger.Debug("RefreshFolderViewModels: {FolderCount} folders, {CharCount} characters, {UnassignedCount} unassigned",
                 _folders.Count, allChars.Count, unassigned.Count);
 
+            // сохраняем состояние раскрытия существующих папок
+            var expandedState = Folders.ToDictionary(f => f.FolderId, f => f.IsExpanded);
+
             Folders.Clear();
             foreach (var folder in _folders.OrderBy(f => f.Order))
             {
                 var capturedFolder = folder;
+
+                // новая папка всегда раскрыта; остальные — восстанавливаем предыдущее состояние
+                bool isExpanded = folder.Id == newlyCreatedFolderId
+                    ? true
+                    : expandedState.GetValueOrDefault(folder.Id, true);
+
                 var vm = new CharacterFolderViewModel(folder)
                 {
+                    IsExpanded = isExpanded,
                     IsSelected = folder.Id == ActiveFolderId,
                     IsRenaming = folder.Id == newlyCreatedFolderId,
                     OnSelectRequested = id => ActiveFolderId = id,
@@ -542,7 +837,7 @@ namespace Writersword.Modules.Characters.ViewModels
                 foreach (var id in folder.CharacterIds)
                 {
                     var c = allChars.FirstOrDefault(x => x.Id == id);
-                    if (c != null)
+                    if (c is not null)
                     {
                         var relCount = _relationshipService.GetAllForCharacter(c.Id).Count;
                         var isNaming = c.Id == inlineBeingNamedId;
@@ -556,6 +851,7 @@ namespace Writersword.Modules.Characters.ViewModels
 
             if (unassigned.Count > 0)
             {
+                bool ungroupedExpanded = expandedState.GetValueOrDefault("ungrouped", true);
                 var ungrouped = new CharacterFolderViewModel(new CharacterFolder
                 {
                     Id = "ungrouped",
@@ -565,6 +861,7 @@ namespace Writersword.Modules.Characters.ViewModels
                     Order = 999
                 })
                 {
+                    IsExpanded = ungroupedExpanded,
                     IsSelected = "ungrouped" == ActiveFolderId,
                     IsRenaming = false,
                     OnSelectRequested = id => ActiveFolderId = id,
@@ -591,18 +888,40 @@ namespace Writersword.Modules.Characters.ViewModels
             item.OnConfirmName = (id, name) =>
             {
                 var character = _characterService.GetById(id);
-                if (character == null) return;
+                if (character is null) return;
+                var oldName = character.Name;
+                if (oldName == name) return;
+
                 character.Name = name;
                 _characterService.Update(character);
                 ApplyFilters();
-                _logger.Debug("Character name saved via callback: {Id} = '{Name}'", id, name);
+
+                PushCommand(new RenameCharacterCommand(id, oldName, name, (cid, n) =>
+                {
+                    var c = _characterService.GetById(cid);
+                    if (c is null) return;
+                    c.Name = n;
+                    _characterService.Update(c);
+                    // обновляем VM напрямую — не через команду чтобы не пушить снова в стек
+                    foreach (var folder in Folders)
+                    {
+                        var vm = folder.Characters.FirstOrDefault(x => x.Id == cid);
+                        if (vm is not null)
+                        {
+                            vm.Name = n; // напрямую через setter (он реактивный)
+                            break;
+                        }
+                    }
+                    ApplyFilters();
+                }));
+
+                _logger.Debug("Character name saved: {Id} = '{Name}'", id, name);
             };
 
             item.OnCancelNewCharacter = (id) =>
             {
                 _characterService.Delete(id);
-                foreach (var f in _folders)
-                    f.CharacterIds.Remove(id);
+                foreach (var f in _folders) f.CharacterIds.Remove(id);
                 RefreshFolderViewModels();
                 ApplyFilters();
                 _logger.Debug("New character creation cancelled, deleted: {Id}", id);
@@ -613,10 +932,27 @@ namespace Writersword.Modules.Characters.ViewModels
             item.OnColorChanged = (id, color) =>
             {
                 var character = _characterService.GetById(id);
-                if (character == null) return;
+                if (character is null) return;
+                var oldColor = character.Color;
+                if (oldColor == color) return;
+
                 character.Color = color;
                 _characterService.Update(character);
-                _logger.Debug("Character color changed via callback: {Id} = {Color}", id, color);
+
+                PushCommand(new ChangeCharacterColorCommand(id, character.Name, oldColor, color, (cid, c) =>
+                {
+                    var ch = _characterService.GetById(cid);
+                    if (ch is null) return;
+                    ch.Color = c;
+                    _characterService.Update(ch);
+                    foreach (var folder in Folders)
+                    {
+                        var vm = folder.Characters.FirstOrDefault(x => x.Id == cid);
+                        if (vm is not null) { vm.Color = c; break; }
+                    }
+                }));
+
+                _logger.Debug("Character color changed: {Id} = {Color}", id, color);
             };
         }
 
@@ -631,13 +967,20 @@ namespace Writersword.Modules.Characters.ViewModels
             _folders.Add(folder);
             ActiveFolderId = folder.Id;
             RefreshFolderViewModels(newlyCreatedFolderId: folder.Id);
+
+            // регистрируем отмену создания папки (Undo = удалить, Redo = пересоздать)
+            PushCommand(new CreateFolderCommand(
+                folder.Id,
+                id => RestoreFolderById(id),
+                id => ConfirmDeleteFolder(id)));
+
             _logger.Debug("Folder created: {Id}", folder.Id);
         }
 
         private void ConfirmDeleteFolder(string folderId)
         {
             var folder = _folders.FirstOrDefault(f => f.Id == folderId);
-            if (folder == null) return;
+            if (folder is null) return;
             _logger.Debug("Folder {Id}: {Count} characters become unassigned", folderId, folder.CharacterIds.Count);
             _folders.Remove(folder);
             if (ActiveFolderId == folderId)
@@ -646,12 +989,27 @@ namespace Writersword.Modules.Characters.ViewModels
             _logger.Debug("Folder deleted: {Id}", folderId);
         }
 
+        // Восстанавливает папку по id (для Redo после CreateFolderCommand.Undo)
+        private void RestoreFolderById(string folderId)
+        {
+            if (_folders.Any(f => f.Id == folderId)) return;
+            var folder = new CharacterFolder
+            {
+                Id = folderId,
+                Name = CharactersStrings.Folder_NewName,
+                Order = _folders.Count
+            };
+            _folders.Add(folder);
+            ActiveFolderId = folder.Id;
+            RefreshFolderViewModels(newlyCreatedFolderId: folderId);
+            _logger.Debug("Folder restored by id: {Id}", folderId);
+        }
+
         public void MoveCharacterToFolder(string characterId, string folderId)
         {
-            foreach (var f in _folders)
-                f.CharacterIds.Remove(characterId);
+            foreach (var f in _folders) f.CharacterIds.Remove(characterId);
             var target = _folders.FirstOrDefault(f => f.Id == folderId);
-            if (target != null && !target.CharacterIds.Contains(characterId))
+            if (target is not null && !target.CharacterIds.Contains(characterId))
                 target.CharacterIds.Add(characterId);
             RefreshFolderViewModels();
         }
@@ -659,15 +1017,11 @@ namespace Writersword.Modules.Characters.ViewModels
         public void MoveCharacterBeforeInFolder(string characterId, string targetCharId)
         {
             var targetFolder = _folders.FirstOrDefault(f => f.CharacterIds.Contains(targetCharId));
-            if (targetFolder == null) return;
-
-            foreach (var f in _folders)
-                f.CharacterIds.Remove(characterId);
-
+            if (targetFolder is null) return;
+            foreach (var f in _folders) f.CharacterIds.Remove(characterId);
             var idx = targetFolder.CharacterIds.IndexOf(targetCharId);
             if (idx < 0) idx = targetFolder.CharacterIds.Count;
             targetFolder.CharacterIds.Insert(idx, characterId);
-
             RefreshFolderViewModels();
         }
 
@@ -728,6 +1082,7 @@ namespace Writersword.Modules.Characters.ViewModels
         private bool _isRenaming = false;
         private bool _isEditingComment = false;
         private bool _isSelected = false;
+        private bool _isDragOver = false;
         private string _name;
         private string _comment;
         private string _color;
@@ -756,21 +1111,13 @@ namespace Writersword.Modules.Characters.ViewModels
         public string Name
         {
             get => _name;
-            set
-            {
-                this.RaiseAndSetIfChanged(ref _name, value);
-                _folder.Name = value;
-            }
+            set { this.RaiseAndSetIfChanged(ref _name, value); _folder.Name = value; }
         }
 
         public string Comment
         {
             get => _comment;
-            set
-            {
-                this.RaiseAndSetIfChanged(ref _comment, value);
-                _folder.Comment = value;
-            }
+            set { this.RaiseAndSetIfChanged(ref _comment, value); _folder.Comment = value; }
         }
 
         public string Color
@@ -808,6 +1155,13 @@ namespace Writersword.Modules.Characters.ViewModels
             set => this.RaiseAndSetIfChanged(ref _isSelected, value);
         }
 
+        // true когда папка закрыта и над ней висит drag — подсвечивает заголовок
+        public bool IsDragOver
+        {
+            get => _isDragOver;
+            set => this.RaiseAndSetIfChanged(ref _isDragOver, value);
+        }
+
         public int Count => Characters.Count;
 
         public CharacterFolderViewModel(CharacterFolder folder)
@@ -821,13 +1175,14 @@ namespace Writersword.Modules.Characters.ViewModels
             IsUngrouped = folder.Id == "ungrouped";
             _isRenaming = false;
 
+            // Count биндится в AXAML, нужно уведомлять при изменении коллекции
+            Characters.CollectionChanged += (_, _) => this.RaisePropertyChanged(nameof(Count));
+
             ToggleExpandCommand = ReactiveCommand.Create(() => { IsExpanded = !IsExpanded; });
             SelectOrRenameCommand = ReactiveCommand.Create(() =>
             {
-                if (IsSelected)
-                    IsRenaming = true;
-                else
-                    OnSelectRequested?.Invoke(FolderId);
+                if (IsSelected) IsRenaming = true;
+                else OnSelectRequested?.Invoke(FolderId);
             });
             StartRenameCommand = ReactiveCommand.Create(() => { IsRenaming = true; });
             ConfirmRenameCommand = ReactiveCommand.Create(() =>

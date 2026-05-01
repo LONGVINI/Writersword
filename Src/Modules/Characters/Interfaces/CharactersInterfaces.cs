@@ -28,6 +28,7 @@ namespace Writersword.Modules.Characters.Interfaces
         CharactersModuleData GetModuleData();
         void LoadModuleData(CharactersModuleData data);
         void SetContext(object? context);
+        Character CreateWithId(Character character);
     }
 
     public interface IRelationshipService

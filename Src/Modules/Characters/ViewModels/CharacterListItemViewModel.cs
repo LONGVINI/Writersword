@@ -12,6 +12,7 @@ namespace Writersword.Modules.Characters.ViewModels
         private bool _isRenaming;
         private string _pendingRename = string.Empty;
         private bool _isSelected;
+        private bool _isDragging;
         private string _name;
         private string _color;
 
@@ -20,7 +21,7 @@ namespace Writersword.Modules.Characters.ViewModels
         public string Name
         {
             get => _name;
-            private set => this.RaiseAndSetIfChanged(ref _name, value);
+            internal set => this.RaiseAndSetIfChanged(ref _name, value);
         }
 
         public string ShortDescription { get; }
@@ -78,12 +79,27 @@ namespace Writersword.Modules.Characters.ViewModels
             set => this.RaiseAndSetIfChanged(ref _isSelected, value);
         }
 
+        // true пока карточка физически перетаскиваетс€ Ч делает еЄ полупрозрачной
+        // и отключает hit-тест чтобы не мешать определению цели вставки
+        public bool IsDragging
+        {
+            get => _isDragging;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _isDragging, value);
+                this.RaisePropertyChanged(nameof(DragOpacity));
+            }
+        }
+
+        // 0.25 во врем€ drag, 1.0 в обычном состо€нии Ч биндитс€ к Opacity карточки
+        public double DragOpacity => _isDragging ? 0.25 : 1.0;
+
         // true когда не в режиме ввода/переименовани€ Ч показывает нормальное отображение
         public bool IsShowingNameDisplay => !_isBeingNamed && !_isRenaming;
 
         // колбэки, устанавливаютс€ родительским ViewModel
         public Action<string, string>? OnConfirmName { get; set; }    // (id, newName)
-        public Action<string>? OnCancelNewCharacter { get; set; }     // (id) Ч отмена нового персонажа = удаление
+        public Action<string>? OnCancelNewCharacter { get; set; }     // (id)
         public Action<string>? OnDeleteRequested { get; set; }        // (id)
         public Action<string, string>? OnColorChanged { get; set; }   // (id, newColor)
 

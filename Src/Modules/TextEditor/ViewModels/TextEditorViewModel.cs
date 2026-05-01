@@ -130,6 +130,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             var docVm = new DocumentViewModel(document, _chunkManager, _autoReplace, _spellCheck);
             docVm.CursorContextChanged += OnCursorContextChanged;
+            // Устанавливаем начальный активный параграф чтобы команды тулбара
+            // (Bold, Italic и др.) работали без предварительного клика в канвас.
+            if (docVm.Paragraphs.Count > 0)
+                docVm.SetActiveParagraph(docVm.Paragraphs[0]);
             DocumentViewModel = docVm;
 
             _paragraphsSubscription?.Dispose();

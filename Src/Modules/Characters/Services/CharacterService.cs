@@ -114,14 +114,23 @@ namespace Writersword.Modules.Characters.Services
                 Parameters = original.Parameters.Select(p => new CharacterParameter
                 {
                     Id = Guid.NewGuid().ToString(),
-                    Name = p.Name, Type = p.Type, GroupName = p.GroupName,
-                    Description = p.Description, MinValue = p.MinValue, MaxValue = p.MaxValue,
-                    NumericValue = p.NumericValue, Step = p.Step,
-                    MinDescription = p.MinDescription, MaxDescription = p.MaxDescription,
+                    Name = p.Name,
+                    Type = p.Type,
+                    GroupName = p.GroupName,
+                    Description = p.Description,
+                    MinValue = p.MinValue,
+                    MaxValue = p.MaxValue,
+                    NumericValue = p.NumericValue,
+                    Step = p.Step,
+                    MinDescription = p.MinDescription,
+                    MaxDescription = p.MaxDescription,
                     ScalePoints = new System.Collections.Generic.Dictionary<double, string>(p.ScalePoints),
-                    States = new List<string>(p.States), CurrentStateIndex = p.CurrentStateIndex,
-                    TextValue = p.TextValue, BoolValue = p.BoolValue,
-                    TrueLabel = p.TrueLabel, FalseLabel = p.FalseLabel,
+                    States = new List<string>(p.States),
+                    CurrentStateIndex = p.CurrentStateIndex,
+                    TextValue = p.TextValue,
+                    BoolValue = p.BoolValue,
+                    TrueLabel = p.TrueLabel,
+                    FalseLabel = p.FalseLabel,
                     Order = p.Order
                 }).ToList(),
                 IsCollective = original.IsCollective,
@@ -189,5 +198,17 @@ namespace Writersword.Modules.Characters.Services
             if (data.Characters != null) _characters.AddRange(data.Characters);
             _logger.Debug("Module data loaded: {Count} characters", _characters.Count);
         }
+
+        public Character CreateWithId(Character character)
+        {
+            var existing = _characters.FirstOrDefault(c => c.Id == character.Id);
+            if (existing != null)
+                return existing;
+
+            _characters.Add(character);
+            _logger.Debug("Character restored with original Id: {Id} = '{Name}'", character.Id, character.Name);
+            return character;
+        }
+
     }
 }

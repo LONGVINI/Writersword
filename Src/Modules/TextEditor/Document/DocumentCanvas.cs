@@ -230,8 +230,9 @@ namespace Writersword.Modules.TextEditor.Document
         private sealed class ClipboardBlock
         {
             public ClipboardBlockKind Kind { get; set; }
-            public string? Text { get; set; }       // для Paragraph
-            public TableBlock? Table { get; set; }  // для Table (уже слайснутая)
+            public string? Text { get; set; }           // plain-text для Paragraph (fallback)
+            public ParagraphBlock? Block { get; set; }  // полная модель параграфа (стили + runs)
+            public TableBlock? Table { get; set; }      // для Table (уже слайснутая)
         }
 
         // ── Рендеринг ─────────────────────────────────────────────────────
@@ -478,6 +479,9 @@ namespace Writersword.Modules.TextEditor.Document
                 DocVm.OnPageBreakInserted = block => _pendingFocusBlock = block;
                 DocVm.UndoDelegate = ExecuteUndo;
                 DocVm.RedoDelegate = ExecuteRedo;
+                DocVm.CutDelegate = ExecuteCut;
+                DocVm.CopyDelegate = ExecuteCopy;
+                DocVm.PasteDelegate = ExecutePaste;
                 foreach (var pvm in DocVm.Paragraphs)
                     WirePvm(pvm);
             }

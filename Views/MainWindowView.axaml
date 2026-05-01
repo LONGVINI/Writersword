@@ -26,19 +26,30 @@
               Background="{DynamicResource BgPanelBrush}"
               UseLayoutRounding="True">
 
-			<StackPanel x:Name="TitleBarContent"
-                        Orientation="Horizontal"
-                        HorizontalAlignment="Left"
-                        VerticalAlignment="Top">
-				<Image Source="avares://Writersword/Resources/Images/icon.ico"
-                       Width="16" Height="16"
-                       Margin="10,8,8,0"
-                       VerticalAlignment="Top"
-                       RenderOptions.BitmapInterpolationMode="HighQuality"/>
-				<menubar:MenuBarView VerticalAlignment="Top" DataContext="{Binding MenuBar}"/>
-			</StackPanel>
+			<Grid.ColumnDefinitions>
+				<!-- Иконка -->
+				<ColumnDefinition Width="Auto"/>
+				<!-- MenuBar — получает реальную ограниченную ширину, иначе WrapPanel
+                     не знает когда переноситься: горизонтальный StackPanel давал
+                     детям бесконечную ширину, SizeChanged никогда не стрелял. -->
+				<ColumnDefinition Width="*"/>
+				<!-- Кнопки окна -->
+				<ColumnDefinition Width="Auto"/>
+			</Grid.ColumnDefinitions>
 
-			<StackPanel x:Name="WindowButtonsPanel"
+			<Image Grid.Column="0"
+                   Source="avares://Writersword/Resources/Images/icon.ico"
+                   Width="16" Height="16"
+                   Margin="10,8,8,0"
+                   VerticalAlignment="Top"
+                   RenderOptions.BitmapInterpolationMode="HighQuality"/>
+
+			<menubar:MenuBarView Grid.Column="1"
+                                 VerticalAlignment="Top"
+                                 DataContext="{Binding MenuBar}"/>
+
+			<StackPanel Grid.Column="2"
+                        x:Name="WindowButtonsPanel"
                         Orientation="Horizontal"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Top"

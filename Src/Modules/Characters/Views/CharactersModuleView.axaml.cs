@@ -24,6 +24,7 @@ namespace Writersword.Modules.Characters.Views
         private static readonly ILogger _log = Log.ForContext<CharactersModuleView>();
 
         private IDisposable? _subscription;
+        private IDisposable? _toastSubscription;
         private readonly List<IDisposable> _folderSubscriptions = new();
 
         private TopLevel? _topLevel;
@@ -45,34 +46,48 @@ namespace Writersword.Modules.Characters.Views
         {
             base.OnAttachedToVisualTree(e);
             _topLevel = TopLevel.GetTopLevel(this);
+            // Регистрируем на TopLevel с Tunnel чтобы Ctrl+Z всегда перехватывался
+            // независимо от того, где сейчас фокус (после RefreshAll фокус теряется).
+            _topLevel?.AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
             AddHandler(TextBox.LostFocusEvent, OnTextBoxLostFocus, RoutingStrategies.Bubble);
-            AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Bubble);
             _log.Debug("CharactersModuleView attached to visual tree");
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnDetachedFromVisualTree(e);
+            _topLevel?.RemoveHandler(KeyDownEvent, OnKeyDown);
             _topLevel = null;
             CommitAllPendingEdits();
             RemoveHandler(TextBox.LostFocusEvent, OnTextBoxLostFocus);
-            RemoveHandler(KeyDownEvent, OnKeyDown);
             _log.Debug("CharactersModuleView detached");
         }
 
         private void OnLoaded(object? sender, RoutedEventArgs e)
         {
             _tabContent = this.FindControl<ContentControl>("TabContent");
-            if (DataContext is CharactersViewModel vm)
-                SwitchTab(vm.MainTabIndex);
+
+            // кнопка закрытия тоста
+            var dismissBtn = this.FindControl<Button>("ToastDismissButton");
+            if (dismissBtn is not null)
+                dismissBtn.Click += (_, _) =>
+                {
+                    if (DataContext is CharactersViewModel vm)
+                        vm.HideUndoToast();
+                };
+
+            if (DataContext is CharactersViewModel vm2)
+                SwitchTab(vm2.MainTabIndex);
             else
                 SwitchTab(0);
+
             _log.Debug("CharactersModuleView loaded");
         }
 
         private void OnDataContextChanged(object? sender, EventArgs e)
         {
             _subscription?.Dispose();
+            _toastSubscription?.Dispose();
 
             foreach (var d in _folderSubscriptions) d.Dispose();
             _folderSubscriptions.Clear();
@@ -88,12 +103,18 @@ namespace Writersword.Modules.Characters.Views
                 vm.FolderDeleteRequested += OnFolderDeleteRequested;
                 _subscription = vm.WhenAnyValue(x => x.MainTabIndex).Subscribe(SwitchTab);
 
+                // автоскрытие тоста через 4 секунды после появления
+                _toastSubscription = vm.WhenAnyValue(x => x.UndoToastMessage)
+                    .Where(msg => !string.IsNullOrEmpty(msg))
+                    .Throttle(TimeSpan.FromSeconds(4))
+                    .Subscribe(_ => Dispatcher.UIThread.Post(() => vm.HideUndoToast()));
+
                 foreach (var folder in vm.Folders)
                     SubscribeToFolderCommentEditing(folder);
 
                 vm.Folders.CollectionChanged += (_, args) =>
                 {
-                    if (args.NewItems != null)
+                    if (args.NewItems is not null)
                         foreach (CharacterFolderViewModel f in args.NewItems)
                             SubscribeToFolderCommentEditing(f);
                 };
@@ -126,7 +147,7 @@ namespace Writersword.Modules.Characters.Views
                     Dispatcher.UIThread.Post(() =>
                     {
                         var box = FindDescendantWithDataContext<TextBox>(this, folder, "FolderCommentBox");
-                        if (box == null || !box.IsVisible)
+                        if (box is null || !box.IsVisible)
                         {
                             _log.Debug("FolderCommentEditing: box not visible for {Id}", folder.FolderId);
                             return;
@@ -146,7 +167,7 @@ namespace Writersword.Modules.Characters.Views
                 if (child is T typed && typed.Name == name)
                 {
                     Visual? v = typed;
-                    while (v != null)
+                    while (v is not null)
                     {
                         if (v is Control c && c.DataContext == dataContext)
                             return typed;
@@ -155,14 +176,14 @@ namespace Writersword.Modules.Characters.Views
                     }
                 }
                 var found = FindDescendantWithDataContext<T>(child, dataContext, name);
-                if (found != null) return found;
+                if (found is not null) return found;
             }
             return null;
         }
 
         private void SwitchTab(int index)
         {
-            if (_tabContent == null) return;
+            if (_tabContent is null) return;
             _log.Debug("SwitchTab: index={Index}", index);
 
             var vm = DataContext as CharactersViewModel;
@@ -208,7 +229,7 @@ namespace Writersword.Modules.Characters.Views
             _log.Debug("OnTextBoxLostFocus: src={Name}", src.Name);
 
             var folderVm = FindAncestor<CharacterFolderViewModel>(src);
-            if (folderVm != null)
+            if (folderVm is not null)
             {
                 if (folderVm.IsRenaming)
                 {
@@ -235,13 +256,30 @@ namespace Writersword.Modules.Characters.Views
 
         private void OnKeyDown(object? sender, KeyEventArgs e)
         {
+            // Проверяем что этот модуль сейчас в визуальном дереве и видим
+            if (!IsEffectivelyVisible) return;
+
+            // Ctrl+Z / Ctrl+Y перехватываем первыми — до TextBox-ов,
+            // чтобы не было двойной обработки (TextBox тоже умеет Ctrl+Z).
+            if (DataContext is CharactersViewModel vm)
+            {
+                if (e.Key == Key.Z && e.KeyModifiers == KeyModifiers.Control)
+                {
+                    if (vm.CanUndo) { vm.Undo(); vm.HideUndoToast(); e.Handled = true; return; }
+                }
+                if (e.Key == Key.Y && e.KeyModifiers == KeyModifiers.Control)
+                {
+                    if (vm.CanRedo) { vm.Redo(); e.Handled = true; return; }
+                }
+            }
+
             if (e.Source is not Control src) return;
             bool isEsc = e.Key == Key.Escape;
             bool isEnter = e.Key == Key.Return;
             if (!isEsc && !isEnter) return;
 
             var folderVm = FindAncestor<CharacterFolderViewModel>(src);
-            if (folderVm != null)
+            if (folderVm is not null)
             {
                 if (folderVm.IsRenaming)
                 {
@@ -269,7 +307,7 @@ namespace Writersword.Modules.Characters.Views
         private static T? FindAncestor<T>(Control ctrl) where T : class
         {
             Visual? v = ctrl;
-            while (v != null)
+            while (v is not null)
             {
                 if (v is Control c && c.DataContext is T result) return result;
                 v = v.GetVisualParent();

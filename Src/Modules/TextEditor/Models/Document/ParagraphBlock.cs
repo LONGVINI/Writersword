@@ -122,6 +122,112 @@ namespace Writersword.Modules.TextEditor.Models.Document
         }
 
         /// <summary>
+        /// Вставляет/удаляет текст в диапазоне [from, to) с сохранением форматирования.
+        /// Используется для всех операций редактирования (ввод, Delete, Backspace).
+        /// В отличие от SetPlainText, не уничтожает RunProperties.
+        /// </summary>
+        public void SpliceText(int from, int to, string insert)
+        {
+            // Строим плоский список символов с их форматированием.
+            var chars = new List<(char ch, Models.Inline.RunProperties? props)>();
+            foreach (var chunk in Chunks)
+                foreach (var run in chunk.Runs)
+                    foreach (var ch in run.Text)
+                        chars.Add((ch, run.Properties));
+
+            int len = chars.Count;
+            from = Math.Max(0, Math.Min(from, len));
+            to = Math.Max(from, Math.Min(to, len));
+
+            // Удаляем диапазон.
+            if (to > from)
+                chars.RemoveRange(from, to - from);
+
+            // Определяем свойства для вставляемого текста:
+            // берём форматирование символа в позиции вставки (или предыдущего).
+            Models.Inline.RunProperties? insertProps = null;
+            if (from < chars.Count)
+                insertProps = chars[from].props;
+            else if (from > 0)
+                insertProps = chars[from - 1].props;
+
+            // Вставляем новые символы.
+            for (int i = 0; i < insert.Length; i++)
+                chars.Insert(from + i, (insert[i], insertProps));
+
+            // Реконструируем чанки/раны, объединяя соседние символы с одинаковым форматированием.
+            Chunks.Clear();
+            var newChunk = new TextChunk();
+            Chunks.Add(newChunk);
+
+            if (chars.Count == 0)
+            {
+                newChunk.Runs.Add(new Models.Inline.RunModel { Text = string.Empty });
+                InvalidateAllChunks();
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            var currentProps = chars[0].props;
+
+            foreach (var (ch, props) in chars)
+            {
+                bool sameProps = ReferenceEquals(props, currentProps)
+                    || RunPropertiesEqual(props, currentProps);
+
+                if (!sameProps)
+                {
+                    newChunk.Runs.Add(new Models.Inline.RunModel
+                    {
+                        Text = sb.ToString(),
+                        Properties = currentProps
+                    });
+                    sb.Clear();
+                    currentProps = props;
+                }
+                sb.Append(ch);
+            }
+
+            newChunk.Runs.Add(new Models.Inline.RunModel
+            {
+                Text = sb.ToString(),
+                Properties = currentProps
+            });
+
+            InvalidateAllChunks();
+        }
+
+        /// <summary>
+        /// Сравнивает два RunProperties по значению всех полей.
+        /// Null == Null и Null == default (все поля false/null).
+        /// </summary>
+        private static bool RunPropertiesEqual(
+            Models.Inline.RunProperties? a,
+            Models.Inline.RunProperties? b)
+        {
+            if (ReferenceEquals(a, b)) return true;
+
+            bool aDefault = a is null || a.IsDefault();
+            bool bDefault = b is null || b.IsDefault();
+            if (aDefault && bDefault) return true;
+            if (aDefault || bDefault) return false;
+
+            return a!.FontFamily == b!.FontFamily
+                && a.FontSize == b.FontSize
+                && a.IsBold == b.IsBold
+                && a.IsItalic == b.IsItalic
+                && a.IsUnderline == b.IsUnderline
+                && a.IsStrikethrough == b.IsStrikethrough
+                && a.IsSuperscript == b.IsSuperscript
+                && a.IsSubscript == b.IsSubscript
+                && a.IsAllCaps == b.IsAllCaps
+                && a.IsSmallCaps == b.IsSmallCaps
+                && a.TextColor == b.TextColor
+                && a.HighlightColor == b.HighlightColor
+                && a.Language == b.Language;
+        }
+
+        /// <summary>
         /// Сбрасывает кешированные длины всех чанков.
         /// Вызывать после bulk-операций с текстом.
         /// </summary>

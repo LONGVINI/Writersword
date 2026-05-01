@@ -51,7 +51,8 @@ namespace Writersword.Modules.Characters
         public override void Initialize()
         {
             if (_characterService is CharacterService cs) cs.SetContext(Context);
-            _viewModel = new CharactersViewModel(_characterService, _relationshipService, _anketaService);
+            var trashService = new CharactersTrashService(_characterService);
+            _viewModel = new CharactersViewModel(_characterService, _relationshipService, _anketaService, trashService);
 
             // Синхронизируем культуру модуля с текущим языком приложения.
             // CharactersStrings имеет собственный статический Culture, который

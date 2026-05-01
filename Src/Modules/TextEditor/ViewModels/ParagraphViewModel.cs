@@ -119,6 +119,19 @@ namespace Writersword.Modules.TextEditor.ViewModels.Blocks
         }
 
         /// <summary>
+        /// Синхронизирует кеш _plainText с актуальным содержимым модели.
+        /// Используется после прямой модификации Model.Chunks без вызова SetPlainText,
+        /// чтобы не затирать уже записанные runs.
+        /// Передаём имя свойства явно — [CallerMemberName] подставил бы имя метода,
+        /// а не "PlainText", и OnPvmPropertyChanged не запустил бы ScheduleRebuild.
+        /// </summary>
+        public void RefreshPlainTextFromModel()
+        {
+            var fresh = _model.GetPlainText();
+            this.RaiseAndSetIfChanged(ref _plainText, fresh, nameof(PlainText));
+        }
+
+        /// <summary>
         /// Удаляет все параграфы с IsSelected = true.
         /// Вызывается при Delete/Backspace/Ctrl+X когда есть document-level выделение.
         /// </summary>

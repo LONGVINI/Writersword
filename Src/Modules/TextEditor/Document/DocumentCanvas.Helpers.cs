@@ -152,7 +152,8 @@ namespace Writersword.Modules.TextEditor.Document
                 string t = sVm.PlainText ?? "";
                 int s2 = Clamp(sc, 0, t.Length);
                 int e2 = Clamp(ec, 0, t.Length);
-                sVm.PlainText = t[..s2] + t[e2..];
+                sVm.Model.SpliceText(s2, e2, string.Empty);
+                sVm.RefreshPlainTextFromModel();
                 _caretChar = s2;
             }
             else if (!IsInCell(sp) && !IsInCell(ep))
@@ -170,7 +171,9 @@ namespace Writersword.Modules.TextEditor.Document
                     if (di < (DocVm?.Paragraphs.Count ?? 0))
                         toDelete.Add(DocVm!.Paragraphs[di]);
 
-                sVm.PlainText = st[..s2] + et[e2..];
+                // Удаляем хвост первого параграфа и голову последнего, сохраняя форматирование.
+                sVm.Model.SpliceText(s2, st.Length, et[e2..]);
+                sVm.RefreshPlainTextFromModel();
                 foreach (var p in toDelete) DocVm?.DeleteParagraph(p);
                 _caretChar = s2;
             }
@@ -261,7 +264,7 @@ namespace Writersword.Modules.TextEditor.Document
                         int to2 = (i == ep) ? Clamp(ec, 0, t2.Length) : t2.Length;
                         if (from2 > to2) to2 = from2;
                         string txt2 = t2[from2..to2];
-                        blocks.Add(new ClipboardBlock { Kind = ClipboardBlockKind.Paragraph, Text = txt2 });
+                        blocks.Add(new ClipboardBlock { Kind = ClipboardBlockKind.Paragraph, Text = txt2, Block = CloneParagraphBlock(pvm.Model, from2, to2) });
                         plainParts.Add(txt2);
                     }
                     continue;
@@ -278,7 +281,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (from > to) to = from;
                 string text = t[from..to];
 
-                blocks.Add(new ClipboardBlock { Kind = ClipboardBlockKind.Paragraph, Text = text });
+                blocks.Add(new ClipboardBlock { Kind = ClipboardBlockKind.Paragraph, Text = text, Block = CloneParagraphBlock(pvm.Model, from, to) });
                 plainParts.Add(text);
             }
 
@@ -398,6 +401,75 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
+        /// <summary>
+        /// Создаёт глубокую копию ParagraphBlock для внутреннего буфера обмена.
+        /// При полном выделении (from==0, to==длина текста) копирует все chunks/runs с форматированием.
+        /// При частичном выделении копирует только Properties и срезанный plain-text.
+        /// </summary>
+        private static ParagraphBlock CloneParagraphBlock(ParagraphBlock src, int from, int to)
+        {
+            var dst = new ParagraphBlock();
+            dst.Properties = src.Properties.Clone();
+            dst.ListProperties = src.ListProperties?.Clone();
+
+            string fullText = src.GetPlainText();
+            from = Math.Max(0, Math.Min(from, fullText.Length));
+            to = Math.Max(from, Math.Min(to, fullText.Length));
+            bool isFull = from == 0 && to == fullText.Length;
+
+            if (isFull)
+            {
+                dst.Chunks.Clear();
+                foreach (var chunk in src.Chunks)
+                {
+                    var dstChunk = new TextChunk();
+                    foreach (var run in chunk.Runs)
+                        dstChunk.Runs.Add(run.Clone());
+                    dst.Chunks.Add(dstChunk);
+                }
+                if (dst.Chunks.Count == 0)
+                    dst.Chunks.Add(new TextChunk());
+            }
+            else
+            {
+                dst.SetPlainText(fullText[from..to]);
+            }
+
+            return dst;
+        }
+
+        /// <summary>
+        /// Применяет сохранённый ClipboardBlock к только что созданному ParagraphViewModel:
+        /// восстанавливает Properties (отступы, выравнивание, стиль) и runs (форматирование текста).
+        /// </summary>
+        private static void ApplyClipboardParagraph(ParagraphViewModel nv, ClipboardBlock block)
+        {
+            if (block.Block != null)
+            {
+                nv.Model.Properties = block.Block.Properties.Clone();
+                nv.Model.ListProperties = block.Block.ListProperties?.Clone();
+
+                nv.Model.Chunks.Clear();
+                foreach (var chunk in block.Block.Chunks)
+                {
+                    var c = new TextChunk();
+                    foreach (var run in chunk.Runs)
+                        c.Runs.Add(run.Clone());
+                    nv.Model.Chunks.Add(c);
+                }
+                if (nv.Model.Chunks.Count == 0)
+                    nv.Model.Chunks.Add(new TextChunk());
+                nv.Model.InvalidateAllChunks();
+
+                // Синхронизируем кеш PlainText в VM без перезаписи chunks.
+                nv.RefreshPlainTextFromModel();
+            }
+            else
+            {
+                nv.PlainText = block.Text ?? "";
+            }
+        }
+
         private async Task PasteAsync()
         {
             // Внутренний буфер используется только когда есть таблицы.
@@ -407,8 +479,9 @@ namespace Writersword.Modules.TextEditor.Document
                 var opts = new JsonSerializerOptions();
                 var blocks = JsonSerializer.Deserialize<List<ClipboardBlock>>(_internalClipboardJson, opts);
                 bool hasTable = blocks?.Any(b => b.Kind == ClipboardBlockKind.Table && b.Table != null) == true;
+                _ = hasTable; // используется для совместимости с будущими расширениями
 
-                if (hasTable && blocks != null)
+                if (blocks != null)
                 {
                     BeginEdit("Paste");
 
@@ -420,26 +493,53 @@ namespace Writersword.Modules.TextEditor.Document
                     _rebuildCts.Cancel();
                     _rebuildCts = new System.Threading.CancellationTokenSource();
 
+                    // Отслеживаем позицию вставки через модель (не через _layouts / _caretPara),
+                    // потому что AddParagraphAfter не перестраивает _layouts между итерациями,
+                    // а InsertTableBlockAfterParagraph вызывает RebuildParagraphViewModels и
+                    // инвалидирует все ссылки на ParagraphViewModel.
+                    ParagraphBlock? anchorBlock = GetVmAt(_caretPara)?.Model;
+                    if (anchorBlock == null)
+                    {
+                        CommitEdit();
+                        return;
+                    }
+
+                    bool isFirstBlock = true;
                     foreach (var block in blocks)
                     {
                         if (block.Kind == ClipboardBlockKind.Table && block.Table != null)
                         {
+                            isFirstBlock = false;
                             foreach (var cell in block.Table.Cells)
                                 cell.Id = Guid.NewGuid();
-                            DocVm.InsertTableBlock(block.Table);
+                            var postAnchor = DocVm.InsertTableBlockAfterParagraph(block.Table, anchorBlock);
+                            if (postAnchor != null)
+                                anchorBlock = postAnchor;
                         }
                         else if (block.Kind == ClipboardBlockKind.Paragraph)
                         {
-                            var blockPvm = GetVmAt(_caretPara);
-                            if (blockPvm != null)
+                            var anchorVm = DocVm.Paragraphs.FirstOrDefault(v => v.Model == anchorBlock);
+                            if (anchorVm == null) continue;
+
+                            if (isFirstBlock)
                             {
-                                var nv = DocVm.AddParagraphAfter(blockPvm);
+                                // Первый блок: применяем стили к текущему параграфу и
+                                // вставляем текст в позицию каретки (не создаём новый параграф).
+                                isFirstBlock = false;
+                                anchorBlock.Properties = block.Block?.Properties.Clone() ?? anchorBlock.Properties;
+                                anchorBlock.ListProperties = block.Block?.ListProperties?.Clone();
+                                string insertText = block.Block?.GetPlainText() ?? block.Text ?? "";
+                                anchorBlock.SpliceText(_caretChar, _caretChar, insertText);
+                                anchorVm.RefreshPlainTextFromModel();
+                                _caretChar += insertText.Length;
+                            }
+                            else
+                            {
+                                var nv = DocVm.AddParagraphAfter(anchorVm);
                                 if (nv != null)
                                 {
-                                    nv.PlainText = block.Text ?? "";
-                                    for (int li = 0; li < _layouts.Count; li++)
-                                        if (_layouts[li].Vm == nv) { _caretPara = li; break; }
-                                    _caretChar = nv.PlainText.Length;
+                                    ApplyClipboardParagraph(nv, block);
+                                    anchorBlock = nv.Model;
                                 }
                             }
                         }
@@ -452,6 +552,21 @@ namespace Writersword.Modules.TextEditor.Document
                     _rebuildCts = new System.Threading.CancellationTokenSource();
 
                     RebuildLayouts();
+
+                    // Устанавливаем каретку на последний вставленный блок.
+                    if (anchorBlock != null)
+                    {
+                        for (int li = 0; li < _layouts.Count; li++)
+                        {
+                            if (_layouts[li].Vm?.Model == anchorBlock)
+                            {
+                                _caretPara = li;
+                                _caretChar = _layouts[li].Vm!.PlainText?.Length ?? 0;
+                                break;
+                            }
+                        }
+                    }
+
                     SnapCaretToCorrectSlice();
                     SyncSel(); ResetCaret(); InvalidateFull();
                     return;
@@ -541,12 +656,15 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (lines.Length == 1)
             {
-                pvm.PlainText = before + lines[0] + after;
+                pvm.Model.SpliceText(pos2, pos2, lines[0]);
+                pvm.RefreshPlainTextFromModel();
                 _caretChar = pos2 + lines[0].Length;
             }
             else
             {
-                pvm.PlainText = before + lines[0];
+                // Первая строка: вставляем в текущий параграф, удаляем хвост после каретки.
+                pvm.Model.SpliceText(pos2, cur2.Length, lines[0]);
+                pvm.RefreshPlainTextFromModel();
                 var prev = pvm;
                 for (int i = 1; i < lines.Length - 1; i++)
                 {
@@ -556,7 +674,9 @@ namespace Writersword.Modules.TextEditor.Document
                 var last = DocVm?.AddParagraphAfter(prev);
                 if (last is not null)
                 {
-                    last.PlainText = lines[^1] + after;
+                    // Последняя строка + остаток исходного параграфа.
+                    last.Model.SpliceText(0, 0, lines[^1] + after);
+                    last.RefreshPlainTextFromModel();
                     _caretPara = DocVm!.Paragraphs.IndexOf(last);
                     _caretChar = lines[^1].Length;
                 }

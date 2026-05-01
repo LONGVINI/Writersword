@@ -96,6 +96,13 @@
                                         Background="{DynamicResource BgPanelBrush}">
 									<Panel>
 										<Border IsVisible="{Binding IsSelected}" Background="#22FFFFFF"/>
+
+										<!-- Подсветка когда папка закрыта и над ней висит drag -->
+										<Border IsVisible="{Binding IsDragOver}"
+                                                Background="#22FFFFFF"
+                                                BorderBrush="{DynamicResource AccentDefaultBrush}"
+                                                BorderThickness="0,0,0,2"/>
+
 										<Grid MinHeight="36">
 											<Grid.ColumnDefinitions>
 												<ColumnDefinition Width="Auto"/>
@@ -196,21 +203,18 @@
                                                          behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsEditingComment}"
                                                          behaviors:ClickOutsideBehavior.Command="{ReflectionBinding ConfirmCommentCommand}"/>
 												</Grid>
+
 											</controls:CharactersFolderHeaderPanel>
 
-											<StackPanel Grid.Column="2"
-                                                        Orientation="Horizontal" Spacing="0"
-                                                        VerticalAlignment="Center">
-												<TextBlock Text="{Binding Count}"
-                                                           FontSize="11"
-                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                           VerticalAlignment="Center"
-                                                           Margin="12,0,4,0"/>
+											<Grid Grid.Column="2"
+                                                  ColumnDefinitions="Auto,Auto,Auto"
+                                                  VerticalAlignment="Center">
 
 												<!-- Корзина для папки -->
-												<Button Command="{Binding RequestDeleteCommand}"
+												<Button Grid.Column="0"
+                                                        Command="{Binding RequestDeleteCommand}"
                                                         Background="Transparent" BorderThickness="0"
-                                                        Padding="6,0" Height="36"
+                                                        Padding="8,0" Height="36"
                                                         VerticalAlignment="Stretch"
                                                         VerticalContentAlignment="Center"
                                                         IsVisible="{Binding !IsUngrouped}"
@@ -225,7 +229,17 @@
                                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
 												</Button>
 
-												<Button Command="{Binding ToggleExpandCommand}"
+												<TextBlock Grid.Column="1"
+                                                           Text="{Binding Count}"
+                                                           FontSize="11"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           VerticalAlignment="Center"
+                                                           HorizontalAlignment="Center"
+                                                           MinWidth="20"
+                                                           TextAlignment="Center"/>
+
+												<Button Grid.Column="2"
+                                                        Command="{Binding ToggleExpandCommand}"
                                                         Background="Transparent" BorderThickness="0"
                                                         Padding="8,0" Margin="0,0,4,0"
                                                         VerticalAlignment="Stretch">
@@ -234,12 +248,15 @@
                                                                Foreground="{DynamicResource TextSecondaryBrush}"
                                                                VerticalAlignment="Center"/>
 												</Button>
-											</StackPanel>
+
+											</Grid>
 										</Grid>
 									</Panel>
 								</Border>
 
-								<!-- Карточки персонажей -->
+								<!-- Карточки персонажей.
+                                     IsDragging=true → Opacity=0.25 и IsHitTestVisible=false,
+                                     чтобы карточка не мешала hit-тесту при определении цели. -->
 								<ItemsControl ItemsSource="{Binding Characters}"
                                               Margin="12,8"
                                               IsVisible="{Binding IsExpanded}">
@@ -250,13 +267,16 @@
 									</ItemsControl.ItemsPanel>
 									<ItemsControl.ItemTemplate>
 										<DataTemplate DataType="vm:CharacterListItemViewModel">
+
 											<Border Width="148" CornerRadius="10"
                                                     Background="{DynamicResource BgPanelBrush}"
                                                     BorderBrush="{Binding Color}"
                                                     BorderThickness="2"
                                                     ClipToBounds="True"
                                                     Margin="6"
-                                                    Cursor="Hand">
+                                                    Cursor="Hand"
+                                                    Opacity="{Binding DragOpacity}"
+                                                    IsHitTestVisible="{Binding !IsDragging}">
 
 												<Grid RowDefinitions="60,Auto">
 
@@ -381,6 +401,7 @@
 													</Panel>
 												</Grid>
 											</Border>
+
 										</DataTemplate>
 									</ItemsControl.ItemTemplate>
 								</ItemsControl>
@@ -428,22 +449,42 @@
 			</Grid>
 		</Border>
 
-		<!-- Призрак перетаскивания — поверх всего, не перехватывает клики -->
+		<!-- Призрак перетаскивания — полноразмерная копия карточки, следует за курсором.
+             IsHitTestVisible=false чтобы не мешать InputHitTest при определении цели. -->
 		<Canvas x:Name="DragGhostCanvas"
                 Grid.Row="0" Grid.RowSpan="3"
                 IsHitTestVisible="False"
                 IsVisible="False">
 			<Border x:Name="DragGhostBorder"
-                    Width="140" Height="36"
-                    CornerRadius="8" Opacity="0.88"
-                    BorderBrush="#88FFFFFF" BorderThickness="1.5">
-				<TextBlock x:Name="DragGhostText"
-                           FontSize="12" FontWeight="Medium"
-                           Foreground="White"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis"
-                           Margin="10,0"/>
+                    Width="148" Height="100"
+                    CornerRadius="10"
+                    Opacity="0.85"
+                    BorderBrush="#AAFFFFFF"
+                    BorderThickness="2">
+				<Border.Effect>
+					<DropShadowEffect BlurRadius="16" OffsetX="0" OffsetY="6" Opacity="0.4"/>
+				</Border.Effect>
+				<Grid RowDefinitions="60,40">
+					<!-- Цветная верхняя часть с "?" -->
+					<Panel Grid.Row="0">
+						<Border x:Name="DragGhostTopBg" CornerRadius="8,8,0,0"/>
+						<TextBlock Text="?" FontSize="28" Foreground="White"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   IsHitTestVisible="False"/>
+					</Panel>
+					<!-- Нижняя часть с именем -->
+					<Border Grid.Row="1"
+                            Background="{DynamicResource BgPanelBrush}"
+                            CornerRadius="0,0,8,8">
+						<TextBlock x:Name="DragGhostText"
+                                   FontSize="12" FontWeight="Medium"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   Margin="8,0"/>
+					</Border>
+				</Grid>
 			</Border>
 		</Canvas>
 

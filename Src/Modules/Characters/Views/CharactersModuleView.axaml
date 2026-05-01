@@ -6,69 +6,108 @@
              x:Class="Writersword.Modules.Characters.Views.CharactersModuleView"
              x:DataType="vm:CharactersViewModel"
              Background="{DynamicResource BgSurfaceBrush}">
+	<Grid>
 
-    <Grid>
-
-        <!-- Онбординг поверх всего -->
-        <Border ZIndex="100"
+		<!-- Онбординг — поверх всего -->
+		<Border ZIndex="100"
                 Background="#CC000000"
                 IsVisible="{Binding ShowOnboarding}">
-            <onb:CharactersOnboardingView DataContext="{Binding OnboardingViewModel}"
+			<onb:CharactersOnboardingView DataContext="{Binding OnboardingViewModel}"
                                           VerticalAlignment="Center"
                                           HorizontalAlignment="Center"
                                           MaxWidth="520"/>
-        </Border>
+		</Border>
 
-        <Grid RowDefinitions="Auto,*">
+		<Grid RowDefinitions="Auto,*">
 
-            <!-- Таббар -->
-            <Border Grid.Row="0"
+			<!-- Вкладки -->
+			<Border Grid.Row="0"
                     Background="{DynamicResource BgPanelBrush}"
                     BorderBrush="{DynamicResource BorderDefaultBrush}"
                     BorderThickness="0,0,0,1"
                     Padding="4,0">
-                <Border.Styles>
-                    <Style Selector="Button.tab-active">
-                        <Setter Property="BorderThickness" Value="0,0,0,2"/>
-                        <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
-                        <Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
-                    </Style>
-                    <Style Selector="Button.tab-active:pointerover">
-                        <Setter Property="BorderThickness" Value="0,0,0,2"/>
-                        <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
-                    </Style>
-                </Border.Styles>
-                <StackPanel Orientation="Horizontal">
-                    <Button Content="{x:Static loc:CharactersStrings.Tab_Characters}"
+				<Border.Styles>
+					<Style Selector="Button.tab-active">
+						<Setter Property="BorderThickness" Value="0,0,0,2"/>
+						<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+						<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+					</Style>
+					<Style Selector="Button.tab-active:pointerover">
+						<Setter Property="BorderThickness" Value="0,0,0,2"/>
+						<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+					</Style>
+				</Border.Styles>
+				<StackPanel Orientation="Horizontal">
+					<Button Content="{x:Static loc:CharactersStrings.Tab_Characters}"
                             Command="{ReflectionBinding GoToCharactersCommand}"
                             Classes.tab-active="{Binding IsTab0Active}"
                             FontSize="12" Padding="12,8"
                             Background="Transparent" BorderThickness="0"
                             Foreground="{DynamicResource TextSecondaryBrush}"/>
-                    <Button Content="{x:Static loc:CharactersStrings.Tab_Edit}"
+					<Button Content="{x:Static loc:CharactersStrings.Tab_Edit}"
                             Command="{ReflectionBinding GoToEditCommand}"
                             Classes.tab-active="{Binding IsTab1Active}"
                             FontSize="12" Padding="12,8"
                             Background="Transparent" BorderThickness="0"
                             Foreground="{DynamicResource TextSecondaryBrush}"/>
-                    <Button Content="{x:Static loc:CharactersStrings.Tab_Relationships}"
+					<Button Content="{x:Static loc:CharactersStrings.Tab_Relationships}"
                             Command="{ReflectionBinding GoToRelationshipsCommand}"
                             Classes.tab-active="{Binding IsTab2Active}"
                             FontSize="12" Padding="12,8"
                             Background="Transparent" BorderThickness="0"
                             Foreground="{DynamicResource TextSecondaryBrush}"/>
-                    <Button Content="{x:Static loc:CharactersStrings.Tab_Templates}"
+					<Button Content="{x:Static loc:CharactersStrings.Tab_Templates}"
                             Command="{ReflectionBinding GoToTemplatesCommand}"
                             Classes.tab-active="{Binding IsTab3Active}"
                             FontSize="12" Padding="12,8"
                             Background="Transparent" BorderThickness="0"
                             Foreground="{DynamicResource TextSecondaryBrush}"/>
-                </StackPanel>
-            </Border>
+				</StackPanel>
+			</Border>
 
-            <!-- Активная вкладка -->
-            <ContentControl Grid.Row="1" x:Name="TabContent"/>
+			<!-- Содержимое вкладки -->
+			<ContentControl Grid.Row="1" x:Name="TabContent"/>
+		</Grid>
 
-        </Grid>
-    </Grid>
+		<!-- Тост снизу — появляется при удалении, скрывается по Ctrl+Z или по кнопке -->
+		<Border x:Name="UndoToast"
+                ZIndex="50"
+                VerticalAlignment="Bottom"
+                HorizontalAlignment="Center"
+                Margin="0,0,0,20"
+                Padding="16,10,12,10"
+                CornerRadius="8"
+                Background="#E0161616"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                BorderThickness="1"
+                IsVisible="{Binding UndoToastMessage,
+                    Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+			<Border.Effect>
+				<DropShadowEffect BlurRadius="16" OffsetX="0" OffsetY="4" Opacity="0.35"/>
+			</Border.Effect>
+			<StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+				<TextBlock Text="{Binding UndoToastMessage}"
+                           FontSize="13"
+                           Foreground="White"
+                           VerticalAlignment="Center"/>
+				<Border Background="#33FFFFFF"
+                        CornerRadius="4" Padding="6,3"
+                        VerticalAlignment="Center">
+					<TextBlock Text="Ctrl+Z"
+                               FontSize="11"
+                               Foreground="White"
+                               FontFamily="Consolas, monospace"/>
+				</Border>
+				<Button x:Name="ToastDismissButton"
+                        Content="✕"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Padding="4,0"
+                        Foreground="#88FFFFFF"
+                        FontSize="13"
+                        VerticalAlignment="Center"/>
+			</StackPanel>
+		</Border>
+
+	</Grid>
 </UserControl>

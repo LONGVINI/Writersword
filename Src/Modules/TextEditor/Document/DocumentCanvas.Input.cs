@@ -364,8 +364,19 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 float selStartYPt = _selStartPara >= 0 && _selStartPara < _layouts.Count
                     ? _layouts[_selStartPara].Ypt : 0f;
-                float selEndYPt = pi >= 0 && pi < _layouts.Count
-                    ? _layouts[pi].Ypt + _layouts[pi].HeightPt : 0f;
+
+                // Если курсор сейчас внутри ячейки, Y нижней границы параграфа
+                // совпадает с tblMaxY — перекрытие обнуляется и таблица ошибочно
+                // выбрасывается из выделения. Используем верхний Y параграфа (без HeightPt):
+                // так selEndYPt оказывается внутри таблицы, а не у её дна.
+                float selEndYPt;
+                if (nowInCell && pi >= 0 && pi < _layouts.Count)
+                    selEndYPt = _layouts[pi].Ypt;
+                else if (pi >= 0 && pi < _layouts.Count)
+                    selEndYPt = _layouts[pi].Ypt + _layouts[pi].HeightPt;
+                else
+                    selEndYPt = 0f;
+
                 float selMinY = Math.Min(selStartYPt, selEndYPt);
                 float selMaxY = Math.Max(selStartYPt, selEndYPt);
 
@@ -397,7 +408,16 @@ namespace Writersword.Modules.TextEditor.Document
                         tblMaxY = Math.Max(tblMaxY, t2.Ypt + sliceH);
                     }
 
-                    if (tblMaxY < selMinY || tblMinY > selMaxY)
+                    // Порог применяется только когда drag начался у верхнего края таблицы
+                    // (якорный параграф нулевой высоты над таблицей): в этом случае
+                    // требуем реального вхождения внутрь таблицы перед выделением.
+                    // Если drag начался под таблицей или внутри неё — порог минимальный
+                    // (только защита от floating-point), иначе выделение снизу вверх
+                    // не захватывает таблицу пока мышь в нижних строках.
+                    float overlapThreshold = selStartYPt <= tblMinY ? 5f : 0.5f;
+                    float overlapStart = Math.Max(tblMinY, selMinY);
+                    float overlapEnd = Math.Min(tblMaxY, selMaxY);
+                    if (overlapEnd - overlapStart < overlapThreshold)
                         toRemove.Add(te.Table);
                     else
                         _tableSelections[te.Table] = (0, 0, te.Table.RowCount - 1, te.Table.ColumnCount - 1);
@@ -832,7 +852,8 @@ namespace Writersword.Modules.TextEditor.Document
 
             string t = pvm.PlainText ?? "";
             int pos = Clamp(_caretChar, 0, t.Length);
-            pvm.PlainText = t[..pos] + text + t[pos..];
+            pvm.Model.SpliceText(pos, pos, text);
+            pvm.RefreshPlainTextFromModel();
             _caretChar = pos + text.Length;
 
             CommitEdit();
@@ -1110,7 +1131,8 @@ namespace Writersword.Modules.TextEditor.Document
             if (_caretChar > 0 && text.Length > 0)
             {
                 int p = Clamp(_caretChar, 1, text.Length);
-                pvm.PlainText = text[..(p - 1)] + text[p..];
+                pvm.Model.SpliceText(p - 1, p, string.Empty);
+                pvm.RefreshPlainTextFromModel();
                 _caretChar = p - 1;
             }
             else if (_caretChar == 0 && _caretPara > 0 && !IsInCell(_caretPara))
@@ -1135,9 +1157,10 @@ namespace Writersword.Modules.TextEditor.Document
                         string prevText = prevVm.PlainText ?? "";
                         if (prevText.Length > 0)
                         {
-                            prevVm.PlainText = prevText[..^1];
+                            prevVm.Model.SpliceText(prevText.Length - 1, prevText.Length, string.Empty);
+                            prevVm.RefreshPlainTextFromModel();
                             _caretPara--;
-                            _caretChar = prevVm.PlainText.Length;
+                            _caretChar = prevVm.PlainText?.Length ?? 0;
                         }
                         else
                         {
@@ -1169,7 +1192,8 @@ namespace Writersword.Modules.TextEditor.Document
             if (_caretChar < text.Length)
             {
                 int p = Clamp(_caretChar, 0, text.Length - 1);
-                pvm.PlainText = text[..p] + text[(p + 1)..];
+                pvm.Model.SpliceText(p, p + 1, string.Empty);
+                pvm.RefreshPlainTextFromModel();
             }
             else if (_caretPara < _layouts.Count - 1 && !IsInCell(_caretPara))
             {
@@ -1201,7 +1225,13 @@ namespace Writersword.Modules.TextEditor.Document
                 else if (nextIsBreakAnchor)
                     DocVm?.DeleteBreakWithAnchor(next!);
                 else if (next is not null && !IsInCell(_caretPara + 1) && !nextIsPostTableAnchor)
-                { pvm.PlainText += next.PlainText; DocVm?.DeleteParagraph(next); }
+                {
+                    // Сливаем следующий параграф в текущий, сохраняя форматирование обоих.
+                    string nextText = next.PlainText ?? "";
+                    pvm.Model.SpliceText(text.Length, text.Length, nextText);
+                    pvm.RefreshPlainTextFromModel();
+                    DocVm?.DeleteParagraph(next);
+                }
             }
             CommitEdit();
             SnapCaretToCorrectSlice();
@@ -1217,11 +1247,16 @@ namespace Writersword.Modules.TextEditor.Document
             DeleteSelection();
             string text = pvm.PlainText ?? "";
             int cp = Clamp(_caretChar, 0, text.Length);
-            pvm.PlainText = text[..cp];
+            // Обрезаем текущий параграф до позиции каретки, сохраняя форматирование.
+            pvm.Model.SpliceText(cp, text.Length, string.Empty);
+            pvm.RefreshPlainTextFromModel();
             var newVm = DocVm?.AddParagraphAfter(pvm);
             if (newVm is not null)
             {
-                newVm.PlainText = text[cp..];
+                // Остаток текста (с форматированием) переносим в новый параграф.
+                // Используем SetPlainText только если форматирования нет — иначе SpliceText.
+                newVm.Model.SpliceText(0, 0, text[cp..]);
+                newVm.RefreshPlainTextFromModel();
                 _rebuildCts.Cancel();
                 _rebuildCts = new System.Threading.CancellationTokenSource();
                 RebuildLayouts();

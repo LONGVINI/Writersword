@@ -83,6 +83,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // Устанавливается DocumentCanvas — пробрасывает вызов в UndoStack.
         public Action? UndoDelegate { get; set; }
         public Action? RedoDelegate { get; set; }
+        public Action? CutDelegate { get; set; }
+        public Action? CopyDelegate { get; set; }
+        public Action? PasteDelegate { get; set; }
 
         /// <summary>
         /// Активная таблица — та в которой стоит каретка.
@@ -309,8 +312,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (vmIndex <= 0) return;
 
             var previous = Paragraphs[vmIndex - 1];
-            int caretPosition = previous.PlainText.Length;
-            previous.PlainText = previous.PlainText + textToMerge;
+            int caretPosition = previous.PlainText?.Length ?? 0;
+
+            // Дописываем текст следующего параграфа сохраняя форматирование обоих.
+            int prevLen = previous.PlainText?.Length ?? 0;
+            previous.Model.SpliceText(prevLen, prevLen, textToMerge);
+            previous.RefreshPlainTextFromModel();
 
             _document.Sections[0].Blocks.Remove(target.Model);
             Paragraphs.RemoveAt(vmIndex);
@@ -430,14 +437,25 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         // ── ITextEditorCommandTarget: буфер обмена ────────────────────────
 
-        public void Cut() { _activeParagraph?.RequestFocus(); }
+        public void Cut()
+        {
+            if (CutDelegate != null) CutDelegate.Invoke();
+            else _activeParagraph?.RequestFocus();
+        }
+
         public void Copy()
         {
+            if (CopyDelegate != null) { CopyDelegate.Invoke(); return; }
             string? docText = GetDocumentSelectedText();
             if (docText is not null) { CopyToClipboardAsync(docText); return; }
             _activeParagraph?.RequestFocus();
         }
-        public void Paste() { _activeParagraph?.RequestFocus(); }
+
+        public void Paste()
+        {
+            if (PasteDelegate != null) PasteDelegate.Invoke();
+            else _activeParagraph?.RequestFocus();
+        }
 
         void ITextEditorCommandTarget.SelectAll() => SelectAll();
         public void Undo() => UndoDelegate?.Invoke();
@@ -448,6 +466,34 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertTable(int rows, int columns) => InsertBlock(BuildEmptyTable(rows, columns));
 
         public void InsertTableBlock(TableBlock table) => InsertBlock(table);
+
+        /// <summary>
+        /// Вставляет TableBlock сразу после заданного якорного параграфа.
+        /// В отличие от InsertBlock, не зависит от _activeParagraph — позволяет
+        /// точно контролировать позицию при последовательной вставке нескольких блоков.
+        /// Возвращает post-anchor ParagraphBlock (пустой параграф после таблицы),
+        /// созданный NormalizeTableAnchors внутри RebuildParagraphViewModels.
+        /// </summary>
+        public ParagraphBlock? InsertTableBlockAfterParagraph(TableBlock table, ParagraphBlock anchor)
+        {
+            if (_document.Sections.Count == 0) return null;
+            var section = _document.Sections[0];
+
+            int idx = section.Blocks.IndexOf(anchor);
+            if (idx >= 0)
+                section.Blocks.Insert(idx + 1, table);
+            else
+                section.Blocks.Add(table);
+
+            RebuildParagraphViewModels();
+
+            int tblIdx = section.Blocks.IndexOf(table);
+            if (tblIdx >= 0 && tblIdx + 1 < section.Blocks.Count
+                && section.Blocks[tblIdx + 1] is ParagraphBlock postAnchor)
+                return postAnchor;
+
+            return null;
+        }
         public void InsertImage(string filePath) { }
         public void InsertShape(ShapeType st) { }
         public void InsertFloatingTextBox() { }
@@ -1132,19 +1178,22 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             string[] lines = text.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
             int caretPos = _activeParagraph.SelectionStart;
-            string before = _activeParagraph.PlainText[..caretPos];
-            string after = _activeParagraph.PlainText[caretPos..];
+            string before = _activeParagraph.PlainText?[..caretPos] ?? "";
+            string after = _activeParagraph.PlainText?[caretPos..] ?? "";
 
             if (lines.Length == 1)
             {
-                _activeParagraph.PlainText = before + lines[0] + after;
-                _activeParagraph.SelectionStart = caretPos + lines[0].Length;
-                _activeParagraph.SelectionEnd = _activeParagraph.SelectionStart;
-                _activeParagraph.RequestFocusAtPosition?.Invoke(_activeParagraph.SelectionStart);
+                _activeParagraph.Model.SpliceText(caretPos, caretPos, lines[0]);
+                _activeParagraph.RefreshPlainTextFromModel();
+                int newPos = caretPos + lines[0].Length;
+                _activeParagraph.SelectionStart = newPos;
+                _activeParagraph.SelectionEnd = newPos;
+                _activeParagraph.RequestFocusAtPosition?.Invoke(newPos);
                 return;
             }
 
-            _activeParagraph.PlainText = before + lines[0];
+            _activeParagraph.Model.SpliceText(caretPos, (before + after).Length, lines[0]);
+            _activeParagraph.RefreshPlainTextFromModel();
             ParagraphViewModel prev = _activeParagraph;
 
             for (int i = 1; i < lines.Length - 1; i++)
@@ -1155,7 +1204,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             }
 
             var last = AddParagraphAfter(prev);
-            last.PlainText = lines[^1] + after;
+            last.Model.SpliceText(0, 0, lines[^1] + after);
+            last.RefreshPlainTextFromModel();
             last.RequestFocusAtPosition?.Invoke(lines[^1].Length);
         }
     }
