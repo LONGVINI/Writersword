@@ -1,16 +1,24 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using Newtonsoft.Json;
 using Writersword.Core.Interfaces.Services;
 
 namespace Writersword.Infrastructure.Services.Storage
 {
     /// <summary>
-    /// Реализация сервиса для вычисления SHA256 хешей
-    /// Используется для быстрой проверки изменений данных модулей
+    /// Реализация сервиса для вычисления SHA256 хешей.
+    /// Используется для быстрой проверки изменений данных модулей.
+    ///
+    /// Ключевое требование: одинаковые данные ВСЕГДА дают одинаковый хеш,
+    /// независимо от типа объекта (POCO, JObject, string с JSON)
+    /// и порядка ключей при сериализации.
+    /// Для этого все объекты проходят нормализацию:
+    ///   object → JToken → сортировка ключей → детерминированный JSON → SHA256.
     /// </summary>
     public class HashService : IHashService
     {
@@ -22,58 +30,107 @@ namespace Writersword.Infrastructure.Services.Storage
         }
 
         /// <summary>
-        /// Вычислить SHA256 хеш для объекта
-        /// Объект сериализуется в JSON, затем вычисляется хеш
+        /// Вычислить SHA256 хеш для объекта.
+        /// Объект нормализуется в JSON с сортировкой ключей, затем вычисляется хеш.
+        /// Это гарантирует одинаковый хеш для одинаковых данных независимо от:
+        /// - типа объекта (POCO vs JObject vs string-с-JSON)
+        /// - порядка ключей при сериализации
+        /// - форматирования (отступы, переносы строк)
         /// </summary>
-        /// <param name="data">Данные для хеширования (string, object, etc)</param>
-        /// <returns>SHA256 хеш в виде строки (64 символа)</returns>
         public string ComputeHash(object? data)
         {
             if (data == null)
                 return ComputeHashFromString("");
 
-            // Если это строка - хешируем напрямую
-            if (data is string str)
-                return ComputeHashFromString(str);
-
-            // Иначе сериализуем в JSON и хешируем
             try
             {
-                var json = JsonConvert.SerializeObject(data);
-                return ComputeHashFromString(json);
+                var normalized = NormalizeToSortedJson(data);
+                return ComputeHashFromString(normalized);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error serializing data");
+                _logger.LogError(ex, "Error computing hash");
                 return ComputeHashFromString(data.ToString() ?? "");
             }
         }
 
         /// <summary>
-        /// Вычислить SHA256 хеш для строки напрямую
-        /// Быстрее чем ComputeHash(object) для текстовых данных
+        /// Вычислить SHA256 хеш для строки напрямую.
         /// </summary>
-        /// <param name="text">Текст для хеширования</param>
-        /// <returns>SHA256 хеш в виде строки (64 символа)</returns>
         public string ComputeHashFromString(string text)
         {
-            using (var sha256 = SHA256.Create())
+            using var sha256 = SHA256.Create();
+            var bytes = Encoding.UTF8.GetBytes(text);
+            var hashBytes = sha256.ComputeHash(bytes);
+            var builder = new StringBuilder(64);
+            foreach (var b in hashBytes)
+                builder.Append(b.ToString("x2"));
+            return builder.ToString();
+        }
+
+        /// <summary>
+        /// Нормализует объект в детерминированный JSON с сортировкой ключей.
+        ///
+        /// Три случая:
+        /// 1. Строка начинается с '{' или '[' — это JSON-в-строке (двойная сериализация).
+        ///    Распаковываем и нормализуем содержимое.
+        /// 2. JToken — нормализуем напрямую.
+        /// 3. Любой другой объект (POCO, Dictionary) — конвертируем в JToken и нормализуем.
+        /// </summary>
+        private static string NormalizeToSortedJson(object? obj)
+        {
+            if (obj == null) return "null";
+
+            if (obj is string str)
             {
-                // Конвертируем текст в байты
-                var bytes = Encoding.UTF8.GetBytes(text);
-
-                // Вычисляем хеш
-                var hashBytes = sha256.ComputeHash(bytes);
-
-                // Конвертируем в hex строку
-                var builder = new StringBuilder();
-                foreach (var b in hashBytes)
+                var trimmed = str.TrimStart();
+                if (trimmed.StartsWith("{") || trimmed.StartsWith("["))
                 {
-                    builder.Append(b.ToString("x2"));
+                    try
+                    {
+                        return SortedTokenToString(JToken.Parse(str));
+                    }
+                    catch { }
                 }
-
-                return builder.ToString();
+                return new JValue(str).ToString(Formatting.None);
             }
+
+            JToken token;
+            try
+            {
+                token = obj is JToken jt ? jt : JToken.FromObject(obj);
+            }
+            catch
+            {
+                return obj.ToString() ?? "null";
+            }
+
+            return SortedTokenToString(token);
+        }
+
+        /// <summary>
+        /// Рекурсивно сериализует JToken с лексикографической сортировкой ключей объектов.
+        /// Массивы не сортируются — порядок элементов семантически значим.
+        /// </summary>
+        private static string SortedTokenToString(JToken token)
+        {
+            if (token is JObject obj)
+            {
+                var sorted = new JObject(
+                    obj.Properties()
+                       .OrderBy(p => p.Name, StringComparer.Ordinal)
+                       .Select(p => new JProperty(p.Name, JToken.Parse(SortedTokenToString(p.Value))))
+                );
+                return sorted.ToString(Formatting.None);
+            }
+
+            if (token is JArray arr)
+            {
+                var sortedArr = new JArray(arr.Select(item => JToken.Parse(SortedTokenToString(item))));
+                return sortedArr.ToString(Formatting.None);
+            }
+
+            return token.ToString(Formatting.None);
         }
     }
 }

@@ -92,10 +92,23 @@ namespace Writersword.Modules.Characters.ViewModels
         }
 
         // 0.25 во врем€ drag, 1.0 в обычном состо€нии Ч биндитс€ к Opacity карточки
-        public double DragOpacity => _isDragging ? 0.25 : 1.0;
+        // true когда это пустой placeholder во врем€ drag
+        private bool _isPlaceholder;
+        public bool IsPlaceholder
+        {
+            get => _isPlaceholder;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _isPlaceholder, value);
+                this.RaisePropertyChanged(nameof(DragOpacity));
+                this.RaisePropertyChanged(nameof(IsShowingNameDisplay));
+            }
+        }
+
+        public double DragOpacity => _isPlaceholder ? 0.35 : 1.0;
 
         // true когда не в режиме ввода/переименовани€ Ч показывает нормальное отображение
-        public bool IsShowingNameDisplay => !_isBeingNamed && !_isRenaming;
+        public bool IsShowingNameDisplay => !_isBeingNamed && !_isRenaming && !_isPlaceholder;
 
         // колбэки, устанавливаютс€ родительским ViewModel
         public Action<string, string>? OnConfirmName { get; set; }    // (id, newName)

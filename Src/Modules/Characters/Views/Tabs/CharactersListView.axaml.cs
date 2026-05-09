@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Writersword.Modules.Characters.ViewModels;
 
@@ -20,11 +22,22 @@ namespace Writersword.Modules.Characters.Views.Tabs
         private bool _isDragging;
         private bool _hasPointerCapture;
 
-        // последнее известное состояние preview — чтобы не дёргать VM на каждый пиксель
-        private string? _lastPreviewBeforeId;
-        private string? _lastPreviewFolderId;
-        // папка с активным IsDragOver (закрытая папка под курсором)
+        private Dictionary<string, Border> _cardBorderCache = new();
+        private Dictionary<string, Control> _folderHeaderCache = new();
+        private Dictionary<string, ItemsControl> _folderItemsCtrlCache = new();
+
+        private int _dragTargetIndex;
+        private string? _dragTargetFolderId;
+
+        private double _slotWidth;
+        private double _slotHeight;
+        private int _cardsPerRow;
+
         private CharacterFolderViewModel? _currentDragOverFolder;
+        private long _lastPreviewTick;
+        private int _flipGeneration;
+
+        private IDisposable? _containerBoundsSubscription;
 
         private Canvas? _ghostCanvas;
         private Border? _ghostBorder;
@@ -38,21 +51,17 @@ namespace Writersword.Modules.Characters.Views.Tabs
             AddHandler(PointerMovedEvent, OnGlobalPointerMoved, RoutingStrategies.Tunnel);
             AddHandler(PointerReleasedEvent, OnGlobalPointerReleased, RoutingStrategies.Tunnel);
             AddHandler(KeyDownEvent, OnGlobalKeyDown, RoutingStrategies.Tunnel);
-
             AddHandler(InputElement.LostFocusEvent, OnCardTextBoxLostFocus, RoutingStrategies.Bubble);
         }
 
-        // Вызывается снаружи (например из CharactersModuleView) по Ctrl+Z
         public void PerformUndo()
         {
-            if (DataContext is CharactersViewModel vm && vm.CanUndo)
-                vm.Undo();
+            if (DataContext is CharactersViewModel vm && vm.CanUndo) vm.Undo();
         }
 
         public void PerformRedo()
         {
-            if (DataContext is CharactersViewModel vm && vm.CanRedo)
-                vm.Redo();
+            if (DataContext is CharactersViewModel vm && vm.CanRedo) vm.Redo();
         }
 
         protected override void OnLoaded(RoutedEventArgs e)
@@ -61,12 +70,51 @@ namespace Writersword.Modules.Characters.Views.Tabs
             _ghostCanvas = this.FindControl<Canvas>("DragGhostCanvas");
             _ghostBorder = this.FindControl<Border>("DragGhostBorder");
             _ghostText = this.FindControl<TextBlock>("DragGhostText");
+
+            // Подписываемся на ширину первого ItemsControl с карточками.
+            // Он знает реальную ширину после вычета скроллбара и margins.
+            // Порог 10px гасит осцилляцию от скроллбара.
+            var foldersContainer = this.FindControl<ItemsControl>("FoldersContainer");
+            if (foldersContainer is not null)
+            {
+                if (DataContext is CharactersViewModel vmInit && foldersContainer.Bounds.Width > 0)
+                    vmInit.UpdateContainerWidth(foldersContainer.Bounds.Width);
+                _containerBoundsSubscription = foldersContainer
+                    .GetObservable(BoundsProperty)
+                    .Subscribe(b =>
+                    {
+                        if (DataContext is CharactersViewModel vmSub && b.Width > 0)
+                            vmSub.UpdateContainerWidth(b.Width);
+                    });
+            }
+            else
+            {
+                _containerBoundsSubscription = this
+                    .GetObservable(BoundsProperty)
+                    .Subscribe(b =>
+                    {
+                        if (DataContext is CharactersViewModel vmSub && b.Width > 0)
+                            vmSub.UpdateContainerWidth(b.Width - 40);
+                    });
+            }
+        }
+
+        protected override void OnDataContextChanged(EventArgs e)
+        {
+            base.OnDataContextChanged(e);
+            _containerBoundsSubscription?.Dispose();
+            _containerBoundsSubscription = null;
+        }
+
+        protected override void OnUnloaded(RoutedEventArgs e)
+        {
+            base.OnUnloaded(e);
+            _containerBoundsSubscription?.Dispose();
+            _containerBoundsSubscription = null;
         }
 
         public void FocusSearch()
             => this.FindControl<TextBox>("SearchTextBox")?.Focus();
-
-        // ── поиск VM в дереве ──────────────────────────────────────────────
 
         private static CharacterListItemViewModel? FindCharacterItemVm(Visual? visual)
         {
@@ -94,8 +142,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
             return null;
         }
 
-        // ── LostFocus: сохранение имени ────────────────────────────────────
-
         private static void OnCardTextBoxLostFocus(object? sender, RoutedEventArgs e)
         {
             if (e.Source is not TextBox) return;
@@ -107,26 +153,17 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 charVm.ConfirmRenameCommand.Execute().Subscribe(_ => { }, _ => { });
         }
 
-        // ── Enter / Escape ─────────────────────────────────────────────────
-
         private void OnGlobalKeyDown(object? sender, KeyEventArgs e)
         {
             if (DataContext is CharactersViewModel vm)
             {
-                // Ctrl+Z — отмена
                 if (e.Key == Key.Z && e.KeyModifiers == KeyModifiers.Control)
-                {
-                    if (vm.CanUndo) { vm.Undo(); e.Handled = true; return; }
-                }
-                // Ctrl+Y — повтор
+                { if (vm.CanUndo) { vm.Undo(); e.Handled = true; return; } }
                 if (e.Key == Key.Y && e.KeyModifiers == KeyModifiers.Control)
-                {
-                    if (vm.CanRedo) { vm.Redo(); e.Handled = true; return; }
-                }
+                { if (vm.CanRedo) { vm.Redo(); e.Handled = true; return; } }
             }
 
             if (e.Key is not (Key.Return or Key.Enter or Key.Escape)) return;
-
             var charVm = FindCharacterItemVm(e.Source as Visual);
             if (charVm is null) return;
             if (e.Key is Key.Return or Key.Enter)
@@ -144,8 +181,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 { charVm.CancelRenameCommand.Execute().Subscribe(_ => { }, _ => { }); e.Handled = true; }
             }
         }
-
-        // ── PointerPressed ─────────────────────────────────────────────────
 
         private void OnGlobalPointerPressed(object? sender, PointerPressedEventArgs e)
         {
@@ -173,19 +208,21 @@ namespace Writersword.Modules.Characters.Views.Tabs
             }
         }
 
-        // ── PointerMoved ───────────────────────────────────────────────────
-
         private void OnGlobalPointerMoved(object? sender, PointerEventArgs e)
         {
             if (_dragCandidate is null) return;
 
             if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             {
-                if (_isDragging && DataContext is CharactersViewModel vm)
-                    vm.CancelDragPreview(_dragCandidate.Id);
+                if (_isDragging && DataContext is CharactersViewModel vmC)
+                {
+                    vmC.CancelDragPreview(_dragCandidate.Id);
+                    ResetTransformsInstant();
+                }
                 ClearDragVisuals();
                 _dragCandidate = null;
                 _isDragging = false;
+                ClearDragCaches();
                 return;
             }
 
@@ -197,35 +234,88 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 if (Math.Abs(delta.X) < DragThreshold && Math.Abs(delta.Y) < DragThreshold)
                     return;
 
-                // порог превышен — начинаем drag
                 _isDragging = true;
                 _hasPointerCapture = true;
                 e.Pointer.Capture(this);
 
                 if (DataContext is CharactersViewModel startVm)
+                {
                     startVm.BeginDragPreview(_dragCandidate.Id);
+
+                    _dragTargetFolderId = null;
+                    foreach (var fv in startVm.Folders)
+                    {
+                        var ph = fv.Characters.FirstOrDefault(c => c.IsPlaceholder);
+                        if (ph is not null)
+                        {
+                            _dragTargetIndex = fv.Characters.IndexOf(ph);
+                            _dragTargetFolderId = fv.FolderId;
+                            InitSlotGeometry(startVm);
+                            break;
+                        }
+                    }
+
+                    if (_dragTargetFolderId is null)
+                    {
+                        startVm.CancelDragPreview(_dragCandidate.Id);
+                        e.Pointer.Capture(null);
+                        _hasPointerCapture = false;
+                        _isDragging = false;
+                        _dragCandidate = null;
+                        return;
+                    }
+
+                    RebuildDragCaches();
+                    RecalibrateSlotGeometry();
+                    _lastPreviewTick = Environment.TickCount64;
+                }
 
                 ShowGhost(_dragCandidate.Name, _dragCandidate.Color, pos);
             }
             else
             {
                 MoveGhost(pos);
-                UpdatePreview(pos);
+
+                var now = Environment.TickCount64;
+                if (now - _lastPreviewTick >= 16)
+                {
+                    _lastPreviewTick = now;
+                    UpdatePreview(pos);
+                }
             }
         }
 
-        // ── UpdatePreview: сначала папка по Y, потом позиция внутри неё ──
+        private void InitSlotGeometry(CharactersViewModel vm)
+        {
+            const double cardMargin = 6.0;
+            _slotWidth = vm.CardWidth + cardMargin * 2;
+            _slotHeight = vm.CardTotalHeight + cardMargin * 2;
+            _cardsPerRow = vm.CardsPerRow;
+        }
+
+        // Уточняем размер слота по реально отрисованному бордеру.
+        // CardTotalHeight не включает BorderThickness (4px суммарно),
+        // что даёт накопительную ошибку: на строке N смещение = N*4px.
+        private void RecalibrateSlotGeometry()
+        {
+            const double cardMargin = 6.0;
+            var border = _cardBorderCache.Values.FirstOrDefault();
+            if (border is null) return;
+            if (border.Bounds.Height > 0)
+                _slotHeight = border.Bounds.Height + cardMargin * 2;
+            if (border.Bounds.Width > 0)
+                _slotWidth = border.Bounds.Width + cardMargin * 2;
+        }
 
         private void UpdatePreview(Point pos)
         {
             if (DataContext is not CharactersViewModel vm) return;
             if (_dragCandidate is null) return;
 
-            // определяем папку под курсором по её визуальным границам
             var targetFolderVm = FindFolderAtPoint(pos, vm);
 
-            // снять IsDragOver если ушли
-            if (_currentDragOverFolder is not null && !ReferenceEquals(_currentDragOverFolder, targetFolderVm))
+            if (_currentDragOverFolder is not null &&
+                !ReferenceEquals(_currentDragOverFolder, targetFolderVm))
             {
                 _currentDragOverFolder.IsDragOver = false;
                 _currentDragOverFolder = null;
@@ -233,7 +323,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
             if (targetFolderVm is null) return;
 
-            // закрытая папка → в конец
             if (!targetFolderVm.IsExpanded)
             {
                 if (!ReferenceEquals(_currentDragOverFolder, targetFolderVm))
@@ -241,17 +330,195 @@ namespace Writersword.Modules.Characters.Views.Tabs
                     targetFolderVm.IsDragOver = true;
                     _currentDragOverFolder = targetFolderVm;
                 }
-                SetPreviewIfChanged(vm, null, targetFolderVm.FolderId);
+                if (targetFolderVm.FolderId != _dragTargetFolderId)
+                {
+                    _dragTargetFolderId = targetFolderVm.FolderId;
+                    _dragTargetIndex = targetFolderVm.Characters.Count;
+                    var snapshot = SnapshotPositions();
+                    vm.UpdateDragPreview(_dragCandidate.Id, _dragTargetFolderId, _dragTargetIndex);
+                    BeginFlipAnimation(snapshot);
+                }
                 return;
             }
 
-            // открытая папка → ищем позицию вставки внутри неё
-            var (beforeId, folderId) = FindInsertPositionInFolder(pos, targetFolderVm, vm);
-            if (folderId is not null)
-                SetPreviewIfChanged(vm, beforeId, folderId);
+            if (targetFolderVm.FolderId != _dragTargetFolderId)
+                InitSlotGeometry(vm);
+
+            int targetIndex = ComputeTargetIndex(pos, targetFolderVm);
+            if (targetIndex == _dragTargetIndex && targetFolderVm.FolderId == _dragTargetFolderId)
+                return;
+
+            _dragTargetIndex = targetIndex;
+            _dragTargetFolderId = targetFolderVm.FolderId;
+
+            var snap = SnapshotPositions();
+            vm.UpdateDragPreview(_dragCandidate.Id, _dragTargetFolderId, _dragTargetIndex);
+            BeginFlipAnimation(snap);
         }
 
-        // Находит папку по Y-позиции курсора, проверяя границы каждой папки в дереве.
+        // Снимаем визуальные позиции (с текущим TranslateTransform).
+        // Не сбрасываем — карточки в середине анимации не прерываются.
+        private Dictionary<string, Point> SnapshotPositions()
+        {
+            var result = new Dictionary<string, Point>(_cardBorderCache.Count);
+            foreach (var (id, border) in _cardBorderCache)
+            {
+                var pt = border.TranslatePoint(new Point(0, 0), this);
+                if (pt.HasValue) result[id] = pt.Value;
+            }
+            return result;
+        }
+
+        private void ResetTransformsInstant()
+        {
+            foreach (var (_, border) in _cardBorderCache)
+            {
+                if (border.RenderTransform is not TranslateTransform tt) continue;
+                if (tt.X == 0.0 && tt.Y == 0.0) continue;
+                var saved = tt.Transitions;
+                tt.Transitions = null;
+                tt.X = 0.0;
+                tt.Y = 0.0;
+                tt.Transitions = saved;
+            }
+        }
+
+        // FLIP: before = визуальная позиция до изменения коллекции.
+        // После layout pass: для каждой карточки точечно сбрасываем трансформ,
+        // измеряем чистую layout-позицию, вычисляем дельту, ставим обратно.
+        // Остальные карточки продолжают свои анимации без обрыва.
+        private void BeginFlipAnimation(Dictionary<string, Point> beforePositions)
+        {
+            if (beforePositions.Count == 0) return;
+            int gen = ++_flipGeneration;
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (gen != _flipGeneration) return;
+
+                var toAnimate = new List<TranslateTransform>(beforePositions.Count);
+
+                foreach (var (id, border) in _cardBorderCache)
+                {
+                    if (!beforePositions.TryGetValue(id, out var before)) continue;
+                    if (border.RenderTransform is not TranslateTransform tt) continue;
+
+                    // Точечный сброс: временно обнуляем трансформ для замера layout-позиции
+                    double oldX = tt.X, oldY = tt.Y;
+                    var saved = tt.Transitions;
+                    tt.Transitions = null;
+                    tt.X = 0.0;
+                    tt.Y = 0.0;
+
+                    var layoutPt = border.TranslatePoint(new Point(0, 0), this);
+
+                    if (!layoutPt.HasValue)
+                    {
+                        tt.X = oldX;
+                        tt.Y = oldY;
+                        tt.Transitions = saved;
+                        continue;
+                    }
+
+                    double dx = before.X - layoutPt.Value.X;
+                    double dy = before.Y - layoutPt.Value.Y;
+
+                    if (Math.Abs(dx) < 0.5 && Math.Abs(dy) < 0.5)
+                    {
+                        // позиция не изменилась — восстанавливаем текущую анимацию
+                        tt.X = oldX;
+                        tt.Y = oldY;
+                        tt.Transitions = saved;
+                        continue;
+                    }
+
+                    tt.X = dx;
+                    tt.Y = dy;
+                    tt.Transitions = saved;
+                    toAnimate.Add(tt);
+                }
+
+                if (toAnimate.Count == 0) return;
+
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (gen != _flipGeneration) return;
+                    foreach (var tt in toAnimate) { tt.X = 0.0; tt.Y = 0.0; }
+                }, DispatcherPriority.Render);
+
+            }, DispatcherPriority.Loaded);
+        }
+
+        private int ComputeTargetIndex(Point pos, CharacterFolderViewModel folderVm)
+        {
+            if (!_folderItemsCtrlCache.TryGetValue(folderVm.FolderId, out var container))
+                return _dragTargetIndex;
+
+            var topLeft = container.TranslatePoint(new Point(0, 0), this);
+            if (topLeft is null) return _dragTargetIndex;
+
+            double relX = pos.X - topLeft.Value.X;
+            double relY = pos.Y - topLeft.Value.Y;
+
+            int row = Math.Max(0, (int)(relY / _slotHeight));
+            int col = Math.Max(0, (int)(relX / _slotWidth));
+            col = Math.Min(col, _cardsPerRow - 1);
+
+            int maxIdx = Math.Max(0, folderVm.Characters.Count - 1);
+            return Math.Min(row * _cardsPerRow + col, maxIdx);
+        }
+
+        private void RebuildDragCaches()
+        {
+            _cardBorderCache.Clear();
+            _folderHeaderCache.Clear();
+            _folderItemsCtrlCache.Clear();
+
+            foreach (var ctrl in this.GetVisualDescendants().OfType<Control>())
+            {
+                switch (ctrl)
+                {
+                    case StackPanel sp when sp.DataContext is CharacterFolderViewModel fvSp:
+                        if (!_folderHeaderCache.ContainsKey(fvSp.FolderId))
+                            _folderHeaderCache[fvSp.FolderId] = sp;
+                        break;
+
+                    case ItemsControl ic when ic.DataContext is CharacterFolderViewModel fvIc:
+                        if (!_folderItemsCtrlCache.ContainsKey(fvIc.FolderId))
+                            _folderItemsCtrlCache[fvIc.FolderId] = ic;
+                        break;
+
+                    case Border border
+                        when border.DataContext is CharacterListItemViewModel cardVm
+                        && !cardVm.IsPlaceholder
+                        && IsTopLevelCardBorder(border):
+                        _cardBorderCache[cardVm.Id] = border;
+                        break;
+                }
+            }
+        }
+
+        private static bool IsTopLevelCardBorder(Border border)
+        {
+            var parent = border.GetVisualParent();
+            while (parent is not null)
+            {
+                if (parent is UniformGrid || parent is WrapPanel)
+                    return true;
+                if (parent is Border pb && pb.DataContext == border.DataContext)
+                    return false;
+                parent = parent.GetVisualParent();
+            }
+            return false;
+        }
+
+        private void ClearDragCaches()
+        {
+            _cardBorderCache.Clear();
+            _folderHeaderCache.Clear();
+            _folderItemsCtrlCache.Clear();
+        }
+
         private CharacterFolderViewModel? FindFolderAtPoint(Point pos, CharactersViewModel vm)
         {
             CharacterFolderViewModel? best = null;
@@ -259,123 +526,28 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
             foreach (var folderVm in vm.Folders)
             {
-                // ищем Border заголовка папки — DataContext = folderVm
-                var headerControl = FindControlForDataContext(folderVm);
-                if (headerControl is null) continue;
+                Control? headerControl;
+                if (!_folderHeaderCache.TryGetValue(folderVm.FolderId, out headerControl))
+                {
+                    foreach (var ctrl in this.GetVisualDescendants().OfType<Control>())
+                    {
+                        if (ReferenceEquals(ctrl.DataContext, folderVm) && ctrl is StackPanel)
+                        { headerControl = ctrl; break; }
+                    }
+                }
 
+                if (headerControl is null) continue;
                 var topLeft = headerControl.TranslatePoint(new Point(0, 0), this);
                 if (topLeft is null) continue;
 
-                // граница папки: от верха заголовка до низа следующего заголовка (или бесконечность)
-                var folderTop = topLeft.Value.Y;
-
-                // выбираем ту папку, чей верх последний не превышает Y курсора
-                if (pos.Y >= folderTop && folderTop > bestTop)
+                if (pos.Y >= topLeft.Value.Y && topLeft.Value.Y > bestTop)
                 {
-                    bestTop = folderTop;
+                    bestTop = topLeft.Value.Y;
                     best = folderVm;
                 }
             }
-
             return best;
         }
-
-        // Ищет управляющий Control для заданного DataContext
-        private Control? FindControlForDataContext(object dataContext)
-        {
-            foreach (var control in this.GetVisualDescendants().OfType<Control>())
-            {
-                if (ReferenceEquals(control.DataContext, dataContext) && control is StackPanel)
-                    return control;
-            }
-            return null;
-        }
-
-        // Внутри открытой папки ищет позицию вставки.
-        // Позиции карточек рассчитываются детерминированно по размеру карточки,
-        // а не из визуального дерева (оно устаревает во время drag).
-        private (string? beforeId, string? folderId) FindInsertPositionInFolder(
-            Point pos, CharacterFolderViewModel folderVm, CharactersViewModel vm)
-        {
-            // все карточки папки кроме перетаскиваемой — в порядке коллекции
-            var cards = folderVm.Characters.Where(c => !c.IsDragging).ToList();
-            if (cards.Count == 0)
-                return (null, folderVm.FolderId);
-
-            // находим контейнер ItemsControl папки чтобы узнать его ширину и позицию
-            Control? container = null;
-            foreach (var ctrl in this.GetVisualDescendants().OfType<ItemsControl>())
-            {
-                if (ctrl.DataContext is CharacterFolderViewModel fvm &&
-                    ReferenceEquals(fvm, folderVm))
-                {
-                    container = ctrl;
-                    break;
-                }
-            }
-
-            if (container is null)
-                return (null, folderVm.FolderId);
-
-            var containerTopLeft = container.TranslatePoint(new Point(0, 0), this);
-            if (containerTopLeft is null)
-                return (null, folderVm.FolderId);
-
-            // размеры карточки с учётом margin
-            const double cardWidth = 148.0;
-            const double cardMargin = 6.0;
-            const double slotWidth = cardWidth + cardMargin * 2; // 160px на слот
-            const double cardHeight = 100.0;
-            const double slotHeight = cardHeight + cardMargin * 2;
-
-            double containerWidth = container.Bounds.Width;
-            int cardsPerRow = Math.Max(1, (int)(containerWidth / slotWidth));
-
-            // координаты курсора относительно контейнера
-            double relX = pos.X - containerTopLeft.Value.X;
-            double relY = pos.Y - containerTopLeft.Value.Y;
-
-            // строка по Y
-            int row = Math.Max(0, (int)(relY / slotHeight));
-
-            // индекс в строке по X — зажимаем в пределах строки
-            int col = (int)(relX / slotWidth);
-            col = Math.Max(0, col);
-
-            // зажимаем col в пределах строки — курсор правее последней позиции
-            // остаётся в последней позиции этой строки (никакого переноса)
-            col = Math.Min(col, cardsPerRow - 1);
-
-            // глобальный индекс целевой позиции
-            int targetIndex = row * cardsPerRow + col;
-            targetIndex = Math.Min(targetIndex, cards.Count - 1);
-
-            if (targetIndex < 0)
-                return (null, folderVm.FolderId);
-
-            return (cards[targetIndex].Id, folderVm.FolderId);
-        }
-
-        // Группирует карточки в строки по Y-пересечению
-
-        private void SetPreviewIfChanged(CharactersViewModel vm, string? beforeId, string folderId)
-        {
-            if (beforeId == _lastPreviewBeforeId && folderId == _lastPreviewFolderId)
-                return;
-            _lastPreviewBeforeId = beforeId;
-            _lastPreviewFolderId = folderId;
-            vm.UpdateDragPreview(_dragCandidate!.Id, beforeId, folderId);
-        }
-
-        private static string? FindFolderContaining(CharactersViewModel vm, string charId)
-        {
-            foreach (var f in vm.Folders)
-                if (f.Characters.Any(c => c.Id == charId))
-                    return f.FolderId;
-            return null;
-        }
-
-        // ── PointerReleased ────────────────────────────────────────────────
 
         private void OnGlobalPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
@@ -386,23 +558,29 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 return;
             }
 
-            // освобождаем только нашу собственную capture
             if (_hasPointerCapture)
             {
                 e.Pointer.Capture(null);
                 _hasPointerCapture = false;
             }
 
-            HideGhost();
             ClearDragVisuals();
 
             if (DataContext is CharactersViewModel vm)
-                vm.CommitDragPreview(_dragCandidate.Id);
+            {
+                if (_dragTargetFolderId is not null)
+                    vm.CommitDragPreview(_dragCandidate.Id, _dragTargetFolderId, _dragTargetIndex);
+                else
+                {
+                    vm.CancelDragPreview(_dragCandidate.Id);
+                    ResetTransformsInstant();
+                }
+            }
 
             _dragCandidate = null;
             _isDragging = false;
-            _lastPreviewBeforeId = null;
-            _lastPreviewFolderId = null;
+            _dragTargetFolderId = null;
+            ClearDragCaches();
         }
 
         private void ClearDragVisuals()
@@ -415,38 +593,29 @@ namespace Writersword.Modules.Characters.Views.Tabs
             HideGhost();
         }
 
-        // ── Призрак — полноразмерная копия карточки ────────────────────────
-
         private void ShowGhost(string name, string color, Point pos)
         {
             if (_ghostCanvas is null || _ghostBorder is null || _ghostText is null) return;
-
             _ghostText.Text = name;
-
             var brush = Color.TryParse(color, out var parsed)
                 ? new SolidColorBrush(parsed)
                 : new SolidColorBrush(Color.FromRgb(96, 125, 139));
-
-            // красим верхнюю цветную панель призрака
             var topBg = _ghostBorder.FindControl<Border>("DragGhostTopBg");
             if (topBg is not null) topBg.Background = brush;
-
             MoveGhost(pos);
             _ghostCanvas.IsVisible = true;
         }
 
         private void MoveGhost(Point pos)
         {
-            if (_ghostBorder is null) return;
-            // центрируем призрак относительно курсора
-            Canvas.SetLeft(_ghostBorder, pos.X - 74);
-            Canvas.SetTop(_ghostBorder, pos.Y - 50);
+            if (_ghostBorder is null || DataContext is not CharactersViewModel vm) return;
+            Canvas.SetLeft(_ghostBorder, pos.X - vm.CardWidth / 2.0);
+            Canvas.SetTop(_ghostBorder, pos.Y - vm.CardTotalHeight / 2.0);
         }
 
         private void HideGhost()
         {
-            if (_ghostCanvas is not null)
-                _ghostCanvas.IsVisible = false;
+            if (_ghostCanvas is not null) _ghostCanvas.IsVisible = false;
         }
     }
 }

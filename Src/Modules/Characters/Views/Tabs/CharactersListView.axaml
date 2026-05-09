@@ -17,13 +17,14 @@
 
 	<Grid RowDefinitions="Auto,*,Auto">
 
-		<!-- Панель поиска и инструментов -->
+		<!-- toolbar -->
 		<Border Grid.Row="0"
                 Background="{DynamicResource BgPanelBrush}"
                 BorderBrush="{DynamicResource BorderDefaultBrush}"
                 BorderThickness="0,0,0,1"
                 Padding="8,6">
-			<Grid ColumnDefinitions="*,Auto,Auto,Auto">
+			<Grid ColumnDefinitions="*,Auto,Auto">
+
 				<TextBox Grid.Column="0"
                          x:Name="SearchTextBox"
                          Text="{ReflectionBinding SearchQuery}"
@@ -34,6 +35,7 @@
                          BorderBrush="{DynamicResource BorderDefaultBrush}"
                          BorderThickness="1" CornerRadius="6" Padding="7,4"
                          behaviors:ClickOutsideBehavior.Command="{ReflectionBinding UnfocusSearchCommand}"/>
+
 				<Button Grid.Column="1"
                         Command="{ReflectionBinding CreateFolderCommand}"
                         Margin="6,0,0,0" Padding="8,4"
@@ -49,32 +51,65 @@
                                    VerticalAlignment="Center"/>
 					</StackPanel>
 				</Button>
-				<Button Grid.Column="2"
-                        Command="{ReflectionBinding SwitchViewModeCommand}"
-                        CommandParameter="{x:Static enums:CharactersViewMode.List}"
-                        Margin="4,0,0,0" Padding="7,4"
-                        Background="{DynamicResource BgSurfaceBrush}"
-                        BorderBrush="{DynamicResource BorderDefaultBrush}"
-                        BorderThickness="1" CornerRadius="6"
-                        ToolTip.Tip="{x:Static loc:CharactersStrings.ViewMode_List}">
-					<PathIcon Data="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"
-                              Width="14" Height="14" Foreground="{DynamicResource TextSecondaryBrush}"/>
-				</Button>
-				<Button Grid.Column="3"
-                        Command="{ReflectionBinding SwitchViewModeCommand}"
-                        CommandParameter="{x:Static enums:CharactersViewMode.Grid}"
-                        Margin="4,0,0,0" Padding="7,4"
-                        Background="{DynamicResource BgSurfaceBrush}"
-                        BorderBrush="{DynamicResource BorderDefaultBrush}"
-                        BorderThickness="1" CornerRadius="6"
-                        ToolTip.Tip="{x:Static loc:CharactersStrings.ViewMode_Grid}">
-					<PathIcon Data="M3 3h8v8H3zm0 10h8v8H3zm10-10h8v8h-8zm0 10h8v8h-8z"
-                              Width="14" Height="14" Foreground="{DynamicResource TextSecondaryBrush}"/>
-				</Button>
+
+				<!-- выбор режима отображения: список / размеры плиток -->
+				<ComboBox Grid.Column="2"
+                          SelectedIndex="{ReflectionBinding ViewModeIndex}"
+                          Margin="4,0,0,0"
+                          Padding="7,4"
+                          FontSize="12"
+                          MinWidth="100"
+                          Background="{DynamicResource BgSurfaceBrush}"
+                          BorderBrush="{DynamicResource BorderDefaultBrush}"
+                          BorderThickness="1"
+                          Foreground="{DynamicResource TextPrimaryBrush}"
+                          ToolTip.Tip="Режим отображения">
+					<ComboBoxItem>
+						<StackPanel Orientation="Horizontal" Spacing="6">
+							<PathIcon Data="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"
+                                      Width="12" Height="12" VerticalAlignment="Center"
+                                      Foreground="{DynamicResource TextPrimaryBrush}"/>
+							<TextBlock Text="Список" VerticalAlignment="Center"/>
+						</StackPanel>
+					</ComboBoxItem>
+					<ComboBoxItem>
+						<StackPanel Orientation="Horizontal" Spacing="6">
+							<PathIcon Data="M3 3h8v8H3zm0 10h8v8H3zm10-10h8v8h-8zm0 10h8v8h-8z"
+                                      Width="10" Height="10" VerticalAlignment="Center"
+                                      Foreground="{DynamicResource TextPrimaryBrush}"/>
+							<TextBlock Text="Малые" VerticalAlignment="Center"/>
+						</StackPanel>
+					</ComboBoxItem>
+					<ComboBoxItem>
+						<StackPanel Orientation="Horizontal" Spacing="6">
+							<PathIcon Data="M3 3h8v8H3zm0 10h8v8H3zm10-10h8v8h-8zm0 10h8v8h-8z"
+                                      Width="12" Height="12" VerticalAlignment="Center"
+                                      Foreground="{DynamicResource TextPrimaryBrush}"/>
+							<TextBlock Text="Средние" VerticalAlignment="Center"/>
+						</StackPanel>
+					</ComboBoxItem>
+					<ComboBoxItem>
+						<StackPanel Orientation="Horizontal" Spacing="6">
+							<PathIcon Data="M3 3h8v8H3zm0 10h8v8H3zm10-10h8v8h-8zm0 10h8v8h-8z"
+                                      Width="14" Height="14" VerticalAlignment="Center"
+                                      Foreground="{DynamicResource TextPrimaryBrush}"/>
+							<TextBlock Text="Большие" VerticalAlignment="Center"/>
+						</StackPanel>
+					</ComboBoxItem>
+					<ComboBoxItem>
+						<StackPanel Orientation="Horizontal" Spacing="6">
+							<PathIcon Data="M3 3h8v8H3zm0 10h8v8H3zm10-10h8v8h-8zm0 10h8v8h-8z"
+                                      Width="16" Height="16" VerticalAlignment="Center"
+                                      Foreground="{DynamicResource TextPrimaryBrush}"/>
+							<TextBlock Text="Огромные" VerticalAlignment="Center"/>
+						</StackPanel>
+					</ComboBoxItem>
+				</ComboBox>
+
 			</Grid>
 		</Border>
 
-		<!-- Список папок и персонажей -->
+		<!-- список папок и карточек -->
 		<ScrollViewer Grid.Row="1" Focusable="False">
 			<StackPanel>
 
@@ -85,24 +120,20 @@
                            Margin="32,32" TextWrapping="Wrap" TextAlignment="Center"
                            IsVisible="{Binding Folders.Count, Converter={StaticResource IntIsZeroConverter}}"/>
 
-				<ItemsControl ItemsSource="{Binding Folders}">
+				<ItemsControl x:Name="FoldersContainer" ItemsSource="{Binding Folders}">
 					<ItemsControl.ItemTemplate>
 						<DataTemplate DataType="vm:CharacterFolderViewModel">
 							<StackPanel Margin="0,0,0,4">
 
-								<!-- Заголовок папки -->
 								<Border BorderBrush="{DynamicResource BorderDefaultBrush}"
                                         BorderThickness="0,0,0,1"
                                         Background="{DynamicResource BgPanelBrush}">
 									<Panel>
 										<Border IsVisible="{Binding IsSelected}" Background="#22FFFFFF"/>
-
-										<!-- Подсветка когда папка закрыта и над ней висит drag -->
 										<Border IsVisible="{Binding IsDragOver}"
                                                 Background="#22FFFFFF"
                                                 BorderBrush="{DynamicResource AccentDefaultBrush}"
                                                 BorderThickness="0,0,0,2"/>
-
 										<Grid MinHeight="36">
 											<Grid.ColumnDefinitions>
 												<ColumnDefinition Width="Auto"/>
@@ -121,10 +152,6 @@
                                                                               RightMinWidth="90"
                                                                               LeftPreferredWidth="260"
                                                                               RightPreferredWidth="210">
-
-												<!-- Child[0]: имя папки.
-                                                     SelectOrRenameCommand: первый клик выбирает папку,
-                                                     повторный клик на уже выбранной — начинает переименование. -->
 												<Panel Margin="0,0,12,0" ClipToBounds="True">
 													<Button Command="{Binding SelectOrRenameCommand}"
                                                             Background="Transparent" BorderThickness="0"
@@ -157,7 +184,6 @@
                                                              behaviors:ClickOutsideBehavior.Command="{ReflectionBinding ConfirmRenameCommand}"/>
 												</Panel>
 
-												<!-- Child[1]: комментарий -->
 												<Grid Margin="8,0,8,0">
 													<Button Command="{Binding StartEditCommentCommand}"
                                                             Background="Transparent" BorderThickness="0"
@@ -203,14 +229,11 @@
                                                          behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsEditingComment}"
                                                          behaviors:ClickOutsideBehavior.Command="{ReflectionBinding ConfirmCommentCommand}"/>
 												</Grid>
-
 											</controls:CharactersFolderHeaderPanel>
 
 											<Grid Grid.Column="2"
                                                   ColumnDefinitions="Auto,Auto,Auto"
                                                   VerticalAlignment="Center">
-
-												<!-- Корзина для папки -->
 												<Button Grid.Column="0"
                                                         Command="{Binding RequestDeleteCommand}"
                                                         Background="Transparent" BorderThickness="0"
@@ -228,7 +251,6 @@
                                                               Width="13" Height="13"
                                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
 												</Button>
-
 												<TextBlock Grid.Column="1"
                                                            Text="{Binding Count}"
                                                            FontSize="11"
@@ -237,7 +259,6 @@
                                                            HorizontalAlignment="Center"
                                                            MinWidth="20"
                                                            TextAlignment="Center"/>
-
 												<Button Grid.Column="2"
                                                         Command="{Binding ToggleExpandCommand}"
                                                         Background="Transparent" BorderThickness="0"
@@ -248,27 +269,25 @@
                                                                Foreground="{DynamicResource TextSecondaryBrush}"
                                                                VerticalAlignment="Center"/>
 												</Button>
-
 											</Grid>
 										</Grid>
 									</Panel>
 								</Border>
 
-								<!-- Карточки персонажей.
-                                     IsDragging=true → Opacity=0.25 и IsHitTestVisible=false,
-                                     чтобы карточка не мешала hit-тесту при определении цели. -->
+								<!-- карточки персонажей -->
 								<ItemsControl ItemsSource="{Binding Characters}"
                                               Margin="12,8"
                                               IsVisible="{Binding IsExpanded}">
 									<ItemsControl.ItemsPanel>
 										<ItemsPanelTemplate>
-											<WrapPanel Orientation="Horizontal"/>
+											<UniformGrid Columns="{Binding $parent[UserControl].DataContext.CardsPerRow, FallbackValue=4}"/>
 										</ItemsPanelTemplate>
 									</ItemsControl.ItemsPanel>
 									<ItemsControl.ItemTemplate>
 										<DataTemplate DataType="vm:CharacterListItemViewModel">
 
-											<Border Width="148" CornerRadius="10"
+											<Border Classes="card-root"
+                                                    CornerRadius="10"
                                                     Background="{DynamicResource BgPanelBrush}"
                                                     BorderBrush="{Binding Color}"
                                                     BorderThickness="2"
@@ -278,20 +297,49 @@
                                                     Opacity="{Binding DragOpacity}"
                                                     IsHitTestVisible="{Binding !IsDragging}">
 
-												<Grid RowDefinitions="60,Auto">
+												<!-- Стили hover: кнопки edit/delete появляются только при наведении.
+                                                     Это освобождает пространство в маленьких карточках и улучшает UX. -->
+												<Border.Styles>
+													<Style Selector="Border.card-root StackPanel.card-edit-btns">
+														<Setter Property="Opacity" Value="0"/>
+														<Setter Property="Transitions">
+															<Transitions>
+																<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+															</Transitions>
+														</Setter>
+													</Style>
+													<Style Selector="Border.card-root:pointerover StackPanel.card-edit-btns">
+														<Setter Property="Opacity" Value="1"/>
+													</Style>
+												</Border.Styles>
 
-													<!-- Верхняя цветная область -->
-													<Panel Grid.Row="0">
+												<Border.RenderTransform>
+													<TranslateTransform>
+														<TranslateTransform.Transitions>
+															<Transitions>
+																<DoubleTransition Property="X"
+                                                                                  Duration="0:0:0.28"
+                                                                                  Easing="CubicEaseOut"/>
+																<DoubleTransition Property="Y"
+                                                                                  Duration="0:0:0.28"
+                                                                                  Easing="CubicEaseOut"/>
+															</Transitions>
+														</TranslateTransform.Transitions>
+													</TranslateTransform>
+												</Border.RenderTransform>
+
+												<StackPanel Orientation="Vertical">
+
+													<!-- цветная зона -->
+													<Panel Height="{Binding $parent[UserControl].DataContext.CardTopHeight, FallbackValue=60}">
 														<Border Background="{Binding Color}"/>
-
 														<TextBlock Text="{Binding FallbackIcon}"
-                                                                   FontSize="30"
+                                                                   FontSize="{Binding $parent[UserControl].DataContext.CardIconFontSize, FallbackValue=30}"
                                                                    HorizontalAlignment="Center"
                                                                    VerticalAlignment="Center"
                                                                    Foreground="White"
                                                                    IsHitTestVisible="False"/>
-
-														<!-- Выбор цвета — сверху-слева -->
+														<!-- цветопикер и кнопки edit/delete: hover-only через opacity -->
 														<colorControls:ColorPickerButton
                                                             HexColor="{Binding Color, Mode=TwoWay}"
                                                             HorizontalAlignment="Left"
@@ -299,9 +347,8 @@
                                                             Margin="5"
                                                             Width="20" Height="20"
                                                             ToolTip.Tip="Изменить цвет"/>
-
-														<!-- Редактировать + крестик удаления — сверху-справа -->
-														<StackPanel Orientation="Horizontal"
+														<StackPanel Classes="card-edit-btns"
+                                                                    Orientation="Horizontal"
                                                                     Spacing="2"
                                                                     HorizontalAlignment="Right"
                                                                     VerticalAlignment="Top"
@@ -316,7 +363,6 @@
 																<PathIcon Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
                                                                           Width="11" Height="11" Foreground="White"/>
 															</Button>
-															<!-- Крестик для персонажа -->
 															<Button Command="{Binding RequestDeleteCommand}"
                                                                     Padding="4,3"
                                                                     Background="#88000000"
@@ -333,11 +379,8 @@
 														</StackPanel>
 													</Panel>
 
-													<!-- Нижняя зона имени -->
-													<Panel Grid.Row="1" MinHeight="40">
-
-														<!-- Состояние 1: ввод имени нового персонажа.
-                                                             Без ClickOutsideBehavior — сохранение через LostFocus в code-behind. -->
+													<!-- зона имени -->
+													<Panel Height="{Binding $parent[UserControl].DataContext.CardNameHeight, FallbackValue=40}">
 														<TextBox Text="{ReflectionBinding InlineName}"
                                                                  PlaceholderText="{x:Static loc:CharactersStrings.Character_NamePlaceholder}"
                                                                  FontSize="12" FontWeight="Medium"
@@ -349,12 +392,8 @@
                                                                  Padding="8,0"
                                                                  Foreground="{DynamicResource TextPrimaryBrush}"
                                                                  VerticalAlignment="Stretch"
-                                                                 MinHeight="40"
                                                                  IsVisible="{Binding IsBeingNamed}"
                                                                  behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsBeingNamed}"/>
-
-														<!-- Состояние 2: переименование существующего персонажа.
-                                                             Без ClickOutsideBehavior — сохранение через LostFocus в code-behind. -->
 														<TextBox Text="{ReflectionBinding PendingRename}"
                                                                  FontSize="12" FontWeight="Medium"
                                                                  TextAlignment="Center"
@@ -365,11 +404,8 @@
                                                                  Padding="8,0"
                                                                  Foreground="{DynamicResource TextPrimaryBrush}"
                                                                  VerticalAlignment="Stretch"
-                                                                 MinHeight="40"
                                                                  IsVisible="{Binding IsRenaming}"
                                                                  behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"/>
-
-														<!-- Состояние 3: нормальное отображение, клик = переименование -->
 														<Button Command="{Binding StartRenameCommand}"
                                                                 Background="Transparent"
                                                                 BorderThickness="0"
@@ -397,9 +433,9 @@
                                                                        ToolTip.Tip="{Binding Name}"
                                                                        ToolTip.ShowDelay="600"/>
 														</Button>
-
 													</Panel>
-												</Grid>
+
+												</StackPanel>
 											</Border>
 
 										</DataTemplate>
@@ -413,7 +449,7 @@
 			</StackPanel>
 		</ScrollViewer>
 
-		<!-- Кнопки создания -->
+		<!-- кнопки создания -->
 		<Border Grid.Row="2"
                 BorderBrush="{DynamicResource BorderDefaultBrush}"
                 BorderThickness="0,1,0,0"
@@ -449,14 +485,13 @@
 			</Grid>
 		</Border>
 
-		<!-- Призрак перетаскивания — полноразмерная копия карточки, следует за курсором.
-             IsHitTestVisible=false чтобы не мешать InputHitTest при определении цели. -->
+		<!-- drag ghost — размеры берутся из VM напрямую (DataContext = CharactersViewModel) -->
 		<Canvas x:Name="DragGhostCanvas"
                 Grid.Row="0" Grid.RowSpan="3"
                 IsHitTestVisible="False"
                 IsVisible="False">
 			<Border x:Name="DragGhostBorder"
-                    Width="148" Height="100"
+                    Width="{Binding CardWidth, FallbackValue=148}"
                     CornerRadius="10"
                     Opacity="0.85"
                     BorderBrush="#AAFFFFFF"
@@ -464,18 +499,16 @@
 				<Border.Effect>
 					<DropShadowEffect BlurRadius="16" OffsetX="0" OffsetY="6" Opacity="0.4"/>
 				</Border.Effect>
-				<Grid RowDefinitions="60,40">
-					<!-- Цветная верхняя часть с "?" -->
-					<Panel Grid.Row="0">
+				<StackPanel Orientation="Vertical">
+					<Panel Height="{Binding CardTopHeight, FallbackValue=60}">
 						<Border x:Name="DragGhostTopBg" CornerRadius="8,8,0,0"/>
-						<TextBlock Text="?" FontSize="28" Foreground="White"
+						<TextBlock Text="?" Foreground="White"
+                                   FontSize="{Binding CardIconFontSize, FallbackValue=28}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                    IsHitTestVisible="False"/>
 					</Panel>
-					<!-- Нижняя часть с именем -->
-					<Border Grid.Row="1"
-                            Background="{DynamicResource BgPanelBrush}"
-                            CornerRadius="0,0,8,8">
+					<Panel Height="{Binding CardNameHeight, FallbackValue=40}">
+						<Border Background="{DynamicResource BgPanelBrush}" CornerRadius="0,0,8,8"/>
 						<TextBlock x:Name="DragGhostText"
                                    FontSize="12" FontWeight="Medium"
                                    Foreground="{DynamicResource TextPrimaryBrush}"
@@ -483,8 +516,8 @@
                                    VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis"
                                    Margin="8,0"/>
-					</Border>
-				</Grid>
+					</Panel>
+				</StackPanel>
 			</Border>
 		</Canvas>
 

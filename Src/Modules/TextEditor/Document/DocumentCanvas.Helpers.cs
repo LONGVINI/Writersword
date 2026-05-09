@@ -490,8 +490,10 @@ namespace Writersword.Modules.TextEditor.Document
                     else if (HasSel())
                         DeleteSelection();
 
-                    _rebuildCts.Cancel();
+                    var oldCts1 = _rebuildCts;
                     _rebuildCts = new System.Threading.CancellationTokenSource();
+                    oldCts1.Cancel();
+                    oldCts1.Dispose();
 
                     // Отслеживаем позицию вставки через модель (не через _layouts / _caretPara),
                     // потому что AddParagraphAfter не перестраивает _layouts между итерациями,
@@ -548,8 +550,10 @@ namespace Writersword.Modules.TextEditor.Document
                     CommitEdit();
                     _cellLayoutCache.Clear();
 
-                    _rebuildCts.Cancel();
+                    var oldCts2 = _rebuildCts;
                     _rebuildCts = new System.Threading.CancellationTokenSource();
+                    oldCts2.Cancel();
+                    oldCts2.Dispose();
 
                     RebuildLayouts();
 
@@ -776,11 +780,17 @@ namespace Writersword.Modules.TextEditor.Document
                     }
                     else
                     {
+                        // Для обычного параграфа правая граница — правый край текстовой области
+                        // страницы (не ширина текстового содержимого).
+                        // Иначе клик правее короткого параграфа давал xDist > 0,
+                        // а ячейка таблицы с широким ClipW выигрывала сравнение (xDist = 0).
                         xLeft = pl.AbsXPt;
-                        xRight = pl.AbsXPt + (pl.Layout.Lines.Count > 0
-                            ? pl.Layout.Lines.Max(l => l.Segments.Count > 0
-                                ? l.Segments[^1].X + l.Segments[^1].Width : 0f)
-                            : 100f);
+                        xRight = pl.AbsXPt + (pl.Layout.TextAreaWidthPt > 0
+                            ? pl.Layout.TextAreaWidthPt
+                            : (pl.Layout.Lines.Count > 0
+                                ? pl.Layout.Lines.Max(l => l.Segments.Count > 0
+                                    ? l.Segments[^1].X + l.Segments[^1].Width : 0f)
+                                : 100f));
                     }
 
                     float xDist = xPt < xLeft ? xLeft - xPt

@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
-using Serilog;
 
 namespace Writersword.Modules.Characters.Controls;
 
@@ -47,7 +46,6 @@ public sealed class CharactersFolderHeaderPanel : Panel
         set => SetValue(RightPreferredWidthProperty, value);
     }
 
-    private static readonly ILogger _log = Log.ForContext<CharactersFolderHeaderPanel>();
 
     private const double VisualBuffer = 12.0;
 
@@ -224,20 +222,11 @@ public sealed class CharactersFolderHeaderPanel : Panel
 
         bool nameEditing = HasVisibleTextBox(nameChild);
 
-        _log.Debug(
-            "FolderHeaderPanel Measure: availableSize.W={AW}, available={A}, nameEditing={NE}, naturalName={NN}, naturalComment={NC}",
-            availableSize.Width, available, nameEditing,
-            _naturalNameWidth, _naturalCommentWidth);
-
         var (nameAlloc, commentAlloc) = ComputeAllocations(
             available,
             _naturalNameWidth,
             _naturalCommentWidth,
             nameEditing);
-
-        _log.Debug(
-            "FolderHeaderPanel Measure result: nameAlloc={NA}, commentAlloc={CA}",
-            nameAlloc, commentAlloc);
 
         nameChild.Measure(new Size(nameAlloc, availableSize.Height));
         commentChild.Measure(new Size(commentAlloc, availableSize.Height));
@@ -273,12 +262,6 @@ public sealed class CharactersFolderHeaderPanel : Panel
 
         double commentLeft = Math.Max(nameAlloc, finalSize.Width - commentAlloc);
         double commentWidth = Math.Max(0, finalSize.Width - commentLeft);
-
-        _log.Debug(
-            "FolderHeaderPanel Arrange: finalSize.W={FW}, nameEditing={NE}, naturalName={NN}, naturalComment={NC}, nameAlloc={NA}, commentAlloc={CA}, commentLeft={CL}, commentWidth={CW}",
-            finalSize.Width, nameEditing,
-            _naturalNameWidth, _naturalCommentWidth,
-            nameAlloc, commentAlloc, commentLeft, commentWidth);
 
         // nameChild arrangeится строго по nameAlloc — и при редактировании, и при отображении
         // Button не растягивается на всю строку, занимает ровно столько, сколько нужно тексту.

@@ -128,6 +128,10 @@ namespace Writersword.Modules.TextEditor.Document
         private readonly Dictionary<ParagraphViewModel,
             (string Text, float Width, SKTextLayout Layout)> _layoutCache = new();
 
+        // Хранит лямбды подписанные в WirePvm чтобы точно отписать в UnwirePvm.
+        // Анонимные лямбды нельзя отписать через -= без сохранения ссылки.
+        private readonly Dictionary<ParagraphViewModel, Action> _pvmFocusHandlers = new();
+
         // ── Кеш VM-обёрток и лейаутов для параграфов ячеек ───────────────
         // Ключ — ParagraphBlock (живёт в TableCell.Paragraphs).
         // VM-обёртки переиспользуются между rebuild'ами → SnapCaretToCorrectSlice
@@ -374,15 +378,50 @@ namespace Writersword.Modules.TextEditor.Document
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnDetachedFromVisualTree(e);
-            UnsubscribeFromScrollViewer();
+
+            // Останавливаем таймер — он держит ссылку на this через замыкание и мешает GC.
+            _caretTimer.Stop();
+            GotFocus -= OnGotFocusHandler;
+
+            // Отписываемся от DocumentViewModel и всех ParagraphViewModel.
+            if (_docVm is not null)
+            {
+                _docVm.Paragraphs.CollectionChanged -= OnParagraphsChanged;
+                _docVm.PropertyChanged -= OnDocVmPropertyChanged;
+                _docVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
+                _docVm.OnPageBreakInserted = null;
+                _docVm.UndoDelegate = null;
+                _docVm.RedoDelegate = null;
+                _docVm.CutDelegate = null;
+                _docVm.CopyDelegate = null;
+                _docVm.PasteDelegate = null;
+
+                // Снимаем делегаты с каждого параграфа — иначе замыкания удерживают canvas.
+                foreach (var pvm in _docVm.Paragraphs)
+                    UnwirePvm(pvm);
+            }
+
+            // Отменяем фоновый rebuild.
+            _rebuildCts.Cancel();
+
+            // Освобождаем все накопившиеся битмапы немедленно.
             lock (_bitmapLock)
             {
                 if (_lastFullRenderBitmap is not null)
                 {
-                    _bitmapDisposeQueue.Enqueue(_lastFullRenderBitmap);
+                    _lastFullRenderBitmap.Dispose();
                     _lastFullRenderBitmap = null;
                 }
             }
+            while (_bitmapDisposeQueue.TryDequeue(out var stale))
+                stale.Dispose();
+
+            // Очищаем кеши лейаутов.
+            _layoutCache.Clear();
+            _cellLayoutCache.Clear();
+            _cellVmCache.Clear();
+
+            UnsubscribeFromScrollViewer();
         }
 
         private void OnGotFocusHandler(object? sender, Avalonia.Input.FocusChangedEventArgs e)
@@ -458,14 +497,26 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (_docVm is not null)
             {
+                // Отписываемся от всех параграфов старого DocVm.
+                // Без этого каждый ParagraphViewModel держит замыкание на этот канвас
+                // через FocusRequested и RequestFocusAtPosition — canvas не освобождается GC.
+                foreach (var pvm in _docVm.Paragraphs)
+                    UnwirePvm(pvm);
+
                 _docVm.Paragraphs.CollectionChanged -= OnParagraphsChanged;
                 _docVm.PropertyChanged -= OnDocVmPropertyChanged;
                 _docVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
                 _docVm.OnPageBreakInserted = null;
+                _docVm.UndoDelegate = null;
+                _docVm.RedoDelegate = null;
+                _docVm.CutDelegate = null;
+                _docVm.CopyDelegate = null;
+                _docVm.PasteDelegate = null;
             }
 
             _docVm = DataContext as DocumentViewModel;
             _layoutCache.Clear();
+            _pvmFocusHandlers.Clear();
             _cellVmCache.Clear();
             _cellLayoutCache.Clear();
 
@@ -554,7 +605,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (e.OldItems is not null)
                 foreach (ParagraphViewModel pvm in e.OldItems)
                 {
-                    pvm.PropertyChanged -= OnPvmPropertyChanged;
+                    UnwirePvm(pvm);
                     _layoutCache.Remove(pvm);
                 }
 
@@ -571,31 +622,52 @@ namespace Writersword.Modules.TextEditor.Document
         {
             pvm.PropertyChanged += OnPvmPropertyChanged;
 
-            pvm.FocusRequested += () =>
-            {
-                if (DocVm is null) return;
-                int idx = DocVm.Paragraphs.IndexOf(pvm);
-                if (idx < 0) return;
-                _caretPara = FindFirstSliceForDocVmParagraph(idx);
-                _caretChar = pvm.PlainText?.Length ?? 0;
-                NotifyLeftCell(); // выходим из ячейки
-                SnapCaretToCorrectSlice();
-                UpdatePreferredX();
-                SyncSel(); ResetCaret(); InvalidateVisual();
-            };
+            // Сохраняем лямбду чтобы точно отписать в UnwirePvm.
+            // Анонимную лямбду нельзя отписать через -= без сохранённой ссылки.
+            Action handler = () => OnPvmFocusRequested(pvm);
+            _pvmFocusHandlers[pvm] = handler;
+            pvm.FocusRequested += handler;
 
-            pvm.RequestFocusAtPosition = pos =>
+            pvm.RequestFocusAtPosition = pos => OnPvmRequestFocusAtPosition(pvm, pos);
+        }
+
+        private void OnPvmFocusRequested(ParagraphViewModel pvm)
+        {
+            if (DocVm is null) return;
+            int idx = DocVm.Paragraphs.IndexOf(pvm);
+            if (idx < 0) return;
+            _caretPara = FindFirstSliceForDocVmParagraph(idx);
+            _caretChar = pvm.PlainText?.Length ?? 0;
+            NotifyLeftCell();
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
+            SyncSel(); ResetCaret(); InvalidateVisual();
+        }
+
+        private void OnPvmRequestFocusAtPosition(ParagraphViewModel pvm, int pos)
+        {
+            if (DocVm is null) return;
+            int idx = DocVm.Paragraphs.IndexOf(pvm);
+            if (idx < 0) return;
+            _caretPara = FindFirstSliceForDocVmParagraph(idx);
+            _caretChar = Clamp(pos, 0, pvm.PlainText?.Length ?? 0);
+            NotifyLeftCell();
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
+            SyncSel(); ResetCaret(); InvalidateVisual();
+        }
+
+        private void UnwirePvm(ParagraphViewModel pvm)
+        {
+            pvm.PropertyChanged -= OnPvmPropertyChanged;
+
+            if (_pvmFocusHandlers.TryGetValue(pvm, out var focusHandler))
             {
-                if (DocVm is null) return;
-                int idx = DocVm.Paragraphs.IndexOf(pvm);
-                if (idx < 0) return;
-                _caretPara = FindFirstSliceForDocVmParagraph(idx);
-                _caretChar = Clamp(pos, 0, pvm.PlainText?.Length ?? 0);
-                NotifyLeftCell();
-                SnapCaretToCorrectSlice();
-                UpdatePreferredX();
-                SyncSel(); ResetCaret(); InvalidateVisual();
-            };
+                pvm.FocusRequested -= focusHandler;
+                _pvmFocusHandlers.Remove(pvm);
+            }
+
+            pvm.RequestFocusAtPosition = null;
         }
 
         private void OnPvmPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -615,8 +687,10 @@ namespace Writersword.Modules.TextEditor.Document
             if (DocVm is not null && dirtyParaIdx < DocVm.Paragraphs.Count)
                 _layoutCache.Remove(DocVm.Paragraphs[dirtyParaIdx]);
 
-            _rebuildCts.Cancel();
+            var oldCts = _rebuildCts;
             _rebuildCts = new System.Threading.CancellationTokenSource();
+            oldCts.Cancel();
+            oldCts.Dispose();
             var cts = _rebuildCts;
 
             InvalidateFull();

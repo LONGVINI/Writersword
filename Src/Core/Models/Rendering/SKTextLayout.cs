@@ -36,6 +36,15 @@ namespace Writersword.Core.Models.Rendering
         /// <summary>Отступ первой строки в pt.</summary>
         public float FirstLineIndentPt { get; set; }
 
+        /// <summary>
+        /// Ширина текстовой области строки в pt (без LeftIndentPt и RightIndentPt).
+        /// Устанавливается в SKTextRenderer.WrapTokensToLines и используется
+        /// в ComputeAlignmentOffset для корректного выравнивания по центру и правому краю.
+        /// Было: ComputeAlignmentOffset использовал RightIndentPt + LeftIndentPt —
+        /// это сумма отступов, а не ширина области, что ломало Center и Right выравнивание.
+        /// </summary>
+        public float TextAreaWidthPt { get; set; }
+
         /// <summary>Выравнивание текста в параграфе.</summary>
         public TextAlignment Alignment { get; set; }
 
@@ -111,7 +120,6 @@ namespace Writersword.Core.Models.Rendering
 
             var lastLine = Lines[^1];
             float lastX = GetCaretXInLine(lastLine, charIndex);
-            // lastLine — последняя строка, никогда не line 0 если строк > 1
             float lastLineExtra = (Lines.Count == 1) ? FirstLineIndentPt : 0f;
 
             return new SKCaretRect
@@ -153,7 +161,6 @@ namespace Writersword.Core.Models.Rendering
 
                 if (x2 < x1) (x2, x1) = (x1, x2);
 
-                // Первая строка параграфа физически сдвинута вправо на FirstLineIndentPt
                 float lineExtra = (i == 0) ? FirstLineIndentPt : 0f;
 
                 result.Add(new SKSelectionRect
@@ -204,10 +211,6 @@ namespace Writersword.Core.Models.Rendering
 
         // ── Вспомогательные методы ────────────────────────────────────────
 
-        /// <summary>
-        /// HitTest по точке внутри одной строки.
-        /// Перебирает глифы сегментов — ищет ближайшую позицию каретки.
-        /// </summary>
         private static SKHitTestResult HitTestLinePoint(SKLineLayout line, float xPt)
         {
             if (line.Segments.Count == 0)
@@ -271,11 +274,6 @@ namespace Writersword.Core.Models.Rendering
             };
         }
 
-        /// <summary>
-        /// Возвращает X-позицию каретки в pt относительно начала строки
-        /// для заданного индекса символа.
-        /// Перебирает глифы сегментов — суммирует ширины до нужного символа.
-        /// </summary>
         private static float GetCaretXInLine(SKLineLayout line, int charIndex)
         {
             foreach (var seg in line.Segments)

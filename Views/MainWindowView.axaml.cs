@@ -21,6 +21,7 @@ using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.ViewModels;
 using Writersword.Core.Interfaces.Modules;
+using Writersword.Views.Components.MenuBar;
 
 namespace Writersword.Views
 {
@@ -149,6 +150,33 @@ namespace Writersword.Views
                 EnsureThickFrameAndSubclass();
                 if (WindowState == WindowState.Maximized)
                     ScheduleMaximizedPadding();
+
+                // После того как визуальное дерево построено — подписываемся на LayoutUpdated
+                // MenuBarView для отслеживания фактической ширины пунктов меню.
+                // Это нужно для WM_NCHITTEST: область правее пунктов меню должна быть
+                // HTCAPTION (перетаскивание окна), а не HTCLIENT.
+                var menuBarView = this.FindDescendantOfType<MenuBarView>();
+                if (menuBarView != null)
+                {
+                    menuBarView.LayoutUpdated += (_, _) =>
+                    {
+                        var wrapPanel = menuBarView.GetVisualDescendants()
+                            .OfType<WrapPanel>()
+                            .FirstOrDefault();
+
+                        if (wrapPanel == null) return;
+
+                        double maxRight = 0;
+                        foreach (Control child in wrapPanel.Children)
+                        {
+                            if (child.IsVisible)
+                                maxRight = Math.Max(maxRight, child.Bounds.Right);
+                        }
+
+                        if (maxRight > 0)
+                            _titleBarContentWidth = menuBarView.Bounds.X + maxRight;
+                    };
+                }
             };
 
             Closing += OnClosing;
@@ -287,7 +315,7 @@ namespace Writersword.Views
             return CallWindowProc(_originalWndProc, hwnd, msg, wParam, lParam);
         }
 
-        /// <summary>Инициализация кнопок заголовка и отслеживание ширины TitleBarContent.</summary>
+        /// <summary>Инициализация кнопок заголовка.</summary>
         private void InitializeTitleBar()
         {
             var minimizeButton = this.FindControl<Button>("MinimizeButton");
@@ -301,15 +329,6 @@ namespace Writersword.Views
             var closeButton = this.FindControl<Button>("CloseButton");
             if (closeButton != null)
                 closeButton.Click += (_, _) => Close();
-
-            var titleBarContent = this.FindControl<StackPanel>("TitleBarContent");
-            if (titleBarContent != null)
-            {
-                titleBarContent.LayoutUpdated += (_, _) =>
-                {
-                    _titleBarContentWidth = titleBarContent.Bounds.Width;
-                };
-            }
 
             PropertyChanged += OnWindowPropertyChanged;
             PositionChanged += OnWindowPositionChanged;
@@ -436,7 +455,13 @@ namespace Writersword.Views
                     padLeft, padTop, padRight, padBottom);
             }
 
-            Padding = new Thickness(padLeft, padTop, padRight, padBottom);
+            // Window.Padding.Bottom в Avalonia 12 конфликтует с внутренним OffScreenMargin
+            // при ExtendClientAreaToDecorationsHint=True — нижний отступ либо игнорируется,
+            // либо суммируется с OffScreenMargin и контент уходит под панель задач.
+            // Решение: left/top/right — через Window.Padding (работают корректно),
+            // bottom — через Margin корневого Grid (обходит конфликт с OffScreenMargin).
+            Padding = new Thickness(padLeft, padTop, padRight, 0);
+            ApplyRootGridBottomMargin(padBottom);
             ApplyButtonsPadding();
         }
 
@@ -464,13 +489,32 @@ namespace Writersword.Views
             var winRight = winLeft + windowBounds.Width;
             var winBottom = winTop + windowBounds.Height;
 
+            var padBottom = Math.Max(0, winBottom - workBottom);
+
+            // Window.Padding.Bottom в Avalonia 12 конфликтует с внутренним OffScreenMargin
+            // при ExtendClientAreaToDecorationsHint=True — нижний отступ либо игнорируется,
+            // либо суммируется с OffScreenMargin и контент уходит под панель задач.
+            // Решение: left/top/right — через Window.Padding (работают корректно),
+            // bottom — через Margin корневого Grid (обходит конфликт с OffScreenMargin).
             Padding = new Thickness(
                 Math.Max(0, workLeft - winLeft),
                 Math.Max(0, workTop - winTop),
                 Math.Max(0, winRight - workRight),
-                Math.Max(0, winBottom - workBottom));
+                0);
 
+            ApplyRootGridBottomMargin(padBottom);
             ApplyButtonsPadding();
+        }
+
+        /// <summary>
+        /// Применяет нижний отступ к корневому Grid вместо Window.Padding.Bottom.
+        /// В Avalonia 12 с ExtendClientAreaToDecorationsHint=True Window.Padding.Bottom
+        /// конфликтует с внутренним OffScreenMargin — контент уходит под панель задач.
+        /// </summary>
+        private void ApplyRootGridBottomMargin(double bottom)
+        {
+            if (this.Content is Grid rootGrid)
+                rootGrid.Margin = new Thickness(0, 0, 0, bottom);
         }
 
         private void ApplyButtonsPadding()
@@ -489,6 +533,7 @@ namespace Writersword.Views
             else
             {
                 Padding = new Thickness(0);
+                ApplyRootGridBottomMargin(0);
                 ApplyButtonsPadding();
             }
 

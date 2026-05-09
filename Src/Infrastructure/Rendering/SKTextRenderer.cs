@@ -68,6 +68,10 @@ namespace Writersword.Infrastructure.Rendering
                 ? (RenderAlignment)(int)para.Properties.Alignment.Value
                 : styles.ResolveAlignment(styleName);
 
+            // textWidthPt — ширина строки текста без учёта отступов параграфа.
+            // Это та ширина по которой выполняется перенос строк.
+            // Она же используется в ComputeAlignmentOffset для правильного
+            // вычисления сдвига при выравнивании по центру / правому краю.
             float textWidthPt = Math.Max(availableWidthPt - leftIndentPt - rightIndentPt, 1f);
 
             var layout = new SKTextLayout
@@ -900,13 +904,20 @@ namespace Writersword.Infrastructure.Rendering
 
         /// <summary>
         /// Жадный алгоритм переноса токенов по строкам с учётом ширины текстовой области.
+        /// textAreaWidthPt — ширина строки текста без LeftIndent/RightIndent (уже вычтены).
+        /// Сохраняется в layout.TextAreaWidthPt для корректного ComputeAlignmentOffset.
         /// </summary>
         private static void WrapTokensToLines(
             List<(string Char, SKRunSegment Format, int GlobalIndex)> tokens,
             SKTextLayout layout,
-            float availableWidthPt,
+            float textAreaWidthPt,
             float lineSpacing)
         {
+            // Сохраняем ширину текстовой области — используется в ComputeAlignmentOffset.
+            // textAreaWidthPt = availableWidthPt - leftIndentPt - rightIndentPt,
+            // т.е. именно то пространство в котором располагаются строки.
+            layout.TextAreaWidthPt = textAreaWidthPt;
+
             if (tokens.Count == 0)
             {
                 var emptyLine = BuildEmptyLine(layout, lineSpacing);
@@ -915,7 +926,7 @@ namespace Writersword.Infrastructure.Rendering
                 return;
             }
 
-            float lineWidth = availableWidthPt - layout.FirstLineIndentPt;
+            float lineWidth = textAreaWidthPt - layout.FirstLineIndentPt;
             float currentW = 0f;
             var currentLine = new SKLineLayout { FirstCharIndex = tokens[0].GlobalIndex };
             var wordBuffer = new List<(string Char, SKRunSegment Format, int GlobalIndex)>();
@@ -930,7 +941,7 @@ namespace Writersword.Infrastructure.Rendering
                     if (currentW + wordWidth > lineWidth && currentLine.Segments.Count > 0)
                     {
                         FinalizeLine(currentLine, layout, lineSpacing);
-                        lineWidth = availableWidthPt;
+                        lineWidth = textAreaWidthPt;
                         currentW = 0f;
                         currentLine = new SKLineLayout
                         {
@@ -946,7 +957,7 @@ namespace Writersword.Infrastructure.Rendering
                 if (currentLine.Segments.Count > 0)
                 {
                     FinalizeLine(currentLine, layout, lineSpacing);
-                    lineWidth = availableWidthPt;
+                    lineWidth = textAreaWidthPt;
                     currentW = 0f;
                     currentLine = new SKLineLayout
                     {
@@ -960,7 +971,7 @@ namespace Writersword.Infrastructure.Rendering
                     if (currentW + charWidth > lineWidth && currentLine.Segments.Count > 0)
                     {
                         FinalizeLine(currentLine, layout, lineSpacing);
-                        lineWidth = availableWidthPt;
+                        lineWidth = textAreaWidthPt;
                         currentW = 0f;
                         currentLine = new SKLineLayout { FirstCharIndex = globalIdx };
                     }
@@ -1115,14 +1126,20 @@ namespace Writersword.Infrastructure.Rendering
 
         // ── Выравнивание ──────────────────────────────────────────────────
 
+        /// <summary>
+        /// Вычисляет горизонтальный сдвиг строки внутри текстовой области параграфа.
+        /// Используется layout.TextAreaWidthPt — ширина строки без LeftIndent/RightIndent.
+        /// Было: layout.RightIndentPt + layout.LeftIndentPt — это сумма отступов,
+        ///        а не ширина области, что давало неверное выравнивание по центру и правому краю.
+        /// </summary>
         private static float ComputeAlignmentOffset(SKTextLayout layout, SKLineLayout line)
         {
-            float availableWidth = layout.RightIndentPt + layout.LeftIndentPt;
+            float textAreaWidth = layout.TextAreaWidthPt;
 
             return layout.Alignment switch
             {
-                RenderAlignment.Center => availableWidth / 2f - line.TextWidth / 2f,
-                RenderAlignment.Right => availableWidth - line.TextWidth,
+                RenderAlignment.Center => (textAreaWidth - line.TextWidth) / 2f,
+                RenderAlignment.Right => textAreaWidth - line.TextWidth,
                 RenderAlignment.Justify when !line.IsLastLine => 0f,
                 _ => 0f
             };

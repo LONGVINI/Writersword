@@ -98,7 +98,12 @@ namespace Writersword.Infrastructure.Services.Project
                         bool dataIsSame = false;
                         if (savedProject != null && cache != null)
                         {
-                            dataIsSame = _comparisonService.AreDataEqual(cache, savedProject.ModulesData);
+                            // Сравниваем только те модули которые есть в кеше.
+                            // Остальные не были активны в прошлой сессии — не могли измениться.
+                            var savedRelevantOnOpen = savedProject.ModulesData
+                                .Where(kvp => cache.ContainsKey(kvp.Key))
+                                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                            dataIsSame = _comparisonService.AreDataEqual(cache, savedRelevantOnOpen);
                             _logger.LogDebug("Data comparison: {Comparison}", dataIsSame ? "SAME" : "DIFFERENT");
                         }
 
@@ -273,7 +278,12 @@ namespace Writersword.Infrastructure.Services.Project
                         bool dataIsSame = false;
                         if (savedProject != null && cache != null)
                         {
-                            dataIsSame = _comparisonService.AreDataEqual(cache, savedProject.ModulesData);
+                            // Сравниваем только те модули которые есть в кеше.
+                            // Остальные не были активны в прошлой сессии — не могли измениться.
+                            var savedRelevantOnOpen = savedProject.ModulesData
+                                .Where(kvp => cache.ContainsKey(kvp.Key))
+                                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                            dataIsSame = _comparisonService.AreDataEqual(cache, savedRelevantOnOpen);
                             _logger.LogDebug("Data comparison: {Comparison}", dataIsSame ? "SAME" : "DIFFERENT");
                         }
 
@@ -854,6 +864,7 @@ namespace Writersword.Infrastructure.Services.Project
         {
             var filePath = tab.FilePath;
 
+            // ── Новый несохранённый проект ────────────────────────────────
             if (string.IsNullOrEmpty(filePath))
             {
                 var tabCollection = App.Services.GetRequiredService<ITabCollection>();
@@ -887,6 +898,13 @@ namespace Writersword.Infrastructure.Services.Project
                 var activeTab = tabCollection.ActiveTab;
                 var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
 
+                // ── Собираем текущие данные только тех модулей что были активны ──
+                // Логика: данные активного модуля берём живьём (он мог измениться
+                // и ещё не успел записаться в кеш). Остальные модули берём из кеша
+                // (они записались при переключении). Модули которых нет ни там ни там
+                // не были активны в этой сессии — они не могли измениться, поэтому
+                // мы их вообще не включаем в сравнение. Для них savedProject.ModulesData
+                // тоже фильтруется ниже.
                 Dictionary<string, object?> allCurrentData;
 
                 if (tab == activeTab)
@@ -895,28 +913,31 @@ namespace Writersword.Infrastructure.Services.Project
                     var activeModules = mainViewModel.GetActiveModules();
                     var activeCustomData = stateCollector.CollectCustomData(activeModules);
 
+                    // Начинаем с живых данных активных модулей.
                     allCurrentData = new Dictionary<string, object?>(activeCustomData);
 
+                    // Добавляем данные из кеша для модулей которых нет среди активных
+                    // (они были активны ранее в этой сессии, переключились → записались в кеш).
                     var cache = _cacheService.LoadCache(filePath);
                     if (cache != null)
                         foreach (var kvp in cache)
                             if (!allCurrentData.ContainsKey(kvp.Key) && kvp.Value != null)
                                 allCurrentData[kvp.Key] = kvp.Value;
 
-                    var nonEmptyData = allCurrentData
+                    // Убираем пустые записи — модуль мог вернуть null или пустую строку.
+                    allCurrentData = allCurrentData
                         .Where(kvp => kvp.Value != null && !(kvp.Value is string str && string.IsNullOrWhiteSpace(str)))
                         .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
-                    if (nonEmptyData.Count == 0)
+                    if (allCurrentData.Count == 0)
                     {
                         _logger.LogDebug("HasUnsavedChanges ({Title}): False (no data)", tab.Title);
                         return false;
                     }
-
-                    allCurrentData = nonEmptyData;
                 }
                 else
                 {
+                    // Неактивная вкладка — все данные только из кеша.
                     var cache = _cacheService.LoadCache(filePath);
 
                     if (cache == null || cache.Count == 0)
@@ -925,19 +946,15 @@ namespace Writersword.Infrastructure.Services.Project
                         return false;
                     }
 
-                    allCurrentData = new Dictionary<string, object?>(cache);
-
-                    var nonEmptyData = allCurrentData
+                    allCurrentData = cache
                         .Where(kvp => kvp.Value != null && !(kvp.Value is string str && string.IsNullOrWhiteSpace(str)))
                         .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
-                    if (nonEmptyData.Count == 0)
+                    if (allCurrentData.Count == 0)
                     {
                         _logger.LogDebug("HasUnsavedChanges ({Title}, inactive): false (no data in cache)", tab.Title);
                         return false;
                     }
-
-                    allCurrentData = nonEmptyData;
                 }
 
                 tab.Context.CloseZipStorage();
@@ -950,7 +967,19 @@ namespace Writersword.Infrastructure.Services.Project
                     return false;
                 }
 
-                bool hasChanges = !_comparisonService.AreDataEqual(allCurrentData, savedProject.ModulesData);
+                // Сравниваем ТОЛЬКО те модули которые были активны в этой сессии.
+                // Модули которых нет в allCurrentData не могли измениться —
+                // незачем их включать в сравнение, это только создаёт ложные срабатывания.
+                var savedRelevant = savedProject.ModulesData
+                    .Where(kvp => allCurrentData.ContainsKey(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+                _logger.LogDebug("Comparing [{CurrentCount}] current keys vs [{SavedCount}] saved keys: {Keys}",
+                    allCurrentData.Count,
+                    savedRelevant.Count,
+                    string.Join(", ", allCurrentData.Keys));
+
+                bool hasChanges = !_comparisonService.AreDataEqual(allCurrentData, savedRelevant);
                 _logger.LogDebug("HasUnsavedChanges ({Title}): {HasChanges}", tab.Title, hasChanges);
                 return hasChanges;
             }
