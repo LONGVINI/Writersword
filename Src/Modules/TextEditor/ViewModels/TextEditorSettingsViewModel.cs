@@ -1,6 +1,8 @@
 using ReactiveUI;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
 using Writersword.Core.Enums;
 using Writersword.Core.Models.Settings;
 using Writersword.Modules.TextEditor.Models.Document;
@@ -8,6 +10,34 @@ using Writersword.Modules.TextEditor.Models.Settings;
 
 namespace Writersword.Modules.TextEditor.ViewModels
 {
+    /// <summary>
+    /// Одна запись в таблице шрифтов по скриптам.
+    /// Реактивна — изменение FontFamily сразу отражается в UI.
+    /// </summary>
+    public sealed class ScriptFontEntry : ReactiveObject
+    {
+        private string _fontFamily;
+
+        /// <summary>Системный ключ скрипта (используется в ScriptFontMap).</summary>
+        public string ScriptKey { get; }
+
+        /// <summary>Название скрипта для отображения пользователю.</summary>
+        public string DisplayName { get; }
+
+        public string FontFamily
+        {
+            get => _fontFamily;
+            set => this.RaiseAndSetIfChanged(ref _fontFamily, value);
+        }
+
+        public ScriptFontEntry(string scriptKey, string displayName, string fontFamily)
+        {
+            ScriptKey = scriptKey;
+            DisplayName = displayName;
+            _fontFamily = fontFamily;
+        }
+    }
+
     public sealed class TextEditorSettingsViewModel : ReactiveObject
     {
         public SettingsFieldContext Context { get; }
@@ -24,6 +54,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public SettingValue<double> DefaultZoom { get; }
         public SettingValue<int> AutoSaveIntervalSeconds { get; }
         public SettingValue<double> MonitorSizeInches { get; }
+
+        /// <summary>
+        /// Реактивная коллекция пар "скрипт → шрифт" для редактирования в UI.
+        /// При вызове GetSettings() агрегируется обратно в Dictionary.
+        /// </summary>
+        public ObservableCollection<ScriptFontEntry> ScriptFonts { get; }
 
         // ── Прокси для NumericUpDown (decimal?) ───────────────────────────
 
@@ -93,6 +129,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             DefaultZoom = new SettingValue<double>(hardcoded.DefaultZoom, global.DefaultZoom);
             AutoSaveIntervalSeconds = new SettingValue<int>(hardcoded.AutoSaveIntervalSeconds, global.AutoSaveIntervalSeconds);
             MonitorSizeInches = new SettingValue<double>(hardcoded.MonitorSizeInches, global.MonitorSizeInches);
+            ScriptFonts = BuildScriptFonts(global.ScriptFontMap);
 
             WireProxies();
         }
@@ -117,6 +154,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             DefaultZoom = new SettingValue<double>(hardcoded.DefaultZoom, global.DefaultZoom, current.DefaultZoom);
             AutoSaveIntervalSeconds = new SettingValue<int>(hardcoded.AutoSaveIntervalSeconds, global.AutoSaveIntervalSeconds, current.AutoSaveIntervalSeconds);
             MonitorSizeInches = new SettingValue<double>(hardcoded.MonitorSizeInches, global.MonitorSizeInches, current.MonitorSizeInches);
+            ScriptFonts = BuildScriptFonts(current.ScriptFontMap);
 
             WireProxies();
         }
@@ -142,6 +180,37 @@ namespace Writersword.Modules.TextEditor.ViewModels
             };
         }
 
+        private static ObservableCollection<ScriptFontEntry> BuildScriptFonts(
+            Dictionary<string, string>? map)
+        {
+            var defaults = new TextEditorSettings().ScriptFontMap;
+            var col = new ObservableCollection<ScriptFontEntry>();
+
+            var definitions = new (string Key, string Display)[]
+            {
+                ("Cyrillic",   "Кириллица (ru, uk, bg…)"),
+                ("Greek",      "Греческий"),
+                ("Arabic",     "Арабский"),
+                ("Hebrew",     "Иврит"),
+                ("CJK",        "Китайский (CJK)"),
+                ("Korean",     "Корейский"),
+                ("Japanese",   "Японский"),
+                ("Devanagari", "Деванагари (хинди)"),
+                ("Thai",       "Тайский"),
+            };
+
+            foreach (var (key, display) in definitions)
+            {
+                string font = (map != null && map.TryGetValue(key, out var f) && !string.IsNullOrEmpty(f))
+                    ? f
+                    : (defaults.TryGetValue(key, out var d) ? d : "Times New Roman");
+
+                col.Add(new ScriptFontEntry(key, display, font));
+            }
+
+            return col;
+        }
+
         public TextEditorSettings GetSettings() => new()
         {
             FontFamily = FontFamily.Value,
@@ -155,7 +224,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             DefaultViewMode = DefaultViewMode.Value,
             DefaultZoom = DefaultZoom.Value,
             AutoSaveIntervalSeconds = AutoSaveIntervalSeconds.Value,
-            MonitorSizeInches = MonitorSizeInches.Value
+            MonitorSizeInches = MonitorSizeInches.Value,
+            ScriptFontMap = ScriptFonts.ToDictionary(e => e.ScriptKey, e => e.FontFamily)
         };
     }
 }

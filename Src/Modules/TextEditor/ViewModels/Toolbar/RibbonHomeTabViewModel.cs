@@ -63,6 +63,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private bool _isBulletList;
         private bool _isNumberedList;
         private string? _fontFamily;
+        private string? _fontFamilyText;
         private double _currentFontSize = 14;
         private string _currentFontSizeText = "14";
         private string? _currentTextColor;
@@ -161,8 +162,23 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             set
             {
                 if (this.RaiseAndSetIfChanged(ref _fontFamily, value) is { } && value is not null)
+                {
+                    _fontFamilyText = value;
+                    this.RaisePropertyChanged(nameof(CurrentFontFamilyText));
                     _target.SetFontFamily(value);
+                }
             }
+        }
+
+        /// <summary>
+        /// Текст отображаемый в AutoCompleteBox шрифта.
+        /// Изменяется при перемещении курсора (UpdateFromCursorContext) и при выборе из списка.
+        /// Не вызывает SetFontFamily — это делает CurrentFontFamily через SelectedItem.
+        /// </summary>
+        public string? CurrentFontFamilyText
+        {
+            get => _fontFamilyText;
+            set => this.RaiseAndSetIfChanged(ref _fontFamilyText, value);
         }
 
         public double CurrentFontSize
@@ -526,6 +542,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             _isBulletList = ctx.IsBulletList;
             _isNumberedList = ctx.IsNumberedList;
             _fontFamily = ctx.FontFamily;
+            _fontFamilyText = ctx.FontFamily;
             _currentFontSize = ctx.FontSize;
             _currentFontSizeText = ((int)ctx.FontSize).ToString();
             _currentTextColor = ctx.TextColor;
@@ -543,6 +560,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             this.RaisePropertyChanged(nameof(IsBulletList));
             this.RaisePropertyChanged(nameof(IsNumberedList));
             this.RaisePropertyChanged(nameof(CurrentFontFamily));
+            this.RaisePropertyChanged(nameof(CurrentFontFamilyText));
             this.RaisePropertyChanged(nameof(CurrentFontSize));
             this.RaisePropertyChanged(nameof(CurrentFontSizeText));
             this.RaisePropertyChanged(nameof(CurrentTextColor));

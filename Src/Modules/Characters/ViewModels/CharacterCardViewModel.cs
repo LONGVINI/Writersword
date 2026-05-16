@@ -7,10 +7,6 @@ using Writersword.Modules.Characters.ViewModels.Tabs;
 
 namespace Writersword.Modules.Characters.ViewModels
 {
-    /// <summary>
-    /// ViewModel карточки персонажа. Содержит 7 вкладок.
-    /// Открывается в правой части экрана Персонажи.
-    /// </summary>
     public class CharacterCardViewModel : ReactiveObject
     {
         private static readonly ILogger _logger = Log.ForContext<CharacterCardViewModel>();
@@ -18,8 +14,6 @@ namespace Writersword.Modules.Characters.ViewModels
         public const int TabCount = 7;
 
         public string CharacterId { get; }
-
-        // ── Вкладки ───────────────────────────────────────────────────────
 
         public CharacterBasicsTabViewModel BasicsTab { get; }
         public CharacterParametersTabViewModel ParametersTab { get; }
@@ -29,8 +23,6 @@ namespace Writersword.Modules.Characters.ViewModels
         public CharacterPersonalTimelineTabViewModel PersonalTimelineTab { get; }
         public CharacterHistoryTabViewModel HistoryTab { get; }
 
-        // ── Текущая вкладка ───────────────────────────────────────────────
-
         private int _selectedTabIndex = 0;
         public int SelectedTabIndex
         {
@@ -38,13 +30,9 @@ namespace Writersword.Modules.Characters.ViewModels
             set => this.RaiseAndSetIfChanged(ref _selectedTabIndex, value);
         }
 
-        // ── Быстрый доступ к имени для заголовка ─────────────────────────
-
         public string DisplayName => BasicsTab.Name;
         public string Color => BasicsTab.Color;
         public bool IsCollective => BasicsTab.IsCollective;
-
-        // ── Команды ───────────────────────────────────────────────────────
 
         public ReactiveCommand<Unit, Unit> SaveCommand { get; }
 
@@ -54,12 +42,13 @@ namespace Writersword.Modules.Characters.ViewModels
             ICharacterService characterService,
             IRelationshipService relationshipService,
             ICharacterAnketaService anketaService,
-            Character character)
+            Character character,
+            ICharacterAvatarService? avatarService = null)
         {
             _characterService = characterService;
             CharacterId = character.Id;
 
-            BasicsTab = new CharacterBasicsTabViewModel(characterService, character);
+            BasicsTab = new CharacterBasicsTabViewModel(characterService, character, avatarService);
             ParametersTab = new CharacterParametersTabViewModel(characterService, anketaService, character);
             RelationshipsTab = new CharacterRelationshipsTabViewModel(relationshipService, characterService, character.Id);
             ContextsTab = new CharacterContextsTabViewModel(character);
@@ -74,15 +63,9 @@ namespace Writersword.Modules.Characters.ViewModels
         {
             var character = _characterService.GetById(CharacterId);
             if (character == null) return;
-
             BasicsTab.ApplyTo(character);
-            character.Parameters = ParametersTab.GetParameters();
-            character.Contexts = ContextsTab.GetContexts();
-            character.Notes = NotesTab.GetNotes();
-            character.PersonalTimeline = PersonalTimelineTab.GetEvents();
-
             _characterService.Update(character);
-            _logger.Debug("Character saved: {Id}", CharacterId);
+            _logger.Debug("Character {Id} saved", CharacterId);
         }
     }
 }

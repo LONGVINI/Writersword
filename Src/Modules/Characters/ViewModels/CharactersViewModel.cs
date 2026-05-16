@@ -5,6 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Reactive;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Modules.Characters.Actions;
@@ -27,8 +29,23 @@ namespace Writersword.Modules.Characters.ViewModels
         private readonly ICharacterAnketaService _anketaService;
         private readonly UndoRedoStack _undoRedoStack = new(maxSteps: 100);
         private readonly CharactersTrashService _trash;
+        private readonly ICharacterAvatarService? _avatarService;
+        private CancellationTokenSource? _refreshCts;
+
+        private bool _isLoading;
+        public bool IsLoading
+        {
+            get => _isLoading;
+            private set => this.RaiseAndSetIfChanged(ref _isLoading, value);
+        }
 
         public CharactersTrashService Trash => _trash;
+        public ICharacterAvatarService? AvatarService => _avatarService;
+        public ICharacterService CharacterService => _characterService;
+
+        // Задаётся из CharactersListView code-behind.
+        // Вызывается для каждого созданного CharacterListItemViewModel.
+        public Action<CharacterListItemViewModel>? BindAvatarPickerCallback { get; set; }
 
         private string _undoToastMessage = string.Empty;
         public string UndoToastMessage
@@ -40,7 +57,7 @@ namespace Writersword.Modules.Characters.ViewModels
         public void ShowUndoToast(string message) => UndoToastMessage = message;
         public void HideUndoToast() => UndoToastMessage = string.Empty;
 
-        // -- IUndoableModule -----------------------------------------------
+        // ── IUndoableModule ────────────────────────────────────────────────
         public bool CanUndo => _undoRedoStack.CanUndo;
         public bool CanRedo => _undoRedoStack.CanRedo;
         public string? UndoDescription => _undoRedoStack.UndoDescription;
@@ -128,7 +145,7 @@ namespace Writersword.Modules.Characters.ViewModels
             set { this.RaiseAndSetIfChanged(ref _filterCollectiveOnly, value); ApplyFilters(); }
         }
 
-        // -- режим отображения и размер карточек ---------------------------
+        // ── режим отображения и размер карточек ───────────────────────────
 
         private double _containerWidth = 600.0;
         private double _cardWidth = 148.0;
@@ -177,18 +194,29 @@ namespace Writersword.Modules.Characters.ViewModels
             };
         }
 
+        // CardWidth используется только для ghost и для расчётов drag.
+        // Сами карточки в сетке ширину не биндят — UniformGrid растягивает их сам.
         public double CardWidth => _cardWidth;
         public double CardTopHeight => _cardTopHeight;
+        // Круг чуть меньше панели — остаётся отступ сверху и снизу.
+        // Максимум 58 чтобы не выглядел огромным на крупных зумах.
+        public double CardAvatarSize => Math.Min(58, Math.Max(36, _cardTopHeight - 10));
         public double CardNameHeight => _cardNameHeight;
         public double CardTotalHeight => _cardTopHeight + _cardNameHeight;
         public double CardIconFontSize => _cardIconSize;
+
+        // Количество колонок — используется для расчётов drag.
         public int CardsPerRow => _cardsPerRow;
+
+        // Минимальная ширина слота (карточка + margin 6px с каждой стороны).
+        // Передаётся в UniformGridLayout.MinItemWidth из code-behind.
+        // UniformGridLayout сам вычислит число колонок и растянет карточки через ItemsStretch.Fill.
         public double CardMinWidth => CardWidthRange(_viewMode).min + 12.0;
 
         public void UpdateContainerWidth(double width)
         {
             if (width < 1.0) return;
-            if (Math.Abs(_containerWidth - width) < 1.0) return;
+            if (Math.Abs(_containerWidth - width) < 10.0) return;
             _containerWidth = width;
             RecalculateCardDimensions();
         }
@@ -205,72 +233,59 @@ namespace Writersword.Modules.Characters.ViewModels
 
         private void RecalculateCardDimensions()
         {
-            double newCardWidth, newCardTopHeight, newCardNameHeight, newCardIconSize;
-            int newCardsPerRow;
-
             if (!IsGridMode)
             {
-                newCardWidth = 148.0;
-                newCardTopHeight = 60.0;
-                newCardNameHeight = 40.0;
-                newCardIconSize = 30.0;
-                newCardsPerRow = 1;
+                _cardWidth = 148.0;
+                _cardTopHeight = 60.0;
+                _cardNameHeight = 40.0;
+                _cardIconSize = 30.0;
+                _cardsPerRow = 1;
+                RaiseCardDimensionProperties();
+                return;
             }
-            else
+
+            const double cardMargin = 6.0;
+            const double slotMargin = cardMargin * 2; // 12px на карточку
+
+            var (minW, maxW) = CardWidthRange(_viewMode);
+
+            // максимальное число карточек в строке при котором каждая >= minW
+            int n = Math.Max(1, (int)(_containerWidth / (minW + slotMargin)));
+
+            // фактическая ширина при n карточках
+            double cardW = _containerWidth / n - slotMargin;
+
+            // если карточки шире maxW — добавляем ещё колонку
+            if (cardW > maxW)
             {
-                const double cardMargin = 6.0;
-                const double slotMargin = cardMargin * 2;
-
-                var (minW, maxW) = CardWidthRange(_viewMode);
-
-                int n = Math.Max(1, (int)(_containerWidth / (minW + slotMargin)));
-                double cardW = _containerWidth / n - slotMargin;
-
-                if (cardW > maxW)
+                int nMore = (int)(_containerWidth / (maxW + slotMargin));
+                if (nMore > n)
                 {
-                    int nMore = (int)(_containerWidth / (maxW + slotMargin));
-                    if (nMore > n)
-                    {
-                        n = nMore;
-                        cardW = _containerWidth / n - slotMargin;
-                    }
+                    n = nMore;
+                    cardW = _containerWidth / n - slotMargin;
                 }
-
-                cardW = Math.Max(minW, Math.Min(maxW, cardW));
-
-                double totalH = 100.0 * (cardW / 148.0);
-
-                newCardWidth = cardW;
-                newCardTopHeight = Math.Round(totalH * 0.60);
-                newCardNameHeight = Math.Round(totalH * 0.40);
-                newCardIconSize = Math.Round(cardW * (30.0 / 148.0));
-                newCardsPerRow = n;
             }
 
-            // Поднимаем события только если значения реально изменились.
-            bool changed =
-                Math.Abs(_cardWidth - newCardWidth) > 0.5 ||
-                Math.Abs(_cardTopHeight - newCardTopHeight) > 0.5 ||
-                Math.Abs(_cardNameHeight - newCardNameHeight) > 0.5 ||
-                Math.Abs(_cardIconSize - newCardIconSize) > 0.5 ||
-                _cardsPerRow != newCardsPerRow;
+            cardW = Math.Max(minW, Math.Min(maxW, cardW));
 
-            if (!changed) return;
+            // высоты пропорциональны ширине от baseline 148×100
+            double totalH = 100.0 * (cardW / 148.0);
 
-            _cardWidth = newCardWidth;
-            _cardTopHeight = newCardTopHeight;
-            _cardNameHeight = newCardNameHeight;
-            _cardIconSize = newCardIconSize;
-            _cardsPerRow = newCardsPerRow;
+            // CardWidth не округляем — используется только для ghost и drag-расчётов
+            _cardWidth = cardW;
+            _cardTopHeight = Math.Round(totalH * 0.60);
+            _cardNameHeight = Math.Round(totalH * 0.40);
+            _cardIconSize = Math.Round(cardW * (30.0 / 148.0));
+            _cardsPerRow = n;
 
             RaiseCardDimensionProperties();
-            SyncFolderCardDimensions();
         }
 
         private void RaiseCardDimensionProperties()
         {
             this.RaisePropertyChanged(nameof(CardWidth));
             this.RaisePropertyChanged(nameof(CardTopHeight));
+            this.RaisePropertyChanged(nameof(CardAvatarSize));
             this.RaisePropertyChanged(nameof(CardNameHeight));
             this.RaisePropertyChanged(nameof(CardTotalHeight));
             this.RaisePropertyChanged(nameof(CardIconFontSize));
@@ -278,15 +293,7 @@ namespace Writersword.Modules.Characters.ViewModels
             this.RaisePropertyChanged(nameof(CardMinWidth));
         }
 
-        // Обновляем размеры карточек во всех папках — только изменённые значения
-        // подхватятся RaiseAndSetIfChanged внутри CharacterFolderViewModel.
-        private void SyncFolderCardDimensions()
-        {
-            foreach (var folder in Folders)
-                folder.UpdateCardDimensions(_cardTopHeight, _cardNameHeight, _cardIconSize);
-        }
-
-        // -- карточка персонажа --------------------------------------------
+        // ── карточка персонажа ─────────────────────────────────────────────
 
         private CharacterCardViewModel? _selectedCharacterCard;
         public CharacterCardViewModel? SelectedCharacterCard
@@ -332,10 +339,8 @@ namespace Writersword.Modules.Characters.ViewModels
             }
         }
 
-        // -- состояние preview-drag ----------------------------------------
+        // ── состояние preview-drag ─────────────────────────────────────────
         private string? _previewDragCharId;
-        private string? _placeholderFolderId;
-        private int _placeholderIndex = -1;
         private string? _previewDragOriginalFolderId;
         private int _previewDragOriginalIndex;
 
@@ -343,12 +348,14 @@ namespace Writersword.Modules.Characters.ViewModels
             ICharacterService characterService,
             IRelationshipService relationshipService,
             ICharacterAnketaService anketaService,
-            CharactersTrashService trash)
+            CharactersTrashService trash,
+            ICharacterAvatarService? avatarService = null)
         {
             _characterService = characterService;
             _relationshipService = relationshipService;
             _anketaService = anketaService;
             _trash = trash;
+            _avatarService = avatarService;
 
             TemplatesViewModel = new CharactersTemplatesViewModel(anketaService, ActiveTemplateIds);
             TemplatesViewModel.OnboardingRestartRequested += () => ShowOnboarding = true;
@@ -532,7 +539,7 @@ namespace Writersword.Modules.Characters.ViewModels
             var character = _characterService.GetById(characterId);
             if (character is null) return;
             SelectedCharacterCard = new CharacterCardViewModel(
-                _characterService, _relationshipService, _anketaService, character);
+                _characterService, _relationshipService, _anketaService, character, _avatarService);
             IsCardOpen = true;
             MainTabIndex = 1;
         }
@@ -658,8 +665,33 @@ namespace Writersword.Modules.Characters.ViewModels
         {
             RefreshTags();
             ApplyFilters();
-            RefreshFolderViewModels();
             GraphViewModel.Refresh();
+            _ = RefreshFolderViewModelsAsync();
+        }
+
+        public void CancelLoad()
+        {
+            _refreshCts?.Cancel();
+            _refreshCts?.Dispose();
+            _refreshCts = null;
+        }
+
+        // Прогрессивная загрузка: папки добавляются пустыми,
+        // затем карточки заполняются батчами по 25 штук с
+        // Background-приоритетом между батчами — UI не фризится.
+        private async Task RefreshFolderViewModelsAsync()
+        {
+            CancelLoad();
+            _refreshCts = new CancellationTokenSource();
+            var ct = _refreshCts.Token;
+
+            IsLoading = true;
+            try
+            {
+                await RefreshFolderViewModelsProgressiveAsync(ct);
+            }
+            catch (OperationCanceledException) { }
+            finally { IsLoading = false; }
         }
 
         private void RefreshTags()
@@ -738,7 +770,7 @@ namespace Writersword.Modules.Characters.ViewModels
             GraphViewModel.Scale = session.GraphScale;
         }
 
-        // -- drag preview API ----------------------------------------------
+        // ── drag preview API ───────────────────────────────────────────────
 
         private CharacterListItemViewModel? _dragPlaceholder;
         private CharacterListItemViewModel? _dragItem;
@@ -770,8 +802,6 @@ namespace Writersword.Modules.Characters.ViewModels
                     var idx = folder.Characters.IndexOf(item);
                     folder.Characters.Remove(item);
                     folder.Characters.Insert(idx, _dragPlaceholder);
-                    _placeholderIndex = idx;
-                    _placeholderFolderId = folder.FolderId;
                     return;
                 }
             }
@@ -782,38 +812,16 @@ namespace Writersword.Modules.Characters.ViewModels
             if (_previewDragCharId != charId) return;
             if (_dragPlaceholder is null) return;
 
+            foreach (var folder in Folders)
+            {
+                if (folder.Characters.Remove(_dragPlaceholder)) break;
+            }
+
             var targetFolderVm = Folders.FirstOrDefault(f => f.FolderId == targetFolderId);
             if (targetFolderVm is null) return;
 
-            if (_placeholderFolderId == targetFolderId)
-            {
-                // Та же папка: RemoveAt(кэшированный индекс) + Insert.
-                // ObservableCollection.Move не поддерживается Avalonia ItemsRepeater.
-                // RemoveAt по индексу — O(1) поиск, без прохода по списку.
-                var clampedIdx = Math.Clamp(targetIndex, 0, targetFolderVm.Characters.Count - 1);
-                if (_placeholderIndex != clampedIdx)
-                {
-                    targetFolderVm.Characters.RemoveAt(_placeholderIndex);
-                    var insertIdx = Math.Min(clampedIdx, targetFolderVm.Characters.Count);
-                    targetFolderVm.Characters.Insert(insertIdx, _dragPlaceholder);
-                    _placeholderIndex = insertIdx;
-                }
-            }
-            else
-            {
-                // Другая папка: Remove из старой, Insert в новую.
-                var currentFolder = Folders.FirstOrDefault(f => f.FolderId == _placeholderFolderId);
-                if (currentFolder is not null && _placeholderIndex >= 0
-                    && _placeholderIndex < currentFolder.Characters.Count)
-                    currentFolder.Characters.RemoveAt(_placeholderIndex);
-                else
-                    currentFolder?.Characters.Remove(_dragPlaceholder);
-
-                var finalIdx = Math.Min(targetIndex, targetFolderVm.Characters.Count);
-                targetFolderVm.Characters.Insert(finalIdx, _dragPlaceholder);
-                _placeholderIndex = finalIdx;
-                _placeholderFolderId = targetFolderId;
-            }
+            var clampedIdx = Math.Min(targetIndex, targetFolderVm.Characters.Count);
+            targetFolderVm.Characters.Insert(clampedIdx, _dragPlaceholder);
         }
 
         public void CancelDragPreview(string charId)
@@ -919,7 +927,7 @@ namespace Writersword.Modules.Characters.ViewModels
             RefreshFolderViewModels();
         }
 
-        // -- папки ---------------------------------------------------------
+        // ── папки ─────────────────────────────────────────────────────────
 
         private readonly List<CharacterFolder> _folders = new();
 
@@ -979,10 +987,6 @@ namespace Writersword.Modules.Characters.ViewModels
                     RequestDeleteCommand = ReactiveCommand.Create(() =>
                         FolderDeleteRequested?.Invoke(capturedFolder.Id, capturedFolder.Name))
                 };
-
-                // Сразу передаём актуальные размеры карточек в новую папку.
-                vm.UpdateCardDimensions(_cardTopHeight, _cardNameHeight, _cardIconSize);
-
                 foreach (var id in folder.CharacterIds)
                 {
                     var c = allChars.FirstOrDefault(x => x.Id == id);
@@ -1020,9 +1024,6 @@ namespace Writersword.Modules.Characters.ViewModels
                     ToggleCommand = ToggleFolderCommand,
                     RequestDeleteCommand = null
                 };
-
-                ungrouped.UpdateCardDimensions(_cardTopHeight, _cardNameHeight, _cardIconSize);
-
                 foreach (var c in unassigned)
                 {
                     var relCount = _relationshipService.GetAllForCharacter(c.Id).Count;
@@ -1032,6 +1033,121 @@ namespace Writersword.Modules.Characters.ViewModels
                     ungrouped.Characters.Add(item);
                 }
                 Folders.Add(ungrouped);
+            }
+        }
+
+        private async Task RefreshFolderViewModelsProgressiveAsync(
+            CancellationToken ct,
+            string? inlineBeingNamedId = null,
+            string? newlyCreatedFolderId = null)
+        {
+            const int batchSize = 1;
+
+            var allChars = await Task.Run(() => _characterService.GetAll().ToList(), ct);
+            var assignedIds = _folders.SelectMany(f => f.CharacterIds).ToHashSet();
+            var unassigned = allChars.Where(c => !assignedIds.Contains(c.Id)).ToList();
+            var expandedState = Folders.ToDictionary(f => f.FolderId, f => f.IsExpanded);
+
+            ct.ThrowIfCancellationRequested();
+
+            Folders.Clear();
+
+            foreach (var folder in _folders.OrderBy(f => f.Order))
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var capturedFolder = folder;
+                bool isExpanded = folder.Id == newlyCreatedFolderId
+                    ? true
+                    : expandedState.GetValueOrDefault(folder.Id, true);
+
+                var vm = new CharacterFolderViewModel(folder)
+                {
+                    IsExpanded = isExpanded,
+                    IsSelected = folder.Id == ActiveFolderId,
+                    IsRenaming = folder.Id == newlyCreatedFolderId,
+                    OnSelectRequested = id => ActiveFolderId = id,
+                    EditCommand = EditCharacterCommand,
+                    ConfirmCommand = ConfirmInlineNameCommand,
+                    CancelCommand = CancelInlineNameCommand,
+                    ToggleCommand = ToggleFolderCommand,
+                    RequestDeleteCommand = ReactiveCommand.Create(() =>
+                        FolderDeleteRequested?.Invoke(capturedFolder.Id, capturedFolder.Name))
+                };
+
+                // Папка добавляется сразу — пользователь видит что что-то происходит.
+                Folders.Add(vm);
+
+                // Карточки добавляем батчами чтобы не фризить UI.
+                var ids = folder.CharacterIds.ToList();
+                for (int i = 0; i < ids.Count; i += batchSize)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    var batch = ids.Skip(i).Take(batchSize);
+                    foreach (var id in batch)
+                    {
+                        var c = allChars.FirstOrDefault(x => x.Id == id);
+                        if (c is not null)
+                        {
+                            var relCount = _relationshipService.GetAllForCharacter(c.Id).Count;
+                            var isNaming = c.Id == inlineBeingNamedId;
+                            var item = new CharacterListItemViewModel(c, relCount, isNaming);
+                            BindCharacterItemCallbacks(item);
+                            vm.Characters.Add(item);
+                        }
+                    }
+
+                    // Отпускаем поток между батчами — UI успевает обработать события.
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+                        () => { }, Avalonia.Threading.DispatcherPriority.Background);
+                }
+            }
+
+            if (unassigned.Count > 0)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                bool ungroupedExpanded = expandedState.GetValueOrDefault("ungrouped", true);
+                var ungrouped = new CharacterFolderViewModel(new CharacterFolder
+                {
+                    Id = "ungrouped",
+                    Name = CharactersStrings.Folder_Ungrouped,
+                    Comment = string.Empty,
+                    Color = "#455A64",
+                    Order = 999
+                })
+                {
+                    IsExpanded = ungroupedExpanded,
+                    IsSelected = "ungrouped" == ActiveFolderId,
+                    IsRenaming = false,
+                    OnSelectRequested = id => ActiveFolderId = id,
+                    EditCommand = EditCharacterCommand,
+                    ConfirmCommand = ConfirmInlineNameCommand,
+                    CancelCommand = CancelInlineNameCommand,
+                    ToggleCommand = ToggleFolderCommand,
+                    RequestDeleteCommand = null
+                };
+
+                Folders.Add(ungrouped);
+
+                for (int i = 0; i < unassigned.Count; i += batchSize)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    var batch = unassigned.Skip(i).Take(batchSize);
+                    foreach (var c in batch)
+                    {
+                        var relCount = _relationshipService.GetAllForCharacter(c.Id).Count;
+                        var isNaming = c.Id == inlineBeingNamedId;
+                        var item = new CharacterListItemViewModel(c, relCount, isNaming, _avatarService);
+                        BindCharacterItemCallbacks(item);
+                        ungrouped.Characters.Add(item);
+                    }
+
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+                        () => { }, Avalonia.Threading.DispatcherPriority.Background);
+                }
             }
         }
 
@@ -1096,6 +1212,7 @@ namespace Writersword.Modules.Characters.ViewModels
                     }
                 }));
             };
+            BindAvatarPickerCallback?.Invoke(item);
         }
 
         private void CreateFolder()
@@ -1309,15 +1426,6 @@ namespace Writersword.Modules.Characters.ViewModels
         {
             get => _cardIconSize;
             set => this.RaiseAndSetIfChanged(ref _cardIconSize, value);
-        }
-
-        // Обновляет размеры карточек. RaiseAndSetIfChanged внутри сеттеров
-        // гарантирует, что PropertyChanged сработает только при реальном изменении.
-        public void UpdateCardDimensions(double topHeight, double nameHeight, double iconSize)
-        {
-            CardTopHeight = topHeight;
-            CardNameHeight = nameHeight;
-            CardIconFontSize = iconSize;
         }
 
         public CharacterFolderViewModel(CharacterFolder folder)

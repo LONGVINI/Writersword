@@ -1,6 +1,9 @@
+п»їusing Avalonia.Media.Imaging;
+using ReactiveUI;
 using System;
 using System.Reactive;
-using ReactiveUI;
+using System.Threading.Tasks;
+using Writersword.Modules.Characters.Interfaces;
 using Writersword.Src.Modules.Characters.Resources;
 
 namespace Writersword.Modules.Characters.ViewModels
@@ -15,6 +18,11 @@ namespace Writersword.Modules.Characters.ViewModels
         private bool _isDragging;
         private string _name;
         private string _color;
+        private string? _avatarPath;
+        private readonly ICharacterAvatarService? _avatarService;
+        private Bitmap? _avatarBitmap;
+        private bool _bitmapLoaded;
+
 
         public string Id { get; }
 
@@ -37,7 +45,24 @@ namespace Writersword.Modules.Characters.ViewModels
         }
 
         public string FallbackIcon { get; }
+        public string? AvatarPath => _avatarPath;
         public bool IsCollective { get; }
+
+        // Р›РµРЅРёРІР°СЏ Р·Р°РіСЂСѓР·РєР° вЂ” Р±РёС‚РјР°Рї СЃРѕР·РґР°С‘С‚СЃСЏ С‚РѕР»СЊРєРѕ РїСЂРё РїРµСЂРІРѕРј РѕР±СЂР°С‰РµРЅРёРё.
+        public Bitmap? AvatarBitmap
+        {
+            get
+            {
+                if (!_bitmapLoaded)
+                {
+                    _bitmapLoaded = true;
+                    if (!string.IsNullOrEmpty(_avatarPath) && _avatarService != null)
+                        try { _avatarBitmap = _avatarService.LoadBitmap(_avatarPath); }
+                        catch { }
+                }
+                return _avatarBitmap;
+            }
+        }
         public int RelationshipsCount { get; }
         public bool IsNewlyCreated { get; }
 
@@ -79,8 +104,8 @@ namespace Writersword.Modules.Characters.ViewModels
             set => this.RaiseAndSetIfChanged(ref _isSelected, value);
         }
 
-        // true пока карточка физически перетаскивается — делает её полупрозрачной
-        // и отключает hit-тест чтобы не мешать определению цели вставки
+        // true ГЇГ®ГЄГ  ГЄГ Г°ГІГ®Г·ГЄГ  ГґГЁГ§ГЁГ·ГҐГ±ГЄГЁ ГЇГҐГ°ГҐГІГ Г±ГЄГЁГўГ ГҐГІГ±Гї В— Г¤ГҐГ«Г ГҐГІ ГҐВё ГЇГ®Г«ГіГЇГ°Г®Г§Г°Г Г·Г­Г®Г©
+        // ГЁ Г®ГІГЄГ«ГѕГ·Г ГҐГІ hit-ГІГҐГ±ГІ Г·ГІГ®ГЎГ» Г­ГҐ Г¬ГҐГёГ ГІГј Г®ГЇГ°ГҐГ¤ГҐГ«ГҐГ­ГЁГѕ Г¶ГҐГ«ГЁ ГўГ±ГІГ ГўГЄГЁ
         public bool IsDragging
         {
             get => _isDragging;
@@ -91,8 +116,8 @@ namespace Writersword.Modules.Characters.ViewModels
             }
         }
 
-        // 0.25 во время drag, 1.0 в обычном состоянии — биндится к Opacity карточки
-        // true когда это пустой placeholder во время drag
+        // 0.25 ГўГ® ГўГ°ГҐГ¬Гї drag, 1.0 Гў Г®ГЎГ»Г·Г­Г®Г¬ Г±Г®Г±ГІГ®ГїГ­ГЁГЁ В— ГЎГЁГ­Г¤ГЁГІГ±Гї ГЄ Opacity ГЄГ Г°ГІГ®Г·ГЄГЁ
+        // true ГЄГ®ГЈГ¤Г  ГЅГІГ® ГЇГіГ±ГІГ®Г© placeholder ГўГ® ГўГ°ГҐГ¬Гї drag
         private bool _isPlaceholder;
         public bool IsPlaceholder
         {
@@ -107,16 +132,16 @@ namespace Writersword.Modules.Characters.ViewModels
 
         public double DragOpacity => _isPlaceholder ? 0.35 : 1.0;
 
-        // true когда не в режиме ввода/переименования — показывает нормальное отображение
+        // true ГЄГ®ГЈГ¤Г  Г­ГҐ Гў Г°ГҐГ¦ГЁГ¬ГҐ ГўГўГ®Г¤Г /ГЇГҐГ°ГҐГЁГ¬ГҐГ­Г®ГўГ Г­ГЁГї В— ГЇГ®ГЄГ Г§Г»ГўГ ГҐГІ Г­Г®Г°Г¬Г Г«ГјГ­Г®ГҐ Г®ГІГ®ГЎГ°Г Г¦ГҐГ­ГЁГҐ
         public bool IsShowingNameDisplay => !_isBeingNamed && !_isRenaming && !_isPlaceholder;
 
-        // колбэки, устанавливаются родительским ViewModel
+        // ГЄГ®Г«ГЎГЅГЄГЁ, ГіГ±ГІГ Г­Г ГўГ«ГЁГўГ ГѕГІГ±Гї Г°Г®Г¤ГЁГІГҐГ«ГјГ±ГЄГЁГ¬ ViewModel
         public Action<string, string>? OnConfirmName { get; set; }    // (id, newName)
         public Action<string>? OnCancelNewCharacter { get; set; }     // (id)
         public Action<string>? OnDeleteRequested { get; set; }        // (id)
         public Action<string, string>? OnColorChanged { get; set; }   // (id, newColor)
 
-        // команды — выполняются из AXAML напрямую через {Binding}
+        // ГЄГ®Г¬Г Г­Г¤Г» В— ГўГ»ГЇГ®Г«Г­ГїГѕГІГ±Гї ГЁГ§ AXAML Г­Г ГЇГ°ГїГ¬ГіГѕ Г·ГҐГ°ГҐГ§ {Binding}
         public ReactiveCommand<Unit, Unit> ConfirmNameCommand { get; }
         public ReactiveCommand<Unit, Unit> CancelNameCommand { get; }
         public ReactiveCommand<Unit, Unit> StartRenameCommand { get; }
@@ -124,10 +149,17 @@ namespace Writersword.Modules.Characters.ViewModels
         public ReactiveCommand<Unit, Unit> CancelRenameCommand { get; }
         public ReactiveCommand<Unit, Unit> RequestDeleteCommand { get; }
 
+        // РђРІР°С‚Р°СЂ вЂ” РѕС‚РєСЂС‹С‚РёРµ РїРёРєРµСЂР° РёР· СЃРїРёСЃРєР° РїРµСЂСЃРѕРЅР°Р¶РµР№.
+        // RequestPickerOpen Р·Р°РґР°С‘С‚СЃСЏ РёР· code-behind CharactersListView.
+        public Func<Task<string?>>? RequestPickerOpen { get; set; }
+        public ReactiveCommand<Unit, Unit> OpenAvatarPickerCommand { get; }
+        public ReactiveCommand<Unit, Unit> RemoveAvatarCommand { get; }
+
         public CharacterListItemViewModel(
             Models.Character character,
             int relationshipsCount = 0,
-            bool isNewlyCreated = false)
+            bool isNewlyCreated = false,
+            ICharacterAvatarService? avatarService = null)
         {
             Id = character.Id;
             _name = character.Name;
@@ -137,6 +169,21 @@ namespace Writersword.Modules.Characters.ViewModels
             IsCollective = character.IsCollective;
             RelationshipsCount = relationshipsCount;
             IsNewlyCreated = isNewlyCreated;
+            _avatarPath = character.AvatarPath;
+            _avatarService = avatarService;
+
+            OpenAvatarPickerCommand = ReactiveCommand.CreateFromTask(async () =>
+            {
+                if (RequestPickerOpen == null) return;
+                var result = await RequestPickerOpen();
+                if (result != null) SetAvatarRef(result);
+            });
+
+            RemoveAvatarCommand = ReactiveCommand.Create(() =>
+            {
+                _avatarService?.DeleteAvatar(_avatarPath);
+                SetAvatarRef(null);
+            });
 
             _isBeingNamed = isNewlyCreated;
             _inlineName = isNewlyCreated ? string.Empty : character.Name;
@@ -181,5 +228,28 @@ namespace Writersword.Modules.Characters.ViewModels
                 OnDeleteRequested?.Invoke(Id);
             });
         }
+        private void SetAvatarRef(string? avatarRef)
+        {
+            _bitmapLoaded = false;
+            _avatarBitmap?.Dispose();
+            _avatarBitmap = null;
+            // Р§РµСЂРµР· field С‡С‚РѕР±С‹ РЅРµ С‚СЂРѕРіР°С‚СЊ readonly
+            _avatarPath = avatarRef;
+            this.RaisePropertyChanged(nameof(AvatarPath));
+            this.RaisePropertyChanged(nameof(AvatarBitmap));
+            OnAvatarChanged?.Invoke(Id, avatarRef);
+        }
+
+        // РЎР±СЂРѕСЃРёС‚СЊ РєСЌС€ Р°РІР°С‚Р°СЂРєРё (РІС‹Р·С‹РІР°РµС‚СЃСЏ СЃРЅР°СЂСѓР¶Рё РїСЂРё РѕР±РЅРѕРІР»РµРЅРёРё).
+        public void RefreshAvatar()
+        {
+            _bitmapLoaded = false;
+            _avatarBitmap?.Dispose();
+            _avatarBitmap = null;
+            this.RaisePropertyChanged(nameof(AvatarBitmap));
+        }
+
+        // РљРѕР»Р±СЌРє СѓРІРµРґРѕРјР»РµРЅРёСЏ СЂРѕРґРёС‚РµР»СЊСЃРєРѕРіРѕ VM Рѕ СЃРјРµРЅРµ Р°РІР°С‚Р°СЂРєРё.
+        public Action<string, string?>? OnAvatarChanged { get; set; }
     }
 }

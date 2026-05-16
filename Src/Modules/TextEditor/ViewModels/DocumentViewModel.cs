@@ -83,6 +83,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // Устанавливается DocumentCanvas — пробрасывает вызов в UndoStack.
         public Action? UndoDelegate { get; set; }
         public Action? RedoDelegate { get; set; }
+
+        // Делегаты для создания undo-снапшота форматирования.
+        // Устанавливаются DocumentCanvas при подключении.
+        public Action<string>? BeginEditDelegate { get; set; }
+        public Action? CommitEditDelegate { get; set; }
         public Action? CutDelegate { get; set; }
         public Action? CopyDelegate { get; set; }
         public Action? PasteDelegate { get; set; }
@@ -808,6 +813,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var block = TableActiveCellParagraph ?? _activeParagraph?.Model;
             if (block is null) return;
 
+            BeginEditDelegate?.Invoke("Format text");
+
             int selStart = _selectionStart;
             int selEnd = _selectionEnd;
             bool hasSelection = selEnd > selStart;
@@ -837,12 +844,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 chunk.InvalidateLength();
             }
 
+            CommitEditDelegate?.Invoke();
             FireCursorContextChanged();
             ParagraphFormatChanged?.Invoke();
         }
 
         private void ApplyParaProperty(Action<ParagraphProperties> mutate)
         {
+            BeginEditDelegate?.Invoke("Format paragraph");
+
             // Режим таблицы: применяем к параграфу активной ячейки.
             if (TableActiveCellParagraph is not null)
             {
@@ -866,6 +876,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             }
             else return;
 
+            CommitEditDelegate?.Invoke();
             FireCursorContextChanged();
             ParagraphFormatChanged?.Invoke();
         }

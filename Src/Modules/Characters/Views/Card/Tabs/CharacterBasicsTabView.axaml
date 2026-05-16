@@ -15,28 +15,53 @@
 		<StackPanel Spacing="12">
 
 			<!-- Аватар -->
-			<StackPanel Spacing="6" HorizontalAlignment="Center">
-				<Border Width="80"
-                        Height="80"
-                        CornerRadius="40"
-                        Background="{Binding Color}"
-                        HorizontalAlignment="Center">
-					<TextBlock Text="{Binding FallbackIcon}"
-                               FontSize="36"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"
-                               Foreground="White"/>
-				</Border>
-				<StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+			<StackPanel Spacing="8" HorizontalAlignment="Center">
+
+				<!-- Круглый аватар — Button чтобы открывать пикер по клику -->
+				<Button Command="{Binding OpenPickerCommand}"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Padding="0"
+                        HorizontalAlignment="Center"
+                        ToolTip.Tip="Нажмите чтобы выбрать аватарку">
+					<Border Width="96"
+                            Height="96"
+                            CornerRadius="48"
+                            ClipToBounds="True"
+                            Background="{Binding Color}">
+						<Panel>
+							<!-- Фото если выбрано -->
+							<Image Source="{Binding AvatarBitmap}"
+                                   Stretch="UniformToFill"
+                                   IsVisible="{Binding AvatarBitmap,
+                                       Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+							<!-- Фолбэк-иконка -->
+							<TextBlock Text="{Binding FallbackIcon}"
+                                       FontSize="40"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Foreground="White"
+                                       IsVisible="{Binding AvatarBitmap,
+                                           Converter={x:Static ObjectConverters.IsNull}}"/>
+						</Panel>
+					</Border>
+				</Button>
+
+				<!-- Кнопки под аватаром -->
+				<StackPanel Orientation="Horizontal"
+                            Spacing="6"
+                            HorizontalAlignment="Center">
 					<Button Content="{x:Static loc:CharactersStrings.Button_UploadAvatar}"
-                            Command="{Binding UploadAvatarCommand}"
+                            Command="{Binding OpenPickerCommand}"
                             FontSize="11"
                             Padding="8,4"/>
 					<Button Content="{x:Static loc:CharactersStrings.Button_DeleteAvatar}"
                             Command="{Binding DeleteAvatarCommand}"
                             FontSize="11"
                             Padding="8,4"
-                            IsVisible="{Binding AvatarPath, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            IsVisible="{Binding AvatarPath,
+                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 				</StackPanel>
 			</StackPanel>
 
@@ -84,7 +109,7 @@
                          BorderThickness="1"
                          CornerRadius="4"
                          Padding="8,6"
-                         PlaceholderText ="#607D8B"/>
+                         PlaceholderText="#607D8B"/>
 			</StackPanel>
 
 			<!-- Иконка-символ -->
@@ -101,7 +126,7 @@
                          CornerRadius="4"
                          Padding="8,6"
                          MaxLength="4"
-                         PlaceholderText = "?"/>
+                         PlaceholderText="?"/>
 			</StackPanel>
 
 			<!-- Уровень важности -->
@@ -123,7 +148,8 @@
 
 			<!-- Кастомная метка важности -->
 			<StackPanel Spacing="4"
-                        IsVisible="{Binding ImportanceLevel, Converter={StaticResource IsCustomImportanceConverter}}">
+                        IsVisible="{Binding ImportanceLevel,
+                            Converter={StaticResource IsCustomImportanceConverter}}">
 				<TextBlock Text="{x:Static loc:CharactersStrings.Field_CustomImportanceLabel}"
                            FontSize="11"
                            Foreground="{DynamicResource TextSecondaryBrush}"/>
@@ -150,7 +176,7 @@
                          BorderThickness="1"
                          CornerRadius="4"
                          Padding="8,6"
-                         PlaceholderText ="{x:Static loc:CharactersStrings.Placeholder_NarrativePoint}"/>
+                         PlaceholderText="{x:Static loc:CharactersStrings.Placeholder_NarrativePoint}"/>
 			</StackPanel>
 
 			<StackPanel Spacing="4">
@@ -165,7 +191,7 @@
                          BorderThickness="1"
                          CornerRadius="4"
                          Padding="8,6"
-                         PlaceholderText ="{x:Static loc:CharactersStrings.Placeholder_NarrativePoint}"/>
+                         PlaceholderText="{x:Static loc:CharactersStrings.Placeholder_NarrativePoint}"/>
 			</StackPanel>
 
 			<!-- Теги -->
@@ -211,8 +237,7 @@
 				<ItemsControl ItemsSource="{Binding ActiveStatuses}">
 					<ItemsControl.ItemTemplate>
 						<DataTemplate>
-							<Grid ColumnDefinitions="Auto,*,Auto"
-                                  Margin="0,2">
+							<Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
 								<Border Grid.Column="0"
                                         Width="16"
                                         Height="16"

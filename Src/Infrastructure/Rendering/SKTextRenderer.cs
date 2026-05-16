@@ -25,6 +25,11 @@ namespace Writersword.Infrastructure.Rendering
         private static readonly ConcurrentDictionary<(string Family, bool Bold, bool Italic), SKTypeface>
             _typefaceCache = new();
 
+        // Кеш фолбэк-гарнитур по кодпоинту Unicode.
+        // Заполняется при первом обращении к символу не поддержанному основным шрифтом.
+        // null — система не нашла ни одного шрифта с нужным глифом.
+        private static readonly ConcurrentDictionary<int, string?> _fallbackFamilyCache = new();
+
         // ── Публичный API ─────────────────────────────────────────────────
 
         /// <summary>
@@ -850,6 +855,8 @@ namespace Writersword.Infrastructure.Rendering
 
         /// <summary>
         /// Собирает список токенов (символ + форматирование) из runs параграфа.
+        /// Для каждого символа проверяет наличие глифа в назначенном шрифте.
+        /// Если глиф отсутствует — подставляет системный фолбэк через SKFontManager.
         /// </summary>
         private static List<(string Char, SKRunSegment Format, int GlobalIndex)> CollectTokens(
             ParagraphBlock para,
@@ -872,14 +879,19 @@ namespace Writersword.Infrastructure.Rendering
 
                     var p = run.Properties;
 
+                    string resolvedFamily = !string.IsNullOrEmpty(p?.FontFamily)
+                        ? p!.FontFamily : styleFontFamily;
+                    float resolvedSize = p?.FontSize.HasValue == true
+                        ? (float)p.FontSize.Value : styleFontSize;
+                    bool resolvedBold = p?.IsBold ?? styleBold;
+                    bool resolvedItalic = p?.IsItalic ?? styleItalic;
+
                     var format = new SKRunSegment
                     {
-                        FontFamily = !string.IsNullOrEmpty(p?.FontFamily)
-                                               ? p!.FontFamily : styleFontFamily,
-                        FontSizePt = p?.FontSize.HasValue == true
-                                               ? (float)p.FontSize.Value : styleFontSize,
-                        IsBold = p?.IsBold ?? styleBold,
-                        IsItalic = p?.IsItalic ?? styleItalic,
+                        FontFamily = resolvedFamily,
+                        FontSizePt = resolvedSize,
+                        IsBold = resolvedBold,
+                        IsItalic = resolvedItalic,
                         IsUnderline = p?.IsUnderline ?? false,
                         IsStrikethrough = p?.IsStrikethrough ?? false,
                         Color = ParseColor(p?.TextColor),
@@ -887,9 +899,41 @@ namespace Writersword.Infrastructure.Rendering
                         GlobalCharOffset = globalIndex
                     };
 
+                    // Получаем typeface один раз на run для проверки глифов.
+                    var typeface = GetOrCreateTypeface(resolvedFamily, resolvedBold, resolvedItalic);
+
                     foreach (char ch in run.Text)
                     {
-                        tokens.Add((ch.ToString(), format, globalIndex));
+                        SKRunSegment charFormat = format;
+
+                        // Проверяем глифы только для символов вне Basic Latin (U+0080+).
+                        // Basic Latin всегда есть в любом текстовом шрифте — проверять незачем,
+                        // а MatchCharacter для них может вернуть Marlett/Wingdings.
+                        if (!char.IsSurrogate(ch) && ch >= '\u0080')
+                        {
+                            int codepoint = ch;
+                            if (typeface.GetGlyph(codepoint) == 0)
+                            {
+                                string? fallbackFamily = FindFallbackFamily(codepoint, styles);
+                                if (fallbackFamily != null && fallbackFamily != resolvedFamily)
+                                {
+                                    charFormat = new SKRunSegment
+                                    {
+                                        FontFamily = fallbackFamily,
+                                        FontSizePt = resolvedSize,
+                                        IsBold = resolvedBold,
+                                        IsItalic = resolvedItalic,
+                                        IsUnderline = p?.IsUnderline ?? false,
+                                        IsStrikethrough = p?.IsStrikethrough ?? false,
+                                        Color = ParseColor(p?.TextColor),
+                                        HighlightColor = ParseHighlight(p?.HighlightColor),
+                                        GlobalCharOffset = globalIndex
+                                    };
+                                }
+                            }
+                        }
+
+                        tokens.Add((ch.ToString(), charFormat, globalIndex));
                         globalIndex++;
                     }
                 }
@@ -1396,6 +1440,79 @@ namespace Writersword.Infrastructure.Rendering
 
             _typefaceCache.TryAdd(key, typeface);
             return typeface;
+        }
+
+        /// <summary>
+        /// Ищет шрифт для символа с указанным кодпоинтом.
+        /// Порядок: пользовательская карта скриптов → системный MatchCharacter → null.
+        /// MatchCharacter кешируется; пользовательская карта проверяется всегда напрямую.
+        /// Декоративные шрифты (Marlett, Wingdings и пр.) исключаются из результата.
+        /// </summary>
+        private static string? FindFallbackFamily(int codepoint, StyleResolver? styles)
+        {
+            // Пользовательская карта скриптов имеет приоритет над системным фолбэком.
+            if (styles is not null && styles.ScriptFontMap.Count > 0)
+            {
+                string? scriptName = GetScriptName(codepoint);
+                if (scriptName != null && styles.ScriptFontMap.TryGetValue(scriptName, out var preferred)
+                    && !string.IsNullOrEmpty(preferred))
+                    return preferred;
+            }
+
+            if (_fallbackFamilyCache.TryGetValue(codepoint, out var cached))
+                return cached;
+
+            SKTypeface? fallback = null;
+            try
+            {
+                fallback = SKFontManager.Default.MatchCharacter(codepoint);
+            }
+            catch
+            {
+                // MatchCharacter может бросить исключение на некоторых конфигурациях.
+            }
+
+            string? result = null;
+            if (fallback != null && !IsDecorationFont(fallback.FamilyName))
+                result = fallback.FamilyName;
+
+            _fallbackFamilyCache.TryAdd(codepoint, result);
+            return result;
+        }
+
+        /// <summary>
+        /// Определяет имя Unicode-скрипта по кодпоинту.
+        /// Используется для поиска в пользовательской карте шрифтов.
+        /// </summary>
+        private static string? GetScriptName(int codepoint)
+        {
+            if (codepoint >= 0x0370 && codepoint <= 0x03FF) return "Greek";
+            if (codepoint >= 0x0400 && codepoint <= 0x052F) return "Cyrillic";
+            if (codepoint >= 0x0590 && codepoint <= 0x05FF) return "Hebrew";
+            if (codepoint >= 0x0600 && codepoint <= 0x06FF) return "Arabic";
+            if (codepoint >= 0x0900 && codepoint <= 0x097F) return "Devanagari";
+            if (codepoint >= 0x0E00 && codepoint <= 0x0E7F) return "Thai";
+            if (codepoint >= 0x3040 && codepoint <= 0x309F) return "Japanese";
+            if (codepoint >= 0x30A0 && codepoint <= 0x30FF) return "Japanese";
+            if (codepoint >= 0x4E00 && codepoint <= 0x9FFF) return "CJK";
+            if (codepoint >= 0xAC00 && codepoint <= 0xD7AF) return "Korean";
+            return null;
+        }
+
+        /// <summary>
+        /// Возвращает true для декоративных и символьных шрифтов Windows.
+        /// Такие шрифты отображают ASCII-символы как иконки/стрелки,
+        /// поэтому не подходят для текстового фолбэка.
+        /// </summary>
+        private static bool IsDecorationFont(string familyName)
+        {
+            return familyName.Equals("Marlett", StringComparison.OrdinalIgnoreCase)
+                || familyName.StartsWith("Wingdings", StringComparison.OrdinalIgnoreCase)
+                || familyName.StartsWith("Webdings", StringComparison.OrdinalIgnoreCase)
+                || familyName.IndexOf("MDL2", StringComparison.OrdinalIgnoreCase) >= 0
+                || familyName.IndexOf("Symbol", StringComparison.OrdinalIgnoreCase) >= 0
+                || familyName.IndexOf("Dingbats", StringComparison.OrdinalIgnoreCase) >= 0
+                || familyName.IndexOf("Emoji", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static SKColor ParseColor(string? hex)

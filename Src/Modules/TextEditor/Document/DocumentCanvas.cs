@@ -243,6 +243,23 @@ namespace Writersword.Modules.TextEditor.Document
         private readonly SKTextRenderer _renderer = new();
         private StyleResolver? _styleResolver;
 
+        /// <summary>
+        /// Карта "скрипт → шрифт" из настроек редактора.
+        /// Пробрасывается в StyleResolver и используется SKTextRenderer для фолбэка символов.
+        /// Обновляется из TextEditorModule при изменении настроек.
+        /// </summary>
+        public IReadOnlyDictionary<string, string>? ScriptFontMap
+        {
+            get => _scriptFontMap;
+            set
+            {
+                _scriptFontMap = value;
+                if (DocVm is not null)
+                    _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
+            }
+        }
+        private IReadOnlyDictionary<string, string>? _scriptFontMap;
+
         // ── Логирование ───────────────────────────────────────────────────
         private static readonly ILogger _logger = Log.ForContext<DocumentCanvas>();
 
@@ -395,6 +412,8 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.CutDelegate = null;
                 _docVm.CopyDelegate = null;
                 _docVm.PasteDelegate = null;
+                _docVm.BeginEditDelegate = null;
+                _docVm.CommitEditDelegate = null;
 
                 // Снимаем делегаты с каждого параграфа — иначе замыкания удерживают canvas.
                 foreach (var pvm in _docVm.Paragraphs)
@@ -512,6 +531,8 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.CutDelegate = null;
                 _docVm.CopyDelegate = null;
                 _docVm.PasteDelegate = null;
+                _docVm.BeginEditDelegate = null;
+                _docVm.CommitEditDelegate = null;
             }
 
             _docVm = DataContext as DocumentViewModel;
@@ -522,7 +543,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (DocVm is not null)
             {
-                _styleResolver = new StyleResolver(DocVm.Document.Styles);
+                _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
                 _lastZoom = DocVm.Zoom;
                 DocVm.Paragraphs.CollectionChanged += OnParagraphsChanged;
                 DocVm.PropertyChanged += OnDocVmPropertyChanged;
@@ -533,6 +554,8 @@ namespace Writersword.Modules.TextEditor.Document
                 DocVm.CutDelegate = ExecuteCut;
                 DocVm.CopyDelegate = ExecuteCopy;
                 DocVm.PasteDelegate = ExecutePaste;
+                DocVm.BeginEditDelegate = BeginEdit;
+                DocVm.CommitEditDelegate = CommitEdit;
                 foreach (var pvm in DocVm.Paragraphs)
                     WirePvm(pvm);
             }
@@ -566,7 +589,7 @@ namespace Writersword.Modules.TextEditor.Document
                                or nameof(DocumentViewModel.PageSettings))
             {
                 if (DocVm is not null)
-                    _styleResolver = new StyleResolver(DocVm.Document.Styles);
+                    _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
                 _layoutCache.Clear();
                 _cellLayoutCache.Clear();
                 RebuildLayouts();
@@ -745,7 +768,7 @@ namespace Writersword.Modules.TextEditor.Document
             _canvasWidth = Math.Max(viewportW / zoom, 1);
 
             if (_styleResolver is null && DocVm is not null)
-                _styleResolver = new StyleResolver(DocVm.Document.Styles);
+                _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
 
             _layoutCache.Clear();
             _cellLayoutCache.Clear();
@@ -797,7 +820,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             if (_styleResolver is null)
-                _styleResolver = new StyleResolver(DocVm.Document.Styles);
+                _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
 
             switch (DocVm.ViewMode)
             {

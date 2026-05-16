@@ -198,18 +198,15 @@ namespace Writersword.Views
             InitializeTitleBar();
         }
 
-        // ── Глобальный анфокус TextBox ─────────────────────────────────────
         // Туннельный обработчик на уровне окна — ловит все клики раньше дочерних элементов.
         // Если сфокусирован TextBox и клик произошёл вне него — фокусируем FocusSink,
         // что гарантированно триггерит LostFocus на TextBox.
         // Window.Focusable == false в Avalonia 11, поэтому Focus() на окне не работает.
-
         private void OnGlobalPointerPressed(object? sender, PointerPressedEventArgs e)
         {
             var focused = FocusManager?.GetFocusedElement();
             if (focused is not TextBox focusedBox) return;
 
-            // Клик внутри самого TextBox — не трогаем.
             Visual? src = e.Source as Visual;
             while (src != null)
             {
@@ -258,7 +255,34 @@ namespace Writersword.Views
         private IntPtr CustomWndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
         {
             if (msg == WM_NCCALCSIZE && wParam != IntPtr.Zero)
+            {
+                // При максимизации явно ограничиваем клиентскую область рабочей зоной монитора.
+                // Это исключает перекрытие панели задач без ручного расчёта Padding/Margin.
+                // При обычном состоянии возвращаем нулевой размер NC-области (убираем системные рамки).
+                if (WindowState == WindowState.Maximized)
+                {
+                    var hMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+                    if (hMonitor != IntPtr.Zero)
+                    {
+                        var mi = new MonitorInfo { cbSize = Marshal.SizeOf<MonitorInfo>() };
+                        if (GetMonitorInfo(hMonitor, ref mi))
+                        {
+                            Marshal.WriteInt32(lParam, 0, mi.rcWork.Left);
+                            Marshal.WriteInt32(lParam, 4, mi.rcWork.Top);
+                            Marshal.WriteInt32(lParam, 8, mi.rcWork.Right);
+                            Marshal.WriteInt32(lParam, 12, mi.rcWork.Bottom);
+
+                            _logger.LogDebug(
+                                "WM_NCCALCSIZE maximized: rcWork=({L},{T},{R},{B})",
+                                mi.rcWork.Left, mi.rcWork.Top, mi.rcWork.Right, mi.rcWork.Bottom);
+
+                            return IntPtr.Zero;
+                        }
+                    }
+                }
+
                 return IntPtr.Zero;
+            }
 
             if (msg == WM_NCHITTEST)
             {
@@ -368,101 +392,26 @@ namespace Writersword.Views
         {
             if (OperatingSystem.IsWindows())
             {
-                var hwnd = TryGetPlatformHandle()?.Handle;
-                if (hwnd.HasValue && hwnd.Value != IntPtr.Zero)
-                {
-                    ApplyMaximizedPaddingWin32(hwnd.Value);
-                    return;
-                }
+                ApplyMaximizedPaddingWin32();
+                return;
             }
 
             ApplyMaximizedPaddingAvalonia();
         }
 
+        /// <summary>
+        /// На Windows клиентская область при максимизации уже ограничена рабочей зоной
+        /// через WM_NCCALCSIZE, поэтому никакой компенсации через Padding/Margin не нужно.
+        /// Сбрасываем любые ранее выставленные отступы и применяем корректировку кнопок.
+        /// </summary>
         [SupportedOSPlatform("windows")]
-        private void ApplyMaximizedPaddingWin32(IntPtr hwnd)
+        private void ApplyMaximizedPaddingWin32()
         {
-            if (!GetWindowRect(hwnd, out var winRect))
-            {
-                _logger.LogWarning("ApplyMaximizedPaddingWin32: GetWindowRect failed, falling back to Avalonia");
-                ApplyMaximizedPaddingAvalonia();
-                return;
-            }
-
-            var hMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-            if (hMonitor == IntPtr.Zero)
-            {
-                _logger.LogWarning("ApplyMaximizedPaddingWin32: MonitorFromWindow returned null, falling back to Avalonia");
-                ApplyMaximizedPaddingAvalonia();
-                return;
-            }
-
-            var mi = new MonitorInfo { cbSize = Marshal.SizeOf<MonitorInfo>() };
-            if (!GetMonitorInfo(hMonitor, ref mi))
-            {
-                _logger.LogWarning("ApplyMaximizedPaddingWin32: GetMonitorInfo failed, falling back to Avalonia");
-                ApplyMaximizedPaddingAvalonia();
-                return;
-            }
-
-            var avaloniaScreen = Screens.All.FirstOrDefault(s =>
-                Math.Abs(s.Bounds.X - mi.rcMonitor.Left) < 10 &&
-                Math.Abs(s.Bounds.Y - mi.rcMonitor.Top) < 10);
-
-            var scaling = avaloniaScreen?.Scaling ?? 1.0;
-
-            var padLeft = Math.Max(0.0, (mi.rcWork.Left - winRect.Left) / scaling);
-            var padTop = Math.Max(0.0, (mi.rcWork.Top - winRect.Top) / scaling);
-            var padRight = Math.Max(0.0, (winRect.Right - mi.rcWork.Right) / scaling);
-            var padBottom = Math.Max(0.0, (winRect.Bottom - mi.rcWork.Bottom) / scaling);
-
-            _logger.LogDebug(
-                "ApplyMaximizedPaddingWin32: winRect=({WL},{WT},{WR},{WB}), rcWork=({ML},{MT},{MR},{MB}), scaling={S}, padding={PL},{PT},{PR},{PB}",
-                winRect.Left, winRect.Top, winRect.Right, winRect.Bottom,
-                mi.rcWork.Left, mi.rcWork.Top, mi.rcWork.Right, mi.rcWork.Bottom,
-                scaling, padLeft, padTop, padRight, padBottom);
-
-            if (padLeft > AnomalousPaddingThreshold || padRight > AnomalousPaddingThreshold)
-            {
-                int frameX = GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-                int frameY = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-
-                int correctX = mi.rcMonitor.Left - frameX;
-                int correctY = mi.rcMonitor.Top - frameY;
-                int correctW = (mi.rcMonitor.Right - mi.rcMonitor.Left) + frameX * 2;
-                int correctH = (mi.rcMonitor.Bottom - mi.rcMonitor.Top) + frameY * 2;
-
-                _logger.LogWarning(
-                    "ApplyMaximizedPaddingWin32: anomalous padding detected, correcting position to ({X},{Y},{W},{H})",
-                    correctX, correctY, correctW, correctH);
-
-                SetWindowPos(hwnd, IntPtr.Zero, correctX, correctY, correctW, correctH,
-                    SWP_NOZORDER | SWP_FRAMECHANGED);
-
-                if (!GetWindowRect(hwnd, out winRect))
-                {
-                    _logger.LogWarning("ApplyMaximizedPaddingWin32: GetWindowRect after correction failed");
-                    return;
-                }
-
-                padLeft = Math.Max(0.0, (mi.rcWork.Left - winRect.Left) / scaling);
-                padTop = Math.Max(0.0, (mi.rcWork.Top - winRect.Top) / scaling);
-                padRight = Math.Max(0.0, (winRect.Right - mi.rcWork.Right) / scaling);
-                padBottom = Math.Max(0.0, (winRect.Bottom - mi.rcWork.Bottom) / scaling);
-
-                _logger.LogDebug(
-                    "ApplyMaximizedPaddingWin32: corrected padding={PL},{PT},{PR},{PB}",
-                    padLeft, padTop, padRight, padBottom);
-            }
-
-            // Window.Padding.Bottom в Avalonia 12 конфликтует с внутренним OffScreenMargin
-            // при ExtendClientAreaToDecorationsHint=True — нижний отступ либо игнорируется,
-            // либо суммируется с OffScreenMargin и контент уходит под панель задач.
-            // Решение: left/top/right — через Window.Padding (работают корректно),
-            // bottom — через Margin корневого Grid (обходит конфликт с OffScreenMargin).
-            Padding = new Thickness(padLeft, padTop, padRight, 0);
-            ApplyRootGridBottomMargin(padBottom);
+            Padding = new Thickness(0);
+            ApplyRootGridBottomMargin(0);
             ApplyButtonsPadding();
+
+            _logger.LogDebug("ApplyMaximizedPaddingWin32: padding cleared, WM_NCCALCSIZE handles work area");
         }
 
         private void ApplyMaximizedPaddingAvalonia()

@@ -32,7 +32,16 @@ namespace Writersword.Infrastructure.Rendering
         /// <summary>Интервал после абзаца по умолчанию в pt.</summary>
         public const float FallbackSpaceAfterPt = 8f;
 
-        public StyleResolver(IEnumerable<DocumentStyle> styles)
+        /// <summary>
+        /// Карта "Unicode-скрипт → шрифт" из пользовательских настроек.
+        /// Используется SKTextRenderer как приоритетный фолбэк перед системным MatchCharacter.
+        /// Ключи: "Cyrillic", "Greek", "Arabic", "Hebrew", "CJK", "Korean", "Japanese" и др.
+        /// </summary>
+        public IReadOnlyDictionary<string, string> ScriptFontMap { get; }
+
+        public StyleResolver(
+            IEnumerable<DocumentStyle> styles,
+            IReadOnlyDictionary<string, string>? scriptFontMap = null)
         {
             _index = new Dictionary<string, DocumentStyle>(
                 System.StringComparer.OrdinalIgnoreCase);
@@ -40,6 +49,9 @@ namespace Writersword.Infrastructure.Rendering
             foreach (var style in styles)
                 if (!string.IsNullOrEmpty(style.Name))
                     _index[style.Name] = style;
+
+            ScriptFontMap = scriptFontMap
+                ?? new Dictionary<string, string>();
         }
 
         // ── Резолверы шрифта ──────────────────────────────────────────────

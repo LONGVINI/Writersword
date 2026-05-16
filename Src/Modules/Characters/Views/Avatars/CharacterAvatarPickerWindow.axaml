@@ -1,0 +1,222 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Avatars"
+        x:Class="Writersword.Modules.Characters.Views.Avatars.CharacterAvatarPickerWindow"
+        x:DataType="vm:CharacterAvatarPickerViewModel"
+        Title="Выбор аватарки"
+        Width="540"
+        Height="520"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="{DynamicResource BgBaseBrush}">
+
+	<Grid RowDefinitions="Auto,*,Auto" Margin="16">
+
+		<!-- Зона drag & drop -->
+		<Border Grid.Row="0"
+                Height="90"
+                CornerRadius="10"
+                BorderThickness="2"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                Margin="0,0,0,12">
+			<Border.Background>
+				<SolidColorBrush Color="{DynamicResource AccentColor}" Opacity="0.05"/>
+			</Border.Background>
+
+			<StackPanel VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        Spacing="4">
+				<TextBlock Text="Нажмите «Загрузить файл» чтобы выбрать изображение"
+                           FontSize="13"
+                           HorizontalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+				<TextBlock Text="{Binding StatusMessage}"
+                           FontSize="11"
+                           HorizontalAlignment="Center"
+                           Foreground="{DynamicResource AccentBrush}"
+                           IsVisible="{Binding StatusMessage,
+                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+			</StackPanel>
+		</Border>
+
+		<!-- Галерея -->
+		<TabControl Grid.Row="1">
+
+			<!-- Проект -->
+			<TabItem Header="Проект">
+				<ScrollViewer>
+					<Panel>
+						<TextBlock Text="Нет аватарок в проекте"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Margin="0,40"
+                                   IsVisible="{Binding HasNoProjectAvatars}"/>
+
+						<ItemsControl ItemsSource="{Binding ProjectAvatars}"
+                                      IsVisible="{Binding HasProjectAvatars}">
+							<ItemsControl.ItemsPanel>
+								<ItemsPanelTemplate>
+									<WrapPanel Orientation="Horizontal" Margin="4"/>
+								</ItemsPanelTemplate>
+							</ItemsControl.ItemsPanel>
+							<ItemsControl.ItemTemplate>
+								<DataTemplate DataType="vm:CharacterAvatarPickerItemViewModel">
+									<Border Width="88" Height="108" Margin="4"
+                                            CornerRadius="8"
+                                            Background="{DynamicResource BgPanelBrush}"
+                                            Cursor="Hand">
+										<StackPanel Spacing="4" Margin="4">
+											<Border Width="64" Height="64" CornerRadius="32"
+                                                    ClipToBounds="True"
+                                                    HorizontalAlignment="Center"
+                                                    Background="{DynamicResource BgBaseBrush}">
+												<Panel>
+													<Image Source="{Binding Thumbnail}"
+                                                           Stretch="UniformToFill"
+                                                           IsVisible="{Binding Thumbnail,
+                                                               Converter={x:Static ObjectConverters.IsNotNull}}"/>
+													<TextBlock Text="?"
+                                                               FontSize="28"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                                               IsVisible="{Binding Thumbnail,
+                                                                   Converter={x:Static ObjectConverters.IsNull}}"/>
+												</Panel>
+											</Border>
+											<Button Content="Выбрать"
+                                                    Command="{Binding SelectCommand}"
+                                                    FontSize="10" Padding="4,2"
+                                                    HorizontalAlignment="Stretch"/>
+											<Button Content="В библиотеку"
+                                                    Command="{Binding CopyToLibraryCommand}"
+                                                    FontSize="10" Padding="4,2"
+                                                    HorizontalAlignment="Stretch"
+                                                    IsVisible="{Binding IsProjectAvatar}"/>
+										</StackPanel>
+									</Border>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
+					</Panel>
+				</ScrollViewer>
+			</TabItem>
+
+			<!-- Встроенные -->
+			<TabItem Header="Дефолтные">
+				<ScrollViewer>
+					<Panel>
+						<TextBlock Text="Папка Assets/Avatars/ не найдена или пуста"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   TextWrapping="Wrap" TextAlignment="Center"
+                                   Margin="24,40"
+                                   IsVisible="{Binding HasNoBuiltInAvatars}"/>
+						<ItemsControl ItemsSource="{Binding BuiltInAvatars}"
+                                      IsVisible="{Binding HasBuiltInAvatars}">
+							<ItemsControl.ItemsPanel>
+								<ItemsPanelTemplate>
+									<WrapPanel Orientation="Horizontal" Margin="4"/>
+								</ItemsPanelTemplate>
+							</ItemsControl.ItemsPanel>
+							<ItemsControl.ItemTemplate>
+								<DataTemplate DataType="vm:CharacterAvatarPickerItemViewModel">
+									<Border Width="80" Height="88" Margin="4"
+                                            CornerRadius="8"
+                                            Background="{DynamicResource BgPanelBrush}"
+                                            Cursor="Hand">
+										<StackPanel Spacing="4" Margin="4">
+											<Border Width="64" Height="64" CornerRadius="32"
+                                                    ClipToBounds="True"
+                                                    HorizontalAlignment="Center">
+												<Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
+											</Border>
+											<Button Content="Выбрать"
+                                                    Command="{Binding SelectCommand}"
+                                                    FontSize="10" Padding="4,2"
+                                                    HorizontalAlignment="Stretch"/>
+										</StackPanel>
+									</Border>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
+					</Panel>
+				</ScrollViewer>
+			</TabItem>
+
+			<!-- Библиотека -->
+			<TabItem Header="Библиотека">
+				<ScrollViewer>
+					<Panel>
+						<TextBlock Text="Библиотека пуста — добавьте аватарки из проектов"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   TextWrapping="Wrap" TextAlignment="Center"
+                                   Margin="24,40"
+                                   IsVisible="{Binding HasNoLibraryAvatars}"/>
+
+						<ItemsControl ItemsSource="{Binding LibraryAvatars}"
+                                      IsVisible="{Binding HasLibraryAvatars}">
+							<ItemsControl.ItemsPanel>
+								<ItemsPanelTemplate>
+									<WrapPanel Orientation="Horizontal" Margin="4"/>
+								</ItemsPanelTemplate>
+							</ItemsControl.ItemsPanel>
+							<ItemsControl.ItemTemplate>
+								<DataTemplate DataType="vm:CharacterAvatarPickerItemViewModel">
+									<Border Width="88" Height="96" Margin="4"
+                                            CornerRadius="8"
+                                            Background="{DynamicResource BgPanelBrush}"
+                                            Cursor="Hand">
+										<StackPanel Spacing="4" Margin="4">
+											<Border Width="64" Height="64" CornerRadius="32"
+                                                    ClipToBounds="True"
+                                                    HorizontalAlignment="Center"
+                                                    Background="{DynamicResource BgBaseBrush}">
+												<Panel>
+													<Image Source="{Binding Thumbnail}"
+                                                           Stretch="UniformToFill"
+                                                           IsVisible="{Binding Thumbnail,
+                                                               Converter={x:Static ObjectConverters.IsNotNull}}"/>
+													<TextBlock Text="?"
+                                                               FontSize="28"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                                               IsVisible="{Binding Thumbnail,
+                                                                   Converter={x:Static ObjectConverters.IsNull}}"/>
+												</Panel>
+											</Border>
+											<Button Content="Выбрать"
+                                                    Command="{Binding SelectCommand}"
+                                                    FontSize="10" Padding="4,2"
+                                                    HorizontalAlignment="Stretch"/>
+										</StackPanel>
+									</Border>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
+					</Panel>
+				</ScrollViewer>
+			</TabItem>
+		</TabControl>
+
+		<!-- Нижняя панель -->
+		<Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" Margin="0,12,0,0">
+			<Button Grid.Column="0"
+                    Content="Загрузить файл…"
+                    Command="{Binding UploadCommand}"
+                    Padding="12,6"/>
+			<Button Grid.Column="2"
+                    Content="Отмена"
+                    Command="{Binding CancelCommand}"
+                    Padding="12,6"/>
+		</Grid>
+	</Grid>
+</Window>

@@ -81,6 +81,26 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         /// </summary>
         public double MonitorSizeInches { get; set; } = 0;
 
+        // ── Шрифты по языковым скриптам ──────────────────────────────────
+
+        /// <summary>
+        /// Карта "Unicode-скрипт → шрифт" для автоматического фолбэка.
+        /// Используется SKTextRenderer когда выбранный шрифт не содержит нужного глифа.
+        /// Ключи: Cyrillic, Greek, Arabic, Hebrew, CJK, Korean, Japanese, Devanagari, Thai.
+        /// </summary>
+        public Dictionary<string, string> ScriptFontMap { get; set; } = new()
+        {
+            { "Cyrillic",   "Times New Roman" },
+            { "Greek",      "Times New Roman" },
+            { "Arabic",     "Arial"           },
+            { "Hebrew",     "Arial"           },
+            { "CJK",        "SimSun"          },
+            { "Korean",     "Malgun Gothic"   },
+            { "Japanese",   "MS Gothic"       },
+            { "Devanagari", "Mangal"          },
+            { "Thai",       "Tahoma"          }
+        };
+
         /// <summary>
         /// Создаёт набор встроенных правил автозамены по умолчанию.
         /// </summary>
@@ -88,14 +108,14 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         {
             return new List<AutoReplaceRule>
             {
-                new() { From = "--",   To = "\u2014", IsBuiltIn = true },  // -- → —
-                new() { From = "...",  To = "\u2026", IsBuiltIn = true },  // ... → …
-                new() { From = "(c)",  To = "\u00A9", IsBuiltIn = true },  // (c) → ©
-                new() { From = "(r)",  To = "\u00AE", IsBuiltIn = true },  // (r) → ®
-                new() { From = "(tm)", To = "\u2122", IsBuiltIn = true },  // (tm) → ™
-                new() { From = "->",   To = "\u2192", IsBuiltIn = true },  // -> → →
-                new() { From = "<-",   To = "\u2190", IsBuiltIn = true },  // <- → ←
-                new() { From = "<->",  To = "\u2194", IsBuiltIn = true },  // <-> → ↔
+                new() { From = "--",   To = "\u2014", IsBuiltIn = true },
+                new() { From = "...",  To = "\u2026", IsBuiltIn = true },
+                new() { From = "(c)",  To = "\u00A9", IsBuiltIn = true },
+                new() { From = "(r)",  To = "\u00AE", IsBuiltIn = true },
+                new() { From = "(tm)", To = "\u2122", IsBuiltIn = true },
+                new() { From = "->",   To = "\u2192", IsBuiltIn = true },
+                new() { From = "<-",   To = "\u2190", IsBuiltIn = true },
+                new() { From = "<->",  To = "\u2194", IsBuiltIn = true },
             };
         }
     }

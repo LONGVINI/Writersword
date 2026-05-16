@@ -32,6 +32,7 @@ namespace Writersword.Modules.Characters
         private readonly ICharacterService _characterService;
         private readonly IRelationshipService _relationshipService;
         private readonly ICharacterAnketaService _anketaService;
+        private readonly ICharacterAvatarService _avatarService;
 
         // Хранится для последующей отписки в Dispose().
         private Action? _onLanguageChanged;
@@ -41,6 +42,15 @@ namespace Writersword.Modules.Characters
             _relationshipService = new RelationshipService();
             _anketaService = new CharacterAnketaService();
             _characterService = new CharacterService(_relationshipService, _anketaService);
+            _avatarService = new CharacterAvatarService();
+            // Путь к тестовым/дефолтным аватаркам.
+            // Для встроенных иконок положи изображения в эту папку.
+            var builtInPath = System.IO.Path.Combine(
+                System.AppContext.BaseDirectory, "Assets", "Avatars");
+            if (!System.IO.Directory.Exists(builtInPath))
+                builtInPath = System.IO.Path.Combine(
+                    System.AppContext.BaseDirectory, "Images", "TestImages");
+            _avatarService.SetBuiltInPath(builtInPath);
         }
 
         public override string moduleType => "Characters";
@@ -52,7 +62,7 @@ namespace Writersword.Modules.Characters
         {
             if (_characterService is CharacterService cs) cs.SetContext(Context);
             var trashService = new CharactersTrashService(_characterService);
-            _viewModel = new CharactersViewModel(_characterService, _relationshipService, _anketaService, trashService);
+            _viewModel = new CharactersViewModel(_characterService, _relationshipService, _anketaService, trashService, _avatarService);
 
             // Синхронизируем культуру модуля с текущим языком приложения.
             // CharactersStrings имеет собственный статический Culture, который
@@ -73,6 +83,7 @@ namespace Writersword.Modules.Characters
         protected override void OnContextChanged(DocumentContext? context)
         {
             if (_characterService is CharacterService cs) cs.SetContext(context);
+            if (_avatarService is CharacterAvatarService avs) avs.SetContext(context);
         }
 
         public override Control? CreateView() =>
@@ -244,6 +255,7 @@ namespace Writersword.Modules.Characters
                     foreach (var id in moduleData.ActiveTemplateIds ?? new List<string>())
                         _viewModel.ActiveTemplateIds.Add(id);
 
+                    _viewModel.CancelLoad();
                     _viewModel.RefreshAll();
                     _logger.Debug("ViewModel refreshed after SetCustomData");
 

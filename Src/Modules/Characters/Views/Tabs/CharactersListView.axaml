@@ -110,311 +110,56 @@
 		</Border>
 
 		<!-- список папок и карточек -->
-		<ScrollViewer Grid.Row="1" Focusable="False">
-			<StackPanel>
+		<Panel Grid.Row="1">
+			<ScrollViewer Focusable="False">
+				<StackPanel>
 
-				<TextBlock Text="{x:Static loc:CharactersStrings.Placeholder_NoCharacters}"
-                           FontSize="14"
-                           Foreground="{DynamicResource TextSecondaryBrush}"
-                           HorizontalAlignment="Center"
-                           Margin="32,32" TextWrapping="Wrap" TextAlignment="Center"
-                           IsVisible="{Binding Folders.Count, Converter={StaticResource IntIsZeroConverter}}"/>
+					<TextBlock Text="{x:Static loc:CharactersStrings.Placeholder_NoCharacters}"
+							   FontSize="14"
+							   Foreground="{DynamicResource TextSecondaryBrush}"
+							   HorizontalAlignment="Center"
+							   Margin="32,32" TextWrapping="Wrap" TextAlignment="Center"
+							   IsVisible="{Binding Folders.Count, Converter={StaticResource IntIsZeroConverter}}"/>
 
-				<ItemsControl x:Name="FoldersContainer" ItemsSource="{Binding Folders}">
-					<ItemsControl.ItemTemplate>
-						<DataTemplate DataType="vm:CharacterFolderViewModel">
-							<StackPanel Margin="0,0,0,4">
+					<ItemsControl x:Name="FoldersContainer" ItemsSource="{Binding Folders}">
+						<ItemsControl.ItemTemplate>
+							<DataTemplate DataType="vm:CharacterFolderViewModel">
+								<StackPanel Margin="0,0,0,4">
 
-								<Border BorderBrush="{DynamicResource BorderDefaultBrush}"
-                                        BorderThickness="0,0,0,1"
-                                        Background="{DynamicResource BgPanelBrush}">
-									<Panel>
-										<Border IsVisible="{Binding IsSelected}" Background="#22FFFFFF"/>
-										<Border IsVisible="{Binding IsDragOver}"
-                                                Background="#22FFFFFF"
-                                                BorderBrush="{DynamicResource AccentDefaultBrush}"
-                                                BorderThickness="0,0,0,2"/>
-										<Grid MinHeight="36">
-											<Grid.ColumnDefinitions>
-												<ColumnDefinition Width="Auto"/>
-												<ColumnDefinition Width="*"/>
-												<ColumnDefinition Width="Auto"/>
-											</Grid.ColumnDefinitions>
+									<Border BorderBrush="{DynamicResource BorderDefaultBrush}"
+											BorderThickness="0,0,0,1"
+											Background="{DynamicResource BgPanelBrush}">
+										<Panel>
+											<Border IsVisible="{Binding IsSelected}" Background="#22FFFFFF"/>
+											<Border IsVisible="{Binding IsDragOver}"
+													Background="#22FFFFFF"
+													BorderBrush="{DynamicResource AccentDefaultBrush}"
+													BorderThickness="0,0,0,2"/>
+											<Grid MinHeight="36">
+												<Grid.ColumnDefinitions>
+													<ColumnDefinition Width="Auto"/>
+													<ColumnDefinition Width="*"/>
+													<ColumnDefinition Width="Auto"/>
+												</Grid.ColumnDefinitions>
 
-											<colorControls:ColorPickerButton
-                                                Grid.Column="0"
-                                                HexColor="{Binding Color, Mode=TwoWay}"
-                                                Margin="12,0,8,0"
-                                                VerticalAlignment="Center"/>
+												<colorControls:ColorPickerButton
+													Grid.Column="0"
+													HexColor="{Binding Color, Mode=TwoWay}"
+													Margin="12,0,8,0"
+													VerticalAlignment="Center"/>
 
-											<controls:CharactersFolderHeaderPanel Grid.Column="1"
-                                                                              LeftMinWidth="55"
-                                                                              RightMinWidth="90"
-                                                                              LeftPreferredWidth="260"
-                                                                              RightPreferredWidth="210">
-												<Panel Margin="0,0,12,0" ClipToBounds="True">
-													<Button Command="{Binding SelectOrRenameCommand}"
-                                                            Background="Transparent" BorderThickness="0"
-                                                            Padding="0" VerticalAlignment="Center"
-                                                            HorizontalAlignment="Stretch"
-                                                            HorizontalContentAlignment="Stretch"
-                                                            IsVisible="{Binding !IsRenaming}">
-														<Button.Styles>
-															<Style Selector="Button:pointerover /template/ ContentPresenter">
-																<Setter Property="Background" Value="Transparent"/>
-															</Style>
-															<Style Selector="Button:pressed /template/ ContentPresenter">
-																<Setter Property="Background" Value="Transparent"/>
-															</Style>
-														</Button.Styles>
-														<TextBlock Text="{Binding Name}"
-                                                                   FontSize="13" FontWeight="SemiBold"
-                                                                   Foreground="{DynamicResource TextPrimaryBrush}"
-                                                                   TextTrimming="CharacterEllipsis"
-                                                                   ToolTip.Tip="{Binding Name}"
-                                                                   ToolTip.ShowDelay="500"/>
-													</Button>
-													<TextBox Name="FolderRenameBox"
-                                                             Text="{ReflectionBinding Name}"
-                                                             FontSize="13" FontWeight="SemiBold"
-                                                             Padding="4,2,16,2"
-                                                             VerticalAlignment="Center"
-                                                             IsVisible="{Binding IsRenaming}"
-                                                             behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"
-                                                             behaviors:ClickOutsideBehavior.Command="{ReflectionBinding ConfirmRenameCommand}"/>
-												</Panel>
-
-												<Grid Margin="8,0,8,0">
-													<Button Command="{Binding StartEditCommentCommand}"
-                                                            Background="Transparent" BorderThickness="0"
-                                                            Padding="4,0" VerticalAlignment="Center"
-                                                            HorizontalAlignment="Right"
-                                                            ToolTip.Tip="{x:Static loc:CharactersStrings.Folder_CommentTooltip}"
-                                                            IsVisible="{Binding Comment, Converter={x:Static StringConverters.IsNullOrEmpty}}">
-														<PathIcon Data="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"
-                                                                  Width="12" Height="12"
-                                                                  Foreground="{DynamicResource TextMutedBrush}"
-                                                                  Opacity="0.4"/>
-													</Button>
-													<Button Command="{Binding StartEditCommentCommand}"
-                                                            Background="Transparent" BorderThickness="0"
-                                                            Padding="0" VerticalAlignment="Center"
-                                                            HorizontalAlignment="Stretch"
-                                                            HorizontalContentAlignment="Stretch"
-                                                            IsVisible="{Binding Comment, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-														<Button.Styles>
-															<Style Selector="Button:pointerover /template/ ContentPresenter">
-																<Setter Property="Background" Value="Transparent"/>
-															</Style>
-															<Style Selector="Button:pressed /template/ ContentPresenter">
-																<Setter Property="Background" Value="Transparent"/>
-															</Style>
-														</Button.Styles>
-														<TextBlock Text="{Binding Comment}"
-                                                                   FontSize="11" FontStyle="Italic"
-                                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                                   TextTrimming="CharacterEllipsis"
-                                                                   ToolTip.Tip="{Binding Comment}"
-                                                                   ToolTip.ShowDelay="500"/>
-													</Button>
-													<infra:ItalicCaretTextBox Name="FolderCommentBox"
-                                                         Classes="italic"
-                                                         Text="{ReflectionBinding Comment}"
-                                                         FontStyle="Italic"
-                                                         PlaceholderText="{x:Static loc:CharactersStrings.Folder_CommentPlaceholder}"
-                                                         Padding="4,2,4,2"
-                                                         HorizontalAlignment="Stretch"
-                                                         VerticalAlignment="Center"
-                                                         IsVisible="{Binding IsEditingComment}"
-                                                         behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsEditingComment}"
-                                                         behaviors:ClickOutsideBehavior.Command="{ReflectionBinding ConfirmCommentCommand}"/>
-												</Grid>
-											</controls:CharactersFolderHeaderPanel>
-
-											<Grid Grid.Column="2"
-                                                  ColumnDefinitions="Auto,Auto,Auto"
-                                                  VerticalAlignment="Center">
-												<Button Grid.Column="0"
-                                                        Command="{Binding RequestDeleteCommand}"
-                                                        Background="Transparent" BorderThickness="0"
-                                                        Padding="8,0" Height="36"
-                                                        VerticalAlignment="Stretch"
-                                                        VerticalContentAlignment="Center"
-                                                        IsVisible="{Binding !IsUngrouped}"
-                                                        ToolTip.Tip="Удалить папку">
-													<Button.Styles>
-														<Style Selector="Button:pointerover /template/ ContentPresenter">
-															<Setter Property="Background" Value="Transparent"/>
-														</Style>
-													</Button.Styles>
-													<PathIcon Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-                                                              Width="13" Height="13"
-                                                              Foreground="{DynamicResource TextSecondaryBrush}"/>
-												</Button>
-												<TextBlock Grid.Column="1"
-                                                           Text="{Binding Count}"
-                                                           FontSize="11"
-                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                           VerticalAlignment="Center"
-                                                           HorizontalAlignment="Center"
-                                                           MinWidth="20"
-                                                           TextAlignment="Center"/>
-												<Button Grid.Column="2"
-                                                        Command="{Binding ToggleExpandCommand}"
-                                                        Background="Transparent" BorderThickness="0"
-                                                        Padding="8,0" Margin="0,0,4,0"
-                                                        VerticalAlignment="Stretch">
-													<TextBlock Text="{Binding IsExpanded, Converter={x:Static conv:BoolToCollapseArrowConverter.Instance}}"
-                                                               FontSize="10"
-                                                               Foreground="{DynamicResource TextSecondaryBrush}"
-                                                               VerticalAlignment="Center"/>
-												</Button>
-											</Grid>
-										</Grid>
-									</Panel>
-								</Border>
-
-								<!-- карточки персонажей -->
-								<ItemsControl ItemsSource="{Binding Characters}"
-                                              Margin="12,8"
-                                              IsVisible="{Binding IsExpanded}">
-									<ItemsControl.ItemsPanel>
-										<ItemsPanelTemplate>
-											<UniformGrid Columns="{Binding $parent[UserControl].DataContext.CardsPerRow, FallbackValue=4}"/>
-										</ItemsPanelTemplate>
-									</ItemsControl.ItemsPanel>
-									<ItemsControl.ItemTemplate>
-										<DataTemplate DataType="vm:CharacterListItemViewModel">
-
-											<Border Classes="card-root"
-                                                    CornerRadius="10"
-                                                    Background="{DynamicResource BgPanelBrush}"
-                                                    BorderBrush="{Binding Color}"
-                                                    BorderThickness="2"
-                                                    ClipToBounds="True"
-                                                    Margin="6"
-                                                    Cursor="Hand"
-                                                    Opacity="{Binding DragOpacity}"
-                                                    IsHitTestVisible="{Binding !IsDragging}">
-
-												<!-- Стили hover: кнопки edit/delete появляются только при наведении.
-                                                     Это освобождает пространство в маленьких карточках и улучшает UX. -->
-												<Border.Styles>
-													<Style Selector="Border.card-root StackPanel.card-edit-btns">
-														<Setter Property="Opacity" Value="0"/>
-														<Setter Property="Transitions">
-															<Transitions>
-																<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
-															</Transitions>
-														</Setter>
-													</Style>
-													<Style Selector="Border.card-root:pointerover StackPanel.card-edit-btns">
-														<Setter Property="Opacity" Value="1"/>
-													</Style>
-												</Border.Styles>
-
-												<Border.RenderTransform>
-													<TranslateTransform>
-														<TranslateTransform.Transitions>
-															<Transitions>
-																<DoubleTransition Property="X"
-                                                                                  Duration="0:0:0.28"
-                                                                                  Easing="CubicEaseOut"/>
-																<DoubleTransition Property="Y"
-                                                                                  Duration="0:0:0.28"
-                                                                                  Easing="CubicEaseOut"/>
-															</Transitions>
-														</TranslateTransform.Transitions>
-													</TranslateTransform>
-												</Border.RenderTransform>
-
-												<StackPanel Orientation="Vertical">
-
-													<!-- цветная зона -->
-													<Panel Height="{Binding $parent[UserControl].DataContext.CardTopHeight, FallbackValue=60}">
-														<Border Background="{Binding Color}"/>
-														<TextBlock Text="{Binding FallbackIcon}"
-                                                                   FontSize="{Binding $parent[UserControl].DataContext.CardIconFontSize, FallbackValue=30}"
-                                                                   HorizontalAlignment="Center"
-                                                                   VerticalAlignment="Center"
-                                                                   Foreground="White"
-                                                                   IsHitTestVisible="False"/>
-														<!-- цветопикер и кнопки edit/delete: hover-only через opacity -->
-														<colorControls:ColorPickerButton
-                                                            HexColor="{Binding Color, Mode=TwoWay}"
-                                                            HorizontalAlignment="Left"
-                                                            VerticalAlignment="Top"
-                                                            Margin="5"
-                                                            Width="20" Height="20"
-                                                            ToolTip.Tip="Изменить цвет"/>
-														<StackPanel Classes="card-edit-btns"
-                                                                    Orientation="Horizontal"
-                                                                    Spacing="2"
-                                                                    HorizontalAlignment="Right"
-                                                                    VerticalAlignment="Top"
-                                                                    Margin="4"
-                                                                    IsVisible="{Binding IsShowingNameDisplay}">
-															<Button Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
-                                                                    CommandParameter="{Binding Id}"
-                                                                    Padding="4,3"
-                                                                    Background="#88000000"
-                                                                    BorderThickness="0" CornerRadius="4"
-                                                                    ToolTip.Tip="{x:Static loc:CharactersStrings.Character_EditTooltip}">
-																<PathIcon Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                                                                          Width="11" Height="11" Foreground="White"/>
-															</Button>
-															<Button Command="{Binding RequestDeleteCommand}"
-                                                                    Padding="4,3"
-                                                                    Background="#88000000"
-                                                                    BorderThickness="0" CornerRadius="4"
-                                                                    ToolTip.Tip="Удалить персонажа">
-																<Button.Styles>
-																	<Style Selector="Button:pointerover /template/ ContentPresenter">
-																		<Setter Property="Background" Value="#BB660000"/>
-																	</Style>
-																</Button.Styles>
-																<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                                                                          Width="11" Height="11" Foreground="White"/>
-															</Button>
-														</StackPanel>
-													</Panel>
-
-													<!-- зона имени -->
-													<Panel Height="{Binding $parent[UserControl].DataContext.CardNameHeight, FallbackValue=40}">
-														<TextBox Text="{ReflectionBinding InlineName}"
-                                                                 PlaceholderText="{x:Static loc:CharactersStrings.Character_NamePlaceholder}"
-                                                                 FontSize="12" FontWeight="Medium"
-                                                                 TextAlignment="Center"
-                                                                 Background="{DynamicResource BgPanelBrush}"
-                                                                 BorderBrush="{DynamicResource AccentDefaultBrush}"
-                                                                 BorderThickness="0,1,0,0"
-                                                                 CornerRadius="0,0,8,8"
-                                                                 Padding="8,0"
-                                                                 Foreground="{DynamicResource TextPrimaryBrush}"
-                                                                 VerticalAlignment="Stretch"
-                                                                 IsVisible="{Binding IsBeingNamed}"
-                                                                 behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsBeingNamed}"/>
-														<TextBox Text="{ReflectionBinding PendingRename}"
-                                                                 FontSize="12" FontWeight="Medium"
-                                                                 TextAlignment="Center"
-                                                                 Background="{DynamicResource BgPanelBrush}"
-                                                                 BorderBrush="{DynamicResource AccentDefaultBrush}"
-                                                                 BorderThickness="0,1,0,0"
-                                                                 CornerRadius="0,0,8,8"
-                                                                 Padding="8,0"
-                                                                 Foreground="{DynamicResource TextPrimaryBrush}"
-                                                                 VerticalAlignment="Stretch"
-                                                                 IsVisible="{Binding IsRenaming}"
-                                                                 behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"/>
-														<Button Command="{Binding StartRenameCommand}"
-                                                                Background="Transparent"
-                                                                BorderThickness="0"
-                                                                Padding="6,4"
-                                                                HorizontalAlignment="Stretch"
-                                                                VerticalAlignment="Stretch"
-                                                                HorizontalContentAlignment="Center"
-                                                                IsVisible="{Binding IsShowingNameDisplay}"
-                                                                ToolTip.Tip="Нажмите для переименования">
+												<controls:CharactersFolderHeaderPanel Grid.Column="1"
+																				  LeftMinWidth="55"
+																				  RightMinWidth="90"
+																				  LeftPreferredWidth="260"
+																				  RightPreferredWidth="210">
+													<Panel Margin="0,0,12,0" ClipToBounds="True">
+														<Button Command="{Binding SelectOrRenameCommand}"
+																Background="Transparent" BorderThickness="0"
+																Padding="0" VerticalAlignment="Center"
+																HorizontalAlignment="Stretch"
+																HorizontalContentAlignment="Stretch"
+																IsVisible="{Binding !IsRenaming}">
 															<Button.Styles>
 																<Style Selector="Button:pointerover /template/ ContentPresenter">
 																	<Setter Property="Background" Value="Transparent"/>
@@ -424,30 +169,371 @@
 																</Style>
 															</Button.Styles>
 															<TextBlock Text="{Binding Name}"
-                                                                       FontSize="12" FontWeight="Medium"
-                                                                       TextWrapping="NoWrap"
-                                                                       TextTrimming="CharacterEllipsis"
-                                                                       TextAlignment="Center"
-                                                                       VerticalAlignment="Center"
-                                                                       Foreground="{DynamicResource TextPrimaryBrush}"
-                                                                       ToolTip.Tip="{Binding Name}"
-                                                                       ToolTip.ShowDelay="600"/>
+																	   FontSize="13" FontWeight="SemiBold"
+																	   Foreground="{DynamicResource TextPrimaryBrush}"
+																	   TextTrimming="CharacterEllipsis"
+																	   ToolTip.Tip="{Binding Name}"
+																	   ToolTip.ShowDelay="500"/>
 														</Button>
+														<TextBox Name="FolderRenameBox"
+																 Text="{ReflectionBinding Name}"
+																 FontSize="13" FontWeight="SemiBold"
+																 Padding="4,2,16,2"
+																 VerticalAlignment="Center"
+																 IsVisible="{Binding IsRenaming}"
+																 behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"
+																 behaviors:ClickOutsideBehavior.Command="{ReflectionBinding ConfirmRenameCommand}"/>
 													</Panel>
 
-												</StackPanel>
-											</Border>
+													<Grid Margin="8,0,8,0">
+														<Button Command="{Binding StartEditCommentCommand}"
+																Background="Transparent" BorderThickness="0"
+																Padding="4,0" VerticalAlignment="Center"
+																HorizontalAlignment="Right"
+																ToolTip.Tip="{x:Static loc:CharactersStrings.Folder_CommentTooltip}"
+																IsVisible="{Binding Comment, Converter={x:Static StringConverters.IsNullOrEmpty}}">
+															<PathIcon Data="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"
+																	  Width="12" Height="12"
+																	  Foreground="{DynamicResource TextMutedBrush}"
+																	  Opacity="0.4"/>
+														</Button>
+														<Button Command="{Binding StartEditCommentCommand}"
+																Background="Transparent" BorderThickness="0"
+																Padding="0" VerticalAlignment="Center"
+																HorizontalAlignment="Stretch"
+																HorizontalContentAlignment="Stretch"
+																IsVisible="{Binding Comment, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+															<Button.Styles>
+																<Style Selector="Button:pointerover /template/ ContentPresenter">
+																	<Setter Property="Background" Value="Transparent"/>
+																</Style>
+																<Style Selector="Button:pressed /template/ ContentPresenter">
+																	<Setter Property="Background" Value="Transparent"/>
+																</Style>
+															</Button.Styles>
+															<TextBlock Text="{Binding Comment}"
+																	   FontSize="11" FontStyle="Italic"
+																	   Foreground="{DynamicResource TextSecondaryBrush}"
+																	   TextTrimming="CharacterEllipsis"
+																	   ToolTip.Tip="{Binding Comment}"
+																	   ToolTip.ShowDelay="500"/>
+														</Button>
+														<infra:ItalicCaretTextBox Name="FolderCommentBox"
+															 Classes="italic"
+															 Text="{ReflectionBinding Comment}"
+															 FontStyle="Italic"
+															 PlaceholderText="{x:Static loc:CharactersStrings.Folder_CommentPlaceholder}"
+															 Padding="4,2,4,2"
+															 HorizontalAlignment="Stretch"
+															 VerticalAlignment="Center"
+															 IsVisible="{Binding IsEditingComment}"
+															 behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsEditingComment}"
+															 behaviors:ClickOutsideBehavior.Command="{ReflectionBinding ConfirmCommentCommand}"/>
+													</Grid>
+												</controls:CharactersFolderHeaderPanel>
 
-										</DataTemplate>
-									</ItemsControl.ItemTemplate>
-								</ItemsControl>
+												<Grid Grid.Column="2"
+													  ColumnDefinitions="Auto,Auto,Auto"
+													  VerticalAlignment="Center">
+													<Button Grid.Column="0"
+															Command="{Binding RequestDeleteCommand}"
+															Background="Transparent" BorderThickness="0"
+															Padding="8,0" Height="36"
+															VerticalAlignment="Stretch"
+															VerticalContentAlignment="Center"
+															IsVisible="{Binding !IsUngrouped}"
+															ToolTip.Tip="Удалить папку">
+														<Button.Styles>
+															<Style Selector="Button:pointerover /template/ ContentPresenter">
+																<Setter Property="Background" Value="Transparent"/>
+															</Style>
+														</Button.Styles>
+														<PathIcon Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+																  Width="13" Height="13"
+																  Foreground="{DynamicResource TextSecondaryBrush}"/>
+													</Button>
+													<TextBlock Grid.Column="1"
+															   Text="{Binding Count}"
+															   FontSize="11"
+															   Foreground="{DynamicResource TextSecondaryBrush}"
+															   VerticalAlignment="Center"
+															   HorizontalAlignment="Center"
+															   MinWidth="20"
+															   TextAlignment="Center"/>
+													<Button Grid.Column="2"
+															Command="{Binding ToggleExpandCommand}"
+															Background="Transparent" BorderThickness="0"
+															Padding="8,0" Margin="0,0,4,0"
+															VerticalAlignment="Stretch">
+														<TextBlock Text="{Binding IsExpanded, Converter={x:Static conv:BoolToCollapseArrowConverter.Instance}}"
+																   FontSize="10"
+																   Foreground="{DynamicResource TextSecondaryBrush}"
+																   VerticalAlignment="Center"/>
+													</Button>
+												</Grid>
+											</Grid>
+										</Panel>
+									</Border>
 
-							</StackPanel>
-						</DataTemplate>
-					</ItemsControl.ItemTemplate>
-				</ItemsControl>
-			</StackPanel>
-		</ScrollViewer>
+									<!-- карточки персонажей -->
+									<ItemsControl ItemsSource="{Binding Characters}"
+												  Margin="12,8"
+												  IsVisible="{Binding IsExpanded}">
+										<ItemsControl.ItemsPanel>
+											<ItemsPanelTemplate>
+												<UniformGrid Columns="{Binding $parent[UserControl].DataContext.CardsPerRow, FallbackValue=4}"/>
+											</ItemsPanelTemplate>
+										</ItemsControl.ItemsPanel>
+										<ItemsControl.ItemTemplate>
+											<DataTemplate DataType="vm:CharacterListItemViewModel">
+
+												<Border Classes="card-root"
+														CornerRadius="10"
+														Background="{DynamicResource BgPanelBrush}"
+														BorderBrush="{Binding Color}"
+														BorderThickness="2"
+														ClipToBounds="True"
+														Margin="6"
+														Cursor="Hand"
+														Opacity="{Binding DragOpacity}"
+														IsHitTestVisible="{Binding !IsDragging}">
+
+													<!-- Стили hover: кнопки edit/delete появляются только при наведении.
+                                                     Это освобождает пространство в маленьких карточках и улучшает UX. -->
+													<Border.Styles>
+														<Style Selector="Border.card-root StackPanel.card-edit-btns">
+															<Setter Property="Opacity" Value="0"/>
+															<Setter Property="Transitions">
+																<Transitions>
+																	<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+																</Transitions>
+															</Setter>
+														</Style>
+														<Style Selector="Border.card-root:pointerover StackPanel.card-edit-btns">
+															<Setter Property="Opacity" Value="1"/>
+														</Style>
+													</Border.Styles>
+
+													<Border.RenderTransform>
+														<TranslateTransform>
+															<TranslateTransform.Transitions>
+																<Transitions>
+																	<DoubleTransition Property="X"
+																					  Duration="0:0:0.28"
+																					  Easing="CubicEaseOut"/>
+																	<DoubleTransition Property="Y"
+																					  Duration="0:0:0.28"
+																					  Easing="CubicEaseOut"/>
+																</Transitions>
+															</TranslateTransform.Transitions>
+														</TranslateTransform>
+													</Border.RenderTransform>
+
+													<StackPanel Orientation="Vertical">
+
+														<!-- цветная зона -->
+														<Panel Height="{Binding $parent[UserControl].DataContext.CardTopHeight, FallbackValue=60}">
+															<!-- Кружок аватарки с Flyout-меню -->
+															<Button Background="Transparent"
+																BorderThickness="0"
+																Padding="0"
+																HorizontalAlignment="Center"
+																VerticalAlignment="Center"
+																ZIndex="2">
+																<!-- Убираем квадратный hover кнопки -->
+																<Button.Styles>
+																	<Style Selector="Button:pointerover /template/ ContentPresenter">
+																		<Setter Property="Background" Value="Transparent"/>
+																	</Style>
+																	<Style Selector="Button:pressed /template/ ContentPresenter">
+																		<Setter Property="Background" Value="Transparent"/>
+																	</Style>
+																	<!-- Круговой ободок при наведении -->
+																	<Style Selector="Button:pointerover Border.avatar-ring">
+																		<Setter Property="Opacity" Value="1"/>
+																	</Style>
+																</Button.Styles>
+																<Button.Flyout>
+																	<Flyout Placement="Bottom">
+																		<StackPanel Spacing="6" Margin="4" MinWidth="140">
+																			<TextBlock Text="Аватарка"
+																					   FontSize="11"
+																					   Foreground="{DynamicResource TextSecondaryBrush}"
+																					   Margin="0,0,0,2"/>
+																			<Button Content="Загрузить фото…"
+																					Command="{Binding OpenAvatarPickerCommand}"
+																					HorizontalAlignment="Stretch"
+																					Padding="8,4"/>
+																			<Button Content="Убрать аватарку"
+																					Command="{Binding RemoveAvatarCommand}"
+																					HorizontalAlignment="Stretch"
+																					Padding="8,4"
+																					IsVisible="{Binding AvatarPath,
+                                                                                    Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+																		</StackPanel>
+																	</Flyout>
+																</Button.Flyout>
+																<Panel>
+																	<Border CornerRadius="999"
+																			ClipToBounds="True"
+																			Background="{Binding Color}"
+																			Width="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
+																			Height="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}">
+																		<Panel>
+																			<Image Source="{Binding AvatarBitmap}"
+																				   Stretch="UniformToFill"
+																				   IsVisible="{Binding AvatarBitmap,
+                                                                               Converter={x:Static ObjectConverters.IsNotNull}}"/>
+																			<TextBlock Text="{Binding FallbackIcon}"
+																					   FontSize="{Binding $parent[UserControl].DataContext.CardIconFontSize, FallbackValue=30}"
+																					   HorizontalAlignment="Center"
+																					   VerticalAlignment="Center"
+																					   Foreground="White"
+																					   IsHitTestVisible="False"
+																					   IsVisible="{Binding AvatarBitmap,
+                                                                                   Converter={x:Static ObjectConverters.IsNull}}"/>
+																		</Panel>
+																	</Border>
+																	<!-- Ободок — видим только при hover, круглый через CornerRadius -->
+																	<Border Classes="avatar-ring"
+																CornerRadius="999"
+																BorderBrush="White"
+																BorderThickness="2"
+																Opacity="0"
+																IsHitTestVisible="False"
+																Width="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=56}"
+																Height="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=56}"
+																HorizontalAlignment="Center"
+																VerticalAlignment="Center"/>
+																</Panel>
+															</Button>
+															<!-- цветопикер и кнопки edit/delete: hover-only через opacity -->
+															<colorControls:ColorPickerButton
+																HexColor="{Binding Color, Mode=TwoWay}"
+																HorizontalAlignment="Left"
+																VerticalAlignment="Top"
+																Margin="5"
+																Width="20" Height="20"
+																ToolTip.Tip="Изменить цвет"/>
+															<StackPanel Classes="card-edit-btns"
+																		Orientation="Vertical"
+																		Spacing="2"
+																		HorizontalAlignment="Right"
+																		VerticalAlignment="Top"
+																		Margin="4"
+																		IsVisible="{Binding IsShowingNameDisplay}">
+																<Button Command="{Binding RequestDeleteCommand}"
+																		Padding="4,3"
+																		Background="#88000000"
+																		BorderThickness="0" CornerRadius="4"
+																		ToolTip.Tip="Удалить персонажа">
+																	<Button.Styles>
+																		<Style Selector="Button:pointerover /template/ ContentPresenter">
+																			<Setter Property="Background" Value="#BB660000"/>
+																		</Style>
+																	</Button.Styles>
+																	<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+																			  Width="11" Height="11" Foreground="White"/>
+																</Button>
+																<Button Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
+																		CommandParameter="{Binding Id}"
+																		Padding="4,3"
+																		Background="#88000000"
+																		BorderThickness="0" CornerRadius="4"
+																		ToolTip.Tip="{x:Static loc:CharactersStrings.Character_EditTooltip}">
+																	<PathIcon Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+																			  Width="11" Height="11" Foreground="White"/>
+																</Button>
+															</StackPanel>
+														</Panel>
+
+														<!-- зона имени -->
+														<Panel Height="{Binding $parent[UserControl].DataContext.CardNameHeight, FallbackValue=40}">
+															<TextBox Text="{ReflectionBinding InlineName}"
+																	 PlaceholderText="{x:Static loc:CharactersStrings.Character_NamePlaceholder}"
+																	 FontSize="12" FontWeight="Medium"
+																	 TextAlignment="Center"
+																	 Background="{DynamicResource BgPanelBrush}"
+																	 BorderBrush="{DynamicResource AccentDefaultBrush}"
+																	 BorderThickness="0,1,0,0"
+																	 CornerRadius="0,0,8,8"
+																	 Padding="8,0"
+																	 Foreground="{DynamicResource TextPrimaryBrush}"
+																	 VerticalAlignment="Stretch"
+																	 IsVisible="{Binding IsBeingNamed}"
+																	 behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsBeingNamed}"/>
+															<TextBox Text="{ReflectionBinding PendingRename}"
+																	 FontSize="12" FontWeight="Medium"
+																	 TextAlignment="Center"
+																	 Background="{DynamicResource BgPanelBrush}"
+																	 BorderBrush="{DynamicResource AccentDefaultBrush}"
+																	 BorderThickness="0,1,0,0"
+																	 CornerRadius="0,0,8,8"
+																	 Padding="8,0"
+																	 Foreground="{DynamicResource TextPrimaryBrush}"
+																	 VerticalAlignment="Stretch"
+																	 IsVisible="{Binding IsRenaming}"
+																	 behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"/>
+															<Button Command="{Binding StartRenameCommand}"
+																	Background="Transparent"
+																	BorderThickness="0"
+																	Padding="6,4"
+																	HorizontalAlignment="Stretch"
+																	VerticalAlignment="Stretch"
+																	HorizontalContentAlignment="Center"
+																	IsVisible="{Binding IsShowingNameDisplay}"
+																	ToolTip.Tip="Нажмите для переименования">
+																<Button.Styles>
+																	<Style Selector="Button:pointerover /template/ ContentPresenter">
+																		<Setter Property="Background" Value="Transparent"/>
+																	</Style>
+																	<Style Selector="Button:pressed /template/ ContentPresenter">
+																		<Setter Property="Background" Value="Transparent"/>
+																	</Style>
+																</Button.Styles>
+																<TextBlock Text="{Binding Name}"
+																		   FontSize="12" FontWeight="Medium"
+																		   TextWrapping="NoWrap"
+																		   TextTrimming="CharacterEllipsis"
+																		   TextAlignment="Center"
+																		   VerticalAlignment="Center"
+																		   Foreground="{DynamicResource TextPrimaryBrush}"
+																		   ToolTip.Tip="{Binding Name}"
+																		   ToolTip.ShowDelay="600"/>
+															</Button>
+														</Panel>
+
+													</StackPanel>
+												</Border>
+
+											</DataTemplate>
+										</ItemsControl.ItemTemplate>
+									</ItemsControl>
+
+								</StackPanel>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+				</StackPanel>
+			</ScrollViewer>
+
+			<!-- Оверлей загрузки -->
+			<Border IsVisible="{Binding IsLoading}"
+			        Background="{DynamicResource BgBaseBrush}"
+			        Opacity="0.85">
+				<StackPanel VerticalAlignment="Center"
+				            HorizontalAlignment="Center"
+				            Spacing="12">
+					<TextBlock Text="Загружаем персонажей…"
+					           FontSize="14"
+					           Foreground="{DynamicResource TextSecondaryBrush}"
+					           HorizontalAlignment="Center"/>
+					<ProgressBar IsIndeterminate="True"
+					             Width="200"
+					             Height="4"/>
+				</StackPanel>
+			</Border>
+		</Panel>
 
 		<!-- кнопки создания -->
 		<Border Grid.Row="2"

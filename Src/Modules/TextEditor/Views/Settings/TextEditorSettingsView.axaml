@@ -242,6 +242,37 @@
                            TextWrapping="Wrap"/>
 			</StackPanel>
 
+			<!-- Секция: Шрифты по языкам -->
+			<StackPanel Spacing="12">
+				<TextBlock Text="Шрифты по языковым скриптам"
+                           FontWeight="SemiBold" FontSize="13"/>
+				<Separator/>
+
+				<TextBlock Text="Выбранный шрифт используется автоматически когда текущий шрифт документа не поддерживает символы этого скрипта."
+                           FontSize="11"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+				<ItemsControl ItemsSource="{Binding ScriptFonts}">
+					<ItemsControl.ItemTemplate>
+						<DataTemplate x:DataType="vm:ScriptFontEntry">
+							<Grid ColumnDefinitions="180,*" Margin="0,3,0,3">
+								<TextBlock Grid.Column="0"
+                                           Text="{Binding DisplayName}"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"/>
+								<ComboBox Grid.Column="1"
+                                          ItemsSource="{Binding $parent[UserControl].((vm:TextEditorSettingsViewModel)DataContext).AvailableFonts}"
+                                          SelectedItem="{Binding FontFamily}"
+                                          HorizontalAlignment="Stretch"
+                                          Height="28"
+                                          FontSize="12"/>
+							</Grid>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+			</StackPanel>
+
 		</StackPanel>
 	</ScrollViewer>
 </UserControl>

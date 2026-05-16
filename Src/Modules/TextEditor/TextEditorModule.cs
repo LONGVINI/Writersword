@@ -143,6 +143,9 @@ namespace Writersword.Modules.TextEditor
             if (_hotKeyService is not null)
                 BindCanvasHotKeyService(view);
 
+            // Передаём карту шрифтов по скриптам в канвас при создании View.
+            ApplyScriptFontMapToCanvas();
+
             // Если SetSessionData был вызван до CreateView (стандартный сценарий DockFactory),
             // восстанавливаем позицию каретки сейчас — view уже существует.
             if (_cachedSessionData is not null)
@@ -162,6 +165,17 @@ namespace Writersword.Modules.TextEditor
 
             canvas.SetHotKeyService(_hotKeyService!);
             _logger.Debug("HotKeyService bound to PageCanvas");
+        }
+
+        /// <summary>
+        /// Передаёт текущую карту "скрипт → шрифт" в DocumentCanvas.
+        /// Вызывается при создании View и при изменении настроек.
+        /// </summary>
+        private void ApplyScriptFontMapToCanvas()
+        {
+            var canvas = _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
+            if (canvas is null) return;
+            canvas.ScriptFontMap = _localSettings.ScriptFontMap;
         }
 
 
@@ -587,6 +601,8 @@ namespace Writersword.Modules.TextEditor
             _viewModel?.ApplySettings(s);
             _settingsService.SaveModuleSettings(moduleType, s);
             _settingsService.Save();
+            _localSettings = s;
+            ApplyScriptFontMapToCanvas();
         }
 
         public void ApplyLocalSettings(object settings)
@@ -595,6 +611,7 @@ namespace Writersword.Modules.TextEditor
             _logger.Debug("ApplyLocalSettings: MonitorSizeInches={V}", s.MonitorSizeInches);
             _localSettings = s;
             _viewModel?.ApplySettings(s);
+            ApplyScriptFontMapToCanvas();
         }
 
         public void ApplyGlobalToLocal()

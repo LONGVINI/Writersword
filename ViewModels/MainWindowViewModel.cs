@@ -244,7 +244,7 @@ namespace Writersword.ViewModels
                 else if (!string.IsNullOrEmpty(tab.FilePath))
                 {
                     _cacheUpdateService.Stop();
-                    _cacheUpdateService.Start(tab.FilePath, () => tab.Workspace.GetActiveModules());
+                    _cacheUpdateService.Start(tab.FilePath, () => tab.Workspace?.GetActiveModules() ?? new List<IModule>());
                 }
 
                 _logger.LogDebug("Tab UI updated: {Title}", tab.Title);

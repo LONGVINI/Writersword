@@ -3,13 +3,15 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Writersword.Modules.Characters.Interfaces;
+using Writersword.Modules.Characters.ViewModels;
+using Writersword.Modules.Characters.Views.Avatars;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using Writersword.Modules.Characters.ViewModels;
 
 namespace Writersword.Modules.Characters.Views.Tabs
 {
@@ -36,6 +38,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
         private CharacterFolderViewModel? _currentDragOverFolder;
         private long _lastPreviewTick;
         private int _flipGeneration;
+        private ICharacterAvatarService? _avatarService;
+
 
         private IDisposable? _containerBoundsSubscription;
 
@@ -74,6 +78,12 @@ namespace Writersword.Modules.Characters.Views.Tabs
             // Подписываемся на ширину первого ItemsControl с карточками.
             // Он знает реальную ширину после вычета скроллбара и margins.
             // Порог 10px гасит осцилляцию от скроллбара.
+            if (DataContext is CharactersViewModel vmAvatar)
+            {
+                _avatarService = vmAvatar.AvatarService;
+                vmAvatar.BindAvatarPickerCallback = BindAvatarPicker;
+            }
+
             var foldersContainer = this.FindControl<ItemsControl>("FoldersContainer");
             if (foldersContainer is not null)
             {
@@ -510,6 +520,29 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 parent = parent.GetVisualParent();
             }
             return false;
+        }
+
+        // Вызывается из ViewModel при создании нового CharacterListItemViewModel
+        // чтобы подключить RequestPickerOpen.
+        private void BindAvatarPicker(CharacterListItemViewModel item)
+        {
+            item.RequestPickerOpen = async () =>
+            {
+                if (_avatarService == null) return null;
+                var window = TopLevel.GetTopLevel(this) as Window;
+                if (window == null) return null;
+                return await CharacterAvatarPickerWindow.ShowAsync(
+                    window, _avatarService, item.Id);
+            };
+
+            item.OnAvatarChanged = (id, avatarRef) =>
+            {
+                if (DataContext is not CharactersViewModel vm) return;
+                var character = vm.CharacterService.GetById(id);
+                if (character is null) return;
+                character.AvatarPath = avatarRef;
+                vm.CharacterService.Update(character);
+            };
         }
 
         private void ClearDragCaches()
