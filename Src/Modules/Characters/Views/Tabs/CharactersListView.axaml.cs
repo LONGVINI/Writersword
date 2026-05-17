@@ -82,6 +82,11 @@ namespace Writersword.Modules.Characters.Views.Tabs
             {
                 _avatarService = vmAvatar.AvatarService;
                 vmAvatar.BindAvatarPickerCallback = BindAvatarPicker;
+
+                // Привязываем уже существующие items (если данные загружены до OnLoaded).
+                foreach (var folder in vmAvatar.Folders)
+                    foreach (var item in folder.Characters)
+                        BindAvatarPicker(item);
             }
 
             var foldersContainer = this.FindControl<ItemsControl>("FoldersContainer");

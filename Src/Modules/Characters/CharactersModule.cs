@@ -45,12 +45,12 @@ namespace Writersword.Modules.Characters
             _avatarService = new CharacterAvatarService();
             // Путь к тестовым/дефолтным аватаркам.
             // Для встроенных иконок положи изображения в эту папку.
-            var builtInPath = System.IO.Path.Combine(
-                System.AppContext.BaseDirectory, "Assets", "Avatars");
-            if (!System.IO.Directory.Exists(builtInPath))
-                builtInPath = System.IO.Path.Combine(
-                    System.AppContext.BaseDirectory, "Images", "TestImages");
-            _avatarService.SetBuiltInPath(builtInPath);
+            // Регистрируем папку с встроенными паками аватарок.
+            // Лежит рядом с DLL модуля — пользователи и другие модули
+            // могут зарегистрировать свои папки тем же способом.
+            var avatarsDir = System.IO.Path.Combine(
+                GetModuleDirectory(), "Avatars");
+            _avatarService.RegisterPackDirectory(avatarsDir);
         }
 
         public override string moduleType => "Characters";

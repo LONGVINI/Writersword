@@ -70,6 +70,114 @@ namespace Writersword.Src.Modules.Characters.Resources {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на My Avatars.
+        /// </summary>
+        public static string AvatarPack_library {
+            get {
+                return ResourceManager.GetString("AvatarPack_library", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на People (minimalism).
+        /// </summary>
+        public static string AvatarPack_people_minimalism {
+            get {
+                return ResourceManager.GetString("AvatarPack_people_minimalism", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Cancel.
+        /// </summary>
+        public static string AvatarPicker_Cancel {
+            get {
+                return ResourceManager.GetString("AvatarPicker_Cancel", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на In project.
+        /// </summary>
+        public static string AvatarPicker_InProject {
+            get {
+                return ResourceManager.GetString("AvatarPicker_InProject", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Manage packs.
+        /// </summary>
+        public static string AvatarPicker_ManagePacks {
+            get {
+                return ResourceManager.GetString("AvatarPicker_ManagePacks", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Saved to library..
+        /// </summary>
+        public static string AvatarPicker_SavedToLibrary {
+            get {
+                return ResourceManager.GetString("AvatarPicker_SavedToLibrary", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Failed to save.
+        /// </summary>
+        public static string AvatarPicker_SaveFailed {
+            get {
+                return ResourceManager.GetString("AvatarPicker_SaveFailed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Saving….
+        /// </summary>
+        public static string AvatarPicker_Saving {
+            get {
+                return ResourceManager.GetString("AvatarPicker_Saving", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Search avatars....
+        /// </summary>
+        public static string AvatarPicker_SearchPlaceholder {
+            get {
+                return ResourceManager.GetString("AvatarPicker_SearchPlaceholder", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Choose Avatar.
+        /// </summary>
+        public static string AvatarPicker_Title {
+            get {
+                return ResourceManager.GetString("AvatarPicker_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Avatar.
+        /// </summary>
+        public static string AvatarPickerFlyout_Title {
+            get {
+                return ResourceManager.GetString("AvatarPickerFlyout_Title", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Upload photo....
+        /// </summary>
+        public static string AvatarPickerFlyout_Upload {
+            get {
+                return ResourceManager.GetString("AvatarPickerFlyout_Upload", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Add context.
         /// </summary>
         public static string Button_AddContext {

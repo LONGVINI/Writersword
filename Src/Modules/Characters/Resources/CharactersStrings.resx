@@ -613,4 +613,52 @@
     <value>» will be deleted. All characters in it will become unassigned.</value>
     <comment>Text after folder name</comment>
   </data>
+  <data name="AvatarPack_people_minimalism" xml:space="preserve">
+    <value>People (minimalism)</value>
+    <comment>Built-in avatar pack name</comment>
+  </data>
+  <data name="AvatarPack_library" xml:space="preserve">
+    <value>My Avatars</value>
+    <comment>User's ungrouped avatar library section</comment>
+  </data>
+  <data name="AvatarPicker_Saving" xml:space="preserve">
+    <value>Saving…</value>
+    <comment>Status message while saving avatar</comment>
+  </data>
+  <data name="AvatarPicker_SaveFailed" xml:space="preserve">
+    <value>Failed to save</value>
+    <comment>Status message on save error</comment>
+  </data>
+  <data name="AvatarPicker_SavedToLibrary" xml:space="preserve">
+    <value>Saved to library.</value>
+    <comment>Status after copying to library</comment>
+  </data>
+  <data name="AvatarPicker_Title" xml:space="preserve">
+    <value>Choose Avatar</value>
+    <comment>Window title</comment>
+  </data>
+  <data name="AvatarPicker_SearchPlaceholder" xml:space="preserve">
+    <value>Search avatars...</value>
+    <comment>TextBox placeholder</comment>
+  </data>
+  <data name="AvatarPicker_ManagePacks" xml:space="preserve">
+    <value>Manage packs</value>
+    <comment>Button in picker</comment>
+  </data>
+  <data name="AvatarPicker_InProject" xml:space="preserve">
+    <value>In project</value>
+    <comment>Section header</comment>
+  </data>
+  <data name="AvatarPicker_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+    <comment>Cancel button</comment>
+  </data>
+  <data name="AvatarPickerFlyout_Title" xml:space="preserve">
+    <value>Avatar</value>
+    <comment>Flyout header in card list</comment>
+  </data>
+  <data name="AvatarPickerFlyout_Upload" xml:space="preserve">
+    <value>Upload photo...</value>
+    <comment>Flyout button</comment>
+  </data>
 </root>

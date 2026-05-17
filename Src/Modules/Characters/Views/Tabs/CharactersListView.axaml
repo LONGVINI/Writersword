@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels"
+             xmlns:res="using:Writersword.Src.Modules.Characters.Resources"
              xmlns:controls="using:Writersword.Modules.Characters.Controls"
              xmlns:colorControls="using:Writersword.Styles.UserControls"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
@@ -356,15 +357,15 @@
 																<Button.Flyout>
 																	<Flyout Placement="Bottom">
 																		<StackPanel Spacing="6" Margin="4" MinWidth="140">
-																			<TextBlock Text="Аватарка"
+																			<TextBlock Text="{x:Static res:CharactersStrings.AvatarPickerFlyout_Title}"
 																					   FontSize="11"
 																					   Foreground="{DynamicResource TextSecondaryBrush}"
 																					   Margin="0,0,0,2"/>
-																			<Button Content="Загрузить фото…"
+																			<Button Content="{x:Static res:CharactersStrings.AvatarPickerFlyout_Upload}"
 																					Command="{Binding OpenAvatarPickerCommand}"
 																					HorizontalAlignment="Stretch"
 																					Padding="8,4"/>
-																			<Button Content="Убрать аватарку"
+																			<Button Content="{x:Static res:CharactersStrings.Button_DeleteAvatar}"
 																					Command="{Binding RemoveAvatarCommand}"
 																					HorizontalAlignment="Stretch"
 																					Padding="8,4"

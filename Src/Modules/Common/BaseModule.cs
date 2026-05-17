@@ -7,6 +7,7 @@ using Writersword.Core.Models;
 using Writersword.Core.Interfaces.Services.Input;
 using Writersword.Core.Services;
 using Writersword.ViewModels;
+using System.IO;
 
 namespace Writersword.Modules.Common
 {
@@ -151,6 +152,20 @@ namespace Writersword.Modules.Common
                 hotKeyService?.UnbindExecutor(moduleType);
             }
         }
+
+
+        /// <summary>
+        /// Возвращает директорию где лежит DLL этого конкретного модуля.
+        /// Используется для нахождения ресурсов рядом с модулем (аватарки, иконки и т.д.)
+        /// GetType() намеренно — чтобы получить тип наследника, а не BaseModule.
+        /// </summary>
+        protected string GetModuleDirectory()
+        {
+            var location = GetType().Assembly.Location;
+            return Path.GetDirectoryName(location)
+                ?? AppContext.BaseDirectory;
+        }
+
 
         /// <summary>Создать View для модуля</summary>
         public abstract Control? CreateView();

@@ -3,7 +3,9 @@ using Serilog;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Writersword.Core.Services;
 using Writersword.Modules.Characters.Interfaces;
@@ -11,73 +13,60 @@ using Writersword.Modules.Characters.Models;
 
 namespace Writersword.Modules.Characters.Services
 {
-    /// <summary>
-    /// Управляет аватарками персонажей.
-    ///
-    /// Проектные аватарки хранятся прямо в ZIP-файле проекта по пути
-    ///   Characters/assets/avatars/{filename}
-    /// через DocumentContext.WriteFile — мгновенно, минуя очередь сохранения.
-    ///
-    /// Библиотечные аватарки хранятся в
-    ///   %AppData%/Writersword/Characters/Library/
-    /// и доступны во всех проектах.
-    ///
-    /// AvatarRef-строки в Character.AvatarPath:
-    ///   "project:filename.jpg"  — проектный аватар
-    ///   "lib:filename.jpg"      — библиотечный аватар
-    /// </summary>
     public class CharacterAvatarService : ICharacterAvatarService
     {
         private static readonly ILogger _logger = Log.ForContext<CharacterAvatarService>();
-
         private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png", ".webp" };
-
         private const string ZipAvatarsFolder = "Characters/assets/avatars";
 
+        // Несгруппированная библиотека пользователя.
         private static readonly string LibraryPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "Writersword", "Characters", "Library");
 
+        // Пользовательские паки.
+        private static readonly string UserPacksPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Writersword", "AvatarPacks");
+
         private DocumentContext? _context;
-        private string? _builtInPath;
+
+        // Все зарегистрированные директории с встроенными паками.
+        // Каждый модуль регистрирует свою через RegisterPackDirectory().
+        private readonly List<string> _registeredDirectories = new();
 
         public void SetContext(DocumentContext? context) => _context = context;
-        public void SetBuiltInPath(string? path) => _builtInPath = path;
+
+        /// <summary>
+        /// Любой модуль регистрирует свою папку с паками.
+        /// Каждая подпапка = один пак аватарок.
+        /// </summary>
+        public void RegisterPackDirectory(string directory)
+        {
+            if (!string.IsNullOrWhiteSpace(directory)
+                && !_registeredDirectories.Contains(directory))
+            {
+                _registeredDirectories.Add(directory);
+                _logger.Debug("Avatar pack directory registered: {Dir}", directory);
+            }
+        }
 
         // ── Сохранение ────────────────────────────────────────────────────
 
         public async Task<string?> SaveToProjectAsync(byte[] imageData, string suggestedName)
         {
-            if (_context == null)
-            {
-                _logger.Warning("SaveToProjectAsync: no context");
-                return null;
-            }
-
+            if (_context == null) { _logger.Warning("SaveToProjectAsync: no context"); return null; }
             var ext = Path.GetExtension(suggestedName).ToLowerInvariant();
-            if (!AllowedExtensions.Contains(ext))
-            {
-                _logger.Warning("SaveToProjectAsync: unsupported extension {Ext}", ext);
-                return null;
-            }
-
-            // Уникальное имя определяем на UI-треде (читает ZIP).
+            if (!AllowedExtensions.Contains(ext)) return null;
             var uniqueName = GetUniqueProjectName(suggestedName);
-            var zipPath = $"{ZipAvatarsFolder}/{uniqueName}";
-            var ctx = _context;
-
             try
             {
-                // Запись в ZIP — в фоновом потоке чтобы не заморозить UI.
-                await Task.Run(() => ctx.WriteFile(zipPath, imageData));
-                _logger.Debug("Avatar saved to project: {Path}", zipPath);
+                await Task.Run(() =>
+                    _context.WriteFile($"{ZipAvatarsFolder}/{uniqueName}", imageData));
+                _logger.Debug("Project avatar saved: {Name}", uniqueName);
                 return $"project:{uniqueName}";
             }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, "Failed to save project avatar");
-                return null;
-            }
+            catch (Exception ex) { _logger.Error(ex, "SaveToProjectAsync failed"); return null; }
         }
 
         public async Task<string?> SaveToLibraryAsync(byte[] imageData, string suggestedName)
@@ -85,35 +74,20 @@ namespace Writersword.Modules.Characters.Services
             try
             {
                 Directory.CreateDirectory(LibraryPath);
-
                 var ext = Path.GetExtension(suggestedName).ToLowerInvariant();
-                if (!AllowedExtensions.Contains(ext))
-                {
-                    _logger.Warning("SaveToLibrary: unsupported extension {Ext}", ext);
-                    return null;
-                }
-
-                var uniqueName = GetUniqueLibraryName(suggestedName);
-                var filePath = Path.Combine(LibraryPath, uniqueName);
-
-                await File.WriteAllBytesAsync(filePath, imageData);
-                _logger.Debug("Avatar saved to library: {Path}", filePath);
+                if (!AllowedExtensions.Contains(ext)) return null;
+                var uniqueName = GetUniqueName(suggestedName, LibraryPath);
+                await File.WriteAllBytesAsync(Path.Combine(LibraryPath, uniqueName), imageData);
                 return $"lib:{uniqueName}";
             }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, "Failed to save library avatar");
-                return null;
-            }
+            catch (Exception ex) { _logger.Error(ex, "SaveToLibraryAsync failed"); return null; }
         }
 
-        public async Task<string?> CopyProjectAvatarToLibraryAsync(string projectAvatarRef)
+        public async Task<string?> CopyProjectAvatarToLibraryAsync(string projectRef)
         {
-            var bytes = LoadAvatarBytes(projectAvatarRef);
+            var bytes = LoadAvatarBytes(projectRef);
             if (bytes == null) return null;
-
-            var fileName = ExtractFileName(projectAvatarRef);
-            return await SaveToLibraryAsync(bytes, fileName);
+            return await SaveToLibraryAsync(bytes, ExtractFileName(projectRef));
         }
 
         // ── Загрузка ──────────────────────────────────────────────────────
@@ -121,40 +95,48 @@ namespace Writersword.Modules.Characters.Services
         public byte[]? LoadAvatarBytes(string? avatarRef)
         {
             if (string.IsNullOrEmpty(avatarRef)) return null;
-
             try
             {
                 if (avatarRef.StartsWith("project:"))
                 {
-                    var fileName = avatarRef["project:".Length..];
-                    var zipPath = $"{ZipAvatarsFolder}/{fileName}";
-                    return _context?.ReadFile(zipPath);
+                    var name = avatarRef["project:".Length..];
+                    return _context?.ReadFile($"{ZipAvatarsFolder}/{name}");
                 }
-
                 if (avatarRef.StartsWith("lib:"))
                 {
-                    var fileName = avatarRef["lib:".Length..];
-                    var filePath = Path.Combine(LibraryPath, fileName);
-                    return File.Exists(filePath) ? File.ReadAllBytes(filePath) : null;
+                    var path = Path.Combine(LibraryPath, avatarRef["lib:".Length..]);
+                    return File.Exists(path) ? File.ReadAllBytes(path) : null;
                 }
-
+                if (avatarRef.StartsWith("pack:"))
+                {
+                    var parts = avatarRef["pack:".Length..].Split(':', 2);
+                    if (parts.Length == 2)
+                    {
+                        var path = Path.Combine(UserPacksPath, parts[0], parts[1]);
+                        return File.Exists(path) ? File.ReadAllBytes(path) : null;
+                    }
+                    return null;
+                }
                 if (avatarRef.StartsWith("builtin:"))
                 {
-                    var filePath = avatarRef["builtin:".Length..];
-                    return File.Exists(filePath) ? File.ReadAllBytes(filePath) : null;
+                    // builtin:packId/filename — ищем во всех зарегистрированных директориях
+                    var relative = avatarRef["builtin:".Length..];
+                    var parts = relative.Split('/', 2);
+                    if (parts.Length == 2)
+                    {
+                        foreach (var dir in _registeredDirectories)
+                        {
+                            var path = Path.Combine(dir, parts[0], parts[1]);
+                            if (File.Exists(path)) return File.ReadAllBytes(path);
+                        }
+                    }
+                    return null;
                 }
-
-                if (avatarRef.StartsWith("builtin:"))
-                {
-                    var fp = avatarRef["builtin:".Length..];
-                    return File.Exists(fp) ? File.ReadAllBytes(fp) : null;
-                }
-                _logger.Warning("Unknown avatar ref format: {Ref}", avatarRef);
                 return null;
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "Failed to load avatar bytes for {Ref}", avatarRef);
+                _logger.Error(ex, "LoadAvatarBytes failed for {Ref}", avatarRef);
                 return null;
             }
         }
@@ -163,17 +145,8 @@ namespace Writersword.Modules.Characters.Services
         {
             var bytes = LoadAvatarBytes(avatarRef);
             if (bytes == null) return null;
-
-            try
-            {
-                using var ms = new MemoryStream(bytes);
-                return new Bitmap(ms);
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, "Failed to decode bitmap for {Ref}", avatarRef);
-                return null;
-            }
+            try { using var ms = new MemoryStream(bytes); return new Bitmap(ms); }
+            catch (Exception ex) { _logger.Error(ex, "LoadBitmap failed for {Ref}", avatarRef); return null; }
         }
 
         // ── Удаление ──────────────────────────────────────────────────────
@@ -181,36 +154,33 @@ namespace Writersword.Modules.Characters.Services
         public void DeleteAvatar(string? avatarRef)
         {
             if (string.IsNullOrEmpty(avatarRef)) return;
-
             try
             {
                 if (avatarRef.StartsWith("project:"))
-                {
-                    var fileName = avatarRef["project:".Length..];
-                    var zipPath = $"{ZipAvatarsFolder}/{fileName}";
-                    _context?.DeleteFile(zipPath);
-                    _logger.Debug("Deleted project avatar: {Path}", zipPath);
-                }
+                    _context?.DeleteFile($"{ZipAvatarsFolder}/{avatarRef["project:".Length..]}");
                 else if (avatarRef.StartsWith("lib:"))
                 {
-                    var fileName = avatarRef["lib:".Length..];
-                    var filePath = Path.Combine(LibraryPath, fileName);
-                    if (File.Exists(filePath)) File.Delete(filePath);
-                    _logger.Debug("Deleted library avatar: {Path}", filePath);
+                    var path = Path.Combine(LibraryPath, avatarRef["lib:".Length..]);
+                    if (File.Exists(path)) File.Delete(path);
+                }
+                else if (avatarRef.StartsWith("pack:"))
+                {
+                    var parts = avatarRef["pack:".Length..].Split(':', 2);
+                    if (parts.Length == 2)
+                    {
+                        var path = Path.Combine(UserPacksPath, parts[0], parts[1]);
+                        if (File.Exists(path)) File.Delete(path);
+                    }
                 }
             }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, "Failed to delete avatar {Ref}", avatarRef);
-            }
+            catch (Exception ex) { _logger.Error(ex, "DeleteAvatar failed for {Ref}", avatarRef); }
         }
 
-        // ── Галерея ───────────────────────────────────────────────────────
+        // ── Паки ──────────────────────────────────────────────────────────
 
         public IReadOnlyList<CharacterAvatarItem> GetProjectAvatars()
         {
             if (_context == null) return Array.Empty<CharacterAvatarItem>();
-
             try
             {
                 return _context.GetFiles(ZipAvatarsFolder)
@@ -224,22 +194,29 @@ namespace Writersword.Modules.Characters.Services
                     })
                     .ToList();
             }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, "Failed to list project avatars");
-                return Array.Empty<CharacterAvatarItem>();
-            }
+            catch (Exception ex) { _logger.Error(ex, "GetProjectAvatars failed"); return Array.Empty<CharacterAvatarItem>(); }
         }
 
-        public IReadOnlyList<CharacterAvatarItem> GetLibraryAvatars()
+        public IReadOnlyList<CharacterAvatarPackInfo> GetAllPacks()
         {
-            try
-            {
-                if (!Directory.Exists(LibraryPath))
-                    return Array.Empty<CharacterAvatarItem>();
+            var result = new List<CharacterAvatarPackInfo>();
 
-                return Directory
-                    .GetFiles(LibraryPath)
+            // Встроенные паки из всех зарегистрированных директорий.
+            foreach (var dir in _registeredDirectories)
+                result.AddRange(LoadPacksFromDirectory(dir, CharacterAvatarPackSource.BuiltIn));
+
+            // Пользовательские паки из %AppData%/AvatarPacks/.
+            if (Directory.Exists(UserPacksPath))
+                foreach (var dir in Directory.GetDirectories(UserPacksPath).OrderBy(d => d))
+                {
+                    var pack = LoadUserPack(dir);
+                    if (pack != null) result.Add(pack);
+                }
+
+            // Несгруппированная библиотека пользователя.
+            if (Directory.Exists(LibraryPath))
+            {
+                var items = Directory.GetFiles(LibraryPath)
                     .Where(f => AllowedExtensions.Contains(
                         Path.GetExtension(f).ToLowerInvariant()))
                     .Select(f => new CharacterAvatarItem
@@ -249,78 +226,203 @@ namespace Writersword.Modules.Characters.Services
                         Source = CharacterAvatarSource.Library
                     })
                     .ToList();
+                if (items.Any())
+                    result.Add(new CharacterAvatarPackInfo
+                    {
+                        Id = "__library__",
+                        Source = CharacterAvatarPackSource.UserGlobal,
+                        Items = items,
+                        IconRef = items.FirstOrDefault()?.AvatarRef
+                    });
             }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, "Failed to list library avatars");
-                return Array.Empty<CharacterAvatarItem>();
-            }
+
+            return result;
         }
 
-        public IReadOnlyList<CharacterAvatarItem> GetBuiltInAvatars()
+        // ── Встроенные паки из директории ─────────────────────────────────
+
+        private List<CharacterAvatarPackInfo> LoadPacksFromDirectory(
+            string baseDir, CharacterAvatarPackSource source)
         {
-            if (string.IsNullOrEmpty(_builtInPath) || !Directory.Exists(_builtInPath))
-                return Array.Empty<CharacterAvatarItem>();
-            try
+            var result = new List<CharacterAvatarPackInfo>();
+            if (!Directory.Exists(baseDir)) return result;
+
+            foreach (var dir in Directory.GetDirectories(baseDir).OrderBy(d => d))
             {
-                return Directory.GetFiles(_builtInPath)
+                var packId = Path.GetFileName(dir);
+                var items = Directory.GetFiles(dir)
                     .Where(f => AllowedExtensions.Contains(
                         Path.GetExtension(f).ToLowerInvariant()))
                     .Select(f => new CharacterAvatarItem
                     {
-                        AvatarRef = $"builtin:{f}",
+                        AvatarRef = $"builtin:{packId}/{Path.GetFileName(f)}",
                         FileName = Path.GetFileName(f),
-                        Source = CharacterAvatarSource.BuiltIn
+                        Source = CharacterAvatarSource.BuiltIn,
+                        PackId = packId
                     })
                     .ToList();
+
+                if (!items.Any()) continue;
+
+                // Встроенный пак не имеет pack.json —
+                // имя берётся из CharactersStrings.AvatarPack_{Id}.
+                result.Add(new CharacterAvatarPackInfo
+                {
+                    Id = packId,
+                    Source = source,
+                    Items = items,
+                    IconRef = items.FirstOrDefault()?.AvatarRef
+                });
             }
-            catch (Exception ex)
+            return result;
+        }
+
+        // ── Пользовательские паки ─────────────────────────────────────────
+
+        public CharacterAvatarPackInfo CreateUserPack(string name)
+        {
+            var id = Guid.NewGuid().ToString("N")[..8];
+            var dir = Path.Combine(UserPacksPath, id);
+            Directory.CreateDirectory(dir);
+            var pack = new CharacterAvatarPackInfo
             {
-                _logger.Error(ex, "Failed to list built-ins from {Path}", _builtInPath);
-                return Array.Empty<CharacterAvatarItem>();
+                Id = id,
+                Name = name,
+                Source = CharacterAvatarPackSource.UserGlobal,
+                FolderPath = dir
+            };
+            SavePackJson(pack);
+            return pack;
+        }
+
+        public void DeleteUserPack(string packId)
+        {
+            var dir = Path.Combine(UserPacksPath, packId);
+            if (Directory.Exists(dir))
+                try { Directory.Delete(dir, recursive: true); }
+                catch (Exception ex) { _logger.Error(ex, "DeleteUserPack failed: {Id}", packId); }
+        }
+
+        public async Task MoveAvatarToPackAsync(string avatarRef, string targetPackId)
+        {
+            var bytes = LoadAvatarBytes(avatarRef);
+            if (bytes == null) return;
+            var fileName = ExtractFileName(avatarRef);
+            var targetDir = targetPackId == "__library__"
+                ? LibraryPath
+                : Path.Combine(UserPacksPath, targetPackId);
+            Directory.CreateDirectory(targetDir);
+            await File.WriteAllBytesAsync(Path.Combine(targetDir, fileName), bytes);
+            DeleteAvatar(avatarRef);
+        }
+
+        public async Task<CharacterAvatarPackInfo?> ImportPackFromZipAsync(string zipPath)
+        {
+            try
+            {
+                var tempId = Guid.NewGuid().ToString("N")[..8];
+                var dir = Path.Combine(UserPacksPath, tempId);
+                Directory.CreateDirectory(dir);
+                await Task.Run(() => ZipFile.ExtractToDirectory(zipPath, dir, overwriteFiles: true));
+
+                var jsonPath = Path.Combine(dir, "pack.json");
+                if (File.Exists(jsonPath))
+                {
+                    var meta = JsonSerializer.Deserialize<CharacterAvatarPackInfo>(
+                        await File.ReadAllTextAsync(jsonPath));
+                    if (!string.IsNullOrEmpty(meta?.Id) && meta.Id != tempId)
+                    {
+                        var namedDir = Path.Combine(UserPacksPath, meta.Id);
+                        if (!Directory.Exists(namedDir))
+                        { Directory.Move(dir, namedDir); dir = namedDir; }
+                    }
+                }
+                return LoadUserPack(dir);
             }
+            catch (Exception ex) { _logger.Error(ex, "ImportPackFromZipAsync failed"); return null; }
+        }
+
+        public async Task ExportPackToZipAsync(string packId, string outputPath)
+        {
+            try
+            {
+                var dir = Path.Combine(UserPacksPath, packId);
+                if (!Directory.Exists(dir)) return;
+                await Task.Run(() =>
+                    ZipFile.CreateFromDirectory(dir, outputPath, CompressionLevel.Optimal, false));
+            }
+            catch (Exception ex) { _logger.Error(ex, "ExportPackToZipAsync failed: {Id}", packId); }
         }
 
         // ── Вспомогательные ───────────────────────────────────────────────
 
-        private string GetUniqueProjectName(string suggestedName)
+        private CharacterAvatarPackInfo? LoadUserPack(string dir)
         {
-            if (_context == null) return suggestedName;
-
-            var nameWithout = Path.GetFileNameWithoutExtension(suggestedName);
-            var ext = Path.GetExtension(suggestedName).ToLowerInvariant();
-            var candidate = suggestedName;
-            int counter = 1;
-
-            while (_context.FileExists($"{ZipAvatarsFolder}/{candidate}"))
+            try
             {
-                candidate = $"{nameWithout} ({counter}){ext}";
-                counter++;
+                var jsonPath = Path.Combine(dir, "pack.json");
+                if (!File.Exists(jsonPath)) return null;
+
+                var pack = JsonSerializer.Deserialize<CharacterAvatarPackInfo>(
+                    File.ReadAllText(jsonPath));
+                if (pack == null) return null;
+
+                if (string.IsNullOrEmpty(pack.Id)) pack.Id = Path.GetFileName(dir);
+                pack.Source = CharacterAvatarPackSource.UserGlobal;
+                pack.FolderPath = dir;
+                pack.Items = Directory.GetFiles(dir)
+                    .Where(f => AllowedExtensions.Contains(
+                        Path.GetExtension(f).ToLowerInvariant()))
+                    .Select(f => new CharacterAvatarItem
+                    {
+                        AvatarRef = $"pack:{pack.Id}:{Path.GetFileName(f)}",
+                        FileName = Path.GetFileName(f),
+                        Source = CharacterAvatarSource.Library,
+                        PackId = pack.Id
+                    })
+                    .ToList();
+                pack.IconRef = pack.Items
+                    .FirstOrDefault(i => i.FileName == pack.IconFileName)?.AvatarRef
+                    ?? pack.Items.FirstOrDefault()?.AvatarRef;
+                return pack;
             }
-            return candidate;
+            catch (Exception ex) { _logger.Error(ex, "LoadUserPack failed: {Dir}", dir); return null; }
         }
 
-        private static string GetUniqueLibraryName(string suggestedName)
+        private void SavePackJson(CharacterAvatarPackInfo pack)
         {
-            Directory.CreateDirectory(LibraryPath);
+            if (pack.FolderPath == null) return;
+            File.WriteAllText(
+                Path.Combine(pack.FolderPath, "pack.json"),
+                JsonSerializer.Serialize(pack, new JsonSerializerOptions { WriteIndented = true }));
+        }
 
-            var nameWithout = Path.GetFileNameWithoutExtension(suggestedName);
-            var ext = Path.GetExtension(suggestedName).ToLowerInvariant();
-            var candidate = suggestedName;
-            int counter = 1;
+        private string GetUniqueProjectName(string name)
+        {
+            if (_context == null) return name;
+            var wo = Path.GetFileNameWithoutExtension(name);
+            var ext = Path.GetExtension(name).ToLowerInvariant();
+            var c = name; int n = 1;
+            while (_context.FileExists($"{ZipAvatarsFolder}/{c}"))
+                c = $"{wo} ({n++}){ext}";
+            return c;
+        }
 
-            while (File.Exists(Path.Combine(LibraryPath, candidate)))
-            {
-                candidate = $"{nameWithout} ({counter}){ext}";
-                counter++;
-            }
-            return candidate;
+        private static string GetUniqueName(string name, string folder)
+        {
+            Directory.CreateDirectory(folder);
+            var wo = Path.GetFileNameWithoutExtension(name);
+            var ext = Path.GetExtension(name).ToLowerInvariant();
+            var c = name; int n = 1;
+            while (File.Exists(Path.Combine(folder, c)))
+                c = $"{wo} ({n++}){ext}";
+            return c;
         }
 
         private static string ExtractFileName(string avatarRef)
         {
-            var colonIdx = avatarRef.IndexOf(':');
-            return colonIdx >= 0 ? avatarRef[(colonIdx + 1)..] : avatarRef;
+            var parts = avatarRef.Split(':');
+            return parts[^1];
         }
     }
 }

@@ -2,8 +2,10 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using System;
 using Writersword.Modules.TextEditor.ViewModels.Toolbar;
 using Writersword.Styles.UserControls;
@@ -18,7 +20,8 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         private TextBox? _fontInnerTextBox;
         private ListBox? _fontInnerList;
         private bool _fontJustGotFocus;
-        private bool _fontUserIsTyping;
+        private bool _fontScrolling;
+        private string? _fontBeforeOpen;
 
         public RibbonHomeTab()
         {
@@ -54,7 +57,6 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             _fontAutoComplete = this.FindControl<AutoCompleteBox>("FontAutoComplete");
             if (_fontAutoComplete is not null)
             {
-                _fontAutoComplete.ItemFilter = FontItemFilter;
                 _fontAutoComplete.TemplateApplied -= OnFontAutoCompleteTemplateApplied;
                 _fontAutoComplete.TemplateApplied += OnFontAutoCompleteTemplateApplied;
                 _fontAutoComplete.DropDownOpened -= OnFontDropDownOpened;
@@ -93,12 +95,16 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         private void OnFontAutoCompleteTemplateApplied(object? sender, TemplateAppliedEventArgs e)
         {
             DetachInnerControls();
-
             _fontInnerTextBox = e.NameScope.Find<TextBox>("PART_TextBox");
             _fontInnerList = e.NameScope.Find<ListBox>("PART_SelectingItemsControl");
 
             if (_fontInnerTextBox is not null)
             {
+                _fontInnerTextBox.MinHeight = 0;
+                _fontInnerTextBox.Height = 22;
+                _fontInnerTextBox.VerticalContentAlignment = VerticalAlignment.Center;
+                _fontInnerTextBox.Padding = new Thickness(6, 0);
+
                 _fontInnerTextBox.PointerReleased += OnFontInnerPointerReleased;
                 _fontInnerTextBox.GotFocus += OnFontInnerGotFocus;
                 _fontInnerTextBox.LostFocus += OnFontInnerLostFocus;
@@ -106,17 +112,7 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             }
         }
 
-        // ── Фильтр ────────────────────────────────────────────────────────
-
-        private bool FontItemFilter(string? search, object? item)
-        {
-            // Пока пользователь не начал печатать — показываем весь список.
-            if (!_fontUserIsTyping) return true;
-            if (item is not string s) return false;
-            return s.Contains(search ?? string.Empty, StringComparison.OrdinalIgnoreCase);
-        }
-
-        // ── Внутренний TextBox события ────────────────────────────────────
+        // ── TextBox события ───────────────────────────────────────────────
 
         private void OnFontInnerGotFocus(object? sender, FocusChangedEventArgs e)
         {
@@ -126,30 +122,19 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         private void OnFontInnerLostFocus(object? sender, FocusChangedEventArgs e)
         {
             _fontJustGotFocus = false;
-            _fontUserIsTyping = false;
         }
 
         private void OnFontInnerPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
-            // SelectAll только при первом получении фокуса.
-            if (_fontJustGotFocus)
-            {
-                _fontJustGotFocus = false;
-                _fontUserIsTyping = false;
-                _fontInnerTextBox?.SelectAll();
-            }
-
-            // Открываем дропдаун при каждом клике — и при первом, и при повторных.
-            if (_fontAutoComplete?.IsDropDownOpen != true)
-                _fontAutoComplete!.IsDropDownOpen = true;
+            // Первый клик — выделяем весь текст.
+            // Повторные клики — курсор встаёт в место клика, не трогаем дропдаун.
+            if (!_fontJustGotFocus) return;
+            _fontJustGotFocus = false;
+            Dispatcher.UIThread.Post(
+                () => _fontInnerTextBox?.SelectAll(),
+                DispatcherPriority.Background);
         }
 
-        /// <summary>
-        /// Пользователь нажал клавишу — включаем фильтрацию.
-        /// KeyDown надёжнее TextChanged: не срабатывает на программные изменения
-        /// текста внутри AutoCompleteBox (выбор элемента, сброс и т.д.).
-        /// Навигационные клавиши (стрелки, Enter, Escape) фильтр не включают.
-        /// </summary>
         private void OnFontInnerKeyDown(object? sender, KeyEventArgs e)
         {
             switch (e.Key)
@@ -165,33 +150,40 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
                 case Key.End:
                     return;
                 default:
-                    _fontUserIsTyping = true;
+                    // При вводе AutoCompleteBox сам открывает дропдаун через MinimumPrefixLength=0
                     break;
             }
         }
 
-        // ── Дропдаун открылся/закрылся ────────────────────────────────────
+        // ── Дропдаун ─────────────────────────────────────────────────────
 
         private void OnFontDropDownOpened(object? sender, EventArgs e)
         {
-            // Сбрасываем флаг — при открытии всегда показываем полный список.
-            _fontUserIsTyping = false;
-
             if (DataContext is not RibbonHomeTabViewModel vm) return;
-            string? current = vm.CurrentFontFamily;
-            if (current is null || _fontInnerList is null) return;
+            _fontBeforeOpen = vm.CurrentFontFamily;
 
+            if (_fontScrolling) return;
+            _fontScrolling = true;
+
+            string? current = _fontBeforeOpen;
             Dispatcher.UIThread.Post(() =>
             {
-                if (_fontInnerList is null || current is null) return;
-                _fontInnerList.SelectedItem = current;
-                _fontInnerList.ScrollIntoView(current);
-            }, DispatcherPriority.Loaded);
+                try
+                {
+                    if (_fontInnerList is null || current is null) return;
+                    _fontInnerList.SelectedItem = current;
+                    _fontInnerList.ScrollIntoView(current);
+                }
+                finally { _fontScrolling = false; }
+            }, DispatcherPriority.Background);
         }
 
         private void OnFontDropDownClosed(object? sender, EventArgs e)
         {
-            _fontUserIsTyping = false;
+            if (DataContext is not RibbonHomeTabViewModel vm) return;
+            string restore = vm.CurrentFontFamily ?? _fontBeforeOpen ?? string.Empty;
+            if (_fontInnerTextBox is not null && _fontInnerTextBox.Text != restore)
+                _fontInnerTextBox.Text = restore;
         }
 
         // ── Ribbon resize ─────────────────────────────────────────────────

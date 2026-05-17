@@ -489,4 +489,40 @@
   <data name="Dialog_DeleteFolder_After" xml:space="preserve">
     <value>» будет удалена. Все персонажи из неё станут нераспределёнными.</value>
   </data>
+  <data name="AvatarPack_people_minimalism" xml:space="preserve">
+    <value>Люди (минимализм)</value>
+  </data>
+  <data name="AvatarPack_library" xml:space="preserve">
+    <value>Мои аватарки</value>
+  </data>
+  <data name="AvatarPicker_Saving" xml:space="preserve">
+    <value>Сохранение…</value>
+  </data>
+  <data name="AvatarPicker_SaveFailed" xml:space="preserve">
+    <value>Не удалось сохранить</value>
+  </data>
+  <data name="AvatarPicker_SavedToLibrary" xml:space="preserve">
+    <value>Сохранено в библиотеку</value>
+  </data>
+  <data name="AvatarPicker_Title" xml:space="preserve">
+    <value>Выбор аватарки</value>
+  </data>
+  <data name="AvatarPicker_SearchPlaceholder" xml:space="preserve">
+    <value>Поиск аватарок...</value>
+  </data>
+  <data name="AvatarPicker_ManagePacks" xml:space="preserve">
+    <value>Управление паками</value>
+  </data>
+  <data name="AvatarPicker_InProject" xml:space="preserve">
+    <value>В проекте</value>
+  </data>
+  <data name="AvatarPicker_Cancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="AvatarPickerFlyout_Title" xml:space="preserve">
+    <value>Аватарка</value>
+  </data>
+  <data name="AvatarPickerFlyout_Upload" xml:space="preserve">
+    <value>Загрузить фото...</value>
+  </data>
 </root>
