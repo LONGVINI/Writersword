@@ -35,9 +35,9 @@ namespace Writersword.Infrastructure.Services.Project
         private readonly INotificationService _notificationService;
         private readonly IDataComparisonService _comparisonService;
 
-        public event Action<DocumentTabViewModel>? ProjectOpened;
-        public event Action<DocumentTabViewModel>? ProjectSaved;
-        public event Action<DocumentTabViewModel>? ProjectClosed;
+        public event Action<IDocumentTab>? ProjectOpened;
+        public event Action<IDocumentTab>? ProjectSaved;
+        public event Action<IDocumentTab>? ProjectClosed;
 
         private readonly Dictionary<string, ZipFileStorageService> _openStorages = new();
         private readonly Dictionary<string, IWorkspaceAutoSaveService> _autoSaveServices = new();
@@ -64,7 +64,7 @@ namespace Writersword.Infrastructure.Services.Project
         /// <summary>
         /// Открыть документ с поддержкой восстановления из кеша.
         /// </summary>
-        public async Task<DocumentTabViewModel?> OpenDocumentAsync(string? filePath = null, bool initializeWorkspace = true)
+        public async Task<IDocumentTab?> OpenDocumentAsync(string? filePath = null, bool initializeWorkspace = true)
         {
             try
             {
@@ -241,8 +241,9 @@ namespace Writersword.Infrastructure.Services.Project
         /// Инициализировать workspace для ленивой вкладки.
         /// Вызывается при первом переключении на вкладку.
         /// </summary>
-        public async Task<bool> EnsureWorkspaceInitialized(DocumentTabViewModel tab)
+        public async Task<bool> EnsureWorkspaceInitialized(IDocumentTab documentTab)
         {
+            var tab = (DocumentTabViewModel)documentTab;
             if (tab.IsLoaded)
             {
                 _logger.LogDebug("Workspace already loaded for: {Title}", tab.Title);
@@ -617,8 +618,9 @@ namespace Writersword.Infrastructure.Services.Project
 
         // ── Сохранение ────────────────────────────────────────────────────
 
-        public async Task<bool> SaveDocumentAsync(DocumentTabViewModel tab)
+        public async Task<bool> SaveDocumentAsync(IDocumentTab documentTab)
         {
+            var tab = (DocumentTabViewModel)documentTab;
             try
             {
                 var project = tab.GetProject();
@@ -756,8 +758,9 @@ namespace Writersword.Infrastructure.Services.Project
             }
         }
 
-        public async Task<bool> SaveAsDocumentAsync(DocumentTabViewModel tab)
+        public async Task<bool> SaveAsDocumentAsync(IDocumentTab documentTab)
         {
+            var tab = (DocumentTabViewModel)documentTab;
             try
             {
                 var filePath = await _dialogService.SaveFileAsync(tab.Title);
@@ -800,8 +803,9 @@ namespace Writersword.Infrastructure.Services.Project
 
         // ── Закрытие ──────────────────────────────────────────────────────
 
-        public async Task<bool> CloseDocumentAsync(DocumentTabViewModel tab, bool force = false)
+        public async Task<bool> CloseDocumentAsync(IDocumentTab documentTab, bool force = false)
         {
+            var tab = (DocumentTabViewModel)documentTab;
             try
             {
                 _logger.LogDebug("Closing tab: {Title}, force: {Force}", tab.Title, force);
@@ -860,8 +864,9 @@ namespace Writersword.Infrastructure.Services.Project
 
         // ── Проверка изменений ────────────────────────────────────────────
 
-        public async Task<bool> HasUnsavedChanges(DocumentTabViewModel tab)
+        public async Task<bool> HasUnsavedChanges(IDocumentTab documentTab)
         {
+            var tab = (DocumentTabViewModel)documentTab;
             var filePath = tab.FilePath;
 
             // ── Новый несохранённый проект ────────────────────────────────
@@ -1025,8 +1030,9 @@ namespace Writersword.Infrastructure.Services.Project
             return null;
         }
 
-        public void RegisterStorage(string filePath, DocumentTabViewModel tab)
+        public void RegisterStorage(string filePath, IDocumentTab documentTab)
         {
+            var tab = (DocumentTabViewModel)documentTab;
             var storage = new ZipFileStorageService(filePath);
             _openStorages[filePath] = storage;
             tab.Context.FileStorage = storage;

@@ -15,6 +15,7 @@ using Writersword.Core.Models.WorkModes;
 using Writersword.Core.Services;
 using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.ViewModels;
+using Document = Dock.Model.Avalonia.Controls.Document;
 
 namespace Writersword.Infrastructure.Dock
 {
@@ -115,7 +116,7 @@ namespace Writersword.Infrastructure.Dock
                     var root = _currentRootDock;
                     Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                     {
-                        var tab = App.Services.GetRequiredService<ITabCollection>().ActiveTab;
+                        var tab = App.Services.GetRequiredService<ITabCollection>().ActiveTab as DocumentTabViewModel;
                         if (tab != null)
                             RecreateDocumentViews(root, tab);
                     }, Avalonia.Threading.DispatcherPriority.Loaded);
@@ -151,7 +152,7 @@ namespace Writersword.Infrastructure.Dock
                         // ContentPresenter-ами — VisualParent остаётся на старом CP.
                         // Единственное решение — пересоздать View через module.CreateView().
                         // ViewModel остаётся той же → данные модуля не теряются.
-                        var tab = App.Services.GetRequiredService<ITabCollection>().ActiveTab;
+                        var tab = App.Services.GetRequiredService<ITabCollection>().ActiveTab as DocumentTabViewModel;
                         if (tab != null)
                             RecreateDocumentViews(rootToNormalize, tab);
                     },
@@ -390,7 +391,7 @@ namespace Writersword.Infrastructure.Dock
 
         private int RestoreModulesInLayout(IRootDock rootDock, WorkMode workMode, DocumentTabViewModel? ownerTab)
         {
-            var tab = ownerTab ?? App.Services.GetRequiredService<ITabCollection>().ActiveTab;
+            var tab = ownerTab ?? App.Services.GetRequiredService<ITabCollection>().ActiveTab as DocumentTabViewModel;
             if (tab == null)
             {
                 _logger.LogError("No tab for restoring modules");
@@ -800,7 +801,7 @@ namespace Writersword.Infrastructure.Dock
             _logger.LogDebug("Creating document for: {ModuleType}, IsCloseable={IsCloseable}",
                 slot.ModuleType, slot.IsCloseable);
 
-            var tab = ownerTab ?? App.Services.GetRequiredService<ITabCollection>().ActiveTab;
+            var tab = ownerTab ?? App.Services.GetRequiredService<ITabCollection>().ActiveTab as DocumentTabViewModel;
             if (tab == null)
             {
                 _logger.LogError("No tab provided and no active tab");

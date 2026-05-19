@@ -63,18 +63,6 @@ namespace Writersword
         public override void Initialize()
         {
             AvaloniaXamlLoader.Load(this);
-
-#if DEBUG
-            try
-            {
-                this.AttachDevTools();
-                Log.ForContext<App>().Debug("DevTools attached successfully");
-            }
-            catch (Exception ex)
-            {
-                Log.ForContext<App>().Error(ex, "Failed to attach DevTools");
-            }
-#endif
         }
 
         /// <summary>
@@ -149,12 +137,38 @@ namespace Writersword
             services.AddSingleton<IProjectWorkflow, ProjectWorkflow>();
 
             Services = services.BuildServiceProvider();
+            Core.Services.CoreServices.SetProvider(Services);
+
+            // Принудительно загружаем все Writersword.*.dll из папки приложения.
+            // Referenced сборки без прямого обращения к их типам не попадают в AppDomain
+            // до первого использования — при переходе на микросервисы модули живут
+            // в отдельных dll и GetExecutingAssembly() их не видит.
+            var appDir = AppContext.BaseDirectory;
+            foreach (var dll in Directory.GetFiles(appDir, "Writersword.*.dll"))
+            {
+                try { Assembly.LoadFrom(dll); }
+                catch (Exception ex)
+                {
+                    Log.ForContext<App>().Warning(
+                        "Could not load assembly {Dll}: {Message}", dll, ex.Message);
+                }
+            }
+
+            // Собираем все загруженные сборки с префиксом Writersword для сканирования типов.
+            var allWriterswordAssemblies = AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => a.GetName().Name?.StartsWith("Writersword") == true)
+                .ToList();
 
             var moduleFactory = Services.GetRequiredService<ModuleFactory>();
-            var assembly = Assembly.GetExecutingAssembly();
 
-            var moduleTypes = assembly.GetTypes()
-                .Where(t => typeof(BaseModule).IsAssignableFrom(t) && !t.IsAbstract);
+            var moduleTypes = allWriterswordAssemblies
+                .SelectMany(a =>
+                {
+                    try { return a.GetTypes(); }
+                    catch { return Array.Empty<Type>(); }
+                })
+                .Where(t => typeof(BaseModule).IsAssignableFrom(t) && !t.IsAbstract)
+                .ToList();
 
             foreach (var moduleType in moduleTypes)
             {
@@ -169,15 +183,21 @@ namespace Writersword
                 }
             }
 
-            Log.ForContext<App>().Debug("Registered {Count} modules", moduleTypes.Count());
+            Log.ForContext<App>().Debug("Registered {Count} modules", moduleTypes.Count);
 
             var workModeFactory = Services.GetRequiredService<WorkModeFactory>();
             var workModeRegistry = Services.GetRequiredService<WorkModeRegistry>();
 
-            var workModeTypes = assembly.GetTypes()
+            var workModeTypes = allWriterswordAssemblies
+                .SelectMany(a =>
+                {
+                    try { return a.GetTypes(); }
+                    catch { return Array.Empty<Type>(); }
+                })
                 .Where(t => typeof(IWorkMode).IsAssignableFrom(t)
                          && !t.IsInterface
-                         && !t.IsAbstract);
+                         && !t.IsAbstract)
+                .ToList();
 
             foreach (var workModeType in workModeTypes)
             {
@@ -186,7 +206,7 @@ namespace Writersword
                     RegisterWorkMode(workModeFactory, workModeRegistry, instance);
             }
 
-            Log.ForContext<App>().Debug("Registered {Count} WorkModes", workModeTypes.Count());
+            Log.ForContext<App>().Debug("Registered {Count} WorkModes", workModeTypes.Count);
 
             var projectTypeRegistry = Services.GetRequiredService<ProjectTypeRegistry>();
             projectTypeRegistry.LoadAll();
@@ -229,7 +249,7 @@ namespace Writersword
                         Log.ForContext<App>().Debug(
                             "Restoring {Count} projects from last session", openProjects.Count);
 
-                        var tabs = new List<DocumentTabViewModel>();
+                        var tabs = new List<IDocumentTab>();
 
                         for (int i = 0; i < openProjects.Count; i++)
                         {
@@ -264,11 +284,12 @@ namespace Writersword
                         foreach (var tab in tabs)
                             tabCollection.Add(tab);
 
-                        if (tabCollection.Tabs.Count > 0)
+                        if (tabCollection.Tabs.Any())
                         {
-                            tabCollection.ActiveTab = tabCollection.Tabs[0];
+                            var firstTab = tabCollection.Tabs.First() as DocumentTabViewModel;
+                            tabCollection.ActiveTab = firstTab;
                             Log.ForContext<App>().Debug(
-                                "Activated first tab: {Title}", tabCollection.Tabs[0].Title);
+                                "Activated first tab: {Title}", firstTab?.Title ?? "");
                         }
                         else
                         {

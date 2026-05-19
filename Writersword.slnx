@@ -1,4 +1,17 @@
 <Solution>
   <Project Path="Tests/Tests.csproj" Id="aecf4b80-e42c-4829-a3b5-8dbe02208e62" />
   <Project Path="Writersword.csproj" />
+  <Project Path="Src/Writersword.Core.csproj" />
+  <Project Path="Writersword.UI.Shared.csproj" />
+  <Project Path="Src/Modules/Characters/Writersword.Characters.csproj" />
+  <Project Path="Src/Modules/TextEditor/Writersword.TextEditor.csproj" />
+  <Project Path="Src/Modules/Notes/Writersword.Notes.csproj" />
+  <Project Path="Src/Modules/Synonyms/Writersword.Synonyms.csproj" />
+  <Project Path="Src/Modules/Timer/Writersword.Timer.csproj" />
+  <Project Path="Src/Modules/Dialogues/Writersword.Dialogues.csproj" />
+  <Project Path="Src/Modules/Poetry/Writersword.Poetry.csproj" />
+  <Project Path="Src/Modules/Statistics/Writersword.Statistics.csproj" />
+  <Project Path="Src/Modules/GameEconomy/Writersword.GameEconomy.csproj" />
+  <Project Path="Src/Modules/Music/Writersword.Music.csproj" />
+  <Project Path="Src/Modules/Timeline/Writersword.Timeline.csproj" />
 </Solution>

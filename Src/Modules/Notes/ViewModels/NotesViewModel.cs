@@ -1,11 +1,12 @@
-using Microsoft.Extensions.DependencyInjection;
+п»їusing Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
+using Writersword.Core.Services;
 
 namespace Writersword.Modules.Notes.ViewModels
 {
     /// <summary>
-    /// ViewModel для модуля заметок
+    /// ViewModel РґР»СЏ РјРѕРґСѓР»СЏ Р·Р°РјРµС‚РѕРє
     /// </summary>
     public class NotesViewModel : ReactiveObject
     {
@@ -13,15 +14,15 @@ namespace Writersword.Modules.Notes.ViewModels
         private string _noteText = string.Empty;
 
         /// <summary>
-        /// Конструктор ViewModel заметок
+        /// РљРѕРЅСЃС‚СЂСѓРєС‚РѕСЂ ViewModel Р·Р°РјРµС‚РѕРє
         /// </summary>
         public NotesViewModel()
         {
-            _logger = App.Services.GetService<ILogger<NotesViewModel>>()!;
+            _logger = CoreServices.GetService<ILogger<NotesViewModel>>()!;
         }
 
         /// <summary>
-        /// Текст заметки
+        /// РўРµРєСЃС‚ Р·Р°РјРµС‚РєРё
         /// </summary>
         public string NoteText
         {
@@ -30,9 +31,9 @@ namespace Writersword.Modules.Notes.ViewModels
         }
 
         /// <summary>
-        /// Загрузить текст заметки
-        /// Используется при загрузке данных из проекта
-        /// НЕ вызывает события изменения для подписчиков
+        /// Р—Р°РіСЂСѓР·РёС‚СЊ С‚РµРєСЃС‚ Р·Р°РјРµС‚РєРё
+        /// РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РїСЂРё Р·Р°РіСЂСѓР·РєРµ РґР°РЅРЅС‹С… РёР· РїСЂРѕРµРєС‚Р°
+        /// РќР• РІС‹Р·С‹РІР°РµС‚ СЃРѕР±С‹С‚РёСЏ РёР·РјРµРЅРµРЅРёСЏ РґР»СЏ РїРѕРґРїРёСЃС‡РёРєРѕРІ
         /// </summary>
         public void LoadNotes(string text)
         {

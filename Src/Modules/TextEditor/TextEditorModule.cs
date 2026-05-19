@@ -1,3 +1,4 @@
+using Writersword.Core.Services;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
@@ -117,9 +118,9 @@ namespace Writersword.Modules.TextEditor
             _hashService = new DeltaHashService();
             _chunkManager = new ChunkManager(_hashService);
             _serializer = new DocumentSerializer(_hashService, _chunkManager);
-            _settingsService = App.Services.GetRequiredService<ISettingsService>();
-            _printService = App.Services.GetRequiredService<IPrintService>();
-            _hotKeyService = App.Services.GetService<IHotKeyService>();
+            _settingsService = CoreServices.GetRequiredService<ISettingsService>();
+            _printService = CoreServices.GetRequiredService<IPrintService>();
+            _hotKeyService = CoreServices.GetService<IHotKeyService>();
             Title = "Text Editor";
 
             var saved = _settingsService.GetModuleSettings<TextEditorSettings>(moduleType);
@@ -807,7 +808,8 @@ namespace Writersword.Modules.TextEditor
                 try
                 {
                     var printDocument = new TextEditorPrintDocument(document);
-                    var mainWindow = App.MainWindow;
+                    var mainWindow = (Avalonia.Application.Current?.ApplicationLifetime
+                    as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.MainWindow;
 
                     if (mainWindow is null)
                     {

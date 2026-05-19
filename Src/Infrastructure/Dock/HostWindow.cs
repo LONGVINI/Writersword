@@ -1,5 +1,6 @@
 ﻿using Avalonia;
 using Dock.Model.Avalonia.Controls;
+using Document = Dock.Model.Avalonia.Controls.Document;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Microsoft.Extensions.DependencyInjection;

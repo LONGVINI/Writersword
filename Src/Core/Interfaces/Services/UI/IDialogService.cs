@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Writersword.Core.Enums;
-using Writersword.Views;
 
 namespace Writersword.Core.Interfaces.Services.UI
 {

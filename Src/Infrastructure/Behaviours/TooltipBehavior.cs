@@ -1,4 +1,5 @@
-﻿using Avalonia;
+﻿using Writersword.Core.Services;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Primitives.PopupPositioning;
@@ -247,7 +248,7 @@ namespace Writersword.Infrastructure.Behaviours
 
             try
             {
-                var service = App.Services.GetService<IHotKeyService>();
+                var service = CoreServices.GetService<IHotKeyService>();
                 if (service is null)
                 {
                     _logger.Warning("TooltipBehavior: IHotKeyService not available");

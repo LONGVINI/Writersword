@@ -4,9 +4,10 @@ using Avalonia.Interactivity;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Linq;
+using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Core.Models.Project;
 using Writersword.ViewModels;
-using Writersword.Core.Interfaces.WorkFlows;
 
 namespace Writersword.Views
 {
@@ -49,7 +50,7 @@ namespace Writersword.Views
             // Получаем ITabCollection для проверки количества открытых вкладок
             var tabCollection = App.Services.GetRequiredService<ITabCollection>();
 
-            if (tabCollection.Tabs.Count > 0)
+            if (tabCollection.Tabs.Count() > 0)
             {
                 // Есть открытые вкладки - просто закрываем Welcome окно
                 _logger.LogDebug("CloseButton clicked - has open tabs, closing welcome window");

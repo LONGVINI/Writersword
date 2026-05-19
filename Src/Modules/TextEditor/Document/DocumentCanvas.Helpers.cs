@@ -10,7 +10,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Writersword.Core.Models.Rendering;
-using Writersword.Infrastructure.Rendering;
+using Writersword.Modules.TextEditor.Rendering;
 using Writersword.Modules.TextEditor.Commands;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;

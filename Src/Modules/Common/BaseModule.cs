@@ -6,7 +6,6 @@ using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
 using Writersword.Core.Interfaces.Services.Input;
 using Writersword.Core.Services;
-using Writersword.ViewModels;
 using System.IO;
 
 namespace Writersword.Modules.Common
@@ -107,7 +106,7 @@ namespace Writersword.Modules.Common
         {
             if (this is IHotKeyProvider provider)
             {
-                var hotKeyService = App.Services.GetService<IHotKeyService>();
+                var hotKeyService = CoreServices.GetService<IHotKeyService>();
                 if (hotKeyService != null)
                 {
                     hotKeyService.BindExecutor(moduleType, provider);
@@ -148,7 +147,7 @@ namespace Writersword.Modules.Common
         {
             if (this is IHotKeyProvider)
             {
-                var hotKeyService = App.Services.GetService<IHotKeyService>();
+                var hotKeyService = CoreServices.GetService<IHotKeyService>();
                 hotKeyService?.UnbindExecutor(moduleType);
             }
         }

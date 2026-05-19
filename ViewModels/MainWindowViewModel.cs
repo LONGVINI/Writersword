@@ -143,7 +143,7 @@ namespace Writersword.ViewModels
             _tabCollection.ActiveTabChanged += (newTab, previousTab) =>
             {
                 if (newTab != null)
-                    _ = OnTabActivatedAsync(newTab, previousTab);
+                    _ = OnTabActivatedAsync(newTab as DocumentTabViewModel, previousTab as DocumentTabViewModel);
 
                 MenuBar.UpdateHasActiveTab();
             };
@@ -223,6 +223,20 @@ namespace Writersword.ViewModels
                 DockLayout = tab.Workspace.GetCurrentLayout();
                 _logger.LogDebug("DockLayout assigned for tab: {Title}", tab.Title);
 
+                // При первом присвоении DockLayout dock ещё не завершил layout pass —
+                // все views получают нулевой размер и ничего не рисуют.
+                // Post на Loaded делает повторный null+set уже после первого layout,
+                // когда DockControl знает свои размеры. Работает для всех модулей.
+                var capturedLayout = DockLayout;
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    if (DockLayout == capturedLayout && DockLayout != null)
+                    {
+                        DockLayout = null;
+                        DockLayout = capturedLayout;
+                    }
+                }, Avalonia.Threading.DispatcherPriority.Loaded);
+
                 WorkModeBar.LoadWorkModes(tab.Workspace.GetAvailableWorkModes());
 
                 var activeWorkMode = tab.Workspace.GetActiveWorkMode();
@@ -257,8 +271,9 @@ namespace Writersword.ViewModels
 
         /// <summary>
         /// Обработчик изменений Workspace.
-        /// DockLayout переприсваивается только если layout объект сменился —
-        /// при перемещении модулей layout тот же объект и трогать его не нужно.
+        /// DockLayout сбрасывается только если layout объект сменился или поднят флаг
+        /// ConsumeNeedsFullLayoutRefresh (структурные изменения вроде CleanupEmptyContainers).
+        /// Без флага — не трогаем вьюшки, нет мигания и потери контекста модулей.
         /// </summary>
         private void OnWorkspaceChanged(object? sender, EventArgs e)
         {
@@ -268,12 +283,13 @@ namespace Writersword.ViewModels
             if (activeTab?.Workspace == null) return;
 
             var newLayout = activeTab.Workspace.GetCurrentLayout();
+            bool forceRefresh = activeTab.Workspace.ConsumeNeedsFullLayoutRefresh();
 
-            if (DockLayout != newLayout)
+            if (forceRefresh || DockLayout != newLayout)
             {
                 DockLayout = null;
                 DockLayout = newLayout;
-                _logger.LogDebug("DockLayout updated (new layout object)");
+                _logger.LogDebug("DockLayout updated (forceRefresh={Force})", forceRefresh);
             }
 
             var activeWorkMode = activeTab.Workspace.GetActiveWorkMode();
@@ -362,30 +378,33 @@ namespace Writersword.ViewModels
         /// <summary>
         /// Обработчик открытия проекта
         /// </summary>
-        private void OnProjectOpened(DocumentTabViewModel tab)
+        private void OnProjectOpened(IDocumentTab tab)
         {
-            _logger.LogInformation("Project opened: {Title}", tab.Title);
+            if (tab is not DocumentTabViewModel vmTab) return;
+            _logger.LogInformation("Project opened: {Title}", vmTab.Title);
         }
 
         /// <summary>
         /// Обработчик сохранения проекта
         /// </summary>
-        private void OnProjectSaved(DocumentTabViewModel tab)
+        private void OnProjectSaved(IDocumentTab tab)
         {
-            _logger.LogInformation("Project saved: {Title}", tab.Title);
+            if (tab is not DocumentTabViewModel vmTab) return;
+            _logger.LogInformation("Project saved: {Title}", vmTab.Title);
         }
 
         /// <summary>
         /// Обработчик закрытия проекта
         /// SaveWorkspaceAsync вызывается асинхронно — без блокирующего .Wait() на UI потоке
         /// </summary>
-        private void OnProjectClosed(DocumentTabViewModel tab)
+        private void OnProjectClosed(IDocumentTab tab)
         {
-            _logger.LogDebug("Project closed: {Title}", tab.Title);
+            if (tab is not DocumentTabViewModel vmTab) return;
+            _logger.LogDebug("Project closed: {Title}", vmTab.Title);
 
-            if (!string.IsNullOrEmpty(tab.FilePath) && tab.Workspace != null)
+            if (!string.IsNullOrEmpty(vmTab.FilePath) && vmTab.Workspace != null)
             {
-                _ = tab.Workspace.SaveWorkspaceAsync();
+                _ = vmTab.Workspace.SaveWorkspaceAsync();
             }
 
             _cacheUpdateService.Stop();

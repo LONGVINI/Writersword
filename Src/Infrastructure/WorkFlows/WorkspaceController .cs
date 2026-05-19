@@ -1,5 +1,6 @@
 ﻿using Avalonia.Threading;
 using Dock.Model.Avalonia.Controls;
+using Document = Dock.Model.Avalonia.Controls.Document;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Microsoft.Extensions.DependencyInjection;
@@ -43,6 +44,7 @@ namespace Writersword.Infrastructure.Workspace
         private List<WorkMode> _availableWorkModes;
 
         private bool _isDeactivating = false;
+        private bool _needsFullLayoutRefresh = false;
 
         public event EventHandler? WorkspaceChanged;
 
@@ -433,6 +435,7 @@ namespace Writersword.Infrastructure.Workspace
 
             _tab.ModuleContext.RemoveModule(moduleType);
             _dockFactory.CleanupEmptyContainersInLayout(_dockLayout);
+            _needsFullLayoutRefresh = true;
 
             _autoSave.NotifyChange();
             WorkspaceChanged?.Invoke(this, EventArgs.Empty);
@@ -839,6 +842,13 @@ namespace Writersword.Infrastructure.Workspace
             WorkspaceChanged?.Invoke(this, EventArgs.Empty);
 
             _logger.LogDebug("Workspace reloaded from global config");
+        }
+
+        public bool ConsumeNeedsFullLayoutRefresh()
+        {
+            if (!_needsFullLayoutRefresh) return false;
+            _needsFullLayoutRefresh = false;
+            return true;
         }
     }
 }

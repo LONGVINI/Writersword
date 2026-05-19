@@ -145,7 +145,7 @@ namespace Writersword.ViewModels.Components.MenuBar
         {
             _logger.LogDebug("CloseAllTabs called");
 
-            foreach (var tab in _tabCollection.Tabs.ToList())
+            foreach (var tab in _tabCollection.Tabs.OfType<DocumentTabViewModel>().ToList())
             {
                 await SaveWorkspaceBeforeClose(tab);
 
@@ -165,7 +165,7 @@ namespace Writersword.ViewModels.Components.MenuBar
 
             _logger.LogDebug("CloseOtherTabs: keeping {Title}", activeTab.Title);
 
-            foreach (var tab in _tabCollection.Tabs.Where(t => t != activeTab).ToList())
+            foreach (var tab in _tabCollection.Tabs.OfType<DocumentTabViewModel>().Where(t => t != activeTab).ToList())
             {
                 await SaveWorkspaceBeforeClose(tab);
 
@@ -214,7 +214,7 @@ namespace Writersword.ViewModels.Components.MenuBar
 
         private async Task HandleNoTabsLeft()
         {
-            if (_tabCollection.Tabs.Count > 0) return;
+            if (_tabCollection.Tabs.Count() > 0) return;
 
             _mainViewModelProvider?.Invoke()?.ClearUIWhenNoTabs();
 

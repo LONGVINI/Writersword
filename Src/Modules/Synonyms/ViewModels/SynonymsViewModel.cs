@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using Writersword.Core.Services;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using System;
@@ -43,7 +44,7 @@ namespace Writersword.Modules.Synonyms.ViewModels
         /// </summary>
         public SynonymsViewModel()
         {
-            _logger = App.Services.GetService<ILogger<SynonymsViewModel>>()!;
+            _logger = CoreServices.GetService<ILogger<SynonymsViewModel>>()!;
 
             Synonyms.Add("писать");
             Synonyms.Add("сочинять");

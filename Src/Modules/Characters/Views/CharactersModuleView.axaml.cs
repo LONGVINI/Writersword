@@ -11,11 +11,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reactive.Linq;
+using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Services.UI;
+using Writersword.Core.Services;
 using Writersword.Modules.Characters.ViewModels;
 using Writersword.Modules.Characters.Views.Tabs;
 using Writersword.Src.Modules.Characters.Resources;
-using Writersword.Views;
 
 namespace Writersword.Modules.Characters.Views
 {
@@ -127,7 +128,7 @@ namespace Writersword.Modules.Characters.Views
 
         private async void OnFolderDeleteRequested(string folderId, string folderName)
         {
-            var dialogService = App.Services.GetRequiredService<IDialogService>();
+            var dialogService = CoreServices.GetRequiredService<IDialogService>();
             var result = await dialogService.ShowMessageAsync(
                 CharactersStrings.Dialog_DeleteFolder_Title,
                 CharactersStrings.Dialog_DeleteFolder_Before + folderName + CharactersStrings.Dialog_DeleteFolder_After,

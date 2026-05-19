@@ -1,3 +1,4 @@
+п»їusing Writersword.Core.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
@@ -8,8 +9,8 @@ using Writersword.Modules.Timer.Models;
 namespace Writersword.Modules.Timer.ViewModels
 {
     /// <summary>
-    /// ViewModel для модуля таймера
-    /// Поддерживает прямой счёт и обратный отсчёт
+    /// ViewModel пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+    /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
     /// </summary>
     public class TimerViewModel : ReactiveObject, IDisposable
     {
@@ -58,7 +59,7 @@ namespace Writersword.Modules.Timer.ViewModels
             }
         }
 
-        /// <summary>Обратный отсчёт завершён</summary>
+        /// <summary>пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ</summary>
         public bool IsFinished => IsCountdown && ElapsedSeconds >= TargetSeconds;
 
         public string DisplayTime
@@ -82,7 +83,7 @@ namespace Writersword.Modules.Timer.ViewModels
 
         public TimerViewModel()
         {
-            _logger = App.Services.GetService<ILogger<TimerViewModel>>()!;
+            _logger = CoreServices.GetService<ILogger<TimerViewModel>>()!;
 
             StartCommand = ReactiveCommand.Create(Start);
             StopCommand = ReactiveCommand.Create(Stop);

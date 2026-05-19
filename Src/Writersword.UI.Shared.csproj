@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<AssemblyName>Writersword.UI.Shared</AssemblyName>
+		<RootNamespace>Writersword</RootNamespace>
+		<EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+		<EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+		<AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Compile Include="Src\Infrastructure\Behaviours\ClickOutsideBehavior.cs" />
+		<Compile Include="Src\Infrastructure\Behaviours\FocusOnVisibleBehavior.cs" />
+		<Compile Include="Src\Infrastructure\Behaviours\TabDragDropBehavior.cs" />
+		<Compile Include="Src\Infrastructure\Behaviours\TooltipBehavior.cs" />
+		<Compile Include="Src\Infrastructure\Behaviours\WorkModeDragDropBehavior.cs" />
+		<Compile Include="Src\Infrastructure\Controls\ItalicCaretTextBox.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Compile Include="Styles\UserControls\ColorPickerButton.axaml.cs" />
+		<AvaloniaXaml Include="Styles\UserControls\ColorPickerButton.axaml" />
+		<Compile Include="Styles\UserControls\RibbonScrollContainer.axaml.cs" />
+		<AvaloniaXaml Include="Styles\UserControls\RibbonScrollContainer.axaml" />
+		<Compile Include="Styles\UserControls\TooltipView.axaml.cs" />
+		<AvaloniaXaml Include="Styles\UserControls\TooltipView.axaml" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Compile Include="Views\Settings\SettingButtons.axaml.cs" />
+		<AvaloniaXaml Include="Views\Settings\SettingButtons.axaml" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Avalonia" Version="12.0.3" />
+		<PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.3" />
+		<PackageReference Include="ReactiveUI.Avalonia" Version="12.0.1" />
+		<PackageReference Include="Serilog" Version="4.3.2-dev-02419" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="Src\Writersword.Core.csproj" />
+	</ItemGroup>
+
+</Project>

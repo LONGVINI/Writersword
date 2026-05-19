@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Writersword.Core.Models.Rendering;
-using Writersword.Infrastructure.Rendering;
+using Writersword.Modules.TextEditor.Rendering;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
 using Writersword.Modules.TextEditor.ViewModels;

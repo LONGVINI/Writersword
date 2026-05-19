@@ -127,5 +127,12 @@ namespace Writersword.Core.Interfaces.Workspace
         /// Используется при сбросе до глобальной конфигурации
         /// </summary>
         void ReloadFromGlobalConfig(List<WorkMode> workModes);
+
+        /// <summary>
+        /// Проверить и сбросить флаг принудительного обновления layout.
+        /// Устанавливается когда структура layout изменилась (закрытие модуля, очистка контейнеров),
+        /// но ссылка на _dockLayout осталась прежней.
+        /// </summary>
+        bool ConsumeNeedsFullLayoutRefresh();
     }
 }

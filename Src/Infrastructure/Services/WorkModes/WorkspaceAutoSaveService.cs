@@ -1,19 +1,20 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
-using System.Reactive.Concurrency;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Services;
+using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Settings;
 using Writersword.Core.Models.WorkModes;
-using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Infrastructure.Dock;
-using Avalonia.Threading;
+using Writersword.ViewModels;
 
 namespace Writersword.Infrastructure.Services.WorkModes
 {
@@ -191,7 +192,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
                 }
 
                 var tabCollection = App.Services.GetRequiredService<ITabCollection>();
-                var activeTab = tabCollection.Tabs?.FirstOrDefault(t => t.FilePath == _currentProjectPath);
+                var activeTab = tabCollection.Tabs?.FirstOrDefault(t => t.FilePath == _currentProjectPath) as DocumentTabViewModel;
 
                 if (activeTab?.Workspace == null)
                 {
@@ -305,7 +306,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
             try
             {
                 var tabCollection = App.Services.GetRequiredService<ITabCollection>();
-                var activeTab = tabCollection.Tabs?.FirstOrDefault(t => t.FilePath == _currentProjectPath);
+                var activeTab = tabCollection.Tabs?.FirstOrDefault(t => t.FilePath == _currentProjectPath) as DocumentTabViewModel;
 
                 if (activeTab == null)
                 {

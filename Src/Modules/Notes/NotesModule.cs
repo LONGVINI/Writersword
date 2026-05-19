@@ -12,7 +12,6 @@ using Writersword.Modules.Common;
 using Writersword.Modules.Notes.ViewModels;
 using Writersword.Core.Services;
 using Writersword.Modules.Notes.Resources;
-using Writersword.ViewModels;
 
 namespace Writersword.Modules.Notes
 {
@@ -24,7 +23,7 @@ namespace Writersword.Modules.Notes
 
         public NotesModule() : base()
         {
-            _logger = App.Services.GetService<ILogger<NotesModule>>()!;
+            _logger = CoreServices.GetService<ILogger<NotesModule>>()!;
         }
 
         public override string moduleType => "Notes";

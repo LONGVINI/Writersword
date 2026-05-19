@@ -1,14 +1,14 @@
-﻿using System;
+﻿using SkiaSharp;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using SkiaSharp;
 using Writersword.Core.Models.Print;
 using Writersword.Core.Models.Rendering;
+using Writersword.Modules.TextEditor.Rendering;
 using Writersword.Modules.TextEditor.Models.Document;
-
 using RenderAlignment = Writersword.Core.Models.Rendering.TextAlignment;
 
-namespace Writersword.Infrastructure.Rendering
+namespace Writersword.Modules.TextEditor.Rendering
 {
     /// <summary>
     /// Единый движок вёрстки и рендеринга текста через SkiaSharp.

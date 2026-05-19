@@ -21,6 +21,7 @@ using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.ViewModels;
 using Writersword.Core.Interfaces.Modules;
+using Writersword.Core.Enums;
 using Writersword.Views.Components.MenuBar;
 
 namespace Writersword.Views
@@ -527,9 +528,9 @@ namespace Writersword.Views
             var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
             var dialogService = App.Services.GetRequiredService<IDialogService>();
 
-            _logger.LogDebug("Open tabs count: {Count}", tabCollection.Tabs.Count);
+            _logger.LogDebug("Open tabs count: {Count}", tabCollection.Tabs.Count());
 
-            if (tabCollection.Tabs.Count == 0)
+            if (tabCollection.Tabs.Count() == 0)
             {
                 _logger.LogDebug("No tabs open, showing welcome screen");
                 _isClosing = false;

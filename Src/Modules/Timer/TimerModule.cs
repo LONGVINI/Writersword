@@ -32,7 +32,7 @@ namespace Writersword.Modules.Timer
 
         public TimerModule() : base()
         {
-            _logger = App.Services.GetService<ILogger<TimerModule>>()!;
+            _logger = CoreServices.GetService<ILogger<TimerModule>>()!;
         }
 
         public override string moduleType => "Timer";
@@ -47,7 +47,7 @@ namespace Writersword.Modules.Timer
         {
             _viewModel = new TimerViewModel();
 
-            var settingsService = App.Services.GetRequiredService<ISettingsService>();
+            var settingsService = CoreServices.GetRequiredService<ISettingsService>();
             var globalSettings = settingsService.GetModuleSettings<TimerSettings>(moduleType)
                                  ?? new TimerSettings();
 
@@ -110,7 +110,7 @@ namespace Writersword.Modules.Timer
         /// </summary>
         public object GetSettings()
         {
-            var settingsService = App.Services.GetRequiredService<ISettingsService>();
+            var settingsService = CoreServices.GetRequiredService<ISettingsService>();
             return settingsService.GetModuleSettings<TimerSettings>(moduleType)
                    ?? new TimerSettings();
         }
@@ -122,7 +122,7 @@ namespace Writersword.Modules.Timer
         {
             if (settings is not TimerSettings typed) return;
 
-            var settingsService = App.Services.GetRequiredService<ISettingsService>();
+            var settingsService = CoreServices.GetRequiredService<ISettingsService>();
             settingsService.SaveModuleSettings(moduleType, typed);
 
             _viewModel?.ApplySettings(typed);
@@ -221,7 +221,7 @@ namespace Writersword.Modules.Timer
         /// </summary>
         public Control CreateSettingsView()
         {
-            var settingsService = App.Services.GetRequiredService<ISettingsService>();
+            var settingsService = CoreServices.GetRequiredService<ISettingsService>();
             var settings = settingsService.GetModuleSettings<TimerSettings>(moduleType)
                            ?? new TimerSettings();
 
@@ -258,7 +258,7 @@ namespace Writersword.Modules.Timer
 
             if (Context?.FileStorage != null)
             {
-                var service = App.Services.GetRequiredService<ILocalSettingsStorageService>();
+                var service = CoreServices.GetRequiredService<ILocalSettingsStorageService>();
                 local = service.Load(Context.FileStorage, moduleType, typeof(TimerSettings))
                         as TimerSettings
                         ?? (GetSettings() as TimerSettings)
@@ -310,7 +310,7 @@ namespace Writersword.Modules.Timer
                 IsCountdown = _settingsVm.IsCountdown
             };
 
-            var settingsService = App.Services.GetRequiredService<ISettingsService>();
+            var settingsService = CoreServices.GetRequiredService<ISettingsService>();
             settingsService.SaveModuleSettings(moduleType, settings);
 
             _logger.LogDebug("PromoteLocalToGlobal completed");

@@ -68,7 +68,7 @@ namespace Writersword.Modules.Characters
             // CharactersStrings имеет собственный статический Culture, который
             // LocalizationService не трогает — поэтому выставляем его здесь
             // и подписываемся на смену языка, чтобы обновлять при Settings.
-            var locService = App.Services.GetRequiredService<ILocalizationService>();
+            var locService = CoreServices.GetRequiredService<ILocalizationService>();
             CharactersStrings.Culture = new CultureInfo(locService.CurrentLanguage);
 
             _onLanguageChanged = () =>
@@ -292,7 +292,7 @@ namespace Writersword.Modules.Characters
             // через синглтон LocalizationService после уничтожения модуля.
             if (_onLanguageChanged != null)
             {
-                var locService = App.Services.GetService<ILocalizationService>();
+                var locService = CoreServices.GetService<ILocalizationService>();
                 if (locService != null)
                     locService.LanguageChanged -= _onLanguageChanged;
                 _onLanguageChanged = null;

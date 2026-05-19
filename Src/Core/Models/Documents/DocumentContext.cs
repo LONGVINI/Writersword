@@ -5,7 +5,6 @@ using System.IO;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Interfaces.WorkFlows;
-using Writersword.Infrastructure.Services.Storage;
 
 namespace Writersword.Core.Services
 {
@@ -36,7 +35,8 @@ namespace Writersword.Core.Services
         /// <summary>Конструктор</summary>
         public DocumentContext(ProjectFile project, string filePath)
         {
-            _logger = App.Services.GetService<ILogger<DocumentContext>>()!;
+            _logger = CoreServices.GetService<ILogger<DocumentContext>>()
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<DocumentContext>.Instance;
             Project = project;
             FilePath = filePath;
             IsInCompareMode = false;
@@ -125,16 +125,26 @@ namespace Writersword.Core.Services
         /// Переоткрыть ZIP после завершения операций с файлом
         /// Восстанавливает доступ модулям к файлам внутри архива
         /// </summary>
+        /// <summary>
+        /// Фабрика для создания IProjectFileStorage из App-слоя.
+        /// Устанавливается при создании DocumentContext.
+        /// </summary>
+        public Func<string, IProjectFileStorage>? StorageFactory { get; set; }
+
         public void ReopenZipStorage()
         {
-            if (!string.IsNullOrEmpty(FilePath) && File.Exists(FilePath))
+            if (string.IsNullOrEmpty(FilePath) || !File.Exists(FilePath)) return;
+            if (StorageFactory == null)
             {
-                var newStorage = new ZipFileStorageService(FilePath);
-                FileStorage = newStorage;
-
-                var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
-                projectWorkflow.UpdateStorageForProject(FilePath, newStorage);
+                _logger.LogWarning("StorageFactory not set, cannot reopen ZIP storage");
+                return;
             }
+
+            var newStorage = StorageFactory(FilePath);
+            FileStorage = newStorage;
+
+            var projectWorkflow = CoreServices.GetService<IProjectWorkflow>();
+            projectWorkflow?.UpdateStorageForProject(FilePath, newStorage);
         }
     }
 }

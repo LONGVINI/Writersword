@@ -11,6 +11,8 @@ using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.ViewModels;
 
+using Writersword.Infrastructure.Services.Tabs;
+
 namespace Writersword.ViewModels.Components
 {
     /// <summary>
@@ -23,14 +25,16 @@ namespace Writersword.ViewModels.Components
         private readonly ITabCollection _tabCollection;
         private readonly IProjectWorkflow _projectWorkflow;
 
+        private TabCollection ConcreteCollection => (_tabCollection as TabCollection)!;
+
         /// <summary>Список открытых вкладок (из TabCollection)</summary>
-        public ObservableCollection<DocumentTabViewModel> Tabs => _tabCollection.Tabs;
+        public ObservableCollection<DocumentTabViewModel> Tabs => ConcreteCollection.Tabs;
 
         /// <summary>Активная вкладка</summary>
         public DocumentTabViewModel? ActiveTab
         {
-            get => _tabCollection.ActiveTab;
-            set => _tabCollection.ActiveTab = value;
+            get => ConcreteCollection.ActiveTab;
+            set => ConcreteCollection.ActiveTab = value;
         }
 
         /// <summary>Есть ли RecoveryBanner у активной вкладки</summary>
@@ -59,9 +63,9 @@ namespace Writersword.ViewModels.Components
 
             CloseTabCommand = ReactiveCommand.CreateFromTask<DocumentTabViewModel>(CloseTabAsync);
 
-            _tabCollection.ActiveTabChanged += OnActiveTabChanged;
+            ConcreteCollection.ActiveTabChanged += OnActiveTabChanged;
 
-            _tabCollection.ActiveTabChanged += (_, __) =>
+            ConcreteCollection.ActiveTabChanged += (_, __) =>
             {
                 this.RaisePropertyChanged(nameof(HasRecoveryBanner));
             };
@@ -150,7 +154,7 @@ namespace Writersword.ViewModels.Components
             _tabCollection.Remove(tab);
             _logger.LogDebug("Tab removed from collection");
 
-            if (_tabCollection.Tabs.Count == 0)
+            if (Tabs.Count == 0)
             {
                 _logger.LogDebug("No tabs left - clearing UI and showing Welcome");
 

@@ -2,7 +2,7 @@
 using SkiaSharp;
 using Writersword.Core.Interfaces.Print;
 using Writersword.Core.Models.Print;
-using Writersword.Infrastructure.Rendering;
+using Writersword.Modules.TextEditor.Rendering;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Page;
 

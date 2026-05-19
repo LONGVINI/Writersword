@@ -8,13 +8,14 @@ using System.Reactive;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
+using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Interfaces.WorkFlows;
+using Writersword.Core.Interfaces.Workspace;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Services;
-using Writersword.Modules.Common;
-using Writersword.Core.Interfaces.Services.Storage;
-using Writersword.Core.Interfaces.Workspace;
 using Writersword.Infrastructure.Dock;
 using Writersword.Infrastructure.Workspace;
+using Writersword.Modules.Common;
 
 namespace Writersword.ViewModels
 {
@@ -22,7 +23,7 @@ namespace Writersword.ViewModels
     /// ViewModel для одной вкладки документа
     /// Каждая вкладка имеет свой изолированный WorkspaceController и ProjectModuleContext
     /// </summary>
-    public class DocumentTabViewModel : ViewModelBase
+    public class DocumentTabViewModel : ViewModelBase, IDocumentTab
     {
         private readonly ILogger<DocumentTabViewModel> _logger;
         private readonly ProjectFile _project;

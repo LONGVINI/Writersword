@@ -8,7 +8,6 @@ using Writersword.Modules.Common;
 using Writersword.Modules.Synonyms.ViewModels;
 using Writersword.Core.Services;
 using Writersword.Modules.Synonyms.Resources;
-using Writersword.ViewModels;
 
 namespace Writersword.Modules.Synonyms
 {
@@ -19,7 +18,7 @@ namespace Writersword.Modules.Synonyms
 
         public SynonymsModule() : base()
         {
-            _logger = App.Services.GetService<ILogger<SynonymsModule>>()!;
+            _logger = CoreServices.GetService<ILogger<SynonymsModule>>()!;
         }
 
         public override string moduleType => "Synonyms";

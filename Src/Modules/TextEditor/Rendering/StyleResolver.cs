@@ -3,7 +3,7 @@ using Writersword.Modules.TextEditor.Models.Styles;
 
 using RenderAlignment = Writersword.Core.Models.Rendering.TextAlignment;
 
-namespace Writersword.Infrastructure.Rendering
+namespace Writersword.Modules.TextEditor.Rendering
 {
     /// <summary>
     /// Резолвер стилей документа.

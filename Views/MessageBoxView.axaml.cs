@@ -9,36 +9,6 @@ using Writersword.Resources.Localization;
 
 namespace Writersword.Views
 {
-    public enum MessageBoxType
-    {
-        Info,
-        Warning,
-        Error,
-        Question,
-        Recovery
-    }
-
-    public enum MessageBoxButtons
-    {
-        OK,
-        OKCancel,
-        YesNo,
-        YesNoCancel,
-        Recovery
-    }
-
-    public enum MessageBoxResult
-    {
-        None,
-        OK,
-        Cancel,
-        Yes,
-        No,
-        Restore,
-        OpenSaved,
-        Compare
-    }
-
     /// <summary>
     /// Диалоговое окно MessageBox
     /// Поддерживает различные типы сообщений и наборы кнопок

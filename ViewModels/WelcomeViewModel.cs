@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
+using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Interfaces.WorkFlows;

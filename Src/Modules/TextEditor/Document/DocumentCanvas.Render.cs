@@ -8,7 +8,7 @@ using SkiaSharp;
 using System;
 using System.Collections.Generic;
 using Writersword.Core.Models.Rendering;
-using Writersword.Infrastructure.Rendering;
+using Writersword.Modules.TextEditor.Rendering;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.ViewModels;
 

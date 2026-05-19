@@ -489,7 +489,7 @@ namespace Writersword.ViewModels.Settings
             });
 
             var tabCollection = App.Services.GetRequiredService<ITabCollection>();
-            var activeTab = tabCollection.ActiveTab;
+            var activeTab = tabCollection.ActiveTab as DocumentTabViewModel;
             var hasActiveProject = activeTab?.Context?.FileStorage != null;
 
             var configurableModules = _moduleFactory.GetConfigurableModules();

@@ -15,7 +15,7 @@
 		<Company>Writersword Team</Company>
 		<Copyright>Copyright © 2025</Copyright>
 		<Description>Multi-modal writing application for writers, poets, screenwriters, and game developers</Description>
-		<ApplicationIcon>Resources\Images\icon.ico</ApplicationIcon>
+		<ApplicationIcon>Resources\\Images\\icon.ico</ApplicationIcon>
 
 		<!-- Отключаем скомпилированные привязки по умолчанию
 		КРАЙНЕ ОПАСНО! ЭТО РЕФЛЕКСИВНЫЕ БИНДИНГИ ПРИ КАЖДОМ ОБНОВЛЕНИИ UI И ЯВЛЯЕТСЯ НЕ ОЧЕНЬ ХОРОШИМ РЕШЕНИЕМ!!!
@@ -40,14 +40,14 @@
        ======================================== -->
 	<ItemGroup>
 		<PackageReference Include="AnimatedImage.Avalonia" Version="2.1.4" />
-		<PackageReference Include="Avalonia" Version="12.0.1" />
+		<PackageReference Include="Avalonia" Version="12.0.3" />
 		<PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
-		<PackageReference Include="Avalonia.Controls.ColorPicker" Version="12.0.1" />
+		<PackageReference Include="Avalonia.Controls.ColorPicker" Version="12.0.3" />
 		<PackageReference Include="Avalonia.Controls.ItemsRepeater" Version="12.0.0" />
-		<PackageReference Include="Avalonia.Desktop" Version="12.0.1" />
+		<PackageReference Include="Avalonia.Desktop" Version="12.0.3" />
 		<PackageReference Include="Avalonia.Svg.Skia" Version="11.3.0" />
-		<PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.1" />
-		<PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.1" />
+		<PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.3" />
+		<PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.3" />
 		<PackageReference Include="Dock.Avalonia" Version="12.0.0.2" />
 		<PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="12.0.0.2" />
 		<PackageReference Include="Dock.Model" Version="12.0.0.2" />
@@ -57,6 +57,7 @@
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="11.0.0-preview.3.26207.106" />
 		<PackageReference Include="ProDiagnostics" Version="12.0.0" />
 		<PackageReference Include="ReactiveUI.Avalonia" Version="12.0.1" />
+		<PackageReference Include="System.Reactive" Version="6.1.0" />
 		<PackageReference Include="Serilog" Version="4.3.2-dev-02419" />
 		<PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
 		<PackageReference Include="Serilog.Settings.Configuration" Version="10.0.1-dev-02339" />
@@ -128,11 +129,8 @@
 			<DependentUpon>Strings.resx</DependentUpon>
 		</EmbeddedResource>
 
-		<!-- Базовые resx модулей -->
-		<EmbeddedResource Include="Src\**\Resources\*Strings.resx" />
-
-		<!-- Культурно-специфичные resx модулей -->
-		<EmbeddedResource Include="Src\**\Resources\*Strings.*.resx" />
+		<!-- Локализация типов проектов -->
+		<EmbeddedResource Include="Src\ProjectTypes\**\*.resx" />
 
 		<Compile Update="Resources\Localization\Strings.Designer.cs">
 			<DesignTime>True</DesignTime>
@@ -142,7 +140,69 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       ИСКЛЮЧЕНИЯ
+       ИСКЛЮЧЕНИЯ — ВЫНЕСЕННЫЕ В ОТДЕЛЬНЫЕ ПРОЕКТЫ
+       ======================================== -->
+	<ItemGroup>
+		<!-- Core, Shared, Common — в Writersword.Core.csproj -->
+		<Compile Remove="Src\obj\**\*.cs" />
+		<Compile Remove="Src\Core\**\*.cs" />
+		<Compile Remove="Src\Shared\**\*.cs" />
+		<Compile Remove="Src\Modules\Common\**\*.cs" />
+
+		<!-- Модули — каждый в своём .csproj -->
+		<Compile Remove="Src\Modules\Characters\**\*.cs" />
+		<Compile Remove="Src\Modules\TextEditor\**\*.cs" />
+		<Compile Remove="Src\Modules\Notes\**\*.cs" />
+		<Compile Remove="Src\Modules\Synonyms\**\*.cs" />
+		<Compile Remove="Src\Modules\Timer\**\*.cs" />
+		<Compile Remove="Src\Modules\Dialogues\**\*.cs" />
+		<Compile Remove="Src\Modules\Poetry\**\*.cs" />
+		<Compile Remove="Src\Modules\Statistics\**\*.cs" />
+		<Compile Remove="Src\Modules\GameEconomy\**\*.cs" />
+		<Compile Remove="Src\Modules\Music\**\*.cs" />
+		<Compile Remove="Src\Modules\Timeline\**\*.cs" />
+
+		<AvaloniaXaml Remove="Src\Modules\Characters\**\*.axaml" />
+		<AvaloniaXaml Remove="Src\Modules\TextEditor\**\*.axaml" />
+		<AvaloniaXaml Remove="Src\Modules\Notes\**\*.axaml" />
+		<AvaloniaXaml Remove="Src\Modules\Synonyms\**\*.axaml" />
+		<AvaloniaXaml Remove="Src\Modules\Timer\**\*.axaml" />
+		<AvaloniaXaml Remove="Src\Modules\Dialogues\**\*.axaml" />
+		<AvaloniaXaml Remove="Src\Modules\Poetry\**\*.axaml" />
+		<AvaloniaXaml Remove="Src\Modules\Statistics\**\*.axaml" />
+		<AvaloniaXaml Remove="Src\Modules\GameEconomy\**\*.axaml" />
+		<AvaloniaXaml Remove="Src\Modules\Music\**\*.axaml" />
+		<AvaloniaXaml Remove="Src\Modules\Timeline\**\*.axaml" />
+
+		<EmbeddedResource Remove="Src\Modules\Characters\Resources\*.resx" />
+		<EmbeddedResource Remove="Src\Modules\TextEditor\Resources\*.resx" />
+		<EmbeddedResource Remove="Src\Modules\Notes\Resources\*.resx" />
+		<EmbeddedResource Remove="Src\Modules\Synonyms\Resources\*.resx" />
+		<EmbeddedResource Remove="Src\Modules\Timer\Resources\*.resx" />
+		<EmbeddedResource Remove="Src\Modules\Dialogues\Resources\*.resx" />
+		<EmbeddedResource Remove="Src\Modules\Poetry\Resources\*.resx" />
+		<EmbeddedResource Remove="Src\Modules\Statistics\Resources\*.resx" />
+		<EmbeddedResource Remove="Src\Modules\GameEconomy\Resources\*.resx" />
+		<EmbeddedResource Remove="Src\Modules\Music\Resources\*.resx" />
+		<EmbeddedResource Remove="Src\Modules\Timeline\Resources\*.resx" />
+
+		<!-- Файлы вынесенные в Writersword.UI.Shared.csproj -->
+		<Compile Remove="Src\Infrastructure\Behaviours\ClickOutsideBehavior.cs" />
+		<Compile Remove="Src\Infrastructure\Behaviours\FocusOnVisibleBehavior.cs" />
+		<Compile Remove="Src\Infrastructure\Behaviours\TooltipBehavior.cs" />
+		<Compile Remove="Src\Infrastructure\Controls\ItalicCaretTextBox.cs" />
+		<Compile Remove="Styles\UserControls\ColorPickerButton.axaml.cs" />
+		<Compile Remove="Styles\UserControls\RibbonScrollContainer.axaml.cs" />
+		<Compile Remove="Styles\UserControls\TooltipView.axaml.cs" />
+		<AvaloniaXaml Remove="Styles\UserControls\ColorPickerButton.axaml" />
+		<AvaloniaXaml Remove="Styles\UserControls\RibbonScrollContainer.axaml" />
+		<AvaloniaXaml Remove="Styles\UserControls\TooltipView.axaml" />
+		<Compile Remove="Views\Settings\SettingButtons.axaml.cs" />
+		<AvaloniaXaml Remove="Views\Settings\SettingButtons.axaml" />
+	</ItemGroup>
+
+	<!-- ========================================
+       ПРОЧИЕ ИСКЛЮЧЕНИЯ
        ======================================== -->
 	<ItemGroup>
 		<AvaloniaXaml Remove="Docs\AI_GUIDE V2.0\**" />
@@ -187,11 +247,6 @@
 
 	<!-- MenuBar Sections -->
 	<ItemGroup>
-		<Compile Update="Src\Modules\Characters\Resources\CharactersStrings.Designer.cs">
-			<DesignTime>True</DesignTime>
-			<AutoGen>True</AutoGen>
-			<DependentUpon>CharactersStrings.resx</DependentUpon>
-		</Compile>
 		<Compile Update="Views\Components\MenuBar\Sections\MenuBarView.File.axaml.cs">
 			<DependentUpon>MenuBarView.File.axaml</DependentUpon>
 		</Compile>
@@ -215,11 +270,23 @@
 		</Compile>
 	</ItemGroup>
 
+	<!-- ========================================
+       ССЫЛКИ НА ПРОЕКТЫ МОДУЛЕЙ
+       ======================================== -->
 	<ItemGroup>
-		<EmbeddedResource Update="Src\Modules\Characters\Resources\CharactersStrings.resx">
-			<Generator>PublicResXFileCodeGenerator</Generator>
-			<LastGenOutput>CharactersStrings.Designer.cs</LastGenOutput>
-		</EmbeddedResource>
+		<ProjectReference Include="Src\Writersword.Core.csproj" />
+		<ProjectReference Include="Writersword.UI.Shared.csproj" />
+		<ProjectReference Include="Src\Modules\Characters\Writersword.Characters.csproj" />
+		<ProjectReference Include="Src\Modules\TextEditor\Writersword.TextEditor.csproj" />
+		<ProjectReference Include="Src\Modules\Notes\Writersword.Notes.csproj" />
+		<ProjectReference Include="Src\Modules\Synonyms\Writersword.Synonyms.csproj" />
+		<ProjectReference Include="Src\Modules\Timer\Writersword.Timer.csproj" />
+		<ProjectReference Include="Src\Modules\Dialogues\Writersword.Dialogues.csproj" />
+		<ProjectReference Include="Src\Modules\Poetry\Writersword.Poetry.csproj" />
+		<ProjectReference Include="Src\Modules\Statistics\Writersword.Statistics.csproj" />
+		<ProjectReference Include="Src\Modules\GameEconomy\Writersword.GameEconomy.csproj" />
+		<ProjectReference Include="Src\Modules\Music\Writersword.Music.csproj" />
+		<ProjectReference Include="Src\Modules\Timeline\Writersword.Timeline.csproj" />
 	</ItemGroup>
 
 	<ProjectExtensions>

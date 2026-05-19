@@ -18,7 +18,7 @@ using Writersword.Core.Interfaces.Services.Input;
 using Writersword.Core.Models.Print;
 using Writersword.Core.Models.Rendering;
 using System.Text.Json;
-using Writersword.Infrastructure.Rendering;
+using Writersword.Modules.TextEditor.Rendering;
 using Writersword.Modules.Common;
 using Writersword.Modules.TextEditor.Commands;
 using Writersword.Modules.TextEditor.Models.Document;
@@ -390,6 +390,18 @@ namespace Writersword.Modules.TextEditor.Document
             RebuildDpiCache();
             SubscribeToScrollViewer();
             _ = PrefetchClipboardAsync();
+
+            // Если _docVm уже установлен — canvas пережил detach (перемещение модуля).
+            // OnDataContextChanged не сработает (DataContext не изменился), поэтому
+            // вручную восстанавливаем подписки и принудительно перестраиваем layout.
+            if (_docVm is not null)
+                RewireDocVm(_docVm);
+
+            // Viewport в момент прикрепления может быть нулевым — layout ещё не завершён.
+            // Post на Loaded гарантирует пересчёт с реальным размером scroll viewer.
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                InvalidateMeasure,
+                Avalonia.Threading.DispatcherPriority.Loaded);
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -542,25 +554,33 @@ namespace Writersword.Modules.TextEditor.Document
             _cellLayoutCache.Clear();
 
             if (DocVm is not null)
-            {
-                _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
-                _lastZoom = DocVm.Zoom;
-                DocVm.Paragraphs.CollectionChanged += OnParagraphsChanged;
-                DocVm.PropertyChanged += OnDocVmPropertyChanged;
-                DocVm.ParagraphFormatChanged += OnParagraphFormatChanged;
-                DocVm.OnPageBreakInserted = block => _pendingFocusBlock = block;
-                DocVm.UndoDelegate = ExecuteUndo;
-                DocVm.RedoDelegate = ExecuteRedo;
-                DocVm.CutDelegate = ExecuteCut;
-                DocVm.CopyDelegate = ExecuteCopy;
-                DocVm.PasteDelegate = ExecutePaste;
-                DocVm.BeginEditDelegate = BeginEdit;
-                DocVm.CommitEditDelegate = CommitEdit;
-                foreach (var pvm in DocVm.Paragraphs)
-                    WirePvm(pvm);
-            }
+                RewireDocVm(DocVm);
 
             InvalidateMeasure();
+        }
+
+        /// <summary>
+        /// Подписывает canvas на события DocumentViewModel и параграфов.
+        /// Вызывается из OnDataContextChanged и из OnAttachedToVisualTree
+        /// (когда canvas пережил detach с тем же _docVm — перемещение модуля).
+        /// </summary>
+        private void RewireDocVm(DocumentViewModel docVm)
+        {
+            _styleResolver = new StyleResolver(docVm.Document.Styles, _scriptFontMap);
+            _lastZoom = docVm.Zoom;
+            docVm.Paragraphs.CollectionChanged += OnParagraphsChanged;
+            docVm.PropertyChanged += OnDocVmPropertyChanged;
+            docVm.ParagraphFormatChanged += OnParagraphFormatChanged;
+            docVm.OnPageBreakInserted = block => _pendingFocusBlock = block;
+            docVm.UndoDelegate = ExecuteUndo;
+            docVm.RedoDelegate = ExecuteRedo;
+            docVm.CutDelegate = ExecuteCut;
+            docVm.CopyDelegate = ExecuteCopy;
+            docVm.PasteDelegate = ExecutePaste;
+            docVm.BeginEditDelegate = BeginEdit;
+            docVm.CommitEditDelegate = CommitEdit;
+            foreach (var pvm in docVm.Paragraphs)
+                WirePvm(pvm);
         }
 
         private void OnParagraphFormatChanged()

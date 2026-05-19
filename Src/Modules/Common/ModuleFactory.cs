@@ -3,6 +3,7 @@ using Serilog;
 using System;
 using System.Collections.Generic;
 using Writersword.Core.Interfaces.Modules;
+using Writersword.Core.Services;
 using Writersword.Core.Interfaces.Services.Input;
 
 namespace Writersword.Modules.Common
@@ -132,7 +133,7 @@ namespace Writersword.Modules.Common
         /// </summary>
         public void RegisterAllHotKeys()
         {
-            var hotKeyService = App.Services.GetRequiredService<IHotKeyService>();
+            var hotKeyService = CoreServices.GetRequiredService<IHotKeyService>();
             var metadata = GetAllModuleMetadata();
             int total = 0;
 
