@@ -128,13 +128,13 @@ namespace Writersword.Views.Components.MenuBar
             {
                 if (item is not MenuItem mi) continue;
 
-                var layoutRoot = mi.GetTemplateChildren()
+                var layoutRoot = mi.GetTemplateDescendants()
                     .OfType<Border>()
                     .FirstOrDefault(b => b.Name == "PART_LayoutRoot");
 
                 if (layoutRoot?.Child is not Grid grid) continue;
 
-                var gestureText = mi.GetTemplateChildren()
+                var gestureText = mi.GetTemplateDescendants()
                     .OfType<TextBlock>()
                     .FirstOrDefault(t => t.Name == "PART_InputGestureText");
 

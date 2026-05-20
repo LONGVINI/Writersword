@@ -142,8 +142,8 @@ namespace Writersword.ViewModels
 
             _tabCollection.ActiveTabChanged += (newTab, previousTab) =>
             {
-                if (newTab != null)
-                    _ = OnTabActivatedAsync(newTab as DocumentTabViewModel, previousTab as DocumentTabViewModel);
+                if (newTab is DocumentTabViewModel tab)
+                    _ = OnTabActivatedAsync(tab, previousTab as DocumentTabViewModel);
 
                 MenuBar.UpdateHasActiveTab();
             };

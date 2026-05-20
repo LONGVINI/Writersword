@@ -79,6 +79,12 @@ namespace Writersword.Core.Interfaces.Modules
         Control? CreateView();
 
         /// <summary>
+        /// Возвращает View с кешированием и починкой VisualParent.
+        /// Используется DockFactory вместо CreateView() при пересоздании views.
+        /// </summary>
+        Control? GetOrCreateView();
+
+        /// <summary>
         /// Принудительно обновить состояние модуля из контекста
         /// Используется при выходе из CompareMode
         /// </summary>

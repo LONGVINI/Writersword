@@ -1,4 +1,6 @@
 ﻿using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
+using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
@@ -21,6 +23,7 @@ namespace Writersword.Modules.Common
     public abstract class BaseModule : IModule
     {
         private DocumentContext? _context;
+        private Control? _cachedView;
 
         /// <summary>
         /// Идентификатор типа модуля (строка).
@@ -150,6 +153,7 @@ namespace Writersword.Modules.Common
                 var hotKeyService = CoreServices.GetService<IHotKeyService>();
                 hotKeyService?.UnbindExecutor(moduleType);
             }
+            _cachedView = null;
         }
 
 
@@ -165,6 +169,29 @@ namespace Writersword.Modules.Common
                 ?? AppContext.BaseDirectory;
         }
 
+
+        /// <summary>
+        /// Возвращает View модуля с кешированием.
+        /// При повторном вызове возвращает существующий инстанс, предварительно
+        /// отсоединяя его от устаревшего VisualParent (Dock 12 не обновляет
+        /// VisualParent при перемещении между ContentPresenter-ами, поэтому
+        /// новый ContentPresenter не может принять контрол без явного detach).
+        /// </summary>
+        public Control? GetOrCreateView()
+        {
+            if (_cachedView == null)
+            {
+                _cachedView = CreateView();
+                return _cachedView;
+            }
+
+            // Отсоединяем от устаревшего ContentPresenter перед передачей новому.
+            var oldParent = _cachedView.GetVisualParent();
+            if (oldParent is ContentPresenter cp)
+                cp.Content = null;
+
+            return _cachedView;
+        }
 
         /// <summary>Создать View для модуля</summary>
         public abstract Control? CreateView();

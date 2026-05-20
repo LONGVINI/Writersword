@@ -173,7 +173,7 @@ namespace Writersword.Infrastructure.Dock
                 var module = tab.ModuleContext.GetModule(moduleType);
                 if (module != null)
                 {
-                    var newView = module.CreateView();
+                    var newView = module.GetOrCreateView();
                     if (newView != null)
                     {
                         doc.Content = null;
@@ -439,7 +439,7 @@ namespace Writersword.Infrastructure.Dock
 
                 var project = tab.GetProject();
                 var cacheService = App.Services.GetRequiredService<IZipCacheService>();
-                var cacheResult = cacheService.LoadCacheWithSession(tab.FilePath, project.Id);
+                var cacheResult = cacheService.LoadCacheWithSession(tab.FilePath!, project.Id);
 
                 object? customDataToRestore = null;
                 object? sessionDataToRestore = null;
@@ -482,7 +482,7 @@ namespace Writersword.Infrastructure.Dock
                     _logger.LogDebug("Restored session data for: {moduleType}", moduleType);
                 }
 
-                var moduleView = module.CreateView();
+                var moduleView = module.GetOrCreateView();
                 if (moduleView != null)
                 {
                     document.Content = moduleView;
@@ -810,7 +810,7 @@ namespace Writersword.Infrastructure.Dock
 
             var project = tab.GetProject();
             var cacheService = App.Services.GetRequiredService<IZipCacheService>();
-            var cacheResult = cacheService.LoadCacheWithSession(tab.FilePath, project.Id);
+            var cacheResult = cacheService.LoadCacheWithSession(tab.FilePath!, project.Id);
 
             object? customDataToRestore = null;
             object? sessionDataToRestore = null;
@@ -855,7 +855,7 @@ namespace Writersword.Infrastructure.Dock
                 _logger.LogDebug("Restored session data for: {ModuleType}", slot.ModuleType);
             }
 
-            var moduleView = module.CreateView();
+            var moduleView = module.GetOrCreateView();
             if (moduleView == null)
             {
                 _logger.LogWarning("No View: {ModuleType}", slot.ModuleType);

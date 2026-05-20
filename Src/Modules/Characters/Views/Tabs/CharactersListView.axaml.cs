@@ -12,6 +12,8 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Avalonia.Layout;
+using ReactiveUI;
 
 namespace Writersword.Modules.Characters.Views.Tabs
 {
@@ -26,7 +28,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
         private Dictionary<string, Border> _cardBorderCache = new();
         private Dictionary<string, Control> _folderHeaderCache = new();
-        private Dictionary<string, ItemsControl> _folderItemsCtrlCache = new();
+        private Dictionary<string, Control> _folderItemsCtrlCache = new();
+        private IDisposable? _cardsPerRowSubscription;
 
         private int _dragTargetIndex;
         private string? _dragTargetFolderId;
@@ -87,6 +90,12 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 foreach (var folder in vmAvatar.Folders)
                     foreach (var item in folder.Characters)
                         BindAvatarPicker(item);
+
+                // Устанавливаем MaximumRowsOrColumns для ItemsRepeater и подписываемся на изменения.
+                _cardsPerRowSubscription?.Dispose();
+                _cardsPerRowSubscription = vmAvatar
+                    .WhenAnyValue(x => x.CardsPerRow)
+                    .Subscribe(UpdateGridLayouts);
             }
 
             var foldersContainer = this.FindControl<ItemsControl>("FoldersContainer");
@@ -119,6 +128,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
             base.OnDataContextChanged(e);
             _containerBoundsSubscription?.Dispose();
             _containerBoundsSubscription = null;
+            _cardsPerRowSubscription?.Dispose();
+            _cardsPerRowSubscription = null;
         }
 
         protected override void OnUnloaded(RoutedEventArgs e)
@@ -126,6 +137,17 @@ namespace Writersword.Modules.Characters.Views.Tabs
             base.OnUnloaded(e);
             _containerBoundsSubscription?.Dispose();
             _containerBoundsSubscription = null;
+            _cardsPerRowSubscription?.Dispose();
+            _cardsPerRowSubscription = null;
+        }
+
+        private void UpdateGridLayouts(int cols)
+        {
+            foreach (var repeater in this.GetVisualDescendants().OfType<ItemsRepeater>())
+            {
+                if (repeater.Layout is UniformGridLayout layout)
+                    layout.MaximumRowsOrColumns = cols;
+            }
         }
 
         public void FocusSearch()
@@ -498,9 +520,9 @@ namespace Writersword.Modules.Characters.Views.Tabs
                             _folderHeaderCache[fvSp.FolderId] = sp;
                         break;
 
-                    case ItemsControl ic when ic.DataContext is CharacterFolderViewModel fvIc:
-                        if (!_folderItemsCtrlCache.ContainsKey(fvIc.FolderId))
-                            _folderItemsCtrlCache[fvIc.FolderId] = ic;
+                    case ItemsRepeater ir when ir.DataContext is CharacterFolderViewModel fvIr:
+                        if (!_folderItemsCtrlCache.ContainsKey(fvIr.FolderId))
+                            _folderItemsCtrlCache[fvIr.FolderId] = ir;
                         break;
 
                     case Border border
@@ -518,7 +540,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
             var parent = border.GetVisualParent();
             while (parent is not null)
             {
-                if (parent is UniformGrid || parent is WrapPanel)
+                if (parent is ItemsRepeater || parent is WrapPanel)
                     return true;
                 if (parent is Border pb && pb.DataContext == border.DataContext)
                     return false;

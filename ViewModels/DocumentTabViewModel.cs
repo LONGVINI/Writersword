@@ -29,7 +29,7 @@ namespace Writersword.ViewModels
         private readonly ProjectFile _project;
         private readonly Func<DocumentTabViewModel, Task>? _onClose;
         private bool _isActive;
-        private string _filePath = "";
+        private string? _filePath = "";
         private RecoveryBannerViewModel? _recoveryBanner;
 
         /// <summary>Загружен ли проект полностью (workspace инициализирован)</summary>
@@ -98,8 +98,7 @@ namespace Writersword.ViewModels
             }
         }
 
-        /// <summary>Путь к файлу проекта</summary>
-        public string FilePath
+        public string? FilePath
         {
             get => _filePath;
             set
@@ -219,7 +218,7 @@ namespace Writersword.ViewModels
                 if (customData.Count == 0)
                     return;
 
-                var savedProject = await projectService.LoadAsync(FilePath);
+                var savedProject = await projectService.LoadAsync(FilePath!);
 
                 if (savedProject != null)
                 {
@@ -249,7 +248,7 @@ namespace Writersword.ViewModels
 
                     if (dataChanged)
                     {
-                        await cacheService.SaveCacheAsync(FilePath, _project.Id, customData, sessionData);
+                        await cacheService.SaveCacheAsync(FilePath!, _project.Id, customData, sessionData);
                         _logger.LogDebug("Cache saved (differs from ZIP)");
                     }
                     else
