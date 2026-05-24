@@ -25,6 +25,12 @@ namespace Writersword.Modules.TextEditor.Document
 
         internal void RenderWithSKCanvas(SKCanvas canvas)
         {
+            if (_isTransitioning) return;
+
+            // Дренируем очередь битмапов ожидающих удаления.
+            while (_bitmapDisposeQueue.TryDequeue(out var stale))
+                stale?.Dispose();
+
             List<ParaLayout> layouts;
             List<PageRect> pages;
             List<TableEntry> tables;
@@ -44,23 +50,60 @@ namespace Writersword.Modules.TextEditor.Document
             float scale = (float)(PtToPx * zoom);
 
             int pixelW = (int)Math.Max(Bounds.Width, 1);
-            int pixelH = (int)Math.Max(Bounds.Height, 1);
+
+            // Рендерим только видимый viewport а не весь документ.
+            // _viewportHeight обновляется в OnScrollViewerPropertyChanged.
+            // Без ScrollViewer — fallback на Bounds.Height.
+            float viewportPx = _viewportHeight > 0 ? (float)_viewportHeight : (float)Bounds.Height;
+
+            // Overscan: рендерим ±viewport выше и ниже видимой области.
+            // Когда compositor показывает стale-кадр во время скролла, старый битмап
+            // уже покрывает новую позицию → нет чёрных полос.
+            float scrollY = (float)_scrollOffsetY;
+            float overlapPx = viewportPx;
+            float docHeightPx = (float)Bounds.Height;
+
+            // bitmapTopY — верхняя граница рендерируемой области в пикселях документа.
+            float bitmapTopY = Math.Max(scrollY - overlapPx, 0f);
+            // Нижняя граница не выходит за документ.
+            float bitmapBotY = Math.Min(bitmapTopY + viewportPx + overlapPx * 2f, docHeightPx);
+            // Если у нижней границы документа не хватает места снизу — сдвигаем верх вниз.
+            bitmapTopY = Math.Max(bitmapBotY - viewportPx - overlapPx * 2f, 0f);
+
+            int pixelH = (int)Math.Max(bitmapBotY - bitmapTopY, 1);
+            float bitmapTopYInPts = scale > 0f ? bitmapTopY / scale : 0f;
+
+            // scrollYInPts нужен только для DrawCaret (рисуется в координатах документа).
+            float scrollYInPts = scale > 0f ? scrollY / scale : 0f;
 
             if (_caretOnlyRedraw)
             {
                 SKBitmap? cached;
                 int cachedW, cachedH;
+                float cachedScrollY;
                 lock (_bitmapLock)
                 {
                     cached = _lastFullRenderBitmap;
                     cachedW = _lastFullRenderWidth;
                     cachedH = _lastFullRenderHeight;
+                    cachedScrollY = _lastFullRenderScrollY;
                 }
 
-                if (cached is not null && cachedW == pixelW && cachedH == pixelH)
+                // Кеш валиден если scroll находится внутри overscan-диапазона битмапа.
+                // cachedScrollY хранит bitmapTopY — верхний край последнего рендера.
+                // Если пользователь проскроллил так что viewport ещё внутри битмапа —
+                // можно переиспользовать битмап без перерисовки.
+                bool scrollInRange = cached is not null
+                    && cachedW == pixelW
+                    && scrollY >= cachedScrollY - 0.5f
+                    && scrollY + viewportPx <= cachedScrollY + cachedH + 0.5f;
+
+                if (scrollInRange)
                 {
                     _caretOnlyRedraw = false;
-                    canvas.DrawBitmap(cached, 0, 0);
+
+                    // Битмап рисуем по его реальному bitmapTopY (не scrollY).
+                    canvas.DrawBitmap(cached!, 0, cachedScrollY);
 
                     if (_caretVisible)
                     {
@@ -71,22 +114,43 @@ namespace Writersword.Modules.TextEditor.Document
                     }
                     return;
                 }
+                _caretOnlyRedraw = false;
             }
 
             _caretOnlyRedraw = false;
 
-            // Освобождаем накопившиеся старые bitmaps — теперь рендер-тред точно их не использует.
             while (_bitmapDisposeQueue.TryDequeue(out var stale))
-                stale.Dispose();
+                stale?.Dispose();
 
-            using var surface = SKSurface.Create(
-                new SKImageInfo(pixelW, pixelH, SKColorType.Bgra8888, SKAlphaType.Premul));
-
-            if (surface is not null)
+            // Получаем или создаём render-bitmap нужного размера.
+            // Если размер не изменился — переиспользуем существующий (0 аллокаций).
+            // Если изменился — создаём новый и откладываем старый в очередь.
+            SKBitmap? renderTarget;
+            lock (_bitmapLock)
             {
-                var offscreen = surface.Canvas;
+                if (_renderBitmap is null || _renderBitmap.Width != pixelW || _renderBitmap.Height != pixelH)
+                {
+                    if (_renderBitmap is not null) _bitmapDisposeQueue.Enqueue(_renderBitmap);
+                    if (_displayBitmap is not null) _bitmapDisposeQueue.Enqueue(_displayBitmap);
+                    _renderBitmap = new SKBitmap(pixelW, pixelH, SKColorType.Bgra8888, SKAlphaType.Premul);
+                    _displayBitmap = new SKBitmap(pixelW, pixelH, SKColorType.Bgra8888, SKAlphaType.Premul);
+                    _bitmapW = pixelW;
+                    _bitmapH = pixelH;
+                }
+                renderTarget = _renderBitmap;
+            }
+
+            if (renderTarget is not null)
+            {
+                // Рисуем прямо в SKBitmap — без SKSurface.Create и SKBitmap.FromImage.
+                // SKCanvas(bitmap) использует уже выделенную память битмапа.
+                using var offscreen = new SKCanvas(renderTarget);
+                offscreen.Clear(SKColors.Transparent);
                 offscreen.Save();
                 offscreen.Scale(scale, scale);
+                // Трансляция -bitmapTopYInPts сдвигает координаты документа
+                // так что область [bitmapTopY, bitmapTopY+pixelH] ложится в битмап.
+                offscreen.Translate(0f, -bitmapTopYInPts);
 
                 var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
                 if (mode == EditorViewMode.Page)
@@ -96,23 +160,19 @@ namespace Writersword.Modules.TextEditor.Document
 
                 offscreen.Restore();
 
-                using var snapshot = surface.Snapshot();
-                var newBitmap = SKBitmap.FromImage(snapshot);
-
-                SKBitmap? oldBitmap;
+                // Атомарно свапаем render и display буферы.
+                SKBitmap? toDisplay;
                 lock (_bitmapLock)
                 {
-                    oldBitmap = _lastFullRenderBitmap;
-                    _lastFullRenderBitmap = newBitmap;
-                    _lastFullRenderWidth = pixelW;
-                    _lastFullRenderHeight = pixelH;
+                    (_renderBitmap, _displayBitmap) = (_displayBitmap, _renderBitmap);
+                    // Сохраняем bitmapTopY — верхний край отрисованного битмапа.
+                    // Используется в cache check: scroll внутри [bitmapTopY, bitmapTopY+H]?
+                    _lastFullRenderScrollY = bitmapTopY;
+                    toDisplay = _displayBitmap;
                 }
-                // Не диспозим oldBitmap сразу — другой рендер-кадр может ещё его рисовать.
-                // Добавляем в очередь, освободится в начале следующего кадра.
-                if (oldBitmap is not null)
-                    _bitmapDisposeQueue.Enqueue(oldBitmap);
 
-                canvas.DrawBitmap(newBitmap, 0, 0);
+                if (toDisplay is not null)
+                    canvas.DrawBitmap(toDisplay, 0, bitmapTopY);
 
                 if (_caretVisible)
                 {
@@ -124,6 +184,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
             else
             {
+                // Fallback: рендерим напрямую в lease canvas (весь документ).
                 canvas.Save();
                 canvas.Scale(scale, scale);
                 var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
@@ -136,7 +197,7 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         // Рисует только рамки и фон таблицы (без параграфов — они в _layouts).
-        private static void RenderTableStructureOnly(
+        private void RenderTableStructureOnly(
             SKCanvas canvas, SKTableLayout tableLayout, float tableX, float tableY,
             int rowFrom = 0, int rowTo = -1,
             float lastRowVisibleHeightPt = -1f, float firstRowContentOffsetPt = 0f,
@@ -188,8 +249,9 @@ namespace Writersword.Modules.TextEditor.Document
                     if (!string.IsNullOrEmpty(cell.BackgroundColor)
                         && SKColor.TryParse(cell.BackgroundColor, out var bgColor))
                     {
-                        using var bgPaint = new SKPaint { Color = bgColor };
-                        canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, visibleH, bgPaint);
+                        // Мутируем Color кешированного паинта — безопасно на compositor-треде.
+                        _paintCellBg.Color = bgColor;
+                        canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, visibleH, _paintCellBg);
                     }
 
                     float visibleCellY = cellY + rowShift;
@@ -207,8 +269,6 @@ namespace Writersword.Modules.TextEditor.Document
             int maxRow = Math.Max(startRow, endRow);
             int minCol = Math.Min(startCol, endCol);
             int maxCol = Math.Max(startCol, endCol);
-
-            using var paint = new SKPaint { Color = SelectionColor };
 
             foreach (var te in tables)
             {
@@ -247,7 +307,7 @@ namespace Writersword.Modules.TextEditor.Document
                         if (cell.Column < minCol || cell.Column > maxCol) continue;
                         float cellX = te.XPt + cell.Xpt;
                         float cellY = te.Ypt + cell.Ypt - rowOffsetY - rowShift - extraShift;
-                        canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, visibleH, paint);
+                        canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, visibleH, _paintSelection);
                     }
                 }
             }
@@ -292,8 +352,6 @@ namespace Writersword.Modules.TextEditor.Document
             const float HW = 6f;
             const float HH = 4f;
 
-            using var fill = new SKPaint { Color = HandleFill, IsAntialias = true };
-            using var stroke = new SKPaint { Color = HandleStroke, StrokeWidth = 1f, IsStroke = true, IsAntialias = true };
 
             // ↔ на каждой внутренней и внешней правой границе колонки (по центру Y слайса)
             float midY = tableY + sliceH / 2f;
@@ -301,18 +359,18 @@ namespace Writersword.Modules.TextEditor.Document
             for (int i = 0; i < layout.ColumnWidthsPt.Count; i++)
             {
                 accX += layout.ColumnWidthsPt[i];
-                DrawHandle(canvas, accX, midY, HW, HH, fill, stroke, horizontal: true);
+                DrawHandle(canvas, accX, midY, HW, HH, _paintHandleFill, _paintHandleStroke, horizontal: true);
             }
 
             // ↕ на нижнем краю слайса по центру ширины
             float midX = tableX + tableW / 2f;
-            DrawHandle(canvas, midX, tableY + sliceH, HH, HW, fill, stroke, horizontal: false);
+            DrawHandle(canvas, midX, tableY + sliceH, HH, HW, _paintHandleFill, _paintHandleStroke, horizontal: false);
 
             // ↔ на левом крае (для сдвига всей таблицы)
-            DrawHandle(canvas, tableX, midY, HW, HH, fill, stroke, horizontal: true);
+            DrawHandle(canvas, tableX, midY, HW, HH, _paintHandleFill, _paintHandleStroke, horizontal: true);
         }
 
-        private static void DrawHandle(SKCanvas canvas,
+        private void DrawHandle(SKCanvas canvas,
             float cx, float cy, float hw, float hh,
             SKPaint fill, SKPaint stroke, bool horizontal)
         {
@@ -321,29 +379,27 @@ namespace Writersword.Modules.TextEditor.Document
             canvas.DrawRoundRect(rect, 2f, 2f, stroke);
 
             // Стрелочки внутри
-            using var arrow = new SKPaint
-            { Color = SKColors.White, StrokeWidth = 1f, IsStroke = true, IsAntialias = true };
             if (horizontal)
             {
                 // ←
-                canvas.DrawLine(cx - hw + 1.5f, cy, cx - 1f, cy, arrow);
-                canvas.DrawLine(cx - hw + 1.5f, cy, cx - hw + 3.5f, cy - 2f, arrow);
-                canvas.DrawLine(cx - hw + 1.5f, cy, cx - hw + 3.5f, cy + 2f, arrow);
+                canvas.DrawLine(cx - hw + 1.5f, cy, cx - 1f, cy, _paintHandleArrow);
+                canvas.DrawLine(cx - hw + 1.5f, cy, cx - hw + 3.5f, cy - 2f, _paintHandleArrow);
+                canvas.DrawLine(cx - hw + 1.5f, cy, cx - hw + 3.5f, cy + 2f, _paintHandleArrow);
                 // →
-                canvas.DrawLine(cx + hw - 1.5f, cy, cx + 1f, cy, arrow);
-                canvas.DrawLine(cx + hw - 1.5f, cy, cx + hw - 3.5f, cy - 2f, arrow);
-                canvas.DrawLine(cx + hw - 1.5f, cy, cx + hw - 3.5f, cy + 2f, arrow);
+                canvas.DrawLine(cx + hw - 1.5f, cy, cx + 1f, cy, _paintHandleArrow);
+                canvas.DrawLine(cx + hw - 1.5f, cy, cx + hw - 3.5f, cy - 2f, _paintHandleArrow);
+                canvas.DrawLine(cx + hw - 1.5f, cy, cx + hw - 3.5f, cy + 2f, _paintHandleArrow);
             }
             else
             {
                 // ↑
-                canvas.DrawLine(cx, cy - hh + 1.5f, cx, cy - 1f, arrow);
-                canvas.DrawLine(cx, cy - hh + 1.5f, cx - 2f, cy - hh + 3.5f, arrow);
-                canvas.DrawLine(cx, cy - hh + 1.5f, cx + 2f, cy - hh + 3.5f, arrow);
+                canvas.DrawLine(cx, cy - hh + 1.5f, cx, cy - 1f, _paintHandleArrow);
+                canvas.DrawLine(cx, cy - hh + 1.5f, cx - 2f, cy - hh + 3.5f, _paintHandleArrow);
+                canvas.DrawLine(cx, cy - hh + 1.5f, cx + 2f, cy - hh + 3.5f, _paintHandleArrow);
                 // ↓
-                canvas.DrawLine(cx, cy + hh - 1.5f, cx, cy + 1f, arrow);
-                canvas.DrawLine(cx, cy + hh - 1.5f, cx - 2f, cy + hh - 3.5f, arrow);
-                canvas.DrawLine(cx, cy + hh - 1.5f, cx + 2f, cy + hh - 3.5f, arrow);
+                canvas.DrawLine(cx, cy + hh - 1.5f, cx, cy + 1f, _paintHandleArrow);
+                canvas.DrawLine(cx, cy + hh - 1.5f, cx - 2f, cy + hh - 3.5f, _paintHandleArrow);
+                canvas.DrawLine(cx, cy + hh - 1.5f, cx + 2f, cy + hh - 3.5f, _paintHandleArrow);
             }
         }
 
@@ -358,18 +414,15 @@ namespace Writersword.Modules.TextEditor.Document
         {
             float canvasWPt = (float)(canvasWidth * PxToPt);
 
-            using var bgPaint = new SKPaint { Color = CanvasBgColor };
-            canvas.DrawRect(0, 0, canvasWPt, canvasHeightPt, bgPaint);
+            canvas.DrawRect(0, 0, canvasWPt, canvasHeightPt, _paintCanvasBg);
 
             var (firstPage, lastPage) = GetVisiblePageRange(pages);
 
             for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
             {
                 var page = pages[pi];
-                using var sh = new SKPaint { Color = PageShadowColor };
-                canvas.DrawRect(page.PadLeftPt + 3, page.Ypt + 3, page.WidthPt, page.HeightPt, sh);
-                using var pg = new SKPaint { Color = SKColors.White };
-                canvas.DrawRect(page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt, pg);
+                canvas.DrawRect(page.PadLeftPt + 3, page.Ypt + 3, page.WidthPt, page.HeightPt, _paintPageShadow);
+                canvas.DrawRect(page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt, _paintPageWhite);
             }
 
             // Рисуем рамки таблиц (без содержимого) — клипуем по правому краю страницы
@@ -445,8 +498,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             float canvasWPt = (float)(canvasWidth * PxToPt);
 
-            using var bgPaint = new SKPaint { Color = SKColors.Transparent };
-            canvas.DrawRect(0, 0, canvasWPt, canvasHeightPt, bgPaint);
+            canvas.DrawRect(0, 0, canvasWPt, canvasHeightPt, _paintTransparent);
 
             float zoom2 = (float)Zoom;
             float viewTopPt = (float)(_scrollOffsetY / zoom2 * PxToPt) - FallbackLinePt * 5f;
@@ -592,22 +644,20 @@ namespace Writersword.Modules.TextEditor.Document
             if (from == to && len == 0)
             {
                 float lineH = pl.Layout.Lines.Count > 0 ? pl.Layout.Lines[0].Height : FallbackLinePt;
-                using var ep2 = new SKPaint { Color = SelectionColor };
-                canvas.DrawRect(xPt, yPt, 5f, lineH, ep2);
+                canvas.DrawRect(xPt, yPt, 5f, lineH, _paintSelection);
                 return;
             }
 
             var rects = pl.Layout.HitTestRange(from, to);
             if (rects.Count == 0) return;
 
-            using var paint = new SKPaint { Color = SelectionColor };
             foreach (var r in rects)
             {
                 if (r.LineIndex < pl.LineFrom || r.LineIndex >= pl.LineTo) continue;
                 canvas.DrawRect(
                     xPt + r.Rect.Left,
                     yPt + r.Rect.Top,
-                    r.Rect.Width, r.Rect.Height, paint);
+                    r.Rect.Width, r.Rect.Height, _paintSelection);
             }
         }
 
@@ -616,8 +666,7 @@ namespace Writersword.Modules.TextEditor.Document
             // Якорный параграф (пустой текст) — рисуем каретку напрямую в его позиции.
             if (string.IsNullOrEmpty(pl.Vm.PlainText))
             {
-                using var ap = new SKPaint { Color = SKColors.Black, StrokeWidth = 1.1f, IsAntialias = false };
-                canvas.DrawLine(xPt, yPt, xPt, yPt + FallbackLinePt, ap);
+                canvas.DrawLine(xPt, yPt, xPt, yPt + FallbackLinePt, _paintCaret);
                 return;
             }
 
@@ -664,10 +713,9 @@ namespace Writersword.Modules.TextEditor.Document
             float yBase = pl.LineFrom < pl.Layout.Lines.Count
                 ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
 
-            using var paint = new SKPaint { Color = SKColors.Black, StrokeWidth = 1.1f, IsAntialias = false };
             float cx = xPt + caret.X;
             float cy = yPt + (caret.Y - yBase);
-            canvas.DrawLine(cx, cy, cx, cy + caret.Height, paint);
+            canvas.DrawLine(cx, cy, cx, cy + caret.Height, _paintCaret);
         }
 
     }

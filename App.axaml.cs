@@ -137,67 +137,84 @@ namespace Writersword
             services.AddSingleton<IProjectWorkflow, ProjectWorkflow>();
 
             Services = services.BuildServiceProvider();
-            Core.Services.CoreServices.SetProvider(Services);
 
-            // Принудительно загружаем все Writersword.*.dll из папки приложения.
-            // Referenced сборки без прямого обращения к их типам не попадают в AppDomain
-            // до первого использования — при переходе на микросервисы модули живут
-            // в отдельных dll и GetExecutingAssembly() их не видит.
-            var appDir = AppContext.BaseDirectory;
-            foreach (var dll in Directory.GetFiles(appDir, "Writersword.*.dll"))
-            {
-                try { Assembly.LoadFrom(dll); }
-                catch (Exception ex)
-                {
-                    Log.ForContext<App>().Warning(
-                        "Could not load assembly {Dll}: {Message}", dll, ex.Message);
-                }
-            }
-
-            // Собираем все загруженные сборки с префиксом Writersword для сканирования типов.
-            var allWriterswordAssemblies = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => a.GetName().Name?.StartsWith("Writersword") == true)
-                .ToList();
+            // Инициализируем статический провайдер для модулей.
+            // CoreServices используется BaseModule и его наследниками
+            // для получения сервисов без прямой зависимости от App.
+            // Должно вызываться ДО GetRequiredService<MainWindowViewModel>().
+            Writersword.Core.Services.CoreServices.SetProvider(Services);
 
             var moduleFactory = Services.GetRequiredService<ModuleFactory>();
 
-            var moduleTypes = allWriterswordAssemblies
+            // Ищем модули во ВСЕХ загруженных сборках, а не только в GetExecutingAssembly.
+            // GetExecutingAssembly() возвращает только Writersword.exe; модули могут
+            // быть в отдельных DLL (Writersword.TextEditor.dll и т.д.) которые
+            // не попадают в GetTypes() пока сборка не загружена явно.
+            var baseModuleType = typeof(BaseModule);
+
+            var executingAssembly = Assembly.GetExecutingAssembly();
+
+            // Модули компилируются в отдельные DLL (Writersword.TextEditor.dll и т.д.).
+            // Assembly.GetExecutingAssembly() возвращает только Writersword.exe и не видит их.
+            // Явно загружаем все Writersword*.dll из папки приложения, после чего
+            // AppDomain.CurrentDomain.GetAssemblies() включает все нужные сборки.
+            var appDir = AppDomain.CurrentDomain.BaseDirectory;
+            foreach (var dllPath in Directory.GetFiles(appDir, "Writersword*.dll"))
+            {
+                try { Assembly.LoadFrom(dllPath); }
+                catch { }
+            }
+
+            var moduleTypes = AppDomain.CurrentDomain.GetAssemblies()
                 .SelectMany(a =>
                 {
                     try { return a.GetTypes(); }
+                    catch (ReflectionTypeLoadException ex)
+                    { return ex.Types.Where(t => t != null).Cast<Type>(); }
                     catch { return Array.Empty<Type>(); }
                 })
-                .Where(t => typeof(BaseModule).IsAssignableFrom(t) && !t.IsAbstract)
-                .ToList();
+                .Where(t => t != null && !t.IsAbstract && baseModuleType.IsAssignableFrom(t));
 
+            int registeredModules = 0;
             foreach (var moduleType in moduleTypes)
             {
-                var instance = Activator.CreateInstance(moduleType) as BaseModule;
-                if (instance != null)
+                try
                 {
-                    var capturedType = moduleType;
-                    moduleFactory.Register(instance.moduleType, () =>
-                        Activator.CreateInstance(capturedType) as BaseModule
-                        ?? throw new InvalidOperationException(
-                            $"Failed to create module {capturedType.Name}"));
+                    var instance = Activator.CreateInstance(moduleType) as BaseModule;
+                    if (instance != null)
+                    {
+                        var capturedType = moduleType;
+                        moduleFactory.Register(instance.moduleType, () =>
+                            Activator.CreateInstance(capturedType) as BaseModule
+                            ?? throw new InvalidOperationException(
+                                $"Failed to create module {capturedType.Name}"));
+                        registeredModules++;
+                        Log.ForContext<App>().Debug(
+                            "Module registered: {ModuleType} as {Id}",
+                            moduleType.Name, instance.moduleType);
+                    }
+                    else
+                    {
+                        Log.ForContext<App>().Warning(
+                            "Module instantiation returned null: {Type}", moduleType.Name);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.ForContext<App>().Error(ex,
+                        "Failed to register module: {Type}", moduleType.Name);
                 }
             }
 
-            Log.ForContext<App>().Debug("Registered {Count} modules", moduleTypes.Count);
+            Log.ForContext<App>().Warning("Registered {Count} modules total", registeredModules);
 
             var workModeFactory = Services.GetRequiredService<WorkModeFactory>();
             var workModeRegistry = Services.GetRequiredService<WorkModeRegistry>();
 
-            var workModeTypes = allWriterswordAssemblies
-                .SelectMany(a =>
-                {
-                    try { return a.GetTypes(); }
-                    catch { return Array.Empty<Type>(); }
-                })
+            var workModeTypes = executingAssembly.GetTypes()
                 .Where(t => typeof(IWorkMode).IsAssignableFrom(t)
                          && !t.IsInterface
-                         && !t.IsAbstract)
-                .ToList();
+                         && !t.IsAbstract);
 
             foreach (var workModeType in workModeTypes)
             {
@@ -206,7 +223,7 @@ namespace Writersword
                     RegisterWorkMode(workModeFactory, workModeRegistry, instance);
             }
 
-            Log.ForContext<App>().Debug("Registered {Count} WorkModes", workModeTypes.Count);
+            Log.ForContext<App>().Debug("Registered {Count} WorkModes", workModeTypes.Count());
 
             var projectTypeRegistry = Services.GetRequiredService<ProjectTypeRegistry>();
             projectTypeRegistry.LoadAll();
@@ -236,6 +253,22 @@ namespace Writersword
                 dialogService?.SetMainWindow(mainWindow);
 
                 desktop.MainWindow = mainWindow;
+
+                desktop.ShutdownRequested += (s, e) =>
+                {
+                    // Останавливаем AutoSaveService чтобы не запускались новые сохранения
+                    // пока приложение уже закрывается.
+                    try
+                    {
+                        var autoSave = Services.GetService<IAutoSaveService>();
+                        autoSave?.Disable();
+                    }
+                    catch { }
+
+                    // Serilog закрываем здесь а не только в Program.finally —
+                    // ShutdownRequested гарантированно вызывается до выхода из main loop.
+                    Serilog.Log.CloseAndFlush();
+                };
 
                 mainWindow.Opened += async (s, e) =>
                 {

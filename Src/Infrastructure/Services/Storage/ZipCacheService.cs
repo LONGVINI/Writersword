@@ -24,6 +24,8 @@ namespace Writersword.Infrastructure.Services.Storage
     {
         private readonly ILogger<ZipCacheService> _logger;
         private readonly IHashService _hashService;
+        // Гарантирует что только одна операция одновременно обращается к .wsasd файлу.
+        private readonly System.Threading.SemaphoreSlim _fileLock = new(1, 1);
 
         public ZipCacheService(IHashService hashService)
         {
@@ -47,6 +49,7 @@ namespace Writersword.Infrastructure.Services.Storage
             var cachePath = GetCachePath(projectPath);
             if (!File.Exists(cachePath)) return null;
 
+            _fileLock.Wait();
             try
             {
                 return LoadMetadata(cachePath)?.CacheDate;
@@ -55,6 +58,10 @@ namespace Writersword.Infrastructure.Services.Storage
             {
                 _logger.LogError(ex, "Error reading cache date");
                 return null;
+            }
+            finally
+            {
+                _fileLock.Release();
             }
         }
 
@@ -74,6 +81,7 @@ namespace Writersword.Infrastructure.Services.Storage
                 return null;
             }
 
+            _fileLock.Wait();
             try
             {
                 var customData = new Dictionary<string, object?>();
@@ -125,6 +133,10 @@ namespace Writersword.Infrastructure.Services.Storage
                 _logger.LogError(ex, "Error loading cache: {CachePath}", cachePath);
                 return null;
             }
+            finally
+            {
+                _fileLock.Release();
+            }
         }
 
         /// <summary>
@@ -140,6 +152,7 @@ namespace Writersword.Infrastructure.Services.Storage
                 return null;
             }
 
+            _fileLock.Wait();
             try
             {
                 var customData = new Dictionary<string, object?>();
@@ -199,6 +212,10 @@ namespace Writersword.Infrastructure.Services.Storage
                 _logger.LogError(ex, "Error loading cache with session: {CachePath}", cachePath);
                 return null;
             }
+            finally
+            {
+                _fileLock.Release();
+            }
         }
 
         /// <summary>
@@ -209,6 +226,7 @@ namespace Writersword.Infrastructure.Services.Storage
             var cachePath = GetCachePath(projectPath);
             if (!File.Exists(cachePath)) return null;
 
+            _fileLock.Wait();
             try
             {
                 return LoadMetadata(cachePath);
@@ -217,6 +235,10 @@ namespace Writersword.Infrastructure.Services.Storage
             {
                 _logger.LogError(ex, "Error loading cache metadata");
                 return null;
+            }
+            finally
+            {
+                _fileLock.Release();
             }
         }
 
@@ -238,6 +260,7 @@ namespace Writersword.Infrastructure.Services.Storage
         {
             var cachePath = GetCachePath(projectPath);
 
+            await _fileLock.WaitAsync().ConfigureAwait(false);
             try
             {
                 _logger.LogDebug("Saving cache (update): {ModulesCount} modules", customDataDict.Count);
@@ -256,10 +279,20 @@ namespace Writersword.Infrastructure.Services.Storage
                         continue;
                     }
 
-                    var customDataJson = JsonConvert.SerializeObject(customData, Formatting.Indented);
+                    // Сериализуем снапшот — живая коллекция может меняться из UI-треда
+                    // пока фоновый поток сериализует, что даёт InvalidOperationException.
+                    object? customDataToSerialize = customData is IDictionary<string, object?> cd
+                        ? new Dictionary<string, object?>(cd)
+                        : customData;
+                    var customDataJson = JsonConvert.SerializeObject(customDataToSerialize, Formatting.Indented);
                     string? sessionDataJson = null;
                     if (sessionDataDict.TryGetValue(moduleType, out var sessionData) && sessionData != null)
-                        sessionDataJson = JsonConvert.SerializeObject(sessionData, Formatting.Indented);
+                    {
+                        object? sessionDataToSerialize = sessionData is IDictionary<string, object?> sd
+                            ? new Dictionary<string, object?>(sd)
+                            : sessionData;
+                        sessionDataJson = JsonConvert.SerializeObject(sessionDataToSerialize, Formatting.Indented);
+                    }
 
                     modulesToSave[moduleType] = (customDataJson, sessionDataJson);
                 }
@@ -369,6 +402,10 @@ namespace Writersword.Infrastructure.Services.Storage
             {
                 _logger.LogError(ex, "Error saving cache");
             }
+            finally
+            {
+                _fileLock.Release();
+            }
         }
 
         public object? GetModuleCustomData(string projectPath, string moduleType)
@@ -383,10 +420,24 @@ namespace Writersword.Infrastructure.Services.Storage
         public void DeleteCache(string projectPath)
         {
             var cachePath = GetCachePath(projectPath);
-            if (File.Exists(cachePath))
+            if (!File.Exists(cachePath)) return;
+
+            _fileLock.Wait();
+            try
             {
-                File.Delete(cachePath);
-                _logger.LogDebug("Cache deleted: {CachePath}", cachePath);
+                if (File.Exists(cachePath))
+                {
+                    File.Delete(cachePath);
+                    _logger.LogDebug("Cache deleted: {CachePath}", cachePath);
+                }
+            }
+            catch (IOException ex)
+            {
+                _logger.LogError(ex, "Error deleting cache: {CachePath}", cachePath);
+            }
+            finally
+            {
+                _fileLock.Release();
             }
         }
 

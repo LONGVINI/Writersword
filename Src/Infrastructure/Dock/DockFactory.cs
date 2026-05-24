@@ -1,4 +1,13 @@
-﻿using Dock.Model.Avalonia;
+﻿// TODO: Dock.Avalonia 12.x не имеет CacheDocumentTabContent (есть только в 11.3.x под Avalonia 11).
+// Когда выйдет стабильный Dock.Avalonia 12.x с этой фичей:
+//   1. Обновить все Dock.* пакеты в Writersword.csproj до новой версии
+//   2. В App.axaml заменить StyleInclude на:
+//      <dockFluent:DockFluentTheme CacheDocumentTabContent="True" />
+//   3. Удалить GetOrCreateView() и RecreateDocumentViews() — они больше не нужны
+//   4. Удалить RequestProgressiveRefreshAsync() вызов из CharactersModuleView.OnLoaded
+// Следить за релизами: https://github.com/wieslawsoltes/Dock/releases
+
+using Dock.Model.Avalonia;
 using Dock.Model.Avalonia.Controls;
 using Dock.Model.Avalonia.Core;
 using Dock.Model.Controls;
@@ -173,7 +182,7 @@ namespace Writersword.Infrastructure.Dock
                 var module = tab.ModuleContext.GetModule(moduleType);
                 if (module != null)
                 {
-                    var newView = module.GetOrCreateView();
+                    var newView = module.CreateView();
                     if (newView != null)
                     {
                         doc.Content = null;
@@ -482,7 +491,7 @@ namespace Writersword.Infrastructure.Dock
                     _logger.LogDebug("Restored session data for: {moduleType}", moduleType);
                 }
 
-                var moduleView = module.GetOrCreateView();
+                var moduleView = module.CreateView();
                 if (moduleView != null)
                 {
                     document.Content = moduleView;
@@ -855,7 +864,7 @@ namespace Writersword.Infrastructure.Dock
                 _logger.LogDebug("Restored session data for: {ModuleType}", slot.ModuleType);
             }
 
-            var moduleView = module.GetOrCreateView();
+            var moduleView = module.CreateView();
             if (moduleView == null)
             {
                 _logger.LogWarning("No View: {ModuleType}", slot.ModuleType);
@@ -1268,6 +1277,13 @@ namespace Writersword.Infrastructure.Dock
             _logger.LogDebug("DockWindow created: {Id}", window.Id);
             return window;
         }
+
+        /// <summary>
+        /// Публичная обёртка — восстанавливает View всех модулей после DockLayout
+        /// null+set или первичной активации. Чинит VisualParent и показывает loading.
+        /// </summary>
+        public void RecreateAllDocumentViews(IDockable root, DocumentTabViewModel tab)
+            => RecreateDocumentViews(root, tab);
 
         /// <summary>
         /// Перехват смены активного документа в Dock

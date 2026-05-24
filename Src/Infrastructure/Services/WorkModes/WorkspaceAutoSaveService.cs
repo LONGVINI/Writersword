@@ -117,56 +117,48 @@ namespace Writersword.Infrastructure.Services.WorkModes
 
         private async void SaveConfiguration()
         {
+            // Уже вызываемся из Dispatcher.UIThread.Post — мы на UI-треде.
+            // Вложенный InvokeAsync создавал deadlock при shutdown: Task попадал в очередь
+            // которую dispatcher уже не обрабатывал, и await никогда не завершался.
             if (_isDisposed || _currentProject == null || _currentProjectPath == null)
                 return;
 
             try
             {
-                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
+                var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
+
+                if (fileStorage == null)
                 {
-                    try
-                    {
-                        var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
-                        var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
+                    _logger.LogWarning("FileStorage not found");
+                    return;
+                }
 
-                        if (fileStorage == null)
-                        {
-                            _logger.LogWarning("FileStorage not found");
-                            return;
-                        }
+                var currentConfig = await CollectCurrentConfigurationAsync();
 
-                        var currentConfig = await CollectCurrentConfigurationAsync();
+                if (currentConfig == null)
+                {
+                    _logger.LogWarning("Failed to collect configuration");
+                    return;
+                }
 
-                        if (currentConfig == null)
-                        {
-                            _logger.LogWarning("Failed to collect configuration");
-                            return;
-                        }
+                if (!ValidateConfiguration(currentConfig))
+                {
+                    _logger.LogError("Configuration validation failed, refusing to save");
+                    return;
+                }
 
-                        if (!ValidateConfiguration(currentConfig))
-                        {
-                            _logger.LogError("Configuration validation failed, refusing to save");
-                            return;
-                        }
+                var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
+                var success = workspaceConfigService.SaveToZip(fileStorage, currentConfig);
 
-                        var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
-                        var success = workspaceConfigService.SaveToZip(fileStorage, currentConfig);
-
-                        if (success)
-                            _logger.LogDebug("workspace.json saved successfully");
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error in SaveConfiguration inner block");
-                    }
-                });
+                if (success)
+                    _logger.LogDebug("workspace.json saved successfully");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error saving workspace");
             }
         }
-
         /// <summary>
         /// Собрать текущую конфигурацию из активного workspace
         /// Активный WorkMode — сериализуется из реального layout

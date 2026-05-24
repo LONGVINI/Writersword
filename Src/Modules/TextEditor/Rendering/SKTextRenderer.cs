@@ -25,6 +25,12 @@ namespace Writersword.Modules.TextEditor.Rendering
         private static readonly ConcurrentDictionary<(string Family, bool Bold, bool Italic), SKTypeface>
             _typefaceCache = new();
 
+        // Кеш SKFont по ключу (typeface handle, размер в тысячных pt).
+        // SKFont — тонкая обёртка над нативным объектом; без кеша создаётся заново
+        // для каждого сегмента каждого рендер-кадра и при измерении в layout.
+        private static readonly ConcurrentDictionary<(IntPtr Typeface, int SizeMils), SKFont>
+            _fontCache = new();
+
         // Кеш фолбэк-гарнитур по кодпоинту Unicode.
         // Заполняется при первом обращении к символу не поддержанному основным шрифтом.
         // null — система не нашла ни одного шрифта с нужным глифом.
@@ -687,7 +693,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 {
                     using var lblPaint = new SKPaint { Color = SKColors.Gray, IsAntialias = true };
                     var tf = GetOrCreateTypeface("Arial", false, true);
-                    using var font = new SKFont(tf, 9f);
+                    var font = GetOrCreateFont(tf, 9f);
                     canvas.DrawText(pageTable.ContinuationLabel, tableX, tableBaseY - 2f, font, lblPaint);
                 }
 
@@ -786,7 +792,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     }
                     using var lbPaint = new SKPaint { Color = SKColors.Gray, IsAntialias = true };
                     var tf2 = GetOrCreateTypeface("Arial", false, true);
-                    using var font2 = new SKFont(tf2, 9f);
+                    var font2 = GetOrCreateFont(tf2, 9f);
                     canvas.DrawText(pageTable.BreakLabel, tableX, lastRowBottom + 11f, font2, lbPaint);
                 }
             }
@@ -815,7 +821,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     }
 
                     var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
-                    using var font = new SKFont(typeface, seg.FontSizePt);
+                    var font = GetOrCreateFont(typeface, seg.FontSizePt);
                     using var paint = new SKPaint
                     {
                         Color = seg.Color,
@@ -1120,7 +1126,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             foreach (var seg in line.Segments)
             {
                 var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
-                using var font = new SKFont(typeface, seg.FontSizePt);
+                var font = GetOrCreateFont(typeface, seg.FontSizePt);
 
                 font.GetFontMetrics(out var metrics);
 
@@ -1149,7 +1155,7 @@ namespace Writersword.Modules.TextEditor.Rendering
         {
             var typeface = GetOrCreateTypeface(
                 StyleResolver.FallbackFontFamily, false, false);
-            using var font = new SKFont(typeface, StyleResolver.FallbackFontSizePt);
+            var font = GetOrCreateFont(typeface, StyleResolver.FallbackFontSizePt);
 
             font.GetFontMetrics(out var metrics);
             float ascent = Math.Abs(metrics.Ascent);
@@ -1194,7 +1200,7 @@ namespace Writersword.Modules.TextEditor.Rendering
         private static float MeasureChar(string ch, SKRunSegment format)
         {
             var typeface = GetOrCreateTypeface(format.FontFamily, format.IsBold, format.IsItalic);
-            using var font = new SKFont(typeface, format.FontSizePt);
+            var font = GetOrCreateFont(typeface, format.FontSizePt);
             return font.MeasureText(ch);
         }
 
@@ -1203,12 +1209,19 @@ namespace Writersword.Modules.TextEditor.Rendering
             if (string.IsNullOrEmpty(seg.Text))
                 return Array.Empty<SKGlyphMetrics>();
 
+            // GetGlyphWidths измеряет все символы за один нативный вызов Skia.
+            // Было: N вызовов font.MeasureText(char.ToString()) = N string аллокаций
+            // и N обращений к glyph cache по одному символу.
+            // Стало: 1 вызов GetGlyphWidths на весь сегмент = 0 string аллокаций.
+            var glyphIds = font.GetGlyphs(seg.Text);
+            var widths = font.GetGlyphWidths(glyphIds);
+
             var glyphs = new SKGlyphMetrics[seg.Text.Length];
             float x = 0f;
 
             for (int i = 0; i < seg.Text.Length; i++)
             {
-                float width = font.MeasureText(seg.Text[i].ToString());
+                float width = (widths is not null && i < widths.Length) ? widths[i] : 0f;
                 glyphs[i] = new SKGlyphMetrics
                 {
                     CharIndex = seg.GlobalCharOffset + i,
@@ -1419,6 +1432,13 @@ namespace Writersword.Modules.TextEditor.Rendering
 
         private static float MmToPt(double mm) => (float)(mm * 72.0 / 25.4);
 
+        private static SKFont GetOrCreateFont(SKTypeface typeface, float sizePt)
+        {
+            // sizePt хранится как целое число тысячных чтобы избежать float-ключей.
+            var key = (typeface.Handle, (int)(sizePt * 1000));
+            return _fontCache.GetOrAdd(key, _ => new SKFont(typeface, sizePt));
+        }
+
         private static SKTypeface GetOrCreateTypeface(string family, bool bold, bool italic)
         {
             var key = (family, bold, italic);
@@ -1562,7 +1582,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     }
 
                     var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
-                    using var font = new SKFont(typeface, seg.FontSizePt);
+                    var font = GetOrCreateFont(typeface, seg.FontSizePt);
                     using var paint = new SKPaint
                     {
                         Color = seg.Color,

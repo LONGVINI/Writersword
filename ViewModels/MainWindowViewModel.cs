@@ -142,8 +142,8 @@ namespace Writersword.ViewModels
 
             _tabCollection.ActiveTabChanged += (newTab, previousTab) =>
             {
-                if (newTab is DocumentTabViewModel tab)
-                    _ = OnTabActivatedAsync(tab, previousTab as DocumentTabViewModel);
+if (newTab is DocumentTabViewModel tab)
+    _ = OnTabActivatedAsync(tab, previousTab as DocumentTabViewModel);
 
                 MenuBar.UpdateHasActiveTab();
             };
@@ -223,17 +223,20 @@ namespace Writersword.ViewModels
                 DockLayout = tab.Workspace.GetCurrentLayout();
                 _logger.LogDebug("DockLayout assigned for tab: {Title}", tab.Title);
 
-                // При первом присвоении DockLayout dock ещё не завершил layout pass —
-                // все views получают нулевой размер и ничего не рисуют.
-                // Post на Loaded делает повторный null+set уже после первого layout,
-                // когда DockControl знает свои размеры. Работает для всех модулей.
-                var capturedLayout = DockLayout;
+                // При первом присвоении DockLayout Dock создаёт ContentPresenter-ы,
+                // но VisualParent у view-шек может указывать на старые orphaned CP.
+                // RecreateAllDocumentViews чинит VisualParent через GetOrCreateView()
+                // и показывает loading indicator вместо чёрного экрана.
+                var capturedTabForLoaded = tab;
+                var capturedLayoutForLoaded = DockLayout;
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                 {
-                    if (DockLayout == capturedLayout && DockLayout != null)
+                    if (DockLayout == capturedLayoutForLoaded
+                        && DockLayout != null
+                        && capturedTabForLoaded.Workspace != null)
                     {
-                        DockLayout = null;
-                        DockLayout = capturedLayout;
+                        _dockFactory.RecreateAllDocumentViews(
+                            DockLayout, capturedTabForLoaded);
                     }
                 }, Avalonia.Threading.DispatcherPriority.Loaded);
 
@@ -290,6 +293,21 @@ namespace Writersword.ViewModels
                 DockLayout = null;
                 DockLayout = newLayout;
                 _logger.LogDebug("DockLayout updated (forceRefresh={Force})", forceRefresh);
+
+                // После null+set Dock создаёт новые ContentPresenter-ы.
+                // Чиним VisualParent и показываем loading для всех модулей.
+                var capturedLayoutWs = newLayout;
+                var capturedTabWs = activeTab as DocumentTabViewModel;
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    if (DockLayout == capturedLayoutWs
+                        && DockLayout != null
+                        && capturedTabWs?.Workspace != null)
+                    {
+                        _dockFactory.RecreateAllDocumentViews(
+                            DockLayout, capturedTabWs);
+                    }
+                }, Avalonia.Threading.DispatcherPriority.Loaded);
             }
 
             var activeWorkMode = activeTab.Workspace.GetActiveWorkMode();

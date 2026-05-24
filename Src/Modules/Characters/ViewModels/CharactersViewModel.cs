@@ -694,6 +694,15 @@ namespace Writersword.Modules.Characters.ViewModels
             finally { IsLoading = false; }
         }
 
+        /// <summary>
+        /// Публичный триггер для повторного прогрессивного рефреша.
+        /// Вызывается когда CharactersModuleView переподключается к visual tree
+        /// (workmode switch, dock move) — чтобы карточки появлялись плавно
+        /// вместо моментального layout pass всей коллекции.
+        /// </summary>
+        public Task RequestProgressiveRefreshAsync()
+            => RefreshFolderViewModelsAsync();
+
         private void RefreshTags()
         {
             AvailableTags.Clear();
@@ -812,16 +821,34 @@ namespace Writersword.Modules.Characters.ViewModels
             if (_previewDragCharId != charId) return;
             if (_dragPlaceholder is null) return;
 
+            CharacterFolderViewModel? sourceFolderVm = null;
+            int sourceIdx = -1;
             foreach (var folder in Folders)
             {
-                if (folder.Characters.Remove(_dragPlaceholder)) break;
+                var idx = folder.Characters.IndexOf(_dragPlaceholder);
+                if (idx >= 0) { sourceFolderVm = folder; sourceIdx = idx; break; }
             }
 
             var targetFolderVm = Folders.FirstOrDefault(f => f.FolderId == targetFolderId);
             if (targetFolderVm is null) return;
 
             var clampedIdx = Math.Min(targetIndex, targetFolderVm.Characters.Count);
-            targetFolderVm.Characters.Insert(clampedIdx, _dragPlaceholder);
+
+            if (sourceFolderVm != null && ReferenceEquals(sourceFolderVm, targetFolderVm))
+            {
+                // Та же папка: Move сохраняет инстансы элементов в ItemsRepeater.
+                // Remove+Insert создаёт новый элемент и ломает TranslateTransform анимацию.
+                var adjusted = clampedIdx > sourceIdx ? clampedIdx - 1 : clampedIdx;
+                if (adjusted != sourceIdx)
+                    sourceFolderVm.Characters.Move(sourceIdx, adjusted);
+            }
+            else
+            {
+                if (sourceFolderVm != null)
+                    sourceFolderVm.Characters.Remove(_dragPlaceholder);
+                var clampedCross = Math.Min(clampedIdx, targetFolderVm.Characters.Count);
+                targetFolderVm.Characters.Insert(clampedCross, _dragPlaceholder);
+            }
         }
 
         public void CancelDragPreview(string charId)
@@ -1352,6 +1379,15 @@ namespace Writersword.Modules.Characters.ViewModels
 
         public ObservableCollection<CharacterListItemViewModel> Characters { get; } = new();
 
+        private static readonly ObservableCollection<CharacterListItemViewModel> _emptyCharacters = new();
+
+        /// <summary>
+        /// ItemsSource для списка карточек. Возвращает пустую коллекцию когда папка
+        /// свёрнута — UniformGrid не меряет 0 элементов, workmode switch мгновенный.
+        /// </summary>
+        public ObservableCollection<CharacterListItemViewModel> VisibleCharacters
+            => IsExpanded ? Characters : _emptyCharacters;
+
         public string Name
         {
             get => _name;
@@ -1377,7 +1413,11 @@ namespace Writersword.Modules.Characters.ViewModels
         public bool IsExpanded
         {
             get => _isExpanded;
-            set => this.RaiseAndSetIfChanged(ref _isExpanded, value);
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _isExpanded, value);
+                this.RaisePropertyChanged(nameof(VisibleCharacters));
+            }
         }
 
         public bool IsRenaming

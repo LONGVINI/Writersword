@@ -214,14 +214,25 @@ namespace Writersword.Modules.TextEditor.Document
             int EndRow, int EndCol);
 
         // ── Bitmap-кеш для мигания каретки ────────────────────────────────
+        //
+        // Двойной буфер: render-bitmap пишем, display-bitmap читает compositor.
+        // Когда размер не меняется — пересоздания нет вообще (0 аллокаций за кадр).
+        // Word делает то же самое на GPU; мы делаем на CPU с теми же принципами.
         private readonly object _bitmapLock = new();
-        private SKBitmap? _lastFullRenderBitmap;
-        private int _lastFullRenderWidth;
-        private int _lastFullRenderHeight;
-        // Бitmaps ожидающие освобождения — не диспозим сразу чтобы избежать
-        // race condition когда рендер-тред ещё использует bitmap который UI-тред заменил.
+        private SKBitmap? _renderBitmap;   // пишем на render-треде
+        private SKBitmap? _displayBitmap;  // читаем на compositor-треде
+        private int _bitmapW;
+        private int _bitmapH;
+        private float _lastFullRenderScrollY;
+        // Очередь для освобождения битмапов старого размера.
         private readonly System.Collections.Concurrent.ConcurrentQueue<SKBitmap> _bitmapDisposeQueue = new();
+
+        // Алиасы для _caretOnlyRedraw fast-path (читаются на compositor-треде).
+        private SKBitmap? _lastFullRenderBitmap { get { lock (_bitmapLock) return _displayBitmap; } }
+        private int _lastFullRenderWidth { get { lock (_bitmapLock) return _bitmapW; } }
+        private int _lastFullRenderHeight { get { lock (_bitmapLock) return _bitmapH; } }
         private bool _caretOnlyRedraw = false;
+        private volatile bool _isTransitioning;
 
         // ── Буфер обмена ─────────────────────────────────────────────────
         private string? _clipboardCache;
@@ -277,6 +288,21 @@ namespace Writersword.Modules.TextEditor.Document
         private static readonly SKColor SelectionColor = new(0x33, 0x90, 0xFF, 0x60);
         private static readonly SKColor CanvasBgColor = new(0xE8, 0xE8, 0xE8);
         private static readonly SKColor PageShadowColor = new(0x00, 0x00, 0x00, 0x28);
+
+        // Кешированные паинты — создаются один раз, живут всё время жизни канваса.
+        // Вместо 13+ аллокаций на каждый рендер-кадр — ноль.
+        // Все паинты используются только на compositor-треде, поэтому thread-safe.
+        private readonly SKPaint _paintCanvasBg = new() { Color = new SKColor(0xE8, 0xE8, 0xE8) };
+        private readonly SKPaint _paintPageShadow = new() { Color = new SKColor(0x00, 0x00, 0x00, 0x28) };
+        private readonly SKPaint _paintPageWhite = new() { Color = SKColors.White };
+        private readonly SKPaint _paintTransparent = new() { Color = SKColors.Transparent };
+        private readonly SKPaint _paintSelection = new() { Color = new SKColor(0x33, 0x90, 0xFF, 0x60) };
+        private readonly SKPaint _paintCaret = new() { Color = SKColors.Black, StrokeWidth = 1.1f, IsAntialias = false, IsStroke = true };
+        private readonly SKPaint _paintHandleFill = new() { Color = new SKColor(0x22, 0x99, 0xFF, 0xCC), IsAntialias = true };
+        private readonly SKPaint _paintHandleStroke = new() { Color = new SKColor(0xFF, 0xFF, 0xFF, 0xCC), StrokeWidth = 1f, IsStroke = true, IsAntialias = true };
+        private readonly SKPaint _paintHandleArrow = new() { Color = SKColors.White, StrokeWidth = 1f, IsStroke = true, IsAntialias = true };
+        // Паинт для фона ячейки — Color мутируется перед каждым DrawRect (compositor-тред).
+        private readonly SKPaint _paintCellBg = new();
 
         private DocumentViewModel? _docVm;
         private DocumentViewModel? DocVm => _docVm;
@@ -386,19 +412,18 @@ namespace Writersword.Modules.TextEditor.Document
         // ── DataContext / ScrollViewer ────────────────────────────────────
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
+            _isTransitioning = false;
+
+            // Дренируем битмапы накопившиеся пока view была detached.
+            // RenderWithSKCanvas тоже дренирует, но он вызывается только когда
+            // контрол видим. При смене воркмода TextEditor может долго не рендериться.
+            while (_bitmapDisposeQueue.TryDequeue(out var stale))
+                stale?.Dispose();
+
             base.OnAttachedToVisualTree(e);
             RebuildDpiCache();
             SubscribeToScrollViewer();
             _ = PrefetchClipboardAsync();
-
-            // Если _docVm уже установлен — canvas пережил detach (перемещение модуля).
-            // OnDataContextChanged не сработает (DataContext не изменился), поэтому
-            // вручную восстанавливаем подписки и принудительно перестраиваем layout.
-            if (_docVm is not null)
-                RewireDocVm(_docVm);
-
-            // Viewport в момент прикрепления может быть нулевым — layout ещё не завершён.
-            // Post на Loaded гарантирует пересчёт с реальным размером scroll viewer.
             Avalonia.Threading.Dispatcher.UIThread.Post(
                 InvalidateMeasure,
                 Avalonia.Threading.DispatcherPriority.Loaded);
@@ -406,6 +431,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
+            _isTransitioning = true;
             base.OnDetachedFromVisualTree(e);
 
             // Останавливаем таймер — он держит ссылку на this через замыкание и мешает GC.
@@ -435,17 +461,28 @@ namespace Writersword.Modules.TextEditor.Document
             // Отменяем фоновый rebuild.
             _rebuildCts.Cancel();
 
-            // Освобождаем все накопившиеся битмапы немедленно.
+            // Не диспозим bitmap напрямую — render-тред (compositor) может держать
+            // локальную ссылку cached на тот же объект и рисовать его прямо сейчас.
+            // Добавляем в очередь и зануляем: bitmap живёт пока render-тред не завершит
+            // текущий DrawBitmap. Очередь очистится при следующем рендере после reattach.
             lock (_bitmapLock)
             {
-                if (_lastFullRenderBitmap is not null)
+                if (_renderBitmap is not null)
                 {
-                    _lastFullRenderBitmap.Dispose();
-                    _lastFullRenderBitmap = null;
+                    _bitmapDisposeQueue.Enqueue(_renderBitmap);
+                    _renderBitmap = null;
+                }
+                if (_displayBitmap is not null)
+                {
+                    _bitmapDisposeQueue.Enqueue(_displayBitmap);
+                    _displayBitmap = null;
                 }
             }
-            while (_bitmapDisposeQueue.TryDequeue(out var stale))
-                stale.Dispose();
+
+            // SKPaint не диспозим здесь: DockFactory переиспользует DocumentCanvas
+            // (detach → reattach при переключении вкладок). Если диспозить паинты
+            // на detach, при повторном reattach рендер упадёт с disposed-объектами.
+            // SKPaint — крошечные нативные объекты (~200 байт), GC соберёт при финализации.
 
             // Очищаем кеши лейаутов.
             _layoutCache.Clear();
@@ -554,33 +591,25 @@ namespace Writersword.Modules.TextEditor.Document
             _cellLayoutCache.Clear();
 
             if (DocVm is not null)
-                RewireDocVm(DocVm);
+            {
+                _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
+                _lastZoom = DocVm.Zoom;
+                DocVm.Paragraphs.CollectionChanged += OnParagraphsChanged;
+                DocVm.PropertyChanged += OnDocVmPropertyChanged;
+                DocVm.ParagraphFormatChanged += OnParagraphFormatChanged;
+                DocVm.OnPageBreakInserted = block => _pendingFocusBlock = block;
+                DocVm.UndoDelegate = ExecuteUndo;
+                DocVm.RedoDelegate = ExecuteRedo;
+                DocVm.CutDelegate = ExecuteCut;
+                DocVm.CopyDelegate = ExecuteCopy;
+                DocVm.PasteDelegate = ExecutePaste;
+                DocVm.BeginEditDelegate = BeginEdit;
+                DocVm.CommitEditDelegate = CommitEdit;
+                foreach (var pvm in DocVm.Paragraphs)
+                    WirePvm(pvm);
+            }
 
             InvalidateMeasure();
-        }
-
-        /// <summary>
-        /// Подписывает canvas на события DocumentViewModel и параграфов.
-        /// Вызывается из OnDataContextChanged и из OnAttachedToVisualTree
-        /// (когда canvas пережил detach с тем же _docVm — перемещение модуля).
-        /// </summary>
-        private void RewireDocVm(DocumentViewModel docVm)
-        {
-            _styleResolver = new StyleResolver(docVm.Document.Styles, _scriptFontMap);
-            _lastZoom = docVm.Zoom;
-            docVm.Paragraphs.CollectionChanged += OnParagraphsChanged;
-            docVm.PropertyChanged += OnDocVmPropertyChanged;
-            docVm.ParagraphFormatChanged += OnParagraphFormatChanged;
-            docVm.OnPageBreakInserted = block => _pendingFocusBlock = block;
-            docVm.UndoDelegate = ExecuteUndo;
-            docVm.RedoDelegate = ExecuteRedo;
-            docVm.CutDelegate = ExecuteCut;
-            docVm.CopyDelegate = ExecuteCopy;
-            docVm.PasteDelegate = ExecutePaste;
-            docVm.BeginEditDelegate = BeginEdit;
-            docVm.CommitEditDelegate = CommitEdit;
-            foreach (var pvm in docVm.Paragraphs)
-                WirePvm(pvm);
         }
 
         private void OnParagraphFormatChanged()
@@ -727,8 +756,17 @@ namespace Writersword.Modules.TextEditor.Document
         // ── Дебаунс пересчёта ─────────────────────────────────────────────
         private void ScheduleRebuild(int dirtyParaIdx)
         {
+            ParagraphViewModel? dirtyPvm = null;
             if (DocVm is not null && dirtyParaIdx < DocVm.Paragraphs.Count)
-                _layoutCache.Remove(DocVm.Paragraphs[dirtyParaIdx]);
+            {
+                dirtyPvm = DocVm.Paragraphs[dirtyParaIdx];
+                _layoutCache.Remove(dirtyPvm);
+
+                // Фаза 1: мгновенно перестраиваем только изменённый параграф
+                // и обновляем _layouts без ожидания полного rebuild.
+                // Символ становится виден немедленно, не дожидаясь Background-задачи.
+                QuickUpdateParagraphLayout(dirtyPvm);
+            }
 
             var oldCts = _rebuildCts;
             _rebuildCts = new System.Threading.CancellationTokenSource();

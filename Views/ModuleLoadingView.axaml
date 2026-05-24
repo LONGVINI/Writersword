@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Writersword.Views.ModuleLoadingView"
+             Background="{DynamicResource BgBaseBrush}">
+
+    <StackPanel VerticalAlignment="Center"
+                HorizontalAlignment="Center"
+                Spacing="14">
+
+        <ProgressBar IsIndeterminate="False"
+                     Value="0"
+                     Width="160"
+                     Height="3"/>
+
+        <TextBlock Text="Загрузка..."
+                   Foreground="{DynamicResource TextMutedBrush}"
+                   FontSize="13"
+                   HorizontalAlignment="Center"/>
+
+    </StackPanel>
+
+</UserControl>

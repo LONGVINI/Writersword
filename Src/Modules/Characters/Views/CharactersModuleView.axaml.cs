@@ -36,6 +36,8 @@ namespace Writersword.Modules.Characters.Views
 
         private ContentControl? _tabContent;
 
+        private bool _viewLoadedOnce;
+
         public CharactersModuleView()
         {
             InitializeComponent();
@@ -64,30 +66,24 @@ namespace Writersword.Modules.Characters.Views
             _log.Debug("CharactersModuleView detached");
         }
 
-        private bool _dismissBtnBound = false;
-
         private void OnLoaded(object? sender, RoutedEventArgs e)
         {
             _tabContent = this.FindControl<ContentControl>("TabContent");
 
-            // Подписываем кнопку закрытия тоста только один раз.
-            // OnLoaded стреляет при каждом reattach — без флага подписка дублируется.
-            if (!_dismissBtnBound)
-            {
-                var dismissBtn = this.FindControl<Button>("ToastDismissButton");
-                if (dismissBtn is not null)
+            // кнопка закрытия тоста
+            var dismissBtn = this.FindControl<Button>("ToastDismissButton");
+            if (dismissBtn is not null)
+                dismissBtn.Click += (_, _) =>
                 {
-                    dismissBtn.Click += (_, _) =>
-                    {
-                        if (DataContext is CharactersViewModel vm)
-                            vm.HideUndoToast();
-                    };
-                    _dismissBtnBound = true;
-                }
-            }
+                    if (DataContext is CharactersViewModel vm)
+                        vm.HideUndoToast();
+                };
 
             if (DataContext is CharactersViewModel vm2)
+            {
                 SwitchTab(vm2.MainTabIndex);
+                _viewLoadedOnce = true;
+            }
             else
                 SwitchTab(0);
 
@@ -106,7 +102,7 @@ namespace Writersword.Modules.Characters.Views
             _editView = null;
             _graphView = null;
             _templatesView = null;
-            _dismissBtnBound = false;
+            _viewLoadedOnce = false;
 
             if (DataContext is CharactersViewModel vm)
             {

@@ -91,7 +91,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
                     foreach (var item in folder.Characters)
                         BindAvatarPicker(item);
 
-                // Устанавливаем MaximumRowsOrColumns для ItemsRepeater и подписываемся на изменения.
                 _cardsPerRowSubscription?.Dispose();
                 _cardsPerRowSubscription = vmAvatar
                     .WhenAnyValue(x => x.CardsPerRow)
@@ -145,7 +144,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
         {
             foreach (var repeater in this.GetVisualDescendants().OfType<ItemsRepeater>())
             {
-                if (repeater.Layout is UniformGridLayout layout)
+                if (repeater.Layout is UniformGridLayout layout && layout.MaximumRowsOrColumns != cols)
                     layout.MaximumRowsOrColumns = cols;
             }
         }
@@ -236,12 +235,17 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 _dragCandidate = charVm;
                 _dragStartPoint = e.GetPosition(this);
                 _isDragging = false;
-                _hasPointerCapture = false;
+                // Захватываем указатель немедленно — до того как ScrollViewer
+                // успеет захватить его для скролла в OnGlobalPointerMoved.
+                // Если drag не начнётся (просто клик) — отпустим в OnGlobalPointerReleased.
+                _hasPointerCapture = true;
+                e.Pointer.Capture(this);
             }
             else
             {
                 _dragCandidate = null;
                 _isDragging = false;
+                _hasPointerCapture = false;
             }
         }
 
@@ -272,8 +276,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
                     return;
 
                 _isDragging = true;
-                _hasPointerCapture = true;
-                e.Pointer.Capture(this);
+                // Capture уже был взят в OnGlobalPointerPressed.
 
                 if (DataContext is CharactersViewModel startVm)
                 {
@@ -613,6 +616,11 @@ namespace Writersword.Modules.Characters.Views.Tabs
         {
             if (!_isDragging || _dragCandidate is null)
             {
+                if (_hasPointerCapture)
+                {
+                    e.Pointer.Capture(null);
+                    _hasPointerCapture = false;
+                }
                 _dragCandidate = null;
                 _isDragging = false;
                 return;

@@ -12,8 +12,17 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        BuildAvaloniaApp()
-            .StartWithClassicDesktopLifetime(args);
+        try
+        {
+            BuildAvaloniaApp()
+                .StartWithClassicDesktopLifetime(args);
+        }
+        finally
+        {
+            // Гарантированный сброс буферов Serilog при любом завершении,
+            // включая исключения и принудительное закрытие окна.
+            Serilog.Log.CloseAndFlush();
+        }
     }
 
     /// <summary>

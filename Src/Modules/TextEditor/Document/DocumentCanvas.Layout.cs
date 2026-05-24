@@ -263,8 +263,125 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
+        // ── Очистка кеша от мёртвых ParagraphViewModel ───────────────────
+        //
+        // Вызывается в начале каждого полного RebuildPageMode/RebuildFlowMode.
+        // Удаляет записи PVM которых нет в DocVm.Paragraphs — они могли накопиться
+        // после split/delete/undo операций. Без очистки Dictionary держит сильную
+        // ссылку на мёртвые PVM и их SKTextLayout, не давая GC их собрать.
+        private void PurgeDeadLayoutCacheEntries()
+        {
+            if (DocVm is null || _layoutCache.Count == 0) return;
+
+            var alive = new HashSet<ParagraphViewModel>(DocVm.Paragraphs);
+            var dead = new List<ParagraphViewModel>();
+
+            foreach (var key in _layoutCache.Keys)
+                if (!alive.Contains(key)) dead.Add(key);
+
+            foreach (var key in dead)
+                _layoutCache.Remove(key);
+        }
+
+        // ── Быстрое обновление одного параграфа (Phase 1) ───────────────
+        //
+        // Перестраивает layout ТОЛЬКО для одного ParagraphViewModel и немедленно
+        // обновляет затронутые записи в _layouts через record-with.
+        // Y-позиции параграфов после изменённого корректируются на дельту высоты.
+        // Таблицы и ячейки не трогаем — их пересчитает полный RebuildLayouts (Phase 2).
+        //
+        // Вызывается из ScheduleRebuild ДО того как InvalidateFull() покажет кадр,
+        // поэтому пользователь видит новый символ мгновенно.
+        private void QuickUpdateParagraphLayout(ParagraphViewModel pvm)
+        {
+            if (_styleResolver is null && DocVm is not null)
+                _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
+            if (_styleResolver is null) return;
+
+            float widthPt = GetCurrentTextWidthPt();
+
+            // Строим layout для одного параграфа.
+            // _layoutCache для этого pvm уже был удалён в ScheduleRebuild,
+            // поэтому GetOrBuildLayout гарантированно пересчитывает.
+            var newLayout = GetOrBuildLayout(pvm, widthPt);
+
+            // Обновляем _layouts без замены всего списка.
+            // Читаем снимок под lock, строим новый список вне lock, меняем под lock.
+            List<ParaLayout> current;
+            lock (_renderLock) { current = _layouts; }
+
+            float yShift = 0f;
+            bool seenPvm = false;
+            var updated = new List<ParaLayout>(current.Count);
+
+            for (int i = 0; i < current.Count; i++)
+            {
+                var pl = current[i];
+
+                if (pl.Vm == pvm)
+                {
+                    float newH = Math.Max(newLayout.BlockHeightPt, FallbackLinePt);
+                    if (!seenPvm)
+                    {
+                        // Считаем дельту по первому вхождению этого pvm.
+                        yShift = newH - pl.HeightPt;
+                        seenPvm = true;
+                    }
+                    // Обновляем Layout и LineTo; Y и HeightPt берём из нового layout.
+                    updated.Add(pl with
+                    {
+                        Layout = newLayout,
+                        HeightPt = newH,
+                        LineTo = newLayout.Lines.Count
+                    });
+                }
+                else if (seenPvm && pl.Cell is null && yShift != 0f)
+                {
+                    // Сдвигаем параграфы без привязки к ячейке — они идут после изменённого.
+                    // Параграфы внутри ячеек (pl.Cell != null) не трогаем: их пересчитает
+                    // полный rebuild, а временная неточность в Y-позиции ячеек не критична.
+                    updated.Add(pl with { Ypt = pl.Ypt + yShift });
+                }
+                else
+                {
+                    updated.Add(pl);
+                }
+            }
+
+            if (seenPvm)
+                lock (_renderLock) { _layouts = updated; }
+        }
+
+        // Возвращает ширину текстовой зоны в точках для текущего режима и размера канваса.
+        // Повторяет логику RebuildPageMode/RebuildFlowMode — нужно для QuickUpdateParagraphLayout.
+        private float GetCurrentTextWidthPt()
+        {
+            if (DocVm is null) return 400f;
+            switch (DocVm.ViewMode)
+            {
+                case EditorViewMode.Page:
+                    {
+                        float pw = GetPageWidthPt();
+                        var (ml, _, mr, _) = GetPagePaddingPt();
+                        return Math.Max(pw - ml - mr, 1f);
+                    }
+                case EditorViewMode.Reading:
+                    {
+                        float cw = (float)(_canvasWidth * PxToPt);
+                        return Math.Max(Math.Min(cw, ReadingMaxPt) - DraftPadWPt * 2f, 1f);
+                    }
+                default:
+                    return Math.Max((float)(_canvasWidth * PxToPt) - DraftPadWPt * 2f, 1f);
+            }
+        }
+
         private void RebuildPageMode()
         {
+            // Удаляем из кеша записи параграфов которых больше нет в документе.
+            // Без этого словарь растёт вечно: при split/delete старый ParagraphViewModel
+            // удаляется из DocVm.Paragraphs но сильная ссылка в _layoutCache не даёт GC его собрать.
+            PurgeDeadLayoutCacheEntries();
+
             float pageWidthPt = GetPageWidthPt();
             float pageHeightPt = GetPageHeightPt();
             var (ml, mt, mr, mb) = GetPagePaddingPt();
@@ -290,6 +407,12 @@ namespace Writersword.Modules.TextEditor.Document
             PageOffsetXChanged?.Invoke(pageOffsetXPx);
 
             var blocks = DocVm!.Document.Sections[0].Blocks;
+
+            // O(1) поиск ParagraphViewModel по ParagraphBlock.
+            // Без этого словаря был O(n²): для каждого из N блоков — O(n) перебор Paragraphs.
+            var pvmByBlock = new Dictionary<ParagraphBlock, ParagraphViewModel>(DocVm.Paragraphs.Count);
+            foreach (var p in DocVm.Paragraphs)
+                if (p.Model is not null) pvmByBlock[p.Model] = p;
 
             // Отслеживаем позицию последней обработанной таблицы для позиционирования якоря после неё.
             float lastTableXPt = textXPt;
@@ -588,10 +711,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (block is not ParagraphBlock paraBlock) continue;
 
-                ParagraphViewModel? pvm = null;
-                foreach (var p in DocVm.Paragraphs)
-                    if (p.Model == paraBlock) { pvm = p; break; }
-                if (pvm is null) continue;
+                if (!pvmByBlock.TryGetValue(paraBlock, out var pvm)) continue;
 
                 var layout = GetOrBuildLayout(pvm, textWidthPt);
 
@@ -687,6 +807,8 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void RebuildFlowMode(float maxWidthPt, float padHPt, float padWPt)
         {
+            PurgeDeadLayoutCacheEntries();
+
             float textWidthPt = Math.Max(maxWidthPt - padWPt * 2f, 1f);
             float yPt = padHPt;
 
@@ -697,6 +819,11 @@ namespace Writersword.Modules.TextEditor.Document
             float lastTableBotPt = padHPt;
 
             var blocks = DocVm!.Document.Sections[0].Blocks;
+
+            var pvmByBlock = new Dictionary<ParagraphBlock, ParagraphViewModel>(DocVm.Paragraphs.Count);
+            foreach (var p in DocVm.Paragraphs)
+                if (p.Model is not null) pvmByBlock[p.Model] = p;
+
             for (int bi = 0; bi < blocks.Count; bi++)
             {
                 var block = blocks[bi];
@@ -718,10 +845,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (block is not ParagraphBlock paraBlock) continue;
 
-                ParagraphViewModel? pvm = null;
-                foreach (var p in DocVm.Paragraphs)
-                    if (p.Model == paraBlock) { pvm = p; break; }
-                if (pvm is null) continue;
+                if (!pvmByBlock.TryGetValue(paraBlock, out var pvm)) continue;
 
                 var layout = GetOrBuildLayout(pvm, textWidthPt);
 
