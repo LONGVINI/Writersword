@@ -41,6 +41,7 @@ namespace Writersword.Infrastructure.Dock
         private readonly HashSet<string> _modulesBeingAdded = new();
         private IRootDock? _currentRootDock;
         private bool _isMoving = false;
+        private bool _isRerendering = false;
         private IDockSerializer? _dockSerializer;
 
         /// <summary>
@@ -114,6 +115,8 @@ namespace Writersword.Infrastructure.Dock
                 _logger.LogDebug("CloseDockable called: {moduleType}, _isMoving={IsMoving}, CanClose={CanClose}",
     moduleType, _isMoving, doc.CanClose);
 
+                if (doc.Content is Avalonia.Controls.Control closingCtrl)
+                    closingCtrl.DataContext = null;
                 doc.Content = null;
                 base.CloseDockable(dockable);
                 OnModuleClosed?.Invoke(moduleType);
@@ -150,20 +153,22 @@ namespace Writersword.Infrastructure.Dock
                 _isMoving = false;
             }
 
-            if (_currentRootDock != null)
+            if (_currentRootDock != null && !_isRerendering)
             {
                 var rootToNormalize = _currentRootDock;
                 Avalonia.Threading.Dispatcher.UIThread.Post(
                     () =>
                     {
+                        if (_isRerendering) return;
                         NormalizeProportionsRecursive(rootToNormalize);
-                        // В Dock 12 View нельзя переиспользовать после перемещения между
-                        // ContentPresenter-ами — VisualParent остаётся на старом CP.
-                        // Единственное решение — пересоздать View через module.CreateView().
-                        // ViewModel остаётся той же → данные модуля не теряются.
-                        var tab = App.Services.GetRequiredService<ITabCollection>().ActiveTab as DocumentTabViewModel;
-                        if (tab != null)
-                            RecreateDocumentViews(rootToNormalize, tab);
+                        // DockControl в Dock 12 не реагирует на изменение doc.Content напрямую —
+                        // нужен null+reassign DockLayout чтобы ContentPresenter-ы пересоздались.
+                        // _isRerendering предотвращает рекурсивный вход через внутренний MoveDockable.
+                        _isRerendering = true;
+                        OnNeedRerender?.Invoke();
+                        Avalonia.Threading.Dispatcher.UIThread.Post(
+                            () => _isRerendering = false,
+                            Avalonia.Threading.DispatcherPriority.Render);
                     },
                     Avalonia.Threading.DispatcherPriority.Loaded);
             }
@@ -185,6 +190,11 @@ namespace Writersword.Infrastructure.Dock
                     var newView = module.CreateView();
                     if (newView != null)
                     {
+                        // Обнуляем DataContext старого вью ДО замены Content.
+                        // Без этого ItemsControl внутри вью держит FilteredCharacters
+                        // через CollectionChangedEventManager — вью не освобождается GC.
+                        if (doc.Content is Avalonia.Controls.Control oldCtrl)
+                            oldCtrl.DataContext = null;
                         doc.Content = null;
                         doc.Content = newView;
                         _logger.LogDebug("View recreated for: {moduleType}", moduleType);
@@ -1080,6 +1090,13 @@ namespace Writersword.Infrastructure.Dock
                 if (document.Content != null)
                 {
                     _logger.LogDebug("Detaching view from Document: {Id}", document.Id);
+                    // Обнуляем DataContext до очистки Content.
+                    // Avalonia.CollectionChangedEventManager держит СИЛЬНУЮ ссылку
+                    // на ObservableCollection пока ItemsControl/view жив.
+                    // DataContext = null принудительно отвязывает все биндинги —
+                    // WeakEventManager.Entry удаляется, коллекция персонажей освобождается.
+                    if (document.Content is Avalonia.Controls.Control ctrl)
+                        ctrl.DataContext = null;
                     document.Content = null;
                 }
                 return;
@@ -1284,6 +1301,14 @@ namespace Writersword.Infrastructure.Dock
         /// </summary>
         public void RecreateAllDocumentViews(IDockable root, DocumentTabViewModel tab)
             => RecreateDocumentViews(root, tab);
+
+        /// <summary>
+        /// Нормализовать пропорции после null+reassign DockLayout.
+        /// null+reassign сбрасывает пропорции в NaN, вызывая повторный MoveDockable.
+        /// Вызывается из OnNeedRerender до следующего layout pass.
+        /// </summary>
+        public void NormalizeAfterRerender(IRootDock rootDock)
+            => NormalizeProportionsRecursive(rootDock);
 
         /// <summary>
         /// Перехват смены активного документа в Dock

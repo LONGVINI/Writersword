@@ -5,23 +5,24 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Reactive;
+using System.Reactive.Disposables.Fluent;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Reactive;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Modules.Characters.Actions;
 using Writersword.Modules.Characters.Interfaces;
 using Writersword.Modules.Characters.Models;
 using Writersword.Modules.Characters.Models.Enums;
 using Writersword.Modules.Characters.Services;
-using Writersword.Modules.Common;
-using Writersword.Src.Modules.Characters.Resources;
 using Writersword.Modules.Characters.ViewModels.Onboarding;
 using Writersword.Modules.Characters.ViewModels.Templates;
+using Writersword.Modules.Common;
+using Writersword.Src.Modules.Characters.Resources;
 
 namespace Writersword.Modules.Characters.ViewModels
 {
-    public class CharactersViewModel : ReactiveObject, IUndoableModule
+    public class CharactersViewModel : ReactiveObject, IUndoableModule, System.IDisposable
     {
         private static readonly ILogger _logger = Log.ForContext<CharactersViewModel>();
         private readonly ICharacterService _characterService;
@@ -31,6 +32,7 @@ namespace Writersword.Modules.Characters.ViewModels
         private readonly CharactersTrashService _trash;
         private readonly ICharacterAvatarService? _avatarService;
         private CancellationTokenSource? _refreshCts;
+        private readonly System.Reactive.Disposables.CompositeDisposable _disposables = new();
 
         private bool _isLoading;
         public bool IsLoading
@@ -376,10 +378,14 @@ namespace Writersword.Modules.Characters.ViewModels
             GoToRelationshipsCommand = ReactiveCommand.Create(() => { MainTabIndex = 2; });
             GoToTemplatesCommand = ReactiveCommand.Create(() => { MainTabIndex = 3; });
 
-            GoToCharactersCommand.ThrownExceptions.Subscribe(ex => _logger.Error(ex, "GoToCharacters failed"));
-            GoToEditCommand.ThrownExceptions.Subscribe(ex => _logger.Error(ex, "GoToEdit failed"));
-            GoToRelationshipsCommand.ThrownExceptions.Subscribe(ex => _logger.Error(ex, "GoToRelationships failed"));
-            GoToTemplatesCommand.ThrownExceptions.Subscribe(ex => _logger.Error(ex, "GoToTemplates failed"));
+            GoToCharactersCommand.ThrownExceptions
+                .Subscribe(ex => _logger.Error(ex, "GoToCharacters failed")).DisposeWith(_disposables);
+            GoToEditCommand.ThrownExceptions
+                .Subscribe(ex => _logger.Error(ex, "GoToEdit failed")).DisposeWith(_disposables);
+            GoToRelationshipsCommand.ThrownExceptions
+                .Subscribe(ex => _logger.Error(ex, "GoToRelationships failed")).DisposeWith(_disposables);
+            GoToTemplatesCommand.ThrownExceptions
+                .Subscribe(ex => _logger.Error(ex, "GoToTemplates failed")).DisposeWith(_disposables);
 
             FilterPrimaryCommand = ReactiveCommand.Create(() =>
             {
@@ -1337,6 +1343,24 @@ namespace Writersword.Modules.Characters.ViewModels
                 else if (character.IsRenaming)
                     character.ConfirmRenameCommand.Execute().Subscribe();
             }
+        }
+
+
+        public void Dispose()
+        {
+            _disposables.Dispose();
+
+            // Явно очищаем данные персонажей — освобождаем аватарки и
+            // строковые данные не дожидаясь GC.
+            foreach (var folder in Folders)
+            {
+                foreach (var ch in folder.Characters)
+                    ch.RefreshAvatar();
+                folder.Characters.Clear();
+            }
+            Folders.Clear();
+            FilteredCharacters.Clear();
+            _folders.Clear();
         }
 
         public void LoadFolders(List<CharacterFolder> folders)

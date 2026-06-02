@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Interfaces.WorkFlows;
@@ -19,15 +20,17 @@ using Writersword.ViewModels;
 namespace Writersword.Infrastructure.Services.WorkModes
 {
     /// <summary>
-    /// Сервис автоматического сохранения локальной конфигурации workspace
-    /// Сохраняет изменения в workspace.json внутри ZIP спустя 5 секунд после последнего изменения
-    /// Ключ данных модуля — moduleType, не InstanceId
-    /// Валидация: проверяет только уникальность moduleType в WorkMode и ProjectId соответствие
+    /// Сервис автоматического сохранения локальной конфигурации workspace.
+    /// Сохраняет изменения в workspace.json внутри ZIP спустя 5 секунд после последнего изменения.
+    /// SemaphoreSlim предотвращает конкурентные записи при частом переключении WorkMode.
+    /// CancellationToken прерывает устаревшую операцию если пришло новое изменение.
     /// </summary>
     public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
     {
         private readonly ILogger<WorkspaceAutoSaveService> _logger;
+        private readonly SemaphoreSlim _saveSemaphore = new SemaphoreSlim(1, 1);
         private IDisposable? _debounceSubscription;
+        private CancellationTokenSource? _cts;
         private string? _currentProjectPath;
         private ProjectFile? _currentProject;
         private bool _isDisposed = false;
@@ -51,6 +54,11 @@ namespace Writersword.Infrastructure.Services.WorkModes
         {
             _debounceSubscription?.Dispose();
             _debounceSubscription = null;
+
+            _cts?.Cancel();
+            _cts?.Dispose();
+            _cts = null;
+
             _currentProjectPath = null;
             _currentProject = null;
             _logger.LogDebug("Stopped");
@@ -63,11 +71,43 @@ namespace Writersword.Infrastructure.Services.WorkModes
 
             _debounceSubscription?.Dispose();
 
+            _cts?.Cancel();
+            _cts?.Dispose();
+            _cts = new CancellationTokenSource();
+            var token = _cts.Token;
+
             _debounceSubscription = Observable
                 .Timer(_debounceDelay)
-                .Subscribe(_ => Avalonia.Threading.Dispatcher.UIThread.Post(() => SaveConfiguration()));
+                .Subscribe(_ =>
+                {
+                    if (!token.IsCancellationRequested)
+                        ScheduleSave(token);
+                });
 
             _logger.LogDebug("Change detected, will save in {Seconds} seconds", _debounceDelay.TotalSeconds);
+        }
+
+        private void ScheduleSave(CancellationToken token)
+        {
+            Task.Run(async () =>
+            {
+                if (token.IsCancellationRequested) return;
+
+                if (!await _saveSemaphore.WaitAsync(TimeSpan.Zero))
+                {
+                    _logger.LogDebug("Save skipped: previous operation still running");
+                    return;
+                }
+
+                try
+                {
+                    await SaveConfigurationAsync(token);
+                }
+                finally
+                {
+                    _saveSemaphore.Release();
+                }
+            });
         }
 
         public async Task SaveNowAsync()
@@ -82,6 +122,10 @@ namespace Writersword.Infrastructure.Services.WorkModes
                 _debounceSubscription?.Dispose();
                 _debounceSubscription = null;
 
+                _cts?.Cancel();
+                _cts?.Dispose();
+                _cts = null;
+
                 var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
                 var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
 
@@ -91,7 +135,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
                     return;
                 }
 
-                var currentConfig = await CollectCurrentConfigurationAsync();
+                var currentConfig = await CollectCurrentConfigurationAsync(CancellationToken.None);
 
                 if (currentConfig == null)
                 {
@@ -115,16 +159,15 @@ namespace Writersword.Infrastructure.Services.WorkModes
             }
         }
 
-        private async void SaveConfiguration()
+        private async Task SaveConfigurationAsync(CancellationToken token)
         {
-            // Уже вызываемся из Dispatcher.UIThread.Post — мы на UI-треде.
-            // Вложенный InvokeAsync создавал deadlock при shutdown: Task попадал в очередь
-            // которую dispatcher уже не обрабатывал, и await никогда не завершался.
             if (_isDisposed || _currentProject == null || _currentProjectPath == null)
                 return;
 
             try
             {
+                if (token.IsCancellationRequested) return;
+
                 var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
                 var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
 
@@ -134,7 +177,9 @@ namespace Writersword.Infrastructure.Services.WorkModes
                     return;
                 }
 
-                var currentConfig = await CollectCurrentConfigurationAsync();
+                var currentConfig = await CollectCurrentConfigurationAsync(token);
+
+                if (token.IsCancellationRequested) return;
 
                 if (currentConfig == null)
                 {
@@ -154,17 +199,22 @@ namespace Writersword.Infrastructure.Services.WorkModes
                 if (success)
                     _logger.LogDebug("workspace.json saved successfully");
             }
+            catch (OperationCanceledException)
+            {
+                _logger.LogDebug("Save cancelled (newer change arrived)");
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error saving workspace");
             }
         }
+
         /// <summary>
-        /// Собрать текущую конфигурацию из активного workspace
-        /// Активный WorkMode — сериализуется из реального layout
-        /// Неактивные — берутся как есть из ModuleSlots (без фильтрации по InstanceId)
+        /// Собрать текущую конфигурацию из активного workspace.
+        /// Активный WorkMode сериализуется из реального layout.
+        /// Неактивные берутся как есть из ModuleSlots.
         /// </summary>
-        private async Task<WorkspaceLocalConfig?> CollectCurrentConfigurationAsync()
+        private async Task<WorkspaceLocalConfig?> CollectCurrentConfigurationAsync(CancellationToken token)
         {
             try
             {
@@ -183,8 +233,12 @@ namespace Writersword.Infrastructure.Services.WorkModes
                     return null;
                 }
 
+                if (token.IsCancellationRequested) return null;
+
                 var tabCollection = App.Services.GetRequiredService<ITabCollection>();
-                var activeTab = tabCollection.Tabs?.FirstOrDefault(t => t.FilePath == _currentProjectPath) as DocumentTabViewModel;
+                var activeTab = await Dispatcher.UIThread.InvokeAsync(() =>
+                    tabCollection.Tabs?.FirstOrDefault(t => t.FilePath == _currentProjectPath) as DocumentTabViewModel,
+                    DispatcherPriority.Background);
 
                 if (activeTab?.Workspace == null)
                 {
@@ -192,17 +246,23 @@ namespace Writersword.Infrastructure.Services.WorkModes
                     return null;
                 }
 
-                var workModeService = activeTab.Workspace.GetWorkModeService();
-                var allWorkModes = workModeService.GetAllWorkModes();
+                if (token.IsCancellationRequested) return null;
+
+                var (allWorkModes, activeWorkMode, dockFactory, currentLayout) =
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        var wms = activeTab.Workspace.GetWorkModeService().GetAllWorkModes();
+                        var active = wms.FirstOrDefault(wm => wm.IsActive);
+                        var factory = App.Services.GetRequiredService<DockFactory>();
+                        var layout = activeTab.Workspace.GetCurrentLayout();
+                        return (wms, active, factory, layout);
+                    }, DispatcherPriority.Background);
 
                 if (allWorkModes == null || allWorkModes.Count == 0)
                 {
                     _logger.LogWarning("No WorkModes to save");
                     return null;
                 }
-
-                var dockFactory = App.Services.GetRequiredService<DockFactory>();
-                var activeWorkMode = allWorkModes.FirstOrDefault(wm => wm.IsActive);
 
                 _logger.LogDebug("Collecting config: {Total} WorkModes, active: {ActiveTitle}",
                     allWorkModes.Count, activeWorkMode?.Title ?? "NULL");
@@ -211,18 +271,19 @@ namespace Writersword.Infrastructure.Services.WorkModes
 
                 foreach (var wm in allWorkModes)
                 {
+                    if (token.IsCancellationRequested) return null;
+
                     if (wm == activeWorkMode)
                     {
-                        var currentLayout = activeTab.Workspace.GetCurrentLayout();
-
                         if (currentLayout == null)
                         {
                             _logger.LogWarning("No layout for active WorkMode {Title}, skipping", wm.Title);
                             continue;
                         }
 
-                        var (serializedLayout, updatedSlots) = dockFactory.SerializeCurrentLayout(
-                            currentLayout, wm, activeTab.ModuleContext);
+                        var (serializedLayout, updatedSlots) = await Dispatcher.UIThread.InvokeAsync(() =>
+                            dockFactory.SerializeCurrentLayout(currentLayout, wm, activeTab.ModuleContext),
+                            DispatcherPriority.Background);
 
                         var activeToSave = new WorkMode
                         {
@@ -282,6 +343,11 @@ namespace Writersword.Infrastructure.Services.WorkModes
                 _logger.LogDebug("Configuration collected: {Count} WorkModes", config.WorkModes.Count);
                 return config;
             }
+            catch (OperationCanceledException)
+            {
+                _logger.LogDebug("CollectCurrentConfiguration cancelled");
+                return null;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error collecting configuration");
@@ -289,10 +355,6 @@ namespace Writersword.Infrastructure.Services.WorkModes
             }
         }
 
-        /// <summary>
-        /// Валидация конфигурации перед сохранением
-        /// Проверяет уникальность moduleType в каждом WorkMode
-        /// </summary>
         private bool ValidateConfiguration(WorkspaceLocalConfig config)
         {
             try
@@ -355,6 +417,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
 
             _isDisposed = true;
             Stop();
+            _saveSemaphore.Dispose();
             _logger.LogDebug("Disposed");
         }
     }

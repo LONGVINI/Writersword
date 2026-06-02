@@ -298,6 +298,11 @@ namespace Writersword.Modules.Characters
                 _onLanguageChanged = null;
             }
 
+            if (_viewModel is System.IDisposable disposableVm)
+                disposableVm.Dispose();
+            _viewModel = null;
+            _moduleData = null;
+
             base.Dispose();
             _logger.Debug("Disposed");
         }

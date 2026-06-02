@@ -139,9 +139,10 @@ namespace Writersword.ViewModels.Components
         }
 
         /// <summary>Освободить ресурсы</summary>
-        public void Dispose()
+        public override void Dispose()
         {
             _hideTimer?.Dispose();
+            base.Dispose();
         }
     }
 }

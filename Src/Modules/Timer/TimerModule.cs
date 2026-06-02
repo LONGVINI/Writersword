@@ -26,6 +26,7 @@ namespace Writersword.Modules.Timer
         private readonly ILogger<TimerModule> _logger;
         private TimerViewModel? _viewModel;
         private TimerSettingsViewModel? _settingsVm;
+        private IDisposable? _settingsSubscription;
 
         /// <summary>Хардкод дефолты — создаются один раз, никогда не меняются.</summary>
         private static readonly TimerSettings _hardcodedDefaults = new();
@@ -232,7 +233,9 @@ namespace Writersword.Modules.Timer
                 IsCountdown = settings.IsCountdown
             };
 
-            _settingsVm.WhenAnyValue(x => x.DefaultMinutes, x => x.DefaultSeconds, x => x.IsCountdown)
+            _settingsSubscription?.Dispose();
+            _settingsSubscription = _settingsVm
+                .WhenAnyValue(x => x.DefaultMinutes, x => x.DefaultSeconds, x => x.IsCountdown)
                 .Skip(1)
                 .Subscribe(tuple =>
                 {
@@ -314,6 +317,16 @@ namespace Writersword.Modules.Timer
             settingsService.SaveModuleSettings(moduleType, settings);
 
             _logger.LogDebug("PromoteLocalToGlobal completed");
+        }
+
+        public override void Dispose()
+        {
+            _settingsSubscription?.Dispose();
+            _settingsSubscription = null;
+            _viewModel?.Dispose();
+            _viewModel = null;
+            _settingsVm = null;
+            base.Dispose();
         }
 
         public override object? GetCustomData() => null;

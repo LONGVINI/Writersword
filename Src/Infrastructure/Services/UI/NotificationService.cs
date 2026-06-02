@@ -12,8 +12,8 @@ using Writersword.Views.Components;
 namespace Writersword.Infrastructure.Services.UI
 {
     /// <summary>
-    /// Сервис для показа всплывающих уведомлений
-    /// Создаёт NotificationView и добавляет его в главное окно
+    /// Сервис для показа всплывающих уведомлений.
+    /// Создаёт NotificationView и добавляет его в главное окно.
     /// </summary>
     public class NotificationService : INotificationService
     {
@@ -52,7 +52,7 @@ namespace Writersword.Infrastructure.Services.UI
         }
 
         /// <summary>
-        /// Показать уведомление с настраиваемым типом и длительностью
+        /// Показать уведомление с настраиваемым типом и длительностью.
         /// </summary>
         public void Show(string message, NotificationType type, TimeSpan? duration = null)
         {
@@ -70,10 +70,12 @@ namespace Writersword.Infrastructure.Services.UI
                         return;
                     }
 
-                    // Скрываем предыдущее уведомление если есть
+                    // Скрываем и освобождаем предыдущее уведомление
                     if (_currentNotification != null)
                     {
                         _currentNotification.Hide();
+                        _currentNotification.Dispose();
+                        _currentNotification = null;
                     }
 
                     // Создаём новое уведомление
@@ -100,8 +102,8 @@ namespace Writersword.Infrastructure.Services.UI
         }
 
         /// <summary>
-        /// Получить или создать контейнер для уведомлений
-        /// Контейнер находится в MainWindow
+        /// Получить или создать контейнер для уведомлений.
+        /// Контейнер находится в MainWindow.
         /// </summary>
         private void EnsureNotificationContainer()
         {

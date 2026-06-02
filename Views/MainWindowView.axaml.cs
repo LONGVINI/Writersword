@@ -13,15 +13,16 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
+using System.Threading.Tasks;
+using Writersword.Core.Enums;
+using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
-using Writersword.Resources.Localization;
 using Writersword.Core.Interfaces.Services.Input;
 using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Interfaces.WorkFlows;
+using Writersword.Resources.Localization;
 using Writersword.ViewModels;
-using Writersword.Core.Interfaces.Modules;
-using Writersword.Core.Enums;
 using Writersword.Views.Components.MenuBar;
 
 namespace Writersword.Views
@@ -616,7 +617,9 @@ namespace Writersword.Views
                     if (!string.IsNullOrEmpty(tab.FilePath))
                     {
                         var cacheService = App.Services.GetRequiredService<IZipCacheService>();
-                        cacheService.DeleteCache(tab.FilePath);
+                        // Task.Run: DeleteCache вызывает _fileLock.Wait() на UI-потоке.
+                        // Если фоновый авто-сейв держит лок — дедлок при закрытии.
+                        await Task.Run(() => cacheService.DeleteCache(tab.FilePath));
                     }
                 }
             }

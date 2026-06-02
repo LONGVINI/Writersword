@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reactive.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
@@ -13,22 +14,25 @@ using Writersword.Core.Interfaces.Services.Storage;
 namespace Writersword.Infrastructure.Services.Storage
 {
     /// <summary>
-    /// Сервис фонового кеширования состояния модулей
-    /// Периодически сохраняет данные модулей в .wsasd файл (ZIP архив)
-    /// Сохраняет только если данные отличаются от сохранённого ZIP файла
-    /// Ключ данных модуля — moduleType, не InstanceId
+    /// Сервис фонового кеширования состояния модулей.
+    /// Периодически сохраняет данные модулей в .wsasd файл (ZIP архив).
+    /// Сохраняет только если данные отличаются от сохранённого ZIP файла.
+    /// Ключ данных модуля — moduleType, не InstanceId.
+    /// SemaphoreSlim гарантирует что одновременно выполняется не более одной операции кеширования.
     /// </summary>
-    public class CacheUpdateService : ICacheUpdateService
+    public class CacheUpdateService : ICacheUpdateService, IDisposable
     {
         private readonly ILogger<CacheUpdateService> _logger;
         private readonly IZipCacheService _cacheService;
         private readonly IModuleStateCollectorService _stateCollector;
         private readonly IDataComparisonService _comparisonService;
+        private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
         private IDisposable? _cacheUpdateSubscription;
         private DebounceTimer? _debounceTimer;
         private TimeSpan _interval = TimeSpan.FromSeconds(10);
         private string? _currentProjectPath;
         private Func<IEnumerable<IModule>>? _getActiveModules;
+        private bool _disposed;
 
         public event EventHandler? CacheSaved;
 
@@ -44,7 +48,7 @@ namespace Writersword.Infrastructure.Services.Storage
         }
 
         /// <summary>
-        /// Запустить фоновое кеширование для проекта
+        /// Запустить фоновое кеширование для проекта.
         /// </summary>
         public void Start(string projectPath, Func<IEnumerable<IModule>> getActiveModules)
         {
@@ -55,13 +59,13 @@ namespace Writersword.Infrastructure.Services.Storage
 
             _cacheUpdateSubscription = Observable
                 .Interval(_interval)
-                .Subscribe(async _ => await PerformCacheUpdateAsync());
+                .Subscribe(_ => ScheduleCacheUpdate());
 
             _logger.LogDebug("Started for: {ProjectPath}", projectPath);
         }
 
         /// <summary>
-        /// Остановить фоновое кеширование
+        /// Остановить фоновое кеширование.
         /// </summary>
         public void Stop()
         {
@@ -78,15 +82,15 @@ namespace Writersword.Infrastructure.Services.Storage
         }
 
         /// <summary>
-        /// Принудительно сохранить в кеш немедленно
+        /// Принудительно сохранить в кеш немедленно.
         /// </summary>
         public void SaveToCache()
         {
-            _ = PerformCacheUpdateAsync();
+            ScheduleCacheUpdate();
         }
 
         /// <summary>
-        /// Установить интервал кеширования
+        /// Установить интервал кеширования.
         /// </summary>
         public void SetInterval(TimeSpan interval)
         {
@@ -95,8 +99,33 @@ namespace Writersword.Infrastructure.Services.Storage
         }
 
         /// <summary>
-        /// Выполнить обновление кеша
-        /// Сохраняет только если данные отличаются от сохранённого ZIP файла
+        /// Запускает обновление кеша в фоне, не блокируя поток таймера.
+        /// SemaphoreSlim защищает от накопления параллельных операций.
+        /// </summary>
+        private void ScheduleCacheUpdate()
+        {
+            Task.Run(async () =>
+            {
+                if (!await _semaphore.WaitAsync(TimeSpan.Zero))
+                {
+                    _logger.LogDebug("Cache update skipped: previous operation still running");
+                    return;
+                }
+
+                try
+                {
+                    await PerformCacheUpdateAsync();
+                }
+                finally
+                {
+                    _semaphore.Release();
+                }
+            });
+        }
+
+        /// <summary>
+        /// Выполнить обновление кеша.
+        /// Сохраняет только если данные отличаются от сохранённого ZIP файла.
         /// </summary>
         private async Task PerformCacheUpdateAsync()
         {
@@ -220,6 +249,7 @@ namespace Writersword.Infrastructure.Services.Storage
                     _logger.LogError("Cannot get ProjectId, aborting cache update");
                     return;
                 }
+
                 await _cacheService.SaveCacheAsync(projectPath, project.Id, customData, sessionData);
 
                 await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
@@ -233,6 +263,17 @@ namespace Writersword.Infrastructure.Services.Storage
             {
                 _logger.LogError(ex, "Cache update failed");
             }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+
+            Stop();
+            _semaphore.Dispose();
+
+            _logger.LogDebug("CacheUpdateService disposed");
         }
     }
 }

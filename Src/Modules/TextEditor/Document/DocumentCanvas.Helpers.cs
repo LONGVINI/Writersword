@@ -785,10 +785,11 @@ namespace Writersword.Modules.TextEditor.Document
                         // Иначе клик правее короткого параграфа давал xDist > 0,
                         // а ячейка таблицы с широким ClipW выигрывала сравнение (xDist = 0).
                         xLeft = pl.AbsXPt;
-                        xRight = pl.AbsXPt + (pl.Layout.TextAreaWidthPt > 0
-                            ? pl.Layout.TextAreaWidthPt
-                            : (pl.Layout.Lines.Count > 0
-                                ? pl.Layout.Lines.Max(l => l.Segments.Count > 0
+                        var selLayout = pl.Layout ?? GetOrBuildLayout(pl.Vm, (float)(_canvasWidth * PxToPt));
+                        xRight = pl.AbsXPt + (selLayout.TextAreaWidthPt > 0
+                            ? selLayout.TextAreaWidthPt
+                            : (selLayout.Lines.Count > 0
+                                ? selLayout.Lines.Max(l => l.Segments.Count > 0
                                     ? l.Segments[^1].X + l.Segments[^1].Width : 0f)
                                 : 100f));
                     }
@@ -860,31 +861,32 @@ namespace Writersword.Modules.TextEditor.Document
 
             float padXPt = best.AbsXPt;
 
-            float localX = xPt - padXPt - best.Layout.LeftIndentPt;
+            var hitLayout = best.Layout ?? GetOrBuildLayout(best.Vm, (float)(_canvasWidth * PxToPt));
+            float localX = xPt - padXPt - hitLayout.LeftIndentPt;
             // localY: переводим screen-Y в координаты лейаута.
             // RenderParagraphLines рисует строку i в точке absY + (lines[i].Y - lines[lineFrom].Y),
             // поэтому: layout_Y = (screenY - pl.Ypt) + lines[lineFrom].Y.
-            float hitYBase = best.LineFrom < best.Layout.Lines.Count
-                ? best.Layout.Lines[best.LineFrom].Y : 0f;
+            float hitYBase = best.LineFrom < hitLayout.Lines.Count
+                ? hitLayout.Lines[best.LineFrom].Y : 0f;
             float localY = yPt - best.Ypt + hitYBase;
 
-            if (best.LineFrom < best.Layout.Lines.Count)
+            if (best.LineFrom < hitLayout.Lines.Count)
             {
-                float fy = best.Layout.Lines[best.LineFrom].Y;
-                int lto = best.LineTo > 0 && best.LineTo <= best.Layout.Lines.Count
-                    ? best.LineTo : best.Layout.Lines.Count;
-                float ly = best.Layout.Lines[lto - 1].Y + best.Layout.Lines[lto - 1].Height;
+                float fy = hitLayout.Lines[best.LineFrom].Y;
+                int lto = best.LineTo > 0 && best.LineTo <= hitLayout.Lines.Count
+                    ? best.LineTo : hitLayout.Lines.Count;
+                float ly = hitLayout.Lines[lto - 1].Y + hitLayout.Lines[lto - 1].Height;
                 localY = Clamp(localY, fy + 0.1f, ly - 0.1f);
             }
 
             float hitX = localX;
             if (best.LineFrom == 0
-                && best.Layout.FirstLineIndentPt != 0
-                && best.Layout.Lines.Count > 0)
+                && hitLayout.FirstLineIndentPt != 0
+                && hitLayout.Lines.Count > 0)
             {
-                float line0Bottom = best.Layout.Lines[0].Y + best.Layout.Lines[0].Height;
+                float line0Bottom = hitLayout.Lines[0].Y + hitLayout.Lines[0].Height;
                 if (localY <= line0Bottom)
-                    hitX -= best.Layout.FirstLineIndentPt;
+                    hitX -= hitLayout.FirstLineIndentPt;
             }
 
             // Определяем целевую строку по localY.
@@ -892,9 +894,9 @@ namespace Writersword.Modules.TextEditor.Document
             // не вызывая HitTestPoint: тот пересчитывает строку по localY внутри
             // и при hitX > TextWidth всё равно уходит на начало следующей.
             _caretLineHint = -1;
-            for (int li = best.LineFrom; li < Math.Min(best.LineTo, best.Layout.Lines.Count); li++)
+            for (int li = best.LineFrom; li < Math.Min(best.LineTo, hitLayout.Lines.Count); li++)
             {
-                var ln = best.Layout.Lines[li];
+                var ln = hitLayout.Lines[li];
                 if (localY <= ln.Y + ln.Height)
                 {
                     _caretLineHint = li;
@@ -904,7 +906,7 @@ namespace Writersword.Modules.TextEditor.Document
                 }
             }
 
-            var hit = best.Layout.HitTestPoint(hitX, localY);
+            var hit = hitLayout.HitTestPoint(hitX, localY);
 
             return (bestIdx, hit.CharIndex);
         }
@@ -925,20 +927,19 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (string.IsNullOrEmpty(pl.Vm.PlainText))
                 {
-                    if (pl.Cell is null && IsBreakAnchor(pl.Vm.Model))
-                    {
-                        caretYPx = pl.Ypt * PtToPx * zoom;
-                        caretHPx = FallbackLinePt * PtToPx * zoom;
-                    }
-                    else return;
+                    // Пустой параграф — например созданный после Enter.
+                    // Используем Ypt параграфа как позицию каретки.
+                    caretYPx = pl.Ypt * PtToPx * zoom;
+                    caretHPx = FallbackLinePt * PtToPx * zoom;
                 }
                 else
                 {
                     int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
-                    var caret = pl.Layout.HitTestPosition(pos);
+                    var htLayout = pl.Layout ?? GetOrBuildLayout(pl.Vm, (float)(_canvasWidth * PxToPt));
+                    var caret = htLayout.HitTestPosition(pos);
 
-                    float yBase = pl.LineFrom < pl.Layout.Lines.Count
-                        ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
+                    float yBase = pl.LineFrom < htLayout.Lines.Count
+                        ? htLayout.Lines[pl.LineFrom].Y : 0f;
 
                     caretYPx = (pl.Ypt + (caret.Y - yBase)) * PtToPx * zoom;
                     caretHPx = caret.Height * PtToPx * zoom;
@@ -1036,7 +1037,8 @@ namespace Writersword.Modules.TextEditor.Document
                 else
                 {
                     int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
-                    var caret = pl.Layout.HitTestPosition(pos);
+                    var htLayout = pl.Layout ?? GetOrBuildLayout(pl.Vm, (float)(_canvasWidth * PxToPt));
+                    var caret = htLayout.HitTestPosition(pos);
                     caretYPx = (pl.Ypt + caret.Y) * PtToPx * zoom;
                     caretHPx = caret.Height * PtToPx * zoom;
                 }
@@ -1077,7 +1079,8 @@ namespace Writersword.Modules.TextEditor.Document
                 var pl = _layouts[i];
                 if (pl.Cell != null)
                 {
-                    var caret = pl.Layout.HitTestPosition(Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0));
+                    var cellLayout = pl.Layout ?? GetOrBuildLayout(pl.Vm, (float)(_canvasWidth * PxToPt));
+                    var caret = cellLayout.HitTestPosition(Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0));
                     float caretAbsY = pl.Ypt + caret.Y;
                     float clipTop = pl.Cell.ClipY;
                     float clipBot = pl.Cell.ClipY + pl.Cell.ClipH;

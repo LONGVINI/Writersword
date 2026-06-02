@@ -82,7 +82,7 @@ namespace Writersword.Modules.TextEditor.Document
         // ── Layout параграфов ─────────────────────────────────────────────
         private record ParaLayout(
             ParagraphViewModel Vm,
-            SKTextLayout Layout,
+            SKTextLayout? Layout,      // null для параграфов за пределами viewport-буфера
             float Ypt,
             float HeightPt,
             int PageIndex,
@@ -464,7 +464,10 @@ namespace Writersword.Modules.TextEditor.Document
             // Не диспозим bitmap напрямую — render-тред (compositor) может держать
             // локальную ссылку cached на тот же объект и рисовать его прямо сейчас.
             // Добавляем в очередь и зануляем: bitmap живёт пока render-тред не завершит
-            // текущий DrawBitmap. Очередь очистится при следующем рендере после reattach.
+            // текущий DrawBitmap.
+            // Дренируем очередь через Background-Post, а не при следующем reattach:
+            // при смене вкладки создаётся НОВЫЙ канвас, старый никогда не reattach-ится,
+            // поэтому его очередь без этого фикса держит нативную SkiaSharp-память вечно.
             lock (_bitmapLock)
             {
                 if (_renderBitmap is not null)
@@ -479,15 +482,30 @@ namespace Writersword.Modules.TextEditor.Document
                 }
             }
 
+            var queueSnapshot = _bitmapDisposeQueue;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                while (queueSnapshot.TryDequeue(out var stale))
+                    stale?.Dispose();
+            }, Avalonia.Threading.DispatcherPriority.Background);
+
             // SKPaint не диспозим здесь: DockFactory переиспользует DocumentCanvas
             // (detach → reattach при переключении вкладок). Если диспозить паинты
             // на detach, при повторном reattach рендер упадёт с disposed-объектами.
             // SKPaint — крошечные нативные объекты (~200 байт), GC соберёт при финализации.
 
-            // Очищаем кеши лейаутов.
+            // Очищаем кеши и списки лейаутов.
+            // _layouts держит ссылки на SKTextLayout (нативные SkiaSharp объекты).
+            // Явная очистка освобождает нативную память без ожидания GC финализаторов.
             _layoutCache.Clear();
             _cellLayoutCache.Clear();
             _cellVmCache.Clear();
+            lock (_renderLock)
+            {
+                _layouts = new System.Collections.Generic.List<ParaLayout>();
+                _pages = new System.Collections.Generic.List<PageRect>();
+                _tables = new System.Collections.Generic.List<TableEntry>();
+            }
 
             UnsubscribeFromScrollViewer();
         }
@@ -614,8 +632,10 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void OnParagraphFormatChanged()
         {
-            _layoutCache.Clear();
-            _cellLayoutCache.Clear();
+            // Не чистим _layoutCache здесь: GetOrBuildLayout проверяет Text и Width,
+            // при изменении текста параграфа кеш инвалидируется сам.
+            // Clear() вызывает сотни BuildLayout на каждый MeasureOverride,
+            // что при быстром наборе текста вызывает лавину аллокаций.
             RebuildLayouts();
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
@@ -757,15 +777,25 @@ namespace Writersword.Modules.TextEditor.Document
         private void ScheduleRebuild(int dirtyParaIdx)
         {
             ParagraphViewModel? dirtyPvm = null;
-            if (DocVm is not null && dirtyParaIdx < DocVm.Paragraphs.Count)
+            if (DocVm is not null && dirtyParaIdx >= 0 && dirtyParaIdx < DocVm.Paragraphs.Count)
             {
                 dirtyPvm = DocVm.Paragraphs[dirtyParaIdx];
                 _layoutCache.Remove(dirtyPvm);
 
-                // Фаза 1: мгновенно перестраиваем только изменённый параграф
-                // и обновляем _layouts без ожидания полного rebuild.
-                // Символ становится виден немедленно, не дожидаясь Background-задачи.
-                QuickUpdateParagraphLayout(dirtyPvm);
+                // Проверяем: параграф уже есть в _layouts (редактирование текста)
+                // или это новый параграф (Enter/вставка).
+                bool pvmInLayouts = _layouts.Any(l => l.Vm == dirtyPvm && l.Cell is null);
+                if (pvmInLayouts)
+                {
+                    // Быстрый путь для редактирования: обновляем только один параграф.
+                    QuickUpdateParagraphLayout(dirtyPvm);
+                }
+                else
+                {
+                    // Новый параграф (Enter): вставляем в _layouts с оценочной высотой
+                    // чтобы ScrollToCaret мог найти его позицию немедленно.
+                    QuickInsertParagraphLayout(dirtyParaIdx, dirtyPvm);
+                }
             }
 
             var oldCts = _rebuildCts;
@@ -813,6 +843,10 @@ namespace Writersword.Modules.TextEditor.Document
                 else
                     InvalidateFull();
 
+                // После полного rebuild _layouts актуален — прокручиваем к каретке.
+                // Нужно при Enter: ResetCaret вызывается до rebuild, каретка вне _layouts.
+                ScrollToCaret();
+
             }, DispatcherPriority.Background);
         }
 
@@ -828,8 +862,10 @@ namespace Writersword.Modules.TextEditor.Document
             if (_styleResolver is null && DocVm is not null)
                 _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
 
-            _layoutCache.Clear();
-            _cellLayoutCache.Clear();
+            // Не чистим _layoutCache здесь: GetOrBuildLayout проверяет Text и Width,
+            // при изменении текста параграфа кеш инвалидируется сам.
+            // Clear() вызывает сотни BuildLayout на каждый MeasureOverride,
+            // что при быстром наборе текста вызывает лавину аллокаций.
             RebuildLayouts();
 
             double visualH = Math.Max(_canvasHeight * zoom, 100);
@@ -899,6 +935,21 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
+
+        /// <summary>
+        /// Быстрая оценка высоты параграфа без построения SKTextLayout.
+        /// Используется для параграфов вне viewport-буфера — точность ~±30%,
+        /// достаточная для позиционирования скроллбара и прокрутки.
+        /// </summary>
+        private float EstimateHeight(ParagraphViewModel pvm, float widthPt)
+        {
+            int charCount = pvm.PlainText?.Length ?? 0;
+            if (charCount == 0) return FallbackLinePt;
+            const float AvgCharWidthPt = 5.5f;
+            float charsPerLine = Math.Max(widthPt / AvgCharWidthPt, 1f);
+            float lines = MathF.Ceiling(charCount / charsPerLine) + 0.5f;
+            return MathF.Max(lines * FallbackLinePt, FallbackLinePt);
+        }
 
         private SKTextLayout GetOrBuildLayout(ParagraphViewModel pvm, float widthPt)
         {

@@ -85,32 +85,50 @@ namespace Writersword.Infrastructure.Services.Project
 
                 if (initializeWorkspace && _cacheService.HasCache(filePath))
                 {
-                    var cacheDate = _cacheService.GetCacheDate(filePath);
+                    // Быстрая проверка через хеш файла проекта из метаданных кеша.
+                    // Читаем только cache.json (~100 байт) вместо загрузки 400 МБ данных.
+                    var cacheMeta = await Task.Run(() => _cacheService.LoadCacheMetadata(filePath));
+                    var cacheDate = cacheMeta?.CacheDate;
                     var saveDate = File.GetLastWriteTime(filePath);
 
                     if (cacheDate.HasValue)
                     {
                         _logger.LogDebug("Cache found - Cache: {CacheDate}, Save: {SaveDate}", cacheDate, saveDate);
 
-                        var savedProject = await _projectService.LoadAsync(filePath);
-                        var cache = _cacheService.LoadCache(filePath);
-
                         bool dataIsSame = false;
-                        if (savedProject != null && cache != null)
+
+                        if (!string.IsNullOrEmpty(cacheMeta?.ProjectFileHash))
                         {
-                            // Сравниваем только те модули которые есть в кеше.
-                            // Остальные не были активны в прошлой сессии — не могли измениться.
-                            var savedRelevantOnOpen = savedProject.ModulesData
-                                .Where(kvp => cache.ContainsKey(kvp.Key))
-                                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-                            dataIsSame = _comparisonService.AreDataEqual(cache, savedRelevantOnOpen);
-                            _logger.LogDebug("Data comparison: {Comparison}", dataIsSame ? "SAME" : "DIFFERENT");
+                            // Быстрый путь: сравниваем хеши файла (~50 мс) вместо загрузки данных.
+                            var currentHash = await Task.Run(() =>
+                            {
+                                using var sha = System.Security.Cryptography.SHA256.Create();
+                                using var fs = File.OpenRead(filePath);
+                                return Convert.ToHexString(sha.ComputeHash(fs));
+                            });
+                            dataIsSame = currentHash == cacheMeta.ProjectFileHash;
+                            _logger.LogDebug("Hash comparison: {Result}", dataIsSame ? "SAME" : "DIFFERENT");
+                        }
+                        else
+                        {
+                            // Старый кеш без хеша файла — загружаем данные для сравнения.
+                            var savedProject = await _projectService.LoadAsync(filePath);
+                            var cache = await Task.Run(() => _cacheService.LoadCache(filePath));
+                            if (savedProject != null && cache != null)
+                            {
+                                var savedRelevantOnOpen = savedProject.ModulesData
+                                    .Where(kvp => cache.ContainsKey(kvp.Key))
+                                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                                dataIsSame = _comparisonService.AreDataEqual(cache, savedRelevantOnOpen);
+                            }
+                            if (dataIsSame) project = savedProject;
+                            _logger.LogDebug("Legacy comparison: {Result}", dataIsSame ? "SAME" : "DIFFERENT");
                         }
 
                         if (dataIsSame)
                         {
                             _logger.LogDebug("Data is identical, skipping Recovery dialog");
-                            project = savedProject;
+                            project ??= await _projectService.LoadAsync(filePath);
                         }
                         else
                         {
@@ -167,8 +185,11 @@ namespace Writersword.Infrastructure.Services.Project
                 }
 
                 var storage = new ZipFileStorageService(filePath);
+                if (_openStorages.TryGetValue(filePath, out var oldStorage))
+                    oldStorage.Dispose();
                 _openStorages[filePath] = storage;
                 tabVM.Context.FileStorage = storage;
+                tabVM.Context.StorageFactory = path => new ZipFileStorageService(path);
                 _logger.LogDebug("ZipFileStorage created for: {FilePath}", filePath);
 
                 var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
@@ -186,7 +207,7 @@ namespace Writersword.Infrastructure.Services.Project
 
                 if (recoveryChoice == RecoveryDialogResult.Compare)
                 {
-                    var cacheDate = _cacheService.GetCacheDate(filePath);
+                    var cacheDate = await Task.Run(() => _cacheService.GetCacheDate(filePath));
                     var saveDate = File.GetLastWriteTime(filePath);
 
                     if (cacheDate.HasValue)
@@ -266,15 +287,19 @@ namespace Writersword.Infrastructure.Services.Project
 
                 if (_cacheService.HasCache(filePath))
                 {
-                    var cacheDate = _cacheService.GetCacheDate(filePath);
+                    var cacheDate = await Task.Run(() => _cacheService.GetCacheDate(filePath));
                     var saveDate = File.GetLastWriteTime(filePath);
 
                     if (cacheDate.HasValue)
                     {
                         _logger.LogDebug("Cache found for lazy tab - Cache: {CacheDate}, Save: {SaveDate}", cacheDate, saveDate);
 
+                        // Task.Run: _fileLock.Wait() в ZipCacheService (singleton) синхронно
+                        // блокирует UI-поток. Фоновый авто-сейв держит тот же лок и ждёт
+                        // Dispatcher.UIThread.InvokeAsync — классический дедлок.
+                        // Task.Run переносит ожидание на пул потоков.
                         var savedProject = await _projectService.LoadAsync(filePath);
-                        var cache = _cacheService.LoadCache(filePath);
+                        var cache = await Task.Run(() => _cacheService.LoadCache(filePath));
 
                         bool dataIsSame = false;
                         if (savedProject != null && cache != null)
@@ -341,6 +366,7 @@ namespace Writersword.Infrastructure.Services.Project
                 var storage = new ZipFileStorageService(filePath);
                 _openStorages[filePath] = storage;
                 tab.Context.FileStorage = storage;
+                tab.Context.StorageFactory = path => new ZipFileStorageService(path);
                 _logger.LogDebug("ZipFileStorage created for: {FilePath}", filePath);
 
                 var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
@@ -358,7 +384,7 @@ namespace Writersword.Infrastructure.Services.Project
 
                 if (recoveryChoice == RecoveryDialogResult.Compare)
                 {
-                    var cacheDate = _cacheService.GetCacheDate(filePath);
+                    var cacheDate = await Task.Run(() => _cacheService.GetCacheDate(filePath));
                     var saveDate = File.GetLastWriteTime(filePath);
 
                     if (cacheDate.HasValue)
@@ -555,7 +581,7 @@ namespace Writersword.Infrastructure.Services.Project
                     {
                         var cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
                         cacheUpdateService.Stop();
-                        cacheUpdateService.Start(capturedTab.FilePath, () => capturedTab.Workspace.GetActiveModules());
+                        cacheUpdateService.Start(capturedTab.FilePath!, () => capturedTab.Workspace.GetActiveModules());
                     }
 
                     _logger.LogDebug("Saved and enabled editing, cache service started");
@@ -840,6 +866,11 @@ namespace Writersword.Infrastructure.Services.Project
                     {
                         autoSaveService.Dispose();
                         _autoSaveServices.Remove(filePath);
+                        if (_openStorages.TryGetValue(filePath, out var closingStorage))
+                        {
+                            closingStorage.Dispose();
+                            _openStorages.Remove(filePath);
+                        }
                         _logger.LogDebug("WorkspaceAutoSave stopped for: {FilePath}", filePath);
                     }
 
@@ -1003,7 +1034,7 @@ namespace Writersword.Infrastructure.Services.Project
             var project = await _projectService.LoadAsync(filePath);
             if (project == null) return null;
 
-            var cache = _cacheService.LoadCache(filePath);
+            var cache = await Task.Run(() => _cacheService.LoadCache(filePath));
             if (cache != null)
                 foreach (var kvp in cache)
                     if (kvp.Value != null)
@@ -1036,6 +1067,7 @@ namespace Writersword.Infrastructure.Services.Project
             var storage = new ZipFileStorageService(filePath);
             _openStorages[filePath] = storage;
             tab.Context.FileStorage = storage;
+            tab.Context.StorageFactory = path => new ZipFileStorageService(path);
 
             var project = tab.GetProject();
 

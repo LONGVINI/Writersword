@@ -1,4 +1,5 @@
 ﻿using Avalonia.Controls;
+using Avalonia.Interactivity;
 using ReactiveUI;
 using Serilog;
 using System;
@@ -56,6 +57,18 @@ namespace Writersword.Modules.TextEditor.Views
                     vm.Ruler.ViewportHeight = scrollViewer.Viewport.Height;
                 };
             };
+        }
+
+        protected override void OnLoaded(RoutedEventArgs e)
+        {
+            base.OnLoaded(e);
+            var canvas = this.FindControl<DocumentCanvas>("PageCanvas");
+            if (canvas is null) return;
+            // После реаттача в Dock (RecreateDocumentViews) ScrollViewer
+            // ещё не знает свой реальный размер в момент OnAttachedToVisualTree.
+            // Принудительный перемер здесь гарантирует что canvas получит
+            // правильный _viewportHeight и запустит рендер.
+            canvas.InvalidateMeasure();
         }
 
         private void SyncCanvas(DocumentCanvas canvas)

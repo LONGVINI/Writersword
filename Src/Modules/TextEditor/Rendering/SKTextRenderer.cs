@@ -36,6 +36,28 @@ namespace Writersword.Modules.TextEditor.Rendering
         // null — система не нашла ни одного шрифта с нужным глифом.
         private static readonly ConcurrentDictionary<int, string?> _fallbackFamilyCache = new();
 
+        /// <summary>
+        /// Сбрасывает нативные SKFont объекты из кеша.
+        /// SKFont — нативные объекты SkiaSharp, накапливаются при смене вкладок.
+        /// SKTypeface не сбрасываем — они тяжёлые для повторной загрузки.
+        /// </summary>
+        public static void TrimFontCache()
+        {
+            // SKFont сначала — они держат внутреннюю ссылку на SKTypeface.
+            // Диспозим шрифты до диспоза гарнитур.
+            foreach (var font in _fontCache.Values)
+                font?.Dispose();
+            _fontCache.Clear();
+
+            // SKTypeface — нативные объекты (данные шрифтового файла в памяти).
+            // При следующем открытии документа загружаются с диска за ~50 мс.
+            foreach (var typeface in _typefaceCache.Values)
+                typeface?.Dispose();
+            _typefaceCache.Clear();
+
+            _fallbackFamilyCache.Clear();
+        }
+
         // ── Публичный API ─────────────────────────────────────────────────
 
         /// <summary>

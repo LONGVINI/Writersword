@@ -794,6 +794,9 @@ namespace Writersword.Modules.TextEditor
                 _viewModel.PrintRequested -= OnPrintRequested;
 
             _viewModel?.Dispose();
+            _viewModel = null;
+            _lastCreatedView = null;
+            Writersword.Modules.TextEditor.Rendering.SKTextRenderer.TrimFontCache();
             base.Dispose();
         }
 

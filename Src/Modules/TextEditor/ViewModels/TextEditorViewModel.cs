@@ -703,53 +703,71 @@ namespace Writersword.Modules.TextEditor.ViewModels
             _autoSaveSubscription?.Dispose();
             _paragraphsSubscription?.Dispose();
             _spellCheck.Dispose();
+
+            // Явно очищаем параграфы чтобы не ждать GC.
+            // Если вью всё ещё жив (Avalonia держит ссылку) — данные
+            // освобождаются сразу, а не когда-то после сборки мусора.
+            if (_documentViewModel is not null)
+            {
+                // Очищаем модельные данные документа (ParagraphBlock с TextChunk, Run).
+                // Paragraphs.Clear() убирает только VM-обёртки, а сами блоки
+                // остаются в Document.Sections[0].Blocks — именно они дают 1.4M объектов.
+                var blocks = _documentViewModel.Document?.Sections?.Count > 0
+                    ? _documentViewModel.Document.Sections[0].Blocks
+                    : null;
+                blocks?.Clear();
+                _documentViewModel.Paragraphs.Clear();
+                _documentViewModel = null;
+            }
         }
 
         // ── Paragraph subscriptions ───────────────────────────────────────
 
         private IDisposable SubscribeToParagraphChanges(DocumentViewModel docVm)
         {
-            var subs = new Dictionary<Guid, IDisposable>();
-
-            void Subscribe(ParagraphViewModel pvm)
+            // Вместо WhenAnyValue+Throttle на каждый параграф (5000 Rx-цепочек для большого документа)
+            // используем один PropertyChanged обработчик + один DispatcherTimer для дебаунса.
+            // Это сокращает количество Rx-объектов планировщика с ~25000 до 1.
+            var debounce = new Avalonia.Threading.DispatcherTimer
             {
-                if (subs.ContainsKey(pvm.BlockId)) return;
-                subs[pvm.BlockId] = pvm
-                    .WhenAnyValue(p => p.PlainText)
-                    .Skip(1)
-                    .Throttle(TimeSpan.FromMilliseconds(300))
-                    .ObserveOn(AvaloniaScheduler.Instance)
-                    .Subscribe(_ => { IsModified = true; RefreshStatusBar(); });
-            }
-
-            void Unsubscribe(ParagraphViewModel pvm)
+                Interval = TimeSpan.FromMilliseconds(300)
+            };
+            debounce.Tick += (_, _) =>
             {
-                if (subs.TryGetValue(pvm.BlockId, out var sub))
-                {
-                    sub.Dispose();
-                    subs.Remove(pvm.BlockId);
-                }
+                debounce.Stop();
+                IsModified = true;
+                RefreshStatusBar();
+            };
+
+            void OnParagraphChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+            {
+                if (e.PropertyName != nameof(ParagraphViewModel.PlainText)) return;
+                debounce.Stop();
+                debounce.Start();
             }
 
             foreach (var pvm in docVm.Paragraphs)
-                Subscribe(pvm);
+                pvm.PropertyChanged += OnParagraphChanged;
 
             void OnCollectionChanged(object? sender,
                 System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
             {
                 if (e.NewItems is not null)
-                    foreach (ParagraphViewModel pvm in e.NewItems) Subscribe(pvm);
+                    foreach (ParagraphViewModel pvm in e.NewItems)
+                        pvm.PropertyChanged += OnParagraphChanged;
                 if (e.OldItems is not null)
-                    foreach (ParagraphViewModel pvm in e.OldItems) Unsubscribe(pvm);
+                    foreach (ParagraphViewModel pvm in e.OldItems)
+                        pvm.PropertyChanged -= OnParagraphChanged;
             }
 
             docVm.Paragraphs.CollectionChanged += OnCollectionChanged;
 
             return System.Reactive.Disposables.Disposable.Create(() =>
             {
+                debounce.Stop();
                 docVm.Paragraphs.CollectionChanged -= OnCollectionChanged;
-                foreach (var sub in subs.Values) sub.Dispose();
-                subs.Clear();
+                foreach (var pvm in docVm.Paragraphs)
+                    pvm.PropertyChanged -= OnParagraphChanged;
             });
         }
     }

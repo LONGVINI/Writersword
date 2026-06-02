@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reactive;
+using System.Reactive.Disposables.Fluent;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
@@ -149,7 +150,8 @@ namespace Writersword.ViewModels
             });
 
             this.WhenAnyValue(x => x.RecoveryBanner)
-                .Subscribe(_ => this.RaisePropertyChanged(nameof(HasRecoveryBanner)));
+                .Subscribe(_ => this.RaisePropertyChanged(nameof(HasRecoveryBanner)))
+                .DisposeWith(_disposables);
         }
 
         /// <summary>
@@ -303,7 +305,7 @@ namespace Writersword.ViewModels
         /// Очистка ресурсов
         /// Уничтожает WorkspaceController и все модули проекта
         /// </summary>
-        public void Dispose()
+        public override void Dispose()
         {
             _logger.LogDebug("Disposing: {Title}", Title);
 
@@ -312,6 +314,7 @@ namespace Writersword.ViewModels
 
             ModuleContext?.Dispose();
 
+            base.Dispose();
             _logger.LogDebug("Disposed: {Title}", Title);
         }
     }

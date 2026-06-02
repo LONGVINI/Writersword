@@ -142,8 +142,8 @@ namespace Writersword.ViewModels
 
             _tabCollection.ActiveTabChanged += (newTab, previousTab) =>
             {
-if (newTab is DocumentTabViewModel tab)
-    _ = OnTabActivatedAsync(tab, previousTab as DocumentTabViewModel);
+                if (newTab is DocumentTabViewModel tab)
+                    _ = OnTabActivatedAsync(tab, previousTab as DocumentTabViewModel);
 
                 MenuBar.UpdateHasActiveTab();
             };
@@ -168,15 +168,12 @@ if (newTab is DocumentTabViewModel tab)
                 _logger.LogDebug("Tab activated: {Title}, previous: {PreviousTitle}",
                     tab.Title, previousTab?.Title ?? "none");
 
+                // Сохраняем ДО инициализации новой вкладки — но деактивируем ПОСЛЕ.
+                // Если пользователь нажмёт Cancel в диалоге восстановления,
+                // предыдущая вкладка останется живой и не нужно будет
+                // пересоздавать все модули (что вешало UI на 78K слов JSON).
                 if (previousTab != null && previousTab != tab && previousTab.Workspace != null)
-                {
-                    _logger.LogDebug("Deactivating previous tab: {Title}", previousTab.Title);
-
                     await previousTab.Workspace.SaveWorkspaceAsync();
-                    previousTab.Workspace.Deactivate();
-
-                    _logger.LogDebug("Previous tab deactivated");
-                }
 
                 if (!tab.IsLoaded)
                 {
@@ -186,27 +183,58 @@ if (newTab is DocumentTabViewModel tab)
 
                     if (!success)
                     {
-                        _logger.LogDebug("Workspace init cancelled for: {Title}, rolling back to previous tab", tab.Title);
-
+                        _logger.LogDebug("[Cancel] Step 1: cancel detected");
                         if (previousTab != null && _tabCollection.Tabs.Contains(previousTab))
                         {
-                            // SilentRevertActiveTab меняет _activeTab и IsActive флаги
-                            // без стрельбы ActiveTabChanged — избегаем рекурсии.
+                            _logger.LogDebug("[Cancel] Step 2: SilentRevertActiveTab");
                             _tabCollection.SilentRevertActiveTab(previousTab);
+                            _logger.LogDebug("[Cancel] Step 3: SilentRevert done");
 
                             if (previousTab.Workspace != null)
                             {
-                                previousTab.Workspace.Activate();
+                                _logger.LogDebug("[Cancel] Step 4: GetCurrentLayout");
                                 DockLayout = previousTab.Workspace.GetCurrentLayout();
+                                _logger.LogDebug("[Cancel] Step 5: LoadWorkModes");
                                 WorkModeBar.LoadWorkModes(previousTab.Workspace.GetAvailableWorkModes());
+                                _logger.LogDebug("[Cancel] Step 6: LoadModulesForWorkMode");
                                 var wm = previousTab.Workspace.GetActiveWorkMode();
                                 if (wm != null) ModulePanel.LoadModulesForWorkMode(wm);
+                                _logger.LogDebug("[Cancel] Step 7: UpdateMenuItems");
                                 UpdateWorkModeMenuItems();
                                 UpdateModuleMenuItems();
+                                _logger.LogDebug("[Cancel] Step 8: DONE");
+                            }
+                            else
+                            {
+                                _logger.LogWarning("[Cancel] previousTab.Workspace is NULL");
                             }
                         }
+                        else
+                        {
+                            _logger.LogWarning("[Cancel] previousTab is null or not in tabs");
+                        }
+                        _logger.LogDebug("[Cancel] returning");
                         return;
                     }
+                }
+
+                // Инициализация прошла успешно — теперь деактивируем предыдущую вкладку.
+                if (previousTab != null && previousTab != tab && previousTab.Workspace != null)
+                {
+                    _logger.LogDebug("Deactivating previous tab: {Title}", previousTab.Title);
+                    previousTab.Workspace.Deactivate();
+                    _ = System.Threading.Tasks.Task.Run(() =>
+                    {
+                        // blocking: true — ждём завершения каждого прохода.
+                        // Выполняется в Task.Run, UI не блокируется.
+                        // Порядок важен: сначала собираем объекты, затем ждём
+                        // финализаторов (SKBitmap, SKFont, SKTypeface),
+                        // затем собираем то что финализаторы освободили.
+                        GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+                        GC.WaitForPendingFinalizers();
+                        GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+                    });
+                    _logger.LogDebug("Previous tab deactivated");
                 }
 
                 DockLayout = null;
@@ -548,9 +576,17 @@ if (newTab is DocumentTabViewModel tab)
             {
                 var layout = TabBar.ActiveTab?.Workspace?.GetCurrentLayout();
                 if (layout == null) return;
+                var capturedTab = TabBar.ActiveTab as DocumentTabViewModel;
+                var capturedLayout = layout;
                 DockLayout = null;
                 DockLayout = layout;
+                _dockFactory.NormalizeAfterRerender(layout);
                 _logger.LogDebug("DockLayout rerendered after module move");
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    if (DockLayout == capturedLayout && DockLayout != null && capturedTab?.Workspace != null)
+                        _dockFactory.RecreateAllDocumentViews(DockLayout, capturedTab);
+                }, Avalonia.Threading.DispatcherPriority.Loaded);
             };
 
             _logger.LogDebug("Dock factory initialized");
@@ -671,21 +707,28 @@ if (newTab is DocumentTabViewModel tab)
         /// </summary>
         public async void LoadProject(string filePath)
         {
-            _logger.LogDebug("Loading project: {Path}", filePath);
-
-            var existingTab = _tabCollection.FindByPath(filePath);
-            if (existingTab != null)
+            try
             {
-                _tabCollection.ActiveTab = existingTab;
-                return;
+                _logger.LogDebug("Loading project: {Path}", filePath);
+
+                var existingTab = _tabCollection.FindByPath(filePath);
+                if (existingTab != null)
+                {
+                    _tabCollection.ActiveTab = existingTab;
+                    return;
+                }
+
+                var tab = await _projectWorkflow.OpenDocumentAsync(filePath);
+                if (tab != null)
+                {
+                    _tabCollection.Add(tab);
+                    _tabCollection.ActiveTab = tab;
+                    _settingsService.AddRecentProject(filePath);
+                }
             }
-
-            var tab = await _projectWorkflow.OpenDocumentAsync(filePath);
-            if (tab != null)
+            catch (Exception ex)
             {
-                _tabCollection.Add(tab);
-                _tabCollection.ActiveTab = tab;
-                _settingsService.AddRecentProject(filePath);
+                _logger.LogError(ex, "Error loading project: {Path}", filePath);
             }
         }
 

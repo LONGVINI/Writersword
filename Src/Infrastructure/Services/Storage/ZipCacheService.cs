@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -49,7 +50,14 @@ namespace Writersword.Infrastructure.Services.Storage
             var cachePath = GetCachePath(projectPath);
             if (!File.Exists(cachePath)) return null;
 
-            _fileLock.Wait();
+            if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
+            {
+                // Таймаут означает что UI-поток заблокирован ожиданием этого же лока
+                // (классический дедлок при откате вкладки или закрытии приложения).
+                // Возвращаем null — вызывающий код использует project.ModulesData как fallback.
+                _logger.LogWarning("Cache lock timeout — returning null, caller uses in-memory fallback");
+                return null;
+            }
             try
             {
                 return LoadMetadata(cachePath)?.CacheDate;
@@ -81,7 +89,14 @@ namespace Writersword.Infrastructure.Services.Storage
                 return null;
             }
 
-            _fileLock.Wait();
+            if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
+            {
+                // Таймаут означает что UI-поток заблокирован ожиданием этого же лока
+                // (классический дедлок при откате вкладки или закрытии приложения).
+                // Возвращаем null — вызывающий код использует project.ModulesData как fallback.
+                _logger.LogWarning("Cache lock timeout — returning null, caller uses in-memory fallback");
+                return null;
+            }
             try
             {
                 var customData = new Dictionary<string, object?>();
@@ -152,7 +167,14 @@ namespace Writersword.Infrastructure.Services.Storage
                 return null;
             }
 
-            _fileLock.Wait();
+            if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
+            {
+                // Таймаут означает что UI-поток заблокирован ожиданием этого же лока
+                // (классический дедлок при откате вкладки или закрытии приложения).
+                // Возвращаем null — вызывающий код использует project.ModulesData как fallback.
+                _logger.LogWarning("Cache lock timeout — returning null, caller uses in-memory fallback");
+                return null;
+            }
             try
             {
                 var customData = new Dictionary<string, object?>();
@@ -226,7 +248,14 @@ namespace Writersword.Infrastructure.Services.Storage
             var cachePath = GetCachePath(projectPath);
             if (!File.Exists(cachePath)) return null;
 
-            _fileLock.Wait();
+            if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
+            {
+                // Таймаут означает что UI-поток заблокирован ожиданием этого же лока
+                // (классический дедлок при откате вкладки или закрытии приложения).
+                // Возвращаем null — вызывающий код использует project.ModulesData как fallback.
+                _logger.LogWarning("Cache lock timeout — returning null, caller uses in-memory fallback");
+                return null;
+            }
             try
             {
                 return LoadMetadata(cachePath);
@@ -386,6 +415,21 @@ namespace Writersword.Infrastructure.Services.Storage
                         _logger.LogDebug("Updated cache entry for: {moduleType}", moduleType);
                     }
 
+                    // Хеш файла проекта — для быстрого сравнения при открытии.
+                    // Позволяет пропустить загрузку 400 МБ данных до показа диалога восстановления.
+                    try
+                    {
+                        using var sha = SHA256.Create();
+                        using var fs = File.OpenRead(projectPath);
+                        var hashBytes = sha.ComputeHash(fs);
+                        metadata.ProjectFileHash = Convert.ToHexString(hashBytes);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to compute project file hash");
+                        metadata.ProjectFileHash = "";
+                    }
+
                     // Перезаписываем метаданные.
                     if (fileExists)
                         archive.GetEntry("cache.json")?.Delete();
@@ -422,7 +466,11 @@ namespace Writersword.Infrastructure.Services.Storage
             var cachePath = GetCachePath(projectPath);
             if (!File.Exists(cachePath)) return;
 
-            _fileLock.Wait();
+            if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
+            {
+                _logger.LogWarning("Cache lock timeout in DeleteCache — skipping delete");
+                return;
+            }
             try
             {
                 if (File.Exists(cachePath))

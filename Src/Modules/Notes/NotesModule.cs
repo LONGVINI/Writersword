@@ -98,6 +98,9 @@ namespace Writersword.Modules.Notes
         public override void Dispose()
         {
             _notesSubscription?.Dispose();
+            _notesSubscription = null;
+            _viewModel = null;
+            base.Dispose();
             _logger.LogDebug("Disposed (moduleType: {moduleType})", moduleType);
         }
 

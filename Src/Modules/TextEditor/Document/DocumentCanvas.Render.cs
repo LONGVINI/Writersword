@@ -543,16 +543,19 @@ namespace Writersword.Modules.TextEditor.Document
                     clip.ClipX + clip.ClipW, clip.ClipY + clip.ClipH));
             }
 
-            DrawSelectionForSlice(canvas, idx, pl, absX, absY, layouts);
+            var renderLayout = pl.Layout
+                ?? GetOrBuildLayout(pl.Vm, (float)(_canvasWidth * PxToPt));
+
+            DrawSelectionForSlice(canvas, idx, pl, absX, absY, layouts, renderLayout);
 
             SKTextRenderer.RenderParagraphLines(
-                canvas, pl.Layout,
-                absX + pl.Layout.LeftIndentPt,
+                canvas, renderLayout,
+                absX + renderLayout.LeftIndentPt,
                 absY,
                 pl.LineFrom, pl.LineTo);
 
             if (drawCaret && _caretPara == idx)
-                DrawCaret(canvas, pl, absX, absY);
+                DrawCaret(canvas, pl, absX, absY, renderLayout);
 
             if (isCell)
                 canvas.Restore();
@@ -568,6 +571,8 @@ namespace Writersword.Modules.TextEditor.Document
             if (_caretPara < 0 || _caretPara >= layouts.Count) return;
 
             var pl = layouts[_caretPara];
+            var caretLayout = pl.Layout
+                ?? GetOrBuildLayout(pl.Vm, (float)(_canvasWidth * PxToPt));
             float xPt = pl.AbsXPt;
 
             // В page-режиме применяем page-level клип (как RenderPageMode делает для параграфов),
@@ -616,7 +621,8 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void DrawSelectionForSlice(
             SKCanvas canvas, int sliceIdx, ParaLayout pl,
-            float xPt, float yPt, List<ParaLayout> layouts)
+            float xPt, float yPt, List<ParaLayout> layouts,
+            SKTextLayout? resolvedLayout = null)
         {
             // Ячейки при активном cell-range или табличном выделении: рисуется через RenderTableSelection.
             if (pl.Cell != null && (_isCellRangeSelecting || _tableSelections.ContainsKey(pl.Cell.Table))) return;
@@ -641,14 +647,17 @@ namespace Writersword.Modules.TextEditor.Document
             to = Clamp(to, 0, len);
             if (from >= to && !(from == 0 && len == 0)) return;
 
+            var sl = resolvedLayout ?? pl.Layout;
+            if (sl is null) return;
+
             if (from == to && len == 0)
             {
-                float lineH = pl.Layout.Lines.Count > 0 ? pl.Layout.Lines[0].Height : FallbackLinePt;
+                float lineH = sl.Lines.Count > 0 ? sl.Lines[0].Height : FallbackLinePt;
                 canvas.DrawRect(xPt, yPt, 5f, lineH, _paintSelection);
                 return;
             }
 
-            var rects = pl.Layout.HitTestRange(from, to);
+            var rects = sl.HitTestRange(from, to);
             if (rects.Count == 0) return;
 
             foreach (var r in rects)
@@ -661,8 +670,10 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
-        private void DrawCaret(SKCanvas canvas, ParaLayout pl, float xPt, float yPt)
+        private void DrawCaret(SKCanvas canvas, ParaLayout pl, float xPt, float yPt, SKTextLayout? resolvedLayout = null)
         {
+            var layout = resolvedLayout ?? pl.Layout;
+            if (layout is null) return;
             // Якорный параграф (пустой текст) — рисуем каретку напрямую в его позиции.
             if (string.IsNullOrEmpty(pl.Vm.PlainText))
             {
@@ -677,18 +688,18 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (_caretLineHint >= 0
                 && _caretLineHint >= pl.LineFrom
-                && _caretLineHint < Math.Min(pl.LineTo, pl.Layout.Lines.Count))
+                && _caretLineHint < Math.Min(pl.LineTo, layout.Lines.Count))
             {
-                var hintLine = pl.Layout.Lines[_caretLineHint];
+                var hintLine = layout.Lines[_caretLineHint];
                 if (pos > hintLine.LastCharIndex && !hintLine.IsLastLine)
                 {
                     var lastSeg = hintLine.Segments.Count > 0 ? hintLine.Segments[^1] : null;
-                    float hintLineExtra = (_caretLineHint == 0) ? pl.Layout.FirstLineIndentPt : 0f;
+                    float hintLineExtra = (_caretLineHint == 0) ? layout.FirstLineIndentPt : 0f;
                     caret = new SKCaretRect
                     {
                         X = lastSeg != null
-                            ? pl.Layout.LeftIndentPt + hintLineExtra + lastSeg.X + lastSeg.Width
-                            : pl.Layout.LeftIndentPt + hintLineExtra,
+                            ? layout.LeftIndentPt + hintLineExtra + lastSeg.X + lastSeg.Width
+                            : layout.LeftIndentPt + hintLineExtra,
                         Y = hintLine.Y,
                         Height = hintLine.Height,
                         Baseline = hintLine.Baseline
@@ -697,21 +708,21 @@ namespace Writersword.Modules.TextEditor.Document
                 }
                 else
                 {
-                    caret = pl.Layout.HitTestPosition(pos);
+                    caret = layout.HitTestPosition(pos);
                     drawLineIdx = _caretLineHint;
                 }
             }
             else
             {
-                caret = pl.Layout.HitTestPosition(pos);
-                drawLineIdx = pl.Layout.GetLineIndexForChar(pos);
+                caret = layout.HitTestPosition(pos);
+                drawLineIdx = layout.GetLineIndexForChar(pos);
             }
 
             // RenderParagraphLines рендерит строки со смещением: line.Y - lines[lineFrom].Y.
             // DrawCaret должен использовать тот же yBase, иначе каретка окажется ниже текста
             // на величину lines[lineFrom].Y — что особенно заметно на страницах продолжения.
-            float yBase = pl.LineFrom < pl.Layout.Lines.Count
-                ? pl.Layout.Lines[pl.LineFrom].Y : 0f;
+            float yBase = pl.LineFrom < layout.Lines.Count
+                ? layout.Lines[pl.LineFrom].Y : 0f;
 
             float cx = xPt + caret.X;
             float cy = yPt + (caret.Y - yBase);

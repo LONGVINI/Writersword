@@ -92,34 +92,41 @@ namespace Writersword.ViewModels.Components
         /// </summary>
         private async void ActivateTab(DocumentTabViewModel tab)
         {
-            _logger.LogDebug("Activating tab: {TabTitle}", tab.Title);
-
-            var oldTab = ActiveTab;
-
-            if (oldTab != null && oldTab != tab)
+            try
             {
-                _logger.LogDebug("Deactivating old tab: {OldTabTitle}", oldTab.Title);
+                _logger.LogDebug("Activating tab: {TabTitle}", tab.Title);
 
-                if (!string.IsNullOrEmpty(oldTab.FilePath))
+                var oldTab = ActiveTab;
+
+                if (oldTab != null && oldTab != tab)
                 {
-                    var workflow = App.Services.GetRequiredService<IProjectWorkflow>();
-                    var autoSave = workflow.GetAutoSaveServiceForProject(oldTab.FilePath);
+                    _logger.LogDebug("Deactivating old tab: {OldTabTitle}", oldTab.Title);
 
-                    if (autoSave != null)
+                    if (!string.IsNullOrEmpty(oldTab.FilePath))
                     {
-                        await autoSave.SaveNowAsync();
-                        _logger.LogDebug("workspace.json saved immediately for: {OldTabTitle}", oldTab.Title);
+                        var workflow = App.Services.GetRequiredService<IProjectWorkflow>();
+                        var autoSave = workflow.GetAutoSaveServiceForProject(oldTab.FilePath);
+
+                        if (autoSave != null)
+                        {
+                            await autoSave.SaveNowAsync();
+                            _logger.LogDebug("workspace.json saved immediately for: {OldTabTitle}", oldTab.Title);
+                        }
                     }
+
+                    var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+
+                    await oldTab.SaveToCacheAsync(() => mainViewModel.GetActiveModules());
+
+                    _logger.LogDebug("Old tab saved to cache");
                 }
 
-                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
-
-                await oldTab.SaveToCacheAsync(() => mainViewModel.GetActiveModules());
-
-                _logger.LogDebug("Old tab saved to cache");
+                ActiveTab = tab;
             }
-
-            ActiveTab = tab;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error activating tab: {TabTitle}", tab.Title);
+            }
         }
 
         /// <summary>Закрыть вкладку</summary>

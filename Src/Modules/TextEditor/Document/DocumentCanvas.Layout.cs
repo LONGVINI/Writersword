@@ -292,6 +292,71 @@ namespace Writersword.Modules.TextEditor.Document
         //
         // Вызывается из ScheduleRebuild ДО того как InvalidateFull() покажет кадр,
         // поэтому пользователь видит новый символ мгновенно.
+        /// <summary>
+        /// Быстрая вставка нового параграфа в _layouts без полного rebuild.
+        /// Используется при Enter: параграф вставляется с оценочной высотой FallbackLinePt,
+        /// последующие параграфы сдвигаются вниз. _canvasHeight обновляется немедленно.
+        /// ScrollToCaret может найти позицию нового параграфа сразу после вставки.
+        /// Background rebuild заменит оценку точными данными.
+        /// </summary>
+        private void QuickInsertParagraphLayout(int insertIdx, ParagraphViewModel newPvm)
+        {
+            var current = _layouts;
+            if (current.Count == 0) { InvalidateMeasure(); return; }
+
+            // Находим позицию вставки по индексу параграфа в DocVm.
+            // Ищем первый ненулевой layout с индексом >= insertIdx-1 чтобы взять его Y+H.
+            float insertYPt = 0f;
+            int layoutInsertPos = current.Count;
+
+            int docIdx = 0;
+            for (int i = 0; i < current.Count; i++)
+            {
+                var pl = current[i];
+                if (pl.Cell is not null) continue;
+                if (docIdx == insertIdx)
+                {
+                    // Вставляем ПЕРЕД этим параграфом.
+                    insertYPt = pl.Ypt;
+                    layoutInsertPos = i;
+                    break;
+                }
+                if (docIdx == insertIdx - 1)
+                {
+                    // Вставляем ПОСЛЕ этого параграфа.
+                    insertYPt = pl.Ypt + pl.HeightPt;
+                    layoutInsertPos = i + 1;
+                }
+                docIdx++;
+            }
+
+            float newH = FallbackLinePt;
+            var newEntry = new ParaLayout(newPvm, null, insertYPt, newH, 0, 0, 0, AbsXPt: current[0].AbsXPt);
+
+            var updated = new List<ParaLayout>(current.Count + 1);
+            for (int i = 0; i < current.Count; i++)
+            {
+                if (i == layoutInsertPos)
+                    updated.Add(newEntry);
+                var pl = current[i];
+                if (i >= layoutInsertPos && pl.Cell is null)
+                    updated.Add(pl with { Ypt = pl.Ypt + newH });
+                else
+                    updated.Add(pl);
+            }
+            if (layoutInsertPos >= current.Count)
+                updated.Add(newEntry);
+
+            lock (_renderLock)
+            {
+                _layouts = updated;
+                _canvasHeightPt += newH;
+                _canvasHeight = _canvasHeightPt * PtToPx;
+            }
+            InvalidateMeasure();
+            ScrollToCaret();
+        }
+
         private void QuickUpdateParagraphLayout(ParagraphViewModel pvm)
         {
             if (_styleResolver is null && DocVm is not null)
@@ -349,7 +414,22 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             if (seenPvm)
-                lock (_renderLock) { _layouts = updated; }
+            {
+                lock (_renderLock)
+                {
+                    _layouts = updated;
+                    if (yShift != 0f)
+                    {
+                        _canvasHeightPt += yShift;
+                        _canvasHeight = _canvasHeightPt * PtToPx;
+                    }
+                }
+                // InvalidateMeasure вызывается синхронно — страховка на случай
+                // если yShift == 0 но нужно обновить рендер.
+                // При yShift != 0 Avalonia сама запланирует layout pass так как
+                // MeasureOverride вернёт другой размер.
+                InvalidateMeasure();
+            }
         }
 
         // Возвращает ширину текстовой зоны в точках для текущего режима и размера канваса.
@@ -747,7 +827,17 @@ namespace Writersword.Modules.TextEditor.Document
 
                 float absXPt = textXPt;
 
-                if (layout.Lines.Count == 0) continue;
+                // Пустой параграф в page mode — отдаём высоту одной строки.
+                if (layout.Lines.Count == 0)
+                {
+                    newLayouts.Add(new ParaLayout(
+                        pvm, layout,
+                        pageYPt + contentYPt, FallbackLinePt,
+                        pageIdx, 0, 0,
+                        AbsXPt: textXPt));
+                    contentYPt += FallbackLinePt;
+                    continue;
+                }
 
                 contentYPt += layout.SpaceBeforePt;
                 int lineFrom = 0;
@@ -867,7 +957,20 @@ namespace Writersword.Modules.TextEditor.Document
                     continue;
                 }
 
-                if (layout.Lines.Count == 0) continue;
+                // Пустой параграф (Enter в конце текста) — без строк в layout.
+                // Не пропускаем: даём высоту одной строки чтобы yPt рос
+                // и новые страницы создавались при нажатии Enter.
+                if (layout.Lines.Count == 0)
+                {
+                    float emptyH = FallbackLinePt;
+                    newLayouts.Add(new ParaLayout(
+                        pvm, layout,
+                        yPt, emptyH,
+                        0, 0, 0,
+                        AbsXPt: padWPt));
+                    yPt += emptyH;
+                    continue;
+                }
 
                 float hPt = Math.Max(layout.TotalHeightPt, FallbackLinePt);
                 newLayouts.Add(new ParaLayout(

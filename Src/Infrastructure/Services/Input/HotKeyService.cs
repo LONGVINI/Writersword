@@ -15,7 +15,7 @@ using Writersword.Core.Interfaces.Services.UI;
 
 namespace Writersword.Infrastructure.Services.Input
 {
-    public class HotKeyService : IHotKeyService
+    public class HotKeyService : IHotKeyService, IDisposable
     {
         private readonly ILogger<HotKeyService> _logger;
 
@@ -31,6 +31,7 @@ namespace Writersword.Infrastructure.Services.Input
 
         private readonly List<KeyGesture> _pendingSequence = new();
         private Timer? _sequenceTimer;
+        private bool _disposed;
         private const int SequenceTimeoutMs = 1500;
 
         public event Action? HotKeysChanged;
@@ -556,7 +557,7 @@ namespace Writersword.Infrastructure.Services.Input
                         foreach (var gestureStr in gestureStrings)
                         {
                             var parts = gestureStr.Trim().Split(
-                                new[] { " -> ", " \u2192 ", "\u2192" },
+                                new[] { " -> ", " → ", "→" },
                                 StringSplitOptions.RemoveEmptyEntries);
                             var steps = parts.Select(p => KeyGesture.Parse(p.Trim())).ToList();
                             hotKey.CustomGestures.Add(new HotKeyGesture(steps));
@@ -718,5 +719,16 @@ namespace Writersword.Infrastructure.Services.Input
 
         private static bool GesturesEqual(KeyGesture a, KeyGesture b) =>
             a.Key == b.Key && a.KeyModifiers == b.KeyModifiers;
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+
+            _sequenceTimer?.Dispose();
+            _sequenceTimer = null;
+
+            _logger.LogDebug("HotKeyService disposed");
+        }
     }
 }
