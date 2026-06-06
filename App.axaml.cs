@@ -71,6 +71,18 @@ namespace Writersword
         /// </summary>
         public override void OnFrameworkInitializationCompleted()
         {
+            Avalonia.Threading.Dispatcher.UIThread.UnhandledException += (_, e) =>
+            {
+                if (e.Exception is ArgumentException { ParamName: "visual" }
+                    && e.Exception.StackTrace?.Contains("DockControl") == true)
+                {
+                    e.Handled = true;
+                    Log.ForContext<App>().Warning(e.Exception,
+                        "Dock.Avalonia stale popup reference — caught and ignored");
+                    return;
+                }
+            };
+
             var configuration = new ConfigurationBuilder()
                 .SetBasePath(Directory.GetCurrentDirectory())
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)

@@ -1933,6 +1933,60 @@ namespace Writersword.Resources.Localization {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Auto-save.
+        /// </summary>
+        public static string Settings_General_AutoSave {
+            get {
+                return ResourceManager.GetString("Settings_General_AutoSave", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Enable auto-save.
+        /// </summary>
+        public static string Settings_General_AutoSave_Enable {
+            get {
+                return ResourceManager.GetString("Settings_General_AutoSave_Enable", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Caching.
+        /// </summary>
+        public static string Settings_General_Caching {
+            get {
+                return ResourceManager.GetString("Settings_General_Caching", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Enable background caching.
+        /// </summary>
+        public static string Settings_General_Caching_Enable {
+            get {
+                return ResourceManager.GetString("Settings_General_Caching_Enable", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Background caching saves module state for crash recovery. Disabling reduces memory usage but turns off crash recovery..
+        /// </summary>
+        public static string Settings_General_Caching_Hint {
+            get {
+                return ResourceManager.GetString("Settings_General_Caching_Hint", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Interval (seconds).
+        /// </summary>
+        public static string Settings_General_Interval {
+            get {
+                return ResourceManager.GetString("Settings_General_Interval", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Language.
         /// </summary>
         public static string Settings_General_Language {

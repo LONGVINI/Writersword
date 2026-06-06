@@ -1069,4 +1069,28 @@
     <value>Reset zoom</value>
     <comment>Tooltip for zoom-reset button, resets to 100%</comment>
   </data>
+  <data name="Settings_General_AutoSave" xml:space="preserve">
+    <value>Auto-save</value>
+    <comment>Section title for auto-save settings</comment>
+  </data>
+  <data name="Settings_General_AutoSave_Enable" xml:space="preserve">
+    <value>Enable auto-save</value>
+    <comment>Checkbox label to enable auto-save</comment>
+  </data>
+  <data name="Settings_General_Caching" xml:space="preserve">
+    <value>Caching</value>
+    <comment>Section title for caching settings</comment>
+  </data>
+  <data name="Settings_General_Caching_Enable" xml:space="preserve">
+    <value>Enable background caching</value>
+    <comment>Checkbox label to enable background caching</comment>
+  </data>
+  <data name="Settings_General_Caching_Hint" xml:space="preserve">
+    <value>Background caching saves module state for crash recovery. Disabling reduces memory usage but turns off crash recovery.</value>
+    <comment>Hint text below the caching section explaining the impact of disabling it</comment>
+  </data>
+  <data name="Settings_General_Interval" xml:space="preserve">
+    <value>Interval (seconds)</value>
+    <comment>Label for interval input field, shared by auto-save and caching sections</comment>
+  </data>
 </root>

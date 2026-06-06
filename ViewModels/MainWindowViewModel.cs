@@ -578,15 +578,23 @@ namespace Writersword.ViewModels
                 if (layout == null) return;
                 var capturedTab = TabBar.ActiveTab as DocumentTabViewModel;
                 var capturedLayout = layout;
+
                 DockLayout = null;
-                DockLayout = layout;
-                _dockFactory.NormalizeAfterRerender(layout);
-                _logger.LogDebug("DockLayout rerendered after module move");
+                _dockFactory.NormalizeAfterRerender(capturedLayout);
+
+                // Восстанавливаем layout в отдельном Render-проходе, чтобы
+                // Dock успел уничтожить старые popup/overlay-контролы до ре-аттача.
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                 {
-                    if (DockLayout == capturedLayout && DockLayout != null && capturedTab?.Workspace != null)
-                        _dockFactory.RecreateAllDocumentViews(DockLayout, capturedTab);
-                }, Avalonia.Threading.DispatcherPriority.Loaded);
+                    DockLayout = capturedLayout;
+                    _logger.LogDebug("DockLayout rerendered after module move");
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    {
+                        if (DockLayout == capturedLayout && DockLayout != null
+                            && capturedTab?.Workspace != null)
+                            _dockFactory.RecreateAllDocumentViews(DockLayout, capturedTab);
+                    }, Avalonia.Threading.DispatcherPriority.Loaded);
+                }, Avalonia.Threading.DispatcherPriority.Render);
             };
 
             _logger.LogDebug("Dock factory initialized");

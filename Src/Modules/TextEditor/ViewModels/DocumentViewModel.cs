@@ -1,6 +1,7 @@
 using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using ReactiveUI;
+using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -20,6 +21,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
 {
     public sealed class DocumentViewModel : ReactiveObject, ITextEditorCommandTarget
     {
+        private static readonly ILogger _log = Log.ForContext<DocumentViewModel>();
+
         private readonly DocumentModel _document;
         private readonly ChunkManager _chunkManager;
         private readonly AutoReplaceService _autoReplace;
@@ -126,6 +129,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// DocumentCanvas подписывается чтобы сбросить кеш лейаутов.
         /// </summary>
         public event Action? ParagraphFormatChanged;
+
+        // Делегаты live-preview шрифта. Канвас сам вычисляет затронутые абзацы и
+        // ячейки по своему состоянию выделения, поэтому сюда передаются только команды
+        // начала сессии, имя шрифта при наведении и завершение (коммит/отмена).
+        public Action? BeginFontPreviewDelegate { get; set; }
+        public Action<string>? PreviewFontFamilyDelegate { get; set; }
+        public Action<bool>? EndFontPreviewDelegate { get; set; }
 
         public EditorViewMode ViewMode
         {
@@ -360,6 +370,41 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetTextColor(string color) => ApplyCharProperty(p => p.TextColor = color);
         public void SetHighlightColor(string? color) => ApplyCharProperty(p => p.HighlightColor = color);
         public void SetFontFamily(string font) => ApplyCharProperty(p => p.FontFamily = font);
+
+        // Live-preview шрифта полностью реализован в DocumentCanvas: он знает полную
+        // картину выделения (обычные абзацы + ячейки таблицы). Здесь — только проброс.
+        public void BeginFontPreview() => BeginFontPreviewDelegate?.Invoke();
+
+        public void PreviewFontFamily(string font) => PreviewFontFamilyDelegate?.Invoke(font);
+
+        public void EndFontPreview(bool commit) => EndFontPreviewDelegate?.Invoke(commit);
+
+        /// <summary>
+        /// Применяет шрифт к набору абзацев и диапазонов одним undo-снапшотом.
+        /// Вызывается DocumentCanvas при коммите live-preview для всего выделения,
+        /// включая обычные абзацы и ячейки таблицы.
+        /// Диапазон end &lt;= start трактуется как весь абзац.
+        /// </summary>
+        public void ApplyFontToBlocks(
+            IReadOnlyList<(ParagraphBlock block, int start, int end)> targets, string font)
+        {
+            if (targets is null || targets.Count == 0) return;
+
+            BeginEditDelegate?.Invoke("Format text");
+
+            foreach (var (block, start, end) in targets)
+            {
+                if (block is null) continue;
+                if (end > start)
+                    ApplyCharPropertyToRange(block, start, end, p => p.FontFamily = font, false);
+                else
+                    ApplyCharPropertyToBlock(block, 0, 0, p => p.FontFamily = font, false);
+            }
+
+            CommitEditDelegate?.Invoke();
+            FireCursorContextChanged();
+            ParagraphFormatChanged?.Invoke();
+        }
         public void SetFontSize(double size)
             => ApplyCharProperty(p => p.FontSize = size > 0 ? size : (double?)null);
 
@@ -809,44 +854,83 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void ApplyCharProperty(Action<RunProperties> mutate, bool clearAll = false)
         {
-            // В режиме таблицы применяем к параграфу активной ячейки.
-            var block = TableActiveCellParagraph ?? _activeParagraph?.Model;
-            if (block is null) return;
+            // Режим ячейки таблицы — применяем только к активной ячейке.
+            if (TableActiveCellParagraph is not null)
+            {
+                BeginEditDelegate?.Invoke("Format text");
+                ApplyCharPropertyToBlock(TableActiveCellParagraph, _selectionStart, _selectionEnd, mutate, clearAll);
+                CommitEditDelegate?.Invoke();
+                FireCursorContextChanged();
+                ParagraphFormatChanged?.Invoke();
+                return;
+            }
+
+            if (_activeParagraph is null) return;
 
             BeginEditDelegate?.Invoke("Format text");
 
-            int selStart = _selectionStart;
-            int selEnd = _selectionEnd;
-            bool hasSelection = selEnd > selStart;
-            int globalOffset = 0;
+            _log.Debug("[APPLY] SelectionParagraphs.Count={Count} selStart={S} selEnd={E} activePara={AP}",
+                SelectionParagraphs.Count, _selectionStart, _selectionEnd,
+                _activeParagraph is null ? "null" : Paragraphs.IndexOf(_activeParagraph).ToString());
 
-            foreach (var chunk in block.Chunks)
+            if (SelectionParagraphs.Count > 1)
             {
-                foreach (var run in chunk.Runs)
+                for (int idx = 0; idx < SelectionParagraphs.Count; idx++)
                 {
-                    int runStart = globalOffset;
-                    int runEnd = globalOffset + run.Text.Length;
-                    bool inRange = !hasSelection || (runEnd > selStart && runStart < selEnd);
+                    var pvm  = SelectionParagraphs[idx];
+                    bool isFirst = idx == 0;
+                    bool isLast  = idx == SelectionParagraphs.Count - 1;
 
-                    if (inRange)
+                    if (!isFirst && !isLast)
                     {
-                        if (clearAll) run.Properties = null;
-                        else
-                        {
-                            run.Properties ??= new RunProperties();
-                            mutate(run.Properties);
-                            if (run.Properties.IsDefault()) run.Properties = null;
-                        }
+                        // Средний параграф — целиком (selEnd <= selStart = "нет выделения" = все раны).
+                        ApplyCharPropertyToBlock(pvm.Model, 0, 0, mutate, clearAll);
                     }
-
-                    globalOffset += run.Text.Length;
+                    else
+                    {
+                        // Первый: от SelectionStart до конца (int.MaxValue clamp-ится внутри).
+                        // Последний: от 0 до SelectionEnd.
+                        int s = isFirst ? pvm.SelectionStart : 0;
+                        int e = isLast  ? pvm.SelectionEnd   : int.MaxValue;
+                        if (e > s)
+                            ApplyCharPropertyToRange(pvm.Model, s, e, mutate, clearAll);
+                    }
                 }
-                chunk.InvalidateLength();
+            }
+            else
+            {
+                ApplyCharPropertyToBlock(_activeParagraph.Model, _selectionStart, _selectionEnd, mutate, clearAll);
             }
 
             CommitEditDelegate?.Invoke();
             FireCursorContextChanged();
             ParagraphFormatChanged?.Invoke();
+        }
+
+        private static void ApplyCharPropertyToBlock(
+            ParagraphBlock block, int selStart, int selEnd,
+            Action<RunProperties> mutate, bool clearAll)
+        {
+            if (selEnd > selStart)
+            {
+                ApplyCharPropertyToRange(block, selStart, selEnd, mutate, clearAll);
+                return;
+            }
+            // Нет выделения — применяем ко всем ранам параграфа.
+            foreach (var chunk in block.Chunks)
+            {
+                foreach (var run in chunk.Runs)
+                {
+                    if (clearAll) run.Properties = null;
+                    else
+                    {
+                        run.Properties ??= new RunProperties();
+                        mutate(run.Properties);
+                        if (run.Properties.IsDefault()) run.Properties = null;
+                    }
+                }
+                chunk.InvalidateLength();
+            }
         }
 
         private void ApplyParaProperty(Action<ParagraphProperties> mutate)
@@ -899,6 +983,86 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             section.Blocks.Add(block);
             RebuildParagraphViewModels();
+        }
+
+        private static void ApplyCharPropertyToRange(
+    ParagraphBlock block, int selStart, int selEnd,
+    Action<RunProperties> mutate, bool clearAll)
+        {
+            var chars = new List<(char ch, RunProperties? props)>();
+            foreach (var chunk in block.Chunks)
+                foreach (var run in chunk.Runs)
+                    foreach (var ch in run.Text)
+                        chars.Add((ch, run.Properties?.Clone()));
+
+            int len = chars.Count;
+            selStart = Math.Max(0, Math.Min(selStart, len));
+            selEnd = Math.Max(selStart, Math.Min(selEnd, len));
+
+            for (int i = selStart; i < selEnd; i++)
+            {
+                var (ch, props) = chars[i];
+                if (clearAll)
+                {
+                    chars[i] = (ch, null);
+                }
+                else
+                {
+                    var newProps = props?.Clone() ?? new RunProperties();
+                    mutate(newProps);
+                    chars[i] = (ch, newProps.IsDefault() ? null : newProps);
+                }
+            }
+
+            block.Chunks.Clear();
+            var newChunk = new TextChunk();
+            block.Chunks.Add(newChunk);
+
+            if (chars.Count == 0)
+            {
+                newChunk.Runs.Add(new RunModel { Text = string.Empty });
+                block.InvalidateAllChunks();
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            var currentProps = chars[0].props;
+
+            foreach (var (ch, props) in chars)
+            {
+                bool sameProps = RunPropertiesEqualValue(props, currentProps);
+                if (!sameProps)
+                {
+                    newChunk.Runs.Add(new RunModel { Text = sb.ToString(), Properties = currentProps });
+                    sb.Clear();
+                    currentProps = props;
+                }
+                sb.Append(ch);
+            }
+
+            newChunk.Runs.Add(new RunModel { Text = sb.ToString(), Properties = currentProps });
+            block.InvalidateAllChunks();
+        }
+
+        private static bool RunPropertiesEqualValue(RunProperties? a, RunProperties? b)
+        {
+            bool aDefault = a is null || a.IsDefault();
+            bool bDefault = b is null || b.IsDefault();
+            if (aDefault && bDefault) return true;
+            if (aDefault || bDefault) return false;
+            return a!.FontFamily == b!.FontFamily
+                && a.FontSize == b.FontSize
+                && a.IsBold == b.IsBold
+                && a.IsItalic == b.IsItalic
+                && a.IsUnderline == b.IsUnderline
+                && a.IsStrikethrough == b.IsStrikethrough
+                && a.IsSuperscript == b.IsSuperscript
+                && a.IsSubscript == b.IsSubscript
+                && a.IsAllCaps == b.IsAllCaps
+                && a.IsSmallCaps == b.IsSmallCaps
+                && a.TextColor == b.TextColor
+                && a.HighlightColor == b.HighlightColor
+                && a.Language == b.Language;
         }
 
         /// <summary>

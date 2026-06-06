@@ -543,8 +543,7 @@ namespace Writersword.Modules.TextEditor.Document
                     clip.ClipX + clip.ClipW, clip.ClipY + clip.ClipH));
             }
 
-            var renderLayout = pl.Layout
-                ?? GetOrBuildLayout(pl.Vm, (float)(_canvasWidth * PxToPt));
+            var renderLayout = GetRenderLayout(pl, (float)(_canvasWidth * PxToPt));
 
             DrawSelectionForSlice(canvas, idx, pl, absX, absY, layouts, renderLayout);
 
@@ -571,8 +570,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (_caretPara < 0 || _caretPara >= layouts.Count) return;
 
             var pl = layouts[_caretPara];
-            var caretLayout = pl.Layout
-                ?? GetOrBuildLayout(pl.Vm, (float)(_canvasWidth * PxToPt));
+            var caretLayout = GetRenderLayout(pl, (float)(_canvasWidth * PxToPt));
             float xPt = pl.AbsXPt;
 
             // В page-режиме применяем page-level клип (как RenderPageMode делает для параграфов),
@@ -660,12 +658,18 @@ namespace Writersword.Modules.TextEditor.Document
             var rects = sl.HitTestRange(from, to);
             if (rects.Count == 0) return;
 
+            // RenderParagraphLines рендерит строки со смещением line.Y - lines[lineFrom].Y,
+            // и каретка использует тот же yBase. Подсветка выделения обязана делать так же,
+            // иначе на странице продолжения прямоугольники уезжают вниз на высоту строк,
+            // оставшихся на предыдущей странице.
+            float yBase = pl.LineFrom < sl.Lines.Count ? sl.Lines[pl.LineFrom].Y : 0f;
+
             foreach (var r in rects)
             {
                 if (r.LineIndex < pl.LineFrom || r.LineIndex >= pl.LineTo) continue;
                 canvas.DrawRect(
                     xPt + r.Rect.Left,
-                    yPt + r.Rect.Top,
+                    yPt + (r.Rect.Top - yBase),
                     r.Rect.Width, r.Rect.Height, _paintSelection);
             }
         }

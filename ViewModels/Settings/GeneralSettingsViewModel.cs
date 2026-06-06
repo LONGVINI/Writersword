@@ -3,18 +3,23 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reactive;
 using Writersword.Resources.Localization;
 using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Interfaces.Services.UI;
+using Writersword.Core.Interfaces.Services;
+using Writersword.Core.Models.Settings;
 
 namespace Writersword.ViewModels.Settings
 {
     /// <summary>
-    /// ViewModel общих настроек приложения
-    /// Управляет выбором языка и темы интерфейса
+    /// ViewModel вкладки General в настройках приложения.
+    /// Управляет языком интерфейса, темой оформления,
+    /// параметрами автосохранения и фонового кеширования.
+    /// Все изменения применяются немедленно — без кнопки Apply.
     /// </summary>
     public class GeneralSettingsViewModel : ReactiveObject
     {
@@ -22,12 +27,22 @@ namespace Writersword.ViewModels.Settings
         private readonly ISettingsService _settingsService;
         private readonly ILocalizationService _localizationService;
         private readonly IThemeService _themeService;
+
+        /// <summary>Язык интерфейса на момент открытия настроек — нужен для определения нужен ли рестарт.</summary>
         private readonly string _initialLanguage;
+
         private LanguageOption _selectedLanguage;
         private ThemeOption _selectedTheme;
         private bool _restartRequired;
 
-        /// <summary>Доступные языки интерфейса — название на родном языке и код</summary>
+        private bool _cachingEnabled;
+        private string _cachingInterval;
+        private bool _autoSaveEnabled;
+        private string _autoSaveInterval;
+
+        // ── Язык ─────────────────────────────────────────────────────────
+
+        /// <summary>Доступные языки интерфейса — название на родном языке и код.</summary>
         public List<LanguageOption> AvailableLanguages { get; } = new()
         {
             new LanguageOption("English", "en"),
@@ -36,15 +51,7 @@ namespace Writersword.ViewModels.Settings
             new LanguageOption("Հայերեն", "hy")
         };
 
-        /// <summary>Доступные темы оформления</summary>
-        public List<ThemeOption> AvailableThemes { get; } = new()
-        {
-            new ThemeOption(Strings.Settings_General_Theme_Dark, "Dark"),
-            new ThemeOption(Strings.Settings_General_Theme_Light, "Light"),
-            new ThemeOption(Strings.Settings_General_Theme_Sepia, "Sepia")
-        };
-
-        /// <summary>Текущий выбранный язык</summary>
+        /// <summary>Текущий выбранный язык. При изменении применяется немедленно.</summary>
         public LanguageOption SelectedLanguage
         {
             get => _selectedLanguage;
@@ -56,7 +63,27 @@ namespace Writersword.ViewModels.Settings
             }
         }
 
-        /// <summary>Текущая выбранная тема</summary>
+        /// <summary>Показывать ли баннер о необходимости перезапуска.</summary>
+        public bool RestartRequired
+        {
+            get => _restartRequired;
+            set => this.RaiseAndSetIfChanged(ref _restartRequired, value);
+        }
+
+        /// <summary>Команда немедленного перезапуска приложения.</summary>
+        public ReactiveCommand<Unit, Unit> RestartNowCommand { get; }
+
+        // ── Тема ──────────────────────────────────────────────────────────
+
+        /// <summary>Доступные темы оформления.</summary>
+        public List<ThemeOption> AvailableThemes { get; } = new()
+        {
+            new ThemeOption(Strings.Settings_General_Theme_Dark, "Dark"),
+            new ThemeOption(Strings.Settings_General_Theme_Light, "Light"),
+            new ThemeOption(Strings.Settings_General_Theme_Sepia, "Sepia")
+        };
+
+        /// <summary>Текущая выбранная тема. При изменении применяется немедленно без перезапуска.</summary>
         public ThemeOption SelectedTheme
         {
             get => _selectedTheme;
@@ -68,15 +95,76 @@ namespace Writersword.ViewModels.Settings
             }
         }
 
-        /// <summary>Нужен ли перезапуск для применения языка</summary>
-        public bool RestartRequired
+        // ── Кеширование / Автосохранение ──────────────────────────────────
+
+        /// <summary>Предустановленные значения интервала в секундах для ComboBox.</summary>
+        public IReadOnlyList<string> IntervalPresets { get; } = new[]
         {
-            get => _restartRequired;
-            set => this.RaiseAndSetIfChanged(ref _restartRequired, value);
+            "5", "10", "15", "20", "30", "45", "60", "90", "120", "180"
+        };
+
+        /// <summary>
+        /// Включено ли фоновое кеширование.
+        /// При выключении немедленно останавливает CacheUpdateService.
+        /// </summary>
+        public bool CachingEnabled
+        {
+            get => _cachingEnabled;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _cachingEnabled, value);
+                ApplyCachingEnabled(value);
+                SavePerformanceSettings();
+            }
         }
 
-        /// <summary>Команда немедленного перезапуска приложения</summary>
-        public ReactiveCommand<Unit, Unit> RestartNowCommand { get; }
+        /// <summary>
+        /// Интервал кеширования в секундах (строка — поддерживает ручной ввод).
+        /// При изменении передаётся в CacheUpdateService.SetInterval().
+        /// Вступает в силу при следующем запуске кеша (переключение вкладки).
+        /// </summary>
+        public string CachingInterval
+        {
+            get => _cachingInterval;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _cachingInterval, value);
+                ApplyCachingInterval(value);
+                SavePerformanceSettings();
+            }
+        }
+
+        /// <summary>
+        /// Включено ли автосохранение.
+        /// При изменении немедленно применяется к IAutoSaveService.
+        /// </summary>
+        public bool AutoSaveEnabled
+        {
+            get => _autoSaveEnabled;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _autoSaveEnabled, value);
+                ApplyAutoSaveEnabled(value);
+                SavePerformanceSettings();
+            }
+        }
+
+        /// <summary>
+        /// Интервал автосохранения в секундах (строка — поддерживает ручной ввод).
+        /// При изменении передаётся в IAutoSaveService.SetInterval().
+        /// </summary>
+        public string AutoSaveInterval
+        {
+            get => _autoSaveInterval;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _autoSaveInterval, value);
+                ApplyAutoSaveInterval(value);
+                SavePerformanceSettings();
+            }
+        }
+
+        // ── Конструктор ───────────────────────────────────────────────────
 
         public GeneralSettingsViewModel()
         {
@@ -98,17 +186,29 @@ namespace Writersword.ViewModels.Settings
             _restartRequired = false;
 
             RestartNowCommand = ReactiveCommand.Create(RestartApplication);
+
+            // Загружаем сохранённые настройки производительности, либо дефолты.
+            var perf = _settingsService.GetModuleSettings<PerformanceSettings>("performance")
+                       ?? new PerformanceSettings();
+
+            _cachingEnabled = perf.CachingEnabled;
+            _cachingInterval = perf.CachingIntervalSeconds.ToString();
+            _autoSaveEnabled = perf.AutoSaveEnabled;
+            _autoSaveInterval = perf.AutoSaveIntervalSeconds.ToString();
         }
 
-        /// <summary>Применить выбранный язык — сохранить в настройки и показать предупреждение если язык изменился</summary>
+        // ── Применение язык / тема ────────────────────────────────────────
+
+        /// <summary>Сохраняет язык и устанавливает флаг перезапуска если язык изменился.</summary>
         private void ApplyLanguage(string languageCode)
         {
             _settingsService.Language = languageCode;
             RestartRequired = languageCode != _initialLanguage;
-            _logger.LogDebug("Language selected: {Language}, restart required: {RestartRequired}", languageCode, RestartRequired);
+            _logger.LogDebug("Language selected: {Language}, restart required: {RestartRequired}",
+                languageCode, RestartRequired);
         }
 
-        /// <summary>Применить выбранную тему — сменить сразу без перезапуска</summary>
+        /// <summary>Применяет тему немедленно без перезапуска.</summary>
         private void ApplyTheme(string themeCode)
         {
             _settingsService.Theme = themeCode;
@@ -116,12 +216,116 @@ namespace Writersword.ViewModels.Settings
             _logger.LogDebug("Theme changed to: {Theme}", themeCode);
         }
 
+        // ── Применение кеширования ────────────────────────────────────────
+
         /// <summary>
-        /// Перезапустить приложение — сначала запускает новый процесс,
+        /// При выключении останавливает текущую сессию кеширования.
+        /// При включении — кеш запустится автоматически при следующей активации вкладки.
+        /// </summary>
+        private void ApplyCachingEnabled(bool enabled)
+        {
+            try
+            {
+                var cacheService = App.Services.GetService<ICacheUpdateService>();
+                if (cacheService is null) return;
+
+                if (!enabled)
+                    cacheService.Stop();
+
+                _logger.LogDebug("Caching enabled set to: {Value}", enabled);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error applying caching enabled");
+            }
+        }
+
+        /// <summary>
+        /// Передаёт новый интервал в CacheUpdateService.
+        /// Вступает в силу при следующем Start() (переключение вкладки).
+        /// </summary>
+        private void ApplyCachingInterval(string value)
+        {
+            try
+            {
+                int seconds = ParseInterval(value, 10);
+                var cacheService = App.Services.GetService<ICacheUpdateService>();
+                cacheService?.SetInterval(TimeSpan.FromSeconds(seconds));
+                _logger.LogDebug("Caching interval set to: {Seconds}s", seconds);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error applying caching interval");
+            }
+        }
+
+        // ── Применение автосохранения ─────────────────────────────────────
+
+        /// <summary>Включает или выключает автосохранение немедленно.</summary>
+        private void ApplyAutoSaveEnabled(bool enabled)
+        {
+            try
+            {
+                var autoSave = App.Services.GetService<IAutoSaveService>();
+                if (autoSave is null) return;
+
+                autoSave.IsEnabled = enabled;
+                _logger.LogDebug("AutoSave enabled set to: {Value}", enabled);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error applying autosave enabled");
+            }
+        }
+
+        /// <summary>Передаёт новый интервал в IAutoSaveService.</summary>
+        private void ApplyAutoSaveInterval(string value)
+        {
+            try
+            {
+                int seconds = ParseInterval(value, 120);
+                var autoSave = App.Services.GetService<IAutoSaveService>();
+                autoSave?.SetInterval(TimeSpan.FromSeconds(seconds));
+                _logger.LogDebug("AutoSave interval set to: {Seconds}s", seconds);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error applying autosave interval");
+            }
+        }
+
+        // ── Сохранение ────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Сохраняет текущие значения производительности в ISettingsService.
+        /// Вызывается после каждого изменения свойства.
+        /// </summary>
+        private void SavePerformanceSettings()
+        {
+            try
+            {
+                var settings = new PerformanceSettings
+                {
+                    CachingEnabled = _cachingEnabled,
+                    CachingIntervalSeconds = ParseInterval(_cachingInterval, 10),
+                    AutoSaveEnabled = _autoSaveEnabled,
+                    AutoSaveIntervalSeconds = ParseInterval(_autoSaveInterval, 120)
+                };
+                _settingsService.SaveModuleSettings("performance", settings);
+                _settingsService.Save();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving performance settings");
+            }
+        }
+
+        // ── Перезапуск ────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Перезапускает приложение: сначала запускает новый процесс,
         /// затем закрывает главное окно через штатный механизм.
-        /// OnClosing сам проверит несохранённые изменения и предложит сохранить.
-        /// Если пользователь отменит закрытие — новый процесс останется висеть,
-        /// поэтому запускаем его только после того как окно начало закрываться.
+        /// OnClosing проверит несохранённые изменения перед закрытием.
         /// </summary>
         private void RestartApplication()
         {
@@ -131,10 +335,8 @@ namespace Writersword.ViewModels.Settings
                 is IClassicDesktopStyleApplicationLifetime desktop
                 && desktop.MainWindow != null)
             {
-                // Сохраняем путь до закрытия процесса
                 var executablePath = Process.GetCurrentProcess().MainModule?.FileName;
 
-                // Подписываемся на закрытие окна — новый процесс запустим только когда окно реально закроется
                 desktop.MainWindow.Closed += (_, _) =>
                 {
                     if (!string.IsNullOrEmpty(executablePath))
@@ -148,21 +350,28 @@ namespace Writersword.ViewModels.Settings
                     }
                 };
 
-                // Закрываем окно через штатный механизм — OnClosing проверит несохранённые изменения
                 desktop.MainWindow.Close();
             }
         }
+
+        // ── Хелперы ───────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Парсит строку в секунды.
+        /// Возвращает fallback если значение не является положительным числом.
+        /// </summary>
+        private static int ParseInterval(string? value, int fallback)
+        {
+            if (int.TryParse(value?.Trim(), out int result) && result > 0)
+                return result;
+            return fallback;
+        }
     }
 
-    /// <summary>
-    /// Опция языка интерфейса
-    /// </summary>
+    /// <summary>Опция языка интерфейса — название на родном языке и ISO-код.</summary>
     public class LanguageOption
     {
-        /// <summary>Название языка на родном языке</summary>
         public string DisplayName { get; }
-
-        /// <summary>Код языка (en, ru, uk)</summary>
         public string Code { get; }
 
         public LanguageOption(string displayName, string code)
@@ -172,15 +381,10 @@ namespace Writersword.ViewModels.Settings
         }
     }
 
-    /// <summary>
-    /// Опция темы оформления
-    /// </summary>
+    /// <summary>Опция темы оформления — отображаемое название и внутренний код.</summary>
     public class ThemeOption
     {
-        /// <summary>Название темы</summary>
         public string DisplayName { get; }
-
-        /// <summary>Код темы (Dark, Light, Sepia)</summary>
         public string Code { get; }
 
         public ThemeOption(string displayName, string code)

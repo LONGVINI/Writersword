@@ -5,100 +5,167 @@
              x:Class="Writersword.Views.Settings.GeneralSettingsView"
              x:DataType="vm:GeneralSettingsViewModel">
 
-	<StackPanel Spacing="24">
+    <UserControl.Styles>
+        <!-- Заголовок секции -->
+        <Style Selector="TextBlock.SectionHeader">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        </Style>
+        <!-- Подпись поля ввода -->
+        <Style Selector="TextBlock.FieldLabel">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+    </UserControl.Styles>
 
-		<!-- Язык -->
-		<StackPanel Spacing="10">
-			<TextBlock Text="{x:Static loc:Strings.Settings_General_Language}"
-                       FontSize="13"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+    <StackPanel Spacing="28">
 
-			<ComboBox ItemsSource="{Binding AvailableLanguages}"
+        <!-- ── Язык ─────────────────────────────────────────────────── -->
+        <StackPanel Spacing="10">
+            <TextBlock Classes="SectionHeader"
+                       Text="{x:Static loc:Strings.Settings_General_Language}"/>
+            <Separator/>
+
+            <ComboBox ItemsSource="{Binding AvailableLanguages}"
                       SelectedItem="{Binding SelectedLanguage}"
                       MinWidth="200"
                       HorizontalAlignment="Left">
-				<ComboBox.ItemTemplate>
-					<DataTemplate x:DataType="vm:LanguageOption">
-						<TextBlock Text="{Binding DisplayName}"
+                <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:LanguageOption">
+                        <TextBlock Text="{Binding DisplayName}"
                                    FontSize="13"
                                    Padding="4,2"/>
-					</DataTemplate>
-				</ComboBox.ItemTemplate>
-			</ComboBox>
-		</StackPanel>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
 
-		<!-- Тема -->
-		<StackPanel Spacing="10">
-			<TextBlock Text="{x:Static loc:Strings.Settings_General_Theme}"
-                       FontSize="13"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+            <!-- Баннер перезапуска — показывается только если язык изменился -->
+            <Border Background="#2A1F00"
+                    Padding="14,10"
+                    CornerRadius="6"
+                    IsVisible="{Binding RestartRequired}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
 
-			<ComboBox ItemsSource="{Binding AvailableThemes}"
+                    <StackPanel Grid.Column="0"
+                                Orientation="Horizontal"
+                                Spacing="8"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="!"
+                                   FontSize="13"
+                                   FontWeight="Bold"
+                                   Foreground="#F0A030"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock Text="{x:Static loc:Strings.Settings_General_RestartRequired}"
+                                   FontSize="12"
+                                   Foreground="#C8881A"
+                                   VerticalAlignment="Center"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <Button Grid.Column="1"
+                            Content="{x:Static loc:Strings.Settings_General_RestartNow}"
+                            Command="{Binding RestartNowCommand}"
+                            Margin="12,0,0,0"
+                            Padding="12,6"
+                            FontSize="12"
+                            FontWeight="SemiBold"
+                            Foreground="#F0A030"
+                            Background="#3D2E00"
+                            BorderBrush="#F0A030"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Cursor="Hand"
+                            VerticalAlignment="Center">
+                        <Button.Styles>
+                            <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                <Setter Property="Background" Value="#4D3A00"/>
+                            </Style>
+                        </Button.Styles>
+                    </Button>
+                </Grid>
+            </Border>
+        </StackPanel>
+
+        <!-- ── Тема ──────────────────────────────────────────────────── -->
+        <StackPanel Spacing="10">
+            <TextBlock Classes="SectionHeader"
+                       Text="{x:Static loc:Strings.Settings_General_Theme}"/>
+            <Separator/>
+
+            <ComboBox ItemsSource="{Binding AvailableThemes}"
                       SelectedItem="{Binding SelectedTheme}"
                       MinWidth="200"
                       HorizontalAlignment="Left">
-				<ComboBox.ItemTemplate>
-					<DataTemplate x:DataType="vm:ThemeOption">
-						<TextBlock Text="{Binding DisplayName}"
+                <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ThemeOption">
+                        <TextBlock Text="{Binding DisplayName}"
                                    FontSize="13"
                                    Padding="4,2"/>
-					</DataTemplate>
-				</ComboBox.ItemTemplate>
-			</ComboBox>
-		</StackPanel>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+        </StackPanel>
 
-		<!-- Предупреждение о перезапуске -->
-		<Border Background="#2A1F00"
-                Padding="14,10"
-                CornerRadius="6"
-                IsVisible="{Binding RestartRequired}">
-			<Grid>
-				<Grid.ColumnDefinitions>
-					<ColumnDefinition Width="*"/>
-					<ColumnDefinition Width="Auto"/>
-				</Grid.ColumnDefinitions>
+        <!-- ── Автосохранение ─────────────────────────────────────────── -->
+        <StackPanel Spacing="10">
+            <TextBlock Classes="SectionHeader"
+                       Text="{x:Static loc:Strings.Settings_General_AutoSave}"/>
+            <Separator/>
 
-				<StackPanel Grid.Column="0"
-                            Orientation="Horizontal"
-                            Spacing="8"
-                            VerticalAlignment="Center">
-					<TextBlock Text="!"
-                               FontSize="13"
-                               FontWeight="Bold"
-                               Foreground="#F0A030"
-                               VerticalAlignment="Center"/>
-					<TextBlock Text="{x:Static loc:Strings.Settings_General_RestartRequired}"
-                               FontSize="12"
-                               Foreground="#C8881A"
-                               VerticalAlignment="Center"
-                               TextWrapping="Wrap"/>
-				</StackPanel>
+            <!-- Чекбокс включения автосохранения -->
+            <CheckBox IsChecked="{Binding AutoSaveEnabled}"
+                      Content="{x:Static loc:Strings.Settings_General_AutoSave_Enable}"/>
 
-				<Button Grid.Column="1"
-                        Content="{x:Static loc:Strings.Settings_General_RestartNow}"
-                        Command="{Binding RestartNowCommand}"
-                        Margin="12,0,0,0"
-                        Padding="12,6"
-                        FontSize="12"
-                        FontWeight="SemiBold"
-                        Foreground="#F0A030"
-                        Background="#3D2E00"
-                        BorderBrush="#F0A030"
-                        BorderThickness="1"
-                        CornerRadius="4"
-                        Cursor="Hand"
-                        VerticalAlignment="Center">
-					<Button.Styles>
-						<Style Selector="Button:pointerover /template/ ContentPresenter">
-							<Setter Property="Background" Value="#4D3A00"/>
-						</Style>
-					</Button.Styles>
-				</Button>
+            <!-- Интервал — блокируется если автосохранение выключено -->
+            <StackPanel Spacing="0"
+                        IsEnabled="{Binding AutoSaveEnabled}">
+                <TextBlock Classes="FieldLabel"
+                           Text="{x:Static loc:Strings.Settings_General_Interval}"/>
+                <!-- IsEditable позволяет вводить произвольное значение помимо пресетов -->
+                <ComboBox IsEditable="True"
+                          ItemsSource="{Binding IntervalPresets}"
+                          Text="{Binding AutoSaveInterval}"
+                          MinWidth="160"
+                          HorizontalAlignment="Left"/>
+            </StackPanel>
+        </StackPanel>
 
-			</Grid>
-		</Border>
+        <!-- ── Кеширование ───────────────────────────────────────────── -->
+        <StackPanel Spacing="10">
+            <TextBlock Classes="SectionHeader"
+                       Text="{x:Static loc:Strings.Settings_General_Caching}"/>
+            <Separator/>
 
-	</StackPanel>
+            <!-- Чекбокс включения кеширования -->
+            <CheckBox IsChecked="{Binding CachingEnabled}"
+                      Content="{x:Static loc:Strings.Settings_General_Caching_Enable}"/>
+
+            <!-- Интервал — блокируется если кеширование выключено -->
+            <StackPanel Spacing="0"
+                        IsEnabled="{Binding CachingEnabled}">
+                <TextBlock Classes="FieldLabel"
+                           Text="{x:Static loc:Strings.Settings_General_Interval}"/>
+                <!-- IsEditable позволяет вводить произвольное значение помимо пресетов -->
+                <ComboBox IsEditable="True"
+                          ItemsSource="{Binding IntervalPresets}"
+                          Text="{Binding CachingInterval}"
+                          MinWidth="160"
+                          HorizontalAlignment="Left"/>
+            </StackPanel>
+
+            <!-- Подсказка о влиянии на восстановление после сбоя -->
+           <TextBlock FontSize="11"
+                   Foreground="{DynamicResource TextMutedBrush}"
+                   Text="{x:Static loc:Strings.Settings_General_Caching_Hint}"
+                   TextWrapping="Wrap"
+                   Margin="0,4,0,0"/>
+        </StackPanel>
+
+    </StackPanel>
 </UserControl>

@@ -26,6 +26,9 @@ namespace Writersword.Modules.TextEditor.Contracts
         void SetTextColor(string color);
         void SetHighlightColor(string? color);
         void SetFontFamily(string fontFamily);
+        void BeginFontPreview();
+        void PreviewFontFamily(string fontFamily);
+        void EndFontPreview(bool commit);
         void SetFontSize(double size);
         void IncreaseFontSize();
         void DecreaseFontSize();

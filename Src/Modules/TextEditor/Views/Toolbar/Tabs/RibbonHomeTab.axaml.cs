@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -22,6 +22,11 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         private bool _fontJustGotFocus;
         private bool _fontScrolling;
         private string? _fontBeforeOpen;
+        private string? _fontHovered;
+        private DispatcherTimer? _fontPreviewTimer;
+        // true только когда пользователь явно кликнул на элемент или нажал Enter.
+        // Навигация стрелками его НЕ устанавливает.
+        private bool _fontExplicitlyConfirmed;
 
         public RibbonHomeTab()
         {
@@ -63,6 +68,9 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
                 _fontAutoComplete.DropDownOpened += OnFontDropDownOpened;
                 _fontAutoComplete.DropDownClosed -= OnFontDropDownClosed;
                 _fontAutoComplete.DropDownClosed += OnFontDropDownClosed;
+
+                _fontAutoComplete.PointerReleased -= OnFontAutoCompletePointerReleased;
+                _fontAutoComplete.PointerReleased += OnFontAutoCompletePointerReleased;
             }
         }
 
@@ -76,6 +84,7 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
                 _fontAutoComplete.TemplateApplied -= OnFontAutoCompleteTemplateApplied;
                 _fontAutoComplete.DropDownOpened -= OnFontDropDownOpened;
                 _fontAutoComplete.DropDownClosed -= OnFontDropDownClosed;
+                _fontAutoComplete.PointerReleased -= OnFontAutoCompletePointerReleased;
             }
 
             DetachInnerControls();
@@ -83,12 +92,27 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
 
         private void DetachInnerControls()
         {
+            _fontPreviewTimer?.Stop();
+            if (_fontPreviewTimer is not null)
+            {
+                _fontPreviewTimer.Tick -= OnPreviewTimerTick;
+                _fontPreviewTimer = null;
+            }
+
             if (_fontInnerTextBox is not null)
             {
                 _fontInnerTextBox.PointerReleased -= OnFontInnerPointerReleased;
                 _fontInnerTextBox.GotFocus -= OnFontInnerGotFocus;
                 _fontInnerTextBox.LostFocus -= OnFontInnerLostFocus;
                 _fontInnerTextBox.KeyDown -= OnFontInnerKeyDown;
+            }
+
+            if (_fontInnerList is not null)
+            {
+                _fontInnerList.SelectionChanged  -= OnFontInnerListSelectionChanged;
+                _fontInnerList.PointerMoved      -= OnFontInnerListPointerMoved;
+                _fontInnerList.PointerExited     -= OnFontInnerListPointerExited;
+                _fontInnerList.PointerReleased   -= OnFontInnerListPointerReleased;
             }
         }
 
@@ -110,9 +134,22 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
                 _fontInnerTextBox.LostFocus += OnFontInnerLostFocus;
                 _fontInnerTextBox.KeyDown += OnFontInnerKeyDown;
             }
+
+            if (_fontInnerList is not null)
+            {
+                _fontInnerList.SelectionChanged += OnFontInnerListSelectionChanged;
+                _fontInnerList.PointerMoved     += OnFontInnerListPointerMoved;
+                _fontInnerList.PointerExited    += OnFontInnerListPointerExited;
+                _fontInnerList.PointerReleased  += OnFontInnerListPointerReleased;
+            }
         }
 
         // ── TextBox события ───────────────────────────────────────────────
+
+        private void OnFontAutoCompletePointerReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            e.Handled = true;
+        }
 
         private void OnFontInnerGotFocus(object? sender, FocusChangedEventArgs e)
         {
@@ -126,13 +163,20 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
 
         private void OnFontInnerPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
-            // Первый клик — выделяем весь текст.
-            // Повторные клики — курсор встаёт в место клика, не трогаем дропдаун.
-            if (!_fontJustGotFocus) return;
             _fontJustGotFocus = false;
-            Dispatcher.UIThread.Post(
-                () => _fontInnerTextBox?.SelectAll(),
-                DispatcherPriority.Background);
+
+            // Не открываем если дропдаун уже открыт.
+            if (_fontAutoComplete?.IsDropDownOpen == true) return;
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (DataContext is RibbonHomeTabViewModel vm)
+                    _fontBeforeOpen = vm.CurrentFontFamily;
+                if (_fontInnerTextBox is not null)
+                    _fontInnerTextBox.Text = string.Empty;
+                if (_fontAutoComplete is not null)
+                    _fontAutoComplete.IsDropDownOpen = true;
+            }, DispatcherPriority.Background);
         }
 
         private void OnFontInnerKeyDown(object? sender, KeyEventArgs e)
@@ -142,6 +186,8 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
                 case Key.Up:
                 case Key.Down:
                 case Key.Enter:
+                    _fontExplicitlyConfirmed = true;
+                    return;
                 case Key.Escape:
                 case Key.Tab:
                 case Key.Left:
@@ -150,9 +196,76 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
                 case Key.End:
                     return;
                 default:
-                    // При вводе AutoCompleteBox сам открывает дропдаун через MinimumPrefixLength=0
                     break;
             }
+        }
+
+        // ── Preview по списку ─────────────────────────────────────────────
+
+        private void EnsurePreviewTimer()
+        {
+            if (_fontPreviewTimer is not null) return;
+            _fontPreviewTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(60)
+            };
+            _fontPreviewTimer.Tick += OnPreviewTimerTick;
+        }
+
+        private void OnPreviewTimerTick(object? sender, EventArgs e)
+        {
+            _fontPreviewTimer?.Stop();
+            if (_fontHovered is not null && DataContext is RibbonHomeTabViewModel vm)
+                vm.PreviewFontFamily(_fontHovered);
+        }
+
+        private void SchedulePreview(string font)
+        {
+            _fontHovered = font;
+            EnsurePreviewTimer();
+            _fontPreviewTimer!.Stop();
+            _fontPreviewTimer.Start();
+        }
+
+        private void StopPreviewTimer()
+        {
+            _fontPreviewTimer?.Stop();
+        }
+
+        private void OnFontInnerListSelectionChanged(object? sender, SelectionChangedEventArgs e)
+        {
+            // Пропускаем программную прокрутку при открытии дропдауна.
+            if (_fontScrolling) return;
+            if (_fontInnerList?.SelectedItem is string font)
+                SchedulePreview(font);
+        }
+
+        private void OnFontInnerListPointerMoved(object? sender, PointerEventArgs e)
+        {
+            if (_fontInnerList is null) return;
+            var pos = e.GetPosition(_fontInnerList);
+            var hit = _fontInnerList.InputHitTest(pos) as Control;
+            if (hit is null) return;
+
+            var lbi = (hit as ListBoxItem) ?? hit.FindAncestorOfType<ListBoxItem>();
+            if (lbi?.DataContext is not string font || font == _fontHovered) return;
+
+            _fontHovered = font;
+            SchedulePreview(font);
+        }
+
+        private void OnFontInnerListPointerExited(object? sender, PointerEventArgs e)
+        {
+            StopPreviewTimer();
+            _fontHovered = null;
+            if (DataContext is RibbonHomeTabViewModel vm && _fontBeforeOpen is not null)
+                vm.PreviewFontFamily(_fontBeforeOpen);
+        }
+
+        private void OnFontInnerListPointerReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            // Клик мышью по элементу = явный выбор шрифта.
+            _fontExplicitlyConfirmed = true;
         }
 
         // ── Дропдаун ─────────────────────────────────────────────────────
@@ -160,7 +273,12 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         private void OnFontDropDownOpened(object? sender, EventArgs e)
         {
             if (DataContext is not RibbonHomeTabViewModel vm) return;
-            _fontBeforeOpen = vm.CurrentFontFamily;
+            _fontBeforeOpen ??= vm.CurrentFontFamily;
+            _fontHovered = null;
+            _fontExplicitlyConfirmed = false;
+            // BeginFontPreview всегда вызывается здесь — это единственное надёжное место.
+            // OnFontInnerPointerReleased не гарантирует вызов если бокс уже был в фокусе.
+            vm.BeginFontPreview();
 
             if (_fontScrolling) return;
             _fontScrolling = true;
@@ -180,10 +298,22 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
 
         private void OnFontDropDownClosed(object? sender, EventArgs e)
         {
+            StopPreviewTimer();
+
             if (DataContext is not RibbonHomeTabViewModel vm) return;
+
+            // Коммит только если пользователь явно нажал Enter или кликнул мышью.
+            // Навигация стрелками и Escape — не коммит.
+            bool committed = _fontExplicitlyConfirmed;
+            _fontExplicitlyConfirmed = false;
+            vm.EndFontPreview(committed);
+
             string restore = vm.CurrentFontFamily ?? _fontBeforeOpen ?? string.Empty;
             if (_fontInnerTextBox is not null && _fontInnerTextBox.Text != restore)
                 _fontInnerTextBox.Text = restore;
+
+            _fontBeforeOpen = null;
+            _fontHovered = null;
         }
 
         // ── Ribbon resize ─────────────────────────────────────────────────

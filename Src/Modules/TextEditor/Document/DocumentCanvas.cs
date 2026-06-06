@@ -128,6 +128,8 @@ namespace Writersword.Modules.TextEditor.Document
         private readonly Dictionary<ParagraphViewModel,
             (string Text, float Width, SKTextLayout Layout)> _layoutCache = new();
 
+        // Поля live-preview шрифта вынесены в DocumentCanvas.FontPreview.cs.
+
         // Хранит лямбды подписанные в WirePvm чтобы точно отписать в UnwirePvm.
         // Анонимные лямбды нельзя отписать через -= без сохранения ссылки.
         private readonly Dictionary<ParagraphViewModel, Action> _pvmFocusHandlers = new();
@@ -279,6 +281,13 @@ namespace Writersword.Modules.TextEditor.Document
 
         // ── Undo ─────────────────────────────────────────────────────────
         public UndoRedoStack? UndoStack { get; set; }
+
+        /// <summary>
+        /// Лёгкий стек операционных команд для набора текста.
+        /// Каждая запись хранит несколько байт вместо полного JSON документа.
+        /// Устанавливается TextEditorModule при создании View.
+        /// </summary>
+        public Writersword.Modules.TextEditor.Commands.TextUndoRedoStack? TextUndoStack { get; set; }
 
         private double _monitorSizeInches = 0;
         private double _cachedDpi = 96.0;
@@ -444,6 +453,9 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.Paragraphs.CollectionChanged -= OnParagraphsChanged;
                 _docVm.PropertyChanged -= OnDocVmPropertyChanged;
                 _docVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
+                _docVm.BeginFontPreviewDelegate   = null;
+                _docVm.PreviewFontFamilyDelegate  = null;
+                _docVm.EndFontPreviewDelegate     = null;
                 _docVm.OnPageBreakInserted = null;
                 _docVm.UndoDelegate = null;
                 _docVm.RedoDelegate = null;
@@ -592,6 +604,9 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.Paragraphs.CollectionChanged -= OnParagraphsChanged;
                 _docVm.PropertyChanged -= OnDocVmPropertyChanged;
                 _docVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
+                _docVm.BeginFontPreviewDelegate   = null;
+                _docVm.PreviewFontFamilyDelegate  = null;
+                _docVm.EndFontPreviewDelegate     = null;
                 _docVm.OnPageBreakInserted = null;
                 _docVm.UndoDelegate = null;
                 _docVm.RedoDelegate = null;
@@ -615,6 +630,9 @@ namespace Writersword.Modules.TextEditor.Document
                 DocVm.Paragraphs.CollectionChanged += OnParagraphsChanged;
                 DocVm.PropertyChanged += OnDocVmPropertyChanged;
                 DocVm.ParagraphFormatChanged += OnParagraphFormatChanged;
+                DocVm.BeginFontPreviewDelegate   = BeginFontPreviewSession;
+                DocVm.PreviewFontFamilyDelegate  = PreviewFontFamilySession;
+                DocVm.EndFontPreviewDelegate     = EndFontPreviewSession;
                 DocVm.OnPageBreakInserted = block => _pendingFocusBlock = block;
                 DocVm.UndoDelegate = ExecuteUndo;
                 DocVm.RedoDelegate = ExecuteRedo;
@@ -632,11 +650,15 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void OnParagraphFormatChanged()
         {
-            // Не чистим _layoutCache здесь: GetOrBuildLayout проверяет Text и Width,
-            // при изменении текста параграфа кеш инвалидируется сам.
-            // Clear() вызывает сотни BuildLayout на каждый MeasureOverride,
-            // что при быстром наборе текста вызывает лавину аллокаций.
+            // При изменении форматирования (шрифт, размер, цвет и т.п.) текст параграфа
+            // не меняется, поэтому _layoutCache не инвалидируется автоматически.
+            // Чистим здесь явно — иначе рендер показывает старое форматирование.
+            _logger.Debug("[FORMAT] OnParagraphFormatChanged: clearing cache ({Count} entries), rebuilding layouts",
+                _layoutCache.Count);
+            _layoutCache.Clear();
+            _cellLayoutCache.Clear();
             RebuildLayouts();
+            _logger.Debug("[FORMAT] RebuildLayouts done, _layouts.Count={Count}", _layouts.Count);
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
 
@@ -866,7 +888,8 @@ namespace Writersword.Modules.TextEditor.Document
             // при изменении текста параграфа кеш инвалидируется сам.
             // Clear() вызывает сотни BuildLayout на каждый MeasureOverride,
             // что при быстром наборе текста вызывает лавину аллокаций.
-            RebuildLayouts();
+            if (!_fontPreviewActive)
+                RebuildLayouts();
 
             double visualH = Math.Max(_canvasHeight * zoom, 100);
             double visualW = availW;
@@ -877,7 +900,6 @@ namespace Writersword.Modules.TextEditor.Document
 
             return new Size(visualW, visualH);
         }
-
         protected override Size ArrangeOverride(Size finalSize)
         {
             double zoom = Zoom;
@@ -937,10 +959,16 @@ namespace Writersword.Modules.TextEditor.Document
 
 
         /// <summary>
-        /// Быстрая оценка высоты параграфа без построения SKTextLayout.
-        /// Используется для параграфов вне viewport-буфера — точность ~±30%,
-        /// достаточная для позиционирования скроллбара и прокрутки.
+        /// Возвращает layout для рендера параграфа.
+        /// Во время live-preview оверлейный _layouts уже содержит preview-layout в pl.Layout.
         /// </summary>
+        private SKTextLayout GetRenderLayout(ParaLayout pl, float widthPt)
+        {
+            // Во время live-preview оверлейный _layouts уже содержит preview-layout
+            // прямо в pl.Layout (см. DocumentCanvas.FontPreview.cs), отдельная ветка не нужна.
+            return pl.Layout ?? GetOrBuildLayout(pl.Vm, widthPt);
+        }
+
         private float EstimateHeight(ParagraphViewModel pvm, float widthPt)
         {
             int charCount = pvm.PlainText?.Length ?? 0;
@@ -958,7 +986,6 @@ namespace Writersword.Modules.TextEditor.Document
                 && cached.Text == text
                 && Math.Abs(cached.Width - widthPt) < 0.1f)
                 return cached.Layout;
-
             var layout = _renderer.BuildLayout(pvm.Model, widthPt, _styleResolver!);
             _layoutCache[pvm] = (text, widthPt, layout);
             return layout;

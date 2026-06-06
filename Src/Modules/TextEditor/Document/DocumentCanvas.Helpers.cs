@@ -808,10 +808,6 @@ namespace Writersword.Modules.TextEditor.Document
 
             var best = layouts[bestIdx];
 
-            _logger.Debug("[HIT] bestIdx={BI} Cell={C} clipBest={CB} xPt={X:F1} yPt={Y:F1}",
-                bestIdx, best.Cell != null ? $"row={best.Cell.Cell?.Row} col={best.Cell.Cell?.Column}" : "null",
-                clipBestIdx, xPt, yPt);
-
             // ── Якоря таблицы: клик снаружи таблицы по X ─────────────────
             if (best.Cell != null)
             {
@@ -1190,12 +1186,25 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (!HasSel()) return;
 
+            var startPvm = sp < _layouts.Count ? GetVmAt(sp) : null;
+            var endPvm = ep < _layouts.Count ? GetVmAt(ep) : null;
+
+            // O(1)-проверка принадлежности абзаца документу. Раньше тут был
+            // DocVm.Paragraphs.Contains() прямо в цикле — O(n) на каждый из выделенных,
+            // что давало O(n^2) и сильную просадку на больших выделениях.
+            var docParas = new HashSet<ParagraphViewModel>(DocVm.Paragraphs);
+
             var seen = new HashSet<ParagraphViewModel>();
             for (int i = sp; i <= ep && i < _layouts.Count; i++)
             {
                 var pvm = GetVmAt(i);
-                if (pvm is not null && seen.Add(pvm) && DocVm.Paragraphs.Contains(pvm))
-                    DocVm.SelectionParagraphs.Add(pvm);
+                if (pvm is null || !docParas.Contains(pvm) || !seen.Add(pvm)) continue;
+
+                DocVm.SelectionParagraphs.Add(pvm);
+
+                int textLen = pvm.PlainText?.Length ?? 0;
+                pvm.SelectionStart = (pvm == startPvm) ? sc : 0;
+                pvm.SelectionEnd = (pvm == endPvm) ? ec : textLen;
             }
         }
 

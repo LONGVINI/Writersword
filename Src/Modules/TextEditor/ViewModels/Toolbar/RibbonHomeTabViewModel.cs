@@ -72,6 +72,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         // --- Флаг подавления рекурсии при синхронизации размера шрифта ---
         private bool _isSyncingFontSize;
 
+        // --- Флаг активного font-preview (дропдаун открыт, пользователь листает) ---
+        // Пока true — CurrentFontFamily.set НЕ вызывает SetFontFamily,
+        // чтобы навигация стрелками не порождала записи в Undo и RebuildLayouts.
+        private bool _fontPreviewActive;
+        private string? _previewOriginalFont;
+
         // --- Состояние форматирования абзаца ---
 
         private TextAlignment _currentAlignment = TextAlignment.Left;
@@ -165,7 +171,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 {
                     _fontFamilyText = value;
                     this.RaisePropertyChanged(nameof(CurrentFontFamilyText));
-                    _target.SetFontFamily(value);
+                    // Во время preview навигация стрелками не должна писать в Undo-стек
+                    // и вызывать RebuildLayouts. Реальное применение — в EndFontPreview.
+                    if (!_fontPreviewActive)
+                        _target.SetFontFamily(value);
                 }
             }
         }
@@ -649,6 +658,33 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             int clamped = Math.Min(count, AvailableStyles.Count);
             if (VisibleStyles.Count == clamped) return;
             VisibleStyles = AvailableStyles.Take(clamped).ToList();
+        }
+
+        public void BeginFontPreview()
+        {
+            _fontPreviewActive  = true;
+            _previewOriginalFont = _fontFamily;
+            _target.BeginFontPreview();
+        }
+
+        public void PreviewFontFamily(string f) => _target.PreviewFontFamily(f);
+
+        public void EndFontPreview(bool commit)
+        {
+            _fontPreviewActive = false;
+            if (commit && _fontFamily is not null)
+            {
+                _target.SetFontFamily(_fontFamily);
+            }
+            else if (!commit)
+            {
+                _fontFamily = _previewOriginalFont;
+                _fontFamilyText = _previewOriginalFont;
+                this.RaisePropertyChanged(nameof(CurrentFontFamily));
+                this.RaisePropertyChanged(nameof(CurrentFontFamilyText));
+            }
+            _target.EndFontPreview(commit);
+            _previewOriginalFont = null;
         }
     }
 }

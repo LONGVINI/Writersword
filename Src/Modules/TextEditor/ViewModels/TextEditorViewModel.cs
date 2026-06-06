@@ -479,6 +479,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetTextColor(string c) => DocumentViewModel?.SetTextColor(c);
         public void SetHighlightColor(string? c) => DocumentViewModel?.SetHighlightColor(c);
         public void SetFontFamily(string f) => DocumentViewModel?.SetFontFamily(f);
+        public void BeginFontPreview()          => DocumentViewModel?.BeginFontPreview();
+        public void PreviewFontFamily(string f) => DocumentViewModel?.PreviewFontFamily(f);
+        public void EndFontPreview(bool commit)  => DocumentViewModel?.EndFontPreview(commit);
         public void SetFontSize(double s) => DocumentViewModel?.SetFontSize(s);
         public void IncreaseFontSize() => DocumentViewModel?.IncreaseFontSize();
         public void DecreaseFontSize() => DocumentViewModel?.DecreaseFontSize();

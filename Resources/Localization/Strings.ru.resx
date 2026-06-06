@@ -834,4 +834,19 @@
   <data name="Print_ZoomReset" xml:space="preserve">
     <value>Сбросить масштаб</value>
   </data>
+  <data name="Settings_General_AutoSave" xml:space="preserve">
+    <value>Автосохранение</value>
+  </data>
+  <data name="Settings_General_AutoSave_Enable" xml:space="preserve">
+    <value>Включить автосохранение</value>
+  </data>
+  <data name="Settings_General_Caching" xml:space="preserve">
+    <value>Кеширование</value>
+  </data>
+  <data name="Settings_General_Caching_Enable" xml:space="preserve">
+    <value>Включить фоновое кеширование</value>
+  </data>
+  <data name="Settings_General_Caching_Hint" xml:space="preserve">
+    <value>Фоновое кеширование сохраняет состояние модулей для восстановления после сбоя. Отключение снижает потребление памяти, но отключает восстановление.</value>
+  </data>
 </root>

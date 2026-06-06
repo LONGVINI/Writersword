@@ -41,7 +41,15 @@ namespace Writersword.Modules.TextEditor
         private readonly DocumentSerializer _serializer;
         private readonly DeltaHashService _hashService;
         private readonly ChunkManager _chunkManager;
-        private readonly UndoRedoStack _undoStack = new(2000);
+        // Стек для операций форматирования (BeginEdit/CommitEdit) — каждый снапшот
+        // хранит полный JSON документа. Ограничен 20 записями до полного перехода
+        // на операционную систему команд.
+        private readonly UndoRedoStack _undoStack = new(20);
+
+        // Лёгкий стек для операций набора текста.
+        // Каждая запись хранит только позицию и текст — не полный JSON документа.
+        // 1000 записей ≈ несколько КБ вместо гигабайт.
+        private readonly Writersword.Modules.TextEditor.Commands.TextUndoRedoStack _textUndoStack = new(1000);
         private readonly ISettingsService _settingsService;
         private readonly IPrintService _printService;
         private readonly IHotKeyService? _hotKeyService;
@@ -144,6 +152,8 @@ namespace Writersword.Modules.TextEditor
             if (_hotKeyService is not null)
                 BindCanvasHotKeyService(view);
 
+            BindCanvasTextUndoStack(view);
+
             // Передаём карту шрифтов по скриптам в канвас при создании View.
             ApplyScriptFontMapToCanvas();
 
@@ -168,6 +178,19 @@ namespace Writersword.Modules.TextEditor
             _logger.Debug("HotKeyService bound to PageCanvas");
         }
 
+        private void BindCanvasTextUndoStack(TextEditorView view)
+        {
+            var canvas = view.FindControl<DocumentCanvas>("PageCanvas");
+            if (canvas is null)
+            {
+                _logger.Warning("BindCanvasTextUndoStack: PageCanvas not found");
+                return;
+            }
+
+            canvas.TextUndoStack = _textUndoStack;
+            _logger.Debug("TextUndoStack bound to PageCanvas");
+        }
+
         /// <summary>
         /// Передаёт текущую карту "скрипт → шрифт" в DocumentCanvas.
         /// Вызывается при создании View и при изменении настроек.
@@ -183,6 +206,12 @@ namespace Writersword.Modules.TextEditor
 
         public override object? GetCustomData()
         {
+            // GetCustomData может вызываться с фонового потока (авто-сохранение).
+            // Вся работа с моделью документа должна быть на UI-потоке, иначе
+            // "Collection was modified" при одновременном Ctrl+Z или вводе текста.
+            if (!Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+                return Avalonia.Threading.Dispatcher.UIThread.Invoke(GetCustomData);
+
             if (_viewModel?.DocumentViewModel is null)
             {
                 // Логируем Warning чтобы зафиксировать факт возврата null.

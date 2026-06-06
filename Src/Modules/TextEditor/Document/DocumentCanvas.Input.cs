@@ -844,17 +844,60 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // Быстрый путь: нет выделения и есть лёгкий стек операций.
+            // Каждая запись undo хранит только позицию и текст вместо полного JSON документа.
+            if (TextUndoStack != null && !HasSel())
+            {
+                var pvm = GetVmAt(_caretPara);
+                if (pvm is null) return;
+
+                string t = pvm.PlainText ?? "";
+                int pos = Clamp(_caretChar, 0, t.Length);
+
+                pvm.Model.SpliceText(pos, pos, text);
+                pvm.RefreshPlainTextFromModel();
+                _caretChar = pos + text.Length;
+
+                var cmd = new Writersword.Modules.TextEditor.Commands.InsertTextCommand(
+                    pvm.Model.Id, pos, text);
+
+                // Callback восстанавливает каретку и обновляет VM после Undo/Redo.
+                cmd.RestoreCaretCallback = (paraId, charPos) =>
+                {
+                    for (int i = 0; i < _layouts.Count; i++)
+                    {
+                        if (_layouts[i].Cell is null && _layouts[i].Vm?.Model?.Id == paraId)
+                        {
+                            _caretPara = i;
+                            _caretChar = charPos;
+                            _layouts[i].Vm?.RefreshPlainTextFromModel();
+                            break;
+                        }
+                    }
+                    SnapCaretToCorrectSlice();
+                    SyncSel();
+                    ResetCaret();
+                    InvalidateFull();
+                };
+
+                TextUndoStack.Push(cmd);
+                UpdatePreferredX();
+                SyncSel(); ResetCaret();
+                return;
+            }
+
+            // Legacy путь: есть выделение или TextUndoStack не установлен.
             BeginEdit("Type text");
             DeleteSelection();
 
-            var pvm = GetVmAt(_caretPara);
-            if (pvm is null) return;
+            var pvmLegacy = GetVmAt(_caretPara);
+            if (pvmLegacy is null) return;
 
-            string t = pvm.PlainText ?? "";
-            int pos = Clamp(_caretChar, 0, t.Length);
-            pvm.Model.SpliceText(pos, pos, text);
-            pvm.RefreshPlainTextFromModel();
-            _caretChar = pos + text.Length;
+            string tLegacy = pvmLegacy.PlainText ?? "";
+            int posLegacy = Clamp(_caretChar, 0, tLegacy.Length);
+            pvmLegacy.Model.SpliceText(posLegacy, posLegacy, text);
+            pvmLegacy.RefreshPlainTextFromModel();
+            _caretChar = posLegacy + text.Length;
 
             CommitEdit();
             UpdatePreferredX();
@@ -1389,6 +1432,12 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteUndo()
         {
+            if (TextUndoStack is not null && TextUndoStack.CanUndo && DocVm is not null)
+            {
+                _logger.Debug("[UNDO] ExecuteUndo (text): '{D}'", TextUndoStack.UndoDescription);
+                TextUndoStack.Undo(DocVm.Document);
+                return;
+            }
             if (UndoStack is null) { _logger.Warning("[UNDO] ExecuteUndo: UndoStack is null"); return; }
             if (!UndoStack.CanUndo) { _logger.Debug("[UNDO] ExecuteUndo: nothing to undo"); return; }
             _logger.Debug("[UNDO] ExecuteUndo: '{D}'", UndoStack.UndoDescription);
@@ -1403,6 +1452,12 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteRedo()
         {
+            if (TextUndoStack is not null && TextUndoStack.CanRedo && DocVm is not null)
+            {
+                _logger.Debug("[UNDO] ExecuteRedo (text): '{D}'", TextUndoStack.RedoDescription);
+                TextUndoStack.Redo(DocVm.Document);
+                return;
+            }
             if (UndoStack is null) { _logger.Warning("[UNDO] ExecuteRedo: UndoStack is null"); return; }
             if (!UndoStack.CanRedo) { _logger.Debug("[UNDO] ExecuteRedo: nothing to redo"); return; }
             _logger.Debug("[UNDO] ExecuteRedo: '{D}'", UndoStack.RedoDescription);
