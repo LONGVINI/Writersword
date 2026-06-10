@@ -71,7 +71,7 @@
 
                 <!-- Название -->
                 <StackPanel Spacing="4">
-                    <TextBlock Text="Название контекста"
+                    <TextBlock Text="{x:Static loc:CharactersStrings.Context_NameLabel}"
                                FontSize="11"
                                Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <TextBox Text="{Binding SelectedContext.Name}"
@@ -87,7 +87,7 @@
 
                 <!-- Описание -->
                 <StackPanel Spacing="4">
-                    <TextBlock Text="Когда активен этот контекст"
+                    <TextBlock Text="{x:Static loc:CharactersStrings.Context_WhenActiveLabel}"
                                FontSize="11"
                                Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <TextBox Text="{Binding SelectedContext.Description}"
@@ -105,7 +105,7 @@
 
                 <!-- Цвет -->
                 <StackPanel Spacing="4">
-                    <TextBlock Text="Цвет контекста (HEX)"
+                    <TextBlock Text="{x:Static loc:CharactersStrings.Context_ColorLabel}"
                                FontSize="11"
                                Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <TextBox Text="{Binding SelectedContext.AccentColor}"
@@ -121,7 +121,7 @@
 
                 <!-- Заметки контекста -->
                 <StackPanel Spacing="4">
-                    <TextBlock Text="Заметки"
+                    <TextBlock Text="{x:Static loc:CharactersStrings.Context_NotesLabel}"
                                FontSize="11"
                                Foreground="{DynamicResource TextSecondaryBrush}"/>
                     <TextBox Text="{Binding SelectedContext.Notes}"
@@ -140,7 +140,7 @@
             </StackPanel>
 
             <!-- Заглушка если нет контекстов -->
-            <TextBlock Text="Контексты не созданы. Нажмите «Добавить контекст»."
+            <TextBlock Text="{x:Static loc:CharactersStrings.Context_EmptyHint}"
                        FontSize="12"
                        Foreground="{DynamicResource TextSecondaryBrush}"
                        HorizontalAlignment="Center"

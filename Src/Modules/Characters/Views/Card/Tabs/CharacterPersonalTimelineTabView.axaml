@@ -86,7 +86,7 @@
                                                 BorderThickness="0"
                                                 Padding="4,2"
                                                 FontSize="12"
-                                                ToolTip.Tip="Ключевое событие"
+                                                ToolTip.Tip="{x:Static loc:CharactersStrings.Timeline_KeyEventTooltip}"
                                                 Foreground="{Binding IsKeyEvent, Converter={StaticResource BoolToAccentConverter}}">
                                             <Button.Content>
                                                 <TextBlock Text="?"/>

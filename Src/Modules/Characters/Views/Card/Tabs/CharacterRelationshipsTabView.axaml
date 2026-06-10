@@ -91,7 +91,7 @@
                                         <CheckBox Grid.Column="1"
                                                   IsChecked="{Binding IsBidirectional}"
                                                   Content="?"
-                                                  ToolTip.Tip="Двунаправленная связь"
+                                                  ToolTip.Tip="{x:Static loc:CharactersStrings.Relationship_BidirectionalTooltip}"
                                                   Margin="6,0,0,0"
                                                   FontSize="14"/>
                                     </Grid>
@@ -122,7 +122,7 @@
                                             <enums:CharacterRelationshipEmotion>Ambivalent</enums:CharacterRelationshipEmotion>
                                         </ComboBox>
                                         <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
-                                            <TextBlock Text="Сила" FontSize="9" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="{x:Static loc:CharactersStrings.Field_RelationshipStrength}" FontSize="9" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
                                             <Slider Minimum="0"
                                                     Maximum="1"
                                                     Value="{Binding Strength}"

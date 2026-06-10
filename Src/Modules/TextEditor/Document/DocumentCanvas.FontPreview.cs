@@ -1,49 +1,50 @@
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using Writersword.Core.Models.Rendering;
+using Writersword.Modules.TextEditor.Commands;
 using Writersword.Modules.TextEditor.Rendering;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
 using Writersword.Modules.TextEditor.ViewModels;
+using Writersword.Modules.TextEditor.ViewModels.Blocks;
 
 namespace Writersword.Modules.TextEditor.Document
 {
-    // Живое превью шрифта для всего выделения (несколько абзацев и ячеек таблицы).
+    // Живое превью шрифта для всего выделения (несколько абзацев).
     //
-    // Идея: канвас знает полную картину выделения (обычные абзацы через
-    // DocVm.SelectionParagraphs и ячейки через _tableSelections), поэтому именно он
-    // снимает список целей. Превью строится ТОЛЬКО для материализованных (видимых)
-    // записей _layouts — те что вне буфера (Layout == null) пропускаются и будут
-    // досчитаны при коммите полным RebuildLayouts. Так не забивается ОЗУ/ЦП при
-    // выделении больше экрана.
+    // Механизм: preview-раскладки затронутых абзацев кладутся в общий _layoutCache
+    // (он валидируется по Text+Width, а смена шрифта их не меняет, поэтому подмена
+    // корректна), после чего вызывается настоящий RebuildLayouts. Он пересчитывает
+    // высоты строк, позиции и разбивку по страницам с реальными метриками шрифта —
+    // ровно как при коммите, включая добавление страниц. Skia при этом не вызывается
+    // (все цели уже в кэше), поэтому пересчёт дешёвый.
     //
-    // Модель документа во время превью не меняется: подменяются только SKTextLayout
-    // в оверлейном списке _layouts. Y-позиции абзацев после изменённого сдвигаются на
-    // дельту высоты (как QuickUpdateParagraphLayout при вводе) — без переразбиения по
-    // страницам. Ячейки подменяются на месте (высота строк и таблицы не пересчитывается).
-    // Полный точный пересчёт выполняется один раз при коммите.
+    // Превью строится только для ВИДИМЫХ (материализованных) целей — остальные вне
+    // буфера остаются со старым шрифтом до коммита (полный RebuildLayouts их досчитает).
+    //
+    // Модель документа во время превью не меняется. При отмене исходные записи кэша
+    // восстанавливаются. Ячейки таблицы через этот путь не превьюятся (cache-injection
+    // рассчитан на обычные абзацы; ячейки корректно применяются при коммите).
     public sealed partial class DocumentCanvas
     {
         // Активна ли сессия превью (открыт дропдаун шрифтов).
         private bool _fontPreviewActive;
 
-        // Последний показанный в превью шрифт. Используется при коммите.
+        // Последний показанный в превью шрифт.
         private string? _previewFont;
 
-        // Снимок целей превью на момент открытия дропдауна: абзац + диапазон [start,end).
-        // Диапазон, равный всему тексту, означает "весь абзац".
-        private readonly List<(ParagraphBlock block, int start, int end)> _previewTargets = new();
+        // Снимок целей превью на момент открытия дропдауна: абзац + VM + диапазон [start,end).
+        // vm == null для абзацев ячеек таблицы (они в превью не участвуют).
+        private readonly List<(ParagraphBlock block, ParagraphViewModel? vm, int start, int end)> _previewTargets = new();
 
-        // Базовый снимок _layouts на момент начала сессии — для отката при отмене.
-        private List<ParaLayout>? _previewBaseLayouts;
-        private float _previewBaseCanvasHeightPt;
-
-        // Кеш построенных preview-layout по Id абзаца (диапазон фиксирован на сессию).
-        // Сбрасывается при смене шрифта.
-        private readonly Dictionary<Guid, SKTextLayout> _previewLayoutCache = new();
+        // Исходные записи _layoutCache затронутых абзацев — для отката при отмене.
+        // Значение null => записи в кэше не было (нужно удалить при откате).
+        private readonly Dictionary<ParagraphViewModel,
+            (string Text, float Width, SKTextLayout Layout)?> _previewSavedLayouts = new();
 
         // Счётчик поколений: применяется результат только последнего фонового задания.
         private int _previewGeneration;
@@ -54,97 +55,75 @@ namespace Writersword.Modules.TextEditor.Document
         {
             ClearPreviewState();
             BuildPreviewTargets(_previewTargets);
-
-            lock (_renderLock)
-            {
-                _previewBaseLayouts = _layouts;
-                _previewBaseCanvasHeightPt = _canvasHeightPt;
-            }
-
             _fontPreviewActive = _previewTargets.Count > 0;
             _previewFont = null;
         }
 
         private void PreviewFontFamilySession(string font)
         {
-            if (!_fontPreviewActive || _previewBaseLayouts is null) return;
+            if (!_fontPreviewActive) return;
             if (string.IsNullOrEmpty(font)) return;
             if (_renderer is null) return;
             if (_styleResolver is null && DocVm is not null)
                 _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
             if (_styleResolver is null) return;
 
-            // Смена шрифта — старые preview-layout невалидны.
-            if (!string.Equals(_previewFont, font, StringComparison.Ordinal))
-            {
-                _previewFont = font;
-                _previewLayoutCache.Clear();
-            }
-
+            _previewFont = font;
             int gen = ++_previewGeneration;
-            var baseLayouts = _previewBaseLayouts;
             var renderer = _renderer;
             var styleResolver = _styleResolver;
-            float regularWidthPt = GetCurrentTextWidthPt();
+            float widthPt = GetCurrentTextWidthPt();
 
-            // Диапазоны превью по Id абзаца (фиксированы на сессию).
-            var rangeById = new Dictionary<Guid, (int start, int end)>();
+            // Целевые обычные абзацы (с VM) + их диапазоны.
+            var rangeByVm = new Dictionary<ParagraphViewModel, (int start, int end)>();
             foreach (var t in _previewTargets)
-                rangeById[t.block.Id] = (t.start, t.end);
+                if (t.vm is not null)
+                    rangeByVm[t.vm] = (t.start, t.end);
+            if (rangeByVm.Count == 0) return;
 
-            // Снимок уже построенных layout — кеш читаем только на UI-потоке.
-            var preBuilt = new Dictionary<Guid, SKTextLayout>(_previewLayoutCache);
-
-            // Задания: только материализованные (видимые) целевые записи, по одному на абзац.
-            // Временную копию абзаца (чтение модели) строим ЗДЕСЬ, на UI-потоке — доступ к
-            // модели безопасен только отсюда. На фон уходит лишь Skia BuildLayout по копии.
-            var buildList = new List<(Guid id, ParagraphBlock temp, bool isCell, float widthPt)>();
-            var queued = new HashSet<Guid>();
-            int targetsVisible = 0;
-            foreach (var pl in baseLayouts)
+            // Строим preview-копии для ВИДИМЫХ целей здесь, на UI-потоке (доступ к модели
+            // безопасен только отсюда). Тяжёлый Skia BuildLayout уйдёт на фон.
+            var jobs = new List<(ParagraphViewModel vm, ParagraphBlock temp)>();
+            var queued = new HashSet<ParagraphViewModel>();
+            foreach (var pl in _layouts)
             {
-                var model = pl.Vm?.Model;
-                if (model is null || pl.Layout is null) continue;
-                if (!rangeById.TryGetValue(model.Id, out var r)) continue;
-                if (!queued.Add(model.Id)) continue;
-
-                targetsVisible++;
-                if (preBuilt.ContainsKey(model.Id)) continue; // layout уже в кеше — копию не строим
-
-                bool isCell = pl.Cell is not null;
-                float w = isCell ? Math.Max(pl.Cell!.ClipW, 1f) : regularWidthPt;
-                buildList.Add((model.Id, BuildPreviewBlock(model, r.start, r.end, font), isCell, w));
+                var vm = pl.Vm;
+                if (vm is null || pl.Layout is null) continue;
+                if (!rangeByVm.TryGetValue(vm, out var r)) continue;
+                if (!queued.Add(vm)) continue;
+                jobs.Add((vm, BuildPreviewBlock(vm.Model, r.start, r.end, font)));
             }
+            if (jobs.Count == 0) return;
 
-            if (targetsVisible == 0)
-            {
-                // В видимой области целей нет — показываем базу без оверлея.
-                lock (_renderLock)
-                {
-                    _layouts = baseLayouts;
-                    _canvasHeightPt = _previewBaseCanvasHeightPt;
-                    _canvasHeight = _canvasHeightPt * PtToPx;
-                }
-                InvalidateFull();
-                return;
-            }
-
-            // BuildLayout — дорогая операция Skia — выносим в пул потоков.
             Task.Run(() =>
             {
-                var built = new Dictionary<Guid, SKTextLayout>(preBuilt);
-                foreach (var job in buildList)
-                    built[job.id] = renderer.BuildLayout(job.temp, job.widthPt, styleResolver, job.isCell);
+                var built = new List<(ParagraphViewModel vm, SKTextLayout layout)>(jobs.Count);
+                foreach (var j in jobs)
+                    built.Add((j.vm, renderer.BuildLayout(j.temp, widthPt, styleResolver)));
                 return built;
             }).ContinueWith(task =>
             {
                 if (!task.IsCompletedSuccessfully) return;
                 Dispatcher.UIThread.Post(() =>
                 {
-                    if (gen != _previewGeneration) return;
-                    foreach (var kv in task.Result)
-                        _previewLayoutCache[kv.Key] = kv.Value;
-                    AssemblePreviewOverlay(baseLayouts, task.Result);
+                    if (gen != _previewGeneration || !_fontPreviewActive) return;
+
+                    foreach (var (vm, layout) in task.Result)
+                    {
+                        // Один раз за сессию сохраняем исходную запись кэша для отката.
+                        if (!_previewSavedLayouts.ContainsKey(vm))
+                            _previewSavedLayouts[vm] = _layoutCache.TryGetValue(vm, out var orig)
+                                ? orig
+                                : ((string, float, SKTextLayout)?)null;
+
+                        _layoutCache[vm] = (vm.PlainText ?? string.Empty, widthPt, layout);
+                    }
+
+                    // Настоящая пагинация: высоты, позиции, страницы пересчитываются с
+                    // реальными метриками. Skia не вызывается — все цели уже в кэше.
+                    RebuildLayouts();
+                    SnapCaretToCorrectSlice();
+                    InvalidateFull();
                 });
             });
         }
@@ -153,114 +132,136 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (commit)
             {
-                // Модель уже изменена боевым SetFontFamily (он вызывается в RibbonVM ДО
-                // EndFontPreview): он применил шрифт с Undo, через OnParagraphFormatChanged
-                // пересобрал _layouts и подравнял каретку. Здесь повторно применять шрифт
-                // НЕЛЬЗЯ — двойной commit ломает Undo, каретку, выделение и cursor-context.
-                // Просто снимаем сессию: оверлей уже заменён настоящим layout.
+                var font = _previewFont;
+                // Снимок целей до очистки сессии.
+                var targets = _previewTargets.ToList();
+                // Убираем preview-раскладки из кэша — модель сейчас изменится, восстанавливать
+                // исходные не нужно.
+                foreach (var vm in _previewSavedLayouts.Keys)
+                    _layoutCache.Remove(vm);
                 ClearPreviewState();
+
+                if (!string.IsNullOrEmpty(font))
+                    CommitFontGranular(font!, targets);
                 return;
             }
 
-            // Отмена: возвращаем исходный layout.
-            var baseLayouts = _previewBaseLayouts;
-            if (baseLayouts is not null)
+            // Отмена: возвращаем исходные раскладки затронутых абзацев и пересобираем.
+            bool any = _previewSavedLayouts.Count > 0;
+            foreach (var kv in _previewSavedLayouts)
             {
-                lock (_renderLock)
-                {
-                    _layouts = baseLayouts;
-                    _canvasHeightPt = _previewBaseCanvasHeightPt;
-                    _canvasHeight = _canvasHeightPt * PtToPx;
-                }
-                InvalidateMeasure();
+                if (kv.Value is { } orig) _layoutCache[kv.Key] = orig;
+                else _layoutCache.Remove(kv.Key);
+            }
+            if (any)
+            {
+                RebuildLayouts();
+                SnapCaretToCorrectSlice();
                 InvalidateFull();
             }
             ClearPreviewState();
         }
 
-        // ── Сборка оверлея ────────────────────────────────────────────────
-
-        private void AssemblePreviewOverlay(
-            List<ParaLayout> baseLayouts,
-            Dictionary<Guid, SKTextLayout> built)
+        // Применяет выбранный шрифт через гранулярные команды (SetRunPropertyCommand на абзац,
+        // объединённые в CompositeCommand) и пишет их в лёгкий TextUndoStack. Тогда Ctrl+Z
+        // откатывает только затронутые абзацы — мгновенно, без снапшота всего документа.
+        private void CommitFontGranular(
+            string font,
+            List<(ParagraphBlock block, ParagraphViewModel? vm, int start, int end)> targets)
         {
-            var updated = new List<ParaLayout>(baseLayouts.Count);
-            float cumShift = 0f;
-            var deltaSeen = new HashSet<Guid>();
-
-            foreach (var pl in baseLayouts)
+            // Гранулярная команда работает по обычным абзацам документа. Если в целях есть
+            // ячейки таблицы (vm == null) или нет лёгкого стека — откатываемся на боевой
+            // SetFontFamily (полный снапшот), чтобы не оставить ячейки без изменения.
+            bool anyCell = targets.Any(t => t.vm is null);
+            if (TextUndoStack is null || DocVm is null || anyCell)
             {
-                var model = pl.Vm?.Model;
-                bool isCell = pl.Cell is not null;
-
-                if (model is not null && built.TryGetValue(model.Id, out var pv))
-                {
-                    if (isCell)
-                    {
-                        // Ячейка: подмена шрифта на месте. Высоту строки/таблицы и
-                        // Y-позицию не трогаем — клип скрывает возможное переполнение.
-                        // Слайс ограничиваем числом строк нового layout чтобы не выйти за границы.
-                        int lf = Math.Min(pl.LineFrom, pv.Lines.Count);
-                        int lt = Math.Min(pl.LineTo, pv.Lines.Count);
-                        if (lt < lf) lt = lf;
-                        updated.Add(pl with { Layout = pv, LineFrom = lf, LineTo = lt });
-                    }
-                    else if (deltaSeen.Add(model.Id))
-                    {
-                        // Первый (основной) слайс обычного абзаца: считаем дельту высоты.
-                        float newH = Math.Max(pv.BlockHeightPt, FallbackLinePt);
-                        float baseY = pl.Ypt + cumShift;
-                        cumShift += newH - pl.HeightPt;
-                        updated.Add(pl with
-                        {
-                            Layout = pv,
-                            Ypt = baseY,
-                            HeightPt = newH,
-                            LineFrom = 0,
-                            LineTo = pv.Lines.Count
-                        });
-                    }
-                    else
-                    {
-                        // Повторный слайс того же абзаца (разбит по страницам в page-режиме):
-                        // не дублируем текст — отдаём пустой слайс. Точную разбивку даст коммит.
-                        updated.Add(pl with
-                        {
-                            Layout = pv,
-                            Ypt = pl.Ypt + cumShift,
-                            LineFrom = 0,
-                            LineTo = 0
-                        });
-                    }
-                }
-                else if (!isCell && cumShift != 0f)
-                {
-                    // Обычный абзац после изменённого — сдвигаем на накопленную дельту.
-                    // Ячейки и таблицы не двигаем (их Y скорректирует коммит).
-                    updated.Add(pl with { Ypt = pl.Ypt + cumShift });
-                }
-                else
-                {
-                    updated.Add(pl);
-                }
+                DocVm?.SetFontFamily(font);
+                return;
             }
 
-            lock (_renderLock)
+            var cmds = new List<ITextCommand>();
+            var ids = new List<Guid>();
+            foreach (var t in targets)
             {
-                _layouts = updated;
-                _canvasHeightPt = _previewBaseCanvasHeightPt + cumShift;
-                _canvasHeight = _canvasHeightPt * PtToPx;
+                if (t.end <= t.start) continue;
+                cmds.Add(new SetRunPropertyCommand(
+                    t.block.Id, t.start, t.end, p => p.FontFamily = font, "Font"));
+                ids.Add(t.block.Id);
             }
-            // ВНИМАНИЕ: только InvalidateFull (InvalidateVisual). InvalidateMeasure здесь
-            // вызывать НЕЛЬЗЯ — MeasureOverride безусловно делает RebuildLayouts из модели
-            // и мгновенно затирает оверлей превью в том же кадре. Высоту канваса при
-            // наведении не обновляем (скроллбар скорректируется при коммите).
+            if (cmds.Count == 0)
+            {
+                DocVm.SetFontFamily(font);
+                return;
+            }
+
+            var idsArr = ids.ToArray();
+            var composite = new CompositeCommand(
+                "Font", cmds, () => RelayoutParagraphsByIds(idsArr));
+
+            // Apply мутирует модель и захватывает оригиналы для undo, затем колбэк пересобирает.
+            composite.Apply(DocVm.Document);
+            PushTextCommand(composite);
+        }
+
+        // Гранулярный коммит свойств рана (жирность/цвет/размер) на заданные диапазоны.
+        // Строит по одной SetRunPropertyCommand на диапазон, объединяет в CompositeCommand и
+        // пишет в лёгкий TextUndoStack — как и шрифт. Тогда отмена этих операций мгновенна и
+        // идёт в общем порядке с набором текста. Возвращает true, если обработал.
+        private bool CommitRunPropertyGranular(
+            IReadOnlyList<(Guid ParaId, int From, int To)> ranges,
+            Action<RunProperties> mutate, string desc)
+        {
+            if (TextUndoStack is null || DocVm is null || ranges.Count == 0)
+                return false;
+
+            var cmds = new List<ITextCommand>();
+            var ids = new List<Guid>();
+            foreach (var r in ranges)
+            {
+                if (r.To <= r.From) continue;
+                cmds.Add(new SetRunPropertyCommand(r.ParaId, r.From, r.To, mutate, desc));
+                ids.Add(r.ParaId);
+            }
+            if (cmds.Count == 0) return false;
+
+            var idsArr = ids.ToArray();
+            var composite = new CompositeCommand(desc, cmds, () => RelayoutParagraphsByIds(idsArr));
+            composite.Apply(DocVm.Document);
+            PushTextCommand(composite);
+            return true;
+        }
+
+        // Точечный пересбор раскладки только для абзацев с указанными Id.
+        // Вызывается как при применении шрифта, так и при undo/redo гранулярной команды.
+        // Набор операций повторяет проверенный путь OnParagraphFormatChanged: выделение
+        // не схлопываем (SyncSel) и каретку не сбрасываем (ResetCaret) — иначе каретка
+        // рассинхронизируется с реальной позицией ввода.
+        private void RelayoutParagraphsByIds(IReadOnlyList<Guid> ids)
+        {
+            if (DocVm is null) return;
+
+            var idSet = new HashSet<Guid>(ids);
+            foreach (var pvm in DocVm.Paragraphs)
+            {
+                if (!idSet.Contains(pvm.Model.Id)) continue;
+                pvm.RefreshPlainTextFromModel();
+                _layoutCache.Remove(pvm);
+            }
+
+            RebuildLayouts();
+            // Сбрасываем подсказку строки каретки: после смены шрифта абзац мог перетечь
+            // по строкам иначе, и старый _caretLineHint указывал бы DrawCaret на неверную
+            // строку (каретка рисовалась бы не там, хотя ввод идёт по _caretChar верно).
+            _caretLineHint = -1;
+            SnapCaretToCorrectSlice();
+            UpdatePreferredX();
             InvalidateFull();
         }
 
-        // ── Снимок целей выделения ─────────────────────────────────────────
+        // ── Снимок целей превью ────────────────────────────────────────────
 
-        private void BuildPreviewTargets(List<(ParagraphBlock block, int start, int end)> into)
+        private void BuildPreviewTargets(
+            List<(ParagraphBlock block, ParagraphViewModel? vm, int start, int end)> into)
         {
             into.Clear();
             if (DocVm is null) return;
@@ -268,6 +269,7 @@ namespace Writersword.Modules.TextEditor.Document
             var seen = new HashSet<ParagraphBlock>();
 
             // 1. Диапазон ячеек таблицы — целиком каждый абзац каждой выделенной ячейки.
+            //    vm == null: в cache-injection превью не участвуют (применятся при коммите).
             if (_tableSelections.Count > 0)
             {
                 foreach (var kv in _tableSelections)
@@ -285,22 +287,21 @@ namespace Writersword.Modules.TextEditor.Document
                         foreach (var para in cell.Paragraphs)
                         {
                             if (para is null || !seen.Add(para)) continue;
-                            into.Add((para, 0, para.TotalLength));
+                            into.Add((para, null, 0, para.TotalLength));
                         }
                     }
                 }
             }
 
-            // 2. Обычное выделение — берём напрямую из состояния канваса (_selStartPara/_selEndPara),
-            //    а не из DocVm.SelectionParagraphs. Это первоисточник: он покрывает несколько абзацев,
-            //    одиночную ячейку с выделением текста и смешанные случаи. Идём по индексам layout
-            //    от sp до ep, для каждого уникального абзаца считаем частичный диапазон по краям.
+            // 2. Обычное выделение — берём напрямую из состояния канваса (sp..ep), для каждого
+            //    уникального абзаца считаем частичный диапазон по краям. Сохраняем VM.
             if (HasSel())
             {
                 var (sp, sc, ep, ec) = NormalizeSelection();
                 for (int i = sp; i <= ep && i < _layouts.Count; i++)
                 {
-                    var model = GetVmAt(i)?.Model;
+                    var vm = GetVmAt(i);
+                    var model = vm?.Model;
                     if (model is null || !seen.Add(model)) continue;
 
                     int len = model.TotalLength;
@@ -308,19 +309,18 @@ namespace Writersword.Modules.TextEditor.Document
                     int e = (i == ep) ? ec : len;
                     s = Math.Max(0, Math.Min(s, len));
                     e = Math.Max(s, Math.Min(e, len));
-                    // Пустой кусок (selStart == selEnd) — селект лишь касается края абзаца,
-                    // не захватывая текст. Пропускаем, как и коммит. НЕ превращаем в весь абзац:
-                    // ветка "весь абзац" — только для случая, когда выделения нет вовсе (ниже).
+                    // Пустой кусок (selStart == selEnd) — селект лишь касается края абзаца.
+                    // Пропускаем, как и коммит.
                     if (e <= s) continue;
-                    into.Add((model, s, e));
+                    into.Add((model, vm, s, e));
                 }
             }
 
-            // 3. Нет выделения вообще — активный абзац (или абзац активной ячейки) целиком.
+            // 3. Нет выделения вообще — активный абзац целиком.
             if (into.Count == 0)
             {
-                var b = GetVmAt(_caretPara)?.Model;
-                if (b is not null) into.Add((b, 0, b.TotalLength));
+                var vm = GetVmAt(_caretPara);
+                if (vm?.Model is not null) into.Add((vm.Model, vm, 0, vm.Model.TotalLength));
             }
         }
 
@@ -329,9 +329,7 @@ namespace Writersword.Modules.TextEditor.Document
             _fontPreviewActive = false;
             _previewFont = null;
             _previewTargets.Clear();
-            _previewBaseLayouts = null;
-            _previewBaseCanvasHeightPt = 0f;
-            _previewLayoutCache.Clear();
+            _previewSavedLayouts.Clear();
             // Аннулируем висящие фоновые задания.
             _previewGeneration++;
         }

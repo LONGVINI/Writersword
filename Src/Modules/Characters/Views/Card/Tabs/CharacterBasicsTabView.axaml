@@ -23,7 +23,7 @@
                         BorderThickness="0"
                         Padding="0"
                         HorizontalAlignment="Center"
-                        ToolTip.Tip="Нажмите чтобы выбрать аватарку">
+                        ToolTip.Tip="{x:Static loc:CharactersStrings.Avatar_PickTooltip}">
 					<Border Width="96"
                             Height="96"
                             CornerRadius="48"

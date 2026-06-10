@@ -12,13 +12,16 @@ namespace Writersword.Modules.TextEditor.Commands
     public sealed class CompositeCommand : ITextCommand
     {
         private readonly List<ITextCommand> _commands;
+        private readonly System.Action? _afterChange;
 
         public string Description { get; }
 
-        public CompositeCommand(string description, List<ITextCommand> commands)
+        public CompositeCommand(string description, List<ITextCommand> commands,
+            System.Action? afterChange = null)
         {
             Description = description;
             _commands = commands;
+            _afterChange = afterChange;
         }
 
         /// <summary>Выполняет все подкоманды в прямом порядке.</summary>
@@ -26,6 +29,7 @@ namespace Writersword.Modules.TextEditor.Commands
         {
             foreach (var cmd in _commands)
                 cmd.Apply(doc);
+            _afterChange?.Invoke();
         }
 
         /// <summary>Откатывает все подкоманды в обратном порядке.</summary>
@@ -33,6 +37,7 @@ namespace Writersword.Modules.TextEditor.Commands
         {
             for (int i = _commands.Count - 1; i >= 0; i--)
                 _commands[i].Revert(doc);
+            _afterChange?.Invoke();
         }
 
         /// <summary>CompositeCommand не сливается с другими командами.</summary>

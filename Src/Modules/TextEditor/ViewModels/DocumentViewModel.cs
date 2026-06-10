@@ -91,6 +91,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // Устанавливаются DocumentCanvas при подключении.
         public Action<string>? BeginEditDelegate { get; set; }
         public Action? CommitEditDelegate { get; set; }
+
+        // Гранулярный коммит свойств рана (жирность/цвет/размер) через лёгкий TextUndoStack.
+        // Канвас строит SetRunPropertyCommand на каждый диапазон и пушит одной командой.
+        // Возвращает true, если обработал; иначе ApplyCharProperty идёт снапшотным путём.
+        public Func<System.Collections.Generic.IReadOnlyList<(System.Guid ParaId, int From, int To)>,
+            Action<RunProperties>, string, bool>? CommitRunPropertyGranularDelegate
+        { get; set; }
         public Action? CutDelegate { get; set; }
         public Action? CopyDelegate { get; set; }
         public Action? PasteDelegate { get; set; }
@@ -130,12 +137,63 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// </summary>
         public event Action? ParagraphFormatChanged;
 
+        // Абзацы, затронутые последним char-форматированием. Канвас забирает этот список
+        // в обработчике ParagraphFormatChanged, чтобы инвалидировать кэш раскладки ТОЛЬКО
+        // у них, а не сбрасывать весь кэш и пересобирать весь документ (на больших
+        // документах это давало секундный фриз на каждый коммит). null => затронутые
+        // неизвестны (напр. форматирование ячейки) => канвас делает полный сброс.
+        private IReadOnlyList<ParagraphViewModel>? _lastFormatAffected;
+
+        /// <summary>
+        /// Возвращает и сбрасывает список абзацев, затронутых последним форматированием.
+        /// Сброс гарантирует, что следующее событие без явного списка приведёт к полному
+        /// пересчёту, а не к использованию устаревшего списка.
+        /// </summary>
+        public IReadOnlyList<ParagraphViewModel>? TakeLastFormatAffected()
+        {
+            var v = _lastFormatAffected;
+            _lastFormatAffected = null;
+            return v;
+        }
+
+        // Во время drag маркеров отступа на линейке ApplyParaProperty вызывается на каждый
+        // шаг мыши. Без батча это давало бы по снапшоту всего документа на каждый шаг (фриз).
+        // BeginParagraphFormatBatch делает один снапшот на весь drag, ApplyParaProperty
+        // внутри батча снапшот не повторяет, EndParagraphFormatBatch коммитит один раз.
+        private bool _suppressFormatSnapshot;
+
+        public void BeginParagraphFormatBatch()
+        {
+            if (_suppressFormatSnapshot) return;
+            _suppressFormatSnapshot = true;
+            BeginEditDelegate?.Invoke("Format paragraph");
+        }
+
+        public void EndParagraphFormatBatch()
+        {
+            if (!_suppressFormatSnapshot) return;
+            _suppressFormatSnapshot = false;
+            CommitEditDelegate?.Invoke();
+        }
+
+        // Идёт массовая перестройка всех VM-абзацев (загрузка/undo/структурные операции).
+        // Канвас в это время пропускает поабзацную инкрементальную раскладку — она
+        // бессмысленна (следом идёт общий пересбор) и даёт O(n^2) на больших документах.
+        public bool IsBulkRebuilding { get; private set; }
+
+        /// <summary>
+        /// Устанавливается DocumentCanvas. Вызывается при изменении preview-шрифта.
+        /// null = preview снят. Никаких изменений модели — canvas сам строит временный лейаут.
+        /// </summary>
         // Делегаты live-preview шрифта. Канвас сам вычисляет затронутые абзацы и
         // ячейки по своему состоянию выделения, поэтому сюда передаются только команды
         // начала сессии, имя шрифта при наведении и завершение (коммит/отмена).
         public Action? BeginFontPreviewDelegate { get; set; }
         public Action<string>? PreviewFontFamilyDelegate { get; set; }
         public Action<bool>? EndFontPreviewDelegate { get; set; }
+
+        // Возврат клавиатурного фокуса редактору (канвасу) после работы с лентой.
+        public Action? FocusEditorDelegate { get; set; }
 
         public EditorViewMode ViewMode
         {
@@ -292,7 +350,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             var section = _document.Sections[0];
             var newBlock = new ParagraphBlock();
-            newBlock.Properties.StyleName = after.Model.Properties.StyleName ?? "Normal";
+
+            // Новый абзац наследует форматирование текущего: выравнивание, отступы
+            // (левый/правый/первой строки), интервалы, межстрочный и стиль. Иначе при
+            // Enter настройки абзаца сбрасывались на дефолтные.
+            newBlock.Properties = after.Model.Properties.Clone();
+            // Разрыв страницы перед абзацем не наследуем — иначе каждый Enter добавлял бы
+            // новый разрыв. Это совпадает с поведением Word.
+            newBlock.Properties.PageBreakBefore = false;
 
             int modelIndex = section.Blocks.IndexOf(after.Model);
             if (modelIndex < 0) section.Blocks.Add(newBlock);
@@ -379,11 +444,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void EndFontPreview(bool commit) => EndFontPreviewDelegate?.Invoke(commit);
 
+        public void FocusEditor() => FocusEditorDelegate?.Invoke();
+
         /// <summary>
         /// Применяет шрифт к набору абзацев и диапазонов одним undo-снапшотом.
         /// Вызывается DocumentCanvas при коммите live-preview для всего выделения,
-        /// включая обычные абзацы и ячейки таблицы.
-        /// Диапазон end &lt;= start трактуется как весь абзац.
+        /// включая абзацы и ячейки таблицы. Диапазон end &lt;= start трактуется как весь абзац.
         /// </summary>
         public void ApplyFontToBlocks(
             IReadOnlyList<(ParagraphBlock block, int start, int end)> targets, string font)
@@ -405,6 +471,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             FireCursorContextChanged();
             ParagraphFormatChanged?.Invoke();
         }
+
         public void SetFontSize(double size)
             => ApplyCharProperty(p => p.FontSize = size > 0 ? size : (double?)null);
 
@@ -854,6 +921,67 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void ApplyCharProperty(Action<RunProperties> mutate, bool clearAll = false)
         {
+            // Ячейка таблицы, очистка форматирования или нет лёгкого пути — снапшот (как было).
+            if (TableActiveCellParagraph is not null || clearAll
+                || CommitRunPropertyGranularDelegate is null || _activeParagraph is null)
+            {
+                ApplyCharPropertySnapshot(mutate, clearAll);
+                return;
+            }
+
+            // Собираем диапазоны (paraId, from, to) — та же логика, что и в снапшотном пути.
+            var ranges = new System.Collections.Generic.List<(System.Guid, int, int)>();
+            if (SelectionParagraphs.Count > 1)
+            {
+                for (int idx = 0; idx < SelectionParagraphs.Count; idx++)
+                {
+                    var pvm = SelectionParagraphs[idx];
+                    bool isFirst = idx == 0;
+                    bool isLast = idx == SelectionParagraphs.Count - 1;
+                    int len = pvm.Model.GetPlainText().Length;
+                    int s, e;
+                    if (!isFirst && !isLast) { s = 0; e = len; }
+                    else { s = isFirst ? pvm.SelectionStart : 0; e = isLast ? pvm.SelectionEnd : len; }
+                    s = Math.Clamp(s, 0, len);
+                    e = Math.Clamp(e, 0, len);
+                    if (e > s) ranges.Add((pvm.Model.Id, s, e));
+                }
+            }
+            else
+            {
+                int len = _activeParagraph.Model.GetPlainText().Length;
+                int s, e;
+                if (_selectionEnd > _selectionStart) { s = _selectionStart; e = _selectionEnd; }
+                else { s = 0; e = len; }
+                s = Math.Clamp(s, 0, len);
+                e = Math.Clamp(e, 0, len);
+                if (e > s) ranges.Add((_activeParagraph.Model.Id, s, e));
+            }
+
+            // Нечего форматировать гранулярно (пустой абзац, пустое выделение) — снапшот:
+            // он умеет проставить свойство пустому рану для «ожидающего» форматирования.
+            if (ranges.Count == 0)
+            {
+                ApplyCharPropertySnapshot(mutate, clearAll);
+                return;
+            }
+
+            bool handled = CommitRunPropertyGranularDelegate(ranges, mutate, "Format text");
+            if (!handled)
+            {
+                ApplyCharPropertySnapshot(mutate, clearAll);
+                return;
+            }
+
+            // Модель и раскладку обновил канвас (команда + точечный пересбор). Здесь только
+            // обновляем состояние тулбара под кареткой.
+            FireCursorContextChanged();
+        }
+
+        // Прежний снапшотный путь форматирования (полная сериализация документа для отмены).
+        // Используется для ячеек таблицы, очистки форматирования и пустых абзацев.
+        private void ApplyCharPropertySnapshot(Action<RunProperties> mutate, bool clearAll = false)
+        {
             // Режим ячейки таблицы — применяем только к активной ячейке.
             if (TableActiveCellParagraph is not null)
             {
@@ -869,17 +997,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             BeginEditDelegate?.Invoke("Format text");
 
-            _log.Debug("[APPLY] SelectionParagraphs.Count={Count} selStart={S} selEnd={E} activePara={AP}",
-                SelectionParagraphs.Count, _selectionStart, _selectionEnd,
-                _activeParagraph is null ? "null" : Paragraphs.IndexOf(_activeParagraph).ToString());
-
             if (SelectionParagraphs.Count > 1)
             {
                 for (int idx = 0; idx < SelectionParagraphs.Count; idx++)
                 {
-                    var pvm  = SelectionParagraphs[idx];
+                    var pvm = SelectionParagraphs[idx];
                     bool isFirst = idx == 0;
-                    bool isLast  = idx == SelectionParagraphs.Count - 1;
+                    bool isLast = idx == SelectionParagraphs.Count - 1;
 
                     if (!isFirst && !isLast)
                     {
@@ -891,7 +1015,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                         // Первый: от SelectionStart до конца (int.MaxValue clamp-ится внутри).
                         // Последний: от 0 до SelectionEnd.
                         int s = isFirst ? pvm.SelectionStart : 0;
-                        int e = isLast  ? pvm.SelectionEnd   : int.MaxValue;
+                        int e = isLast ? pvm.SelectionEnd : int.MaxValue;
                         if (e > s)
                             ApplyCharPropertyToRange(pvm.Model, s, e, mutate, clearAll);
                     }
@@ -904,6 +1028,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             CommitEditDelegate?.Invoke();
             FireCursorContextChanged();
+            // Затронуты только эти абзацы — канвас инвалидирует кэш раскладки точечно,
+            // а не сбрасывает весь документ.
+            _lastFormatAffected = SelectionParagraphs.Count > 1
+                ? SelectionParagraphs.ToList()
+                : new[] { _activeParagraph };
             ParagraphFormatChanged?.Invoke();
         }
 
@@ -935,7 +1064,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void ApplyParaProperty(Action<ParagraphProperties> mutate)
         {
-            BeginEditDelegate?.Invoke("Format paragraph");
+            // В режиме батча (drag отступов) снапшот делается один раз в
+            // BeginParagraphFormatBatch — здесь его не повторяем.
+            if (!_suppressFormatSnapshot)
+                BeginEditDelegate?.Invoke("Format paragraph");
 
             // Режим таблицы: применяем к параграфу активной ячейки.
             if (TableActiveCellParagraph is not null)
@@ -960,8 +1092,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
             }
             else return;
 
-            CommitEditDelegate?.Invoke();
+            if (!_suppressFormatSnapshot)
+                CommitEditDelegate?.Invoke();
             FireCursorContextChanged();
+            // Затронуты только эти абзацы — канвас инвалидирует кэш раскладки точечно,
+            // а не сбрасывает весь документ (на больших документах это убирает фриз).
+            _lastFormatAffected = SelectionParagraphs.Count > 0
+                ? SelectionParagraphs.ToList()
+                : (_activeParagraph is not null ? new[] { _activeParagraph } : null);
             ParagraphFormatChanged?.Invoke();
         }
 
@@ -1193,11 +1331,19 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             NormalizeTableAnchors();
             NormalizeBreakAnchors();
-            Paragraphs.Clear();
-            if (_document.Sections.Count == 0) return;
-            foreach (var block in _document.Sections[0].Blocks)
-                if (block is ParagraphBlock para)
-                    Paragraphs.Add(CreateParagraphViewModel(para));
+            IsBulkRebuilding = true;
+            try
+            {
+                Paragraphs.Clear();
+                if (_document.Sections.Count == 0) return;
+                foreach (var block in _document.Sections[0].Blocks)
+                    if (block is ParagraphBlock para)
+                        Paragraphs.Add(CreateParagraphViewModel(para));
+            }
+            finally
+            {
+                IsBulkRebuilding = false;
+            }
         }
 
         public void DeleteSelectedParagraphs()

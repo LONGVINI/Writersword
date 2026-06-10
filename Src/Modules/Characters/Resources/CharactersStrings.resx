@@ -661,4 +661,192 @@
     <value>Upload photo...</value>
     <comment>Flyout button</comment>
   </data>
+  <data name="FilePicker_ImagesFilter" xml:space="preserve">
+    <value>Images</value>
+    <comment>File-type filter name in the OS image dialog</comment>
+  </data>
+  <data name="FilePicker_SelectImageTitle" xml:space="preserve">
+    <value>Select image</value>
+    <comment>Title of the OS file dialog for choosing an avatar</comment>
+  </data>
+  <data name="AvatarPackManager_Title" xml:space="preserve">
+    <value>Manage packs</value>
+    <comment>Header of the avatar pack manager overlay</comment>
+  </data>
+  <data name="AvatarPackManager_BuiltInBadge" xml:space="preserve">
+    <value>built-in</value>
+    <comment>Badge on built-in read-only packs</comment>
+  </data>
+  <data name="AvatarPackManager_NewPackPlaceholder" xml:space="preserve">
+    <value>New pack name</value>
+    <comment>Placeholder in the new-pack name input</comment>
+  </data>
+  <data name="AvatarPackManager_CreatePack" xml:space="preserve">
+    <value>Create pack</value>
+    <comment>Button: create a new user pack</comment>
+  </data>
+  <data name="AvatarPackManager_ImportZip" xml:space="preserve">
+    <value>Import ZIP</value>
+    <comment>Button: import a pack from a ZIP</comment>
+  </data>
+  <data name="AvatarPackManager_SelectPackHint" xml:space="preserve">
+    <value>Select a pack on the left</value>
+    <comment>Placeholder when no pack is selected</comment>
+  </data>
+  <data name="AvatarPackManager_ExportZip" xml:space="preserve">
+    <value>Export ZIP</value>
+    <comment>Button: export the selected pack to a ZIP</comment>
+  </data>
+  <data name="AvatarPackManager_DeletePack" xml:space="preserve">
+    <value>Delete pack</value>
+    <comment>Button: delete the selected user pack</comment>
+  </data>
+  <data name="AvatarPackManager_BuiltInHint" xml:space="preserve">
+    <value>Built-in packs are view-only. To add avatars, upload a file in the picker or import a ZIP.</value>
+    <comment>Hint under the pack manager</comment>
+  </data>
+  <data name="Avatar_PickTooltip" xml:space="preserve">
+    <value>Click to choose an avatar</value>
+    <comment>Tooltip on the round avatar in the character card</comment>
+  </data>
+  <data name="ViewMode_Tooltip" xml:space="preserve">
+    <value>Display mode</value>
+    <comment>Tooltip on the view-mode combo box</comment>
+  </data>
+  <data name="ViewMode_Small" xml:space="preserve">
+    <value>Small</value>
+    <comment>View-mode option: small tiles</comment>
+  </data>
+  <data name="ViewMode_Medium" xml:space="preserve">
+    <value>Medium</value>
+    <comment>View-mode option: medium tiles</comment>
+  </data>
+  <data name="ViewMode_Large" xml:space="preserve">
+    <value>Large</value>
+    <comment>View-mode option: large tiles</comment>
+  </data>
+  <data name="ViewMode_Huge" xml:space="preserve">
+    <value>Huge</value>
+    <comment>View-mode option: huge tiles</comment>
+  </data>
+  <data name="Folder_DeleteTooltip" xml:space="preserve">
+    <value>Delete folder</value>
+    <comment>Tooltip on the folder delete button</comment>
+  </data>
+  <data name="ColorPicker_Tooltip" xml:space="preserve">
+    <value>Change color</value>
+    <comment>Tooltip on the character card color picker</comment>
+  </data>
+  <data name="Character_DeleteTooltip" xml:space="preserve">
+    <value>Delete character</value>
+    <comment>Tooltip on the card delete button</comment>
+  </data>
+  <data name="Character_RenameTooltip" xml:space="preserve">
+    <value>Click to rename</value>
+    <comment>Tooltip on the card name area</comment>
+  </data>
+  <data name="Loading_Characters" xml:space="preserve">
+    <value>Loading characters…</value>
+    <comment>Loading overlay text</comment>
+  </data>
+  <data name="Relationship_BidirectionalTooltip" xml:space="preserve">
+    <value>Two-way relationship</value>
+    <comment>Tooltip on the bidirectional toggle</comment>
+  </data>
+  <data name="Timeline_KeyEventTooltip" xml:space="preserve">
+    <value>Key event</value>
+    <comment>Tooltip on the mark-as-key-event button</comment>
+  </data>
+  <data name="Param_AddNumeric" xml:space="preserve">
+    <value># Numeric</value>
+    <comment>Button: add numeric parameter</comment>
+  </data>
+  <data name="Param_AddText" xml:space="preserve">
+    <value>T Text</value>
+    <comment>Button: add text parameter</comment>
+  </data>
+  <data name="Param_AddStateList" xml:space="preserve">
+    <value>= List</value>
+    <comment>Button: add state-list parameter</comment>
+  </data>
+  <data name="Param_AddBoolean" xml:space="preserve">
+    <value>? Yes/No</value>
+    <comment>Button: add boolean parameter</comment>
+  </data>
+  <data name="Param_DescriptionPlaceholder" xml:space="preserve">
+    <value>Parameter description (hint)</value>
+    <comment>Placeholder for parameter description</comment>
+  </data>
+  <data name="Param_MinPlaceholder" xml:space="preserve">
+    <value>min</value>
+    <comment>Placeholder for numeric min field</comment>
+  </data>
+  <data name="Param_MaxPlaceholder" xml:space="preserve">
+    <value>max</value>
+    <comment>Placeholder for numeric max field</comment>
+  </data>
+  <data name="Note_TitlePlaceholder" xml:space="preserve">
+    <value>Note title</value>
+    <comment>Placeholder for note title</comment>
+  </data>
+  <data name="Note_BodyPlaceholder" xml:space="preserve">
+    <value>Note text…</value>
+    <comment>Placeholder for note body</comment>
+  </data>
+  <data name="Context_NameLabel" xml:space="preserve">
+    <value>Context name</value>
+    <comment>Label above context name field</comment>
+  </data>
+  <data name="Context_WhenActiveLabel" xml:space="preserve">
+    <value>When this context is active</value>
+    <comment>Label above context condition field</comment>
+  </data>
+  <data name="Context_ColorLabel" xml:space="preserve">
+    <value>Context color (HEX)</value>
+    <comment>Label above context color field</comment>
+  </data>
+  <data name="Context_NotesLabel" xml:space="preserve">
+    <value>Notes</value>
+    <comment>Label above context notes</comment>
+  </data>
+  <data name="Context_EmptyHint" xml:space="preserve">
+    <value>No contexts yet. Click "Add context".</value>
+    <comment>Empty-state hint on contexts tab</comment>
+  </data>
+  <data name="Onboarding_Title" xml:space="preserve">
+    <value>Characters module setup</value>
+    <comment>Onboarding header</comment>
+  </data>
+  <data name="Onboarding_Subtitle" xml:space="preserve">
+    <value>Answer a few questions — the system will suggest matching parameter templates for new characters.</value>
+    <comment>Onboarding subtitle</comment>
+  </data>
+  <data name="Onboarding_Skip" xml:space="preserve">
+    <value>Skip</value>
+    <comment>Button: skip onboarding</comment>
+  </data>
+  <data name="Onboarding_ApplyTemplates" xml:space="preserve">
+    <value>Apply templates</value>
+    <comment>Button: apply selected templates</comment>
+  </data>
+  <data name="Common_Yes" xml:space="preserve">
+    <value>Yes</value>
+    <comment>Default true label for boolean parameters</comment>
+  </data>
+  <data name="Common_No" xml:space="preserve">
+    <value>No</value>
+    <comment>Default false label for boolean parameters</comment>
+  </data>
+  <data name="Template_Apply" xml:space="preserve">
+    <value>Apply</value>
+    <comment>Template toggle button, inactive</comment>
+  </data>
+  <data name="Template_Applied" xml:space="preserve">
+    <value>Applied</value>
+    <comment>Template toggle button, active</comment>
+  </data>
+  <data name="Toast_CharacterDeleted" xml:space="preserve">
+    <value>Character deleted — Ctrl+Z to undo</value>
+    <comment>Toast after deleting a character</comment>
+  </data>
 </root>

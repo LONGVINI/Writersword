@@ -203,6 +203,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         // ── События ───────────────────────────────────────────────────────
 
         public event Action<RulerIndentMarkerType, double>? IndentMarkerChanged;
+
+        /// <summary>Перетаскивание маркера отступа началось (нажата кнопка мыши на маркере).</summary>
+        public event Action? IndentDragStarted;
+
+        /// <summary>Перетаскивание маркера отступа завершено (кнопка мыши отпущена).</summary>
+        public event Action? IndentDragEnded;
         public Func<double>? GetMinParagraphIndentMm { get; set; }
 
         public event Action<double, double>? MarginChanged;
@@ -359,7 +365,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         }
 
         public void BeginIndentDrag(RulerIndentMarkerType markerType)
-            => DraggingIndentMarker = markerType;
+        {
+            DraggingIndentMarker = markerType;
+            IndentDragStarted?.Invoke();
+        }
 
         public void EndIndentDrag()
         {
@@ -376,6 +385,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
                 IndentMarkerChanged?.Invoke(DraggingIndentMarker.Value, UnitsToMm(pos));
             }
             DraggingIndentMarker = null;
+            IndentDragEnded?.Invoke();
         }
 
         public void BeginColumnDrag(int listIndex)

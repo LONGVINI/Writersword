@@ -289,6 +289,40 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         public Writersword.Modules.TextEditor.Commands.TextUndoRedoStack? TextUndoStack { get; set; }
 
+        // Единый хронологический порядок отмены между снапшотным (UndoStack) и операционным
+        // (TextUndoStack) стеками. Без него ExecuteUndo сначала вычерпывал бы весь операционный
+        // стек, и Ctrl+Z откатывал бы не последнее действие, а сначала весь набор текста.
+        private enum UndoSource { Text, Snapshot }
+        private readonly LinkedList<UndoSource> _undoOrder = new();
+        private readonly Stack<UndoSource> _redoOrder = new();
+
+        // Кладёт операционную команду в стек и фиксирует её в общем порядке отмены.
+        // Если команда слилась с предыдущей (TryMerge вернул, что добавления нет) — отдельной
+        // записи порядка не создаём.
+        private void PushTextCommand(Writersword.Modules.TextEditor.Commands.ITextCommand cmd)
+        {
+            if (TextUndoStack is null) return;
+            if (TextUndoStack.Push(cmd))
+            {
+                _undoOrder.AddLast(UndoSource.Text);
+                _redoOrder.Clear();
+            }
+        }
+
+        // Фиксирует снапшотную команду в общем порядке отмены (вызывается из CommitEdit).
+        private void RecordSnapshotInOrder()
+        {
+            _undoOrder.AddLast(UndoSource.Snapshot);
+            _redoOrder.Clear();
+        }
+
+        // Сброс порядка отмены — при смене документа, когда стеки очищаются.
+        private void ResetUndoOrder()
+        {
+            _undoOrder.Clear();
+            _redoOrder.Clear();
+        }
+
         private double _monitorSizeInches = 0;
         private double _cachedDpi = 96.0;
         private DocumentSnapshotCommand? _pendingSnapshot;
@@ -453,9 +487,10 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.Paragraphs.CollectionChanged -= OnParagraphsChanged;
                 _docVm.PropertyChanged -= OnDocVmPropertyChanged;
                 _docVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
-                _docVm.BeginFontPreviewDelegate   = null;
-                _docVm.PreviewFontFamilyDelegate  = null;
-                _docVm.EndFontPreviewDelegate     = null;
+                _docVm.BeginFontPreviewDelegate = null;
+                _docVm.PreviewFontFamilyDelegate = null;
+                _docVm.EndFontPreviewDelegate = null;
+                _docVm.FocusEditorDelegate = null;
                 _docVm.OnPageBreakInserted = null;
                 _docVm.UndoDelegate = null;
                 _docVm.RedoDelegate = null;
@@ -464,6 +499,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.PasteDelegate = null;
                 _docVm.BeginEditDelegate = null;
                 _docVm.CommitEditDelegate = null;
+                _docVm.CommitRunPropertyGranularDelegate = null;
 
                 // Снимаем делегаты с каждого параграфа — иначе замыкания удерживают canvas.
                 foreach (var pvm in _docVm.Paragraphs)
@@ -604,9 +640,10 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.Paragraphs.CollectionChanged -= OnParagraphsChanged;
                 _docVm.PropertyChanged -= OnDocVmPropertyChanged;
                 _docVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
-                _docVm.BeginFontPreviewDelegate   = null;
-                _docVm.PreviewFontFamilyDelegate  = null;
-                _docVm.EndFontPreviewDelegate     = null;
+                _docVm.BeginFontPreviewDelegate = null;
+                _docVm.PreviewFontFamilyDelegate = null;
+                _docVm.EndFontPreviewDelegate = null;
+                _docVm.FocusEditorDelegate = null;
                 _docVm.OnPageBreakInserted = null;
                 _docVm.UndoDelegate = null;
                 _docVm.RedoDelegate = null;
@@ -615,6 +652,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.PasteDelegate = null;
                 _docVm.BeginEditDelegate = null;
                 _docVm.CommitEditDelegate = null;
+                _docVm.CommitRunPropertyGranularDelegate = null;
             }
 
             _docVm = DataContext as DocumentViewModel;
@@ -622,6 +660,7 @@ namespace Writersword.Modules.TextEditor.Document
             _pvmFocusHandlers.Clear();
             _cellVmCache.Clear();
             _cellLayoutCache.Clear();
+            ResetUndoOrder();
 
             if (DocVm is not null)
             {
@@ -630,9 +669,10 @@ namespace Writersword.Modules.TextEditor.Document
                 DocVm.Paragraphs.CollectionChanged += OnParagraphsChanged;
                 DocVm.PropertyChanged += OnDocVmPropertyChanged;
                 DocVm.ParagraphFormatChanged += OnParagraphFormatChanged;
-                DocVm.BeginFontPreviewDelegate   = BeginFontPreviewSession;
-                DocVm.PreviewFontFamilyDelegate  = PreviewFontFamilySession;
-                DocVm.EndFontPreviewDelegate     = EndFontPreviewSession;
+                DocVm.BeginFontPreviewDelegate = BeginFontPreviewSession;
+                DocVm.PreviewFontFamilyDelegate = PreviewFontFamilySession;
+                DocVm.EndFontPreviewDelegate = EndFontPreviewSession;
+                DocVm.FocusEditorDelegate = FocusEditorFromHost;
                 DocVm.OnPageBreakInserted = block => _pendingFocusBlock = block;
                 DocVm.UndoDelegate = ExecuteUndo;
                 DocVm.RedoDelegate = ExecuteRedo;
@@ -641,6 +681,7 @@ namespace Writersword.Modules.TextEditor.Document
                 DocVm.PasteDelegate = ExecutePaste;
                 DocVm.BeginEditDelegate = BeginEdit;
                 DocVm.CommitEditDelegate = CommitEdit;
+                DocVm.CommitRunPropertyGranularDelegate = CommitRunPropertyGranular;
                 foreach (var pvm in DocVm.Paragraphs)
                     WirePvm(pvm);
             }
@@ -651,14 +692,29 @@ namespace Writersword.Modules.TextEditor.Document
         private void OnParagraphFormatChanged()
         {
             // При изменении форматирования (шрифт, размер, цвет и т.п.) текст параграфа
-            // не меняется, поэтому _layoutCache не инвалидируется автоматически.
-            // Чистим здесь явно — иначе рендер показывает старое форматирование.
-            _logger.Debug("[FORMAT] OnParagraphFormatChanged: clearing cache ({Count} entries), rebuilding layouts",
-                _layoutCache.Count);
-            _layoutCache.Clear();
-            _cellLayoutCache.Clear();
+            // не меняется, поэтому _layoutCache не инвалидируется автоматически — чистим явно.
+            // Берём список затронутых абзацев: если он есть — инвалидируем кэш ТОЛЬКО у них,
+            // а раскладки остальных (на больших документах — тысячи) остаются валидными и
+            // переиспользуются при RebuildLayouts. Это убирает полный пересбор всего документа
+            // через Skia на каждый коммит форматирования.
+            var affected = DocVm?.TakeLastFormatAffected();
+            if (affected is { Count: > 0 })
+            {
+                foreach (var pvm in affected)
+                    _layoutCache.Remove(pvm);
+            }
+            else
+            {
+                // Затронутые неизвестны (например, форматирование ячейки) — полный сброс.
+                _layoutCache.Clear();
+                _cellLayoutCache.Clear();
+            }
+
             RebuildLayouts();
-            _logger.Debug("[FORMAT] RebuildLayouts done, _layouts.Count={Count}", _layouts.Count);
+            // Подсказка строки каретки могла устареть: при смене форматирования (шрифт,
+            // размер) абзац перетекает по строкам иначе. Сбрасываем, иначе DrawCaret
+            // нарисует каретку на старой строке.
+            _caretLineHint = -1;
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
 
@@ -798,25 +854,34 @@ namespace Writersword.Modules.TextEditor.Document
         // ── Дебаунс пересчёта ─────────────────────────────────────────────
         private void ScheduleRebuild(int dirtyParaIdx)
         {
-            ParagraphViewModel? dirtyPvm = null;
-            if (DocVm is not null && dirtyParaIdx >= 0 && dirtyParaIdx < DocVm.Paragraphs.Count)
+            // Во время массовой перестройки VM (undo/загрузка/структурные операции) Paragraphs
+            // переполняется тысячами Add-событий, и поабзацная инкрементальная раскладка здесь
+            // бессмысленна: каждый вызов делает _layouts.Any(...) — проход по всем раскладкам,
+            // что на тысячах абзацев даёт O(n^2) (десятки секунд). Пропускаем её — общий
+            // пересбор выполнит отложенный RebuildLayouts ниже (и/или FireParagraphFormatChanged
+            // от вызвавшей операции).
+            if (DocVm?.IsBulkRebuilding != true)
             {
-                dirtyPvm = DocVm.Paragraphs[dirtyParaIdx];
-                _layoutCache.Remove(dirtyPvm);
+                ParagraphViewModel? dirtyPvm = null;
+                if (DocVm is not null && dirtyParaIdx >= 0 && dirtyParaIdx < DocVm.Paragraphs.Count)
+                {
+                    dirtyPvm = DocVm.Paragraphs[dirtyParaIdx];
+                    _layoutCache.Remove(dirtyPvm);
 
-                // Проверяем: параграф уже есть в _layouts (редактирование текста)
-                // или это новый параграф (Enter/вставка).
-                bool pvmInLayouts = _layouts.Any(l => l.Vm == dirtyPvm && l.Cell is null);
-                if (pvmInLayouts)
-                {
-                    // Быстрый путь для редактирования: обновляем только один параграф.
-                    QuickUpdateParagraphLayout(dirtyPvm);
-                }
-                else
-                {
-                    // Новый параграф (Enter): вставляем в _layouts с оценочной высотой
-                    // чтобы ScrollToCaret мог найти его позицию немедленно.
-                    QuickInsertParagraphLayout(dirtyParaIdx, dirtyPvm);
+                    // Проверяем: параграф уже есть в _layouts (редактирование текста)
+                    // или это новый параграф (Enter/вставка).
+                    bool pvmInLayouts = _layouts.Any(l => l.Vm == dirtyPvm && l.Cell is null);
+                    if (pvmInLayouts)
+                    {
+                        // Быстрый путь для редактирования: обновляем только один параграф.
+                        QuickUpdateParagraphLayout(dirtyPvm);
+                    }
+                    else
+                    {
+                        // Новый параграф (Enter): вставляем в _layouts с оценочной высотой
+                        // чтобы ScrollToCaret мог найти его позицию немедленно.
+                        QuickInsertParagraphLayout(dirtyParaIdx, dirtyPvm);
+                    }
                 }
             }
 
@@ -888,8 +953,7 @@ namespace Writersword.Modules.TextEditor.Document
             // при изменении текста параграфа кеш инвалидируется сам.
             // Clear() вызывает сотни BuildLayout на каждый MeasureOverride,
             // что при быстром наборе текста вызывает лавину аллокаций.
-            if (!_fontPreviewActive)
-                RebuildLayouts();
+            RebuildLayouts();
 
             double visualH = Math.Max(_canvasHeight * zoom, 100);
             double visualW = availW;
@@ -900,6 +964,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             return new Size(visualW, visualH);
         }
+
         protected override Size ArrangeOverride(Size finalSize)
         {
             double zoom = Zoom;
@@ -969,6 +1034,11 @@ namespace Writersword.Modules.TextEditor.Document
             return pl.Layout ?? GetOrBuildLayout(pl.Vm, widthPt);
         }
 
+        /// <summary>
+        /// Быстрая оценка высоты параграфа без построения SKTextLayout.
+        /// Используется для параграфов вне viewport-буфера — точность ~±30%,
+        /// достаточная для позиционирования скроллбара и прокрутки.
+        /// </summary>
         private float EstimateHeight(ParagraphViewModel pvm, float widthPt)
         {
             int charCount = pvm.PlainText?.Length ?? 0;

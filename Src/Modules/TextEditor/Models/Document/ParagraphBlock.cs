@@ -113,7 +113,7 @@ namespace Writersword.Modules.TextEditor.Models.Document
             Chunks.Clear();
             Chunks.Add(new TextChunk
             {
-                Runs = new System.Collections.Generic.List<Models.Inline.RunModel>
+                Runs = new List<Inline.RunModel>
         {
             new Models.Inline.RunModel { Text = text ?? string.Empty }
         }
@@ -145,11 +145,24 @@ namespace Writersword.Modules.TextEditor.Models.Document
 
             // Определяем свойства для вставляемого текста:
             // берём форматирование символа в позиции вставки (или предыдущего).
-            Models.Inline.RunProperties? insertProps = null;
-            if (from < chars.Count)
-                insertProps = chars[from].props;
-            else if (from > 0)
+            Inline.RunProperties? insertProps = null;
+            if (from > 0)
                 insertProps = chars[from - 1].props;
+            else if (from < chars.Count)
+                insertProps = chars[from].props;
+
+            // Пустой абзац (символов нет): у пустого рана может быть форматирование — его
+            // проставляют при Enter, чтобы ввод продолжал шрифт/начертание. Без этого ввод
+            // в пустой абзац сбрасывался бы на дефолтный шрифт.
+            if (insertProps is null && chars.Count == 0)
+            {
+                foreach (var chunk in Chunks)
+                {
+                    foreach (var run in chunk.Runs)
+                        if (run.Properties is not null) { insertProps = run.Properties; break; }
+                    if (insertProps is not null) break;
+                }
+            }
 
             // Вставляем новые символы.
             for (int i = 0; i < insert.Length; i++)

@@ -35,6 +35,41 @@ namespace Writersword.Modules.Characters.Services
         // Каждый модуль регистрирует свою через RegisterPackDirectory().
         private readonly List<string> _registeredDirectories = new();
 
+        // Кэш байтов аватарок по ссылке. Убирает повторные открытия большого
+        // проектного zip при отрисовке (миниатюры пикера, карточки) — основная
+        // причина залипаний UI на крупных проектах. Ссылки уникальны и неизменяемы.
+        private readonly Dictionary<string, byte[]> _byteCache = new();
+        private readonly Queue<string> _byteCacheOrder = new();
+        private readonly object _byteCacheLock = new object();
+        private const int ByteCacheMaxEntries = 150;
+
+        private void CacheBytes(string avatarRef, byte[] data)
+        {
+            lock (_byteCacheLock)
+            {
+                if (_byteCache.ContainsKey(avatarRef)) return;
+                _byteCache[avatarRef] = data;
+                _byteCacheOrder.Enqueue(avatarRef);
+                while (_byteCacheOrder.Count > ByteCacheMaxEntries)
+                {
+                    var oldest = _byteCacheOrder.Dequeue();
+                    _byteCache.Remove(oldest);
+                }
+            }
+        }
+
+        private byte[]? TryGetCachedBytes(string avatarRef)
+        {
+            lock (_byteCacheLock)
+                return _byteCache.TryGetValue(avatarRef, out var data) ? data : null;
+        }
+
+        private void EvictCachedBytes(string avatarRef)
+        {
+            lock (_byteCacheLock)
+                _byteCache.Remove(avatarRef);
+        }
+
         public void SetContext(DocumentContext? context) => _context = context;
 
         /// <summary>
@@ -61,10 +96,12 @@ namespace Writersword.Modules.Characters.Services
             var uniqueName = GetUniqueProjectName(suggestedName);
             try
             {
+                var avatarRef = $"project:{uniqueName}";
+                CacheBytes(avatarRef, imageData);
                 await Task.Run(() =>
                     _context.WriteFile($"{ZipAvatarsFolder}/{uniqueName}", imageData));
                 _logger.Debug("Project avatar saved: {Name}", uniqueName);
-                return $"project:{uniqueName}";
+                return avatarRef;
             }
             catch (Exception ex) { _logger.Error(ex, "SaveToProjectAsync failed"); return null; }
         }
@@ -78,7 +115,9 @@ namespace Writersword.Modules.Characters.Services
                 if (!AllowedExtensions.Contains(ext)) return null;
                 var uniqueName = GetUniqueName(suggestedName, LibraryPath);
                 await File.WriteAllBytesAsync(Path.Combine(LibraryPath, uniqueName), imageData);
-                return $"lib:{uniqueName}";
+                var avatarRef = $"lib:{uniqueName}";
+                CacheBytes(avatarRef, imageData);
+                return avatarRef;
             }
             catch (Exception ex) { _logger.Error(ex, "SaveToLibraryAsync failed"); return null; }
         }
@@ -95,11 +134,24 @@ namespace Writersword.Modules.Characters.Services
         public byte[]? LoadAvatarBytes(string? avatarRef)
         {
             if (string.IsNullOrEmpty(avatarRef)) return null;
+
+            var cached = TryGetCachedBytes(avatarRef);
+            if (cached != null) return cached;
+
+            var bytes = LoadAvatarBytesFromSource(avatarRef);
+            if (bytes != null) CacheBytes(avatarRef, bytes);
+            return bytes;
+        }
+
+        private byte[]? LoadAvatarBytesFromSource(string avatarRef)
+        {
             try
             {
                 if (avatarRef.StartsWith("project:"))
                 {
-                    var name = avatarRef["project:".Length..];
+                    // Допускаем как корректную ссылку project:имя.png, так и старую
+                    // битую project:Characters/assets/avatars/имя.png — берём имя файла.
+                    var name = Path.GetFileName(avatarRef["project:".Length..]);
                     return _context?.ReadFile($"{ZipAvatarsFolder}/{name}");
                 }
                 if (avatarRef.StartsWith("lib:"))
@@ -141,11 +193,33 @@ namespace Writersword.Modules.Characters.Services
             }
         }
 
+        // Аватарка показывается максимум ~150px, но полноразмерное фото (с телефона/
+        // камеры) уходит в GPU как огромная текстура и вешает рендер-поток на части
+        // драйверов. Уменьшаем до безопасного размера перед отдачей в UI.
+        private const int AvatarMaxSide = 512;
+
         public Bitmap? LoadBitmap(string? avatarRef)
         {
             var bytes = LoadAvatarBytes(avatarRef);
             if (bytes == null) return null;
-            try { using var ms = new MemoryStream(bytes); return new Bitmap(ms); }
+            try
+            {
+                using var ms = new MemoryStream(bytes);
+                var bitmap = new Bitmap(ms);
+
+                var w = bitmap.PixelSize.Width;
+                var h = bitmap.PixelSize.Height;
+                if (w <= AvatarMaxSide && h <= AvatarMaxSide)
+                    return bitmap;
+
+                var scale = (double)AvatarMaxSide / Math.Max(w, h);
+                var target = new Avalonia.PixelSize(
+                    Math.Max(1, (int)Math.Round(w * scale)),
+                    Math.Max(1, (int)Math.Round(h * scale)));
+                var scaled = bitmap.CreateScaledBitmap(target, BitmapInterpolationMode.HighQuality);
+                bitmap.Dispose();
+                return scaled;
+            }
             catch (Exception ex) { _logger.Error(ex, "LoadBitmap failed for {Ref}", avatarRef); return null; }
         }
 
@@ -154,10 +228,11 @@ namespace Writersword.Modules.Characters.Services
         public void DeleteAvatar(string? avatarRef)
         {
             if (string.IsNullOrEmpty(avatarRef)) return;
+            EvictCachedBytes(avatarRef);
             try
             {
                 if (avatarRef.StartsWith("project:"))
-                    _context?.DeleteFile($"{ZipAvatarsFolder}/{avatarRef["project:".Length..]}");
+                    _context?.DeleteFile($"{ZipAvatarsFolder}/{Path.GetFileName(avatarRef["project:".Length..])}");
                 else if (avatarRef.StartsWith("lib:"))
                 {
                     var path = Path.Combine(LibraryPath, avatarRef["lib:".Length..]);
@@ -186,11 +261,18 @@ namespace Writersword.Modules.Characters.Services
                 return _context.GetFiles(ZipAvatarsFolder)
                     .Where(f => AllowedExtensions.Contains(
                         Path.GetExtension(f).ToLowerInvariant()))
-                    .Select(f => new CharacterAvatarItem
+                    .Select(f =>
                     {
-                        AvatarRef = $"project:{f}",
-                        FileName = f,
-                        Source = CharacterAvatarSource.Project
+                        // GetFiles возвращает полный путь внутри zip; ссылка project:
+                        // должна содержать только имя файла, иначе LoadAvatarBytes
+                        // повторно приклеит папку и файл не найдётся.
+                        var fileName = Path.GetFileName(f);
+                        return new CharacterAvatarItem
+                        {
+                            AvatarRef = $"project:{fileName}",
+                            FileName = fileName,
+                            Source = CharacterAvatarSource.Project
+                        };
                     })
                     .ToList();
             }

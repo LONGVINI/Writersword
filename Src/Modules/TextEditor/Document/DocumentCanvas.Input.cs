@@ -10,6 +10,7 @@ using Writersword.Core.Models.Rendering;
 using Writersword.Modules.TextEditor.Rendering;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
+using Writersword.Modules.TextEditor.Commands;
 using Writersword.Modules.TextEditor.ViewModels;
 
 namespace Writersword.Modules.TextEditor.Document
@@ -880,7 +881,7 @@ namespace Writersword.Modules.TextEditor.Document
                     InvalidateFull();
                 };
 
-                TextUndoStack.Push(cmd);
+                PushTextCommand(cmd);
                 UpdatePreferredX();
                 SyncSel(); ResetCaret();
                 return;
@@ -1290,16 +1291,30 @@ namespace Writersword.Modules.TextEditor.Document
             DeleteSelection();
             string text = pvm.PlainText ?? "";
             int cp = Clamp(_caretChar, 0, text.Length);
-            // Обрезаем текущий параграф до позиции каретки, сохраняя форматирование.
-            pvm.Model.SpliceText(cp, text.Length, string.Empty);
+            // Форматирование рана в точке каретки — чтобы новый абзац продолжал шрифт и
+            // начертание, даже если переброс делается в конце строки (новый абзац пустой).
+            var caretRunProps = GetRunPropertiesAt(pvm.Model, cp);
+            int plainLen = pvm.Model.GetPlainText().Length;
+            int cutPos = Clamp(cp, 0, plainLen);
+            // Забираем хвост абзаца ВМЕСТЕ с форматированием каждого рана и удаляем его из
+            // исходного. Перенос ранами, а не строкой: иначе разнобойное форматирование хвоста
+            // (где-то жирный, другой шрифт) сбрасывалось бы на одно, хотя текст не трогали.
+            var tailRuns = DocumentModelHelper.DeleteRange(pvm.Model, cutPos, plainLen - cutPos);
             pvm.RefreshPlainTextFromModel();
             var newVm = DocVm?.AddParagraphAfter(pvm);
             if (newVm is not null)
             {
-                // Остаток текста (с форматированием) переносим в новый параграф.
-                // Используем SetPlainText только если форматирования нет — иначе SpliceText.
-                newVm.Model.SpliceText(0, 0, text[cp..]);
+                // Восстанавливаем раны хвоста в новом абзаце с их исходными свойствами.
+                if (tailRuns.Length > 0)
+                    DocumentModelHelper.RestoreRuns(newVm.Model, 0, tailRuns);
                 newVm.RefreshPlainTextFromModel();
+
+                // Если новый абзац пуст (Enter в конце строки) — переносим форматирование
+                // каретки в его пустой ран, чтобы последующий ввод шёл тем же шрифтом.
+                if (string.IsNullOrEmpty(newVm.PlainText) && caretRunProps is not null
+                    && newVm.Model.Chunks.Count > 0 && newVm.Model.Chunks[0].Runs.Count > 0)
+                    newVm.Model.Chunks[0].Runs[0].Properties = caretRunProps.Clone();
+
                 _rebuildCts.Cancel();
                 _rebuildCts = new System.Threading.CancellationTokenSource();
                 RebuildLayouts();
@@ -1310,6 +1325,24 @@ namespace Writersword.Modules.TextEditor.Document
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
             SyncSel(); ResetCaret(); InvalidateFull();
+        }
+
+        // Возвращает форматирование рана в позиции каретки: берём символ ПЕРЕД кареткой
+        // (его продолжит ввод), либо символ в самой позиции. Для пустого абзаца — null.
+        private static RunProperties? GetRunPropertiesAt(ParagraphBlock block, int charIndex)
+        {
+            int idx = 0;
+            RunProperties? atPos = null;
+            RunProperties? beforePos = null;
+            foreach (var chunk in block.Chunks)
+                foreach (var run in chunk.Runs)
+                    foreach (var _ in run.Text)
+                    {
+                        if (idx == charIndex) atPos = run.Properties;
+                        if (idx == charIndex - 1) beforePos = run.Properties;
+                        idx++;
+                    }
+            return beforePos ?? atPos;
         }
 
         public void ExecuteNavLeft(bool extend)
@@ -1432,42 +1465,92 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteUndo()
         {
-            if (TextUndoStack is not null && TextUndoStack.CanUndo && DocVm is not null)
+            if (DocVm is null) return;
+            if (_undoOrder.Count == 0) { _logger.Debug("[UNDO] ExecuteUndo: nothing to undo"); return; }
+
+            var src = _undoOrder.Last!.Value;
+            bool done = false;
+
+            if (src == UndoSource.Text)
             {
-                _logger.Debug("[UNDO] ExecuteUndo (text): '{D}'", TextUndoStack.UndoDescription);
-                TextUndoStack.Undo(DocVm.Document);
-                return;
+                if (TextUndoStack is not null && TextUndoStack.CanUndo)
+                {
+                    _logger.Debug("[UNDO] ExecuteUndo (text): '{D}'", TextUndoStack.UndoDescription);
+                    TextUndoStack.Undo(DocVm.Document);
+                    done = true;
+                }
             }
-            if (UndoStack is null) { _logger.Warning("[UNDO] ExecuteUndo: UndoStack is null"); return; }
-            if (!UndoStack.CanUndo) { _logger.Debug("[UNDO] ExecuteUndo: nothing to undo"); return; }
-            _logger.Debug("[UNDO] ExecuteUndo: '{D}'", UndoStack.UndoDescription);
-            _cellLayoutCache.Clear();
-            _cellVmCache.Clear();
-            UndoStack.Undo();
-            RebuildLayouts();
-            _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
-            _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
-            SyncSel(); ResetCaret(); InvalidateFull();
+            else
+            {
+                if (UndoStack is not null && UndoStack.CanUndo)
+                {
+                    _logger.Debug("[UNDO] ExecuteUndo: '{D}'", UndoStack.UndoDescription);
+                    _cellLayoutCache.Clear();
+                    _cellVmCache.Clear();
+                    UndoStack.Undo();
+                    RebuildLayouts();
+                    _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
+                    _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
+                    SyncSel(); ResetCaret(); InvalidateFull();
+                    done = true;
+                }
+            }
+
+            if (done)
+            {
+                _undoOrder.RemoveLast();
+                _redoOrder.Push(src);
+            }
+            else
+            {
+                // Запись порядка осталась без соответствующей команды в стеке (рассинхрон,
+                // например после внешней очистки стека) — снимаем её, чтобы не застрять.
+                _undoOrder.RemoveLast();
+            }
         }
 
         public void ExecuteRedo()
         {
-            if (TextUndoStack is not null && TextUndoStack.CanRedo && DocVm is not null)
+            if (DocVm is null) return;
+            if (_redoOrder.Count == 0) { _logger.Debug("[UNDO] ExecuteRedo: nothing to redo"); return; }
+
+            var src = _redoOrder.Peek();
+            bool done = false;
+
+            if (src == UndoSource.Text)
             {
-                _logger.Debug("[UNDO] ExecuteRedo (text): '{D}'", TextUndoStack.RedoDescription);
-                TextUndoStack.Redo(DocVm.Document);
-                return;
+                if (TextUndoStack is not null && TextUndoStack.CanRedo)
+                {
+                    _logger.Debug("[UNDO] ExecuteRedo (text): '{D}'", TextUndoStack.RedoDescription);
+                    TextUndoStack.Redo(DocVm.Document);
+                    done = true;
+                }
             }
-            if (UndoStack is null) { _logger.Warning("[UNDO] ExecuteRedo: UndoStack is null"); return; }
-            if (!UndoStack.CanRedo) { _logger.Debug("[UNDO] ExecuteRedo: nothing to redo"); return; }
-            _logger.Debug("[UNDO] ExecuteRedo: '{D}'", UndoStack.RedoDescription);
-            _cellLayoutCache.Clear();
-            _cellVmCache.Clear();
-            UndoStack.Redo();
-            RebuildLayouts();
-            _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
-            _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
-            SyncSel(); ResetCaret(); InvalidateFull();
+            else
+            {
+                if (UndoStack is not null && UndoStack.CanRedo)
+                {
+                    _logger.Debug("[UNDO] ExecuteRedo: '{D}'", UndoStack.RedoDescription);
+                    _cellLayoutCache.Clear();
+                    _cellVmCache.Clear();
+                    UndoStack.Redo();
+                    RebuildLayouts();
+                    _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
+                    _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
+                    SyncSel(); ResetCaret(); InvalidateFull();
+                    done = true;
+                }
+            }
+
+            if (done)
+            {
+                _redoOrder.Pop();
+                _undoOrder.AddLast(src);
+            }
+            else
+            {
+                _redoOrder.Pop();
+            }
         }
 
         /// <summary>

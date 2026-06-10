@@ -424,11 +424,16 @@ namespace Writersword.Modules.TextEditor.Document
                         _canvasHeight = _canvasHeightPt * PtToPx;
                     }
                 }
-                // InvalidateMeasure вызывается синхронно — страховка на случай
-                // если yShift == 0 но нужно обновить рендер.
-                // При yShift != 0 Avalonia сама запланирует layout pass так как
-                // MeasureOverride вернёт другой размер.
-                InvalidateMeasure();
+                // Если высота абзаца не изменилась (обычный набор без переноса строки) —
+                // достаточно перерисовки. InvalidateMeasure дёргает MeasureOverride, а тот
+                // пересобирает ВЕСЬ документ, поэтому на каждую клавишу шёл полный пересбор
+                // всех абзацев — отсюда тормоза и моргание. Полный layout-pass нужен только
+                // когда высота абзаца реально изменилась (перенос строки), чтобы обновить
+                // скроллбар и сдвинуть последующие абзацы.
+                if (yShift != 0f)
+                    InvalidateMeasure();
+                else
+                    InvalidateFull();
             }
         }
 

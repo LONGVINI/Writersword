@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Writersword.Modules.Characters.Interfaces;
 using Writersword.Modules.Characters.ViewModels.Avatars;
 using Writersword.Modules.Characters.Views.Avatars;
+using Writersword.Src.Modules.Characters.Resources;
 
 namespace Writersword.Modules.Characters.Views.Avatars
 {
@@ -14,7 +15,7 @@ namespace Writersword.Modules.Characters.Views.Avatars
     {
         private static readonly ILogger _logger = Log.ForContext<CharacterAvatarPickerWindow>();
 
-        private static readonly FilePickerFileType ImageFileType = new("Изображения")
+        private static readonly FilePickerFileType ImageFileType = new(CharactersStrings.FilePicker_ImagesFilter)
         {
             Patterns = new[] { "*.jpg", "*.jpeg", "*.png", "*.webp" },
             MimeTypes = new[] { "image/jpeg", "image/png", "image/webp" }
@@ -49,7 +50,7 @@ namespace Writersword.Modules.Characters.Views.Avatars
                 var files = await window.StorageProvider.OpenFilePickerAsync(
                     new FilePickerOpenOptions
                     {
-                        Title = "Выберите изображение",
+                        Title = CharactersStrings.FilePicker_SelectImageTitle,
                         AllowMultiple = false,
                         FileTypeFilter = new[] { ImageFileType }
                     });

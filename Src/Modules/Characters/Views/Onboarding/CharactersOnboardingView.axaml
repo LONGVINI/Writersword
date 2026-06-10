@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Onboarding"
+             xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              x:Class="Writersword.Modules.Characters.Views.Onboarding.CharactersOnboardingView"
              x:DataType="vm:CharactersOnboardingViewModel">
     <Border Background="{DynamicResource BgPanelBrush}"
@@ -9,10 +10,10 @@
             BoxShadow="0 8 32 0 #AA000000">
         <StackPanel Spacing="20">
             <StackPanel Spacing="4">
-                <TextBlock Text="Настройка модуля Персонажи"
+                <TextBlock Text="{x:Static loc:CharactersStrings.Onboarding_Title}"
                            FontSize="18" FontWeight="Bold"
                            Foreground="{DynamicResource TextPrimaryBrush}"/>
-                <TextBlock Text="Ответьте на несколько вопросов — система подберёт подходящие шаблоны параметров для новых персонажей."
+                <TextBlock Text="{x:Static loc:CharactersStrings.Onboarding_Subtitle}"
                            FontSize="12"
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            TextWrapping="Wrap"/>
@@ -46,7 +47,7 @@
             </ItemsControl>
             <Grid ColumnDefinitions="*,Auto,Auto">
                 <Button Grid.Column="1"
-                        Content="Пропустить"
+                        Content="{x:Static loc:CharactersStrings.Onboarding_Skip}"
                         Command="{Binding SkipCommand}"
                         FontSize="12" Padding="12,6"
                         Background="Transparent"
@@ -55,7 +56,7 @@
                         BorderBrush="{DynamicResource BorderDefaultBrush}"
                         CornerRadius="4" Margin="0,0,8,0"/>
                 <Button Grid.Column="2"
-                        Content="Применить шаблоны"
+                        Content="{x:Static loc:CharactersStrings.Onboarding_ApplyTemplates}"
                         Command="{Binding CompleteCommand}"
                         FontSize="12" Padding="12,6"
                         Background="{DynamicResource AccentDefaultBrush}"

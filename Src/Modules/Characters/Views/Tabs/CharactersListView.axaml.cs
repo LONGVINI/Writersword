@@ -20,8 +20,12 @@ namespace Writersword.Modules.Characters.Views.Tabs
     public partial class CharactersListView : UserControl
     {
         private const double DragThreshold = 8.0;
+        // Пауза удержания перед стартом перетаскивания. Быстрый клик уходит кнопкам
+        // карточки, перетаскивание начинается только после зажатия и последующего движения.
+        private const long DragHoldDelayMs = 350;
 
         private Point _dragStartPoint;
+        private long _pressTick;
         private CharacterListItemViewModel? _dragCandidate;
         private bool _isDragging;
         private bool _hasPointerCapture;
@@ -142,10 +146,16 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
         private void UpdateGridLayouts(int cols)
         {
+            double minItemWidth = (DataContext as CharactersViewModel)?.CardMinWidth ?? 152.0;
             foreach (var repeater in this.GetVisualDescendants().OfType<ItemsRepeater>())
             {
-                if (repeater.Layout is UniformGridLayout layout && layout.MaximumRowsOrColumns != cols)
-                    layout.MaximumRowsOrColumns = cols;
+                if (repeater.Layout is UniformGridLayout layout)
+                {
+                    if (layout.MaximumRowsOrColumns != cols)
+                        layout.MaximumRowsOrColumns = cols;
+                    if (Math.Abs(layout.MinItemWidth - minItemWidth) > 0.5)
+                        layout.MinItemWidth = minItemWidth;
+                }
             }
         }
 
@@ -234,12 +244,12 @@ namespace Writersword.Modules.Characters.Views.Tabs
             {
                 _dragCandidate = charVm;
                 _dragStartPoint = e.GetPosition(this);
+                _pressTick = Environment.TickCount64;
                 _isDragging = false;
-                // Захватываем указатель немедленно — до того как ScrollViewer
-                // успеет захватить его для скролла в OnGlobalPointerMoved.
-                // Если drag не начнётся (просто клик) — отпустим в OnGlobalPointerReleased.
-                _hasPointerCapture = true;
-                e.Pointer.Capture(this);
+                // Указатель здесь не захватываем: при простом клике захват на UserControl
+                // подавляет Click внутренних кнопок карточки (в том числе Flyout аватарки).
+                // Захват берём только при реальном старте перетаскивания в OnGlobalPointerMoved.
+                _hasPointerCapture = false;
             }
             else
             {
@@ -272,11 +282,27 @@ namespace Writersword.Modules.Characters.Views.Tabs
             if (!_isDragging)
             {
                 var delta = pos - _dragStartPoint;
-                if (Math.Abs(delta.X) < DragThreshold && Math.Abs(delta.Y) < DragThreshold)
+                bool movedBeyondThreshold =
+                    Math.Abs(delta.X) >= DragThreshold || Math.Abs(delta.Y) >= DragThreshold;
+
+                // Движение раньше паузы удержания — это клик или скролл, а не перетаскивание:
+                // отпускаем кандидата, чтобы нажатие дошло до кнопок карточки.
+                if (movedBeyondThreshold
+                    && Environment.TickCount64 - _pressTick < DragHoldDelayMs)
+                {
+                    _dragCandidate = null;
+                    return;
+                }
+
+                if (!movedBeyondThreshold)
                     return;
 
                 _isDragging = true;
-                // Capture уже был взят в OnGlobalPointerPressed.
+                // Захватываем указатель в момент старта перетаскивания.
+                // Туннельный обработчик на корне срабатывает раньше ScrollViewer,
+                // поэтому захвата на пороге достаточно, чтобы перехватить скролл.
+                e.Pointer.Capture(this);
+                _hasPointerCapture = true;
 
                 if (DataContext is CharactersViewModel startVm)
                 {

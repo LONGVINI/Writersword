@@ -1283,5 +1283,287 @@ namespace Writersword.Src.Modules.Characters.Resources {
                 return ResourceManager.GetString("ViewMode_List", resourceCulture);
             }
         }
+
+        public static string FilePicker_ImagesFilter {
+            get {
+                return ResourceManager.GetString("FilePicker_ImagesFilter", resourceCulture);
+            }
+        }
+
+        public static string FilePicker_SelectImageTitle {
+            get {
+                return ResourceManager.GetString("FilePicker_SelectImageTitle", resourceCulture);
+            }
+        }
+
+        public static string AvatarPackManager_Title {
+            get {
+                return ResourceManager.GetString("AvatarPackManager_Title", resourceCulture);
+            }
+        }
+
+        public static string AvatarPackManager_BuiltInBadge {
+            get {
+                return ResourceManager.GetString("AvatarPackManager_BuiltInBadge", resourceCulture);
+            }
+        }
+
+        public static string AvatarPackManager_NewPackPlaceholder {
+            get {
+                return ResourceManager.GetString("AvatarPackManager_NewPackPlaceholder", resourceCulture);
+            }
+        }
+
+        public static string AvatarPackManager_CreatePack {
+            get {
+                return ResourceManager.GetString("AvatarPackManager_CreatePack", resourceCulture);
+            }
+        }
+
+        public static string AvatarPackManager_ImportZip {
+            get {
+                return ResourceManager.GetString("AvatarPackManager_ImportZip", resourceCulture);
+            }
+        }
+
+        public static string AvatarPackManager_SelectPackHint {
+            get {
+                return ResourceManager.GetString("AvatarPackManager_SelectPackHint", resourceCulture);
+            }
+        }
+
+        public static string AvatarPackManager_ExportZip {
+            get {
+                return ResourceManager.GetString("AvatarPackManager_ExportZip", resourceCulture);
+            }
+        }
+
+        public static string AvatarPackManager_DeletePack {
+            get {
+                return ResourceManager.GetString("AvatarPackManager_DeletePack", resourceCulture);
+            }
+        }
+
+        public static string AvatarPackManager_BuiltInHint {
+            get {
+                return ResourceManager.GetString("AvatarPackManager_BuiltInHint", resourceCulture);
+            }
+        }
+
+        public static string Avatar_PickTooltip {
+            get {
+                return ResourceManager.GetString("Avatar_PickTooltip", resourceCulture);
+            }
+        }
+
+        public static string ViewMode_Tooltip {
+            get {
+                return ResourceManager.GetString("ViewMode_Tooltip", resourceCulture);
+            }
+        }
+
+        public static string ViewMode_Small {
+            get {
+                return ResourceManager.GetString("ViewMode_Small", resourceCulture);
+            }
+        }
+
+        public static string ViewMode_Medium {
+            get {
+                return ResourceManager.GetString("ViewMode_Medium", resourceCulture);
+            }
+        }
+
+        public static string ViewMode_Large {
+            get {
+                return ResourceManager.GetString("ViewMode_Large", resourceCulture);
+            }
+        }
+
+        public static string ViewMode_Huge {
+            get {
+                return ResourceManager.GetString("ViewMode_Huge", resourceCulture);
+            }
+        }
+
+        public static string Folder_DeleteTooltip {
+            get {
+                return ResourceManager.GetString("Folder_DeleteTooltip", resourceCulture);
+            }
+        }
+
+        public static string ColorPicker_Tooltip {
+            get {
+                return ResourceManager.GetString("ColorPicker_Tooltip", resourceCulture);
+            }
+        }
+
+        public static string Character_DeleteTooltip {
+            get {
+                return ResourceManager.GetString("Character_DeleteTooltip", resourceCulture);
+            }
+        }
+
+        public static string Character_RenameTooltip {
+            get {
+                return ResourceManager.GetString("Character_RenameTooltip", resourceCulture);
+            }
+        }
+
+        public static string Loading_Characters {
+            get {
+                return ResourceManager.GetString("Loading_Characters", resourceCulture);
+            }
+        }
+
+        public static string Relationship_BidirectionalTooltip {
+            get {
+                return ResourceManager.GetString("Relationship_BidirectionalTooltip", resourceCulture);
+            }
+        }
+
+        public static string Timeline_KeyEventTooltip {
+            get {
+                return ResourceManager.GetString("Timeline_KeyEventTooltip", resourceCulture);
+            }
+        }
+
+        public static string Param_AddNumeric {
+            get {
+                return ResourceManager.GetString("Param_AddNumeric", resourceCulture);
+            }
+        }
+
+        public static string Param_AddText {
+            get {
+                return ResourceManager.GetString("Param_AddText", resourceCulture);
+            }
+        }
+
+        public static string Param_AddStateList {
+            get {
+                return ResourceManager.GetString("Param_AddStateList", resourceCulture);
+            }
+        }
+
+        public static string Param_AddBoolean {
+            get {
+                return ResourceManager.GetString("Param_AddBoolean", resourceCulture);
+            }
+        }
+
+        public static string Param_DescriptionPlaceholder {
+            get {
+                return ResourceManager.GetString("Param_DescriptionPlaceholder", resourceCulture);
+            }
+        }
+
+        public static string Param_MinPlaceholder {
+            get {
+                return ResourceManager.GetString("Param_MinPlaceholder", resourceCulture);
+            }
+        }
+
+        public static string Param_MaxPlaceholder {
+            get {
+                return ResourceManager.GetString("Param_MaxPlaceholder", resourceCulture);
+            }
+        }
+
+        public static string Note_TitlePlaceholder {
+            get {
+                return ResourceManager.GetString("Note_TitlePlaceholder", resourceCulture);
+            }
+        }
+
+        public static string Note_BodyPlaceholder {
+            get {
+                return ResourceManager.GetString("Note_BodyPlaceholder", resourceCulture);
+            }
+        }
+
+        public static string Context_NameLabel {
+            get {
+                return ResourceManager.GetString("Context_NameLabel", resourceCulture);
+            }
+        }
+
+        public static string Context_WhenActiveLabel {
+            get {
+                return ResourceManager.GetString("Context_WhenActiveLabel", resourceCulture);
+            }
+        }
+
+        public static string Context_ColorLabel {
+            get {
+                return ResourceManager.GetString("Context_ColorLabel", resourceCulture);
+            }
+        }
+
+        public static string Context_NotesLabel {
+            get {
+                return ResourceManager.GetString("Context_NotesLabel", resourceCulture);
+            }
+        }
+
+        public static string Context_EmptyHint {
+            get {
+                return ResourceManager.GetString("Context_EmptyHint", resourceCulture);
+            }
+        }
+
+        public static string Onboarding_Title {
+            get {
+                return ResourceManager.GetString("Onboarding_Title", resourceCulture);
+            }
+        }
+
+        public static string Onboarding_Subtitle {
+            get {
+                return ResourceManager.GetString("Onboarding_Subtitle", resourceCulture);
+            }
+        }
+
+        public static string Onboarding_Skip {
+            get {
+                return ResourceManager.GetString("Onboarding_Skip", resourceCulture);
+            }
+        }
+
+        public static string Onboarding_ApplyTemplates {
+            get {
+                return ResourceManager.GetString("Onboarding_ApplyTemplates", resourceCulture);
+            }
+        }
+
+        public static string Common_Yes {
+            get {
+                return ResourceManager.GetString("Common_Yes", resourceCulture);
+            }
+        }
+
+        public static string Common_No {
+            get {
+                return ResourceManager.GetString("Common_No", resourceCulture);
+            }
+        }
+
+        public static string Template_Apply {
+            get {
+                return ResourceManager.GetString("Template_Apply", resourceCulture);
+            }
+        }
+
+        public static string Template_Applied {
+            get {
+                return ResourceManager.GetString("Template_Applied", resourceCulture);
+            }
+        }
+
+        public static string Toast_CharacterDeleted {
+            get {
+                return ResourceManager.GetString("Toast_CharacterDeleted", resourceCulture);
+            }
+        }
     }
 }

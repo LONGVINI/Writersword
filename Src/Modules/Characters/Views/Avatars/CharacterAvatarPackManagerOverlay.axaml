@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Avatars"
+             xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              x:Class="Writersword.Modules.Characters.Views.Avatars.CharacterAvatarPackManagerOverlay"
              x:DataType="vm:CharacterAvatarPackManagerViewModel">
 
@@ -18,7 +19,7 @@
 
 				<!-- Заголовок -->
 				<Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="16,14,16,10">
-					<TextBlock Text="Управление паками"
+					<TextBlock Text="{x:Static loc:CharactersStrings.AvatarPackManager_Title}"
                                FontSize="15" FontWeight="SemiBold"
                                VerticalAlignment="Center"/>
 					<Button Grid.Column="1"
@@ -56,7 +57,7 @@
 												</Border.Styles>
 												<StackPanel>
 													<TextBlock Text="{Binding DisplayName}" FontSize="12"/>
-													<TextBlock Text="встроенный"
+													<TextBlock Text="{x:Static loc:CharactersStrings.AvatarPackManager_BuiltInBadge}"
                                                                FontSize="10"
                                                                Foreground="{DynamicResource TextSecondaryBrush}"
                                                                IsVisible="{Binding IsBuiltIn}"/>
@@ -70,13 +71,13 @@
 							<!-- Создать / импортировать -->
 							<StackPanel Grid.Row="1" Margin="4" Spacing="4">
 								<TextBox Text="{Binding NewPackName}"
-                                         PlaceholderText="Название нового пака"
+                                         PlaceholderText="{x:Static loc:CharactersStrings.AvatarPackManager_NewPackPlaceholder}"
                                          FontSize="11" Padding="6,4"/>
-								<Button Content="Создать пак"
+								<Button Content="{x:Static loc:CharactersStrings.AvatarPackManager_CreatePack}"
                                         Command="{Binding CreatePackCommand}"
                                         HorizontalAlignment="Stretch"
                                         Padding="6,4" FontSize="11"/>
-								<Button Content="Импорт ZIP"
+								<Button Content="{x:Static loc:CharactersStrings.AvatarPackManager_ImportZip}"
                                         Command="{Binding ImportPackCommand}"
                                         HorizontalAlignment="Stretch"
                                         Padding="6,4" FontSize="11"/>
@@ -92,7 +93,7 @@
 
 							<ScrollViewer Grid.Row="0">
 								<Panel>
-									<TextBlock Text="Выберите пак слева"
+									<TextBlock Text="{x:Static loc:CharactersStrings.AvatarPackManager_SelectPackHint}"
                                                FontSize="12"
                                                Foreground="{DynamicResource TextSecondaryBrush}"
                                                HorizontalAlignment="Center"
@@ -140,10 +141,10 @@
 							<StackPanel Grid.Row="1" Orientation="Horizontal"
                                         Spacing="6" Margin="8,6"
                                         IsVisible="{Binding CanEditPack}">
-								<Button Content="Экспорт ZIP"
+								<Button Content="{x:Static loc:CharactersStrings.AvatarPackManager_ExportZip}"
                                         Command="{Binding ExportPackCommand}"
                                         Padding="8,4" FontSize="11"/>
-								<Button Content="Удалить пак"
+								<Button Content="{x:Static loc:CharactersStrings.AvatarPackManager_DeletePack}"
                                         Command="{Binding DeletePackCommand}"
                                         Padding="8,4" FontSize="11"
                                         Foreground="OrangeRed"/>
@@ -160,7 +161,7 @@
 					<TextBlock FontSize="10"
                                Foreground="{DynamicResource TextSecondaryBrush}"
                                TextWrapping="Wrap"
-                               Text="Встроенные паки — только для просмотра. Для добавления аватарок загрузите файл через пикер или импортируйте ZIP."/>
+                               Text="{x:Static loc:CharactersStrings.AvatarPackManager_BuiltInHint}"/>
 				</Border>
 			</Grid>
 		</Border>

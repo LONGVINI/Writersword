@@ -33,25 +33,25 @@
                             FontSize="11"
                             Padding="8,4"
                             ToolTip.Tip="{x:Static loc:CharactersStrings.HotKey_AddParameterNumeric}"/>
-					<Button Content="# Числовой"
+					<Button Content="{x:Static loc:CharactersStrings.Param_AddNumeric}"
                             Command="{Binding AddNumericParameterCommand}"
                             FontSize="10"
                             Padding="6,3"
                             Background="{DynamicResource BgPanelBrush}"
                             Foreground="{DynamicResource TextSecondaryBrush}"/>
-					<Button Content="T Текст"
+					<Button Content="{x:Static loc:CharactersStrings.Param_AddText}"
                             Command="{Binding AddTextParameterCommand}"
                             FontSize="10"
                             Padding="6,3"
                             Background="{DynamicResource BgPanelBrush}"
                             Foreground="{DynamicResource TextSecondaryBrush}"/>
-					<Button Content="= Список"
+					<Button Content="{x:Static loc:CharactersStrings.Param_AddStateList}"
                             Command="{Binding AddStateListParameterCommand}"
                             FontSize="10"
                             Padding="6,3"
                             Background="{DynamicResource BgPanelBrush}"
                             Foreground="{DynamicResource TextSecondaryBrush}"/>
-					<Button Content="? Да/Нет"
+					<Button Content="{x:Static loc:CharactersStrings.Param_AddBoolean}"
                             Command="{Binding AddBooleanParameterCommand}"
                             FontSize="10"
                             Padding="6,3"
@@ -138,7 +138,7 @@
                                              Background="Transparent"
                                              BorderThickness="0"
                                              Padding="0,2,0,4"
-                                             PlaceholderText= "Описание параметра (подсказка)"
+                                             PlaceholderText="{x:Static loc:CharactersStrings.Param_DescriptionPlaceholder}"
                                              IsVisible="{Binding Type, Converter={StaticResource IsNotStateListConverter}}"/>
 
 									<!-- Числовой: слайдер + мин/макс -->
@@ -155,7 +155,7 @@
 												BorderThickness="0" 
 												Padding="0" 
 												MaxWidth="60"
-												PlaceholderText="мин"/>
+												PlaceholderText="{x:Static loc:CharactersStrings.Param_MinPlaceholder}"/>
 										</StackPanel>
 										<Slider Grid.Column="1"
                                                 Minimum="{Binding MinValue}"
@@ -174,7 +174,7 @@
 												BorderThickness="0" 
 												Padding="0" 
 												MaxWidth="60"
-												PlaceholderText="макс"/>
+												PlaceholderText="{x:Static loc:CharactersStrings.Param_MaxPlaceholder}"/>
 										</StackPanel>
 									</Grid>
 

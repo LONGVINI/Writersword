@@ -166,8 +166,24 @@ namespace Writersword.Modules.TextEditor.Commands
 
                 var run = chunk.Runs[runIdx];
                 int runLen = run.Text?.Length ?? 0;
+
+                // Позиция точно на стыке ранов: MapToRun отдаёт конец предыдущего рана
+                // (offsetInRun == runLen), из-за чего available == 0, toDelete == 0 и цикл
+                // зацикливается навсегда. Реально удалять надо из следующего рана.
+                if (offsetInRun >= runLen && runLen > 0 && runIdx + 1 < chunk.Runs.Count)
+                {
+                    runIdx++;
+                    run = chunk.Runs[runIdx];
+                    runLen = run.Text?.Length ?? 0;
+                    offsetInRun = 0;
+                }
+
                 int available = runLen - offsetInRun;
                 int toDelete = Math.Min(available, remaining);
+
+                // Гарантия завершения: если удалять нечего, а ран не пустой (позиция за его
+                // пределами и следующего рана нет) — дальше прогресса не будет, выходим.
+                if (toDelete == 0 && runLen > 0) break;
 
                 if (toDelete == runLen)
                 {

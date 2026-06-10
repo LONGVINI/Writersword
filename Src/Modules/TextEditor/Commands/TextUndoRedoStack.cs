@@ -38,11 +38,13 @@ namespace Writersword.Modules.TextEditor.Commands
         /// Очищает redo-стек — после новой операции redo недоступен.
         /// При переполнении удаляет самую старую запись.
         /// </summary>
-        public void Push(ITextCommand command)
+        public bool Push(ITextCommand command)
         {
             // Пробуем слить с последней командой (например, последовательный ввод символов).
+            // При слиянии новая запись не добавляется — возвращаем false, чтобы вызывающий
+            // не фиксировал её в общем порядке отмены отдельным шагом.
             if (_undoStack.Last != null && _undoStack.Last.Value.TryMerge(command))
-                return;
+                return false;
 
             _undoStack.AddLast(command);
             _redoStack.Clear();
@@ -50,6 +52,7 @@ namespace Writersword.Modules.TextEditor.Commands
             // Ограничение размера — выбрасываем самую старую запись.
             if (_undoStack.Count > _maxSize)
                 _undoStack.RemoveFirst();
+            return true;
         }
 
         /// <summary>

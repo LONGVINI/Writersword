@@ -591,7 +591,7 @@ namespace Writersword.Modules.TextEditor.Document
                 canvas.ClipRect(new SKRect(c.ClipX, c.ClipY, c.ClipX + c.ClipW, c.ClipY + c.ClipH));
             }
 
-            DrawCaret(canvas, pl, xPt, pl.Ypt);
+            DrawCaret(canvas, pl, xPt, pl.Ypt, caretLayout);
 
             if (isCell || hasPageClip) canvas.Restore();
         }
@@ -678,10 +678,28 @@ namespace Writersword.Modules.TextEditor.Document
         {
             var layout = resolvedLayout ?? pl.Layout;
             if (layout is null) return;
-            // Якорный параграф (пустой текст) — рисуем каретку напрямую в его позиции.
+            // Якорный параграф (пустой текст) — например, только что созданный по Enter
+            // абзац. HitTestPosition(0) для пустого абзаца возвращает X с учётом левого
+            // отступа и отступа первой строки и реальную высоту строки, поэтому каретка
+            // встаёт на абзацный отступ, а не у левого края страницы.
             if (string.IsNullOrEmpty(pl.Vm.PlainText))
             {
-                canvas.DrawLine(xPt, yPt, xPt, yPt + FallbackLinePt, _paintCaret);
+                var emptyCaret = layout.HitTestPosition(0);
+                float emptyYBase = layout.Lines.Count > 0 ? layout.Lines[0].Y : 0f;
+                // HitTestPosition не применяет сдвиг выравнивания (он есть только в рендере
+                // строк), поэтому для центрированного/правого пустого абзаца добавляем тот же
+                // сдвиг вручную. Для пустой строки её ширина = 0, поэтому Center даёт половину
+                // текстовой области, Right — всю.
+                float alignOffset = layout.Alignment switch
+                {
+                    Writersword.Core.Models.Rendering.TextAlignment.Center => layout.TextAreaWidthPt / 2f,
+                    Writersword.Core.Models.Rendering.TextAlignment.Right => layout.TextAreaWidthPt,
+                    _ => 0f
+                };
+                float ex = xPt + emptyCaret.X + alignOffset;
+                float ey = yPt + (emptyCaret.Y - emptyYBase);
+                float eh = emptyCaret.Height > 0.01f ? emptyCaret.Height : FallbackLinePt;
+                canvas.DrawLine(ex, ey, ex, ey + eh, _paintCaret);
                 return;
             }
 
@@ -730,7 +748,28 @@ namespace Writersword.Modules.TextEditor.Document
 
             float cx = xPt + caret.X;
             float cy = yPt + (caret.Y - yBase);
-            canvas.DrawLine(cx, cy, cx, cy + caret.Height, _paintCaret);
+
+            // Высота каретки — по шрифту руна под кареткой (символ слева, как и при вводе),
+            // а не по высоте всей строки. Иначе в строке с крупным руном каретка тянулась бы
+            // во всю строку даже там, где текст мелкий. Привязываем к базовой линии строки:
+            // рендерер ставит глифы на cy + caret.Baseline, мелкий текст сидит на той же линии.
+            double? runFs = GetRunPropertiesAt(pl.Vm.Model, pos)?.FontSize;
+            float runFontPt = runFs is { } fsv && fsv > 0
+                ? (float)fsv
+                : (_styleResolver?.ResolveFontSize(pl.Vm.Model.Properties.StyleName) ?? FallbackLinePt);
+
+            float baselineY = cy + caret.Baseline;
+            float caretTop = baselineY - runFontPt * 0.80f;
+            float caretBottom = baselineY + runFontPt * 0.22f;
+
+            // Ограничиваем пределами строки на всякий случай и страхуем минимальную высоту.
+            float lineTop = cy;
+            float lineBottom = cy + caret.Height;
+            if (caretTop < lineTop) caretTop = lineTop;
+            if (caretBottom > lineBottom) caretBottom = lineBottom;
+            if (caretBottom - caretTop < 1f) caretBottom = caretTop + Math.Max(1f, caret.Height);
+
+            canvas.DrawLine(cx, caretTop, cx, caretBottom, _paintCaret);
         }
 
     }

@@ -201,11 +201,15 @@ namespace Writersword.Modules.Characters.ViewModels
         public double CardWidth => _cardWidth;
         public double CardTopHeight => _cardTopHeight;
         // Круг чуть меньше панели — остаётся отступ сверху и снизу.
-        // Максимум 58 чтобы не выглядел огромным на крупных зумах.
-        public double CardAvatarSize => Math.Min(58, Math.Max(36, _cardTopHeight - 10));
+        // Масштабируется вместе с высотой верхней панели, без верхнего потолка.
+        public double CardAvatarSize => Math.Max(40, _cardTopHeight - 12);
         public double CardNameHeight => _cardNameHeight;
         public double CardTotalHeight => _cardTopHeight + _cardNameHeight;
         public double CardIconFontSize => _cardIconSize;
+
+        // Размеры кнопок взаимодействия, пропорциональные ширине карточки (baseline 148).
+        public double CardActionIconSize => Math.Max(11, Math.Round(_cardWidth * 11.0 / 148.0));
+        public double CardColorButtonSize => Math.Max(18, Math.Round(_cardWidth * 20.0 / 148.0));
 
         // Количество колонок — используется для расчётов drag.
         public int CardsPerRow => _cardsPerRow;
@@ -270,13 +274,13 @@ namespace Writersword.Modules.Characters.ViewModels
 
             cardW = Math.Max(minW, Math.Min(maxW, cardW));
 
-            // высоты пропорциональны ширине от baseline 148×100
-            double totalH = 100.0 * (cardW / 148.0);
+            // высоты пропорциональны ширине от baseline 148×108
+            double totalH = 108.0 * (cardW / 148.0);
 
             // CardWidth не округляем — используется только для ghost и drag-расчётов
             _cardWidth = cardW;
-            _cardTopHeight = Math.Round(totalH * 0.60);
-            _cardNameHeight = Math.Round(totalH * 0.40);
+            _cardTopHeight = Math.Round(totalH * 0.64);
+            _cardNameHeight = Math.Round(totalH * 0.36);
             _cardIconSize = Math.Round(cardW * (30.0 / 148.0));
             _cardsPerRow = n;
 
@@ -291,6 +295,8 @@ namespace Writersword.Modules.Characters.ViewModels
             this.RaisePropertyChanged(nameof(CardNameHeight));
             this.RaisePropertyChanged(nameof(CardTotalHeight));
             this.RaisePropertyChanged(nameof(CardIconFontSize));
+            this.RaisePropertyChanged(nameof(CardActionIconSize));
+            this.RaisePropertyChanged(nameof(CardColorButtonSize));
             this.RaisePropertyChanged(nameof(CardsPerRow));
             this.RaisePropertyChanged(nameof(CardMinWidth));
         }
@@ -514,7 +520,7 @@ namespace Writersword.Modules.Characters.ViewModels
             {
                 folderVm.IsExpanded = true;
                 var relCount = _relationshipService.GetAllForCharacter(character.Id).Count;
-                var item = new CharacterListItemViewModel(character, relCount, isNaming);
+                var item = new CharacterListItemViewModel(character, relCount, isNaming, _avatarService);
                 BindCharacterItemCallbacks(item);
                 folderVm.Characters.Add(item);
             }
@@ -616,7 +622,7 @@ namespace Writersword.Modules.Characters.ViewModels
                 id => DeleteCharacterAndAddToTrash(id),
                 id => RestoreFromTrash(id)));
 
-            ShowUndoToast($"«{character.Name}» удалён — Ctrl+Z чтобы вернуть");
+            ShowUndoToast(CharactersStrings.Toast_CharacterDeleted);
         }
 
         private void DeleteCharacterAndAddToTrash(string characterId)
@@ -732,7 +738,7 @@ namespace Writersword.Modules.Characters.ViewModels
             foreach (var c in all)
             {
                 var relCount = _relationshipService.GetAllForCharacter(c.Id).Count;
-                FilteredCharacters.Add(new CharacterListItemViewModel(c, relCount));
+                FilteredCharacters.Add(new CharacterListItemViewModel(c, relCount, false, _avatarService));
             }
         }
 
@@ -1027,7 +1033,7 @@ namespace Writersword.Modules.Characters.ViewModels
                     {
                         var relCount = _relationshipService.GetAllForCharacter(c.Id).Count;
                         var isNaming = c.Id == inlineBeingNamedId;
-                        var item = new CharacterListItemViewModel(c, relCount, isNaming);
+                        var item = new CharacterListItemViewModel(c, relCount, isNaming, _avatarService);
                         BindCharacterItemCallbacks(item);
                         vm.Characters.Add(item);
                     }
@@ -1061,7 +1067,7 @@ namespace Writersword.Modules.Characters.ViewModels
                 {
                     var relCount = _relationshipService.GetAllForCharacter(c.Id).Count;
                     var isNaming = c.Id == inlineBeingNamedId;
-                    var item = new CharacterListItemViewModel(c, relCount, isNaming);
+                    var item = new CharacterListItemViewModel(c, relCount, isNaming, _avatarService);
                     BindCharacterItemCallbacks(item);
                     ungrouped.Characters.Add(item);
                 }
@@ -1125,7 +1131,7 @@ namespace Writersword.Modules.Characters.ViewModels
                         {
                             var relCount = _relationshipService.GetAllForCharacter(c.Id).Count;
                             var isNaming = c.Id == inlineBeingNamedId;
-                            var item = new CharacterListItemViewModel(c, relCount, isNaming);
+                            var item = new CharacterListItemViewModel(c, relCount, isNaming, _avatarService);
                             BindCharacterItemCallbacks(item);
                             vm.Characters.Add(item);
                         }

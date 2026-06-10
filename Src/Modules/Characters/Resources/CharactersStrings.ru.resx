@@ -525,4 +525,145 @@
   <data name="AvatarPickerFlyout_Upload" xml:space="preserve">
     <value>Загрузить фото...</value>
   </data>
+  <data name="FilePicker_ImagesFilter" xml:space="preserve">
+    <value>Изображения</value>
+  </data>
+  <data name="FilePicker_SelectImageTitle" xml:space="preserve">
+    <value>Выберите изображение</value>
+  </data>
+  <data name="AvatarPackManager_Title" xml:space="preserve">
+    <value>Управление паками</value>
+  </data>
+  <data name="AvatarPackManager_BuiltInBadge" xml:space="preserve">
+    <value>встроенный</value>
+  </data>
+  <data name="AvatarPackManager_NewPackPlaceholder" xml:space="preserve">
+    <value>Название нового пака</value>
+  </data>
+  <data name="AvatarPackManager_CreatePack" xml:space="preserve">
+    <value>Создать пак</value>
+  </data>
+  <data name="AvatarPackManager_ImportZip" xml:space="preserve">
+    <value>Импорт ZIP</value>
+  </data>
+  <data name="AvatarPackManager_SelectPackHint" xml:space="preserve">
+    <value>Выберите пак слева</value>
+  </data>
+  <data name="AvatarPackManager_ExportZip" xml:space="preserve">
+    <value>Экспорт ZIP</value>
+  </data>
+  <data name="AvatarPackManager_DeletePack" xml:space="preserve">
+    <value>Удалить пак</value>
+  </data>
+  <data name="AvatarPackManager_BuiltInHint" xml:space="preserve">
+    <value>Встроенные паки — только для просмотра. Для добавления аватарок загрузите файл через пикер или импортируйте ZIP.</value>
+  </data>
+  <data name="Avatar_PickTooltip" xml:space="preserve">
+    <value>Нажмите чтобы выбрать аватарку</value>
+  </data>
+  <data name="ViewMode_Tooltip" xml:space="preserve">
+    <value>Режим отображения</value>
+  </data>
+  <data name="ViewMode_Small" xml:space="preserve">
+    <value>Малые</value>
+  </data>
+  <data name="ViewMode_Medium" xml:space="preserve">
+    <value>Средние</value>
+  </data>
+  <data name="ViewMode_Large" xml:space="preserve">
+    <value>Большие</value>
+  </data>
+  <data name="ViewMode_Huge" xml:space="preserve">
+    <value>Огромные</value>
+  </data>
+  <data name="Folder_DeleteTooltip" xml:space="preserve">
+    <value>Удалить папку</value>
+  </data>
+  <data name="ColorPicker_Tooltip" xml:space="preserve">
+    <value>Изменить цвет</value>
+  </data>
+  <data name="Character_DeleteTooltip" xml:space="preserve">
+    <value>Удалить персонажа</value>
+  </data>
+  <data name="Character_RenameTooltip" xml:space="preserve">
+    <value>Нажмите для переименования</value>
+  </data>
+  <data name="Loading_Characters" xml:space="preserve">
+    <value>Загружаем персонажей…</value>
+  </data>
+  <data name="Relationship_BidirectionalTooltip" xml:space="preserve">
+    <value>Двунаправленная связь</value>
+  </data>
+  <data name="Timeline_KeyEventTooltip" xml:space="preserve">
+    <value>Ключевое событие</value>
+  </data>
+  <data name="Param_AddNumeric" xml:space="preserve">
+    <value># Числовой</value>
+  </data>
+  <data name="Param_AddText" xml:space="preserve">
+    <value>T Текст</value>
+  </data>
+  <data name="Param_AddStateList" xml:space="preserve">
+    <value>= Список</value>
+  </data>
+  <data name="Param_AddBoolean" xml:space="preserve">
+    <value>? Да/Нет</value>
+  </data>
+  <data name="Param_DescriptionPlaceholder" xml:space="preserve">
+    <value>Описание параметра (подсказка)</value>
+  </data>
+  <data name="Param_MinPlaceholder" xml:space="preserve">
+    <value>мин</value>
+  </data>
+  <data name="Param_MaxPlaceholder" xml:space="preserve">
+    <value>макс</value>
+  </data>
+  <data name="Note_TitlePlaceholder" xml:space="preserve">
+    <value>Заголовок заметки</value>
+  </data>
+  <data name="Note_BodyPlaceholder" xml:space="preserve">
+    <value>Текст заметки...</value>
+  </data>
+  <data name="Context_NameLabel" xml:space="preserve">
+    <value>Название контекста</value>
+  </data>
+  <data name="Context_WhenActiveLabel" xml:space="preserve">
+    <value>Когда активен этот контекст</value>
+  </data>
+  <data name="Context_ColorLabel" xml:space="preserve">
+    <value>Цвет контекста (HEX)</value>
+  </data>
+  <data name="Context_NotesLabel" xml:space="preserve">
+    <value>Заметки</value>
+  </data>
+  <data name="Context_EmptyHint" xml:space="preserve">
+    <value>Контексты не созданы. Нажмите «Добавить контекст».</value>
+  </data>
+  <data name="Onboarding_Title" xml:space="preserve">
+    <value>Настройка модуля Персонажи</value>
+  </data>
+  <data name="Onboarding_Subtitle" xml:space="preserve">
+    <value>Ответьте на несколько вопросов — система подберёт подходящие шаблоны параметров для новых персонажей.</value>
+  </data>
+  <data name="Onboarding_Skip" xml:space="preserve">
+    <value>Пропустить</value>
+  </data>
+  <data name="Onboarding_ApplyTemplates" xml:space="preserve">
+    <value>Применить шаблоны</value>
+  </data>
+  <data name="Common_Yes" xml:space="preserve">
+    <value>Да</value>
+  </data>
+  <data name="Common_No" xml:space="preserve">
+    <value>Нет</value>
+  </data>
+  <data name="Template_Apply" xml:space="preserve">
+    <value>Применить</value>
+  </data>
+  <data name="Template_Applied" xml:space="preserve">
+    <value>Применяется</value>
+  </data>
+  <data name="Toast_CharacterDeleted" xml:space="preserve">
+    <value>Персонаж удалён — Ctrl+Z чтобы вернуть</value>
+  </data>
 </root>

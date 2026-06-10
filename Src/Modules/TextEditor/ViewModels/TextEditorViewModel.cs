@@ -89,6 +89,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             // Подписки на события линейки.
             Ruler.IndentMarkerChanged += OnRulerIndentMarkerChanged;
+            Ruler.IndentDragStarted += () => DocumentViewModel?.BeginParagraphFormatBatch();
+            Ruler.IndentDragEnded += () => DocumentViewModel?.EndParagraphFormatBatch();
             Ruler.AllColumnWidthsChanged += OnRulerAllColumnWidthsChanged;
             Ruler.AllColumnWidthsChanging += OnRulerAllColumnWidthsChanging;
             Ruler.MarginChanged += OnRulerMarginChanged;
@@ -479,9 +481,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetTextColor(string c) => DocumentViewModel?.SetTextColor(c);
         public void SetHighlightColor(string? c) => DocumentViewModel?.SetHighlightColor(c);
         public void SetFontFamily(string f) => DocumentViewModel?.SetFontFamily(f);
-        public void BeginFontPreview()          => DocumentViewModel?.BeginFontPreview();
+        public void BeginFontPreview() => DocumentViewModel?.BeginFontPreview();
         public void PreviewFontFamily(string f) => DocumentViewModel?.PreviewFontFamily(f);
-        public void EndFontPreview(bool commit)  => DocumentViewModel?.EndFontPreview(commit);
+        public void EndFontPreview(bool commit) => DocumentViewModel?.EndFontPreview(commit);
+        public void FocusEditor() => DocumentViewModel?.FocusEditor();
         public void SetFontSize(double s) => DocumentViewModel?.SetFontSize(s);
         public void IncreaseFontSize() => DocumentViewModel?.IncreaseFontSize();
         public void DecreaseFontSize() => DocumentViewModel?.DecreaseFontSize();

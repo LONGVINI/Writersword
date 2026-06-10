@@ -18,6 +18,7 @@ namespace Writersword.Infrastructure.Services.Storage
     {
         private readonly ILogger<ZipFileStorageService> _logger;
         private readonly string _zipFilePath;
+        private readonly object _sync = new object();
         private ZipArchive? _archive;
         private bool _isDisposed = false;
 
@@ -44,7 +45,7 @@ namespace Writersword.Infrastructure.Services.Storage
             // В RELEASE режиме открываем архив сразу и держим открытым
             if (KeepArchiveOpen)
             {
-                OpenArchive();
+                OpenArchive(ZipArchiveMode.Update);
                 _logger.LogDebug("Opened ZIP (RELEASE mode): {FilePath}", zipFilePath);
             }
             else
@@ -55,15 +56,21 @@ namespace Writersword.Infrastructure.Services.Storage
 #pragma warning restore CS0162
 
         /// <summary>
-        /// Открыть ZIP архив для работы
+        /// Открыть ZIP архив для работы.
+        /// Режим Read используется для операций чтения (не переписывает архив при закрытии),
+        /// Update — для записи и удаления.
         /// </summary>
-        private void OpenArchive()
+        private void OpenArchive(ZipArchiveMode mode)
         {
             if (_archive != null)
                 return;
 
-            var fileStream = new FileStream(_zipFilePath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
-            _archive = new ZipArchive(fileStream, ZipArchiveMode.Update, leaveOpen: false);
+            var access = mode == ZipArchiveMode.Read
+                ? FileAccess.Read
+                : FileAccess.ReadWrite;
+
+            var fileStream = new FileStream(_zipFilePath, FileMode.Open, access, FileShare.ReadWrite);
+            _archive = new ZipArchive(fileStream, mode, leaveOpen: false);
         }
 
         /// <summary>
@@ -91,49 +98,52 @@ namespace Writersword.Infrastructure.Services.Storage
                 return;
             }
 
-            try
+            lock (_sync)
             {
-                // В DEBUG режиме открываем архив перед записью
-                if (!KeepArchiveOpen)
+                try
                 {
-                    OpenArchive();
-                }
+                    // В DEBUG режиме открываем архив перед записью
+                    if (!KeepArchiveOpen)
+                    {
+                        OpenArchive(ZipArchiveMode.Update);
+                    }
 
-                if (_archive == null)
+                    if (_archive == null)
+                    {
+                        _logger.LogError("Archive is null");
+                        return;
+                    }
+
+                    // Нормализуем путь (заменяем \ на /)
+                    relativePath = relativePath.Replace("\\", "/");
+
+                    // Удаляем старую запись если существует
+                    var existingEntry = _archive.GetEntry(relativePath);
+                    if (existingEntry != null)
+                    {
+                        existingEntry.Delete();
+                    }
+
+                    // Создаём новую запись
+                    var entry = _archive.CreateEntry(relativePath, CompressionLevel.Optimal);
+
+                    using (var stream = entry.Open())
+                    {
+                        stream.Write(data, 0, data.Length);
+                    }
+
+                    _logger.LogDebug("Written: {RelativePath} ({Size} bytes)", relativePath, data.Length);
+                }
+                catch (Exception ex)
                 {
-                    _logger.LogError("Archive is null");
-                    return;
+                    _logger.LogError(ex, "Write error");
+                    throw;
                 }
-
-                // Нормализуем путь (заменяем \ на /)
-                relativePath = relativePath.Replace("\\", "/");
-
-                // Удаляем старую запись если существует
-                var existingEntry = _archive.GetEntry(relativePath);
-                if (existingEntry != null)
+                finally
                 {
-                    existingEntry.Delete();
+                    // В DEBUG режиме закрываем архив после записи
+                    CloseArchive();
                 }
-
-                // Создаём новую запись
-                var entry = _archive.CreateEntry(relativePath, CompressionLevel.Optimal);
-
-                using (var stream = entry.Open())
-                {
-                    stream.Write(data, 0, data.Length);
-                }
-
-                _logger.LogDebug("Written: {RelativePath} ({Size} bytes)", relativePath, data.Length);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Write error");
-                throw;
-            }
-            finally
-            {
-                // В DEBUG режиме закрываем архив после записи
-                CloseArchive();
             }
         }
 
@@ -150,48 +160,51 @@ namespace Writersword.Infrastructure.Services.Storage
                 return null;
             }
 
-            try
+            lock (_sync)
             {
-                // В DEBUG режиме открываем архив перед чтением
-                if (!KeepArchiveOpen)
+                try
                 {
-                    OpenArchive();
-                }
+                    // В DEBUG режиме открываем архив перед чтением
+                    if (!KeepArchiveOpen)
+                    {
+                        OpenArchive(ZipArchiveMode.Read);
+                    }
 
-                if (_archive == null)
+                    if (_archive == null)
+                    {
+                        _logger.LogError("Archive is null");
+                        return null;
+                    }
+
+                    // Нормализуем путь
+                    relativePath = relativePath.Replace("\\", "/");
+
+                    var entry = _archive.GetEntry(relativePath);
+                    if (entry == null)
+                    {
+                        _logger.LogDebug("File not found: {RelativePath}", relativePath);
+                        return null;
+                    }
+
+                    using (var stream = entry.Open())
+                    using (var memoryStream = new MemoryStream())
+                    {
+                        stream.CopyTo(memoryStream);
+                        var data = memoryStream.ToArray();
+                        _logger.LogDebug("Read: {RelativePath} ({Size} bytes)", relativePath, data.Length);
+                        return data;
+                    }
+                }
+                catch (Exception ex)
                 {
-                    _logger.LogError("Archive is null");
+                    _logger.LogError(ex, "Read error");
                     return null;
                 }
-
-                // Нормализуем путь
-                relativePath = relativePath.Replace("\\", "/");
-
-                var entry = _archive.GetEntry(relativePath);
-                if (entry == null)
+                finally
                 {
-                    _logger.LogDebug("File not found: {RelativePath}", relativePath);
-                    return null;
+                    // В DEBUG режиме закрываем архив после чтения
+                    CloseArchive();
                 }
-
-                using (var stream = entry.Open())
-                using (var memoryStream = new MemoryStream())
-                {
-                    stream.CopyTo(memoryStream);
-                    var data = memoryStream.ToArray();
-                    _logger.LogDebug("Read: {RelativePath} ({Size} bytes)", relativePath, data.Length);
-                    return data;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Read error");
-                return null;
-            }
-            finally
-            {
-                // В DEBUG режиме закрываем архив после чтения
-                CloseArchive();
             }
         }
 
@@ -205,24 +218,27 @@ namespace Writersword.Infrastructure.Services.Storage
             if (_isDisposed)
                 return false;
 
-            try
+            lock (_sync)
             {
-                // В DEBUG режиме открываем архив
-                if (!KeepArchiveOpen)
+                try
                 {
-                    OpenArchive();
+                    // В DEBUG режиме открываем архив
+                    if (!KeepArchiveOpen)
+                    {
+                        OpenArchive(ZipArchiveMode.Read);
+                    }
+
+                    if (_archive == null)
+                        return false;
+
+                    relativePath = relativePath.Replace("\\", "/");
+                    return _archive.GetEntry(relativePath) != null;
                 }
-
-                if (_archive == null)
-                    return false;
-
-                relativePath = relativePath.Replace("\\", "/");
-                return _archive.GetEntry(relativePath) != null;
-            }
-            finally
-            {
-                // В DEBUG режиме закрываем архив
-                CloseArchive();
+                finally
+                {
+                    // В DEBUG режиме закрываем архив
+                    CloseArchive();
+                }
             }
         }
 
@@ -239,38 +255,41 @@ namespace Writersword.Infrastructure.Services.Storage
                 return;
             }
 
-            try
+            lock (_sync)
             {
-                // В DEBUG режиме открываем архив
-                if (!KeepArchiveOpen)
+                try
                 {
-                    OpenArchive();
-                }
+                    // В DEBUG режиме открываем архив
+                    if (!KeepArchiveOpen)
+                    {
+                        OpenArchive(ZipArchiveMode.Update);
+                    }
 
-                if (_archive == null)
+                    if (_archive == null)
+                    {
+                        _logger.LogError("Archive is null");
+                        return;
+                    }
+
+                    relativePath = relativePath.Replace("\\", "/");
+                    var entry = _archive.GetEntry(relativePath);
+
+                    if (entry != null)
+                    {
+                        entry.Delete();
+                        _logger.LogDebug("Deleted: {RelativePath}", relativePath);
+                    }
+                }
+                catch (Exception ex)
                 {
-                    _logger.LogError("Archive is null");
-                    return;
+                    _logger.LogError(ex, "Delete error");
+                    throw;
                 }
-
-                relativePath = relativePath.Replace("\\", "/");
-                var entry = _archive.GetEntry(relativePath);
-
-                if (entry != null)
+                finally
                 {
-                    entry.Delete();
-                    _logger.LogDebug("Deleted: {RelativePath}", relativePath);
+                    // В DEBUG режиме закрываем архив
+                    CloseArchive();
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Delete error");
-                throw;
-            }
-            finally
-            {
-                // В DEBUG режиме закрываем архив
-                CloseArchive();
             }
         }
 
@@ -284,28 +303,31 @@ namespace Writersword.Infrastructure.Services.Storage
             if (_isDisposed)
                 return Enumerable.Empty<string>();
 
-            try
+            lock (_sync)
             {
-                // В DEBUG режиме открываем архив
-                if (!KeepArchiveOpen)
+                try
                 {
-                    OpenArchive();
+                    // В DEBUG режиме открываем архив
+                    if (!KeepArchiveOpen)
+                    {
+                        OpenArchive(ZipArchiveMode.Read);
+                    }
+
+                    if (_archive == null)
+                        return Enumerable.Empty<string>();
+
+                    relativePath = relativePath.Replace("\\", "/").TrimEnd('/') + "/";
+
+                    return _archive.Entries
+                        .Where(e => e.FullName.StartsWith(relativePath) && !e.FullName.EndsWith("/"))
+                        .Select(e => e.FullName)
+                        .ToList(); // Материализуем список до закрытия архива
                 }
-
-                if (_archive == null)
-                    return Enumerable.Empty<string>();
-
-                relativePath = relativePath.Replace("\\", "/").TrimEnd('/') + "/";
-
-                return _archive.Entries
-                    .Where(e => e.FullName.StartsWith(relativePath) && !e.FullName.EndsWith("/"))
-                    .Select(e => e.FullName)
-                    .ToList(); // Материализуем список до закрытия архива
-            }
-            finally
-            {
-                // В DEBUG режиме закрываем архив
-                CloseArchive();
+                finally
+                {
+                    // В DEBUG режиме закрываем архив
+                    CloseArchive();
+                }
             }
         }
 
@@ -315,16 +337,19 @@ namespace Writersword.Infrastructure.Services.Storage
         /// </summary>
         public void Dispose()
         {
-            if (_isDisposed)
-                return;
-
-            _isDisposed = true;
-
-            if (_archive != null)
+            lock (_sync)
             {
-                _archive.Dispose();
-                _archive = null;
-                _logger.LogDebug("Closed ZIP: {FilePath}", _zipFilePath);
+                if (_isDisposed)
+                    return;
+
+                _isDisposed = true;
+
+                if (_archive != null)
+                {
+                    _archive.Dispose();
+                    _archive = null;
+                    _logger.LogDebug("Closed ZIP: {FilePath}", _zipFilePath);
+                }
             }
         }
     }

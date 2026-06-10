@@ -40,6 +40,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (UndoStack is null) { _logger.Warning("[UNDO] CommitEdit: UndoStack is null"); return; }
             _pendingSnapshot.Commit(_caretPara, _caretChar);
             UndoStack.Push(_pendingSnapshot);
+            RecordSnapshotInOrder();
             _logger.Debug("[UNDO] CommitEdit: pushed '{D}', stackSize={S}", _pendingSnapshot.Description, UndoStack.CanUndo);
             _pendingSnapshot = null;
         }

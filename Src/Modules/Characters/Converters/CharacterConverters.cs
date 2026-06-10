@@ -2,6 +2,7 @@ using Avalonia.Data.Converters;
 using System;
 using System.Globalization;
 using Writersword.Modules.Characters.Models.Enums;
+using Writersword.Src.Modules.Characters.Resources;
 
 namespace Writersword.Modules.Characters.Converters
 {
@@ -91,7 +92,7 @@ namespace Writersword.Modules.Characters.Converters
                 var parts = labels.Split('|');
                 if (parts.Length == 2) return isTrue ? parts[0] : parts[1];
             }
-            return isTrue ? "Да" : "Нет";
+            return isTrue ? CharactersStrings.Common_Yes : CharactersStrings.Common_No;
         }
         public object? ConvertBack(object? value, Type t, object? p, CultureInfo c) => throw new NotImplementedException();
     }
@@ -143,7 +144,7 @@ namespace Writersword.Modules.Characters.Converters
     {
         public static readonly BoolToActiveTemplateConverter Instance = new();
         public object? Convert(object? value, Type t, object? p, CultureInfo c)
-            => value is bool b && b ? "Применяется" : "Применить";
+            => value is bool b && b ? CharactersStrings.Template_Applied : CharactersStrings.Template_Apply;
         public object? ConvertBack(object? value, Type t, object? p, CultureInfo c) => throw new NotImplementedException();
     }
 
