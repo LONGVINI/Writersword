@@ -1,0 +1,53 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Writersword.Styles.UserControls.EyedropperOverlay"
+        x:Name="EyeRoot"
+        SystemDecorations="None"
+        Topmost="True"
+        ShowInTaskbar="False"
+        CanResize="False"
+        WindowStartupLocation="Manual"
+        Background="Black">
+
+	<Canvas x:Name="RootCanvas" Background="Transparent" Cursor="None">
+
+		<!-- Снимок экрана -->
+		<Image x:Name="ScreenImage"/>
+
+		<!-- Лупа: увеличенный фрагмент вокруг курсора -->
+		<Border x:Name="Loupe"
+                Width="128" Height="128" CornerRadius="64"
+                ClipToBounds="True"
+                BorderBrush="White" BorderThickness="2"
+                IsVisible="False">
+			<Border.Effect>
+				<DropShadowEffect BlurRadius="10" OffsetX="0" OffsetY="2" Opacity="0.6" Color="#000000"/>
+			</Border.Effect>
+			<Grid>
+				<Image x:Name="LoupeImage" Stretch="Fill"/>
+				<Rectangle Width="14" Height="14"
+                           Stroke="White" StrokeThickness="1.5"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+				<Rectangle Width="16" Height="16"
+                           Stroke="#80000000" StrokeThickness="1"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+			</Grid>
+		</Border>
+
+		<!-- Подпись HEX + образец -->
+		<Border x:Name="HexLabel" Background="#DD000000" CornerRadius="4" Padding="6,3" IsVisible="False">
+			<StackPanel Orientation="Horizontal" Spacing="6">
+				<Border x:Name="HexSwatch" Width="14" Height="14" CornerRadius="3"
+                        BorderBrush="White" BorderThickness="1"/>
+				<TextBlock x:Name="HexText" Foreground="White" FontSize="12" VerticalAlignment="Center"/>
+			</StackPanel>
+		</Border>
+
+		<!-- Иконка-пипетка у курсора (остриё указывает на пиксель) -->
+		<Path x:Name="Pipette"
+              IsVisible="False"
+              Fill="White" Stroke="Black" StrokeThickness="0.7"
+              Data="M17.66 5.41l.92.92-2.69 2.69-.92-.92 2.69-2.69M17.67 3c-.26 0-.51.1-.71.29l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.05V21h4.95l8.61-8.61 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42l-2.34-2.34c-.2-.2-.45-.3-.71-.3zM6.12 19L5 17.88l8.06-8.06 1.12 1.12L6.12 19z"/>
+
+	</Canvas>
+</Window>

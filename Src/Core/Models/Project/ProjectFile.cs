@@ -33,6 +33,16 @@ namespace Writersword.Core.Models.Project
         public Dictionary<string, object?> ModulesData { get; set; } = new();
 
         /// <summary>
+        /// Палитра цветов проекта: закреплённые пользователем («+») и недавно
+        /// использованные. Сохраняются вместе с проектом для повторного использования.
+        /// </summary>
+        [JsonProperty("ProjectPinnedColors")]
+        public List<string> ProjectPinnedColors { get; set; } = new();
+
+        [JsonProperty("ProjectRecentColors")]
+        public List<string> ProjectRecentColors { get; set; } = new();
+
+        /// <summary>
         /// Конфигурация WorkModes.
         /// НЕ сериализуется — загружается из workspace.json при открытии.
         /// </summary>

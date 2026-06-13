@@ -1,0 +1,184 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:res="using:Writersword.Styles.UserControls"
+        x:Class="Writersword.Styles.UserControls.AdvancedColorPickerWindow"
+        x:Name="ModalRoot"
+        Title="Color"
+        SystemDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="Manual">
+
+	<Window.Styles>
+		<Style Selector="Button.swatch">
+			<Setter Property="Width" Value="26"/>
+			<Setter Property="Height" Value="26"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Margin" Value="3"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Template">
+				<ControlTemplate>
+					<Border CornerRadius="999"
+                            Background="{Binding}"
+                            BorderBrush="{DynamicResource BorderSubtleBrush}"
+                            BorderThickness="1.5"/>
+				</ControlTemplate>
+			</Setter>
+		</Style>
+		<Style Selector="Button.swatch:pointerover /template/ Border">
+			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="BorderThickness" Value="2.5"/>
+		</Style>
+	</Window.Styles>
+
+	<Grid>
+
+		<!-- Скрим: затемняет приложение позади и закрывает окно по клику мимо панели -->
+		<Border x:Name="Scrim" Background="#66000000" PointerPressed="OnScrimClick"/>
+
+		<!-- Подложка как у Welcome -->
+		<Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                Background="{DynamicResource BgBaseBrush}"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="16"
+                Padding="20"
+                MinWidth="400">
+			<Border.Effect>
+				<DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.55" Color="#000000"/>
+			</Border.Effect>
+
+			<Grid RowDefinitions="Auto,Auto,Auto">
+
+				<!-- Заголовок + крестик -->
+				<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+					<TextBlock Grid.Column="0"
+                               Text="{x:Static res:SharedStrings.ColorEditor_Title}"
+                               FontSize="16" FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+					<Button Grid.Column="1" Content="✕" Click="OnCloseClick"
+                            Background="Transparent" BorderThickness="0"
+                            Padding="8,2" FontSize="15"
+                            Foreground="{DynamicResource TextSecondaryBrush}"/>
+				</Grid>
+
+				<!-- Контент -->
+				<Grid Grid.Row="1" ColumnDefinitions="Auto,Auto" Margin="0,16">
+
+					<StackPanel Grid.Column="0" Width="300" Spacing="14">
+
+						<!-- Превью образца + HEX -->
+						<Grid ColumnDefinitions="Auto,*">
+							<Border x:Name="PreviewSwatch" Grid.Column="0"
+                                    Width="56" Height="56" CornerRadius="10"
+                                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                    BorderThickness="1"/>
+							<StackPanel Grid.Column="1" Margin="12,0,0,0"
+                                        VerticalAlignment="Center" Spacing="4">
+								<TextBlock Text="HEX" FontSize="10"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+								<TextBox x:Name="HexBox" MaxLength="7" FontSize="13"
+                                         KeyDown="OnHexKeyDown" LostFocus="OnHexCommit"/>
+							</StackPanel>
+						</Grid>
+
+						<!-- RGB ползунки -->
+						<Grid ColumnDefinitions="18,*,40" RowDefinitions="Auto,Auto,Auto">
+							<TextBlock Grid.Row="0" Grid.Column="0" Text="R" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<Slider Grid.Row="0" Grid.Column="1" x:Name="SliderR"
+                                    Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
+                                    ValueChanged="OnRgbChanged"/>
+							<TextBlock Grid.Row="0" Grid.Column="2" x:Name="LabelR"
+                                       VerticalAlignment="Center" HorizontalAlignment="Right"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+							<TextBlock Grid.Row="1" Grid.Column="0" Text="G" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<Slider Grid.Row="1" Grid.Column="1" x:Name="SliderG"
+                                    Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
+                                    ValueChanged="OnRgbChanged"/>
+							<TextBlock Grid.Row="1" Grid.Column="2" x:Name="LabelG"
+                                       VerticalAlignment="Center" HorizontalAlignment="Right"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+							<TextBlock Grid.Row="2" Grid.Column="0" Text="B" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<Slider Grid.Row="2" Grid.Column="1" x:Name="SliderB"
+                                    Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
+                                    ValueChanged="OnRgbChanged"/>
+							<TextBlock Grid.Row="2" Grid.Column="2" x:Name="LabelB"
+                                       VerticalAlignment="Center" HorizontalAlignment="Right"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+						</Grid>
+
+						<!-- Пресеты на плашке -->
+						<Border Background="{DynamicResource BgSurfaceBrush}"
+                                CornerRadius="10" Padding="8">
+							<ItemsControl ItemsSource="{Binding Presets, ElementName=ModalRoot}">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<DataTemplate>
+										<Button Classes="swatch" Click="OnPresetClick"/>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+						</Border>
+
+						<!-- Пипетка -->
+						<Button x:Name="EyedropperButton" Click="OnEyedropperClick"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                Padding="8,6" CornerRadius="6"
+                                Content="{x:Static res:SharedStrings.ColorEditor_Eyedropper}"/>
+					</StackPanel>
+
+					<!-- Превью мини-карточки (только при открытии из карточки) -->
+					<StackPanel Grid.Column="1" x:Name="PreviewPanel"
+                                Margin="18,0,0,0" Spacing="8"
+                                IsVisible="False" VerticalAlignment="Top">
+						<TextBlock Text="{x:Static res:SharedStrings.ColorEditor_Preview}"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+						<Border x:Name="PreviewCardBorder"
+                                Width="150" Height="112" CornerRadius="10"
+                                Background="{DynamicResource BgPanelBrush}"
+                                BorderThickness="2"
+                                HorizontalAlignment="Center" ClipToBounds="True">
+							<StackPanel>
+								<Panel Height="68">
+									<Border x:Name="PreviewAvatar"
+                                            Width="46" Height="46" CornerRadius="999"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center">
+										<TextBlock Text="?" Foreground="White" FontSize="22"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+									</Border>
+								</Panel>
+								<Border Height="44">
+									<TextBlock Text="Aa" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               FontSize="12" Foreground="{DynamicResource TextPrimaryBrush}"/>
+								</Border>
+							</StackPanel>
+						</Border>
+					</StackPanel>
+				</Grid>
+
+				<!-- Кнопки -->
+				<StackPanel Grid.Row="2" Orientation="Horizontal"
+                            HorizontalAlignment="Right" Spacing="8">
+					<Button Content="{x:Static res:SharedStrings.Common_Cancel}"
+                            Click="OnCancelClick" Padding="14,6" CornerRadius="6"/>
+					<Button Content="{x:Static res:SharedStrings.Common_Ok}"
+                            Click="OnOkClick" Padding="18,6" CornerRadius="6"
+                            Background="{DynamicResource AccentDefaultBrush}" Foreground="White"/>
+				</StackPanel>
+
+			</Grid>
+		</Border>
+	</Grid>
+</Window>

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="ColorPicker_ChangeColor" xml:space="preserve">
+    <value>Change color</value>
+    <comment>Tooltip on the color picker trigger</comment>
+  </data>
+  <data name="ColorPicker_BasicColors" xml:space="preserve">
+    <value>Basic colors</value>
+    <comment>Header above the built-in preset swatches</comment>
+  </data>
+  <data name="ColorPicker_ProjectColors" xml:space="preserve">
+    <value>Project colors</value>
+    <comment>Header for the pinned project palette section</comment>
+  </data>
+  <data name="ColorPicker_SaveCurrent" xml:space="preserve">
+    <value>+ Save current color</value>
+    <comment>Button: pin the current color to the project palette</comment>
+  </data>
+  <data name="ColorPicker_SaveTooltip" xml:space="preserve">
+    <value>Save the current color to the project palette</value>
+    <comment>Tooltip for the save-color button</comment>
+  </data>
+  <data name="ColorPicker_Recent" xml:space="preserve">
+    <value>Recent</value>
+    <comment>Header for the recently used colors section</comment>
+  </data>
+  <data name="ColorPicker_RemoveFromPalette" xml:space="preserve">
+    <value>Remove from palette</value>
+    <comment>Tooltip on the remove (x) button of a pinned color</comment>
+  </data>
+  <data name="ColorPicker_Configure" xml:space="preserve">
+    <value>Configure color…</value>
+    <comment>Button in the flyout that opens the advanced color editor</comment>
+  </data>
+  <data name="ColorEditor_Title" xml:space="preserve">
+    <value>Color</value>
+    <comment>Title of the advanced color editor modal</comment>
+  </data>
+  <data name="ColorEditor_Eyedropper" xml:space="preserve">
+    <value>Pick from screen (eyedropper)</value>
+    <comment>Button that starts screen color picking</comment>
+  </data>
+  <data name="ColorEditor_Preview" xml:space="preserve">
+    <value>Preview</value>
+    <comment>Label above the card preview in the color editor</comment>
+  </data>
+  <data name="ColorEditor_TabSpectrum" xml:space="preserve">
+    <value>Spectrum</value>
+    <comment>Tab label: HSV spectrum picker (saturation/value square + hue bar)</comment>
+  </data>
+  <data name="ColorEditor_TabHoneycomb" xml:space="preserve">
+    <value>Honeycomb</value>
+    <comment>Tab label: honeycomb grid of preset color cells</comment>
+  </data>
+  <data name="ColorEditor_MyColors" xml:space="preserve">
+    <value>My colors</value>
+    <comment>Header for the user's draggable saved color palette</comment>
+  </data>
+  <data name="ColorEditor_AddCurrent" xml:space="preserve">
+    <value>Add current color</value>
+    <comment>Tooltip on the plus tile that saves the current color to the palette</comment>
+  </data>
+  <data name="ColorEditor_EyedropperHint" xml:space="preserve">
+    <value>Pick a color anywhere on screen</value>
+    <comment>Tooltip on the eyedropper button</comment>
+  </data>
+  <data name="Common_Ok" xml:space="preserve">
+    <value>OK</value>
+    <comment>Confirm button</comment>
+  </data>
+  <data name="Common_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+    <comment>Cancel button</comment>
+  </data>
+</root>

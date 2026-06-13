@@ -1,31 +1,31 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:cp="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.ColorPicker"
+             xmlns:res="using:Writersword.Styles.UserControls"
              x:Class="Writersword.Styles.UserControls.ColorPickerButton"
-             x:Name="Root">
+             x:Name="Root"
+             Width="20" Height="20">
 
 	<Button x:Name="TriggerButton"
-            Width="20" Height="20"
-            Padding="0" CornerRadius="10"
+            Padding="0" CornerRadius="999"
             BorderThickness="1.5"
             BorderBrush="{DynamicResource BorderSubtleBrush}"
             Background="{Binding HexColor, ElementName=Root}"
-            VerticalAlignment="Center"
-            HorizontalAlignment="Center"
-            ToolTip.Tip="Изменить цвет">
+            VerticalAlignment="Stretch"
+            HorizontalAlignment="Stretch"
+            ToolTip.Tip="{x:Static res:SharedStrings.ColorPicker_ChangeColor}">
 		<Button.Styles>
-			<Style Selector="Button">
+			<Style Selector="Button#TriggerButton">
 				<Setter Property="Template">
 					<ControlTemplate>
-						<Border CornerRadius="10"
+						<Border CornerRadius="999"
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                Width="20" Height="20"/>
+                                BorderThickness="{TemplateBinding BorderThickness}"/>
 					</ControlTemplate>
 				</Setter>
 			</Style>
-			<Style Selector="Button:pointerover /template/ Border">
+			<Style Selector="Button#TriggerButton:pointerover /template/ Border">
 				<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
 				<Setter Property="BorderThickness" Value="2"/>
 			</Style>
@@ -43,53 +43,118 @@
 				<Border Background="{DynamicResource BgPanelBrush}"
                         BorderBrush="{DynamicResource BorderDefaultBrush}"
                         BorderThickness="1" CornerRadius="8" Padding="12">
+
+					<!-- Стиль образца цвета. Лежит здесь (внутри попапа флаута),
+					     потому что стили самого UserControl в попап не попадают. -->
+					<Border.Styles>
+						<Style Selector="Button.swatch">
+							<Setter Property="Width" Value="26"/>
+							<Setter Property="Height" Value="26"/>
+							<Setter Property="Margin" Value="2"/>
+							<Setter Property="Padding" Value="0"/>
+							<Setter Property="Template">
+								<ControlTemplate>
+									<Border CornerRadius="13"
+                                            Background="{Binding}"
+                                            BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                            BorderThickness="1.5"/>
+								</ControlTemplate>
+							</Setter>
+						</Style>
+						<Style Selector="Button.swatch:pointerover /template/ Border">
+							<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+							<Setter Property="BorderThickness" Value="2.5"/>
+						</Style>
+					</Border.Styles>
+
 					<StackPanel Spacing="8" Width="280">
 
-						<TextBlock Text="Выбор цвета"
+						<!-- Базовая палитра -->
+						<TextBlock Text="{x:Static res:SharedStrings.ColorPicker_BasicColors}"
                                    FontSize="11"
                                    Foreground="{DynamicResource TextSecondaryBrush}"/>
 
-						<!-- Preset swatches — binding через ElementName, минуя DataContext -->
 						<ItemsControl ItemsSource="{Binding PresetColors, ElementName=Root}">
 							<ItemsControl.ItemsPanel>
-								<ItemsPanelTemplate>
-									<WrapPanel Orientation="Horizontal"/>
-								</ItemsPanelTemplate>
+								<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
 							</ItemsControl.ItemsPanel>
 							<ItemsControl.ItemTemplate>
 								<DataTemplate>
-									<Button Width="26" Height="26" Margin="2"
-                                            Padding="0"
+									<Button Classes="swatch"
                                             Command="{Binding SelectPresetCommand, ElementName=Root}"
-                                            CommandParameter="{Binding}">
-										<Button.Styles>
-											<Style Selector="Button">
-												<Setter Property="Template">
-													<ControlTemplate>
-														<Border CornerRadius="13"
-                                                                Background="{Binding}"
-                                                                BorderBrush="{DynamicResource BorderSubtleBrush}"
-                                                                BorderThickness="1.5"
-                                                                Width="26" Height="26"/>
-													</ControlTemplate>
-												</Setter>
-											</Style>
-											<Style Selector="Button:pointerover /template/ Border">
-												<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
-												<Setter Property="BorderThickness" Value="2.5"/>
-											</Style>
-										</Button.Styles>
-									</Button>
+                                            CommandParameter="{Binding}"/>
 								</DataTemplate>
 							</ItemsControl.ItemTemplate>
 						</ItemsControl>
 
-						<Border Height="1"
-                                Background="{DynamicResource BorderSubtleBrush}"
-                                Margin="0,2"/>
+						<Border Height="1" Background="{DynamicResource BorderSubtleBrush}" Margin="0,2"/>
 
-						<cp:ColorView x:Name="ColorViewControl"
-                                   IsAlphaVisible="False"/>
+						<!-- Закреплённые цвета проекта -->
+						<TextBlock Text="{x:Static res:SharedStrings.ColorPicker_ProjectColors}"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+						<Button Content="{x:Static res:SharedStrings.ColorPicker_SaveCurrent}"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                FontSize="11" Padding="8,5" CornerRadius="6"
+                                Background="{DynamicResource AccentDefaultBrush}"
+                                Foreground="White"
+                                Command="{Binding PinCurrentCommand, ElementName=Root}"
+                                ToolTip.Tip="{x:Static res:SharedStrings.ColorPicker_SaveTooltip}"/>
+
+						<ItemsControl ItemsSource="{Binding PinnedColors, ElementName=Root}"
+                                      IsVisible="{Binding HasPinnedColors, ElementName=Root}">
+							<ItemsControl.ItemsPanel>
+								<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+							</ItemsControl.ItemsPanel>
+							<ItemsControl.ItemTemplate>
+								<DataTemplate>
+									<Panel Width="26" Height="26" Margin="2">
+										<Button Classes="swatch" Margin="0"
+                                                Command="{Binding SelectPresetCommand, ElementName=Root}"
+                                                CommandParameter="{Binding}"/>
+										<Button Content="✕"
+                                                FontSize="8" Padding="0"
+                                                Width="14" Height="14"
+                                                CornerRadius="7" BorderThickness="0"
+                                                Background="#CC000000" Foreground="White"
+                                                HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                Command="{Binding RemovePinnedCommand, ElementName=Root}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="{x:Static res:SharedStrings.ColorPicker_RemoveFromPalette}"/>
+									</Panel>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
+
+						<!-- Недавно использованные (скрыто, если пусто) -->
+						<StackPanel Spacing="8" IsVisible="{Binding HasRecentColors, ElementName=Root}">
+							<TextBlock Text="{x:Static res:SharedStrings.ColorPicker_Recent}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+							<ItemsControl ItemsSource="{Binding RecentColors, ElementName=Root}">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<DataTemplate>
+										<Button Classes="swatch"
+                                                Command="{Binding SelectPresetCommand, ElementName=Root}"
+                                                CommandParameter="{Binding}"/>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+						</StackPanel>
+
+						<Border Height="1" Background="{DynamicResource BorderSubtleBrush}" Margin="0,2"/>
+
+						<!-- Полный редактор цвета (спектр, RGB/HEX, палитра, пипетка) в модале -->
+						<Button Content="{x:Static res:SharedStrings.ColorPicker_Configure}"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                FontSize="11" Padding="8,6" CornerRadius="6"
+                                Click="OnConfigureClick"/>
 
 					</StackPanel>
 				</Border>

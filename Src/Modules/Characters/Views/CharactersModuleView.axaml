@@ -3,8 +3,10 @@
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels"
              xmlns:onb="using:Writersword.Modules.Characters.Views.Onboarding"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
+             xmlns:ui="using:Writersword.Styles.UserControls"
              x:Class="Writersword.Modules.Characters.Views.CharactersModuleView"
              x:DataType="vm:CharactersViewModel"
+             ui:ModalHost.IsHost="True"
              Background="{DynamicResource BgSurfaceBrush}">
 	<Grid>
 
@@ -17,6 +19,9 @@
                                           HorizontalAlignment="Center"
                                           MaxWidth="520"/>
 		</Border>
+
+		<!-- Оверлей редактора цвета — внутри модуля, поверх всего -->
+		<ui:ColorEditorOverlay x:Name="ColorEditorOverlay" ZIndex="200"/>
 
 		<Grid RowDefinitions="Auto,*">
 

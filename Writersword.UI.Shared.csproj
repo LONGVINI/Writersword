@@ -27,10 +27,25 @@
 	<ItemGroup>
 		<Compile Include="Styles\UserControls\ColorPickerButton.axaml.cs" />
 		<AvaloniaXaml Include="Styles\UserControls\ColorPickerButton.axaml" />
+		<Compile Include="Styles\UserControls\ScreenColorPicker.cs" />
+		<Compile Include="Styles\UserControls\ModalHost.cs" />
+		<Compile Include="Styles\UserControls\ColorEditorOverlay.axaml.cs" />
+		<AvaloniaXaml Include="Styles\UserControls\ColorEditorOverlay.axaml" />
+		<Compile Include="Styles\UserControls\EyedropperOverlay.axaml.cs" />
+		<AvaloniaXaml Include="Styles\UserControls\EyedropperOverlay.axaml" />
 		<Compile Include="Styles\UserControls\RibbonScrollContainer.axaml.cs" />
 		<AvaloniaXaml Include="Styles\UserControls\RibbonScrollContainer.axaml" />
 		<Compile Include="Styles\UserControls\TooltipView.axaml.cs" />
 		<AvaloniaXaml Include="Styles\UserControls\TooltipView.axaml" />
+	</ItemGroup>
+
+	<!-- Локализация общих контролов -->
+	<ItemGroup>
+		<Compile Include="Styles\UserControls\SharedStrings.Designer.cs" />
+		<EmbeddedResource Include="Styles\UserControls\SharedStrings.resx" />
+		<EmbeddedResource Include="Styles\UserControls\SharedStrings.ru.resx">
+			<DependentUpon>SharedStrings.resx</DependentUpon>
+		</EmbeddedResource>
 	</ItemGroup>
 
 

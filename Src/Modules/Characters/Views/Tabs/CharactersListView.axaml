@@ -318,6 +318,18 @@
                                                             <Style Selector="Border.card-root:pointerover StackPanel.card-edit-btns">
                                                                 <Setter Property="Opacity" Value="1"/>
                                                             </Style>
+                                                            <!-- Цветопикер тоже только при наведении на карточку. -->
+                                                            <Style Selector="Border.card-root colorControls|ColorPickerButton">
+                                                                <Setter Property="Opacity" Value="0"/>
+                                                                <Setter Property="Transitions">
+                                                                    <Transitions>
+                                                                        <DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+                                                                    </Transitions>
+                                                                </Setter>
+                                                            </Style>
+                                                            <Style Selector="Border.card-root:pointerover colorControls|ColorPickerButton">
+                                                                <Setter Property="Opacity" Value="1"/>
+                                                            </Style>
                                                         </Border.Styles>
 
                                                         <Border.RenderTransform>
@@ -450,6 +462,7 @@
 
                                                                 <!-- цветопикер и кнопки edit/delete: hover-only через opacity -->
                                                                 <colorControls:ColorPickerButton
+                                                                    ShowCardPreview="True"
                                                                     HexColor="{Binding Color, Mode=TwoWay}"
                                                                     HorizontalAlignment="Left"
                                                                     VerticalAlignment="Top"

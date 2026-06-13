@@ -489,12 +489,34 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private double ResolveCurrentFontSize()
         {
-            if (_activeParagraph is null) return 14;
-            var block = _activeParagraph.Model;
-            if (block.Chunks.Count > 0 && block.Chunks[0].Runs.Count > 0)
-                return block.Chunks[0].Runs[0].Properties?.FontSize
-                    ?? ResolveStyleFontSize(block.Properties.StyleName);
-            return ResolveStyleFontSize(block.Properties.StyleName);
+            // Берём размер по позиции выделения (первый выделенный абзац, его SelectionStart),
+            // как это делает BuildCursorContext. Раньше всегда читался первый ран абзаца —
+            // из-за этого increase/decrease на выделении не на первом ране «застревали»:
+            // читался старый размер первого рана, и каждое нажатие давало один и тот же шаг.
+            ParagraphViewModel? pvm = SelectionParagraphs.Count > 0 ? SelectionParagraphs[0] : _activeParagraph;
+            if (pvm is null) return 14;
+            var block = pvm.Model;
+            int pos = pvm.SelectionEnd > pvm.SelectionStart ? pvm.SelectionStart : 0;
+            var rp = GetRunPropsAtOffset(block, pos);
+            return rp?.FontSize ?? ResolveStyleFontSize(block.Properties.StyleName);
+        }
+
+        // Возвращает свойства рана, покрывающего символ в позиции charOffset.
+        // Если позиция в конце текста — последний непустой ран.
+        private static RunProperties? GetRunPropsAtOffset(ParagraphBlock block, int charOffset)
+        {
+            int offset = 0;
+            foreach (var chunk in block.Chunks)
+                foreach (var run in chunk.Runs)
+                {
+                    if (offset + run.Text.Length > charOffset)
+                        return run.Properties;
+                    offset += run.Text.Length;
+                }
+            for (int ci = block.Chunks.Count - 1; ci >= 0; ci--)
+                if (block.Chunks[ci].Runs.Count > 0)
+                    return block.Chunks[ci].Runs[^1].Properties;
+            return null;
         }
 
         // ── ITextEditorCommandTarget: абзац ───────────────────────────────

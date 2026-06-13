@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="ColorPicker_ChangeColor" xml:space="preserve">
+    <value>Изменить цвет</value>
+  </data>
+  <data name="ColorPicker_BasicColors" xml:space="preserve">
+    <value>Базовые цвета</value>
+  </data>
+  <data name="ColorPicker_ProjectColors" xml:space="preserve">
+    <value>Цвета проекта</value>
+  </data>
+  <data name="ColorPicker_SaveCurrent" xml:space="preserve">
+    <value>+ сохранить текущий цвет</value>
+  </data>
+  <data name="ColorPicker_SaveTooltip" xml:space="preserve">
+    <value>Сохранить текущий цвет в палитру проекта</value>
+  </data>
+  <data name="ColorPicker_Recent" xml:space="preserve">
+    <value>Недавние</value>
+  </data>
+  <data name="ColorPicker_RemoveFromPalette" xml:space="preserve">
+    <value>Убрать из палитры</value>
+  </data>
+  <data name="ColorPicker_Configure" xml:space="preserve">
+    <value>Настроить цвет…</value>
+  </data>
+  <data name="ColorEditor_Title" xml:space="preserve">
+    <value>Цвет</value>
+  </data>
+  <data name="ColorEditor_Eyedropper" xml:space="preserve">
+    <value>Пипетка — взять цвет с экрана</value>
+  </data>
+  <data name="ColorEditor_Preview" xml:space="preserve">
+    <value>Предпросмотр</value>
+  </data>
+  <data name="ColorEditor_TabSpectrum" xml:space="preserve">
+    <value>Спектр</value>
+  </data>
+  <data name="ColorEditor_TabHoneycomb" xml:space="preserve">
+    <value>Соты</value>
+  </data>
+  <data name="ColorEditor_MyColors" xml:space="preserve">
+    <value>Мои цвета</value>
+  </data>
+  <data name="ColorEditor_AddCurrent" xml:space="preserve">
+    <value>Добавить текущий цвет</value>
+  </data>
+  <data name="ColorEditor_EyedropperHint" xml:space="preserve">
+    <value>Взять цвет в любой точке экрана</value>
+  </data>
+  <data name="Common_Ok" xml:space="preserve">
+    <value>ОК</value>
+  </data>
+  <data name="Common_Cancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+</root>
