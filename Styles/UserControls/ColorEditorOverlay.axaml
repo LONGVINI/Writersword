@@ -20,7 +20,7 @@
 		</Style>
 
 		<Style Selector="Button.tab">
-			<Setter Property="Padding" Value="16,6"/>
+			<Setter Property="Padding" Value="14,6"/>
 			<Setter Property="CornerRadius" Value="6"/>
 			<Setter Property="Background" Value="Transparent"/>
 			<Setter Property="BorderThickness" Value="0"/>
@@ -36,10 +36,8 @@
 			<Setter Property="Height" Value="26"/>
 			<Setter Property="MinWidth" Value="0"/>
 			<Setter Property="MinHeight" Value="0"/>
-			<Setter Property="Margin" Value="3"/>
+			<Setter Property="Margin" Value="0"/>
 			<Setter Property="Padding" Value="0"/>
-			<Setter Property="Content" Value="+"/>
-			<Setter Property="FontSize" Value="16"/>
 			<Setter Property="HorizontalContentAlignment" Value="Center"/>
 			<Setter Property="VerticalContentAlignment" Value="Center"/>
 			<Setter Property="CornerRadius" Value="999"/>
@@ -48,6 +46,74 @@
 			<Setter Property="BorderThickness" Value="1.5"/>
 			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
 		</Style>
+
+		<Style Selector="TextBlock.groupLabel">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Margin" Value="0,0,0,2"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.fieldLabel">
+			<Setter Property="Width" Value="16"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="HorizontalAlignment" Value="Right"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="TextBox.valnum">
+			<Setter Property="Width" Value="60"/>
+			<Setter Property="FontSize" Value="13"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+		</Style>
+
+		<!-- Градиентный ползунок: трек = переданный Background (градиент канала). -->
+		<Style Selector="Slider.grad">
+			<Setter Property="MinHeight" Value="22"/>
+			<Setter Property="Height" Value="22"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Template">
+				<ControlTemplate>
+					<Grid VerticalAlignment="Center">
+						<Border Height="8" CornerRadius="4" VerticalAlignment="Center"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                BorderThickness="1"/>
+						<Track Name="PART_Track" Orientation="Horizontal"
+                               Minimum="{TemplateBinding Minimum}"
+                               Maximum="{TemplateBinding Maximum}"
+                               Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+							<Track.DecreaseButton>
+								<RepeatButton Name="PART_DecreaseButton" Focusable="False"
+                                              Background="Transparent" BorderThickness="0">
+									<RepeatButton.Template>
+										<ControlTemplate><Border Background="Transparent"/></ControlTemplate>
+									</RepeatButton.Template>
+								</RepeatButton>
+							</Track.DecreaseButton>
+							<Track.IncreaseButton>
+								<RepeatButton Name="PART_IncreaseButton" Focusable="False"
+                                              Background="Transparent" BorderThickness="0">
+									<RepeatButton.Template>
+										<ControlTemplate><Border Background="Transparent"/></ControlTemplate>
+									</RepeatButton.Template>
+								</RepeatButton>
+							</Track.IncreaseButton>
+							<Thumb Width="16" Height="16" Padding="0">
+								<Thumb.Template>
+									<ControlTemplate>
+										<Border Background="White" CornerRadius="8"
+                                                BorderBrush="#444444" BorderThickness="1">
+											<Border.Effect>
+												<DropShadowEffect BlurRadius="3" OffsetX="0" OffsetY="0"
+                                                                  Opacity="0.5" Color="#000000"/>
+											</Border.Effect>
+										</Border>
+									</ControlTemplate>
+								</Thumb.Template>
+							</Thumb>
+						</Track>
+					</Grid>
+				</ControlTemplate>
+			</Setter>
+		</Style>
 	</UserControl.Styles>
 
 	<Grid>
@@ -55,22 +121,24 @@
 		<!-- Скрим: затемняет и блокирует только модуль. Клик НЕ закрывает. -->
 		<Border Background="#66000000"/>
 
-		<!-- Панель редактора -->
-		<Border HorizontalAlignment="Center" VerticalAlignment="Center"
+		<!-- Панель редактора. Ширина и высота ограничиваются в коде под размер модуля. -->
+		<Border x:Name="EditorPanel"
+                HorizontalAlignment="Center" VerticalAlignment="Center"
+                Margin="24"
+                MinWidth="0" Width="440"
                 Background="{DynamicResource BgBaseBrush}"
                 BorderBrush="{DynamicResource BorderDefaultBrush}"
                 BorderThickness="1"
                 CornerRadius="16"
-                Padding="20"
-                MinWidth="600">
+                Padding="20">
 			<Border.Effect>
 				<DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.55" Color="#000000"/>
 			</Border.Effect>
 
-			<Grid RowDefinitions="Auto,Auto,Auto">
+			<Grid RowDefinitions="Auto,Auto,*,Auto">
 
 				<!-- Заголовок + крестик -->
-				<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+				<Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
 					<TextBlock Grid.Column="0"
                                Text="{x:Static res:SharedStrings.ColorEditor_Title}"
                                FontSize="16" FontWeight="SemiBold"
@@ -82,226 +150,428 @@
                             Foreground="{DynamicResource TextSecondaryBrush}"/>
 				</Grid>
 
-				<!-- Контент -->
-				<Grid Grid.Row="1" ColumnDefinitions="Auto,24,Auto" Margin="0,16">
+				<!-- ПРЕВЬЮ + редактируемый HEX — всегда сверху. При сжатии превью уходит
+				     в нижнюю строку; кнопка-глаз скрывает/показывает превью. -->
+				<WrapPanel x:Name="PreviewTopGrid" Grid.Row="1" Orientation="Horizontal"
+                      Margin="0,0,0,12">
+					<Border x:Name="PreviewSwatch" Grid.Column="0" VerticalAlignment="Center"
+                            Width="56" Height="56" CornerRadius="10"
+                            Margin="0,0,12,0"
+                            BorderBrush="{DynamicResource BorderSubtleBrush}"
+                            BorderThickness="1"/>
 
-					<!-- Левая колонка: выбор цвета -->
-					<StackPanel Grid.Column="0" Width="276" Spacing="12">
+					<StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="6">
+						<StackPanel Orientation="Horizontal" Spacing="6">
+							<TextBlock Text="HEX" FontSize="10" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<TextBox x:Name="HexBox" MaxLength="7" FontSize="14" Width="110"
+                                     KeyDown="OnHexKeyDown" LostFocus="OnHexCommit"/>
+						</StackPanel>
+						<Button x:Name="EyedropperButton" Click="OnEyedropperClick"
+                                HorizontalAlignment="Left" Padding="8,6" CornerRadius="8"
+                                Background="{DynamicResource BgSurfaceBrush}"
+                                BorderBrush="{DynamicResource AccentDefaultBrush}"
+                                BorderThickness="1"
+                                ToolTip.Tip="{x:Static res:SharedStrings.ColorEditor_EyedropperHint}">
+							<StackPanel Orientation="Horizontal" Spacing="8">
+								<Viewbox Width="16" Height="16">
+									<Canvas Width="24" Height="24">
+										<Path Fill="{DynamicResource AccentDefaultBrush}"
+                                              Data="M17.66 5.41l.92.92-2.69 2.69-.92-.92 2.69-2.69M17.67 3c-.26 0-.51.1-.71.29l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42l-2.34-2.34c-.2-.19-.45-.29-.71-.29zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z"/>
+									</Canvas>
+								</Viewbox>
+								<TextBlock x:Name="EyedropperLabel"
+                                           Text="{x:Static res:SharedStrings.ColorEditor_Eyedropper}"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource AccentDefaultBrush}"/>
+							</StackPanel>
+						</Button>
+					</StackPanel>
 
+					<Button x:Name="PreviewToggle"
+                            IsVisible="False" Click="OnTogglePreview"
+                            VerticalAlignment="Top" Margin="16,0,8,8"
+                            Width="26" Height="26" Padding="0" CornerRadius="999"
+                            Background="Transparent"
+                            BorderBrush="{DynamicResource BorderDefaultBrush}" BorderThickness="1"
+                            ToolTip.Tip="{x:Static res:SharedStrings.ColorEditor_Preview}">
+						<Viewbox Width="14" Height="14">
+							<Canvas Width="24" Height="24">
+								<Path Fill="{DynamicResource TextSecondaryBrush}"
+                                      Data="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+							</Canvas>
+						</Viewbox>
+					</Button>
+
+					<StackPanel x:Name="PreviewPanel"
+                                Spacing="4" Margin="0,0,0,8"
+                                IsVisible="False" VerticalAlignment="Center">
+						<Border x:Name="PreviewCardBorder"
+                                Width="124" Height="92" CornerRadius="10"
+                                Background="{DynamicResource BgPanelBrush}"
+                                BorderThickness="2"
+                                ClipToBounds="True">
+							<StackPanel>
+								<Panel Height="56">
+									<Panel Width="44" Height="44"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center">
+										<Ellipse x:Name="PreviewAvatar" Width="44" Height="44"/>
+										<Border Width="44" Height="44" CornerRadius="999" ClipToBounds="True">
+											<Image x:Name="PreviewAvatarImage" Stretch="UniformToFill"/>
+										</Border>
+										<TextBlock x:Name="PreviewFallbackText" Text="?"
+                                                   Foreground="White" FontSize="20"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+									</Panel>
+									<Border x:Name="PreviewRing"
+                                            Width="52" Height="52" CornerRadius="999"
+                                            BorderThickness="2" IsVisible="False" IsHitTestVisible="False"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
+								</Panel>
+								<Border Height="36">
+									<TextBlock x:Name="PreviewNameText" Text="Aa"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               FontSize="12" Margin="6,0"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+								</Border>
+							</StackPanel>
+						</Border>
+					</StackPanel>
+				</WrapPanel>
+
+				<!-- Прокручиваемая середина -->
+				<ScrollViewer Grid.Row="2"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto" Padding="0,0,16,0">
+					<StackPanel Spacing="14">
+
+						<!-- Вкладки выбора -->
 						<Border Background="{DynamicResource BgSurfaceBrush}" CornerRadius="8"
                                 Padding="3" HorizontalAlignment="Left">
-							<StackPanel Orientation="Horizontal" Spacing="2">
+							<WrapPanel Orientation="Horizontal">
 								<Button x:Name="TabSpectrumBtn" Classes="tab active"
                                         Click="OnTabSpectrum"
                                         Content="{x:Static res:SharedStrings.ColorEditor_TabSpectrum}"/>
 								<Button x:Name="TabHoneycombBtn" Classes="tab"
                                         Click="OnTabHoneycomb"
                                         Content="{x:Static res:SharedStrings.ColorEditor_TabHoneycomb}"/>
-							</StackPanel>
+								<Button x:Name="TabWheelBtn" Classes="tab"
+                                        Click="OnTabWheel"
+                                        Content="{x:Static res:SharedStrings.ColorEditor_TabWheel}"/>
+								<Button x:Name="TabValuesBtn" Classes="tab"
+                                        Click="OnTabValues"
+                                        Content="{x:Static res:SharedStrings.ColorEditor_TabValues}"/>
+								<Button x:Name="TabPalettesBtn" Classes="tab"
+                                        Click="OnTabPalettes"
+                                        IsVisible="False"
+                                        Content="{x:Static res:SharedStrings.ColorEditor_TabPalettes}"/>
+							</WrapPanel>
 						</Border>
 
-						<Panel Height="230">
+						<!-- Содержимое вкладок: высота по содержимому активной вкладки -->
+						<Panel>
 
-							<!-- Режим «Спектр»: SV-квадрат + полоса оттенка -->
-							<StackPanel x:Name="SpectrumPanel" Orientation="Horizontal"
-                                        Spacing="14" HorizontalAlignment="Center">
+							<!-- Спектр: SV-квадрат + полоса оттенка + ползунки RGB -->
+							<!-- менеджер палитр вынесен ниже, всегда виден -->
 
-								<Panel x:Name="SvSquare" Width="220" Height="220"
-                                       Background="Transparent"
-                                       PointerPressed="OnSvPressed"
-                                       PointerMoved="OnSvMoved"
-                                       PointerReleased="OnSvReleased">
-									<Border x:Name="SvHueLayer" CornerRadius="8"/>
-									<Border CornerRadius="8" IsHitTestVisible="False">
-										<Border.Background>
-											<LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
-												<GradientStop Offset="0" Color="#FFFFFFFF"/>
-												<GradientStop Offset="1" Color="#00FFFFFF"/>
-											</LinearGradientBrush>
-										</Border.Background>
-									</Border>
-									<Border CornerRadius="8" IsHitTestVisible="False">
-										<Border.Background>
-											<LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-												<GradientStop Offset="0" Color="#00000000"/>
-												<GradientStop Offset="1" Color="#FF000000"/>
-											</LinearGradientBrush>
-										</Border.Background>
-									</Border>
-									<Canvas IsHitTestVisible="False">
-										<Border x:Name="SvThumb" Width="16" Height="16"
-                                                CornerRadius="999" Background="Transparent"
-                                                BorderBrush="White" BorderThickness="2">
-											<Border.Effect>
-												<DropShadowEffect BlurRadius="3" OffsetX="0" OffsetY="0"
-                                                                  Opacity="0.7" Color="#000000"/>
-											</Border.Effect>
-										</Border>
-									</Canvas>
-								</Panel>
+							<StackPanel x:Name="SpectrumPanel" Spacing="12">
+								<Viewbox Stretch="Uniform" StretchDirection="DownOnly"
+                                         HorizontalAlignment="Center" MaxHeight="188">
+									<StackPanel Orientation="Horizontal" Spacing="14">
+										<Panel x:Name="SvSquare" Width="200" Height="200"
+                                               Background="Transparent"
+                                               PointerPressed="OnSvPressed"
+                                               PointerMoved="OnSvMoved"
+                                               PointerReleased="OnSvReleased">
+											<Border x:Name="SvHueLayer" CornerRadius="8"/>
+											<Border CornerRadius="8" IsHitTestVisible="False">
+												<Border.Background>
+													<LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+														<GradientStop Offset="0" Color="#FFFFFFFF"/>
+														<GradientStop Offset="1" Color="#00FFFFFF"/>
+													</LinearGradientBrush>
+												</Border.Background>
+											</Border>
+											<Border CornerRadius="8" IsHitTestVisible="False">
+												<Border.Background>
+													<LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+														<GradientStop Offset="0" Color="#00000000"/>
+														<GradientStop Offset="1" Color="#FF000000"/>
+													</LinearGradientBrush>
+												</Border.Background>
+											</Border>
+											<Canvas IsHitTestVisible="False">
+												<Border x:Name="SvThumb" Width="16" Height="16"
+                                                        CornerRadius="999" Background="Transparent"
+                                                        BorderBrush="White" BorderThickness="2">
+													<Border.Effect>
+														<DropShadowEffect BlurRadius="3" OffsetX="0" OffsetY="0"
+                                                                          Opacity="0.7" Color="#000000"/>
+													</Border.Effect>
+												</Border>
+											</Canvas>
+										</Panel>
 
-								<Panel x:Name="HueBar" Width="22" Height="220"
-                                       Background="Transparent"
-                                       PointerPressed="OnHuePressed"
-                                       PointerMoved="OnHueMoved"
-                                       PointerReleased="OnHueReleased">
-									<Border CornerRadius="6" IsHitTestVisible="False">
-										<Border.Background>
-											<LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-												<GradientStop Offset="0" Color="#FF0000"/>
-												<GradientStop Offset="0.1667" Color="#FFFF00"/>
-												<GradientStop Offset="0.3333" Color="#00FF00"/>
-												<GradientStop Offset="0.5" Color="#00FFFF"/>
-												<GradientStop Offset="0.6667" Color="#0000FF"/>
-												<GradientStop Offset="0.8333" Color="#FF00FF"/>
-												<GradientStop Offset="1" Color="#FF0000"/>
-											</LinearGradientBrush>
-										</Border.Background>
-									</Border>
-									<Canvas IsHitTestVisible="False">
-										<Border x:Name="HueThumb" Width="26" Height="6"
-                                                CornerRadius="3" Background="White"
-                                                BorderBrush="#333333" BorderThickness="1"/>
-									</Canvas>
-								</Panel>
+										<Panel x:Name="HueBar" Width="22" Height="200"
+                                               Background="Transparent"
+                                               PointerPressed="OnHuePressed"
+                                               PointerMoved="OnHueMoved"
+                                               PointerReleased="OnHueReleased">
+											<Border CornerRadius="6" IsHitTestVisible="False">
+												<Border.Background>
+													<LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+														<GradientStop Offset="0" Color="#FF0000"/>
+														<GradientStop Offset="0.1667" Color="#FFFF00"/>
+														<GradientStop Offset="0.3333" Color="#00FF00"/>
+														<GradientStop Offset="0.5" Color="#00FFFF"/>
+														<GradientStop Offset="0.6667" Color="#0000FF"/>
+														<GradientStop Offset="0.8333" Color="#FF00FF"/>
+														<GradientStop Offset="1" Color="#FF0000"/>
+													</LinearGradientBrush>
+												</Border.Background>
+											</Border>
+											<Canvas IsHitTestVisible="False">
+												<Border x:Name="HueThumb" Width="26" Height="6"
+                                                        CornerRadius="3" Background="White"
+                                                        BorderBrush="#333333" BorderThickness="1"/>
+											</Canvas>
+										</Panel>
+									</StackPanel>
+								</Viewbox>
+
+								<Grid ColumnDefinitions="18,*,40" RowDefinitions="Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="10">
+									<TextBlock Grid.Row="0" Grid.Column="0" Text="R" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+									<Slider Grid.Row="0" Grid.Column="1" x:Name="SliderR" Classes="grad"
+                                            Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
+                                            ValueChanged="OnRgbSliderChanged"/>
+									<TextBlock Grid.Row="0" Grid.Column="2" x:Name="LabelR"
+                                               VerticalAlignment="Center" HorizontalAlignment="Right"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+									<TextBlock Grid.Row="1" Grid.Column="0" Text="G" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+									<Slider Grid.Row="1" Grid.Column="1" x:Name="SliderG" Classes="grad"
+                                            Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
+                                            ValueChanged="OnRgbSliderChanged"/>
+									<TextBlock Grid.Row="1" Grid.Column="2" x:Name="LabelG"
+                                               VerticalAlignment="Center" HorizontalAlignment="Right"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+									<TextBlock Grid.Row="2" Grid.Column="0" Text="B" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+									<Slider Grid.Row="2" Grid.Column="1" x:Name="SliderB" Classes="grad"
+                                            Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
+                                            ValueChanged="OnRgbSliderChanged"/>
+									<TextBlock Grid.Row="2" Grid.Column="2" x:Name="LabelB"
+                                               VerticalAlignment="Center" HorizontalAlignment="Right"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+								</Grid>
 							</StackPanel>
 
-							<!-- Режим «Соты»: строится в коде -->
+							<!-- Соты (масштабируются) -->
 							<Border x:Name="HoneycombPanel" IsVisible="False"
-                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    VerticalAlignment="Center"
                                     Background="{DynamicResource BgSurfaceBrush}"
                                     CornerRadius="10" Padding="8">
-								<Canvas x:Name="HoneycombCanvas"/>
-							</Border>
-						</Panel>
-					</StackPanel>
-
-					<!-- Правая колонка: значения, пипетка, палитра, превью -->
-					<StackPanel Grid.Column="2" Width="300" Spacing="14">
-
-						<Grid ColumnDefinitions="Auto,*">
-							<Border x:Name="PreviewSwatch" Grid.Column="0"
-                                    Width="56" Height="56" CornerRadius="10"
-                                    BorderBrush="{DynamicResource BorderSubtleBrush}"
-                                    BorderThickness="1"/>
-							<StackPanel Grid.Column="1" Margin="12,0,0,0"
-                                        VerticalAlignment="Center" Spacing="4">
-								<TextBlock Text="HEX" FontSize="10"
-                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-								<TextBox x:Name="HexBox" MaxLength="7" FontSize="13"
-                                         KeyDown="OnHexKeyDown" LostFocus="OnHexCommit"/>
-							</StackPanel>
-						</Grid>
-
-						<Button x:Name="EyedropperButton" Click="OnEyedropperClick"
-                                HorizontalAlignment="Stretch" Padding="10,8" CornerRadius="8"
-                                Background="{DynamicResource BgSurfaceBrush}"
-                                BorderBrush="{DynamicResource AccentDefaultBrush}"
-                                BorderThickness="1"
-                                ToolTip.Tip="{x:Static res:SharedStrings.ColorEditor_EyedropperHint}">
-							<StackPanel Orientation="Horizontal" Spacing="8"
-                                        HorizontalAlignment="Center">
-								<Viewbox Width="17" Height="17">
-									<Canvas Width="24" Height="24">
-										<Path Fill="{DynamicResource AccentDefaultBrush}"
-                                              Data="M17.66 5.41l.92.92-2.69 2.69-.92-.92 2.69-2.69M17.67 3c-.26 0-.51.1-.71.29l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42l-2.34-2.34c-.2-.19-.45-.29-.71-.29zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z"/>
-									</Canvas>
+								<Viewbox Stretch="Uniform" StretchDirection="DownOnly"
+                                         HorizontalAlignment="Center">
+									<Canvas x:Name="HoneycombCanvas"/>
 								</Viewbox>
-								<TextBlock Text="{x:Static res:SharedStrings.ColorEditor_Eyedropper}"
-                                           VerticalAlignment="Center"
-                                           Foreground="{DynamicResource AccentDefaultBrush}"/>
+							</Border>
+
+							<!-- Колесо (масштабируется), ползунок V справа -->
+							<Grid x:Name="WheelPanel" IsVisible="False"
+                                  ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+								<Viewbox Grid.Column="0" Stretch="Uniform" StretchDirection="DownOnly"
+                                         HorizontalAlignment="Center" MaxHeight="200">
+									<Panel x:Name="Wheel" Width="200" Height="200"
+                                           Background="Transparent"
+                                           PointerPressed="OnWheelPressed"
+                                           PointerMoved="OnWheelMoved"
+                                           PointerReleased="OnWheelReleased">
+										<Image x:Name="WheelImage" Width="200" Height="200" IsHitTestVisible="False"/>
+										<Ellipse x:Name="WheelDim" Width="200" Height="200"
+                                                 Fill="Black" Opacity="0" IsHitTestVisible="False"/>
+										<Canvas IsHitTestVisible="False">
+											<Border x:Name="WheelThumb" Width="16" Height="16"
+                                                    CornerRadius="999" Background="Transparent"
+                                                    BorderBrush="White" BorderThickness="2">
+												<Border.Effect>
+													<DropShadowEffect BlurRadius="3" OffsetX="0" OffsetY="0"
+                                                                      Opacity="0.7" Color="#000000"/>
+												</Border.Effect>
+											</Border>
+										</Canvas>
+									</Panel>
+								</Viewbox>
+								<StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center" Margin="12,0,0,0">
+									<TextBlock Text="V" HorizontalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+									<Slider x:Name="WheelValue" Orientation="Vertical"
+                                            Minimum="0" Maximum="100" Height="170"
+                                            HorizontalAlignment="Center"
+                                            ValueChanged="OnWheelValueChanged"/>
+								</StackPanel>
+							</Grid>
+
+							<!-- Значения: градиентные ползунки + поля (RGB / HSL / HSV). HEX — наверху. -->
+							<StackPanel x:Name="ValuesPanel" IsVisible="False" Spacing="12">
+
+								<StackPanel Spacing="4">
+									<TextBlock Text="RGB (0–255)" Classes="groupLabel"/>
+									<Grid ColumnDefinitions="16,*,Auto" RowDefinitions="Auto,Auto,Auto"
+                                          ColumnSpacing="8" RowSpacing="8">
+										<TextBlock Grid.Row="0" Grid.Column="0" Text="R" Classes="fieldLabel"/>
+										<Slider Grid.Row="0" Grid.Column="1" x:Name="SlR" Classes="grad"
+                                                Minimum="0" Maximum="255" ValueChanged="OnValRgbSlider"/>
+										<TextBox Grid.Row="0" Grid.Column="2" x:Name="TxtR" Classes="valnum"
+                                                 KeyDown="OnRgbKey" LostFocus="OnRgbCommit"/>
+										<TextBlock Grid.Row="1" Grid.Column="0" Text="G" Classes="fieldLabel"/>
+										<Slider Grid.Row="1" Grid.Column="1" x:Name="SlG" Classes="grad"
+                                                Minimum="0" Maximum="255" ValueChanged="OnValRgbSlider"/>
+										<TextBox Grid.Row="1" Grid.Column="2" x:Name="TxtG" Classes="valnum"
+                                                 KeyDown="OnRgbKey" LostFocus="OnRgbCommit"/>
+										<TextBlock Grid.Row="2" Grid.Column="0" Text="B" Classes="fieldLabel"/>
+										<Slider Grid.Row="2" Grid.Column="1" x:Name="SlB" Classes="grad"
+                                                Minimum="0" Maximum="255" ValueChanged="OnValRgbSlider"/>
+										<TextBox Grid.Row="2" Grid.Column="2" x:Name="TxtB" Classes="valnum"
+                                                 KeyDown="OnRgbKey" LostFocus="OnRgbCommit"/>
+									</Grid>
+								</StackPanel>
+
+								<StackPanel Spacing="4">
+									<TextBlock Text="HSL (H 0–360, S/L 0–100)" Classes="groupLabel"/>
+									<Grid ColumnDefinitions="16,*,Auto" RowDefinitions="Auto,Auto,Auto"
+                                          ColumnSpacing="8" RowSpacing="8">
+										<TextBlock Grid.Row="0" Grid.Column="0" Text="H" Classes="fieldLabel"/>
+										<Slider Grid.Row="0" Grid.Column="1" x:Name="SlHslH" Classes="grad"
+                                                Minimum="0" Maximum="360" ValueChanged="OnValHslSlider"/>
+										<TextBox Grid.Row="0" Grid.Column="2" x:Name="TxtHslH" Classes="valnum"
+                                                 KeyDown="OnHslKey" LostFocus="OnHslCommit"/>
+										<TextBlock Grid.Row="1" Grid.Column="0" Text="S" Classes="fieldLabel"/>
+										<Slider Grid.Row="1" Grid.Column="1" x:Name="SlHslS" Classes="grad"
+                                                Minimum="0" Maximum="100" ValueChanged="OnValHslSlider"/>
+										<TextBox Grid.Row="1" Grid.Column="2" x:Name="TxtHslS" Classes="valnum"
+                                                 KeyDown="OnHslKey" LostFocus="OnHslCommit"/>
+										<TextBlock Grid.Row="2" Grid.Column="0" Text="L" Classes="fieldLabel"/>
+										<Slider Grid.Row="2" Grid.Column="1" x:Name="SlHslL" Classes="grad"
+                                                Minimum="0" Maximum="100" ValueChanged="OnValHslSlider"/>
+										<TextBox Grid.Row="2" Grid.Column="2" x:Name="TxtHslL" Classes="valnum"
+                                                 KeyDown="OnHslKey" LostFocus="OnHslCommit"/>
+									</Grid>
+								</StackPanel>
+
+								<StackPanel Spacing="4">
+									<TextBlock Text="HSV / HSB (H 0–360, S/V 0–100)" Classes="groupLabel"/>
+									<Grid ColumnDefinitions="16,*,Auto" RowDefinitions="Auto,Auto,Auto"
+                                          ColumnSpacing="8" RowSpacing="8">
+										<TextBlock Grid.Row="0" Grid.Column="0" Text="H" Classes="fieldLabel"/>
+										<Slider Grid.Row="0" Grid.Column="1" x:Name="SlHsvH" Classes="grad"
+                                                Minimum="0" Maximum="360" ValueChanged="OnValHsvSlider"/>
+										<TextBox Grid.Row="0" Grid.Column="2" x:Name="TxtHsvH" Classes="valnum"
+                                                 KeyDown="OnHsvKey" LostFocus="OnHsvCommit"/>
+										<TextBlock Grid.Row="1" Grid.Column="0" Text="S" Classes="fieldLabel"/>
+										<Slider Grid.Row="1" Grid.Column="1" x:Name="SlHsvS" Classes="grad"
+                                                Minimum="0" Maximum="100" ValueChanged="OnValHsvSlider"/>
+										<TextBox Grid.Row="1" Grid.Column="2" x:Name="TxtHsvS" Classes="valnum"
+                                                 KeyDown="OnHsvKey" LostFocus="OnHsvCommit"/>
+										<TextBlock Grid.Row="2" Grid.Column="0" Text="V" Classes="fieldLabel"/>
+										<Slider Grid.Row="2" Grid.Column="1" x:Name="SlHsvV" Classes="grad"
+                                                Minimum="0" Maximum="100" ValueChanged="OnValHsvSlider"/>
+										<TextBox Grid.Row="2" Grid.Column="2" x:Name="TxtHsvV" Classes="valnum"
+                                                 KeyDown="OnHsvKey" LostFocus="OnHsvCommit"/>
+									</Grid>
+								</StackPanel>
 							</StackPanel>
-						</Button>
+						</Panel>
 
-						<Grid ColumnDefinitions="18,*,40" RowDefinitions="Auto,Auto,Auto">
-							<TextBlock Grid.Row="0" Grid.Column="0" Text="R" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-							<Slider Grid.Row="0" Grid.Column="1" x:Name="SliderR"
-                                    Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
-                                    ValueChanged="OnRgbChanged"/>
-							<TextBlock Grid.Row="0" Grid.Column="2" x:Name="LabelR"
-                                       VerticalAlignment="Center" HorizontalAlignment="Right"
-                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
-
-							<TextBlock Grid.Row="1" Grid.Column="0" Text="G" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-							<Slider Grid.Row="1" Grid.Column="1" x:Name="SliderG"
-                                    Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
-                                    ValueChanged="OnRgbChanged"/>
-							<TextBlock Grid.Row="1" Grid.Column="2" x:Name="LabelG"
-                                       VerticalAlignment="Center" HorizontalAlignment="Right"
-                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
-
-							<TextBlock Grid.Row="2" Grid.Column="0" Text="B" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-							<Slider Grid.Row="2" Grid.Column="1" x:Name="SliderB"
-                                    Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
-                                    ValueChanged="OnRgbChanged"/>
-							<TextBlock Grid.Row="2" Grid.Column="2" x:Name="LabelB"
-                                       VerticalAlignment="Center" HorizontalAlignment="Right"
-                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
-						</Grid>
-
+						<!-- Палитра «Мои цвета»: переносится вниз -->
 						<StackPanel Spacing="6">
-							<TextBlock Text="{x:Static res:SharedStrings.ColorEditor_MyColors}"
-                                       FontSize="11"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<Grid ColumnDefinitions="*,Auto">
+								<TextBlock Grid.Column="0"
+                                           Text="{x:Static res:SharedStrings.ColorEditor_MyColors}"
+                                           FontSize="11" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+								<Button Grid.Column="1" Classes="addtile" Click="OnAddCurrentClick"
+                                        ToolTip.Tip="{x:Static res:SharedStrings.ColorEditor_AddCurrent}">
+									<Panel Width="12" Height="12">
+										<Rectangle Width="12" Height="2" RadiusX="1" RadiusY="1"
+                                                   Fill="{DynamicResource TextSecondaryBrush}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+										<Rectangle Width="2" Height="12" RadiusX="1" RadiusY="1"
+                                                   Fill="{DynamicResource TextSecondaryBrush}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+									</Panel>
+								</Button>
+							</Grid>
 							<Border Background="{DynamicResource BgSurfaceBrush}"
                                     CornerRadius="10" Padding="6" MinHeight="44">
-								<StackPanel Orientation="Horizontal">
-									<ItemsControl x:Name="PaletteItems"
-                                                  ItemsSource="{Binding Palette, ElementName=OverlayRoot}">
-										<ItemsControl.ItemsPanel>
-											<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
-										</ItemsControl.ItemsPanel>
-										<ItemsControl.ItemTemplate>
-											<DataTemplate>
-												<Border Classes="paletteSwatch" Background="{Binding}"
-                                                        PointerPressed="OnPalettePressed"
-                                                        PointerMoved="OnPaletteMoved"
-                                                        PointerReleased="OnPaletteReleased"/>
-											</DataTemplate>
-										</ItemsControl.ItemTemplate>
-									</ItemsControl>
-									<Button Classes="addtile" Click="OnAddCurrentClick"
-                                            VerticalAlignment="Top"
-                                            ToolTip.Tip="{x:Static res:SharedStrings.ColorEditor_AddCurrent}"/>
-								</StackPanel>
+								<ItemsControl x:Name="PaletteItems"
+                                              ItemsSource="{Binding Palette, ElementName=OverlayRoot}">
+									<ItemsControl.ItemsPanel>
+										<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+									</ItemsControl.ItemsPanel>
+									<ItemsControl.ItemTemplate>
+										<DataTemplate>
+											<Border Classes="paletteSwatch" Background="{Binding}"
+                                                    PointerPressed="OnPalettePressed"
+                                                    PointerMoved="OnPaletteMoved"
+                                                    PointerReleased="OnPaletteReleased"/>
+										</DataTemplate>
+									</ItemsControl.ItemTemplate>
+								</ItemsControl>
 							</Border>
 						</StackPanel>
 
-						<StackPanel x:Name="PreviewPanel" Spacing="8"
-                                    IsVisible="False">
-							<TextBlock Text="{x:Static res:SharedStrings.ColorEditor_Preview}"
-                                       FontSize="11"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-							<Border x:Name="PreviewCardBorder"
-                                    Width="150" Height="112" CornerRadius="10"
-                                    Background="{DynamicResource BgPanelBrush}"
-                                    BorderThickness="2"
-                                    HorizontalAlignment="Left" ClipToBounds="True">
-								<StackPanel>
-									<Panel Height="68">
-										<Border x:Name="PreviewAvatar"
-                                                Width="46" Height="46" CornerRadius="999"
-                                                HorizontalAlignment="Center" VerticalAlignment="Center">
-											<TextBlock Text="?" Foreground="White" FontSize="22"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
-										</Border>
-									</Panel>
-									<Border Height="44">
-										<TextBlock Text="Aa" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                   FontSize="12" Foreground="{DynamicResource TextPrimaryBrush}"/>
-									</Border>
-								</StackPanel>
+						<!-- Доп. функция: кольцо цвета вокруг аватара (только для карточек).
+						     Одна кнопка с меняющейся подписью + встроенное подтверждение. -->
+						<res:PaletteManagerView x:Name="PalettesPanel"/>
+
+						<StackPanel x:Name="RingSection" IsVisible="False" Spacing="8">
+							<WrapPanel Orientation="Horizontal">
+								<CheckBox x:Name="RingCheck"
+                                          Content="{x:Static res:SharedStrings.ColorEditor_AvatarRing}"
+                                          Click="OnRingCheckChanged"
+                                          VerticalAlignment="Center" Margin="0,0,12,6"/>
+								<Button x:Name="RingAllButton" Click="OnRingAllClick"
+                                        Padding="12,6" CornerRadius="6" Margin="0,0,0,6"
+                                        VerticalAlignment="Center"
+                                        Background="{DynamicResource BgSurfaceBrush}"
+                                        BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                        BorderThickness="1"/>
+							</WrapPanel>
+
+							<Border x:Name="RingConfirmPanel" IsVisible="False"
+                                    Background="{DynamicResource BgSurfaceBrush}"
+                                    BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                    BorderThickness="1" CornerRadius="8" Padding="10">
+								<WrapPanel Orientation="Horizontal">
+									<TextBlock Text="{x:Static res:SharedStrings.ColorEditor_ConfirmAll}"
+                                               VerticalAlignment="Center" Margin="0,0,12,0"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+									<Button Content="{x:Static res:SharedStrings.Common_Ok}"
+                                            Click="OnConfirmRingApply"
+                                            Padding="12,4" CornerRadius="6" Margin="0,0,8,0"
+                                            Background="{DynamicResource AccentDefaultBrush}" Foreground="White"/>
+									<Button Content="{x:Static res:SharedStrings.ColorEditor_RingNone}"
+                                            IsVisible="False"
+                                            Click="OnConfirmRingRemove"
+                                            Padding="12,4" CornerRadius="6" Margin="0,0,8,0"/>
+									<Button Content="{x:Static res:SharedStrings.Common_Cancel}"
+                                            Click="OnRingConfirmCancel"
+                                            Padding="12,4" CornerRadius="6"/>
+								</WrapPanel>
 							</Border>
 						</StackPanel>
+
 					</StackPanel>
-				</Grid>
+				</ScrollViewer>
 
 				<!-- Кнопки -->
-				<StackPanel Grid.Row="2" Orientation="Horizontal"
-                            HorizontalAlignment="Right" Spacing="8">
+				<StackPanel Grid.Row="3" Orientation="Horizontal"
+                            HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
 					<Button Content="{x:Static res:SharedStrings.Common_Cancel}"
                             Click="OnCancelClick" Padding="14,6" CornerRadius="6"/>
 					<Button Content="{x:Static res:SharedStrings.Common_Ok}"

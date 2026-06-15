@@ -9,6 +9,7 @@ using Writersword.Modules.TextEditor.Commands;
 using Writersword.Modules.TextEditor.Rendering;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
+using Writersword.Modules.TextEditor.Models.Styles;
 using Writersword.Modules.TextEditor.ViewModels;
 using Writersword.Modules.TextEditor.ViewModels.Blocks;
 
@@ -236,6 +237,52 @@ namespace Writersword.Modules.TextEditor.Document
         // Набор операций повторяет проверенный путь OnParagraphFormatChanged: выделение
         // не схлопываем (SyncSel) и каретку не сбрасываем (ResetCaret) — иначе каретка
         // рассинхронизируется с реальной позицией ввода.
+        // Гранулярный коммит изменений текста (смена регистра) на заданные диапазоны.
+        // Строит ChangeCaseCommand на каждый диапазон, объединяет в CompositeCommand и пишет
+        // в общий TextUndoStack — отмена идёт в одном порядке с набором и форматированием.
+        private bool CommitTextEditsGranular(
+            IReadOnlyList<(Guid ParaId, int From, string OldText, string NewText)> edits, string desc)
+        {
+            if (TextUndoStack is null || DocVm is null || edits.Count == 0) return false;
+
+            var cmds = new List<ITextCommand>();
+            var ids = new List<Guid>();
+            foreach (var e in edits)
+            {
+                cmds.Add(new ChangeCaseCommand(e.ParaId, e.From, e.OldText, e.NewText));
+                ids.Add(e.ParaId);
+            }
+            var idsArr = ids.ToArray();
+            var composite = new CompositeCommand(desc, cmds, () => RelayoutParagraphsByIds(idsArr));
+            composite.Apply(DocVm.Document);
+            PushTextCommand(composite);
+            return true;
+        }
+
+        // Гранулярный коммит свойств абзаца (выравнивание/отступы/интервалы): строит
+        // SetParagraphPropertyCommand на каждый абзац, объединяет в CompositeCommand и пишет
+        // в общий TextUndoStack — отмена идёт в одном порядке с набором/форматированием, без
+        // снапшота всего документа.
+        private bool CommitParagraphPropertyGranular(
+            IReadOnlyList<(Guid ParaId, Action<ParagraphProperties> Apply, Action<ParagraphProperties> Revert)> edits,
+            string desc)
+        {
+            if (TextUndoStack is null || DocVm is null || edits.Count == 0) return false;
+
+            var cmds = new List<ITextCommand>();
+            var ids = new List<Guid>();
+            foreach (var e in edits)
+            {
+                cmds.Add(new SetParagraphPropertyCommand(e.ParaId, e.Apply, e.Revert, desc));
+                ids.Add(e.ParaId);
+            }
+            var idsArr = ids.ToArray();
+            var composite = new CompositeCommand(desc, cmds, () => RelayoutParagraphsByIds(idsArr));
+            composite.Apply(DocVm.Document);
+            PushTextCommand(composite);
+            return true;
+        }
+
         private void RelayoutParagraphsByIds(IReadOnlyList<Guid> ids)
         {
             if (DocVm is null) return;

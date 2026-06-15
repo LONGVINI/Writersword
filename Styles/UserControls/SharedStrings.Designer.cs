@@ -87,6 +87,54 @@ namespace Writersword.Styles.UserControls
         public static string ColorEditor_EyedropperHint =>
             ResourceManager.GetString("ColorEditor_EyedropperHint", resourceCulture)!;
 
+        public static string ColorEditor_TabWheel =>
+            ResourceManager.GetString("ColorEditor_TabWheel", resourceCulture)!;
+
+        public static string ColorEditor_TabValues =>
+            ResourceManager.GetString("ColorEditor_TabValues", resourceCulture)!;
+
+        public static string ColorEditor_AvatarRing =>
+            ResourceManager.GetString("ColorEditor_AvatarRing", resourceCulture)!;
+
+        public static string ColorEditor_ApplyToAll =>
+            ResourceManager.GetString("ColorEditor_ApplyToAll", resourceCulture)!;
+
+        public static string ColorEditor_RingAll =>
+            ResourceManager.GetString("ColorEditor_RingAll", resourceCulture)!;
+
+        public static string ColorEditor_RingNone =>
+            ResourceManager.GetString("ColorEditor_RingNone", resourceCulture)!;
+
+        public static string ColorEditor_ConfirmAll =>
+            ResourceManager.GetString("ColorEditor_ConfirmAll", resourceCulture)!;
+
+        public static string ColorEditor_TabPalettes =>
+            ResourceManager.GetString("ColorEditor_TabPalettes", resourceCulture)!;
+
+        public static string Palette_Standard =>
+            ResourceManager.GetString("Palette_Standard", resourceCulture)!;
+
+        public static string Palette_Reset =>
+            ResourceManager.GetString("Palette_Reset", resourceCulture)!;
+
+        public static string Palette_Palettes =>
+            ResourceManager.GetString("Palette_Palettes", resourceCulture)!;
+
+        public static string Palette_New =>
+            ResourceManager.GetString("Palette_New", resourceCulture)!;
+
+        public static string Palette_Local =>
+            ResourceManager.GetString("Palette_Local", resourceCulture)!;
+
+        public static string Palette_Global =>
+            ResourceManager.GetString("Palette_Global", resourceCulture)!;
+
+        public static string Palette_Delete =>
+            ResourceManager.GetString("Palette_Delete", resourceCulture)!;
+
+        public static string Palette_ToggleVisible =>
+            ResourceManager.GetString("Palette_ToggleVisible", resourceCulture)!;
+
         public static string Common_Ok =>
             ResourceManager.GetString("Common_Ok", resourceCulture)!;
 

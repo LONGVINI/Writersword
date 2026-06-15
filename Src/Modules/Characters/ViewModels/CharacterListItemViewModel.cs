@@ -48,6 +48,18 @@ namespace Writersword.Modules.Characters.ViewModels
         public string? AvatarPath => _avatarPath;
         public bool IsCollective { get; }
 
+        // Доп. функция: цветное кольцо вокруг аватара (цветом персонажа).
+        private bool _avatarRing;
+        public bool AvatarRing
+        {
+            get => _avatarRing;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _avatarRing, value);
+                OnAvatarRingChanged?.Invoke(Id, value);
+            }
+        }
+
         // Ленивая загрузка — битмап создаётся только при первом обращении.
         public Bitmap? AvatarBitmap
         {
@@ -133,13 +145,15 @@ namespace Writersword.Modules.Characters.ViewModels
         public double DragOpacity => _isPlaceholder ? 0.35 : 1.0;
 
         // true êîãäà íå â ðåæèìå ââîäà/ïåðåèìåíîâàíèÿ  ïîêàçûâàåò íîðìàëüíîå îòîáðàæåíèå
-        public bool IsShowingNameDisplay => !_isBeingNamed && !_isRenaming && !_isPlaceholder;
+        public bool IsShowingNameDisplay => !_isBeingNamed && !_isRenaming;
 
         // êîëáýêè, óñòàíàâëèâàþòñÿ ðîäèòåëüñêèì ViewModel
         public Action<string, string>? OnConfirmName { get; set; }    // (id, newName)
         public Action<string>? OnCancelNewCharacter { get; set; }     // (id)
         public Action<string>? OnDeleteRequested { get; set; }        // (id)
         public Action<string, string>? OnColorChanged { get; set; }   // (id, newColor)
+        public Action<string, bool>? OnAvatarRingChanged { get; set; } // (id, ringEnabled)
+        public Action<bool>? OnApplyRingToAll { get; set; }            // (ringEnabled — ко всем персонажам)
 
         // êîìàíäû  âûïîëíÿþòñÿ èç AXAML íàïðÿìóþ ÷åðåç {Binding}
         public ReactiveCommand<Unit, Unit> ConfirmNameCommand { get; }
@@ -148,6 +162,7 @@ namespace Writersword.Modules.Characters.ViewModels
         public ReactiveCommand<Unit, Unit> ConfirmRenameCommand { get; }
         public ReactiveCommand<Unit, Unit> CancelRenameCommand { get; }
         public ReactiveCommand<Unit, Unit> RequestDeleteCommand { get; }
+        public ReactiveCommand<bool, Unit> ApplyRingToAllCommand { get; }
 
         // Аватар — открытие пикера из списка персонажей.
         // RequestPickerOpen задаётся из code-behind CharactersListView.
@@ -165,6 +180,7 @@ namespace Writersword.Modules.Characters.ViewModels
             _name = character.Name;
             ShortDescription = character.ShortDescription;
             _color = character.Color;
+            _avatarRing = character.AvatarRing;
             FallbackIcon = character.FallbackIcon;
             IsCollective = character.IsCollective;
             RelationshipsCount = relationshipsCount;
@@ -226,6 +242,11 @@ namespace Writersword.Modules.Characters.ViewModels
             RequestDeleteCommand = ReactiveCommand.Create(() =>
             {
                 OnDeleteRequested?.Invoke(Id);
+            });
+
+            ApplyRingToAllCommand = ReactiveCommand.Create<bool>(v =>
+            {
+                OnApplyRingToAll?.Invoke(v);
             });
         }
         private void SetAvatarRef(string? avatarRef)

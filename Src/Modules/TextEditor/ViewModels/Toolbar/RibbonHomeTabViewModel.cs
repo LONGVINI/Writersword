@@ -488,11 +488,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             });
 
             // Смена регистра — делегируем в ToggleAllCaps или реализуем через target позже.
-            CaseSentenceCommand = ReactiveCommand.Create(() => { });
-            CaseLowerCommand = ReactiveCommand.Create(() => { });
-            CaseUpperCommand = ReactiveCommand.Create(() => _target.ToggleAllCaps());
-            CaseTitleCommand = ReactiveCommand.Create(() => { });
-            CaseToggleCommand = ReactiveCommand.Create(() => { });
+            CaseSentenceCommand = ReactiveCommand.Create(() => _target.ChangeCase(TextCaseMode.Sentence));
+            CaseLowerCommand = ReactiveCommand.Create(() => _target.ChangeCase(TextCaseMode.Lower));
+            CaseUpperCommand = ReactiveCommand.Create(() => _target.ChangeCase(TextCaseMode.Upper));
+            CaseTitleCommand = ReactiveCommand.Create(() => _target.ChangeCase(TextCaseMode.Title));
+            CaseToggleCommand = ReactiveCommand.Create(() => _target.ChangeCase(TextCaseMode.Toggle));
 
             // Эффекты текста — заготовки.
             TextOutlineCommand = ReactiveCommand.Create(() => { });
@@ -662,7 +662,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         public void BeginFontPreview()
         {
-            _fontPreviewActive  = true;
+            _fontPreviewActive = true;
             _previewOriginalFont = _fontFamily;
             _target.BeginFontPreview();
         }

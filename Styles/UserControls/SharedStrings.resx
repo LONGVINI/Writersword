@@ -49,7 +49,7 @@
     <comment>Title of the advanced color editor modal</comment>
   </data>
   <data name="ColorEditor_Eyedropper" xml:space="preserve">
-    <value>Pick from screen (eyedropper)</value>
+    <value>Eyedropper</value>
     <comment>Button that starts screen color picking</comment>
   </data>
   <data name="ColorEditor_Preview" xml:space="preserve">
@@ -75,6 +75,70 @@
   <data name="ColorEditor_EyedropperHint" xml:space="preserve">
     <value>Pick a color anywhere on screen</value>
     <comment>Tooltip on the eyedropper button</comment>
+  </data>
+  <data name="ColorEditor_TabWheel" xml:space="preserve">
+    <value>Wheel</value>
+    <comment>Tab label: circular hue/saturation color wheel with a value slider</comment>
+  </data>
+  <data name="ColorEditor_TabValues" xml:space="preserve">
+    <value>Values</value>
+    <comment>Tab label: manual numeric color entry (HEX, RGB, HSL, HSV)</comment>
+  </data>
+  <data name="ColorEditor_AvatarRing" xml:space="preserve">
+    <value>Ring around avatar</value>
+    <comment>Checkbox: draw a colored ring of the character color around the avatar</comment>
+  </data>
+  <data name="ColorEditor_ApplyToAll" xml:space="preserve">
+    <value>Apply to all</value>
+    <comment>Button: apply the avatar ring setting to every character</comment>
+  </data>
+  <data name="ColorEditor_RingAll" xml:space="preserve">
+    <value>Rings for all</value>
+    <comment>Button: enable the avatar ring for every character</comment>
+  </data>
+  <data name="ColorEditor_RingNone" xml:space="preserve">
+    <value>Remove from all</value>
+    <comment>Button: remove the avatar ring from every character</comment>
+  </data>
+  <data name="ColorEditor_ConfirmAll" xml:space="preserve">
+    <value>Apply to all characters?</value>
+    <comment>Confirmation prompt before changing the ring on every character</comment>
+  </data>
+  <data name="ColorEditor_TabPalettes" xml:space="preserve">
+    <value>Palettes</value>
+    <comment>Tab label: palette manager (standard colors and named palettes)</comment>
+  </data>
+  <data name="Palette_Standard" xml:space="preserve">
+    <value>Standard colors</value>
+    <comment>Header for the editable global standard colors</comment>
+  </data>
+  <data name="Palette_Reset" xml:space="preserve">
+    <value>Reset</value>
+    <comment>Button: reset standard colors to hardcoded defaults</comment>
+  </data>
+  <data name="Palette_Palettes" xml:space="preserve">
+    <value>Palettes</value>
+    <comment>Header for the named palettes section</comment>
+  </data>
+  <data name="Palette_New" xml:space="preserve">
+    <value>New palette</value>
+    <comment>Button/name: create a new palette</comment>
+  </data>
+  <data name="Palette_Local" xml:space="preserve">
+    <value>Local</value>
+    <comment>Palette scope: stored in the project</comment>
+  </data>
+  <data name="Palette_Global" xml:space="preserve">
+    <value>Global</value>
+    <comment>Palette scope: stored in app settings (all projects)</comment>
+  </data>
+  <data name="Palette_Delete" xml:space="preserve">
+    <value>Delete</value>
+    <comment>Button: delete the selected palette</comment>
+  </data>
+  <data name="Palette_ToggleVisible" xml:space="preserve">
+    <value>Show / hide in quick popup</value>
+    <comment>Tooltip: toggle palette visibility in the quick color popup</comment>
   </data>
   <data name="Common_Ok" xml:space="preserve">
     <value>OK</value>

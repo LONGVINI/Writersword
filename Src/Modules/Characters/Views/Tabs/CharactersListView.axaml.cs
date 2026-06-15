@@ -22,13 +22,14 @@ namespace Writersword.Modules.Characters.Views.Tabs
         private const double DragThreshold = 8.0;
         // Пауза удержания перед стартом перетаскивания. Быстрый клик уходит кнопкам
         // карточки, перетаскивание начинается только после зажатия и последующего движения.
-        private const long DragHoldDelayMs = 350;
+        private const long DragHoldDelayMs = 90;
 
         private Point _dragStartPoint;
         private long _pressTick;
         private CharacterListItemViewModel? _dragCandidate;
         private bool _isDragging;
         private bool _hasPointerCapture;
+        private Border? _pickedCard;
 
         private Dictionary<string, Border> _cardBorderCache = new();
         private Dictionary<string, Control> _folderHeaderCache = new();
@@ -188,6 +189,34 @@ namespace Writersword.Modules.Characters.Views.Tabs
             return null;
         }
 
+        // Корневой Border карточки над переданным элементом (для отклика «взято»).
+        private static Border? FindCardBorder(Visual? visual)
+        {
+            var current = visual;
+            while (current is not null)
+            {
+                if (current is Border b && b.Classes.Contains("card-root")) return b;
+                current = current.GetVisualParent();
+            }
+            return null;
+        }
+
+        // Подсветка «карточка взята» (тень-подъём) — мгновенный отклик на зажатие.
+        private void SetPicked(Border? border)
+        {
+            ClearPicked();
+            if (border is null) return;
+            _pickedCard = border;
+            if (!border.Classes.Contains("picked")) border.Classes.Add("picked");
+        }
+
+        private void ClearPicked()
+        {
+            if (_pickedCard is null) return;
+            _pickedCard.Classes.Remove("picked");
+            _pickedCard = null;
+        }
+
         private static void OnCardTextBoxLostFocus(object? sender, RoutedEventArgs e)
         {
             if (e.Source is not TextBox) return;
@@ -250,9 +279,14 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 // подавляет Click внутренних кнопок карточки (в том числе Flyout аватарки).
                 // Захват берём только при реальном старте перетаскивания в OnGlobalPointerMoved.
                 _hasPointerCapture = false;
+
+                // Мгновенный отклик: приподнимаем карточку тенью, чтобы было понятно,
+                // что она взята и её можно перетаскивать.
+                SetPicked(FindCardBorder(source));
             }
             else
             {
+                ClearPicked();
                 _dragCandidate = null;
                 _isDragging = false;
                 _hasPointerCapture = false;
@@ -290,6 +324,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 if (movedBeyondThreshold
                     && Environment.TickCount64 - _pressTick < DragHoldDelayMs)
                 {
+                    ClearPicked();
                     _dragCandidate = null;
                     return;
                 }
@@ -303,6 +338,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 // поэтому захвата на пороге достаточно, чтобы перехватить скролл.
                 e.Pointer.Capture(this);
                 _hasPointerCapture = true;
+                // Перетаскивание началось — статичную подсветку убираем, дальше летит призрак.
+                ClearPicked();
 
                 if (DataContext is CharactersViewModel startVm)
                 {
@@ -426,8 +463,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
         // Не сбрасываем — карточки в середине анимации не прерываются.
         private Dictionary<string, Point> SnapshotPositions()
         {
-            var result = new Dictionary<string, Point>(_cardBorderCache.Count);
-            foreach (var (id, border) in _cardBorderCache)
+            var result = new Dictionary<string, Point>();
+            foreach (var (id, border) in EnumerateLiveCards())
             {
                 var pt = border.TranslatePoint(new Point(0, 0), this);
                 if (pt.HasValue) result[id] = pt.Value;
@@ -435,9 +472,29 @@ namespace Writersword.Modules.Characters.Views.Tabs
             return result;
         }
 
+        // Живые реализованные карточки (id -> корневой Border) из репитеров. Стартовый
+        // кэш на момент начала drag ещё пуст (дети репитера не реализованы), поэтому
+        // снапшоты и FLIP берут карточки из живого дерева на каждом шаге.
+        private IEnumerable<(string id, Border border)> EnumerateLiveCards()
+        {
+            foreach (var repeater in _folderItemsCtrlCache.Values.OfType<ItemsRepeater>())
+            {
+                foreach (var child in repeater.GetVisualChildren().OfType<Control>())
+                {
+                    if (child.DataContext is not CharacterListItemViewModel cvm || cvm.IsPlaceholder)
+                        continue;
+                    var border = child as Border
+                        ?? child.GetVisualDescendants().OfType<Border>()
+                                .FirstOrDefault(b => b.Classes.Contains("card-root"));
+                    if (border is not null)
+                        yield return (cvm.Id, border);
+                }
+            }
+        }
+
         private void ResetTransformsInstant()
         {
-            foreach (var (_, border) in _cardBorderCache)
+            foreach (var (_, border) in EnumerateLiveCards())
             {
                 if (border.RenderTransform is not TranslateTransform tt) continue;
                 if (tt.X == 0.0 && tt.Y == 0.0) continue;
@@ -458,80 +515,139 @@ namespace Writersword.Modules.Characters.Views.Tabs
             if (beforePositions.Count == 0) return;
             int gen = ++_flipGeneration;
 
+            // Прогоняем layout СИНХРОННО после изменения коллекции и измеряем новые
+            // позиции сразу. Раньше замер откладывался постом с приоритетом Loaded,
+            // который НИЖЕ Input: при непрерывном перетаскивании входные события его
+            // вытесняют, колбэк не успевает отработать — отсюда «нет анимаций».
+            UpdateLayout();
+
+            var toAnimate = new List<TranslateTransform>(beforePositions.Count);
+
+            foreach (var (id, border) in EnumerateLiveCards())
+            {
+                if (!beforePositions.TryGetValue(id, out var before)) continue;
+                if (border.RenderTransform is not TranslateTransform tt) continue;
+
+                // Точечный сброс: временно обнуляем трансформ для замера layout-позиции
+                double oldX = tt.X, oldY = tt.Y;
+                var saved = tt.Transitions;
+                tt.Transitions = null;
+                tt.X = 0.0;
+                tt.Y = 0.0;
+
+                var layoutPt = border.TranslatePoint(new Point(0, 0), this);
+
+                if (!layoutPt.HasValue)
+                {
+                    tt.X = oldX;
+                    tt.Y = oldY;
+                    tt.Transitions = saved;
+                    continue;
+                }
+
+                double dx = before.X - layoutPt.Value.X;
+                double dy = before.Y - layoutPt.Value.Y;
+
+                if (Math.Abs(dx) < 0.5 && Math.Abs(dy) < 0.5)
+                {
+                    // позиция не изменилась — восстанавливаем текущую анимацию
+                    tt.X = oldX;
+                    tt.Y = oldY;
+                    tt.Transitions = saved;
+                    continue;
+                }
+
+                tt.X = dx;
+                tt.Y = dy;
+                tt.Transitions = saved;
+                toAnimate.Add(tt);
+            }
+
+            if (toAnimate.Count == 0) return;
+
+            // Финальный «доезд» к нулю — на следующий тик с приоритетом Render
+            // (он выше Input, перетаскиванием не вытесняется), чтобы сыграл переход.
             Dispatcher.UIThread.Post(() =>
             {
                 if (gen != _flipGeneration) return;
-
-                var toAnimate = new List<TranslateTransform>(beforePositions.Count);
-
-                foreach (var (id, border) in _cardBorderCache)
-                {
-                    if (!beforePositions.TryGetValue(id, out var before)) continue;
-                    if (border.RenderTransform is not TranslateTransform tt) continue;
-
-                    // Точечный сброс: временно обнуляем трансформ для замера layout-позиции
-                    double oldX = tt.X, oldY = tt.Y;
-                    var saved = tt.Transitions;
-                    tt.Transitions = null;
-                    tt.X = 0.0;
-                    tt.Y = 0.0;
-
-                    var layoutPt = border.TranslatePoint(new Point(0, 0), this);
-
-                    if (!layoutPt.HasValue)
-                    {
-                        tt.X = oldX;
-                        tt.Y = oldY;
-                        tt.Transitions = saved;
-                        continue;
-                    }
-
-                    double dx = before.X - layoutPt.Value.X;
-                    double dy = before.Y - layoutPt.Value.Y;
-
-                    if (Math.Abs(dx) < 0.5 && Math.Abs(dy) < 0.5)
-                    {
-                        // позиция не изменилась — восстанавливаем текущую анимацию
-                        tt.X = oldX;
-                        tt.Y = oldY;
-                        tt.Transitions = saved;
-                        continue;
-                    }
-
-                    tt.X = dx;
-                    tt.Y = dy;
-                    tt.Transitions = saved;
-                    toAnimate.Add(tt);
-                }
-
-                if (toAnimate.Count == 0) return;
-
-                Dispatcher.UIThread.Post(() =>
-                {
-                    if (gen != _flipGeneration) return;
-                    foreach (var tt in toAnimate) { tt.X = 0.0; tt.Y = 0.0; }
-                }, DispatcherPriority.Render);
-
-            }, DispatcherPriority.Loaded);
+                foreach (var tt in toAnimate) { tt.X = 0.0; tt.Y = 0.0; }
+            }, DispatcherPriority.Render);
         }
 
         private int ComputeTargetIndex(Point pos, CharacterFolderViewModel folderVm)
         {
-            if (!_folderItemsCtrlCache.TryGetValue(folderVm.FolderId, out var container))
+            if (!_folderItemsCtrlCache.TryGetValue(folderVm.FolderId, out var ctrl))
                 return _dragTargetIndex;
 
-            var topLeft = container.TranslatePoint(new Point(0, 0), this);
+            // Маппим курсор на СЕТКУ ЯЧЕЕК, а не на личность карточки. Ячейки сетки
+            // стоят на месте (карточки лишь переезжают между ними), поэтому индекс не
+            // зависит от текущего положения плейсхолдера — нет петли «двигаем -> индекс
+            // сменился -> снова двигаем», отсюда уходит мерцание. Колонки/строки берём
+            // из живых позиций (вычитая анимационный сдвиг — стабильная layout-позиция),
+            // плейсхолдер включаем, чтобы сетка была полной.
+            if (ctrl is ItemsRepeater repeater)
+            {
+                const double tol = 4.0;
+                var xs = new List<double>();
+                var ys = new List<double>();
+
+                foreach (var child in repeater.GetVisualChildren().OfType<Control>())
+                {
+                    if (child.DataContext is not CharacterListItemViewModel) continue;
+                    // Только что реализованные/невыложенные карточки с нулевыми
+                    // границами дают ложную колонку слева и сдвиг индекса — отсеиваем.
+                    if (child.Bounds.Width <= 1 || child.Bounds.Height <= 1) continue;
+                    var ctr = child.TranslatePoint(
+                        new Point(child.Bounds.Width / 2.0, child.Bounds.Height / 2.0), this);
+                    if (!ctr.HasValue) continue;
+
+                    double offX = 0, offY = 0;
+                    if (child.RenderTransform is TranslateTransform tt) { offX = tt.X; offY = tt.Y; }
+                    double cx = ctr.Value.X - offX;
+                    double cy = ctr.Value.Y - offY;
+
+                    if (!xs.Any(v => Math.Abs(v - cx) <= tol)) xs.Add(cx);
+                    if (!ys.Any(v => Math.Abs(v - cy) <= tol)) ys.Add(cy);
+                }
+
+                if (xs.Count > 0 && ys.Count > 0)
+                {
+                    xs.Sort();
+                    ys.Sort();
+                    int cols = xs.Count;
+                    int col = NearestIndex(xs, pos.X);
+                    int row = NearestIndex(ys, pos.Y);
+                    int maxReal = Math.Max(0, folderVm.Characters.Count - 1);
+                    return Math.Min(row * cols + col, maxReal);
+                }
+            }
+
+            // Фолбэк: прежняя оценка по слот-геометрии (карточки ещё не реализованы).
+            var topLeft = ctrl.TranslatePoint(new Point(0, 0), this);
             if (topLeft is null) return _dragTargetIndex;
 
             double relX = pos.X - topLeft.Value.X;
             double relY = pos.Y - topLeft.Value.Y;
 
-            int row = Math.Max(0, (int)(relY / _slotHeight));
-            int col = Math.Max(0, (int)(relX / _slotWidth));
-            col = Math.Min(col, _cardsPerRow - 1);
+            int r = Math.Max(0, (int)(relY / _slotHeight));
+            int c = Math.Max(0, (int)(relX / _slotWidth));
+            c = Math.Min(c, _cardsPerRow - 1);
 
             int maxIdx = Math.Max(0, folderVm.Characters.Count - 1);
-            return Math.Min(row * _cardsPerRow + col, maxIdx);
+            return Math.Min(r * _cardsPerRow + c, maxIdx);
+        }
+
+        // Индекс ближайшего по значению центра (колонки/строки) к координате курсора.
+        private static int NearestIndex(List<double> centers, double value)
+        {
+            int best = 0;
+            double bestDist = double.MaxValue;
+            for (int i = 0; i < centers.Count; i++)
+            {
+                double d = Math.Abs(centers[i] - value);
+                if (d < bestDist) { bestDist = d; best = i; }
+            }
+            return best;
         }
 
         private void RebuildDragCaches()
@@ -540,6 +656,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
             _folderHeaderCache.Clear();
             _folderItemsCtrlCache.Clear();
 
+            // Заголовки папок и репитеры — обычным обходом визуального дерева.
             foreach (var ctrl in this.GetVisualDescendants().OfType<Control>())
             {
                 switch (ctrl)
@@ -553,29 +670,26 @@ namespace Writersword.Modules.Characters.Views.Tabs
                         if (!_folderItemsCtrlCache.ContainsKey(fvIr.FolderId))
                             _folderItemsCtrlCache[fvIr.FolderId] = ir;
                         break;
-
-                    case Border border
-                        when border.DataContext is CharacterListItemViewModel cardVm
-                        && !cardVm.IsPlaceholder
-                        && IsTopLevelCardBorder(border):
-                        _cardBorderCache[cardVm.Id] = border;
-                        break;
                 }
             }
-        }
 
-        private static bool IsTopLevelCardBorder(Border border)
-        {
-            var parent = border.GetVisualParent();
-            while (parent is not null)
+            // Карточки берём НАПРЯМУЮ из реализованных детей репитеров — так же, как в
+            // ComputeTargetIndex (этот путь карточки точно находит). Глобальный обход
+            // GetVisualDescendants в реализованные дети ItemsRepeater не заходит, из-за
+            // чего кэш оставался пустым и FLIP-анимации не было.
+            foreach (var repeater in _folderItemsCtrlCache.Values.OfType<ItemsRepeater>())
             {
-                if (parent is ItemsRepeater || parent is WrapPanel)
-                    return true;
-                if (parent is Border pb && pb.DataContext == border.DataContext)
-                    return false;
-                parent = parent.GetVisualParent();
+                foreach (var child in repeater.GetVisualChildren().OfType<Control>())
+                {
+                    if (child.DataContext is not CharacterListItemViewModel cardVm || cardVm.IsPlaceholder)
+                        continue;
+                    var border = child as Border
+                        ?? child.GetVisualDescendants().OfType<Border>()
+                                .FirstOrDefault(b => b.Classes.Contains("card-root"));
+                    if (border is not null)
+                        _cardBorderCache[cardVm.Id] = border;
+                }
             }
-            return false;
         }
 
         // Вызывается из ViewModel при создании нового CharacterListItemViewModel
@@ -647,6 +761,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
                     e.Pointer.Capture(null);
                     _hasPointerCapture = false;
                 }
+                ClearPicked();
                 _dragCandidate = null;
                 _isDragging = false;
                 return;
@@ -685,6 +800,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 _currentDragOverFolder = null;
             }
             HideGhost();
+            ClearPicked();
         }
 
         private void ShowGhost(string name, string color, Point pos)

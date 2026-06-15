@@ -2,16 +2,20 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
+using Avalonia.Data.Converters;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.VisualTree;
 using ReactiveUI;
 using System;
+using System.Windows.Input;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
+using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Services;
@@ -40,6 +44,49 @@ namespace Writersword.Styles.UserControls
         {
             get => GetValue(ShowCardPreviewProperty);
             set => SetValue(ShowCardPreviewProperty, value);
+        }
+
+        // Данные для превью реальной карточки в редакторе: картинка, имя, запасной значок.
+        public static readonly StyledProperty<Bitmap?> PreviewImageProperty =
+            AvaloniaProperty.Register<ColorPickerButton, Bitmap?>(nameof(PreviewImage));
+        public Bitmap? PreviewImage
+        {
+            get => GetValue(PreviewImageProperty);
+            set => SetValue(PreviewImageProperty, value);
+        }
+
+        public static readonly StyledProperty<string?> PreviewNameProperty =
+            AvaloniaProperty.Register<ColorPickerButton, string?>(nameof(PreviewName));
+        public string? PreviewName
+        {
+            get => GetValue(PreviewNameProperty);
+            set => SetValue(PreviewNameProperty, value);
+        }
+
+        public static readonly StyledProperty<string?> PreviewFallbackProperty =
+            AvaloniaProperty.Register<ColorPickerButton, string?>(nameof(PreviewFallback));
+        public string? PreviewFallback
+        {
+            get => GetValue(PreviewFallbackProperty);
+            set => SetValue(PreviewFallbackProperty, value);
+        }
+
+        // Доп. функция кольца вокруг аватара (двусторонняя связь с моделью карточки).
+        public static readonly StyledProperty<bool> RingEnabledProperty =
+            AvaloniaProperty.Register<ColorPickerButton, bool>(
+                nameof(RingEnabled), defaultBindingMode: BindingMode.TwoWay);
+        public bool RingEnabled
+        {
+            get => GetValue(RingEnabledProperty);
+            set => SetValue(RingEnabledProperty, value);
+        }
+
+        public static readonly StyledProperty<ICommand?> ApplyRingToAllCommandProperty =
+            AvaloniaProperty.Register<ColorPickerButton, ICommand?>(nameof(ApplyRingToAllCommand));
+        public ICommand? ApplyRingToAllCommand
+        {
+            get => GetValue(ApplyRingToAllCommandProperty);
+            set => SetValue(ApplyRingToAllCommandProperty, value);
         }
 
         public IReadOnlyList<string> PresetColors { get; } = new[]
@@ -74,8 +121,64 @@ namespace Writersword.Styles.UserControls
             private set => SetAndRaise(HasRecentColorsProperty, ref _hasRecentColors, value);
         }
 
+        // Видимые палитры (проектные + глобальные) для секции «Палитры» в попапе.
+        public ObservableCollection<PaletteListItem> PopupPalettes { get; } = new();
+
+        public static readonly DirectProperty<ColorPickerButton, bool> HasPalettesProperty =
+            AvaloniaProperty.RegisterDirect<ColorPickerButton, bool>(nameof(HasPalettes), o => o.HasPalettes);
+        private bool _hasPalettes;
+        public bool HasPalettes
+        {
+            get => _hasPalettes;
+            private set => SetAndRaise(HasPalettesProperty, ref _hasPalettes, value);
+        }
+
+        // Раскрытость секций попапа (двусторонняя — для биндинга тел и шевронов).
+        public static readonly DirectProperty<ColorPickerButton, bool> BasicExpandedProperty =
+            AvaloniaProperty.RegisterDirect<ColorPickerButton, bool>(
+                nameof(BasicExpanded), o => o.BasicExpanded, (o, v) => o.BasicExpanded = v);
+        private bool _basicExpanded = true;
+        public bool BasicExpanded
+        {
+            get => _basicExpanded;
+            set => SetAndRaise(BasicExpandedProperty, ref _basicExpanded, value);
+        }
+
+        public static readonly DirectProperty<ColorPickerButton, bool> MineExpandedProperty =
+            AvaloniaProperty.RegisterDirect<ColorPickerButton, bool>(
+                nameof(MineExpanded), o => o.MineExpanded, (o, v) => o.MineExpanded = v);
+        private bool _mineExpanded = true;
+        public bool MineExpanded
+        {
+            get => _mineExpanded;
+            set => SetAndRaise(MineExpandedProperty, ref _mineExpanded, value);
+        }
+
+        public static readonly DirectProperty<ColorPickerButton, bool> RecentExpandedProperty =
+            AvaloniaProperty.RegisterDirect<ColorPickerButton, bool>(
+                nameof(RecentExpanded), o => o.RecentExpanded, (o, v) => o.RecentExpanded = v);
+        private bool _recentExpanded = true;
+        public bool RecentExpanded
+        {
+            get => _recentExpanded;
+            set => SetAndRaise(RecentExpandedProperty, ref _recentExpanded, value);
+        }
+
+        public static readonly DirectProperty<ColorPickerButton, bool> PalettesExpandedProperty =
+            AvaloniaProperty.RegisterDirect<ColorPickerButton, bool>(
+                nameof(PalettesExpanded), o => o.PalettesExpanded, (o, v) => o.PalettesExpanded = v);
+        private bool _palettesExpanded = true;
+        public bool PalettesExpanded
+        {
+            get => _palettesExpanded;
+            set => SetAndRaise(PalettesExpandedProperty, ref _palettesExpanded, value);
+        }
+
+        private GlobalPaletteData _global = new();
+
         public ReactiveCommand<string, Unit> SelectPresetCommand { get; }
         public ReactiveCommand<string, Unit> RemovePinnedCommand { get; }
+        public ReactiveCommand<string, Unit> RemoveRecentCommand { get; }
         public ReactiveCommand<Unit, Unit> PinCurrentCommand { get; }
         public ReactiveCommand<Unit, Unit> OpenAdvancedCommand { get; }
 
@@ -106,6 +209,13 @@ namespace Writersword.Styles.UserControls
                 CurrentProject?.ProjectPinnedColors.RemoveAll(c => HexEquals(c, hex));
                 for (int i = PinnedColors.Count - 1; i >= 0; i--)
                     if (HexEquals(PinnedColors[i], hex)) PinnedColors.RemoveAt(i);
+            });
+
+            RemoveRecentCommand = ReactiveCommand.Create<string>(hex =>
+            {
+                CurrentProject?.ProjectRecentColors.RemoveAll(c => HexEquals(c, hex));
+                for (int i = RecentColors.Count - 1; i >= 0; i--)
+                    if (HexEquals(RecentColors[i], hex)) RecentColors.RemoveAt(i);
             });
 
             PinCurrentCommand = ReactiveCommand.Create(() => AddPinned(HexColor));
@@ -143,9 +253,28 @@ namespace Writersword.Styles.UserControls
                 _flyout?.Hide();
                 var overlay = FindEditorOverlay();
                 if (overlay is null) return;
-                var result = await overlay.ShowAsync(HexColor, ShowCardPreview);
-                if (!string.IsNullOrWhiteSpace(result))
-                    HexColor = result;
+                var result = await overlay.ShowAsync(
+                    HexColor, ShowCardPreview, PreviewImage, PreviewName, PreviewFallback,
+                    RingEnabled, CurrentProject?.AvatarRingsAll ?? false);
+                if (result is null) return;
+
+                if (!string.IsNullOrWhiteSpace(result.Hex))
+                    HexColor = result.Hex;
+
+                if (result.ApplyAll is bool applyVal)
+                {
+                    var cmd = ApplyRingToAllCommand;
+                    if (cmd is not null && cmd.CanExecute(applyVal)) cmd.Execute(applyVal);
+                    RingEnabled = applyVal;
+
+                    var proj = CurrentProject;
+                    if (proj is not null) proj.AvatarRingsAll = applyVal;
+                    SaveActiveDocument();
+                }
+                else
+                {
+                    RingEnabled = result.Ring;
+                }
             }
             catch (Exception ex)
             {
@@ -155,6 +284,20 @@ namespace Writersword.Styles.UserControls
 
         private static ProjectFile? CurrentProject =>
             CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context?.Project;
+
+        // Проектные данные (палитра, флаг колец) не помечают проект «грязным» —
+        // сохраняем документ явно после массового переключения колец.
+        private static void SaveActiveDocument()
+        {
+            try
+            {
+                var tab = CoreServices.GetService<ITabCollection>()?.ActiveTab;
+                var workflow = CoreServices.GetService<IProjectWorkflow>();
+                if (tab is not null && workflow is not null)
+                    _ = workflow.SaveDocumentAsync(tab);
+            }
+            catch { }
+        }
 
         private static string Normalize(string? hex) => (hex ?? string.Empty).Trim().ToUpperInvariant();
 
@@ -200,6 +343,7 @@ namespace Writersword.Styles.UserControls
         private void OnFlyoutOpened(object? sender, EventArgs e)
         {
             ReloadFromProject();
+            LoadPalettesAndCollapse();
             SyncColorViewFromHex(HexColor);
         }
 
@@ -219,6 +363,61 @@ namespace Writersword.Styles.UserControls
             foreach (var c in proj.ProjectRecentColors) RecentColors.Add(c);
             HasPinnedColors = PinnedColors.Count > 0;
             HasRecentColors = RecentColors.Count > 0;
+        }
+
+        // Загружает видимые палитры (проектные + глобальные) и состояние
+        // сворачивания секций попапа из глобальных настроек.
+        private void LoadPalettesAndCollapse()
+        {
+            var s = CoreServices.GetService<ISettingsService>();
+            _global = s?.GetModuleSettings<GlobalPaletteData>("ColorPalettes") ?? new GlobalPaletteData();
+            _global.Palettes ??= new List<ColorPalette>();
+            _global.CollapsedSections ??= new Dictionary<string, bool>();
+
+            PopupPalettes.Clear();
+            var proj = CurrentProject;
+            if (proj is not null)
+                foreach (var p in proj.ProjectPalettes)
+                    if (p.Visible && p.Colors.Count > 0)
+                        PopupPalettes.Add(new PaletteListItem { Palette = p, IsGlobal = false });
+            foreach (var p in _global.Palettes)
+                if (p.Visible && p.Colors.Count > 0)
+                    PopupPalettes.Add(new PaletteListItem { Palette = p, IsGlobal = true });
+            HasPalettes = PopupPalettes.Count > 0;
+
+            BasicExpanded = !IsCollapsed("pp.basic");
+            MineExpanded = !IsCollapsed("pp.mine");
+            RecentExpanded = !IsCollapsed("pp.recent");
+            PalettesExpanded = !IsCollapsed("pp.palettes");
+        }
+
+        private bool IsCollapsed(string key) =>
+            _global.CollapsedSections.TryGetValue(key, out var v) && v;
+
+        private void OnSectionHeader(object? sender, RoutedEventArgs e)
+        {
+            if (sender is not Control c || c.Tag is not string key) return;
+
+            bool collapsed;
+            switch (key)
+            {
+                case "pp.basic": BasicExpanded = !BasicExpanded; collapsed = !BasicExpanded; break;
+                case "pp.mine": MineExpanded = !MineExpanded; collapsed = !MineExpanded; break;
+                case "pp.recent": RecentExpanded = !RecentExpanded; collapsed = !RecentExpanded; break;
+                case "pp.palettes": PalettesExpanded = !PalettesExpanded; collapsed = !PalettesExpanded; break;
+                default: return;
+            }
+
+            _global.CollapsedSections[key] = collapsed;
+            SaveGlobalCollapse();
+        }
+
+        private void SaveGlobalCollapse()
+        {
+            var s = CoreServices.GetService<ISettingsService>();
+            if (s is null) return;
+            s.SaveModuleSettings("ColorPalettes", _global);
+            s.Save();
         }
 
         private void AddPinned(string hex)
@@ -277,5 +476,13 @@ namespace Writersword.Styles.UserControls
             HexColor = $"#{color.R:X2}{color.G:X2}{color.B:X2}";
             _syncingColorView = false;
         }
+    }
+
+    /// <summary>Конвертеры для попапа выбора цвета.</summary>
+    public static class PaletteConverters
+    {
+        // Инверсия bool: для биндинга «свёрнутого» шеврона секции.
+        public static readonly IValueConverter Not =
+            new FuncValueConverter<bool, bool>(b => !b);
     }
 }

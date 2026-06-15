@@ -13,6 +13,8 @@ namespace Writersword.Modules.Characters.Models
         public string Name { get; set; } = "Новый персонаж";
         public string ShortDescription { get; set; } = string.Empty;
         public string Color { get; set; } = "#607D8B";
+        // Доп. функция: показывать кольцо цвета персонажа вокруг аватара.
+        public bool AvatarRing { get; set; } = false;
         public string FallbackIcon { get; set; } = "?";
         public string? AvatarPath { get; set; }
         public CharacterImportanceLevel ImportanceLevel { get; set; } = CharacterImportanceLevel.Secondary;

@@ -43,6 +43,17 @@ namespace Writersword.Core.Models.Project
         public List<string> ProjectRecentColors { get; set; } = new();
 
         /// <summary>
+        /// Доп. функция: включено ли кольцо вокруг аватара у ВСЕХ персонажей.
+        /// Переключается одной кнопкой в редакторе цвета.
+        /// </summary>
+        [JsonProperty("AvatarRingsAll")]
+        public bool AvatarRingsAll { get; set; } = false;
+
+        /// <summary>Локальные (проектные) именованные палитры цветов.</summary>
+        [JsonProperty("ProjectPalettes")]
+        public List<ColorPalette> ProjectPalettes { get; set; } = new();
+
+        /// <summary>
         /// Конфигурация WorkModes.
         /// НЕ сериализуется — загружается из workspace.json при открытии.
         /// </summary>

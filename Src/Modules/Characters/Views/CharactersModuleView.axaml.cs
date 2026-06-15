@@ -36,8 +36,6 @@ namespace Writersword.Modules.Characters.Views
 
         private ContentControl? _tabContent;
 
-        private bool _viewLoadedOnce;
-
         public CharactersModuleView()
         {
             InitializeComponent();
@@ -82,7 +80,6 @@ namespace Writersword.Modules.Characters.Views
             if (DataContext is CharactersViewModel vm2)
             {
                 SwitchTab(vm2.MainTabIndex);
-                _viewLoadedOnce = true;
             }
             else
                 SwitchTab(0);
@@ -102,7 +99,6 @@ namespace Writersword.Modules.Characters.Views
             _editView = null;
             _graphView = null;
             _templatesView = null;
-            _viewLoadedOnce = false;
 
             if (DataContext is CharactersViewModel vm)
             {

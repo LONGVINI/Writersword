@@ -33,6 +33,9 @@
 		<AvaloniaXaml Include="Styles\UserControls\ColorEditorOverlay.axaml" />
 		<Compile Include="Styles\UserControls\EyedropperOverlay.axaml.cs" />
 		<AvaloniaXaml Include="Styles\UserControls\EyedropperOverlay.axaml" />
+		<Compile Include="Styles\UserControls\PaletteManagerView.axaml.cs" />
+		<AvaloniaXaml Include="Styles\UserControls\PaletteManagerView.axaml" />
+		<Compile Include="Styles\UserControls\StandardColors.cs" />
 		<Compile Include="Styles\UserControls\RibbonScrollContainer.axaml.cs" />
 		<AvaloniaXaml Include="Styles\UserControls\RibbonScrollContainer.axaml" />
 		<Compile Include="Styles\UserControls\TooltipView.axaml.cs" />

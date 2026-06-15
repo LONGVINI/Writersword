@@ -300,13 +300,23 @@
                                                             BorderThickness="2"
                                                             ClipToBounds="True"
                                                             Margin="6"
-                                                            Cursor="Hand"
+                                                            Cursor="SizeAll"
                                                             Opacity="{Binding DragOpacity}"
                                                             IsHitTestVisible="{Binding !IsDragging}">
 
                                                         <!-- Стили hover: кнопки edit/delete появляются только при наведении.
                                                              Это освобождает пространство в маленьких карточках и улучшает UX. -->
                                                         <Border.Styles>
+                                                            <!-- Карточка «взята»: приподнимаем тенью при зажатии. -->
+                                                            <Style Selector="Border.card-root.picked">
+                                                                <Setter Property="BoxShadow" Value="0 0 16 2 #99FFFFFF"/>
+                                                                <Setter Property="ZIndex" Value="20"/>
+                                                            </Style>
+                                                            <!-- При наведении карточка слегка приподнимается — видно, что её можно двигать. -->
+                                                            <Style Selector="Border.card-root:pointerover">
+                                                                <Setter Property="BoxShadow" Value="0 0 10 1 #55FFFFFF"/>
+                                                                <Setter Property="ZIndex" Value="10"/>
+                                                            </Style>
                                                             <Style Selector="Border.card-root StackPanel.card-edit-btns">
                                                                 <Setter Property="Opacity" Value="0"/>
                                                                 <Setter Property="Transitions">
@@ -387,6 +397,15 @@
                                                                                        Foreground="White"
                                                                                        IsHitTestVisible="False"/>
                                                                         </Border>
+                                                                        <Border CornerRadius="999"
+                                                                            BorderBrush="{Binding Color}"
+                                                                            BorderThickness="2"
+                                                                            IsVisible="{Binding AvatarRing}"
+                                                                            IsHitTestVisible="False"
+                                                                            Width="{Binding $parent[UserControl].DataContext.CardRingSize, FallbackValue=56}"
+                                                                            Height="{Binding $parent[UserControl].DataContext.CardRingSize, FallbackValue=56}"
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center"/>
                                                                         <Border Classes="avatar-ring"
                                                                             CornerRadius="999"
                                                                             BorderBrush="White"
@@ -447,6 +466,15 @@
                                                                             <Image Source="{Binding AvatarBitmap}"
                                                                                    Stretch="UniformToFill"/>
                                                                         </Border>
+                                                                        <Border CornerRadius="999"
+                                                                            BorderBrush="{Binding Color}"
+                                                                            BorderThickness="2"
+                                                                            IsVisible="{Binding AvatarRing}"
+                                                                            IsHitTestVisible="False"
+                                                                            Width="{Binding $parent[UserControl].DataContext.CardRingSize, FallbackValue=56}"
+                                                                            Height="{Binding $parent[UserControl].DataContext.CardRingSize, FallbackValue=56}"
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center"/>
                                                                         <Border Classes="avatar-ring"
                                                                             CornerRadius="999"
                                                                             BorderBrush="White"
@@ -464,6 +492,11 @@
                                                                 <colorControls:ColorPickerButton
                                                                     ShowCardPreview="True"
                                                                     HexColor="{Binding Color, Mode=TwoWay}"
+                                                                    PreviewImage="{Binding AvatarBitmap}"
+                                                                    PreviewName="{Binding Name}"
+                                                                    PreviewFallback="{Binding FallbackIcon}"
+                                                                    RingEnabled="{Binding AvatarRing, Mode=TwoWay}"
+                                                                    ApplyRingToAllCommand="{Binding ApplyRingToAllCommand}"
                                                                     HorizontalAlignment="Left"
                                                                     VerticalAlignment="Top"
                                                                     Margin="5"

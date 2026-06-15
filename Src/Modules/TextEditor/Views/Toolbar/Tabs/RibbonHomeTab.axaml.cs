@@ -19,7 +19,6 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         private AutoCompleteBox? _fontAutoComplete;
         private TextBox? _fontInnerTextBox;
         private ListBox? _fontInnerList;
-        private bool _fontJustGotFocus;
         private bool _fontScrolling;
         private string? _fontBeforeOpen;
         private string? _fontHovered;
@@ -102,17 +101,15 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             if (_fontInnerTextBox is not null)
             {
                 _fontInnerTextBox.PointerReleased -= OnFontInnerPointerReleased;
-                _fontInnerTextBox.GotFocus -= OnFontInnerGotFocus;
-                _fontInnerTextBox.LostFocus -= OnFontInnerLostFocus;
                 _fontInnerTextBox.KeyDown -= OnFontInnerKeyDown;
             }
 
             if (_fontInnerList is not null)
             {
-                _fontInnerList.SelectionChanged  -= OnFontInnerListSelectionChanged;
-                _fontInnerList.PointerMoved      -= OnFontInnerListPointerMoved;
-                _fontInnerList.PointerExited     -= OnFontInnerListPointerExited;
-                _fontInnerList.PointerReleased   -= OnFontInnerListPointerReleased;
+                _fontInnerList.SelectionChanged -= OnFontInnerListSelectionChanged;
+                _fontInnerList.PointerMoved -= OnFontInnerListPointerMoved;
+                _fontInnerList.PointerExited -= OnFontInnerListPointerExited;
+                _fontInnerList.PointerReleased -= OnFontInnerListPointerReleased;
             }
         }
 
@@ -130,17 +127,15 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
                 _fontInnerTextBox.Padding = new Thickness(6, 0);
 
                 _fontInnerTextBox.PointerReleased += OnFontInnerPointerReleased;
-                _fontInnerTextBox.GotFocus += OnFontInnerGotFocus;
-                _fontInnerTextBox.LostFocus += OnFontInnerLostFocus;
                 _fontInnerTextBox.KeyDown += OnFontInnerKeyDown;
             }
 
             if (_fontInnerList is not null)
             {
                 _fontInnerList.SelectionChanged += OnFontInnerListSelectionChanged;
-                _fontInnerList.PointerMoved     += OnFontInnerListPointerMoved;
-                _fontInnerList.PointerExited    += OnFontInnerListPointerExited;
-                _fontInnerList.PointerReleased  += OnFontInnerListPointerReleased;
+                _fontInnerList.PointerMoved += OnFontInnerListPointerMoved;
+                _fontInnerList.PointerExited += OnFontInnerListPointerExited;
+                _fontInnerList.PointerReleased += OnFontInnerListPointerReleased;
             }
         }
 
@@ -151,20 +146,8 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             e.Handled = true;
         }
 
-        private void OnFontInnerGotFocus(object? sender, FocusChangedEventArgs e)
-        {
-            _fontJustGotFocus = true;
-        }
-
-        private void OnFontInnerLostFocus(object? sender, FocusChangedEventArgs e)
-        {
-            _fontJustGotFocus = false;
-        }
-
         private void OnFontInnerPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
-            _fontJustGotFocus = false;
-
             // Не открываем если дропдаун уже открыт.
             if (_fontAutoComplete?.IsDropDownOpen == true) return;
 

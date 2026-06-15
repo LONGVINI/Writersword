@@ -98,6 +98,21 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Func<System.Collections.Generic.IReadOnlyList<(System.Guid ParaId, int From, int To)>,
             Action<RunProperties>, string, bool>? CommitRunPropertyGranularDelegate
         { get; set; }
+
+        // Гранулярный коммит изменений текста с сохранением форматирования (смена регистра).
+        // Канвас строит ChangeCaseCommand на каждый диапазон и пушит одной командой в TextUndoStack.
+        // Возвращает true, если обработал; иначе ChangeCase идёт снапшотным запасным путём.
+        public Func<System.Collections.Generic.IReadOnlyList<(System.Guid ParaId, int From, string OldText, string NewText)>,
+            string, bool>? CommitTextEditsDelegate
+        { get; set; }
+
+        // Гранулярный коммит свойств абзаца (выравнивание/отступы/интервалы) через TextUndoStack.
+        // Канвас строит SetParagraphPropertyCommand на каждый абзац и пушит одной командой.
+        // Возвращает true, если обработал; иначе ApplyParaProperty идёт снапшотным путём.
+        public Func<System.Collections.Generic.IReadOnlyList<(System.Guid ParaId,
+            Action<ParagraphProperties> Apply, Action<ParagraphProperties> Revert)>,
+            string, bool>? CommitParagraphPropertyGranularDelegate
+        { get; set; }
         public Action? CutDelegate { get; set; }
         public Action? CopyDelegate { get; set; }
         public Action? PasteDelegate { get; set; }
@@ -429,6 +444,158 @@ namespace Writersword.Modules.TextEditor.ViewModels
             => ApplyCharProperty(p => { p.IsSubscript = !p.IsSubscript; if (p.IsSubscript) p.IsSuperscript = false; });
 
         public void ToggleAllCaps() => ApplyCharProperty(p => p.IsAllCaps = !p.IsAllCaps);
+
+        /// <summary>
+        /// Меняет регистр выделенного текста (сами буквы, не форматирование), сохраняя
+        /// форматирование ранов. Без выделения менять нечего (позиции каретки в DocVm нет).
+        /// </summary>
+        public void ChangeCase(TextCaseMode mode)
+        {
+            if (SelectionParagraphs.Count == 0) return;
+
+            // Собираем правки (paraId, from, старый текст, новый текст) по выделенным диапазонам.
+            var edits = new System.Collections.Generic.List<(System.Guid ParaId, int From, string OldText, string NewText)>();
+            for (int i = 0; i < SelectionParagraphs.Count; i++)
+            {
+                var pvm = SelectionParagraphs[i];
+                var block = pvm.Model;
+                string full = block.GetPlainText();
+                int len = full.Length;
+                int from = (SelectionParagraphs.Count == 1 || i == 0) ? pvm.SelectionStart : 0;
+                int to = (SelectionParagraphs.Count == 1 || i == SelectionParagraphs.Count - 1) ? pvm.SelectionEnd : len;
+                from = Math.Clamp(from, 0, len);
+                to = Math.Clamp(to, from, len);
+                if (to <= from) continue;
+
+                char[] chars = full.ToCharArray();
+                ApplyCaseToRange(chars, from, to, mode);
+                string newText = new string(chars, from, to - from);
+                string oldText = full.Substring(from, to - from);
+                if (oldText != newText)
+                    edits.Add((block.Id, from, oldText, newText));
+            }
+            if (edits.Count == 0) return;
+
+            // Операционный путь: гранулярная команда в общий TextUndoStack (как и весь остальной
+            // ввод/форматирование). Отмена идёт в общем хронологическом порядке, без снапшота.
+            if (CommitTextEditsDelegate is not null && CommitTextEditsDelegate(edits, "Change case"))
+            {
+                FireCursorContextChanged();
+                return;
+            }
+
+            // Запасной путь (канвас не подключён) — снапшот.
+            BeginEditDelegate?.Invoke("Change case");
+            for (int i = 0; i < SelectionParagraphs.Count; i++)
+            {
+                var pvm = SelectionParagraphs[i];
+                int len = pvm.Model.GetPlainText().Length;
+                int s = (SelectionParagraphs.Count == 1 || i == 0) ? pvm.SelectionStart : 0;
+                int e = (SelectionParagraphs.Count == 1 || i == SelectionParagraphs.Count - 1) ? pvm.SelectionEnd : len;
+                TransformParagraphRange(pvm.Model, s, e, mode);
+                pvm.RefreshPlainTextFromModel();
+            }
+            CommitEditDelegate?.Invoke();
+            _lastFormatAffected = SelectionParagraphs.ToList();
+            FireCursorContextChanged();
+            ParagraphFormatChanged?.Invoke();
+        }
+
+        // Меняет регистр символов абзаца в диапазоне [from, to), записывая их обратно в раны.
+        // Длина текста не меняется, поэтому структура ранов и форматирование сохраняются.
+        private static void TransformParagraphRange(ParagraphBlock block, int from, int to, TextCaseMode mode)
+        {
+            string full = block.GetPlainText();
+            int len = full.Length;
+            from = Math.Clamp(from, 0, len);
+            to = Math.Clamp(to, from, len);
+            if (to <= from) return;
+
+            char[] chars = full.ToCharArray();
+            ApplyCaseToRange(chars, from, to, mode);
+
+            int offset = 0;
+            foreach (var chunk in block.Chunks)
+                foreach (var run in chunk.Runs)
+                {
+                    int rl = run.Text.Length;
+                    if (rl == 0) continue;
+                    int runStart = offset;
+                    int s = Math.Max(from, runStart);
+                    int e = Math.Min(to, runStart + rl);
+                    if (e > s)
+                    {
+                        var arr = run.Text.ToCharArray();
+                        for (int g = s; g < e; g++)
+                            arr[g - runStart] = chars[g];
+                        run.Text = new string(arr);
+                    }
+                    offset += rl;
+                }
+            block.InvalidateAllChunks();
+        }
+
+        // Применяет режим регистра к диапазону массива символов с учётом контекста слева
+        // (для Title — границы слов, для Sentence — конец предложения).
+        private static void ApplyCaseToRange(char[] text, int from, int to, TextCaseMode mode)
+        {
+            switch (mode)
+            {
+                case TextCaseMode.Upper:
+                    for (int i = from; i < to; i++) text[i] = char.ToUpper(text[i]);
+                    break;
+
+                case TextCaseMode.Lower:
+                    for (int i = from; i < to; i++) text[i] = char.ToLower(text[i]);
+                    break;
+
+                case TextCaseMode.Toggle:
+                    for (int i = from; i < to; i++)
+                        text[i] = char.IsUpper(text[i]) ? char.ToLower(text[i]) : char.ToUpper(text[i]);
+                    break;
+
+                case TextCaseMode.Title:
+                    {
+                        bool prevSep = from == 0 || !char.IsLetterOrDigit(text[from - 1]);
+                        for (int i = from; i < to; i++)
+                        {
+                            char c = text[i];
+                            if (char.IsLetter(c))
+                            {
+                                text[i] = prevSep ? char.ToUpper(c) : char.ToLower(c);
+                                prevSep = false;
+                            }
+                            else prevSep = !char.IsLetterOrDigit(c);
+                        }
+                        break;
+                    }
+
+                case TextCaseMode.Sentence:
+                    {
+                        // Определяем начало предложения по контексту слева от диапазона.
+                        bool startSentence = true;
+                        for (int j = from - 1; j >= 0; j--)
+                        {
+                            char pc = text[j];
+                            if (pc == ' ' || pc == '\t') continue;
+                            startSentence = pc == '.' || pc == '!' || pc == '?';
+                            break;
+                        }
+                        for (int i = from; i < to; i++)
+                        {
+                            char c = text[i];
+                            if (char.IsLetter(c))
+                            {
+                                text[i] = startSentence ? char.ToUpper(c) : char.ToLower(c);
+                                startSentence = false;
+                            }
+                            else if (c == '.' || c == '!' || c == '?')
+                                startSentence = true;
+                        }
+                        break;
+                    }
+            }
+        }
         public void ToggleSmallCaps() => ApplyCharProperty(p => p.IsSmallCaps = !p.IsSmallCaps);
         public void ClearFormatting() => ApplyCharProperty(_ => { }, clearAll: true);
 
@@ -1086,42 +1253,58 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void ApplyParaProperty(Action<ParagraphProperties> mutate)
         {
-            // В режиме батча (drag отступов) снапшот делается один раз в
-            // BeginParagraphFormatBatch — здесь его не повторяем.
-            if (!_suppressFormatSnapshot)
-                BeginEditDelegate?.Invoke("Format paragraph");
-
-            // Режим таблицы: применяем к параграфу активной ячейки.
+            // Режим таблицы: применяем к параграфу активной ячейки (снапшотный путь как был).
             if (TableActiveCellParagraph is not null)
             {
+                if (!_suppressFormatSnapshot)
+                    BeginEditDelegate?.Invoke("Format paragraph");
                 mutate(TableActiveCellParagraph.Properties);
-                // Обновляем контекст — создаём временный VM.
+                if (!_suppressFormatSnapshot)
+                    CommitEditDelegate?.Invoke();
                 var tempVm = new ParagraphViewModel(TableActiveCellParagraph);
                 CursorContextChanged?.Invoke(BuildCursorContext(tempVm));
                 ParagraphFormatChanged?.Invoke();
                 return;
             }
 
-            // Обычный режим.
-            if (SelectionParagraphs.Count > 0)
-            {
-                foreach (var pvm in SelectionParagraphs)
-                    mutate(pvm.Model.Properties);
-            }
-            else if (_activeParagraph is not null)
-            {
-                mutate(_activeParagraph.Model.Properties);
-            }
-            else return;
+            // Список затронутых абзацев.
+            var targets = SelectionParagraphs.Count > 0
+                ? SelectionParagraphs.ToList()
+                : (_activeParagraph is not null
+                    ? new System.Collections.Generic.List<ParagraphViewModel> { _activeParagraph }
+                    : null);
+            if (targets is null || targets.Count == 0) return;
 
+            // Операционный путь (одиночное форматирование, не во время drag отступов на линейке):
+            // гранулярная команда в общий TextUndoStack. Ctrl+Z мгновенный, без тяжёлого снапшота
+            // всего документа — на больших документах это и убирало фриз при отмене.
+            if (!_suppressFormatSnapshot && CommitParagraphPropertyGranularDelegate is not null)
+            {
+                var edits = new System.Collections.Generic.List<(System.Guid,
+                    Action<ParagraphProperties>, Action<ParagraphProperties>)>();
+                foreach (var pvm in targets)
+                {
+                    var old = pvm.Model.Properties.Clone();
+                    edits.Add((pvm.Model.Id, mutate, p => p.CopyFrom(old)));
+                }
+                if (CommitParagraphPropertyGranularDelegate(edits, "Format paragraph"))
+                {
+                    FireCursorContextChanged();
+                    return;
+                }
+            }
+
+            // Снапшотный путь: батч-drag отступов (один снапшот на весь drag) или нет делегата.
+            if (!_suppressFormatSnapshot)
+                BeginEditDelegate?.Invoke("Format paragraph");
+            foreach (var pvm in targets)
+                mutate(pvm.Model.Properties);
             if (!_suppressFormatSnapshot)
                 CommitEditDelegate?.Invoke();
             FireCursorContextChanged();
             // Затронуты только эти абзацы — канвас инвалидирует кэш раскладки точечно,
             // а не сбрасывает весь документ (на больших документах это убирает фриз).
-            _lastFormatAffected = SelectionParagraphs.Count > 0
-                ? SelectionParagraphs.ToList()
-                : (_activeParagraph is not null ? new[] { _activeParagraph } : null);
+            _lastFormatAffected = targets;
             ParagraphFormatChanged?.Invoke();
         }
 

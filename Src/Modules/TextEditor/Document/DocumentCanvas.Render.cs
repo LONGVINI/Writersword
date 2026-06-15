@@ -667,10 +667,34 @@ namespace Writersword.Modules.TextEditor.Document
             foreach (var r in rects)
             {
                 if (r.LineIndex < pl.LineFrom || r.LineIndex >= pl.LineTo) continue;
+
+                // Тот же сдвиг, что у глифов и каретки: HitTestRange даёт X с левым и абзацным
+                // отступом, но без сдвига выравнивания. Убираем абзацный отступ (он уже заложен)
+                // и прибавляем общий сдвиг строки — иначе по центру/правому подсветка идёт от
+                // левого края, а не по тексту.
+                float firstLineBaked = (r.LineIndex == 0) ? sl.FirstLineIndentPt : 0f;
+                float left = xPt + r.Rect.Left - firstLineBaked + LineAlignShift(sl, r.LineIndex);
+                float width = r.Rect.Width;
+
+                // По ширине подсветка должна следовать за растянутыми промежутками: сдвигаем на
+                // растяжку до начала выделенного фрагмента строки и расширяем на растяжку внутри
+                // него, иначе подсветка идёт по пробелам, а не по фактическим словам.
+                float extra = SKTextRenderer.JustifyExtraPerSpace(sl, r.LineIndex);
+                if (extra > 0f && r.LineIndex < sl.Lines.Count)
+                {
+                    var ln = sl.Lines[r.LineIndex];
+                    int lineSelStart = Math.Max(from, ln.FirstCharIndex);
+                    int lineSelEnd = Math.Min(to, ln.LastCharIndex + 1);
+                    float leftShift = JustifyShiftBeforeChar(sl, r.LineIndex, lineSelStart);
+                    float rightShift = JustifyShiftBeforeChar(sl, r.LineIndex, lineSelEnd);
+                    left += leftShift;
+                    width += rightShift - leftShift;
+                }
+
                 canvas.DrawRect(
-                    xPt + r.Rect.Left,
+                    left,
                     yPt + (r.Rect.Top - yBase),
-                    r.Rect.Width, r.Rect.Height, _paintSelection);
+                    width, r.Rect.Height, _paintSelection);
             }
         }
 
@@ -746,30 +770,58 @@ namespace Writersword.Modules.TextEditor.Document
             float yBase = pl.LineFrom < layout.Lines.Count
                 ? layout.Lines[pl.LineFrom].Y : 0f;
 
-            float cx = xPt + caret.X;
+            // HitTestPosition даёт X с учётом левого отступа и абзацного отступа первой строки,
+            // но БЕЗ сдвига выравнивания. Приводим каретку к тем же координатам, что и рендер
+            // глифов: убираем абзацный отступ, уже заложенный HitTestPosition, и прибавляем общий
+            // сдвиг строки LineAlignShift (он сам вернёт отступ для левого/по-ширине). Для Justify
+            // добавляем накопленную растяжку пробелов до каретки, иначе она отстаёт от текста.
+            float firstLineBaked = (drawLineIdx == 0) ? layout.FirstLineIndentPt : 0f;
+            float caretAlignOffset = LineAlignShift(layout, drawLineIdx) - firstLineBaked
+                + JustifyShiftBeforeChar(layout, drawLineIdx, pos);
+
+            float cx = xPt + caret.X + caretAlignOffset;
             float cy = yPt + (caret.Y - yBase);
+            canvas.DrawLine(cx, cy, cx, cy + caret.Height, _paintCaret);
+        }
 
-            // Высота каретки — по шрифту руна под кареткой (символ слева, как и при вводе),
-            // а не по высоте всей строки. Иначе в строке с крупным руном каретка тянулась бы
-            // во всю строку даже там, где текст мелкий. Привязываем к базовой линии строки:
-            // рендерер ставит глифы на cy + caret.Baseline, мелкий текст сидит на той же линии.
-            double? runFs = GetRunPropertiesAt(pl.Vm.Model, pos)?.FontSize;
-            float runFontPt = runFs is { } fsv && fsv > 0
-                ? (float)fsv
-                : (_styleResolver?.ResolveFontSize(pl.Vm.Model.Properties.StyleName) ?? FallbackLinePt);
+        // Общий сдвиг строки по выравниванию (центр/право + абзацный отступ первой строки для
+        // левого/по-ширине). Тот же расчёт, что и в SKTextRenderer.RenderParagraphLines —
+        // используется кареткой и хит-тестом, чтобы они совпадали с отрисованным текстом.
+        // Общий сдвиг строки по выравниванию — единый расчёт в SKTextRenderer (вордовская
+        // модель), чтобы каретка, хит-тест и выделение совпадали с отрисованным текстом.
+        private static float LineAlignShift(SKTextLayout layout, int lineIndex)
+            => SKTextRenderer.LineAlignShift(layout, lineIndex);
 
-            float baselineY = cy + caret.Baseline;
-            float caretTop = baselineY - runFontPt * 0.80f;
-            float caretBottom = baselineY + runFontPt * 0.22f;
+        // Накопленная добавка растяжки по ширине для пробелов строки, расположенных до символа
+        // globalCharIndex. Хвостовые пробелы строки исключаются — как и в JustifyExtraPerSpace,
+        // иначе их (несуществующая) растяжка уводит каретку и выделение за правый край.
+        // Для не-Justify и последней строки даёт 0.
+        private static float JustifyShiftBeforeChar(SKTextLayout layout, int lineIndex, int globalCharIndex)
+        {
+            float extra = SKTextRenderer.JustifyExtraPerSpace(layout, lineIndex);
+            if (extra <= 0f) return 0f;
+            var line = layout.Lines[lineIndex];
 
-            // Ограничиваем пределами строки на всякий случай и страхуем минимальную высоту.
-            float lineTop = cy;
-            float lineBottom = cy + caret.Height;
-            if (caretTop < lineTop) caretTop = lineTop;
-            if (caretBottom > lineBottom) caretBottom = lineBottom;
-            if (caretBottom - caretTop < 1f) caretBottom = caretTop + Math.Max(1f, caret.Height);
+            // Граница последнего слова: пробелы за ней (хвостовые) растяжки не получают.
+            int lastWordEnd = -1;
+            foreach (var s in line.Segments)
+                for (int k = 0; k < s.Text.Length; k++)
+                {
+                    char c = s.Text[k];
+                    if (c != ' ' && c != '\t') lastWordEnd = s.GlobalCharOffset + k + 1;
+                }
+            if (lastWordEnd < 0) return 0f;
 
-            canvas.DrawLine(cx, caretTop, cx, caretBottom, _paintCaret);
+            int limit = Math.Min(globalCharIndex, lastWordEnd);
+            int spacesBefore = 0;
+            foreach (var s in line.Segments)
+                for (int k = 0; k < s.Text.Length; k++)
+                {
+                    if (s.GlobalCharOffset + k >= limit) return spacesBefore * extra;
+                    char c = s.Text[k];
+                    if (c == ' ' || c == '\t') spacesBefore++;
+                }
+            return spacesBefore * extra;
         }
 
     }

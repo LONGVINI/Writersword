@@ -40,7 +40,7 @@
     <value>Цвет</value>
   </data>
   <data name="ColorEditor_Eyedropper" xml:space="preserve">
-    <value>Пипетка — взять цвет с экрана</value>
+    <value>Пипетка</value>
   </data>
   <data name="ColorEditor_Preview" xml:space="preserve">
     <value>Предпросмотр</value>
@@ -59,6 +59,54 @@
   </data>
   <data name="ColorEditor_EyedropperHint" xml:space="preserve">
     <value>Взять цвет в любой точке экрана</value>
+  </data>
+  <data name="ColorEditor_TabWheel" xml:space="preserve">
+    <value>Колесо</value>
+  </data>
+  <data name="ColorEditor_TabValues" xml:space="preserve">
+    <value>Значения</value>
+  </data>
+  <data name="ColorEditor_AvatarRing" xml:space="preserve">
+    <value>Кольцо вокруг аватара</value>
+  </data>
+  <data name="ColorEditor_ApplyToAll" xml:space="preserve">
+    <value>Применить ко всем</value>
+  </data>
+  <data name="ColorEditor_RingAll" xml:space="preserve">
+    <value>Кольца — всем</value>
+  </data>
+  <data name="ColorEditor_RingNone" xml:space="preserve">
+    <value>Убрать у всех</value>
+  </data>
+  <data name="ColorEditor_ConfirmAll" xml:space="preserve">
+    <value>Применить ко всем персонажам?</value>
+  </data>
+  <data name="ColorEditor_TabPalettes" xml:space="preserve">
+    <value>Палитры</value>
+  </data>
+  <data name="Palette_Standard" xml:space="preserve">
+    <value>Стандартные цвета</value>
+  </data>
+  <data name="Palette_Reset" xml:space="preserve">
+    <value>Сбросить</value>
+  </data>
+  <data name="Palette_Palettes" xml:space="preserve">
+    <value>Палитры</value>
+  </data>
+  <data name="Palette_New" xml:space="preserve">
+    <value>Новая палитра</value>
+  </data>
+  <data name="Palette_Local" xml:space="preserve">
+    <value>Локальная</value>
+  </data>
+  <data name="Palette_Global" xml:space="preserve">
+    <value>Глобальная</value>
+  </data>
+  <data name="Palette_Delete" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="Palette_ToggleVisible" xml:space="preserve">
+    <value>Видимость в быстром попапе</value>
   </data>
   <data name="Common_Ok" xml:space="preserve">
     <value>ОК</value>

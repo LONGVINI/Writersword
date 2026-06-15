@@ -198,12 +198,15 @@
 		<Compile Remove="Styles\UserControls\ModalHost.cs" />
 		<Compile Remove="Styles\UserControls\ColorEditorOverlay.axaml.cs" />
 		<Compile Remove="Styles\UserControls\EyedropperOverlay.axaml.cs" />
+		<Compile Remove="Styles\UserControls\PaletteManagerView.axaml.cs" />
+		<Compile Remove="Styles\UserControls\StandardColors.cs" />
 		<Compile Remove="Styles\UserControls\RibbonScrollContainer.axaml.cs" />
 		<Compile Remove="Styles\UserControls\TooltipView.axaml.cs" />
 		<AvaloniaXaml Remove="Styles\UserControls\ColorPickerButton.axaml" />
 		<AvaloniaXaml Remove="Styles\UserControls\AdvancedColorPickerWindow.axaml" />
 		<AvaloniaXaml Remove="Styles\UserControls\ColorEditorOverlay.axaml" />
 		<AvaloniaXaml Remove="Styles\UserControls\EyedropperOverlay.axaml" />
+		<AvaloniaXaml Remove="Styles\UserControls\PaletteManagerView.axaml" />
 		<AvaloniaXaml Remove="Styles\UserControls\RibbonScrollContainer.axaml" />
 		<AvaloniaXaml Remove="Styles\UserControls\TooltipView.axaml" />
 		<Compile Remove="Views\Settings\SettingButtons.axaml.cs" />

@@ -87,5 +87,25 @@ namespace Writersword.Modules.TextEditor.Models.Styles
 
         /// <summary>Создаёт копию свойств.</summary>
         public ParagraphProperties Clone() => (ParagraphProperties)MemberwiseClone();
+
+        /// <summary>
+        /// Копирует все свойства из src в текущий экземпляр (не меняя ссылку).
+        /// Используется командой отмены форматирования абзаца для восстановления старых значений.
+        /// </summary>
+        public void CopyFrom(ParagraphProperties src)
+        {
+            Alignment = src.Alignment;
+            FirstLineIndent = src.FirstLineIndent;
+            LeftIndent = src.LeftIndent;
+            RightIndent = src.RightIndent;
+            SpaceBefore = src.SpaceBefore;
+            SpaceAfter = src.SpaceAfter;
+            LineSpacingRule = src.LineSpacingRule;
+            LineSpacingValue = src.LineSpacingValue;
+            KeepTogether = src.KeepTogether;
+            KeepWithNext = src.KeepWithNext;
+            PageBreakBefore = src.PageBreakBefore;
+            StyleName = src.StyleName;
+        }
     }
 }

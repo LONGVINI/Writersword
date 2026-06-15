@@ -826,10 +826,11 @@ namespace Writersword.Modules.TextEditor.Rendering
         public static void RenderParagraph(
             SKCanvas canvas, SKTextLayout layout, float paraX, float paraY)
         {
-            foreach (var line in layout.Lines)
+            for (int i = 0; i < layout.Lines.Count; i++)
             {
+                var line = layout.Lines[i];
                 float lineY = paraY + line.Y;
-                float offsetX = ComputeAlignmentOffset(layout, line);
+                float offsetX = LineAlignShift(layout, i);
 
                 foreach (var seg in line.Segments)
                 {
@@ -1107,7 +1108,14 @@ namespace Writersword.Modules.TextEditor.Rendering
         {
             var lastSeg = line.Segments.Count > 0 ? line.Segments[^1] : null;
 
-            if (lastSeg is not null && IsSameFormat(lastSeg, format))
+            // Разрываем сегмент на границе пробел/не-пробел: тогда пробелы образуют отдельные
+            // сегменты и при выравнивании по ширине между словами можно раздвигать промежутки.
+            // Внутри слова и внутри групп пробелов того же формата символы по-прежнему сливаются.
+            bool curSpace = ch == " " || ch == "\t";
+            bool lastSpace = lastSeg is not null && lastSeg.Text.Length > 0
+                && (lastSeg.Text[^1] == ' ' || lastSeg.Text[^1] == '\t');
+
+            if (lastSeg is not null && IsSameFormat(lastSeg, format) && curSpace == lastSpace)
             {
                 lastSeg.Text += ch;
                 lastSeg.Width += charWidth;
@@ -1199,22 +1207,69 @@ namespace Writersword.Modules.TextEditor.Rendering
         // ── Выравнивание ──────────────────────────────────────────────────
 
         /// <summary>
-        /// Вычисляет горизонтальный сдвиг строки внутри текстовой области параграфа.
-        /// Используется layout.TextAreaWidthPt — ширина строки без LeftIndent/RightIndent.
-        /// Было: layout.RightIndentPt + layout.LeftIndentPt — это сумма отступов,
-        ///        а не ширина области, что давало неверное выравнивание по центру и правому краю.
+        /// Горизонтальный сдвиг строки по выравниванию относительно начала текстовой области.
+        /// Модель как в Word: область первой строки — [абзацный отступ, ширина области], прочих —
+        /// [0, ширина области]. По центру строка центрируется внутри своей области (с учётом
+        /// абзацного отступа первой строки), по правому краю — упирается в правый край (отступ не
+        /// влияет), по левому/ширине — начинается у абзацного отступа (для первой строки).
+        /// Общий публичный метод: используется рендером, кареткой, хит-тестом и выделением —
+        /// чтобы все считали позицию одинаково.
         /// </summary>
-        private static float ComputeAlignmentOffset(SKTextLayout layout, SKLineLayout line)
+        public static float LineAlignShift(SKTextLayout layout, int lineIndex)
         {
-            float textAreaWidth = layout.TextAreaWidthPt;
+            if (lineIndex < 0 || lineIndex >= layout.Lines.Count) return 0f;
+            var line = layout.Lines[lineIndex];
+            float area = layout.TextAreaWidthPt;
+            float firstExtra = lineIndex == 0 ? layout.FirstLineIndentPt : 0f;
 
             return layout.Alignment switch
             {
-                RenderAlignment.Center => (textAreaWidth - line.TextWidth) / 2f,
-                RenderAlignment.Right => textAreaWidth - line.TextWidth,
-                RenderAlignment.Justify when !line.IsLastLine => 0f,
-                _ => 0f
+                RenderAlignment.Center => firstExtra + (area - firstExtra - line.TextWidth) / 2f,
+                RenderAlignment.Right => area - line.TextWidth,
+                _ => firstExtra
             };
+        }
+
+        /// <summary>
+        /// Добавка ширины на один пробел при выравнивании по ширине для строки lineIndex.
+        /// Свободное место распределяется только по межсловным пробелам (хвостовые пробелы строки
+        /// исключаются — иначе их доля растяжки уходит впустую и последнее слово не достаёт до
+        /// правого края). Для последней/одиночной строки и не-Justify — 0.
+        /// </summary>
+        public static float JustifyExtraPerSpace(SKTextLayout layout, int lineIndex)
+        {
+            if (layout.Alignment != RenderAlignment.Justify) return 0f;
+            if (lineIndex < 0 || lineIndex >= layout.Lines.Count) return 0f;
+            var line = layout.Lines[lineIndex];
+            if (line.IsLastLine) return 0f;
+
+            var segs = line.Segments;
+
+            // Индекс последнего сегмента, содержащего непробельный символ.
+            int lastWordSeg = -1;
+            for (int si = segs.Count - 1; si >= 0; si--)
+            {
+                bool hasWord = false;
+                foreach (var c in segs[si].Text)
+                    if (c != ' ' && c != '\t') { hasWord = true; break; }
+                if (hasWord) { lastWordSeg = si; break; }
+            }
+            if (lastWordSeg < 0) return 0f;
+
+            int spaces = 0;
+            for (int si = 0; si <= lastWordSeg; si++)
+                foreach (var c in segs[si].Text)
+                    if (c == ' ' || c == '\t') spaces++;
+            if (spaces == 0) return 0f;
+
+            float trailingWidth = 0f;
+            for (int si = lastWordSeg + 1; si < segs.Count; si++)
+                trailingWidth += segs[si].Width;
+
+            float firstExtra = lineIndex == 0 ? layout.FirstLineIndentPt : 0f;
+            float effectiveWidth = line.TextWidth - trailingWidth;
+            float free = (layout.TextAreaWidthPt - firstExtra) - effectiveWidth;
+            return free > 0f ? free / spaces : 0f;
         }
 
         // ── Измерение текста ──────────────────────────────────────────────
@@ -1588,13 +1643,19 @@ namespace Writersword.Modules.TextEditor.Rendering
             {
                 var line = layout.Lines[i];
                 float lineY = paraY + (line.Y - yBase);
-                float offsetX = ComputeAlignmentOffset(layout, line);
 
-                float firstLineExtra = (i == 0) ? layout.FirstLineIndentPt : 0f;
+                // Единый сдвиг строки по выравниванию (центр/право + абзацный отступ первой
+                // строки по вордовской модели). Тот же расчёт у каретки/хит-теста/выделения.
+                float lineShift = LineAlignShift(layout, i);
+
+                // Растяжение по ширине: распределяем свободное место по межсловным пробелам.
+                float extraPerSpace = JustifyExtraPerSpace(layout, i);
+                bool doJustify = extraPerSpace > 0f;
+                float justifyShift = 0f;
 
                 foreach (var seg in line.Segments)
                 {
-                    float segX = paraX + seg.X + offsetX + firstLineExtra;
+                    float segX = paraX + seg.X + lineShift + justifyShift;
                     float baseY = lineY + line.Baseline;
 
                     if (seg.HighlightColor != SKColors.Transparent)
@@ -1635,6 +1696,16 @@ namespace Writersword.Modules.TextEditor.Rendering
                         };
                         float strikeY = baseY - seg.FontSizePt * 0.3f;
                         canvas.DrawLine(segX, strikeY, segX + seg.Width, strikeY, sPaint);
+                    }
+
+                    // После сегмента сдвигаем следующие на накопленную добавку по его пробелам —
+                    // так растягиваются промежутки между словами при выравнивании по ширине.
+                    if (doJustify)
+                    {
+                        int segSpaces = 0;
+                        foreach (var c in seg.Text)
+                            if (c == ' ' || c == '\t') segSpaces++;
+                        justifyShift += segSpaces * extraPerSpace;
                     }
                 }
             }

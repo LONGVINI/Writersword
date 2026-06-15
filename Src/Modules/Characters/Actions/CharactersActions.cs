@@ -1,5 +1,6 @@
 ﻿using Writersword.Core.Interfaces.Modules;
 using System;
+using System.Collections.Generic;
 
 namespace Writersword.Modules.Characters.Actions
 {
@@ -143,6 +144,37 @@ namespace Writersword.Modules.Characters.Actions
 
         public void Execute() => _applyColor(_characterId, _newColor);
         public void Undo() => _applyColor(_characterId, _oldColor);
+    }
+
+    // Массовое включение/выключение кольца вокруг аватара у всех персонажей.
+    // Undo восстанавливает прежнее состояние каждого (кто был с кольцом, кто без).
+    public class ApplyAvatarRingToAllCommand : IUndoableCommand
+    {
+        private readonly List<(string id, bool old)> _previous;
+        private readonly bool _newValue;
+        private readonly Action<string, bool> _applyRing; // (id, ringEnabled)
+
+        public string Description => _newValue ? "кольца — всем" : "убрать кольца у всех";
+
+        public ApplyAvatarRingToAllCommand(
+            List<(string id, bool old)> previous,
+            bool newValue,
+            Action<string, bool> applyRing)
+        {
+            _previous = previous;
+            _newValue = newValue;
+            _applyRing = applyRing;
+        }
+
+        public void Execute()
+        {
+            foreach (var (id, _) in _previous) _applyRing(id, _newValue);
+        }
+
+        public void Undo()
+        {
+            foreach (var (id, old) in _previous) _applyRing(id, old);
+        }
     }
 
     // Создание папки — Undo удаляет, Redo пересоздаёт с тем же id

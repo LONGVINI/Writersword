@@ -44,13 +44,16 @@
                         BorderBrush="{DynamicResource BorderDefaultBrush}"
                         BorderThickness="1" CornerRadius="8" Padding="12">
 
-					<!-- Стиль образца цвета. Лежит здесь (внутри попапа флаута),
-					     потому что стили самого UserControl в попап не попадают. -->
+					<!-- Стили образцов, крестиков, заголовков секций и бейджей.
+					     Лежат внутри попапа флаута, потому что стили самого
+					     UserControl в попап не попадают. -->
 					<Border.Styles>
 						<Style Selector="Button.swatch">
 							<Setter Property="Width" Value="26"/>
 							<Setter Property="Height" Value="26"/>
-							<Setter Property="Margin" Value="2"/>
+							<Setter Property="MinWidth" Value="0"/>
+							<Setter Property="MinHeight" Value="0"/>
+							<Setter Property="Margin" Value="0"/>
 							<Setter Property="Padding" Value="0"/>
 							<Setter Property="Template">
 								<ControlTemplate>
@@ -65,83 +68,208 @@
 							<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
 							<Setter Property="BorderThickness" Value="2.5"/>
 						</Style>
+
+						<Style Selector="Button.removeBtn">
+							<Setter Property="Width" Value="14"/>
+							<Setter Property="Height" Value="14"/>
+							<Setter Property="MinWidth" Value="0"/>
+							<Setter Property="MinHeight" Value="0"/>
+							<Setter Property="Padding" Value="0"/>
+							<Setter Property="FontSize" Value="9"/>
+							<Setter Property="CornerRadius" Value="7"/>
+							<Setter Property="BorderThickness" Value="0"/>
+							<Setter Property="Background" Value="#E6202020"/>
+							<Setter Property="Foreground" Value="White"/>
+							<Setter Property="HorizontalAlignment" Value="Right"/>
+							<Setter Property="VerticalAlignment" Value="Top"/>
+							<Setter Property="HorizontalContentAlignment" Value="Center"/>
+							<Setter Property="VerticalContentAlignment" Value="Center"/>
+							<Setter Property="Margin" Value="0,-4,-4,0"/>
+							<Setter Property="Opacity" Value="0"/>
+							<Setter Property="IsHitTestVisible" Value="False"/>
+						</Style>
+						<Style Selector="Panel.swatchCell:pointerover Button.removeBtn">
+							<Setter Property="Opacity" Value="1"/>
+							<Setter Property="IsHitTestVisible" Value="True"/>
+						</Style>
+
+						<Style Selector="Path.chev">
+							<Setter Property="Stroke" Value="{DynamicResource TextMutedBrush}"/>
+							<Setter Property="StrokeThickness" Value="1.5"/>
+							<Setter Property="VerticalAlignment" Value="Center"/>
+						</Style>
+
+						<Style Selector="Border.badge">
+							<Setter Property="CornerRadius" Value="4"/>
+							<Setter Property="Padding" Value="5,1"/>
+							<Setter Property="VerticalAlignment" Value="Center"/>
+						</Style>
+						<Style Selector="Border.badge TextBlock">
+							<Setter Property="FontSize" Value="9"/>
+						</Style>
+
+						<Style Selector="TextBlock.section">
+							<Setter Property="FontSize" Value="11"/>
+							<Setter Property="VerticalAlignment" Value="Center"/>
+							<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+						</Style>
 					</Border.Styles>
 
-					<StackPanel Spacing="8" Width="280">
+					<StackPanel Spacing="6" Width="280">
 
-						<!-- Базовая палитра -->
-						<TextBlock Text="{x:Static res:SharedStrings.ColorPicker_BasicColors}"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
-
-						<ItemsControl ItemsSource="{Binding PresetColors, ElementName=Root}">
-							<ItemsControl.ItemsPanel>
-								<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
-							</ItemsControl.ItemsPanel>
-							<ItemsControl.ItemTemplate>
-								<DataTemplate>
-									<Button Classes="swatch"
-                                            Command="{Binding SelectPresetCommand, ElementName=Root}"
-                                            CommandParameter="{Binding}"/>
-								</DataTemplate>
-							</ItemsControl.ItemTemplate>
-						</ItemsControl>
-
-						<Border Height="1" Background="{DynamicResource BorderSubtleBrush}" Margin="0,2"/>
-
-						<!-- Закреплённые цвета проекта -->
-						<TextBlock Text="{x:Static res:SharedStrings.ColorPicker_ProjectColors}"
-                                   FontSize="11"
-                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
-						<Button Content="{x:Static res:SharedStrings.ColorPicker_SaveCurrent}"
-                                HorizontalAlignment="Stretch"
-                                HorizontalContentAlignment="Center"
-                                FontSize="11" Padding="8,5" CornerRadius="6"
-                                Background="{DynamicResource AccentDefaultBrush}"
-                                Foreground="White"
-                                Command="{Binding PinCurrentCommand, ElementName=Root}"
-                                ToolTip.Tip="{x:Static res:SharedStrings.ColorPicker_SaveTooltip}"/>
-
-						<ItemsControl ItemsSource="{Binding PinnedColors, ElementName=Root}"
-                                      IsVisible="{Binding HasPinnedColors, ElementName=Root}">
-							<ItemsControl.ItemsPanel>
-								<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
-							</ItemsControl.ItemsPanel>
-							<ItemsControl.ItemTemplate>
-								<DataTemplate>
-									<Panel Width="26" Height="26" Margin="2">
-										<Button Classes="swatch" Margin="0"
-                                                Command="{Binding SelectPresetCommand, ElementName=Root}"
-                                                CommandParameter="{Binding}"/>
-										<Button Content="✕"
-                                                FontSize="8" Padding="0"
-                                                Width="14" Height="14"
-                                                CornerRadius="7" BorderThickness="0"
-                                                Background="#CC000000" Foreground="White"
-                                                HorizontalAlignment="Right" VerticalAlignment="Top"
-                                                Command="{Binding RemovePinnedCommand, ElementName=Root}"
-                                                CommandParameter="{Binding}"
-                                                ToolTip.Tip="{x:Static res:SharedStrings.ColorPicker_RemoveFromPalette}"/>
-									</Panel>
-								</DataTemplate>
-							</ItemsControl.ItemTemplate>
-						</ItemsControl>
-
-						<!-- Недавно использованные (скрыто, если пусто) -->
-						<StackPanel Spacing="8" IsVisible="{Binding HasRecentColors, ElementName=Root}">
-							<TextBlock Text="{x:Static res:SharedStrings.ColorPicker_Recent}"
-                                       FontSize="11"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
-
-							<ItemsControl ItemsSource="{Binding RecentColors, ElementName=Root}">
+						<!-- Основные -->
+						<StackPanel Spacing="6">
+							<Button Classes="ghost" Tag="pp.basic" Click="OnSectionHeader"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                    Padding="6,4">
+								<Grid ColumnDefinitions="*,Auto">
+									<TextBlock Grid.Column="0" Classes="section"
+                                               Text="{x:Static res:SharedStrings.ColorPicker_BasicColors}"/>
+									<Path Grid.Column="1" Classes="chev" Data="M0,0 L5,5 L10,0"
+                                          IsVisible="{Binding BasicExpanded, ElementName=Root}"/>
+									<Path Grid.Column="1" Classes="chev" Data="M0,0 L5,5 L0,10"
+                                          IsVisible="{Binding BasicExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Not}}"/>
+								</Grid>
+							</Button>
+							<ItemsControl ItemsSource="{Binding PresetColors, ElementName=Root}"
+                                          IsVisible="{Binding BasicExpanded, ElementName=Root}">
 								<ItemsControl.ItemsPanel>
 									<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
 								</ItemsControl.ItemsPanel>
 								<ItemsControl.ItemTemplate>
 									<DataTemplate>
-										<Button Classes="swatch"
-                                                Command="{Binding SelectPresetCommand, ElementName=Root}"
-                                                CommandParameter="{Binding}"/>
+										<Border Width="26" Height="26" Margin="2">
+											<Button Classes="swatch"
+                                                    Command="{Binding SelectPresetCommand, ElementName=Root}"
+                                                    CommandParameter="{Binding}"/>
+										</Border>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+						</StackPanel>
+
+						<!-- Мои цвета (закреплённые проекта) -->
+						<StackPanel Spacing="6" IsVisible="{Binding HasPinnedColors, ElementName=Root}">
+							<Border Height="1" Background="{DynamicResource BorderSubtleBrush}" Margin="0,2"/>
+							<Button Classes="ghost" Tag="pp.mine" Click="OnSectionHeader"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                    Padding="6,4">
+								<Grid ColumnDefinitions="*,Auto">
+									<TextBlock Grid.Column="0" Classes="section"
+                                               Text="{x:Static res:SharedStrings.ColorEditor_MyColors}"/>
+									<Path Grid.Column="1" Classes="chev" Data="M0,0 L5,5 L10,0"
+                                          IsVisible="{Binding MineExpanded, ElementName=Root}"/>
+									<Path Grid.Column="1" Classes="chev" Data="M0,0 L5,5 L0,10"
+                                          IsVisible="{Binding MineExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Not}}"/>
+								</Grid>
+							</Button>
+							<ItemsControl ItemsSource="{Binding PinnedColors, ElementName=Root}"
+                                          IsVisible="{Binding MineExpanded, ElementName=Root}">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<DataTemplate>
+										<Panel Classes="swatchCell" Width="26" Height="26" Margin="2">
+											<Button Classes="swatch"
+                                                    Command="{Binding SelectPresetCommand, ElementName=Root}"
+                                                    CommandParameter="{Binding}"/>
+											<Button Classes="removeBtn" Content="✕"
+                                                    Command="{Binding RemovePinnedCommand, ElementName=Root}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip.Tip="{x:Static res:SharedStrings.ColorPicker_RemoveFromPalette}"/>
+										</Panel>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+						</StackPanel>
+
+						<!-- Недавние -->
+						<StackPanel Spacing="6" IsVisible="{Binding HasRecentColors, ElementName=Root}">
+							<Border Height="1" Background="{DynamicResource BorderSubtleBrush}" Margin="0,2"/>
+							<Button Classes="ghost" Tag="pp.recent" Click="OnSectionHeader"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                    Padding="6,4">
+								<Grid ColumnDefinitions="*,Auto">
+									<TextBlock Grid.Column="0" Classes="section"
+                                               Text="{x:Static res:SharedStrings.ColorPicker_Recent}"/>
+									<Path Grid.Column="1" Classes="chev" Data="M0,0 L5,5 L10,0"
+                                          IsVisible="{Binding RecentExpanded, ElementName=Root}"/>
+									<Path Grid.Column="1" Classes="chev" Data="M0,0 L5,5 L0,10"
+                                          IsVisible="{Binding RecentExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Not}}"/>
+								</Grid>
+							</Button>
+							<ItemsControl ItemsSource="{Binding RecentColors, ElementName=Root}"
+                                          IsVisible="{Binding RecentExpanded, ElementName=Root}">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<DataTemplate>
+										<Panel Classes="swatchCell" Width="26" Height="26" Margin="2">
+											<Button Classes="swatch"
+                                                    Command="{Binding SelectPresetCommand, ElementName=Root}"
+                                                    CommandParameter="{Binding}"/>
+											<Button Classes="removeBtn" Content="✕"
+                                                    Command="{Binding RemoveRecentCommand, ElementName=Root}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip.Tip="{x:Static res:SharedStrings.ColorPicker_RemoveFromPalette}"/>
+										</Panel>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+						</StackPanel>
+
+						<!-- Палитры (видимые) -->
+						<StackPanel Spacing="6" IsVisible="{Binding HasPalettes, ElementName=Root}">
+							<Border Height="1" Background="{DynamicResource BorderSubtleBrush}" Margin="0,2"/>
+							<Button Classes="ghost" Tag="pp.palettes" Click="OnSectionHeader"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                    Padding="6,4">
+								<Grid ColumnDefinitions="*,Auto">
+									<TextBlock Grid.Column="0" Classes="section"
+                                               Text="{x:Static res:SharedStrings.Palette_Palettes}"/>
+									<Path Grid.Column="1" Classes="chev" Data="M0,0 L5,5 L10,0"
+                                          IsVisible="{Binding PalettesExpanded, ElementName=Root}"/>
+									<Path Grid.Column="1" Classes="chev" Data="M0,0 L5,5 L0,10"
+                                          IsVisible="{Binding PalettesExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Not}}"/>
+								</Grid>
+							</Button>
+							<ItemsControl ItemsSource="{Binding PopupPalettes, ElementName=Root}"
+                                          IsVisible="{Binding PalettesExpanded, ElementName=Root}">
+								<ItemsControl.ItemTemplate>
+									<DataTemplate>
+										<StackPanel Spacing="4" Margin="0,2">
+											<StackPanel Orientation="Horizontal" Spacing="6">
+												<TextBlock Text="{Binding DisplayName}" FontSize="11"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+												<Border Classes="badge" IsVisible="{Binding IsGlobal}"
+                                                        Background="{DynamicResource SectionGlobalBgBrush}">
+													<TextBlock Text="{x:Static res:SharedStrings.Palette_Global}"
+                                                               Foreground="{DynamicResource SectionGlobalFgBrush}"/>
+												</Border>
+												<Border Classes="badge" IsVisible="{Binding IsLocal}"
+                                                        Background="{DynamicResource SectionProjectBgBrush}">
+													<TextBlock Text="{x:Static res:SharedStrings.Palette_Local}"
+                                                               Foreground="{DynamicResource SectionProjectFgBrush}"/>
+												</Border>
+											</StackPanel>
+											<ItemsControl ItemsSource="{Binding Palette.Colors}">
+												<ItemsControl.ItemsPanel>
+													<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+												</ItemsControl.ItemsPanel>
+												<ItemsControl.ItemTemplate>
+													<DataTemplate>
+														<Border Width="26" Height="26" Margin="2">
+															<Button Classes="swatch"
+                                                                    Command="{Binding SelectPresetCommand, ElementName=Root}"
+                                                                    CommandParameter="{Binding}"/>
+														</Border>
+													</DataTemplate>
+												</ItemsControl.ItemTemplate>
+											</ItemsControl>
+										</StackPanel>
 									</DataTemplate>
 								</ItemsControl.ItemTemplate>
 							</ItemsControl>
@@ -149,7 +277,7 @@
 
 						<Border Height="1" Background="{DynamicResource BorderSubtleBrush}" Margin="0,2"/>
 
-						<!-- Полный редактор цвета (спектр, RGB/HEX, палитра, пипетка) в модале -->
+						<!-- Полный редактор цвета (квадрат, колесо, соты, значения, палитры, пипетка) -->
 						<Button Content="{x:Static res:SharedStrings.ColorPicker_Configure}"
                                 HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Center"

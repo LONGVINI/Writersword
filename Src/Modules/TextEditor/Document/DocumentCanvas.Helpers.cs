@@ -876,27 +876,22 @@ namespace Writersword.Modules.TextEditor.Document
                 localY = Clamp(localY, fy + 0.1f, ly - 0.1f);
             }
 
-            float hitX = localX;
-            if (best.LineFrom == 0
-                && hitLayout.FirstLineIndentPt != 0
-                && hitLayout.Lines.Count > 0)
-            {
-                float line0Bottom = hitLayout.Lines[0].Y + hitLayout.Lines[0].Height;
-                if (localY <= line0Bottom)
-                    hitX -= hitLayout.FirstLineIndentPt;
-            }
-
             // Определяем целевую строку по localY.
             // Если клик правее текста строки — возвращаем конец строки напрямую,
             // не вызывая HitTestPoint: тот пересчитывает строку по localY внутри
             // и при hitX > TextWidth всё равно уходит на начало следующей.
             _caretLineHint = -1;
+            float hitX = localX;
             for (int li = best.LineFrom; li < Math.Min(best.LineTo, hitLayout.Lines.Count); li++)
             {
                 var ln = hitLayout.Lines[li];
                 if (localY <= ln.Y + ln.Height)
                 {
                     _caretLineHint = li;
+                    // Приводим X клика к координатам сегментов: убираем общий сдвиг выравнивания
+                    // (центр/право + абзацный отступ первой строки), который рендер добавил к
+                    // тексту. Иначе по центру/правому/первой строке клик попадал не в тот символ.
+                    hitX = localX - LineAlignShift(hitLayout, li);
                     if (hitX >= ln.TextWidth)
                         return (bestIdx, ln.LastCharIndex + 1);
                     break;
@@ -1240,6 +1235,5 @@ namespace Writersword.Modules.TextEditor.Document
                 InvalidateFull();
             }, DispatcherPriority.Loaded);
         }
-
     }
 }

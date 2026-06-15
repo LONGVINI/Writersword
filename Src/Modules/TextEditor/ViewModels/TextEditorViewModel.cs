@@ -475,6 +475,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ToggleSuperscript() => DocumentViewModel?.ToggleSuperscript();
         public void ToggleSubscript() => DocumentViewModel?.ToggleSubscript();
         public void ToggleAllCaps() => DocumentViewModel?.ToggleAllCaps();
+        public void ChangeCase(Contracts.TextCaseMode mode) => DocumentViewModel?.ChangeCase(mode);
         public void ToggleSmallCaps() => DocumentViewModel?.ToggleSmallCaps();
         public void ClearFormatting() => DocumentViewModel?.ClearFormatting();
 

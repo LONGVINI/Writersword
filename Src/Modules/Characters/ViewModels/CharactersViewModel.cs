@@ -203,6 +203,8 @@ namespace Writersword.Modules.Characters.ViewModels
         // Круг чуть меньше панели — остаётся отступ сверху и снизу.
         // Масштабируется вместе с высотой верхней панели, без верхнего потолка.
         public double CardAvatarSize => Math.Max(40, _cardTopHeight - 12);
+        // Кольцо чуть больше аватара — рисуется снаружи картинки.
+        public double CardRingSize => CardAvatarSize + 8;
         public double CardNameHeight => _cardNameHeight;
         public double CardTotalHeight => _cardTopHeight + _cardNameHeight;
         public double CardIconFontSize => _cardIconSize;
@@ -292,6 +294,7 @@ namespace Writersword.Modules.Characters.ViewModels
             this.RaisePropertyChanged(nameof(CardWidth));
             this.RaisePropertyChanged(nameof(CardTopHeight));
             this.RaisePropertyChanged(nameof(CardAvatarSize));
+            this.RaisePropertyChanged(nameof(CardRingSize));
             this.RaisePropertyChanged(nameof(CardNameHeight));
             this.RaisePropertyChanged(nameof(CardTotalHeight));
             this.RaisePropertyChanged(nameof(CardIconFontSize));
@@ -809,15 +812,18 @@ namespace Writersword.Modules.Characters.ViewModels
                     item.IsDragging = true;
                     _dragItem = item;
 
+                    // Плейсхолдер — копия перетаскиваемой карточки (аватар, имя, цвет),
+                    // только тусклее (DragOpacity). Так в сетке остаётся та же карточка.
                     _dragPlaceholder = new CharacterListItemViewModel(
                         new Models.Character
                         {
                             Id = "__placeholder__",
-                            Name = string.Empty,
+                            Name = item.Name,
                             Color = item.Color,
-                            FallbackIcon = item.FallbackIcon
+                            FallbackIcon = item.FallbackIcon,
+                            AvatarPath = item.AvatarPath
                         },
-                        0, false)
+                        0, false, AvatarService)
                     { IsPlaceholder = true };
 
                     var idx = folder.Characters.IndexOf(item);
@@ -850,9 +856,11 @@ namespace Writersword.Modules.Characters.ViewModels
             {
                 // Та же папка: Move сохраняет инстансы элементов в ItemsRepeater.
                 // Remove+Insert создаёт новый элемент и ломает TranslateTransform анимацию.
-                var adjusted = clampedIdx > sourceIdx ? clampedIdx - 1 : clampedIdx;
-                if (adjusted != sourceIdx)
-                    sourceFolderVm.Characters.Move(sourceIdx, adjusted);
+                // targetIndex уже целевая ЯЧЕЙКА под курсором — кладём плейсхолдер прямо
+                // туда (без -1), иначе при движении вниз он встаёт на блок левее.
+                var dest = Math.Min(clampedIdx, sourceFolderVm.Characters.Count - 1);
+                if (dest != sourceIdx)
+                    sourceFolderVm.Characters.Move(sourceIdx, dest);
             }
             else
             {
@@ -1251,7 +1259,49 @@ namespace Writersword.Modules.Characters.ViewModels
                     }
                 }));
             };
+
+            item.OnAvatarRingChanged = (id, on) =>
+            {
+                var character = _characterService.GetById(id);
+                if (character is null || character.AvatarRing == on) return;
+                character.AvatarRing = on;
+                _characterService.Update(character);
+            };
+
+            item.OnApplyRingToAll = (on) =>
+            {
+                var previous = new List<(string id, bool old)>();
+                foreach (var folder in Folders)
+                    foreach (var vm in folder.Characters)
+                    {
+                        var ch = _characterService.GetById(vm.Id);
+                        if (ch is null) continue;
+                        previous.Add((vm.Id, ch.AvatarRing));
+                    }
+                if (previous.Count == 0) return;
+
+                foreach (var (id, _) in previous) ApplyRingToCharacter(id, on);
+
+                PushCommand(new ApplyAvatarRingToAllCommand(previous, on, ApplyRingToCharacter));
+            };
+
             BindAvatarPickerCallback?.Invoke(item);
+        }
+
+        // Применяет состояние кольца к одному персонажу: модель + персист + VM во всех папках.
+        private void ApplyRingToCharacter(string id, bool val)
+        {
+            var ch = _characterService.GetById(id);
+            if (ch is not null && ch.AvatarRing != val)
+            {
+                ch.AvatarRing = val;
+                _characterService.Update(ch);
+            }
+            foreach (var folder in Folders)
+            {
+                var vm = folder.Characters.FirstOrDefault(x => x.Id == id);
+                if (vm is not null) { vm.AvatarRing = val; break; }
+            }
         }
 
         private void CreateFolder()

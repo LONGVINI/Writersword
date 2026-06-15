@@ -7,6 +7,18 @@ using Writersword.Modules.TextEditor.Models.Styles;
 namespace Writersword.Modules.TextEditor.Contracts
 {
     /// <summary>
+    /// Режим смены регистра выделенного текста.
+    /// </summary>
+    public enum TextCaseMode
+    {
+        Sentence,
+        Lower,
+        Upper,
+        Title,
+        Toggle
+    }
+
+    /// <summary>
     /// Контракт между Ribbon (командный источник) и DocumentViewModel (исполнитель).
     /// Все операции редактирования проходят через этот интерфейс.
     /// PaperSize и PageOrientation берутся из Core.Models.Print.
@@ -32,6 +44,7 @@ namespace Writersword.Modules.TextEditor.Contracts
         void SetFontSize(double size);
         void IncreaseFontSize();
         void DecreaseFontSize();
+        void ChangeCase(TextCaseMode mode);
 
         // ── Форматирование абзаца ─────────────────────────────────────────
         void SetAlignment(TextAlignment alignment);

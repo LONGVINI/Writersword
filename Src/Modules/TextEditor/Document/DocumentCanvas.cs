@@ -500,6 +500,8 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.BeginEditDelegate = null;
                 _docVm.CommitEditDelegate = null;
                 _docVm.CommitRunPropertyGranularDelegate = null;
+                _docVm.CommitTextEditsDelegate = null;
+                _docVm.CommitParagraphPropertyGranularDelegate = null;
 
                 // Снимаем делегаты с каждого параграфа — иначе замыкания удерживают canvas.
                 foreach (var pvm in _docVm.Paragraphs)
@@ -653,6 +655,8 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.BeginEditDelegate = null;
                 _docVm.CommitEditDelegate = null;
                 _docVm.CommitRunPropertyGranularDelegate = null;
+                _docVm.CommitTextEditsDelegate = null;
+                _docVm.CommitParagraphPropertyGranularDelegate = null;
             }
 
             _docVm = DataContext as DocumentViewModel;
@@ -682,6 +686,8 @@ namespace Writersword.Modules.TextEditor.Document
                 DocVm.BeginEditDelegate = BeginEdit;
                 DocVm.CommitEditDelegate = CommitEdit;
                 DocVm.CommitRunPropertyGranularDelegate = CommitRunPropertyGranular;
+                DocVm.CommitTextEditsDelegate = CommitTextEditsGranular;
+                DocVm.CommitParagraphPropertyGranularDelegate = CommitParagraphPropertyGranular;
                 foreach (var pvm in DocVm.Paragraphs)
                     WirePvm(pvm);
             }
