@@ -824,7 +824,7 @@ namespace Writersword.Modules.Characters.ViewModels
                             AvatarPath = item.AvatarPath
                         },
                         0, false, AvatarService)
-                    { IsPlaceholder = true };
+                    { IsPlaceholder = true, IsDragging = true };
 
                     var idx = folder.Characters.IndexOf(item);
                     folder.Characters.Remove(item);

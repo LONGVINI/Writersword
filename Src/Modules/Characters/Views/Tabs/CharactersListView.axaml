@@ -300,7 +300,7 @@
                                                             BorderThickness="2"
                                                             ClipToBounds="True"
                                                             Margin="6"
-                                                            Cursor="SizeAll"
+                                                            Cursor="Hand"
                                                             Opacity="{Binding DragOpacity}"
                                                             IsHitTestVisible="{Binding !IsDragging}">
 
@@ -672,19 +672,28 @@
             <Border x:Name="DragGhostBorder"
                     Width="{Binding CardWidth, FallbackValue=148}"
                     CornerRadius="10"
-                    Opacity="0.85"
-                    BorderBrush="#AAFFFFFF"
+                    Opacity="0.9"
+                    Background="{DynamicResource BgPanelBrush}"
+                    BorderBrush="#888888"
                     BorderThickness="2">
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="16" OffsetX="0" OffsetY="6" Opacity="0.4"/>
                 </Border.Effect>
                 <StackPanel Orientation="Vertical">
                     <Panel Height="{Binding CardTopHeight, FallbackValue=60}">
-                        <Border x:Name="DragGhostTopBg" CornerRadius="8,8,0,0"/>
-                        <TextBlock Text="?" Foreground="White"
-                                   FontSize="{Binding CardIconFontSize, FallbackValue=28}"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   IsHitTestVisible="False"/>
+                        <Panel Width="{Binding CardAvatarSize, FallbackValue=44}"
+                               Height="{Binding CardAvatarSize, FallbackValue=44}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Border x:Name="DragGhostAvatarBg" CornerRadius="999"/>
+                            <Border CornerRadius="999" ClipToBounds="True">
+                                <Image x:Name="DragGhostAvatar" Stretch="UniformToFill"/>
+                            </Border>
+                            <TextBlock x:Name="DragGhostFallback" Text="?"
+                                       Foreground="White"
+                                       FontSize="{Binding CardIconFontSize, FallbackValue=28}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       IsHitTestVisible="False"/>
+                        </Panel>
                     </Panel>
                     <Panel Height="{Binding CardNameHeight, FallbackValue=40}">
                         <Border Background="{DynamicResource BgPanelBrush}" CornerRadius="0,0,8,8"/>

@@ -54,6 +54,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
         private Canvas? _ghostCanvas;
         private Border? _ghostBorder;
         private TextBlock? _ghostText;
+        private double _ghostWidth = 148;
 
         public CharactersListView()
         {
@@ -280,9 +281,13 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 // Захват берём только при реальном старте перетаскивания в OnGlobalPointerMoved.
                 _hasPointerCapture = false;
 
-                // Мгновенный отклик: приподнимаем карточку тенью, чтобы было понятно,
-                // что она взята и её можно перетаскивать.
-                SetPicked(FindCardBorder(source));
+                // Мгновенный отклик: приподнимаем карточку тенью. Заодно запоминаем
+                // реальную ширину карточки (в списке — во всю строку) для призрака —
+                // в момент нажатия она ещё на месте и корректно разложена.
+                var pressedCard = FindCardBorder(source);
+                SetPicked(pressedCard);
+                if (pressedCard is not null && pressedCard.Bounds.Width > 0)
+                    _ghostWidth = pressedCard.Bounds.Width;
             }
             else
             {
@@ -373,7 +378,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
                     _lastPreviewTick = Environment.TickCount64;
                 }
 
-                ShowGhost(_dragCandidate.Name, _dragCandidate.Color, pos);
+                ShowGhost(_dragCandidate, pos);
             }
             else
             {
@@ -777,13 +782,15 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
             if (DataContext is CharactersViewModel vm)
             {
+                // Снимаем текущие (возможно ещё анимируемые) позиции, применяем
+                // изменение и плавно доводим карточки FLIP-ом — без резкого «щелчка»
+                // и обрыва незавершённых анимаций при быстром броске.
+                var snap = SnapshotPositions();
                 if (_dragTargetFolderId is not null)
                     vm.CommitDragPreview(_dragCandidate.Id, _dragTargetFolderId, _dragTargetIndex);
                 else
-                {
                     vm.CancelDragPreview(_dragCandidate.Id);
-                    ResetTransformsInstant();
-                }
+                BeginFlipAnimation(snap);
             }
 
             _dragCandidate = null;
@@ -803,15 +810,37 @@ namespace Writersword.Modules.Characters.Views.Tabs
             ClearPicked();
         }
 
-        private void ShowGhost(string name, string color, Point pos)
+        private void ShowGhost(CharacterListItemViewModel item, Point pos)
         {
             if (_ghostCanvas is null || _ghostBorder is null || _ghostText is null) return;
-            _ghostText.Text = name;
-            var brush = Color.TryParse(color, out var parsed)
+
+            _ghostText.Text = item.Name;
+
+            var brush = Color.TryParse(item.Color, out var parsed)
                 ? new SolidColorBrush(parsed)
                 : new SolidColorBrush(Color.FromRgb(96, 125, 139));
-            var topBg = _ghostBorder.FindControl<Border>("DragGhostTopBg");
-            if (topBg is not null) topBg.Background = brush;
+            _ghostBorder.BorderBrush = brush;
+
+            // Кружок-аватар: заливка цветом персонажа, поверх — картинка (если есть),
+            // иначе запасной значок. Делает призрак похожим на реальную карточку.
+            var avatarBg = this.FindControl<Border>("DragGhostAvatarBg");
+            if (avatarBg is not null) avatarBg.Background = brush;
+
+            var bmp = item.AvatarBitmap;
+            var avatar = this.FindControl<Image>("DragGhostAvatar");
+            if (avatar is not null) avatar.Source = bmp;
+
+            var fallback = this.FindControl<TextBlock>("DragGhostFallback");
+            if (fallback is not null)
+            {
+                fallback.Text = string.IsNullOrEmpty(item.FallbackIcon) ? "?" : item.FallbackIcon;
+                fallback.IsVisible = bmp is null;
+            }
+
+            // Ширина призрака = ширина перетаскиваемой карточки (замерена при нажатии;
+            // в списке — во всю строку).
+            _ghostBorder.Width = _ghostWidth;
+
             MoveGhost(pos);
             _ghostCanvas.IsVisible = true;
         }
@@ -819,7 +848,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
         private void MoveGhost(Point pos)
         {
             if (_ghostBorder is null || DataContext is not CharactersViewModel vm) return;
-            Canvas.SetLeft(_ghostBorder, pos.X - vm.CardWidth / 2.0);
+            Canvas.SetLeft(_ghostBorder, pos.X - _ghostWidth / 2.0);
             Canvas.SetTop(_ghostBorder, pos.Y - vm.CardTotalHeight / 2.0);
         }
 

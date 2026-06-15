@@ -247,6 +247,33 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             set => this.RaiseAndSetIfChanged(ref _currentHighlightColor, value);
         }
 
+        // Цвет для пикеров в Ribbon (двусторонняя привязка к ColorPickerButton). Контекст каретки
+        // пишет в поле напрямую (без применения, см. UpdateFromCursorContext), а выбор цвета
+        // пользователем идёт через сеттер и применяет цвет к выделению/тексту.
+        private string _textColorPick = "#1A1A1A";
+        public string TextColorPick
+        {
+            get => _textColorPick;
+            set
+            {
+                if (string.Equals(_textColorPick, value, StringComparison.OrdinalIgnoreCase)) return;
+                this.RaiseAndSetIfChanged(ref _textColorPick, value);
+                if (!string.IsNullOrWhiteSpace(value)) _target.SetTextColor(value);
+            }
+        }
+
+        private string _highlightColorPick = "#FFF176";
+        public string HighlightColorPick
+        {
+            get => _highlightColorPick;
+            set
+            {
+                if (string.Equals(_highlightColorPick, value, StringComparison.OrdinalIgnoreCase)) return;
+                this.RaiseAndSetIfChanged(ref _highlightColorPick, value);
+                if (!string.IsNullOrWhiteSpace(value)) _target.SetHighlightColor(value);
+            }
+        }
+
         // --- Свойства: абзац ---
 
         public TextAlignment CurrentAlignment
@@ -556,6 +583,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             _currentFontSizeText = ((int)ctx.FontSize).ToString();
             _currentTextColor = ctx.TextColor;
             _currentHighlightColor = ctx.HighlightColor;
+            _textColorPick = ctx.TextColor ?? "#1A1A1A";
+            _highlightColorPick = ctx.HighlightColor ?? "#FFF176";
             _currentAlignment = ctx.Alignment;
             _currentStyleName = ctx.StyleName;
 
@@ -574,6 +603,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             this.RaisePropertyChanged(nameof(CurrentFontSizeText));
             this.RaisePropertyChanged(nameof(CurrentTextColor));
             this.RaisePropertyChanged(nameof(CurrentHighlightColor));
+            this.RaisePropertyChanged(nameof(TextColorPick));
+            this.RaisePropertyChanged(nameof(HighlightColorPick));
             this.RaisePropertyChanged(nameof(CurrentAlignment));
             this.RaisePropertyChanged(nameof(CurrentStyleName));
         }
