@@ -5,10 +5,17 @@
              xmlns:statusbar="using:Writersword.Modules.TextEditor.Views.StatusBar"
              xmlns:doc="using:Writersword.Modules.TextEditor.Document"
              xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
+             xmlns:ui="using:Writersword.Styles.UserControls"
              x:Class="Writersword.Modules.TextEditor.Views.TextEditorView"
-             x:DataType="vm:TextEditorViewModel">
+             x:DataType="vm:TextEditorViewModel"
+             ui:ModalHost.IsHost="True">
 
 	<Grid RowDefinitions="Auto * Auto">
+
+		<!-- Оверлей редактора цвета — поверх всего модуля -->
+		<ui:ColorEditorOverlay x:Name="ColorEditorOverlay"
+		                       Grid.Row="0" Grid.RowSpan="3"
+		                       ZIndex="200"/>
 
 		<!-- Строка 0: Ribbon -->
 		<toolbar:RibbonView Grid.Row="0"

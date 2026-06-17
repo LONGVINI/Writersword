@@ -62,6 +62,13 @@ namespace Writersword.Core.Models.Rendering
         /// Используется для сопоставления позиции клика с позицией в модели.
         /// </summary>
         public int GlobalCharOffset { get; init; }
+
+        /// <summary>
+        /// Вертикальное смещение базовой линии сегмента в pt относительно базовой линии строки.
+        /// Положительное — вверх (надстрочный), отрицательное — вниз (подстрочный), 0 — обычный.
+        /// Устанавливается при сборке сегмента из RunProperties (надстрочный/подстрочный текст).
+        /// </summary>
+        public float BaselineShiftPt { get; init; }
     }
 
     /// <summary>

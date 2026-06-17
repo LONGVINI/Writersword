@@ -892,6 +892,9 @@ namespace Writersword.Modules.TextEditor.Document
                     // (центр/право + абзацный отступ первой строки), который рендер добавил к
                     // тексту. Иначе по центру/правому/первой строке клик попадал не в тот символ.
                     hitX = localX - LineAlignShift(hitLayout, li);
+                    // Для выравнивания по ширине убираем растяжку межсловных пробелов: текст
+                    // растянут вправо, и без этого клик попадал бы левее реального символа.
+                    hitX = UnstretchJustifyX(hitLayout, li, hitX);
                     if (hitX >= ln.TextWidth)
                         return (bestIdx, ln.LastCharIndex + 1);
                     break;
@@ -1235,5 +1238,6 @@ namespace Writersword.Modules.TextEditor.Document
                 InvalidateFull();
             }, DispatcherPriority.Loaded);
         }
+
     }
 }

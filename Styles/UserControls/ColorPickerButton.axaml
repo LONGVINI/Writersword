@@ -174,7 +174,7 @@
 											<Button Classes="swatch"
                                                     Command="{Binding SelectPresetCommand, ElementName=Root}"
                                                     CommandParameter="{Binding}"/>
-											<Button Classes="removeBtn" Content="✕"
+											<Button Classes="removeBtn" Content="✕" IsVisible="False"
                                                     Command="{Binding RemovePinnedCommand, ElementName=Root}"
                                                     CommandParameter="{Binding}"
                                                     ToolTip.Tip="{x:Static res:SharedStrings.ColorPicker_RemoveFromPalette}"/>
@@ -210,7 +210,7 @@
 											<Button Classes="swatch"
                                                     Command="{Binding SelectPresetCommand, ElementName=Root}"
                                                     CommandParameter="{Binding}"/>
-											<Button Classes="removeBtn" Content="✕"
+											<Button Classes="removeBtn" Content="✕" IsVisible="False"
                                                     Command="{Binding RemoveRecentCommand, ElementName=Root}"
                                                     CommandParameter="{Binding}"
                                                     ToolTip.Tip="{x:Static res:SharedStrings.ColorPicker_RemoveFromPalette}"/>

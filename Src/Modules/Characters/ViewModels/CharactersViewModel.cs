@@ -809,6 +809,9 @@ namespace Writersword.Modules.Characters.ViewModels
                 {
                     _previewDragOriginalFolderId = folder.FolderId;
                     _previewDragOriginalIndex = folder.Characters.IndexOf(item);
+                    Serilog.Log.ForContext<CharactersViewModel>().Debug(
+                        "[Drag] BEGIN folder='{F}' pickedIndex={I} count={C}",
+                        folder.Name, _previewDragOriginalIndex, folder.Characters.Count);
                     item.IsDragging = true;
                     _dragItem = item;
 
@@ -827,8 +830,12 @@ namespace Writersword.Modules.Characters.ViewModels
                     { IsPlaceholder = true, IsDragging = true };
 
                     var idx = folder.Characters.IndexOf(item);
-                    folder.Characters.Remove(item);
-                    folder.Characters.Insert(idx, _dragPlaceholder);
+                    try
+                    {
+                        folder.Characters.Remove(item);
+                        folder.Characters.Insert(idx, _dragPlaceholder);
+                    }
+                    catch (NotImplementedException) { }
                     return;
                 }
             }
@@ -852,23 +859,39 @@ namespace Writersword.Modules.Characters.ViewModels
 
             var clampedIdx = Math.Min(targetIndex, targetFolderVm.Characters.Count);
 
-            if (sourceFolderVm != null && ReferenceEquals(sourceFolderVm, targetFolderVm))
+            // Обёртка от бага Avalonia 12: UniformGridLayout.ClearElementOnDataSourceChange
+            // не реализован и кидает NotImplementedException при перестройке коллекции в
+            // виртуализованном состоянии (например, у нижних карточек длинного списка).
+            // Данные переставляются корректно до выброса; раскладку дотянет UpdateLayout.
+            try
             {
-                // Та же папка: Move сохраняет инстансы элементов в ItemsRepeater.
-                // Remove+Insert создаёт новый элемент и ломает TranslateTransform анимацию.
-                // targetIndex уже целевая ЯЧЕЙКА под курсором — кладём плейсхолдер прямо
-                // туда (без -1), иначе при движении вниз он встаёт на блок левее.
-                var dest = Math.Min(clampedIdx, sourceFolderVm.Characters.Count - 1);
-                if (dest != sourceIdx)
-                    sourceFolderVm.Characters.Move(sourceIdx, dest);
+                if (sourceFolderVm != null && ReferenceEquals(sourceFolderVm, targetFolderVm))
+                {
+                    // Та же папка: Move сохраняет инстансы элементов в ItemsRepeater.
+                    // Remove+Insert создаёт новый элемент и ломает TranslateTransform анимацию.
+                    // targetIndex уже целевая ЯЧЕЙКА под курсором — кладём плейсхолдер прямо
+                    // туда (без -1), иначе при движении вниз он встаёт на блок левее.
+                    var dest = Math.Min(clampedIdx, sourceFolderVm.Characters.Count - 1);
+                    if (dest != sourceIdx)
+                        sourceFolderVm.Characters.Move(sourceIdx, dest);
+                }
+                else
+                {
+                    if (sourceFolderVm != null)
+                        sourceFolderVm.Characters.Remove(_dragPlaceholder);
+                    var clampedCross = Math.Min(clampedIdx, targetFolderVm.Characters.Count);
+                    targetFolderVm.Characters.Insert(clampedCross, _dragPlaceholder);
+                }
             }
-            else
-            {
-                if (sourceFolderVm != null)
-                    sourceFolderVm.Characters.Remove(_dragPlaceholder);
-                var clampedCross = Math.Min(clampedIdx, targetFolderVm.Characters.Count);
-                targetFolderVm.Characters.Insert(clampedCross, _dragPlaceholder);
-            }
+            catch (NotImplementedException) { }
+
+            int phResult = -1;
+            for (int i = 0; i < targetFolderVm.Characters.Count; i++)
+                if (targetFolderVm.Characters[i].IsPlaceholder) { phResult = i; break; }
+            Serilog.Log.ForContext<CharactersViewModel>().Debug(
+                "[Drag] MOVE same={S} folder='{F}' srcIdx={SI} targetIdx={TI} clamped={CL} placeholderNow={PH}",
+                ReferenceEquals(sourceFolderVm, targetFolderVm), targetFolderVm.Name,
+                sourceIdx, targetIndex, clampedIdx, phResult);
         }
 
         public void CancelDragPreview(string charId)
@@ -877,8 +900,12 @@ namespace Writersword.Modules.Characters.ViewModels
 
             if (_dragPlaceholder is not null)
             {
-                foreach (var folder in Folders)
-                    folder.Characters.Remove(_dragPlaceholder);
+                try
+                {
+                    foreach (var folder in Folders)
+                        folder.Characters.Remove(_dragPlaceholder);
+                }
+                catch (NotImplementedException) { }
                 _dragPlaceholder = null;
             }
 
@@ -889,7 +916,8 @@ namespace Writersword.Modules.Characters.ViewModels
                 if (origFolderVm is not null)
                 {
                     var idx = Math.Min(_previewDragOriginalIndex, origFolderVm.Characters.Count);
-                    origFolderVm.Characters.Insert(idx, _dragItem);
+                    try { origFolderVm.Characters.Insert(idx, _dragItem); }
+                    catch (NotImplementedException) { }
                 }
                 _dragItem = null;
             }
@@ -915,7 +943,8 @@ namespace Writersword.Modules.Characters.ViewModels
                     {
                         finalIndex = phIdx;
                         finalFolderVm = folder;
-                        folder.Characters.Remove(_dragPlaceholder);
+                        try { folder.Characters.Remove(_dragPlaceholder); }
+                        catch (NotImplementedException) { }
                         break;
                     }
                 }
@@ -935,7 +964,8 @@ namespace Writersword.Modules.Characters.ViewModels
                 if (finalFolderVm is not null)
                 {
                     var clampedVm = Math.Min(finalIndex, finalFolderVm.Characters.Count);
-                    finalFolderVm.Characters.Insert(clampedVm, item);
+                    try { finalFolderVm.Characters.Insert(clampedVm, item); }
+                    catch (NotImplementedException) { }
                 }
 
                 bool posChanged = finalFolderVm?.FolderId != origFolderId || finalIndex != origIndex;

@@ -545,13 +545,16 @@ namespace Writersword.Modules.TextEditor.Document
 
             var renderLayout = GetRenderLayout(pl, (float)(_canvasWidth * PxToPt));
 
-            DrawSelectionForSlice(canvas, idx, pl, absX, absY, layouts, renderLayout);
-
             SKTextRenderer.RenderParagraphLines(
                 canvas, renderLayout,
                 absX + renderLayout.LeftIndentPt,
                 absY,
                 pl.LineFrom, pl.LineTo);
+
+            // Выделение рисуем ПОВЕРХ содержимого (после заливки текста и глифов), иначе
+            // непрозрачная заливка HighlightColor перекрывает полупрозрачную подсветку
+            // выделения и выделенный текст на залитом фоне становится не виден.
+            DrawSelectionForSlice(canvas, idx, pl, absX, absY, layouts, renderLayout);
 
             if (drawCaret && _caretPara == idx)
                 DrawCaret(canvas, pl, absX, absY, renderLayout);
@@ -791,6 +794,36 @@ namespace Writersword.Modules.TextEditor.Document
         // модель), чтобы каретка, хит-тест и выделение совпадали с отрисованным текстом.
         private static float LineAlignShift(SKTextLayout layout, int lineIndex)
             => SKTextRenderer.LineAlignShift(layout, lineIndex);
+
+        // Преобразует X клика (в координатах с растяжкой justify, относительно начала строки)
+        // в X без растяжки — для передачи в HitTestPoint, который считает по нерастянутым
+        // координатам сегментов. Для не-Justify/последней строки возвращает X как есть.
+        // Идёт по сегментам, накапливая растяжку как при отрисовке: если клик попал на сегмент —
+        // отдаёт его нерастянутую позицию; если в раздвинутый зазор между словами — к началу
+        // сегмента (ближайшая граница слова).
+        private static float UnstretchJustifyX(SKTextLayout layout, int lineIndex, float stretchedX)
+        {
+            float extra = SKTextRenderer.JustifyExtraPerSpace(layout, lineIndex);
+            if (extra <= 0f) return stretchedX;
+            if (lineIndex < 0 || lineIndex >= layout.Lines.Count) return stretchedX;
+            var line = layout.Lines[lineIndex];
+
+            float cumStretch = 0f;
+            foreach (var seg in line.Segments)
+            {
+                float stretchedLeft = seg.X + cumStretch;
+                if (stretchedX < stretchedLeft)
+                    return seg.X;
+                if (stretchedX <= stretchedLeft + seg.Width)
+                    return seg.X + (stretchedX - stretchedLeft);
+
+                int spaces = 0;
+                foreach (var c in seg.Text)
+                    if (c == ' ' || c == '\t') spaces++;
+                cumStretch += spaces * extra;
+            }
+            return line.TextWidth;
+        }
 
         // Накопленная добавка растяжки по ширине для пробелов строки, расположенных до символа
         // globalCharIndex. Хвостовые пробелы строки исключаются — как и в JustifyExtraPerSpace,

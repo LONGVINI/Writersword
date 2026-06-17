@@ -915,10 +915,27 @@ namespace Writersword.Modules.TextEditor.Rendering
                     bool resolvedBold = p?.IsBold ?? styleBold;
                     bool resolvedItalic = p?.IsItalic ?? styleItalic;
 
+                    // Над/подстрочный: уменьшаем кегль и смещаем базовую линию. Сдвиг считаем от
+                    // исходного размера, чтобы надстрочный поднимался к верху обычного текста,
+                    // а подстрочный опускался под него. 0 — обычный текст.
+                    float segFontSize = resolvedSize;
+                    float baselineShift = 0f;
+                    if (p?.IsSuperscript == true)
+                    {
+                        segFontSize = resolvedSize * 0.65f;
+                        baselineShift = resolvedSize * 0.34f;
+                    }
+                    else if (p?.IsSubscript == true)
+                    {
+                        segFontSize = resolvedSize * 0.65f;
+                        baselineShift = -resolvedSize * 0.16f;
+                    }
+
                     var format = new SKRunSegment
                     {
                         FontFamily = resolvedFamily,
-                        FontSizePt = resolvedSize,
+                        FontSizePt = segFontSize,
+                        BaselineShiftPt = baselineShift,
                         IsBold = resolvedBold,
                         IsItalic = resolvedItalic,
                         IsUnderline = p?.IsUnderline ?? false,
@@ -949,7 +966,8 @@ namespace Writersword.Modules.TextEditor.Rendering
                                     charFormat = new SKRunSegment
                                     {
                                         FontFamily = fallbackFamily,
-                                        FontSizePt = resolvedSize,
+                                        FontSizePt = segFontSize,
+                                        BaselineShiftPt = baselineShift,
                                         IsBold = resolvedBold,
                                         IsItalic = resolvedItalic,
                                         IsUnderline = p?.IsUnderline ?? false,
@@ -1127,6 +1145,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     Text = ch,
                     FontFamily = format.FontFamily,
                     FontSizePt = format.FontSizePt,
+                    BaselineShiftPt = format.BaselineShiftPt,
                     IsBold = format.IsBold,
                     IsItalic = format.IsItalic,
                     IsUnderline = format.IsUnderline,
@@ -1491,6 +1510,7 @@ namespace Writersword.Modules.TextEditor.Rendering
         private static bool IsSameFormat(SKRunSegment a, SKRunSegment b)
             => a.FontFamily == b.FontFamily
             && a.FontSizePt == b.FontSizePt
+            && a.BaselineShiftPt == b.BaselineShiftPt
             && a.IsBold == b.IsBold
             && a.IsItalic == b.IsItalic
             && a.IsUnderline == b.IsUnderline
@@ -1657,6 +1677,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                 {
                     float segX = paraX + seg.X + lineShift + justifyShift;
                     float baseY = lineY + line.Baseline;
+                    // Над/подстрочный: смещаем базовую линию сегмента (вверх для надстрочного,
+                    // вниз для подстрочного). Для обычного текста BaselineShiftPt = 0.
+                    float segBaseY = baseY - seg.BaselineShiftPt;
 
                     if (seg.HighlightColor != SKColors.Transparent)
                     {
@@ -1672,7 +1695,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                         IsAntialias = true
                     };
 
-                    canvas.DrawText(seg.Text, segX, baseY, font, paint);
+                    canvas.DrawText(seg.Text, segX, segBaseY, font, paint);
 
                     if (seg.IsUnderline)
                     {
@@ -1682,7 +1705,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                             StrokeWidth = Math.Max(0.5f, seg.FontSizePt * 0.05f),
                             IsAntialias = true
                         };
-                        float underlineY = baseY + seg.FontSizePt * 0.12f;
+                        float underlineY = segBaseY + seg.FontSizePt * 0.12f;
                         canvas.DrawLine(segX, underlineY, segX + seg.Width, underlineY, uPaint);
                     }
 
@@ -1694,7 +1717,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                             StrokeWidth = Math.Max(0.5f, seg.FontSizePt * 0.05f),
                             IsAntialias = true
                         };
-                        float strikeY = baseY - seg.FontSizePt * 0.3f;
+                        float strikeY = segBaseY - seg.FontSizePt * 0.3f;
                         canvas.DrawLine(segX, strikeY, segX + seg.Width, strikeY, sPaint);
                     }
 

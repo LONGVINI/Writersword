@@ -24,6 +24,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
         // карточки, перетаскивание начинается только после зажатия и последующего движения.
         private const long DragHoldDelayMs = 90;
 
+        private static readonly Serilog.ILogger DragLog = Serilog.Log.ForContext<CharactersListView>();
+
         private Point _dragStartPoint;
         private long _pressTick;
         private CharacterListItemViewModel? _dragCandidate;
@@ -45,7 +47,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
         private CharacterFolderViewModel? _currentDragOverFolder;
         private long _lastPreviewTick;
-        private int _flipGeneration;
         private ICharacterAvatarService? _avatarService;
 
 
@@ -56,6 +57,12 @@ namespace Writersword.Modules.Characters.Views.Tabs
         private TextBlock? _ghostText;
         private double _ghostWidth = 148;
 
+        // Автопрокрутка списка во время перетаскивания.
+        private ScrollViewer? _dragScroll;
+        private DispatcherTimer? _autoScrollTimer;
+        private double _autoScrollVel;
+        private Point _lastDragPos;
+
         public CharactersListView()
         {
             InitializeComponent();
@@ -63,6 +70,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
             AddHandler(PointerPressedEvent, OnGlobalPointerPressed, RoutingStrategies.Tunnel);
             AddHandler(PointerMovedEvent, OnGlobalPointerMoved, RoutingStrategies.Tunnel);
             AddHandler(PointerReleasedEvent, OnGlobalPointerReleased, RoutingStrategies.Tunnel);
+            AddHandler(PointerWheelChangedEvent, OnGlobalPointerWheel, RoutingStrategies.Tunnel);
             AddHandler(KeyDownEvent, OnGlobalKeyDown, RoutingStrategies.Tunnel);
             AddHandler(InputElement.LostFocusEvent, OnCardTextBoxLostFocus, RoutingStrategies.Bubble);
         }
@@ -376,12 +384,19 @@ namespace Writersword.Modules.Characters.Views.Tabs
                     RebuildDragCaches();
                     RecalibrateSlotGeometry();
                     _lastPreviewTick = Environment.TickCount64;
+
+                    _dragScroll = _folderItemsCtrlCache.TryGetValue(_dragTargetFolderId!, out var repForScroll)
+                        ? repForScroll.GetVisualAncestors().OfType<ScrollViewer>().FirstOrDefault()
+                        : null;
+                    StartAutoScroll();
                 }
 
                 ShowGhost(_dragCandidate, pos);
             }
             else
             {
+                _lastDragPos = pos;
+                UpdateAutoScrollVelocity(pos);
                 MoveGhost(pos);
 
                 var now = Environment.TickCount64;
@@ -464,23 +479,26 @@ namespace Writersword.Modules.Characters.Views.Tabs
             BeginFlipAnimation(snap);
         }
 
-        // Снимаем визуальные позиции (с текущим TranslateTransform).
+        // Снимаем визуальные позиции (с текущим TranslateTransform) в координатах
+        // репитера, а не вьюпорта: прокрутка не должна порождать ложные дельты FLIP.
         // Не сбрасываем — карточки в середине анимации не прерываются.
         private Dictionary<string, Point> SnapshotPositions()
         {
             var result = new Dictionary<string, Point>();
-            foreach (var (id, border) in EnumerateLiveCards())
+            foreach (var (id, border, repeater) in EnumerateLiveCards())
             {
-                var pt = border.TranslatePoint(new Point(0, 0), this);
+                var pt = border.TranslatePoint(new Point(0, 0), repeater);
                 if (pt.HasValue) result[id] = pt.Value;
             }
             return result;
         }
 
-        // Живые реализованные карточки (id -> корневой Border) из репитеров. Стартовый
+        // Живые реализованные карточки: id -> корневой Border + его репитер. Стартовый
         // кэш на момент начала drag ещё пуст (дети репитера не реализованы), поэтому
-        // снапшоты и FLIP берут карточки из живого дерева на каждом шаге.
-        private IEnumerable<(string id, Border border)> EnumerateLiveCards()
+        // снапшоты и FLIP берут карточки из живого дерева на каждом шаге. Репитер нужен
+        // как система координат для FLIP: он скроллится вместе с карточкой, поэтому
+        // позиция относительно него не зависит от прокрутки.
+        private IEnumerable<(string id, Border border, ItemsRepeater repeater)> EnumerateLiveCards()
         {
             foreach (var repeater in _folderItemsCtrlCache.Values.OfType<ItemsRepeater>())
             {
@@ -492,14 +510,14 @@ namespace Writersword.Modules.Characters.Views.Tabs
                         ?? child.GetVisualDescendants().OfType<Border>()
                                 .FirstOrDefault(b => b.Classes.Contains("card-root"));
                     if (border is not null)
-                        yield return (cvm.Id, border);
+                        yield return (cvm.Id, border, repeater);
                 }
             }
         }
 
         private void ResetTransformsInstant()
         {
-            foreach (var (_, border) in EnumerateLiveCards())
+            foreach (var (_, border, _) in EnumerateLiveCards())
             {
                 if (border.RenderTransform is not TranslateTransform tt) continue;
                 if (tt.X == 0.0 && tt.Y == 0.0) continue;
@@ -518,7 +536,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
         private void BeginFlipAnimation(Dictionary<string, Point> beforePositions)
         {
             if (beforePositions.Count == 0) return;
-            int gen = ++_flipGeneration;
 
             // Прогоняем layout СИНХРОННО после изменения коллекции и измеряем новые
             // позиции сразу. Раньше замер откладывался постом с приоритетом Loaded,
@@ -526,9 +543,9 @@ namespace Writersword.Modules.Characters.Views.Tabs
             // вытесняют, колбэк не успевает отработать — отсюда «нет анимаций».
             UpdateLayout();
 
-            var toAnimate = new List<TranslateTransform>(beforePositions.Count);
+            var toAnimate = new List<(TranslateTransform tt, double dx, double dy)>(beforePositions.Count);
 
-            foreach (var (id, border) in EnumerateLiveCards())
+            foreach (var (id, border, repeater) in EnumerateLiveCards())
             {
                 if (!beforePositions.TryGetValue(id, out var before)) continue;
                 if (border.RenderTransform is not TranslateTransform tt) continue;
@@ -540,7 +557,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 tt.X = 0.0;
                 tt.Y = 0.0;
 
-                var layoutPt = border.TranslatePoint(new Point(0, 0), this);
+                var layoutPt = border.TranslatePoint(new Point(0, 0), repeater);
 
                 if (!layoutPt.HasValue)
                 {
@@ -562,20 +579,35 @@ namespace Writersword.Modules.Characters.Views.Tabs
                     continue;
                 }
 
+                // Огромный сдвиг = артефакт переиспользования (recycle) при виртуализации:
+                // карточка «прыгнула» через пол-экрана. Не анимируем — оставляем на её
+                // layout-месте (трансформ уже 0 после замера). Иначе она улетает.
+                if (Math.Abs(dx) > 600 || Math.Abs(dy) > 600)
+                {
+                    tt.Transitions = saved;
+                    continue;
+                }
+
                 tt.X = dx;
                 tt.Y = dy;
                 tt.Transitions = saved;
-                toAnimate.Add(tt);
+                toAnimate.Add((tt, dx, dy));
             }
+
+            DragLog.Debug("[Drag] FLIP before={B} animate={A}", beforePositions.Count, toAnimate.Count);
 
             if (toAnimate.Count == 0) return;
 
-            // Финальный «доезд» к нулю — на следующий тик с приоритетом Render
-            // (он выше Input, перетаскиванием не вытесняется), чтобы сыграл переход.
+            // Финальный «доезд» к нулю — на следующий тик с приоритетом Render (он выше
+            // Input, перетаскиванием не вытесняется), чтобы сыграл переход. Сбрасываем
+            // только если трансформ всё ещё хранит ИМЕННО нашу дельту: если более новый
+            // FLIP уже задал этой карточке другую дельту — пропускаем, её доведёт его
+            // собственный пост. Без проверки поколения: иначе при гонке шагов карточка
+            // навсегда застывала со смещением (дырки в сетке + «призраки» при recycle).
             Dispatcher.UIThread.Post(() =>
             {
-                if (gen != _flipGeneration) return;
-                foreach (var tt in toAnimate) { tt.X = 0.0; tt.Y = 0.0; }
+                foreach (var (tt, dx, dy) in toAnimate)
+                    if (tt.X == dx && tt.Y == dy) { tt.X = 0.0; tt.Y = 0.0; }
             }, DispatcherPriority.Render);
         }
 
@@ -584,50 +616,80 @@ namespace Writersword.Modules.Characters.Views.Tabs
             if (!_folderItemsCtrlCache.TryGetValue(folderVm.FolderId, out var ctrl))
                 return _dragTargetIndex;
 
-            // Маппим курсор на СЕТКУ ЯЧЕЕК, а не на личность карточки. Ячейки сетки
-            // стоят на месте (карточки лишь переезжают между ними), поэтому индекс не
-            // зависит от текущего положения плейсхолдера — нет петли «двигаем -> индекс
-            // сменился -> снова двигаем», отсюда уходит мерцание. Колонки/строки берём
-            // из живых позиций (вычитая анимационный сдвиг — стабильная layout-позиция),
-            // плейсхолдер включаем, чтобы сетка была полной.
+            // Место вставки меряем по ФАКТИЧЕСКОЙ геометрии реализованных ячеек, а не по
+            // расчётным размерам слота. Плейсхолдер держится СТРОКИ КУРСОРА: по горизонтали
+            // — левее/правее центров ячеек; правее всех в строке = правый край строки (без
+            // переноса в начало следующей), левее всех = левый край. Переход на другую
+            // строку происходит ТОЛЬКО вертикальным движением курсора — никаких перескоков
+            // туда, куда мышь не смотрит.
             if (ctrl is ItemsRepeater repeater)
             {
-                const double tol = 4.0;
-                var xs = new List<double>();
-                var ys = new List<double>();
+                // Все реализованные ячейки, включая плейсхолдер: он — реальная ячейка строки,
+                // и его учёт делает выбор устойчивым (наведение на его клетку = без сдвига).
+                var cells = new List<(int idx, double cx, double cy)>();
+                var rowYs = new List<double>();
+                double cardH = 0;
 
                 foreach (var child in repeater.GetVisualChildren().OfType<Control>())
                 {
-                    if (child.DataContext is not CharacterListItemViewModel) continue;
-                    // Только что реализованные/невыложенные карточки с нулевыми
-                    // границами дают ложную колонку слева и сдвиг индекса — отсеиваем.
+                    if (child.DataContext is not CharacterListItemViewModel cvm) continue;
                     if (child.Bounds.Width <= 1 || child.Bounds.Height <= 1) continue;
+                    int aidx = folderVm.Characters.IndexOf(cvm);
+                    if (aidx < 0) continue;
                     var ctr = child.TranslatePoint(
                         new Point(child.Bounds.Width / 2.0, child.Bounds.Height / 2.0), this);
                     if (!ctr.HasValue) continue;
 
+                    // Стабильный центр без учёта текущего FLIP-трансформа.
                     double offX = 0, offY = 0;
                     if (child.RenderTransform is TranslateTransform tt) { offX = tt.X; offY = tt.Y; }
                     double cx = ctr.Value.X - offX;
                     double cy = ctr.Value.Y - offY;
 
-                    if (!xs.Any(v => Math.Abs(v - cx) <= tol)) xs.Add(cx);
-                    if (!ys.Any(v => Math.Abs(v - cy) <= tol)) ys.Add(cy);
+                    cells.Add((aidx, cx, cy));
+                    if (child.Bounds.Height > cardH) cardH = child.Bounds.Height;
+                    if (!rowYs.Any(y => Math.Abs(y - cy) <= 4)) rowYs.Add(cy);
                 }
 
-                if (xs.Count > 0 && ys.Count > 0)
+                if (cells.Count > 0)
                 {
-                    xs.Sort();
-                    ys.Sort();
-                    int cols = xs.Count;
-                    int col = NearestIndex(xs, pos.X);
-                    int row = NearestIndex(ys, pos.Y);
-                    int maxReal = Math.Max(0, folderVm.Characters.Count - 1);
-                    return Math.Min(row * cols + col, maxReal);
+                    // Фактический шаг строк = минимальная разница между центрами соседних
+                    // строк. Полоса в полшага точно покрывает строку без зазоров и нахлёста.
+                    rowYs.Sort();
+                    double rowPitch = double.MaxValue;
+                    for (int i = 1; i < rowYs.Count; i++)
+                    {
+                        double d = rowYs[i] - rowYs[i - 1];
+                        if (d > 1 && d < rowPitch) rowPitch = d;
+                    }
+                    if (rowPitch == double.MaxValue) rowPitch = cardH > 1 ? cardH : 100;
+                    double halfRow = rowPitch / 2.0;
+
+                    // Ячейки строки курсора (по измеренной полосе вокруг pos.Y).
+                    var row = cells.Where(c => Math.Abs(c.cy - pos.Y) <= halfRow).ToList();
+                    if (row.Count == 0)
+                    {
+                        double ny = cells.OrderBy(c => Math.Abs(c.cy - pos.Y)).First().cy;
+                        row = cells.Where(c => Math.Abs(c.cy - ny) <= halfRow).ToList();
+                    }
+
+                    int rowMin = row.Min(c => c.idx);
+                    int countLeft = row.Count(c => c.cx < pos.X);
+                    int target = rowMin + countLeft;
+
+                    // Есть строка ниже => текущая строка заполнена: не вылезаем за её правый
+                    // край, иначе плейсхолдер перескочил бы в начало следующей строки. В
+                    // последней строке кап не нужен — справа реальные пустые ячейки, и
+                    // countLeft даёт дозапись в конец списка.
+                    bool hasRowBelow = cells.Any(c => c.cy > pos.Y + halfRow);
+                    if (hasRowBelow)
+                        target = Math.Min(target, rowMin + row.Count - 1);
+
+                    return Math.Clamp(target, 0, folderVm.Characters.Count);
                 }
             }
 
-            // Фолбэк: прежняя оценка по слот-геометрии (карточки ещё не реализованы).
+            // Фолбэк: оценка по слот-геометрии (карточки ещё не реализованы).
             var topLeft = ctrl.TranslatePoint(new Point(0, 0), this);
             if (topLeft is null) return _dragTargetIndex;
 
@@ -638,21 +700,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
             int c = Math.Max(0, (int)(relX / _slotWidth));
             c = Math.Min(c, _cardsPerRow - 1);
 
-            int maxIdx = Math.Max(0, folderVm.Characters.Count - 1);
-            return Math.Min(r * _cardsPerRow + c, maxIdx);
-        }
-
-        // Индекс ближайшего по значению центра (колонки/строки) к координате курсора.
-        private static int NearestIndex(List<double> centers, double value)
-        {
-            int best = 0;
-            double bestDist = double.MaxValue;
-            for (int i = 0; i < centers.Count; i++)
-            {
-                double d = Math.Abs(centers[i] - value);
-                if (d < bestDist) { bestDist = d; best = i; }
-            }
-            return best;
+            return Math.Min(r * _cardsPerRow + c, folderVm.Characters.Count);
         }
 
         private void RebuildDragCaches()
@@ -694,7 +742,34 @@ namespace Writersword.Modules.Characters.Views.Tabs
                     if (border is not null)
                         _cardBorderCache[cardVm.Id] = border;
                 }
+
+                // Сбрасываем зависший TranslateTransform при переиспользовании элемента
+                // виртуализацией (recycle) и при его реализации: иначе карточка с
+                // недогашенным смещением всплывает «призраком» за другими. Идемпотентно
+                // через -=/+= — повторные вызовы RebuildDragCaches не плодят подписок.
+                repeater.ElementPrepared -= OnRepeaterElementPrepared;
+                repeater.ElementPrepared += OnRepeaterElementPrepared;
+                repeater.ElementClearing -= OnRepeaterElementClearing;
+                repeater.ElementClearing += OnRepeaterElementClearing;
             }
+        }
+
+        private void OnRepeaterElementPrepared(object? sender, ItemsRepeaterElementPreparedEventArgs e)
+            => ResetElementTransform(e.Element);
+
+        private void OnRepeaterElementClearing(object? sender, ItemsRepeaterElementClearingEventArgs e)
+            => ResetElementTransform(e.Element);
+
+        // Мгновенно (без перехода) обнуляет TranslateTransform карточки.
+        private static void ResetElementTransform(Control? element)
+        {
+            if (element?.RenderTransform is not TranslateTransform tt) return;
+            if (tt.X == 0.0 && tt.Y == 0.0) return;
+            var saved = tt.Transitions;
+            tt.Transitions = null;
+            tt.X = 0.0;
+            tt.Y = 0.0;
+            tt.Transitions = saved;
         }
 
         // Вызывается из ViewModel при создании нового CharacterListItemViewModel
@@ -808,6 +883,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
             }
             HideGhost();
             ClearPicked();
+            StopAutoScroll();
         }
 
         private void ShowGhost(CharacterListItemViewModel item, Point pos)
@@ -855,6 +931,68 @@ namespace Writersword.Modules.Characters.Views.Tabs
         private void HideGhost()
         {
             if (_ghostCanvas is not null) _ghostCanvas.IsVisible = false;
+        }
+
+        private void StartAutoScroll()
+        {
+            if (_autoScrollTimer is null)
+            {
+                _autoScrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+                _autoScrollTimer.Tick += OnAutoScrollTick;
+            }
+            _autoScrollVel = 0;
+            _autoScrollTimer.Start();
+        }
+
+        private void StopAutoScroll()
+        {
+            _autoScrollTimer?.Stop();
+            _autoScrollVel = 0;
+            _dragScroll = null;
+        }
+
+        // Скорость автопрокрутки тем больше, чем ближе курсор к верхнему/нижнему краю
+        // прокручиваемой области (как страница в браузере).
+        private void UpdateAutoScrollVelocity(Point pos)
+        {
+            _autoScrollVel = 0;
+            if (_dragScroll is null) return;
+            var tl = _dragScroll.TranslatePoint(new Point(0, 0), this);
+            if (tl is null) return;
+            double top = tl.Value.Y;
+            double bottom = top + _dragScroll.Bounds.Height;
+            const double zone = 90.0;
+            const double maxSpeed = 24.0;
+            if (pos.Y < top + zone)
+                _autoScrollVel = -maxSpeed * Math.Clamp((top + zone - pos.Y) / zone, 0, 1);
+            else if (pos.Y > bottom - zone)
+                _autoScrollVel = maxSpeed * Math.Clamp((pos.Y - (bottom - zone)) / zone, 0, 1);
+        }
+
+        private void OnAutoScrollTick(object? sender, EventArgs e)
+        {
+            if (!_isDragging || _dragScroll is null || Math.Abs(_autoScrollVel) < 0.5) return;
+            var off = _dragScroll.Offset;
+            double maxY = Math.Max(0, _dragScroll.Extent.Height - _dragScroll.Viewport.Height);
+            double newY = Math.Clamp(off.Y + _autoScrollVel, 0, maxY);
+            if (Math.Abs(newY - off.Y) < 0.1) return;
+            _dragScroll.Offset = new Vector(off.X, newY);
+            MoveGhost(_lastDragPos);
+            UpdatePreview(_lastDragPos);
+        }
+
+        private void OnGlobalPointerWheel(object? sender, PointerWheelEventArgs e)
+        {
+            if (!_isDragging || _dragScroll is null) return;
+            var off = _dragScroll.Offset;
+            double maxY = Math.Max(0, _dragScroll.Extent.Height - _dragScroll.Viewport.Height);
+            double newY = Math.Clamp(off.Y - e.Delta.Y * 60.0, 0, maxY);
+            _dragScroll.Offset = new Vector(off.X, newY);
+            var p = e.GetPosition(this);
+            _lastDragPos = p;
+            MoveGhost(p);
+            UpdatePreview(p);
+            e.Handled = true;
         }
     }
 }
