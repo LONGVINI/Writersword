@@ -809,9 +809,6 @@ namespace Writersword.Modules.Characters.ViewModels
                 {
                     _previewDragOriginalFolderId = folder.FolderId;
                     _previewDragOriginalIndex = folder.Characters.IndexOf(item);
-                    Serilog.Log.ForContext<CharactersViewModel>().Debug(
-                        "[Drag] BEGIN folder='{F}' pickedIndex={I} count={C}",
-                        folder.Name, _previewDragOriginalIndex, folder.Characters.Count);
                     item.IsDragging = true;
                     _dragItem = item;
 
@@ -884,14 +881,6 @@ namespace Writersword.Modules.Characters.ViewModels
                 }
             }
             catch (NotImplementedException) { }
-
-            int phResult = -1;
-            for (int i = 0; i < targetFolderVm.Characters.Count; i++)
-                if (targetFolderVm.Characters[i].IsPlaceholder) { phResult = i; break; }
-            Serilog.Log.ForContext<CharactersViewModel>().Debug(
-                "[Drag] MOVE same={S} folder='{F}' srcIdx={SI} targetIdx={TI} clamped={CL} placeholderNow={PH}",
-                ReferenceEquals(sourceFolderVm, targetFolderVm), targetFolderVm.Name,
-                sourceIdx, targetIndex, clampedIdx, phResult);
         }
 
         public void CancelDragPreview(string charId)
@@ -1040,7 +1029,7 @@ namespace Writersword.Modules.Characters.ViewModels
             var assignedIds = _folders.SelectMany(f => f.CharacterIds).ToHashSet();
             var unassigned = allChars.Where(c => !assignedIds.Contains(c.Id)).ToList();
 
-            var expandedState = Folders.ToDictionary(f => f.FolderId, f => f.IsExpanded);
+            var expandedState = Folders.GroupBy(f => f.FolderId).ToDictionary(g => g.Key, g => g.Last().IsExpanded);
 
             Folders.Clear();
             foreach (var folder in _folders.OrderBy(f => f.Order))
@@ -1123,7 +1112,7 @@ namespace Writersword.Modules.Characters.ViewModels
             var allChars = await Task.Run(() => _characterService.GetAll().ToList(), ct);
             var assignedIds = _folders.SelectMany(f => f.CharacterIds).ToHashSet();
             var unassigned = allChars.Where(c => !assignedIds.Contains(c.Id)).ToList();
-            var expandedState = Folders.ToDictionary(f => f.FolderId, f => f.IsExpanded);
+            var expandedState = Folders.GroupBy(f => f.FolderId).ToDictionary(g => g.Key, g => g.Last().IsExpanded);
 
             ct.ThrowIfCancellationRequested();
 
@@ -1344,12 +1333,40 @@ namespace Writersword.Modules.Characters.ViewModels
             };
             _folders.Add(folder);
             ActiveFolderId = folder.Id;
-            RefreshFolderViewModels(newlyCreatedFolderId: folder.Id);
+
+            // Точечно: добавляем VM новой (пустой) папки прямо в показ, без полной
+            // пересборки списка. Полная пересборка пересоздаёт все карточки и глючит
+            // рендер (папка иногда рисуется дважды — мнимый «дубль»). Вставляем перед
+            // «без папки» (Order 999), если она есть, иначе в конец.
+            var vm = BuildFolderVm(folder, isExpanded: true, isRenaming: true);
+            int insertIdx = Folders.Count;
+            for (int i = 0; i < Folders.Count; i++)
+                if (Folders[i].FolderId == "ungrouped") { insertIdx = i; break; }
+            Folders.Insert(insertIdx, vm);
 
             PushCommand(new CreateFolderCommand(
                 folder.Id,
                 id => RestoreFolderById(id),
                 id => ConfirmDeleteFolder(id)));
+        }
+
+        // Создаёт VM папки с тем же набором команд, что и RefreshFolderViewModels.
+        private CharacterFolderViewModel BuildFolderVm(CharacterFolder folder, bool isExpanded, bool isRenaming)
+        {
+            var captured = folder;
+            return new CharacterFolderViewModel(folder)
+            {
+                IsExpanded = isExpanded,
+                IsSelected = folder.Id == ActiveFolderId,
+                IsRenaming = isRenaming,
+                OnSelectRequested = id => ActiveFolderId = id,
+                EditCommand = EditCharacterCommand,
+                ConfirmCommand = ConfirmInlineNameCommand,
+                CancelCommand = CancelInlineNameCommand,
+                ToggleCommand = ToggleFolderCommand,
+                RequestDeleteCommand = ReactiveCommand.Create(() =>
+                    FolderDeleteRequested?.Invoke(captured.Id, captured.Name))
+            };
         }
 
         private void ConfirmDeleteFolder(string folderId)
@@ -1359,7 +1376,49 @@ namespace Writersword.Modules.Characters.ViewModels
             _folders.Remove(folder);
             if (ActiveFolderId == folderId)
                 ActiveFolderId = _folders.FirstOrDefault()?.Id;
-            RefreshFolderViewModels();
+
+            // Точечное удаление БЕЗ полной пересборки списка: убираем только VM этой папки,
+            // а её карточки ПЕРЕИСПОЛЬЗУЕМ (не пересоздаём 479 штук) — переносим в «без
+            // папки». Остальные папки и их карточки не трогаются → без лага.
+            var folderVm = Folders.FirstOrDefault(f => f.FolderId == folderId);
+            if (folderVm is null) { RefreshFolderViewModels(); return; }
+
+            var orphans = folderVm.Characters.Where(c => !c.IsPlaceholder).ToList();
+            Folders.Remove(folderVm);
+
+            if (orphans.Count > 0)
+            {
+                var ungrouped = Folders.FirstOrDefault(f => f.FolderId == "ungrouped")
+                                ?? CreateUngroupedFolderVm();
+                foreach (var item in orphans)
+                    ungrouped.Characters.Add(item);
+            }
+        }
+
+        // Создаёт и добавляет в показ папку «без папки» (для осиротевших карточек).
+        private CharacterFolderViewModel CreateUngroupedFolderVm()
+        {
+            var vm = new CharacterFolderViewModel(new CharacterFolder
+            {
+                Id = "ungrouped",
+                Name = CharactersStrings.Folder_Ungrouped,
+                Comment = string.Empty,
+                Color = "#455A64",
+                Order = 999
+            })
+            {
+                IsExpanded = true,
+                IsSelected = "ungrouped" == ActiveFolderId,
+                IsRenaming = false,
+                OnSelectRequested = id => ActiveFolderId = id,
+                EditCommand = EditCharacterCommand,
+                ConfirmCommand = ConfirmInlineNameCommand,
+                CancelCommand = CancelInlineNameCommand,
+                ToggleCommand = ToggleFolderCommand,
+                RequestDeleteCommand = null
+            };
+            Folders.Add(vm);
+            return vm;
         }
 
         private void RestoreFolderById(string folderId)
@@ -1452,7 +1511,12 @@ namespace Writersword.Modules.Characters.ViewModels
         public void LoadFolders(List<CharacterFolder> folders)
         {
             _folders.Clear();
-            _folders.AddRange(folders);
+            // Дедуп по Id: в сохранёнке могли оказаться папки-дубли с одинаковым Id
+            // (порча данных). Дубли роняли ToDictionary и ломали операции с папками.
+            var seen = new HashSet<string>();
+            foreach (var f in folders)
+                if (f is not null && seen.Add(f.Id))
+                    _folders.Add(f);
         }
     }
 

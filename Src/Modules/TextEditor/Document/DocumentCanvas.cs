@@ -339,7 +339,11 @@ namespace Writersword.Modules.TextEditor.Document
         private readonly SKPaint _paintPageShadow = new() { Color = new SKColor(0x00, 0x00, 0x00, 0x28) };
         private readonly SKPaint _paintPageWhite = new() { Color = SKColors.White };
         private readonly SKPaint _paintTransparent = new() { Color = SKColors.Transparent };
+        // Обычное выделение — мягкое полупрозрачное голубое.
         private readonly SKPaint _paintSelection = new() { Color = new SKColor(0x33, 0x90, 0xFF, 0x60) };
+        // Выделение поверх голубой/циановой заливки: голубое по голубому сливается, поэтому
+        // для таких заливок берём мягкий тёплый (янтарный) полупрозрачный — он контрастен синему.
+        private readonly SKPaint _paintSelectionAlt = new() { Color = new SKColor(0xFF, 0x8F, 0x00, 0x66) };
         private readonly SKPaint _paintCaret = new() { Color = SKColors.Black, StrokeWidth = 1.1f, IsAntialias = false, IsStroke = true };
         private readonly SKPaint _paintHandleFill = new() { Color = new SKColor(0x22, 0x99, 0xFF, 0xCC), IsAntialias = true };
         private readonly SKPaint _paintHandleStroke = new() { Color = new SKColor(0xFF, 0xFF, 0xFF, 0xCC), StrokeWidth = 1f, IsStroke = true, IsAntialias = true };
@@ -874,20 +878,27 @@ namespace Writersword.Modules.TextEditor.Document
                     dirtyPvm = DocVm.Paragraphs[dirtyParaIdx];
                     _layoutCache.Remove(dirtyPvm);
 
-                    // Проверяем: параграф уже есть в _layouts (редактирование текста)
-                    // или это новый параграф (Enter/вставка).
-                    bool pvmInLayouts = _layouts.Any(l => l.Vm == dirtyPvm && l.Cell is null);
-                    if (pvmInLayouts)
+                    // Считаем, сколько НЕ-ячейковых слайсов у этого абзаца.
+                    //   0  — новый абзац (Enter/вставка): быстрая вставка.
+                    //   1  — абзац на одной странице: быстрый поабзацный апдейт.
+                    //  >1  — абзац разорван между страницами (несколько слайсов). Быстрый путь
+                    //        ставит LineTo = все строки в КАЖДЫЙ слайс, и каждый слайс рисует
+                    //        весь абзац — текст лезет за границу страницы, на кадр, до фонового
+                    //        пересчёта. Это и есть мерцание на стыке страниц. Поэтому быстрый
+                    //        путь пропускаем и доверяем полному RebuildLayouts ниже.
+                    int sliceCount = _layouts.Count(l => l.Vm == dirtyPvm && l.Cell is null);
+                    if (sliceCount == 1)
                     {
                         // Быстрый путь для редактирования: обновляем только один параграф.
                         QuickUpdateParagraphLayout(dirtyPvm);
                     }
-                    else
+                    else if (sliceCount == 0)
                     {
                         // Новый параграф (Enter): вставляем в _layouts с оценочной высотой
                         // чтобы ScrollToCaret мог найти его позицию немедленно.
                         QuickInsertParagraphLayout(dirtyParaIdx, dirtyPvm);
                     }
+                    // sliceCount > 1: пропускаем быстрый путь, полный пересчёт ниже.
                 }
             }
 

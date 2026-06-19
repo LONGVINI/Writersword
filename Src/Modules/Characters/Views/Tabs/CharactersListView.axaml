@@ -112,7 +112,8 @@
 
         <!-- список папок и карточек -->
         <Panel Grid.Row="1">
-            <ScrollViewer Focusable="False">
+            <ScrollViewer Focusable="False"
+                          HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
 
                     <TextBlock Text="{x:Static loc:CharactersStrings.Placeholder_NoCharacters}"
@@ -136,7 +137,7 @@
                                                     Background="#22FFFFFF"
                                                     BorderBrush="{DynamicResource AccentDefaultBrush}"
                                                     BorderThickness="0,0,0,2"/>
-                                            <Grid MinHeight="36">
+                                            <Grid MinHeight="36" Margin="0,0,16,0">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
@@ -277,14 +278,11 @@
                                     </Border>
 
                                     <!-- карточки персонажей -->
-                                    <ScrollViewer IsVisible="{Binding IsExpanded}"
-                                                 MaxHeight="700"
-                                                 HorizontalScrollBarVisibility="Disabled"
-                                                 VerticalScrollBarVisibility="Auto">
-                                        <ItemsRepeater ItemsSource="{Binding VisibleCharacters}"
-                                                     Margin="12,8">
+                                    <ItemsRepeater ItemsSource="{Binding VisibleCharacters}"
+                                                   IsVisible="{Binding IsExpanded}"
+                                                   Margin="12,8">
                                             <ItemsRepeater.Layout>
-                                                <UniformGridLayout MaximumRowsOrColumns="4"
+                                                <UniformGridLayout MaximumRowsOrColumns="20"
                                                                    MinItemWidth="152"
                                                                    MinColumnSpacing="0"
                                                                    MinRowSpacing="0"
@@ -298,7 +296,7 @@
                                                             Background="{DynamicResource BgPanelBrush}"
                                                             BorderBrush="{Binding Color}"
                                                             BorderThickness="2"
-                                                            ClipToBounds="True"
+                                                            ClipToBounds="False"
                                                             Margin="6"
                                                             Cursor="Hand"
                                                             Opacity="{Binding DragOpacity}"
@@ -366,6 +364,7 @@
                                                                 <Button Background="Transparent"
                                                                     BorderThickness="0"
                                                                     Padding="0"
+                                                                    ClipToBounds="False"
                                                                     HorizontalAlignment="Center"
                                                                     VerticalAlignment="Center"
                                                                     ZIndex="2"
@@ -385,18 +384,15 @@
                                                                         </Style>
                                                                     </Button.Styles>
                                                                     <Panel>
-                                                                        <Border CornerRadius="999"
-                                                                                ClipToBounds="True"
-                                                                                Background="{Binding Color}"
-                                                                                Width="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
-                                                                                Height="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}">
-                                                                            <TextBlock Text="{Binding FallbackIcon}"
-                                                                                       FontSize="{Binding $parent[UserControl].DataContext.CardIconFontSize, FallbackValue=30}"
-                                                                                       HorizontalAlignment="Center"
-                                                                                       VerticalAlignment="Center"
-                                                                                       Foreground="White"
-                                                                                       IsHitTestVisible="False"/>
-                                                                        </Border>
+                                                                        <Ellipse Width="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
+                                                                                 Height="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
+                                                                                 Fill="{Binding Color}"/>
+                                                                        <TextBlock Text="{Binding FallbackIcon}"
+                                                                                   FontSize="{Binding $parent[UserControl].DataContext.CardIconFontSize, FallbackValue=30}"
+                                                                                   HorizontalAlignment="Center"
+                                                                                   VerticalAlignment="Center"
+                                                                                   Foreground="White"
+                                                                                   IsHitTestVisible="False"/>
                                                                         <Border CornerRadius="999"
                                                                             BorderBrush="{Binding Color}"
                                                                             BorderThickness="2"
@@ -423,6 +419,7 @@
                                                                 <Button Background="Transparent"
                                                                     BorderThickness="0"
                                                                     Padding="0"
+                                                                    ClipToBounds="False"
                                                                     HorizontalAlignment="Center"
                                                                     VerticalAlignment="Center"
                                                                     ZIndex="2"
@@ -458,14 +455,16 @@
                                                                         </Flyout>
                                                                     </Button.Flyout>
                                                                     <Panel>
-                                                                        <Border CornerRadius="999"
-                                                                                ClipToBounds="True"
-                                                                                Background="{Binding Color}"
-                                                                                Width="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
-                                                                                Height="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}">
-                                                                            <Image Source="{Binding AvatarBitmap}"
-                                                                                   Stretch="UniformToFill"/>
-                                                                        </Border>
+                                                                        <Ellipse Width="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
+                                                                                 Height="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
+                                                                                 Fill="{Binding Color}"/>
+                                                                        <Ellipse Width="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
+                                                                                 Height="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}">
+                                                                            <Ellipse.Fill>
+                                                                                <ImageBrush Source="{Binding AvatarBitmap}"
+                                                                                            Stretch="UniformToFill"/>
+                                                                            </Ellipse.Fill>
+                                                                        </Ellipse>
                                                                         <Border CornerRadius="999"
                                                                             BorderBrush="{Binding Color}"
                                                                             BorderThickness="2"
@@ -601,7 +600,6 @@
                                                 </DataTemplate>
                                             </ItemsRepeater.ItemTemplate>
                                         </ItemsRepeater>
-                                    </ScrollViewer>
 
                                 </StackPanel>
                             </DataTemplate>

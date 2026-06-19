@@ -1110,6 +1110,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void ApplyCharProperty(Action<RunProperties> mutate, bool clearAll = false)
         {
+            _log.Information("[FONT] ApplyCharProperty: tableCell={TC} clearAll={CA} granularDelegate={GD} active={AP} selStart={SS} selEnd={SE}",
+                TableActiveCellParagraph is not null, clearAll,
+                CommitRunPropertyGranularDelegate is not null, _activeParagraph is not null,
+                _selectionStart, _selectionEnd);
             // Ячейка таблицы, очистка форматирования или нет лёгкого пути — снапшот (как было).
             if (TableActiveCellParagraph is not null || clearAll
                 || CommitRunPropertyGranularDelegate is null || _activeParagraph is null)
@@ -1174,6 +1178,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // Режим ячейки таблицы — применяем только к активной ячейке.
             if (TableActiveCellParagraph is not null)
             {
+                _log.Information("[FONT] Snapshot cell apply: para len={L} selStart={SS} selEnd={SE}",
+                    TableActiveCellParagraph.GetPlainText().Length, _selectionStart, _selectionEnd);
                 BeginEditDelegate?.Invoke("Format text");
                 ApplyCharPropertyToBlock(TableActiveCellParagraph, _selectionStart, _selectionEnd, mutate, clearAll);
                 CommitEditDelegate?.Invoke();

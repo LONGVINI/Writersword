@@ -71,7 +71,8 @@ namespace Writersword.Styles.UserControls
             InitializeComponent();
             IsVisible = false;
 
-            // Клик по дорожке градиентного ползунка переносит значение в точку клика.
+            // Клик/протяжка по дорожке градиентного ползунка: значение моментально
+            // переходит под курсор и сразу тянется одним движением.
             foreach (var name in new[]
             {
                 "SliderR", "SliderG", "SliderB",
@@ -80,8 +81,11 @@ namespace Writersword.Styles.UserControls
                 "SlHsvH", "SlHsvS", "SlHsvV"
             })
             {
-                this.FindControl<Slider>(name)?
-                    .AddHandler(InputElement.PointerPressedEvent, OnGradSliderPressed, RoutingStrategies.Tunnel);
+                var sl = this.FindControl<Slider>(name);
+                if (sl is null) continue;
+                sl.AddHandler(InputElement.PointerPressedEvent, OnGradSliderPressed, RoutingStrategies.Tunnel);
+                sl.AddHandler(InputElement.PointerMovedEvent, OnGradSliderMoved, RoutingStrategies.Tunnel);
+                sl.AddHandler(InputElement.PointerReleasedEvent, OnGradSliderReleased, RoutingStrategies.Tunnel);
             }
 
             // Связь менеджера палитр с редактором: клик по образцу ставит цвет,
@@ -807,19 +811,43 @@ namespace Writersword.Styles.UserControls
 
         private double SliderVal(string name) => this.FindControl<Slider>(name)?.Value ?? 0;
 
-        // Клик по дорожке ставит значение в точку клика; нажатие по самому ползунку — обычное перетаскивание.
+        private Slider? _gradDrag;
+
+        // Нажатие по дорожке: значение моментально переходит под курсор, указатель
+        // захватывается и протяжка идёт тем же движением. Нажатие по самому ползунку
+        // тоже захватывается — поведение единое из любой точки.
         private void OnGradSliderPressed(object? sender, PointerPressedEventArgs e)
         {
             if (sender is not Slider s) return;
-            if (e.Source is Control c && c.FindAncestorOfType<Thumb>(true) is not null) return;
+            if (!e.GetCurrentPoint(s).Properties.IsLeftButtonPressed) return;
+            _gradDrag = s;
+            e.Pointer.Capture(s);
+            SetGradValueFromPointer(s, e.GetPosition(s));
+            e.Handled = true;
+        }
 
+        private void OnGradSliderMoved(object? sender, PointerEventArgs e)
+        {
+            if (_gradDrag is null || !ReferenceEquals(sender, _gradDrag)) return;
+            SetGradValueFromPointer(_gradDrag, e.GetPosition(_gradDrag));
+            e.Handled = true;
+        }
+
+        private void OnGradSliderReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            if (_gradDrag is null) return;
+            _gradDrag = null;
+            e.Pointer.Capture(null);
+            e.Handled = true;
+        }
+
+        private static void SetGradValueFromPointer(Slider s, Point p)
+        {
             double w = s.Bounds.Width;
             if (w <= 0) return;
             const double thumb = 16;
-            double x = e.GetPosition(s).X;
-            double frac = Math.Clamp((x - thumb / 2) / Math.Max(1, w - thumb), 0, 1);
+            double frac = Math.Clamp((p.X - thumb / 2) / Math.Max(1, w - thumb), 0, 1);
             s.Value = s.Minimum + frac * (s.Maximum - s.Minimum);
-            e.Handled = true;
         }
 
         private void SetSliderVal(string name, double v)

@@ -179,7 +179,10 @@ namespace Writersword.Views
             {
                 _logger?.LogDebug("MessageBox button clicked: {Result}", result);
                 Result = result;
-                Close();
+                // Закрываем НЕ синхронно внутри обработки клика (WndProc): синхронный
+                // Close() здесь ведёт к дедлоку — удаление композиции окна ждёт блокировку
+                // потока рендера, а тот ждёт UI-поток. Откладываем на следующий тик.
+                Avalonia.Threading.Dispatcher.UIThread.Post(Close);
             };
 
             return button;

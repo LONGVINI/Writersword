@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
@@ -22,10 +23,14 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         private bool _fontScrolling;
         private string? _fontBeforeOpen;
         private string? _fontHovered;
+        // Шрифт, выбранный пользователем: элемент под курсором в момент нажатия (клик) или
+        // выбранный с клавиатуры. Нажатие ловим в фазе tunnel, до bubble, где Dock роняет
+        // pointer-pressed (DockControl.PressedHandler) и съедает клик. Не сбрасывается при уводе
+        // мыши со списка; сбрасывается при открытии, после коммита и Esc.
+        private string? _fontChosen;
+        // Пользователь нажал Escape в открытом дропдауне — отмена выбора.
+        private bool _fontCancelled;
         private DispatcherTimer? _fontPreviewTimer;
-        // true только когда пользователь явно кликнул на элемент или нажал Enter.
-        // Навигация стрелками его НЕ устанавливает.
-        private bool _fontExplicitlyConfirmed;
 
         public RibbonHomeTab()
         {
@@ -70,6 +75,12 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
 
                 _fontAutoComplete.PointerReleased -= OnFontAutoCompletePointerReleased;
                 _fontAutoComplete.PointerReleased += OnFontAutoCompletePointerReleased;
+
+                // При повторном attach (после detach из-за перестроек с таблицей/сменой
+                // документа) шаблон заново не применяется и TemplateApplied не срабатывает —
+                // подписки на внутренние части теряются (клик не открывал список, выбор не
+                // применялся). Отложенно восстанавливаем их по реализованному шаблону.
+                Dispatcher.UIThread.Post(EnsureInnerWired, DispatcherPriority.Loaded);
             }
         }
 
@@ -111,6 +122,12 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
                 _fontInnerList.PointerExited -= OnFontInnerListPointerExited;
                 _fontInnerList.PointerReleased -= OnFontInnerListPointerReleased;
             }
+
+            // Обнуляем ссылки: при повторном attach (после detach из-за перестроек, связанных
+            // с таблицей/сменой документа) шаблон не применяется заново, и EnsureInnerWired
+            // по null-ссылкам понимает, что внутренние части надо найти и переподписать.
+            _fontInnerTextBox = null;
+            _fontInnerList = null;
         }
 
         private void OnFontAutoCompleteTemplateApplied(object? sender, TemplateAppliedEventArgs e)
@@ -118,7 +135,13 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             DetachInnerControls();
             _fontInnerTextBox = e.NameScope.Find<TextBox>("PART_TextBox");
             _fontInnerList = e.NameScope.Find<ListBox>("PART_SelectingItemsControl");
+            SubscribeInner();
+        }
 
+        // Идемпотентная подписка на внутренние части (сначала снимаем, потом вешаем) — можно
+        // звать и из TemplateApplied, и из EnsureInnerWired при повторном attach.
+        private void SubscribeInner()
+        {
             if (_fontInnerTextBox is not null)
             {
                 _fontInnerTextBox.MinHeight = 0;
@@ -126,17 +149,52 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
                 _fontInnerTextBox.VerticalContentAlignment = VerticalAlignment.Center;
                 _fontInnerTextBox.Padding = new Thickness(6, 0);
 
+                _fontInnerTextBox.PointerReleased -= OnFontInnerPointerReleased;
                 _fontInnerTextBox.PointerReleased += OnFontInnerPointerReleased;
+                _fontInnerTextBox.KeyDown -= OnFontInnerKeyDown;
                 _fontInnerTextBox.KeyDown += OnFontInnerKeyDown;
             }
 
             if (_fontInnerList is not null)
             {
+                _fontInnerList.SelectionChanged -= OnFontInnerListSelectionChanged;
                 _fontInnerList.SelectionChanged += OnFontInnerListSelectionChanged;
+                _fontInnerList.PointerMoved -= OnFontInnerListPointerMoved;
                 _fontInnerList.PointerMoved += OnFontInnerListPointerMoved;
+                _fontInnerList.PointerExited -= OnFontInnerListPointerExited;
                 _fontInnerList.PointerExited += OnFontInnerListPointerExited;
+                _fontInnerList.PointerReleased -= OnFontInnerListPointerReleased;
                 _fontInnerList.PointerReleased += OnFontInnerListPointerReleased;
+                // Нажатие ловим в tunnel: bubble того же события перехватывает DockControl и
+                // роняет его (PointToScreen на контроле вне визуального дерева), из-за чего клик
+                // по элементу теряется. Tunnel идёт раньше bubble, поэтому выбор успеваем снять.
+                _fontInnerList.RemoveHandler(InputElement.PointerPressedEvent, OnFontInnerListPointerPressedTunnel);
+                _fontInnerList.AddHandler(InputElement.PointerPressedEvent, OnFontInnerListPointerPressedTunnel, RoutingStrategies.Tunnel);
             }
+        }
+
+        // Восстанавливает подписки на внутренние части, если они потерялись после повторного
+        // attach (шаблон AutoCompleteBox при этом заново не применяется, TemplateApplied не
+        // срабатывает). Ищет PART_TextBox/PART_SelectingItemsControl в реализованном шаблоне.
+        private void EnsureInnerWired()
+        {
+            if (_fontAutoComplete is null) return;
+            if (_fontInnerTextBox is not null && _fontInnerList is not null) return;
+
+            TextBox? tb = _fontInnerTextBox;
+            ListBox? lb = _fontInnerList;
+            foreach (var v in _fontAutoComplete.GetVisualDescendants())
+            {
+                if (tb is null && v is TextBox t && t.Name == "PART_TextBox") tb = t;
+                else if (lb is null && v is ListBox l && l.Name == "PART_SelectingItemsControl") lb = l;
+                if (tb is not null && lb is not null) break;
+            }
+
+            if (tb is null && lb is null) return;
+
+            _fontInnerTextBox = tb;
+            _fontInnerList = lb;
+            SubscribeInner();
         }
 
         // ── TextBox события ───────────────────────────────────────────────
@@ -169,9 +227,12 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
                 case Key.Up:
                 case Key.Down:
                 case Key.Enter:
-                    _fontExplicitlyConfirmed = true;
+                    // Навигация и подтверждение с клавиатуры. Выбор фиксируется в SelectionChanged
+                    // (стрелки меняют SelectedItem), отдельный флаг не нужен.
                     return;
                 case Key.Escape:
+                    _fontCancelled = true;
+                    return;
                 case Key.Tab:
                 case Key.Left:
                 case Key.Right:
@@ -220,7 +281,10 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             // Пропускаем программную прокрутку при открытии дропдауна.
             if (_fontScrolling) return;
             if (_fontInnerList?.SelectedItem is string font)
+            {
+                _fontChosen = font;
                 SchedulePreview(font);
+            }
         }
 
         private void OnFontInnerListPointerMoved(object? sender, PointerEventArgs e)
@@ -237,18 +301,44 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             SchedulePreview(font);
         }
 
+        private void OnFontInnerListPointerPressedTunnel(object? sender, PointerPressedEventArgs e)
+        {
+            if (_fontInnerList is null) return;
+            var pos = e.GetPosition(_fontInnerList);
+            var hit = _fontInnerList.InputHitTest(pos) as Control;
+            if (hit is null) return;
+
+            var lbi = (hit as ListBoxItem) ?? hit.FindAncestorOfType<ListBoxItem>();
+            if (lbi?.DataContext is not string font) return;
+
+            // Нажатие по элементу = выбор. Фиксируем здесь, в tunnel, до того как bubble дойдёт
+            // до DockControl и упадёт, потеряв клик. Превью обновляем сразу, чтобы видеть выбор.
+            _fontChosen = font;
+            SchedulePreview(font);
+        }
+
         private void OnFontInnerListPointerExited(object? sender, PointerEventArgs e)
         {
             StopPreviewTimer();
             _fontHovered = null;
+            // _fontChosen намеренно не сбрасываем: при закрытии дропдауна (в т.ч. по клику) сюда
+            // приходит exited и откатил бы выбор. Откатываем только визуальное превью на исходный.
             if (DataContext is RibbonHomeTabViewModel vm && _fontBeforeOpen is not null)
                 vm.PreviewFontFamily(_fontBeforeOpen);
         }
 
         private void OnFontInnerListPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
-            // Клик мышью по элементу = явный выбор шрифта.
-            _fontExplicitlyConfirmed = true;
+            // Запасной захват выбора: там, где Dock не роняет событие, отпускание над элементом
+            // тоже фиксирует выбор (основной путь — tunnel-нажатие и SelectionChanged).
+            if (_fontInnerList is null) return;
+            var pos = e.GetPosition(_fontInnerList);
+            var hit = _fontInnerList.InputHitTest(pos) as Control;
+            if (hit is null) return;
+
+            var lbi = (hit as ListBoxItem) ?? hit.FindAncestorOfType<ListBoxItem>();
+            if (lbi?.DataContext is string font)
+                _fontChosen = font;
         }
 
         // ── Дропдаун ─────────────────────────────────────────────────────
@@ -258,7 +348,8 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             if (DataContext is not RibbonHomeTabViewModel vm) return;
             _fontBeforeOpen ??= vm.CurrentFontFamily;
             _fontHovered = null;
-            _fontExplicitlyConfirmed = false;
+            _fontChosen = null;
+            _fontCancelled = false;
             // BeginFontPreview всегда вызывается здесь — это единственное надёжное место.
             // OnFontInnerPointerReleased не гарантирует вызов если бокс уже был в фокусе.
             vm.BeginFontPreview();
@@ -285,10 +376,16 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
 
             if (DataContext is not RibbonHomeTabViewModel vm) return;
 
-            // Коммит только если пользователь явно нажал Enter или кликнул мышью.
-            // Навигация стрелками и Escape — не коммит.
-            bool committed = _fontExplicitlyConfirmed;
-            _fontExplicitlyConfirmed = false;
+            // Коммитим выбранный шрифт. Клик по элементу съедается доком (bubble pointer-pressed
+            // роняет DockControl.PressedHandler), поэтому ловим выбор иначе: _fontChosen снят в
+            // tunnel-нажатии или из SelectionChanged (клавиатура) и переживает exited. Esc отменяет.
+            bool committed = !_fontCancelled && _fontChosen is not null;
+            if (committed)
+                // Увод мыши при закрытии откатил превью на исходный шрифт — возвращаем выбранный,
+                // чтобы EndFontPreview применил именно его.
+                vm.PreviewFontFamily(_fontChosen!);
+            _fontChosen = null;
+            _fontCancelled = false;
             vm.EndFontPreview(committed);
 
             string restore = vm.CurrentFontFamily ?? _fontBeforeOpen ?? string.Empty;

@@ -61,7 +61,20 @@ namespace Writersword.Modules.Characters.Views
             _topLevel = null;
             CommitAllPendingEdits();
             RemoveHandler(TextBox.LostFocusEvent, OnTextBoxLostFocus);
+            UnsubscribeFromVm();
             _log.Debug("CharactersModuleView detached");
+        }
+
+        // Снимает обработчики событий именно с той VM, на которую подписан ЭТОТ view —
+        // при detach и при смене DataContext. Так на старых VM не остаётся живых
+        // обработчиков, и удаление папки не плодит диалоги и не «перехватывается»
+        // мёртвым обработчиком (который не выполнял бы реальное удаление).
+        private void UnsubscribeFromVm()
+        {
+            if (_subscribedVm is null) return;
+            _subscribedVm.SearchFocusRequested -= OnSearchFocusRequested;
+            _subscribedVm.FolderDeleteRequested -= OnFolderDeleteRequested;
+            _subscribedVm = null;
         }
 
         private void OnLoaded(object? sender, RoutedEventArgs e)
@@ -87,8 +100,16 @@ namespace Writersword.Modules.Characters.Views
             _log.Debug("CharactersModuleView loaded");
         }
 
+        // VM, на события которой реально подписан ЭТОТ view-инстанс. Нужна, чтобы
+        // отписаться именно от неё, а не от текущего DataContext: при смене DataContext
+        // или пересоздании view иначе на старой VM остаётся живой обработчик, и удаление
+        // папки плодит диалоги-дубли. Это и есть причина, а не симптом.
+        private CharactersViewModel? _subscribedVm;
+
         private void OnDataContextChanged(object? sender, EventArgs e)
         {
+            UnsubscribeFromVm();
+
             _subscription?.Dispose();
             _toastSubscription?.Dispose();
 
@@ -102,8 +123,11 @@ namespace Writersword.Modules.Characters.Views
 
             if (DataContext is CharactersViewModel vm)
             {
+                // UnsubscribeFromVm() выше уже снял обработчики с прошлой VM, поэтому здесь
+                // просто подписываемся и запоминаем VM как текущую подписанную.
                 vm.SearchFocusRequested += OnSearchFocusRequested;
                 vm.FolderDeleteRequested += OnFolderDeleteRequested;
+                _subscribedVm = vm;
                 _subscription = vm.WhenAnyValue(x => x.MainTabIndex).Subscribe(SwitchTab);
 
                 // автоскрытие тоста через 4 секунды после появления

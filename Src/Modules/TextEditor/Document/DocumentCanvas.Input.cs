@@ -628,6 +628,7 @@ namespace Writersword.Modules.TextEditor.Document
                     vm.TableDeleteRowDelegate = ExecuteTableDeleteRow;
                     vm.TableDeleteColDelegate = ExecuteTableDeleteColumn;
                     vm.TableDeleteDelegate = ExecuteTableDelete;
+                    vm.TableSetCellBackgroundDelegate = ExecuteTableSetCellBackground;
                     vm.TableSetLeftEdgeDelegate = leftIndentPt =>
                     {
                         if (_activeTableBlock is null) return;
@@ -657,6 +658,7 @@ namespace Writersword.Modules.TextEditor.Document
                 vm.TableDeleteRowDelegate = null;
                 vm.TableDeleteColDelegate = null;
                 vm.TableDeleteDelegate = null;
+                vm.TableSetCellBackgroundDelegate = null;
                 vm.TableSetLeftEdgeDelegate = null;
             }
 
@@ -881,7 +883,7 @@ namespace Writersword.Modules.TextEditor.Document
                     InvalidateFull();
                 };
 
-                PushTextCommand(cmd);
+                TextUndoStack.Push(cmd);
                 UpdatePreferredX();
                 SyncSel(); ResetCaret();
                 return;
@@ -1378,10 +1380,38 @@ namespace Writersword.Modules.TextEditor.Document
             { _caretPara++; _caretChar = 0; }
             // В ячейке: не выходим за конец через стрелки
 
+            // Если шаг вправо привёл ровно на мягкий перенос (конец визуальной строки, где висит
+            // хвостовой пробел, а слово ушло на следующую строку), привязываем каретку к концу
+            // этой строки. Иначе она перепрыгнет на начало следующей строки (тот же офсет
+            // принадлежит обеим). Hint ставится до Snap — дальше CommitSlice отработает сам.
+            int wrapLine = WrapBoundaryLineForChar(
+                GetLayoutAt(_caretPara), GetVmAt(_caretPara)?.PlainText, _caretChar);
+            if (wrapLine >= 0) _caretLineHint = wrapLine;
+
             SnapCaretToCorrectSlice();
             if (!extend) SyncSel(); else ExtendSel();
             UpdatePreferredX();
             ResetCaret(); InvalidateFull();
+        }
+
+        // Индекс визуальной строки, у которой charPos == LastCharIndex + 1 и которая не последняя,
+        // то есть позиция стоит ровно на мягком переносе. Привязку к концу строки даём только если
+        // строка заканчивается пробелом (хвостовой пробел висит на ней, слово ушло дальше) — для
+        // переноса в середине длинного слова оставляем начало следующей строки. -1 если нет.
+        private static int WrapBoundaryLineForChar(SKTextLayout? layout, string? text, int charPos)
+        {
+            if (layout is null) return -1;
+            for (int i = 0; i < layout.Lines.Count; i++)
+            {
+                var ln = layout.Lines[i];
+                if (ln.IsLastLine || charPos != ln.LastCharIndex + 1) continue;
+                int lastIdx = ln.LastCharIndex;
+                if (text != null && lastIdx >= 0 && lastIdx < text.Length
+                    && char.IsWhiteSpace(text[lastIdx]))
+                    return i;
+                return -1;
+            }
+            return -1;
         }
 
         public void ExecuteNavUp(bool extend)
@@ -1465,92 +1495,42 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteUndo()
         {
-            if (DocVm is null) return;
-            if (_undoOrder.Count == 0) { _logger.Debug("[UNDO] ExecuteUndo: nothing to undo"); return; }
-
-            var src = _undoOrder.Last!.Value;
-            bool done = false;
-
-            if (src == UndoSource.Text)
+            if (TextUndoStack is not null && TextUndoStack.CanUndo && DocVm is not null)
             {
-                if (TextUndoStack is not null && TextUndoStack.CanUndo)
-                {
-                    _logger.Debug("[UNDO] ExecuteUndo (text): '{D}'", TextUndoStack.UndoDescription);
-                    TextUndoStack.Undo(DocVm.Document);
-                    done = true;
-                }
+                _logger.Debug("[UNDO] ExecuteUndo (text): '{D}'", TextUndoStack.UndoDescription);
+                TextUndoStack.Undo(DocVm.Document);
+                return;
             }
-            else
-            {
-                if (UndoStack is not null && UndoStack.CanUndo)
-                {
-                    _logger.Debug("[UNDO] ExecuteUndo: '{D}'", UndoStack.UndoDescription);
-                    _cellLayoutCache.Clear();
-                    _cellVmCache.Clear();
-                    UndoStack.Undo();
-                    RebuildLayouts();
-                    _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
-                    _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
-                    SyncSel(); ResetCaret(); InvalidateFull();
-                    done = true;
-                }
-            }
-
-            if (done)
-            {
-                _undoOrder.RemoveLast();
-                _redoOrder.Push(src);
-            }
-            else
-            {
-                // Запись порядка осталась без соответствующей команды в стеке (рассинхрон,
-                // например после внешней очистки стека) — снимаем её, чтобы не застрять.
-                _undoOrder.RemoveLast();
-            }
+            if (UndoStack is null) { _logger.Warning("[UNDO] ExecuteUndo: UndoStack is null"); return; }
+            if (!UndoStack.CanUndo) { _logger.Debug("[UNDO] ExecuteUndo: nothing to undo"); return; }
+            _logger.Debug("[UNDO] ExecuteUndo: '{D}'", UndoStack.UndoDescription);
+            _cellLayoutCache.Clear();
+            _cellVmCache.Clear();
+            UndoStack.Undo();
+            RebuildLayouts();
+            _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
+            _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
+            SyncSel(); ResetCaret(); InvalidateFull();
         }
 
         public void ExecuteRedo()
         {
-            if (DocVm is null) return;
-            if (_redoOrder.Count == 0) { _logger.Debug("[UNDO] ExecuteRedo: nothing to redo"); return; }
-
-            var src = _redoOrder.Peek();
-            bool done = false;
-
-            if (src == UndoSource.Text)
+            if (TextUndoStack is not null && TextUndoStack.CanRedo && DocVm is not null)
             {
-                if (TextUndoStack is not null && TextUndoStack.CanRedo)
-                {
-                    _logger.Debug("[UNDO] ExecuteRedo (text): '{D}'", TextUndoStack.RedoDescription);
-                    TextUndoStack.Redo(DocVm.Document);
-                    done = true;
-                }
+                _logger.Debug("[UNDO] ExecuteRedo (text): '{D}'", TextUndoStack.RedoDescription);
+                TextUndoStack.Redo(DocVm.Document);
+                return;
             }
-            else
-            {
-                if (UndoStack is not null && UndoStack.CanRedo)
-                {
-                    _logger.Debug("[UNDO] ExecuteRedo: '{D}'", UndoStack.RedoDescription);
-                    _cellLayoutCache.Clear();
-                    _cellVmCache.Clear();
-                    UndoStack.Redo();
-                    RebuildLayouts();
-                    _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
-                    _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
-                    SyncSel(); ResetCaret(); InvalidateFull();
-                    done = true;
-                }
-            }
-
-            if (done)
-            {
-                _redoOrder.Pop();
-                _undoOrder.AddLast(src);
-            }
-            else
-            {
-                _redoOrder.Pop();
-            }
+            if (UndoStack is null) { _logger.Warning("[UNDO] ExecuteRedo: UndoStack is null"); return; }
+            if (!UndoStack.CanRedo) { _logger.Debug("[UNDO] ExecuteRedo: nothing to redo"); return; }
+            _logger.Debug("[UNDO] ExecuteRedo: '{D}'", UndoStack.RedoDescription);
+            _cellLayoutCache.Clear();
+            _cellVmCache.Clear();
+            UndoStack.Redo();
+            RebuildLayouts();
+            _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
+            _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
+            SyncSel(); ResetCaret(); InvalidateFull();
         }
 
         /// <summary>

@@ -25,6 +25,50 @@ namespace Writersword.Modules.TextEditor.Document
             InvalidateFull();
         }
 
+        // Цвет фона ячеек. Применяется к выделенному диапазону ячеек (_tableSelections), а если
+        // диапазона нет — к активной ячейке под кареткой. color == null/пусто снимает заливку.
+        private void ExecuteTableSetCellBackground(string? color)
+        {
+            string? value = string.IsNullOrWhiteSpace(color) ? null : color;
+
+            var targets = new List<TableCell>();
+            if (_tableSelections.Count > 0)
+            {
+                foreach (var kv in _tableSelections)
+                {
+                    int minRow = Math.Min(kv.Value.sr, kv.Value.er);
+                    int maxRow = Math.Max(kv.Value.sr, kv.Value.er);
+                    int minCol = Math.Min(kv.Value.sc, kv.Value.ec);
+                    int maxCol = Math.Max(kv.Value.sc, kv.Value.ec);
+                    foreach (var cell in kv.Key.Cells)
+                    {
+                        if (cell.Row < minRow || cell.Row > maxRow) continue;
+                        if (cell.Column < minCol || cell.Column > maxCol) continue;
+                        targets.Add(cell);
+                    }
+                }
+            }
+            else if (_activeTableBlock is not null)
+            {
+                foreach (var cell in _activeTableBlock.Cells)
+                {
+                    if (cell.Row != _activeCellRow || cell.Column != _activeCellCol) continue;
+                    targets.Add(cell);
+                    break;
+                }
+            }
+
+            if (targets.Count == 0) return;
+
+            BeginEdit("Set cell background");
+            foreach (var cell in targets) cell.BackgroundColor = value;
+            CommitEdit();
+
+            _cellLayoutCache.Clear();
+            RebuildLayouts();
+            InvalidateFull();
+        }
+
         private void ExecuteTableDeleteRow()
         {
             if (_activeTableBlock is null) return;

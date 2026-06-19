@@ -58,10 +58,15 @@ namespace Writersword.Modules.TextEditor.Document
             BuildPreviewTargets(_previewTargets);
             _fontPreviewActive = _previewTargets.Count > 0;
             _previewFont = null;
+            _logger.Information(
+                "[FONT] Begin: targets={T} active={A} caretPara={P} inCell={C} tableCellPara={TC} tableSel={TS}",
+                _previewTargets.Count, _fontPreviewActive, _caretPara, IsInCell(_caretPara),
+                DocVm?.TableActiveCellParagraph is not null, _tableSelections.Count);
         }
 
         private void PreviewFontFamilySession(string font)
         {
+            _logger.Information("[FONT] Preview: font={F} active={A}", font, _fontPreviewActive);
             if (!_fontPreviewActive) return;
             if (string.IsNullOrEmpty(font)) return;
             if (_renderer is null) return;
@@ -131,6 +136,8 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void EndFontPreviewSession(bool commit)
         {
+            _logger.Information("[FONT] End: commit={C} previewFont={F} targets={T}",
+                commit, _previewFont, _previewTargets.Count);
             if (commit)
             {
                 var font = _previewFont;
@@ -174,9 +181,41 @@ namespace Writersword.Modules.TextEditor.Document
             // ячейки таблицы (vm == null) или нет лёгкого стека — откатываемся на боевой
             // SetFontFamily (полный снапшот), чтобы не оставить ячейки без изменения.
             bool anyCell = targets.Any(t => t.vm is null);
+            _logger.Information("[FONT] Commit: font={F} targets={T} anyCell={AC} hasStack={HS} tableCellPara={TC}",
+                font, targets.Count, anyCell, TextUndoStack is not null,
+                DocVm?.TableActiveCellParagraph is not null);
             if (TextUndoStack is null || DocVm is null || anyCell)
             {
+                // Диапазон ячеек: SetFontFamily применил бы шрифт лишь к одной активной ячейке.
+                // Поэтому применяем ко всем абзацам выделенных ячеек напрямую гранулярными
+                // командами (FindParagraph ищет и внутри ячеек таблицы) под одним снапшотом undo.
+                if (_tableSelections.Count > 0 && DocVm is not null)
+                {
+                    BeginEdit("Font");
+                    foreach (var t in targets)
+                    {
+                        if (t.end <= t.start) continue;
+                        new SetRunPropertyCommand(
+                            t.block.Id, t.start, t.end, p => p.FontFamily = font, "Font")
+                            .Apply(DocVm.Document);
+                    }
+                    CommitEdit();
+                    _cellLayoutCache.Clear();
+                    RebuildLayouts();
+                    InvalidateFull();
+                    if (DocVm.TableActiveCellParagraph is { } cpr)
+                        DocVm.FireTableCellCursorContext(cpr);
+                    _logger.Information("[FONT] Commit cell-range: paras={N}", targets.Count);
+                    return;
+                }
+
                 DocVm?.SetFontFamily(font);
+                _logger.Information("[FONT] Commit via SetFontFamily (cell/snapshot path)");
+                // Для ячейки обновляем контекст ленты её путём (FireCursorContextChanged
+                // работает по _activeParagraph, который у ячейки пуст), иначе поле шрифта
+                // показывало бы старое значение.
+                if (DocVm?.TableActiveCellParagraph is { } cp)
+                    DocVm.FireTableCellCursorContext(cp);
                 return;
             }
 
@@ -202,6 +241,14 @@ namespace Writersword.Modules.TextEditor.Document
             // Apply мутирует модель и захватывает оригиналы для undo, затем колбэк пересобирает.
             composite.Apply(DocVm.Document);
             PushTextCommand(composite);
+
+            // Обновляем состояние тулбара под кареткой: снапшотный путь делает это через
+            // FireCursorContextChanged, а гранулярный — нет, и поле шрифта восстанавливалось
+            // старым значением (выбор «сбрасывался»). Синхронизируем выделение в DocVm и явно,
+            // синхронно пере-фаерим контекст — до того как дропдаун прочитает CurrentFontFamily
+            // при закрытии.
+            UpdateSelectionContext();
+            DocVm.FireCursorContextChanged();
         }
 
         // Гранулярный коммит свойств рана (жирность/цвет/размер) на заданные диапазоны.
@@ -338,6 +385,17 @@ namespace Writersword.Modules.TextEditor.Document
                         }
                     }
                 }
+            }
+
+            // 1b. Каретка или выделение ТЕКСТА внутри одной ячейки (без выделения диапазона
+            //     ячеек). Цель — параграф активной ячейки (vm == null). Коммит уйдёт через
+            //     SetFontFamily, который применит шрифт к ячейке по выделению DocVm — тем же
+            //     путём, что и остальное форматирование текста в ячейке. Без этого правка
+            //     шрифта в ячейке не давала целей и ничего не применялось.
+            if (into.Count == 0 && DocVm.TableActiveCellParagraph is { } cellPara
+                && seen.Add(cellPara))
+            {
+                into.Add((cellPara, null, 0, cellPara.TotalLength));
             }
 
             // 2. Обычное выделение — берём напрямую из состояния канваса (sp..ep), для каждого

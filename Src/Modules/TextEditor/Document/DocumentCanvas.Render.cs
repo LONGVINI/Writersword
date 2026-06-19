@@ -654,7 +654,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (from == to && len == 0)
             {
                 float lineH = sl.Lines.Count > 0 ? sl.Lines[0].Height : FallbackLinePt;
-                canvas.DrawRect(xPt, yPt, 5f, lineH, _paintSelection);
+                canvas.DrawRect(xPt, yPt, 5f, lineH, SelectionPaintAt(pl, from));
                 return;
             }
 
@@ -670,34 +670,132 @@ namespace Writersword.Modules.TextEditor.Document
             foreach (var r in rects)
             {
                 if (r.LineIndex < pl.LineFrom || r.LineIndex >= pl.LineTo) continue;
+                if (r.LineIndex >= sl.Lines.Count) continue;
 
-                // Тот же сдвиг, что у глифов и каретки: HitTestRange даёт X с левым и абзацным
-                // отступом, но без сдвига выравнивания. Убираем абзацный отступ (он уже заложен)
-                // и прибавляем общий сдвиг строки — иначе по центру/правому подсветка идёт от
-                // левого края, а не по тексту.
-                float firstLineBaked = (r.LineIndex == 0) ? sl.FirstLineIndentPt : 0f;
-                float left = xPt + r.Rect.Left - firstLineBaked + LineAlignShift(sl, r.LineIndex);
-                float width = r.Rect.Width;
+                var ln = sl.Lines[r.LineIndex];
+                int lineSelStart = Math.Max(from, ln.FirstCharIndex);
+                int lineSelEnd = Math.Min(to, ln.LastCharIndex + 1);
 
-                // По ширине подсветка должна следовать за растянутыми промежутками: сдвигаем на
-                // растяжку до начала выделенного фрагмента строки и расширяем на растяжку внутри
-                // него, иначе подсветка идёт по пробелам, а не по фактическим словам.
-                float extra = SKTextRenderer.JustifyExtraPerSpace(sl, r.LineIndex);
-                if (extra > 0f && r.LineIndex < sl.Lines.Count)
+                // Вырожденный случай (например выделение пустой строки / только переноса):
+                // рисуем прямоугольник как есть одной кистью по началу фрагмента.
+                if (lineSelEnd <= lineSelStart)
                 {
-                    var ln = sl.Lines[r.LineIndex];
-                    int lineSelStart = Math.Max(from, ln.FirstCharIndex);
-                    int lineSelEnd = Math.Min(to, ln.LastCharIndex + 1);
-                    float leftShift = JustifyShiftBeforeChar(sl, r.LineIndex, lineSelStart);
-                    float rightShift = JustifyShiftBeforeChar(sl, r.LineIndex, lineSelEnd);
-                    left += leftShift;
-                    width += rightShift - leftShift;
+                    DrawSelectionRect(canvas, sl, r.LineIndex, r.Rect.Left, r.Rect.Width,
+                        r.Rect.Top, r.Rect.Height, lineSelStart, lineSelEnd,
+                        xPt, yPt, yBase, SelectionPaintAt(pl, lineSelStart));
+                    continue;
                 }
 
-                canvas.DrawRect(
-                    left,
-                    yPt + (r.Rect.Top - yBase),
-                    width, r.Rect.Height, _paintSelection);
+                // Режем выделенный фрагмент строки на группы по «голубизне» заливки и красим
+                // каждую своей кистью. Иначе при смене заливки внутри строки (голубое -> белое)
+                // весь фрагмент красился бы цветом первого символа — и белый участок выделялся
+                // бы янтарным вместо обычного голубого.
+                var para = pl.Vm?.Model as ParagraphBlock;
+                int segStart = lineSelStart;
+                bool curBlue = IsBlueishAt(para, lineSelStart);
+                for (int pos = lineSelStart + 1; pos < lineSelEnd; pos++)
+                {
+                    bool b = IsBlueishAt(para, pos);
+                    if (b == curBlue) continue;
+                    DrawSelectionSubRange(canvas, sl, r.LineIndex, segStart, pos,
+                        xPt, yPt, yBase, curBlue ? _paintSelectionAlt : _paintSelection);
+                    segStart = pos;
+                    curBlue = b;
+                }
+                DrawSelectionSubRange(canvas, sl, r.LineIndex, segStart, lineSelEnd,
+                    xPt, yPt, yBase, curBlue ? _paintSelectionAlt : _paintSelection);
+            }
+        }
+
+        // Рисует выделение для под-диапазона [subFrom, subTo) на одной визуальной строке указанной
+        // кистью. Координаты считаются так же, как у глифов и каретки (сдвиг выравнивания, абзацный
+        // отступ первой строки, накопленная растяжка justify) — чтобы подсветка совпадала с текстом.
+        private void DrawSelectionSubRange(
+            SKCanvas canvas, SKTextLayout sl, int lineIndex, int subFrom, int subTo,
+            float xPt, float yPt, float yBase, SKPaint paint)
+        {
+            if (subTo <= subFrom) return;
+            foreach (var rr in sl.HitTestRange(subFrom, subTo))
+            {
+                if (rr.LineIndex != lineIndex) continue;
+                DrawSelectionRect(canvas, sl, lineIndex, rr.Rect.Left, rr.Rect.Width,
+                    rr.Rect.Top, rr.Rect.Height, subFrom, subTo, xPt, yPt, yBase, paint);
+            }
+        }
+
+        // Общая отрисовка одного прямоугольника выделения с приведением координат к тексту.
+        private void DrawSelectionRect(
+            SKCanvas canvas, SKTextLayout sl, int lineIndex,
+            float rectLeft, float rectWidth, float rectTop, float rectHeight,
+            int selFrom, int selTo, float xPt, float yPt, float yBase, SKPaint paint)
+        {
+            float firstLineBaked = (lineIndex == 0) ? sl.FirstLineIndentPt : 0f;
+            float left = xPt + rectLeft - firstLineBaked + LineAlignShift(sl, lineIndex);
+            float width = rectWidth;
+
+            float extra = SKTextRenderer.JustifyExtraPerSpace(sl, lineIndex);
+            if (extra > 0f && lineIndex < sl.Lines.Count)
+            {
+                float leftShift = JustifyShiftBeforeChar(sl, lineIndex, selFrom);
+                float rightShift = JustifyShiftBeforeChar(sl, lineIndex, selTo);
+                left += leftShift;
+                width += rightShift - leftShift;
+            }
+
+            canvas.DrawRect(left, yPt + (rectTop - yBase), width, rectHeight, paint);
+        }
+
+        // Голубая ли заливка в символе с локальным смещением offset.
+        private static bool IsBlueishAt(ParagraphBlock? para, int offset)
+            => para is not null && IsBlueishHighlight(HighlightAt(para, offset));
+
+        // Выбирает кисть выделения по заливке текста под выделением в данной точке: для
+        // голубых/циановых заливок берём контрастную тёплую кисть, иначе обычную голубую.
+        private SKPaint SelectionPaintAt(ParaLayout pl, int localOffset)
+        {
+            if (pl.Vm?.Model is ParagraphBlock para
+                && IsBlueishHighlight(HighlightAt(para, localOffset)))
+                return _paintSelectionAlt;
+            return _paintSelection;
+        }
+
+        // Цвет заливки (HighlightColor строкой) в символе с локальным смещением offset, либо null.
+        private static string? HighlightAt(ParagraphBlock para, int offset)
+        {
+            int acc = 0;
+            foreach (var chunk in para.Chunks)
+            {
+                foreach (var run in chunk.Runs)
+                {
+                    int rl = run.Text?.Length ?? 0;
+                    if (offset < acc + rl || rl == 0)
+                        return run.Properties?.HighlightColor;
+                    acc += rl;
+                }
+            }
+            return null;
+        }
+
+        // Голубой/циановый оттенок: синий канал заметно преобладает над красным.
+        private static bool IsBlueishHighlight(string? hex)
+        {
+            if (string.IsNullOrWhiteSpace(hex)) return false;
+            var s = hex.Trim().TrimStart('#');
+            if (s.Length == 8) s = s.Substring(2);      // отбрасываем альфу AARRGGBB
+            else if (s.Length == 4) s = s.Substring(1); // короткая ARGB -> RGB ниже
+            if (s.Length == 3)
+                s = string.Concat(s[0], s[0], s[1], s[1], s[2], s[2]);
+            if (s.Length != 6) return false;
+            try
+            {
+                int r = Convert.ToInt32(s.Substring(0, 2), 16);
+                int g = Convert.ToInt32(s.Substring(2, 2), 16);
+                int b = Convert.ToInt32(s.Substring(4, 2), 16);
+                return b > 110 && b >= g && (b - r) >= 40;
+            }
+            catch
+            {
+                return false;
             }
         }
 

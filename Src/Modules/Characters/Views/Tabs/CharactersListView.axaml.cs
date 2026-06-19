@@ -24,7 +24,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
         // карточки, перетаскивание начинается только после зажатия и последующего движения.
         private const long DragHoldDelayMs = 90;
 
-        private static readonly Serilog.ILogger DragLog = Serilog.Log.ForContext<CharactersListView>();
 
         private Point _dragStartPoint;
         private long _pressTick;
@@ -474,7 +473,24 @@ namespace Writersword.Modules.Characters.Views.Tabs
             _dragTargetIndex = targetIndex;
             _dragTargetFolderId = targetFolderVm.FolderId;
 
-            var snap = SnapshotPositions();
+            // Текущее место плейсхолдера в целевой папке. Если он здесь — перестановка
+            // внутри папки: двигаются только карточки между ним и целью, снимаем лишь их.
+            int oldPh = -1;
+            for (int i = 0; i < targetFolderVm.Characters.Count; i++)
+                if (targetFolderVm.Characters[i].IsPlaceholder) { oldPh = i; break; }
+
+            Dictionary<string, Point> snap;
+            if (oldPh >= 0)
+            {
+                int newPh = Math.Min(targetIndex, targetFolderVm.Characters.Count - 1);
+                snap = SnapshotPositions(targetFolderVm, Math.Min(oldPh, newPh), Math.Max(oldPh, newPh));
+            }
+            else
+            {
+                // Кросс-папка: двигаются обе папки целиком — снимок всего окна.
+                snap = SnapshotPositions();
+            }
+
             vm.UpdateDragPreview(_dragCandidate.Id, _dragTargetFolderId, _dragTargetIndex);
             BeginFlipAnimation(snap);
         }
@@ -482,11 +498,26 @@ namespace Writersword.Modules.Characters.Views.Tabs
         // Снимаем визуальные позиции (с текущим TranslateTransform) в координатах
         // репитера, а не вьюпорта: прокрутка не должна порождать ложные дельты FLIP.
         // Не сбрасываем — карточки в середине анимации не прерываются.
-        private Dictionary<string, Point> SnapshotPositions()
+        private Dictionary<string, Point> SnapshotPositions() => SnapshotPositions(null, 0, 0);
+
+        // Если задана папка с диапазоном [lo..hi] — снимаем только её карточки в этом
+        // диапазоне (только они и сдвигаются при перестановке), остальные статичны и
+        // мерить их незачем. Без папки — снимок всего реализованного окна.
+        private Dictionary<string, Point> SnapshotPositions(CharacterFolderViewModel? folder, int lo, int hi)
         {
+            HashSet<string>? ids = null;
+            if (folder is not null)
+            {
+                ids = new HashSet<string>();
+                int a = Math.Max(0, lo);
+                int b = Math.Min(folder.Characters.Count - 1, hi);
+                for (int i = a; i <= b; i++) ids.Add(folder.Characters[i].Id);
+            }
+
             var result = new Dictionary<string, Point>();
             foreach (var (id, border, repeater) in EnumerateLiveCards())
             {
+                if (ids is not null && !ids.Contains(id)) continue;
                 var pt = border.TranslatePoint(new Point(0, 0), repeater);
                 if (pt.HasValue) result[id] = pt.Value;
             }
@@ -547,7 +578,21 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
             foreach (var (id, border, repeater) in EnumerateLiveCards())
             {
-                if (!beforePositions.TryGetValue(id, out var before)) continue;
+                if (!beforePositions.TryGetValue(id, out var before))
+                {
+                    // Карточка вне затронутого диапазона — двигаться не должна. Если на ней
+                    // остался трансформ, направляем его к нулю С ПЕРЕХОДОМ (не мгновенно):
+                    // уже едущая к месту анимация продолжится плавно, а «застрявшая» (чей
+                    // FLIP-доезд не сыграл) доедет красиво — и не уедет под соседнюю дыркой.
+                    // Цель та же (0), поэтому едущую анимацию это не перезапускает.
+                    if (border.RenderTransform is TranslateTransform stale &&
+                        (stale.X != 0.0 || stale.Y != 0.0))
+                    {
+                        stale.X = 0.0;
+                        stale.Y = 0.0;
+                    }
+                    continue;
+                }
                 if (border.RenderTransform is not TranslateTransform tt) continue;
 
                 // Точечный сброс: временно обнуляем трансформ для замера layout-позиции
@@ -579,10 +624,12 @@ namespace Writersword.Modules.Characters.Views.Tabs
                     continue;
                 }
 
-                // Огромный сдвиг = артефакт переиспользования (recycle) при виртуализации:
-                // карточка «прыгнула» через пол-экрана. Не анимируем — оставляем на её
-                // layout-месте (трансформ уже 0 после замера). Иначе она улетает.
-                if (Math.Abs(dx) > 600 || Math.Abs(dy) > 600)
+                // Отбрасываем только большой ВЕРТИКАЛЬНЫЙ прыжок — это артефакт
+                // переиспользования (recycle) при виртуализации (карточка «прыгнула» через
+                // полэкрана по вертикали). Большой ГОРИЗОНТАЛЬНЫЙ сдвиг при маленьком
+                // вертикальном — это нормальный перенос карточки с конца строки в начало
+                // следующей (и наоборот), его надо анимировать, а не глотать.
+                if (Math.Abs(dy) > 600)
                 {
                     tt.Transitions = saved;
                     continue;
@@ -593,8 +640,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 tt.Transitions = saved;
                 toAnimate.Add((tt, dx, dy));
             }
-
-            DragLog.Debug("[Drag] FLIP before={B} animate={A}", beforePositions.Count, toAnimate.Count);
 
             if (toAnimate.Count == 0) return;
 
@@ -726,10 +771,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 }
             }
 
-            // Карточки берём НАПРЯМУЮ из реализованных детей репитеров — так же, как в
-            // ComputeTargetIndex (этот путь карточки точно находит). Глобальный обход
-            // GetVisualDescendants в реализованные дети ItemsRepeater не заходит, из-за
-            // чего кэш оставался пустым и FLIP-анимации не было.
             foreach (var repeater in _folderItemsCtrlCache.Values.OfType<ItemsRepeater>())
             {
                 foreach (var child in repeater.GetVisualChildren().OfType<Control>())
@@ -743,10 +784,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
                         _cardBorderCache[cardVm.Id] = border;
                 }
 
-                // Сбрасываем зависший TranslateTransform при переиспользовании элемента
-                // виртуализацией (recycle) и при его реализации: иначе карточка с
-                // недогашенным смещением всплывает «призраком» за другими. Идемпотентно
-                // через -=/+= — повторные вызовы RebuildDragCaches не плодят подписок.
+                // Сброс зависшего TranslateTransform при переиспользовании элемента
+                // виртуализацией (recycle) и при реализации. Идемпотентно через -=/+=.
                 repeater.ElementPrepared -= OnRepeaterElementPrepared;
                 repeater.ElementPrepared += OnRepeaterElementPrepared;
                 repeater.ElementClearing -= OnRepeaterElementClearing;
@@ -857,15 +896,15 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
             if (DataContext is CharactersViewModel vm)
             {
-                // Снимаем текущие (возможно ещё анимируемые) позиции, применяем
-                // изменение и плавно доводим карточки FLIP-ом — без резкого «щелчка»
-                // и обрыва незавершённых анимаций при быстром броске.
-                var snap = SnapshotPositions();
+                // Применяем результат. FLIP на дропе НЕ нужен: плейсхолдер уже стоит ровно
+                // на финальном месте, реальная карточка встаёт туда же — двигать нечего.
+                // Раскладку НЕ пересобираем: мягкая чистка трансформов на каждом ходе уже
+                // не даёт «дыркам» оставаться, а пересборка Layout целевой папки ломала
+                // замер ячейки единственной карточки и резала ей аватар.
                 if (_dragTargetFolderId is not null)
                     vm.CommitDragPreview(_dragCandidate.Id, _dragTargetFolderId, _dragTargetIndex);
                 else
                     vm.CancelDragPreview(_dragCandidate.Id);
-                BeginFlipAnimation(snap);
             }
 
             _dragCandidate = null;
