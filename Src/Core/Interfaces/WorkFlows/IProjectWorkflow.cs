@@ -17,8 +17,9 @@ namespace Writersword.Core.Interfaces.WorkFlows
         /// <param name="initializeWorkspace">Инициализировать workspace сразу (false для lazy loading)</param>
         Task<IDocumentTab?> OpenDocumentAsync(string? filePath = null, bool initializeWorkspace = true);
 
-        /// <summary>Сохранить документ</summary>
-        Task<bool> SaveDocumentAsync(IDocumentTab tab);
+        /// <summary>Сохранить документ. showNotification=false — тихо, без тоста
+        /// (для фоновых сохранений вроде правки палитр).</summary>
+        Task<bool> SaveDocumentAsync(IDocumentTab tab, bool showNotification = true);
 
         /// <summary>Сохранить как (выбрать новый путь)</summary>
         Task<bool> SaveAsDocumentAsync(IDocumentTab tab);

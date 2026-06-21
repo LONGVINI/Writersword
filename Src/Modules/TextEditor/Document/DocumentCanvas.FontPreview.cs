@@ -80,12 +80,31 @@ namespace Writersword.Modules.TextEditor.Document
             var styleResolver = _styleResolver;
             float widthPt = GetCurrentTextWidthPt();
 
+            // Ячейки таблицы: строим preview-абзац по выделенному диапазону (модель не трогаем).
+            // BuildTableLayout подставит его в раскладку ячейки.
+            bool anyCell = false;
+            foreach (var t in _previewTargets)
+                if (t.vm is null)
+                {
+                    _cellFontPreview[t.block] = BuildPreviewBlock(t.block, t.start, t.end, font);
+                    anyCell = true;
+                }
+
             // Целевые обычные абзацы (с VM) + их диапазоны.
             var rangeByVm = new Dictionary<ParagraphViewModel, (int start, int end)>();
             foreach (var t in _previewTargets)
                 if (t.vm is not null)
                     rangeByVm[t.vm] = (t.start, t.end);
-            if (rangeByVm.Count == 0) return;
+            if (rangeByVm.Count == 0)
+            {
+                if (anyCell)
+                {
+                    RebuildLayouts();
+                    SnapCaretToCorrectSlice();
+                    InvalidateFull();
+                }
+                return;
+            }
 
             // Строим preview-копии для ВИДИМЫХ целей здесь, на UI-потоке (доступ к модели
             // безопасен только отсюда). Тяжёлый Skia BuildLayout уйдёт на фон.
@@ -154,20 +173,22 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
-            // Отмена: возвращаем исходные раскладки затронутых абзацев и пересобираем.
+            // Отмена: возвращаем исходные раскладки затронутых абзацев и override ячеек,
+            // затем пересобираем (override уже очищен в ClearPreviewState -> исходный шрифт).
+            bool hadCells = _cellFontPreview.Count > 0;
             bool any = _previewSavedLayouts.Count > 0;
             foreach (var kv in _previewSavedLayouts)
             {
                 if (kv.Value is { } orig) _layoutCache[kv.Key] = orig;
                 else _layoutCache.Remove(kv.Key);
             }
-            if (any)
+            ClearPreviewState();
+            if (any || hadCells)
             {
                 RebuildLayouts();
                 SnapCaretToCorrectSlice();
                 InvalidateFull();
             }
-            ClearPreviewState();
         }
 
         // Применяет выбранный шрифт через гранулярные команды (SetRunPropertyCommand на абзац,
@@ -186,11 +207,12 @@ namespace Writersword.Modules.TextEditor.Document
                 DocVm?.TableActiveCellParagraph is not null);
             if (TextUndoStack is null || DocVm is null || anyCell)
             {
-                // Диапазон ячеек: SetFontFamily применил бы шрифт лишь к одной активной ячейке.
-                // Поэтому применяем ко всем абзацам выделенных ячеек напрямую гранулярными
-                // командами (FindParagraph ищет и внутри ячеек таблицы) под одним снапшотом undo.
-                if (_tableSelections.Count > 0 && DocVm is not null)
+                // Ячейки (одна/диапазон) или смешанное выделение ячеек и обычных абзацев.
+                // SetFontFamily применил бы шрифт лишь к активной ячейке, поэтому применяем ко
+                // ВСЕМ целям напрямую (FindParagraph резолвит и абзацы ячеек) под одним снапшотом.
+                if (DocVm is not null && targets.Count > 0)
                 {
+                    int applied = 0;
                     BeginEdit("Font");
                     foreach (var t in targets)
                     {
@@ -198,22 +220,25 @@ namespace Writersword.Modules.TextEditor.Document
                         new SetRunPropertyCommand(
                             t.block.Id, t.start, t.end, p => p.FontFamily = font, "Font")
                             .Apply(DocVm.Document);
+                        applied++;
                     }
                     CommitEdit();
-                    _cellLayoutCache.Clear();
-                    RebuildLayouts();
-                    InvalidateFull();
+                    if (applied > 0)
+                    {
+                        _cellLayoutCache.Clear();
+                        RebuildLayouts();
+                        InvalidateFull();
+                    }
+                    _logger.Information("[FONT] Commit all targets (cell/mixed): applied={N}", applied);
                     if (DocVm.TableActiveCellParagraph is { } cpr)
                         DocVm.FireTableCellCursorContext(cpr);
-                    _logger.Information("[FONT] Commit cell-range: paras={N}", targets.Count);
+                    else
+                        DocVm.FireCursorContextChanged();
                     return;
                 }
 
                 DocVm?.SetFontFamily(font);
-                _logger.Information("[FONT] Commit via SetFontFamily (cell/snapshot path)");
-                // Для ячейки обновляем контекст ленты её путём (FireCursorContextChanged
-                // работает по _activeParagraph, который у ячейки пуст), иначе поле шрифта
-                // показывало бы старое значение.
+                _logger.Information("[FONT] Commit via SetFontFamily (fallback)");
                 if (DocVm?.TableActiveCellParagraph is { } cp)
                     DocVm.FireTableCellCursorContext(cp);
                 return;
@@ -395,7 +420,19 @@ namespace Writersword.Modules.TextEditor.Document
             if (into.Count == 0 && DocVm.TableActiveCellParagraph is { } cellPara
                 && seen.Add(cellPara))
             {
-                into.Add((cellPara, null, 0, cellPara.TotalLength));
+                int cs = 0, ce = cellPara.TotalLength;
+                // Если внутри ячейки выделена часть текста (одна ячейка = один абзац) — берём
+                // именно его диапазон, чтобы и превью, и коммит применялись к выделенному куску.
+                if (HasSel())
+                {
+                    var (sp, sc, ep, ec) = NormalizeSelection();
+                    if (sp == ep && GetVmAt(sp)?.Model == cellPara)
+                    {
+                        cs = Math.Max(0, Math.Min(sc, ce));
+                        ce = Math.Max(cs, Math.Min(ec, cellPara.TotalLength));
+                    }
+                }
+                into.Add((cellPara, null, cs, ce));
             }
 
             // 2. Обычное выделение — берём напрямую из состояния канваса (sp..ep), для каждого
@@ -431,6 +468,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void ClearPreviewState()
         {
+            _cellFontPreview.Clear();
             _fontPreviewActive = false;
             _previewFont = null;
             _previewTargets.Clear();

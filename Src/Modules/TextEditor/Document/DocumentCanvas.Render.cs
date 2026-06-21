@@ -485,6 +485,55 @@ namespace Writersword.Modules.TextEditor.Document
             // Рисуем выделения всех таблиц из единого словаря.
             foreach (var kv in _tableSelections)
                 RenderTableSelection(canvas, tables, kv.Key, kv.Value.sr, kv.Value.sc, kv.Value.er, kv.Value.ec);
+
+            // Полностью попавшие в поток ячейки — заливаем целиком.
+            RenderCellFlowFull(canvas, tables);
+        }
+
+        // Заливает целиком ячейки из _cellFlowFull (полностью попавшие в потоковое выделение).
+        // Геометрия — как в RenderTableSelection, но отбор по принадлежности множеству, а не по
+        // прямоугольному диапазону строк/колонок.
+        private void RenderCellFlowFull(SKCanvas canvas, List<TableEntry> tables)
+        {
+            if (_cellFlowFull.Count == 0) return;
+
+            foreach (var te in tables)
+            {
+                int effectiveRowTo = te.RowTo < 0 ? te.Layout.Rows.Count : te.RowTo;
+                float rowOffsetY = te.RowFrom > 0 && te.RowFrom < te.Layout.Rows.Count
+                    ? te.Layout.Rows[te.RowFrom].Ypt : 0f;
+
+                float maxPadTop = 0f;
+                if (te.IsContinuation && te.FirstRowContentOffsetPt > 0f
+                    && te.RowFrom < te.Layout.Rows.Count)
+                {
+                    foreach (var cell in te.Layout.Rows[te.RowFrom].Cells)
+                        maxPadTop = Math.Max(maxPadTop, cell.PadTopPt + cell.Borders.Top.WidthPt);
+                }
+
+                foreach (var row in te.Layout.Rows)
+                {
+                    if (row.Row < te.RowFrom || row.Row >= effectiveRowTo) continue;
+
+                    bool isFirstRow = row.Row == te.RowFrom;
+                    float rowShift = isFirstRow ? te.FirstRowContentOffsetPt : 0f;
+                    float extraShift = isFirstRow ? 0f : (te.FirstRowContentOffsetPt - maxPadTop);
+                    float effectiveRowH = isFirstRow
+                        ? row.HeightPt - rowShift + maxPadTop
+                        : row.HeightPt;
+                    float visibleH = (row.Row == effectiveRowTo - 1 && te.LastRowVisibleHeightPt >= 0f)
+                        ? te.LastRowVisibleHeightPt
+                        : effectiveRowH;
+
+                    foreach (var cell in row.Cells)
+                    {
+                        if (!_cellFlowFull.Contains((te.Table, row.Row, cell.Column))) continue;
+                        float cellX = te.XPt + cell.Xpt;
+                        float cellY = te.Ypt + cell.Ypt - rowOffsetY - rowShift - extraShift;
+                        canvas.DrawRect(cellX, cellY + rowShift, cell.WidthPt, visibleH, _paintSelection);
+                    }
+                }
+            }
         }
 
         private void RenderFlowMode(
@@ -625,6 +674,26 @@ namespace Writersword.Modules.TextEditor.Document
             float xPt, float yPt, List<ParaLayout> layouts,
             SKTextLayout? resolvedLayout = null)
         {
+            var sl = resolvedLayout ?? pl.Layout;
+            if (sl is null) return;
+            int len = pl.Vm?.PlainText?.Length ?? 0;
+
+            // Потоковое выделение активно: ячейки этой таблицы рисуем строго по потоку —
+            // частичные края по тексту (из _cellFlowRanges), полные заливает RenderCellFlowFull,
+            // ячейки вне потока не рисуем (иначе линейный путь дал бы полоски).
+            if (pl.Cell != null && (_cellFlowRanges.Count > 0 || _cellFlowFull.Count > 0))
+            {
+                if (pl.Vm?.Model is ParagraphBlock cellModel
+                    && _cellFlowRanges.TryGetValue(cellModel, out var flow))
+                {
+                    int ff = Clamp(flow.from, 0, len);
+                    int tt = Clamp(flow.to, 0, len);
+                    if (tt > ff || len == 0)
+                        DrawSelectionRangeOnSlice(canvas, pl, sl, ff, tt, len, xPt, yPt);
+                }
+                return;
+            }
+
             // Ячейки при активном cell-range или табличном выделении: рисуется через RenderTableSelection.
             if (pl.Cell != null && (_isCellRangeSelecting || _tableSelections.ContainsKey(pl.Cell.Table))) return;
 
@@ -633,12 +702,12 @@ namespace Writersword.Modules.TextEditor.Document
             var (sp, sc, ep, ec) = NormalizeSelection();
             if (sliceIdx < sp || sliceIdx > ep) return;
 
-            int len = pl.Vm.PlainText?.Length ?? 0;
-
-            // Пустые параграфы-якоря вокруг таблиц при активном табличном выделении
+            // Пустые параграфы-якоря вокруг таблиц при активном табличном/потоковом выделении
             // пропускаем — они дают тонкую полосу выделения вплотную к рамке таблицы.
-            if (len == 0 && _tableSelections.Count > 0
-                && (IsBlockBeforeTable(pl.Vm.Model) || IsBlockAfterTable(pl.Vm.Model)))
+            bool tableSelActive = _tableSelections.Count > 0
+                || _cellFlowFull.Count > 0 || _cellFlowRanges.Count > 0;
+            if (len == 0 && tableSelActive && pl.Vm?.Model is { } anchorModel
+                && (IsBlockBeforeTable(anchorModel) || IsBlockAfterTable(anchorModel)))
                 return;
 
             int from = sliceIdx == sp ? sc : 0;
@@ -648,9 +717,16 @@ namespace Writersword.Modules.TextEditor.Document
             to = Clamp(to, 0, len);
             if (from >= to && !(from == 0 && len == 0)) return;
 
-            var sl = resolvedLayout ?? pl.Layout;
-            if (sl is null) return;
+            DrawSelectionRangeOnSlice(canvas, pl, sl, from, to, len, xPt, yPt);
+        }
 
+        // Рисует выделение диапазона [from, to) одного слайса (абзаца) с группировкой по «голубизне»
+        // заливки. Вынесено из DrawSelectionForSlice, чтобы использовать и для потокового выделения
+        // ячеек, и для обычного выделения.
+        private void DrawSelectionRangeOnSlice(
+            SKCanvas canvas, ParaLayout pl, SKTextLayout sl,
+            int from, int to, int len, float xPt, float yPt)
+        {
             if (from == to && len == 0)
             {
                 float lineH = sl.Lines.Count > 0 ? sl.Lines[0].Height : FallbackLinePt;

@@ -142,6 +142,10 @@ namespace Writersword.Modules.TextEditor.Document
         private readonly Dictionary<ParagraphBlock,
             (string Text, float Width, SKTextLayout Layout)> _cellLayoutCache = new();
 
+        // Превью шрифта для абзацев ячеек: оригинальный абзац -> preview-абзац (построен по
+        // выделенному диапазону). BuildTableLayout строит раскладку из него. Пусто вне превью.
+        private readonly Dictionary<ParagraphBlock, ParagraphBlock> _cellFontPreview = new();
+
         // ── Дебаунс пересчёта ─────────────────────────────────────────────
         private System.Threading.CancellationTokenSource _rebuildCts = new();
 
@@ -195,7 +199,6 @@ namespace Writersword.Modules.TextEditor.Document
         // Единый словарь: TableBlock → (startRow, startCol, endRow, endCol).
         // Обновляется при движении курсора, очищается при новом клике.
         private bool _isCellRangeSelecting = false;
-        private TableBlock? _cellSelTable;
 
         // Ячейка, в которой было нажатие мыши (якорь cell-range выделения).
         // Хранится отдельно, т.к. для пустых ячеек без layout-записи HitTest
@@ -203,12 +206,17 @@ namespace Writersword.Modules.TextEditor.Document
         private TableBlock? _pressCellTable;
         private int _pressCellRow = -1;
         private int _pressCellCol = -1;
-        private int _cellSelStartRow = -1;
-        private int _cellSelStartCol = -1;
-        private int _cellSelEndRow = -1;
-        private int _cellSelEndCol = -1;
 
         private readonly Dictionary<TableBlock, (int sr, int sc, int er, int ec)> _tableSelections = new();
+
+        // Потоковое выделение ячеек: абзац ячейки -> выделенный диапазон [from, to].
+        // Частичная стартовая ячейка, целые промежуточные по порядку чтения, частичная конечная.
+        // Пусто, когда потокового выделения нет (тогда работает прямоугольное _tableSelections).
+        private readonly Dictionary<ParagraphBlock, (int from, int to)> _cellFlowRanges = new();
+
+        // Полностью попавшие в поток ячейки (table, row, col) — заливаются целиком прямоугольником
+        // ячейки, как обычное табличное выделение (а не по тексту, иначе пустые/узкие дают полоски).
+        private readonly HashSet<(TableBlock table, int row, int col)> _cellFlowFull = new();
 
         private sealed record FrozenTableSelection(
             TableBlock Table,

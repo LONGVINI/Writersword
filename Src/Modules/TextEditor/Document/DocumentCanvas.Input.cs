@@ -192,8 +192,9 @@ namespace Writersword.Modules.TextEditor.Document
             _selEndPara = pi; _selEndChar = ci;
             _isSelecting = true;
             _isCellRangeSelecting = false;
-            _cellSelTable = null;
             _tableSelections.Clear();
+            _cellFlowRanges.Clear();
+            _cellFlowFull.Clear();
 
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
@@ -327,8 +328,9 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     // Курсор в той же ячейке — обычное текстовое выделение внутри ячейки.
                     _isCellRangeSelecting = false;
-                    _cellSelTable = null;
                     _tableSelections.Clear();
+                    _cellFlowRanges.Clear();
+                    _cellFlowFull.Clear();
                     _selEndPara = pi; _selEndChar = ci;
                     _caretPara = pi; _caretChar = ci;
                     UpdateSelectionContext();
@@ -339,17 +341,16 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (geoEnd.HasValue && geoEnd.Value.table == _pressCellTable)
                 {
-                    // Курсор перешёл в другую ячейку той же таблицы — cell-range.
+                    // Курсор в другой ячейке той же таблицы — прямоугольное выделение целых
+                    // ячеек (квадрат min/max строк и колонок), как принято в таблицах.
+                    // Порядок-чтения лентой используется только при заходе ИЗВНЕ таблицы.
                     _isCellRangeSelecting = true;
-                    _cellSelTable = _pressCellTable;
                     _tableSelections.Clear();
+                    _cellFlowRanges.Clear();
+                    _cellFlowFull.Clear();
                     _tableSelections[_pressCellTable] = (
                         _pressCellRow, _pressCellCol,
                         geoEnd.Value.row, geoEnd.Value.col);
-                    _cellSelStartRow = _pressCellRow;
-                    _cellSelStartCol = _pressCellCol;
-                    _cellSelEndRow = geoEnd.Value.row;
-                    _cellSelEndCol = geoEnd.Value.col;
                     InvalidateFull();
                     e.Handled = true;
                     return;
@@ -357,8 +358,9 @@ namespace Writersword.Modules.TextEditor.Document
 
                 // Курсор вышел за пределы таблицы — переходим в параграфный режим.
                 _isCellRangeSelecting = false;
-                _cellSelTable = null;
                 _tableSelections.Clear();
+                _cellFlowRanges.Clear();
+                _cellFlowFull.Clear();
                 // Не делаем return — продолжаем в Y-range блок.
             }
             // Drag начался вне таблицы — все таблицы в Y-диапазоне выделяются целиком.
@@ -384,12 +386,39 @@ namespace Writersword.Modules.TextEditor.Document
                 List<TableEntry> allTables;
                 lock (_renderLock) { allTables = _tables; }
 
+                // Если курсор сейчас внутри ячейки — для ЭТОЙ таблицы строим поток от верхнего
+                // (или нижнего) края до курсора, а не берём её целиком. Так заход сверху в
+                // таблицу выделяет ячейки по порядку чтения до курсора, а не всю таблицу.
+                TableBlock? flowTable = null;
+                if (nowInCell && pi >= 0 && pi < _layouts.Count && _layouts[pi].Cell is { } curCell)
+                {
+                    flowTable = curCell.Table;
+                    float ftMinY = float.MaxValue;
+                    foreach (var t2 in allTables)
+                        if (t2.Table == flowTable) ftMinY = Math.Min(ftMinY, t2.Ypt);
+                    bool fromTop = selStartYPt <= ftMinY;
+                    if (!BuildCellFlowFromEdge(flowTable, pi, ci, fromTop))
+                        flowTable = null;
+                    else
+                        // Таблица под курсором покрыта потоком — снимаем её прямоугольное
+                        // выделение, если оно осталось с прошлого хода (иначе двойная заливка
+                        // при проходе насквозь и возврате).
+                        _tableSelections.Remove(flowTable);
+                }
+                else
+                {
+                    _cellFlowRanges.Clear();
+                    _cellFlowFull.Clear();
+                }
+
                 var seenTables = new HashSet<TableBlock>();
                 var toRemove = new List<TableBlock>();
 
                 foreach (var te in allTables)
                 {
                     if (!seenTables.Add(te.Table)) continue;
+                    // Таблица под курсором покрыта потоком — целиком не берём.
+                    if (te.Table == flowTable) continue;
 
                     float tblMinY = float.MaxValue;
                     float tblMaxY = float.MinValue;
@@ -410,11 +439,9 @@ namespace Writersword.Modules.TextEditor.Document
                     }
 
                     // Порог применяется только когда drag начался у верхнего края таблицы
-                    // (якорный параграф нулевой высоты над таблицей): в этом случае
-                    // требуем реального вхождения внутрь таблицы перед выделением.
-                    // Если drag начался под таблицей или внутри неё — порог минимальный
-                    // (только защита от floating-point), иначе выделение снизу вверх
-                    // не захватывает таблицу пока мышь в нижних строках.
+                    // (якорный параграф нулевой высоты над таблицей): в этом случае требуем
+                    // реального вхождения внутрь таблицы. Если drag начался под таблицей или
+                    // внутри неё — порог минимальный (защита от floating-point).
                     float overlapThreshold = selStartYPt <= tblMinY ? 5f : 0.5f;
                     float overlapStart = Math.Max(tblMinY, selMinY);
                     float overlapEnd = Math.Min(tblMaxY, selMaxY);
@@ -432,7 +459,6 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             _isCellRangeSelecting = false;
-            _cellSelTable = null;
             _selEndPara = pi; _selEndChar = ci;
             _caretPara = pi; _caretChar = ci;
             UpdateSelectionContext();
@@ -504,16 +530,18 @@ namespace Writersword.Modules.TextEditor.Document
                         _caretChar = e.Text.Length;
                         CommitEdit();
                         _isCellRangeSelecting = false;
-                        _cellSelTable = null;
                         _tableSelections.Clear();
+                        _cellFlowRanges.Clear();
+                        _cellFlowFull.Clear();
                         RebuildAfterCellEdit();
                     }
                 }
                 else
                 {
                     _isCellRangeSelecting = false;
-                    _cellSelTable = null;
                     _tableSelections.Clear();
+                    _cellFlowRanges.Clear();
+                    _cellFlowFull.Clear();
                     SyncSel();
                     ResetCaret();
                     InvalidateFull();
@@ -1627,8 +1655,9 @@ namespace Writersword.Modules.TextEditor.Document
                 DeleteSelection();
 
             _tableSelections.Clear();
+            _cellFlowRanges.Clear();
+            _cellFlowFull.Clear();
             _isCellRangeSelecting = false;
-            _cellSelTable = null;
 
             CommitEdit();
             _cellVmCache.Clear();

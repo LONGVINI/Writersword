@@ -136,7 +136,8 @@ namespace Writersword.Modules.TextEditor.Rendering
         public SKTableLayout BuildTableLayout(
             TableBlock table,
             float textAreaWidthPt,
-            StyleResolver styles)
+            StyleResolver styles,
+            IReadOnlyDictionary<ParagraphBlock, ParagraphBlock>? cellFontPreview = null)
         {
             int colCount = table.ColumnCount;
             int rowCount = table.RowCount;
@@ -223,7 +224,12 @@ namespace Writersword.Modules.TextEditor.Rendering
                     for (int pi = 0; pi < cell.Paragraphs.Count; pi++)
                     {
                         var para = cell.Paragraphs[pi];
-                        var paraLayout = BuildLayout(para, contentWidthPt, styles, isCell: true);
+                        // Превью шрифта в ячейке: если для абзаца задан preview-абзац (построен
+                        // канвасом по выделенному диапазону), строим раскладку из него. Модель
+                        // оригинала не трогается. Ширина та же — contentWidthPt.
+                        var paraSrc = (cellFontPreview != null
+                            && cellFontPreview.TryGetValue(para, out var pv)) ? pv : para;
+                        var paraLayout = BuildLayout(paraSrc, contentWidthPt, styles, isCell: true);
 
                         cellLayout.Paragraphs.Add(new SKTableParaLayout
                         {

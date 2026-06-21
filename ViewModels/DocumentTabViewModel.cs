@@ -275,6 +275,10 @@ namespace Writersword.ViewModels
                 _project.ModulesData[kvp.Key] = kvp.Value;
 
             _project.LastModified = newProject.LastModified;
+            _project.ProjectPinnedColors = newProject.ProjectPinnedColors;
+            _project.ProjectRecentColors = newProject.ProjectRecentColors;
+            _project.AvatarRingsAll = newProject.AvatarRingsAll;
+            _project.ProjectPalettes = newProject.ProjectPalettes;
 
             this.RaisePropertyChanged(nameof(Content));
 

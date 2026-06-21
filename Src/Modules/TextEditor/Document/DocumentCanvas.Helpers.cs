@@ -91,8 +91,9 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             _isCellRangeSelecting = false;
-            _cellSelTable = null;
             _tableSelections.Clear();
+            _cellFlowRanges.Clear();
+            _cellFlowFull.Clear();
 
             CommitEdit();
             _cellLayoutCache.Clear();
@@ -137,8 +138,9 @@ namespace Writersword.Modules.TextEditor.Document
                 foreach (var tbl in _tableSelections.Keys.ToList())
                     blocks.Remove(tbl);
                 _tableSelections.Clear();
+                _cellFlowRanges.Clear();
+                _cellFlowFull.Clear();
                 _isCellRangeSelecting = false;
-                _cellSelTable = null;
             }
 
             if (!hasSel) { _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1)); return; }

@@ -520,7 +520,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (block is TableBlock tableBlock)
                 {
-                    var tableLayout = _renderer.BuildTableLayout(tableBlock, textWidthPt, _styleResolver!);
+                    var tableLayout = _renderer.BuildTableLayout(tableBlock, textWidthPt, _styleResolver!, _cellFontPreview);
                     float tableXPt = textXPt + (float)tableBlock.LeftIndentPt;
                     bool byCell = tableBlock.SplitMode == TableSplitMode.ByCell;
                     float fullPageH = pageHeightPt - mt - mb;
@@ -925,7 +925,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (block is TableBlock tableBlock)
                 {
-                    var tableLayout = _renderer.BuildTableLayout(tableBlock, textWidthPt, _styleResolver!);
+                    var tableLayout = _renderer.BuildTableLayout(tableBlock, textWidthPt, _styleResolver!, _cellFontPreview);
                     float tableXPt = padWPt + (float)tableBlock.LeftIndentPt;
                     int teIdx = newTables.Count;
                     newTables.Add(new TableEntry(tableBlock, tableLayout, yPt, tableXPt, 0));

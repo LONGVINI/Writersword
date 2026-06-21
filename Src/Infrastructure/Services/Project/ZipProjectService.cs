@@ -23,6 +23,10 @@ namespace Writersword.Infrastructure.Services.Project
     {
         private readonly ILogger<ZipProjectService> _logger;
 
+        // Сохранения сериализуем: иначе параллельные вызовы пишут в один .tmp и
+        // падают с IOException (file used by another process).
+        private static readonly System.Threading.SemaphoreSlim _saveGate = new(1, 1);
+
         public ZipProjectService()
         {
             _logger = App.Services.GetService<ILogger<ZipProjectService>>()!;
@@ -44,6 +48,7 @@ namespace Writersword.Infrastructure.Services.Project
         /// </summary>
         public async Task<bool> SaveToZipAsync(ProjectFile project, string filePath)
         {
+            await _saveGate.WaitAsync();
             try
             {
                 _logger.LogDebug("Saving to ZIP: {FilePath}", filePath);
@@ -115,7 +120,11 @@ namespace Writersword.Infrastructure.Services.Project
                         project.FormatVersion,
                         project.Id,
                         project.CreatedAt,
-                        project.LastModified
+                        project.LastModified,
+                        project.ProjectPinnedColors,
+                        project.ProjectRecentColors,
+                        project.AvatarRingsAll,
+                        project.ProjectPalettes
                     };
 
                     var projectJson = JsonHelper.Serialize(projectMeta);
@@ -185,6 +194,10 @@ namespace Writersword.Infrastructure.Services.Project
                 catch { }
 
                 return false;
+            }
+            finally
+            {
+                _saveGate.Release();
             }
         }
 

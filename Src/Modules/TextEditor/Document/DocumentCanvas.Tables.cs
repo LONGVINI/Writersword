@@ -7,6 +7,41 @@ namespace Writersword.Modules.TextEditor.Document
 {
     public sealed partial class DocumentCanvas
     {
+        // Строит потоковое выделение ячеек по порядку чтения (Row*ColumnCount+Col) от точки
+        // нажатия (_selStartPara/_selStartChar) до курсора (cursorSlice/cursorChar). Заполняет
+        // Добавляет в _cellFlowFull все ячейки таблицы с reading-index в [loIdx, hiIdx] целиком.
+        // Словари должны быть очищены вызывающим.
+        private bool BuildCellFlowWhole(TableBlock table, int loIdx, int hiIdx)
+        {
+            int colCount = Math.Max(1, table.ColumnCount);
+            foreach (var cell in table.Cells)
+            {
+                int idx = cell.Row * colCount + cell.Column;
+                if (idx < loIdx || idx > hiIdx) continue;
+                _cellFlowFull.Add((table, cell.Row, cell.Column));
+            }
+            return _cellFlowFull.Count > 0;
+        }
+
+        // Поток при входе текстового выделения в таблицу извне: от верхнего-левого края (fromTop)
+        // или нижнего-правого до ячейки курсора включительно. Только ЦЕЛЬНЫЕ ячейки.
+        private bool BuildCellFlowFromEdge(TableBlock table, int cursorSlice, int cursorChar, bool fromTop)
+        {
+            _cellFlowRanges.Clear();
+            _cellFlowFull.Clear();
+            if (cursorSlice < 0 || cursorSlice >= _layouts.Count) return false;
+            var cursorCell = _layouts[cursorSlice].Cell;
+            if (cursorCell is null || cursorCell.Table != table) return false;
+
+            int colCount = Math.Max(1, table.ColumnCount);
+            int cIdx = cursorCell.Cell.Row * colCount + cursorCell.Cell.Column;
+            int maxIdx = (table.RowCount - 1) * colCount + (table.ColumnCount - 1);
+
+            int loIdx = fromTop ? 0 : cIdx;
+            int hiIdx = fromTop ? cIdx : maxIdx;
+            return BuildCellFlowWhole(table, loIdx, hiIdx);
+        }
+
         // ── Таблица — структурные операции ────────────────────────────────
         private void ExecuteTableAddRow(bool above)
         {

@@ -23,6 +23,12 @@ namespace Writersword.Core.Models.Project
         // false — хранится, но в попап не попадает. Управляется глазиком в редакторе.
         [JsonProperty("Visible")]
         public bool Visible { get; set; } = true;
+
+        // Сквозной порядок отображения (общий для локальных и глобальных). По нему
+        // сортируется объединённый список, чтобы перестановка не зависела от области
+        // и переживала перезагрузку.
+        [JsonProperty("Order")]
+        public double Order { get; set; }
     }
 
     /// <summary>

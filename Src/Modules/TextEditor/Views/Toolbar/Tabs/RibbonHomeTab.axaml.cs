@@ -251,7 +251,7 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             if (_fontPreviewTimer is not null) return;
             _fontPreviewTimer = new DispatcherTimer(DispatcherPriority.Background)
             {
-                Interval = TimeSpan.FromMilliseconds(60)
+                Interval = TimeSpan.FromMilliseconds(200)
             };
             _fontPreviewTimer.Tick += OnPreviewTimerTick;
         }

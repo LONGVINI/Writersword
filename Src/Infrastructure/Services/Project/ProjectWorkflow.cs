@@ -644,7 +644,7 @@ namespace Writersword.Infrastructure.Services.Project
 
         // ── Сохранение ────────────────────────────────────────────────────
 
-        public async Task<bool> SaveDocumentAsync(IDocumentTab documentTab)
+        public async Task<bool> SaveDocumentAsync(IDocumentTab documentTab, bool showNotification = true)
         {
             var tab = (DocumentTabViewModel)documentTab;
             try
@@ -714,7 +714,7 @@ namespace Writersword.Infrastructure.Services.Project
                     {
                         _cacheService.DeleteCache(filePath);
                         _logger.LogDebug("Project saved, cache deleted");
-                        _notificationService.ShowSuccess(Strings.Notification_ProjectSaved);
+                        if (showNotification) _notificationService.ShowSuccess(Strings.Notification_ProjectSaved);
                         ProjectSaved?.Invoke(tab);
                         return true;
                     }
@@ -768,7 +768,7 @@ namespace Writersword.Infrastructure.Services.Project
                     {
                         _cacheService.DeleteCache(filePath);
                         _logger.LogDebug("Project saved, cache deleted");
-                        _notificationService.ShowSuccess(Strings.Notification_ProjectSaved);
+                        if (showNotification) _notificationService.ShowSuccess(Strings.Notification_ProjectSaved);
                         ProjectSaved?.Invoke(tab);
                         return true;
                     }

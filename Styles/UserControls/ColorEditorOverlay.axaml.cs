@@ -95,7 +95,12 @@ namespace Writersword.Styles.UserControls
             {
                 pm.ColorPicked = SelectFromHex;
                 pm.CurrentColorProvider = () => $"#{_current.R:X2}{_current.G:X2}{_current.B:X2}";
+                pm.ActiveChanged += UpdateActivePalettePlate;
+                UpdateActivePalettePlate();
             }
+
+            // По умолчанию открыта вкладка «Мои цвета».
+            SetCollectionTab("my");
 
             // Высота панели не должна превышать высоту модуля — иначе при сжатии
             // окна редактор обрезается. Середина (ScrollViewer) прокручивается.
@@ -104,7 +109,19 @@ namespace Writersword.Styles.UserControls
                 var panel = this.FindControl<Border>("EditorPanel");
                 if (panel is null) return;
                 panel.MaxHeight = Math.Max(220, b.Height - 48);
-                panel.MaxWidth = Math.Min(640, Math.Max(120, b.Width - 48));
+
+                // Если в модуле есть место — расширяем редактор и раскладываем в две
+                // колонки (пикер слева, коллекции справа). Иначе — один столбец.
+                bool wide = b.Width >= 820;
+                panel.MaxWidth = Math.Min(wide ? 760 : 460, Math.Max(120, b.Width - 48));
+                panel.Width = wide ? 720 : 440;
+                // Перенос панелей делаем вне прохода раскладки (на следующем тике),
+                // иначе ContentPresenter падает с NullReferenceException.
+                if (_isWide != wide)
+                {
+                    _isWide = wide;
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() => SetTwoColumn(wide));
+                }
 
                 // При узкой панели кнопка пипетки сворачивается до одной иконки.
                 var lbl = this.FindControl<TextBlock>("EyedropperLabel");
@@ -166,6 +183,7 @@ namespace Writersword.Styles.UserControls
             LoadPalette();
             SetTab(0);
             this.FindControl<PaletteManagerView>("PalettesPanel")?.Refresh();
+            SetCollectionTab(_collectionTab);
 
             Color c;
             try { c = Color.Parse(hex); }
@@ -212,7 +230,7 @@ namespace Writersword.Styles.UserControls
                 var tab = CoreServices.GetService<ITabCollection>()?.ActiveTab;
                 var workflow = CoreServices.GetService<IProjectWorkflow>();
                 if (tab is not null && workflow is not null)
-                    _ = workflow.SaveDocumentAsync(tab);
+                    _ = workflow.SaveDocumentAsync(tab, showNotification: false);
             }
             catch { }
         }
@@ -377,6 +395,83 @@ namespace Writersword.Styles.UserControls
         private void OnTabWheel(object? sender, RoutedEventArgs e) => SetTab(2);
         private void OnTabValues(object? sender, RoutedEventArgs e) => SetTab(3);
         private void OnTabPalettes(object? sender, RoutedEventArgs e) => SetTab(4);
+
+        // Вкладки коллекций: Мои цвета / Стандартные / Палитры.
+        private string _collectionTab = "my";
+
+        private void OnColMy(object? sender, RoutedEventArgs e) => SetCollectionTab("my");
+        private void OnColStd(object? sender, RoutedEventArgs e) => SetCollectionTab("std");
+        private void OnColPal(object? sender, RoutedEventArgs e) => SetCollectionTab("pal");
+
+        private void SetCollectionTab(string tab)
+        {
+            _collectionTab = tab;
+            var my = this.FindControl<StackPanel>("MyColorsSection");
+            var pm = this.FindControl<PaletteManagerView>("PalettesPanel");
+            if (my is not null) my.IsVisible = tab == "my";
+            if (pm is not null)
+            {
+                pm.IsVisible = tab != "my";
+                if (tab == "std") pm.ShowSection("standard");
+                else if (tab == "pal") pm.ShowSection("palettes");
+            }
+            SetTabActive(this.FindControl<Button>("ColMyBtn"), tab == "my");
+            SetTabActive(this.FindControl<Button>("ColStdBtn"), tab == "std");
+            SetTabActive(this.FindControl<Button>("ColPalBtn"), tab == "pal");
+        }
+
+        private static void SetTabActive(Button? b, bool on)
+        {
+            if (b is null) return;
+            if (on) { if (!b.Classes.Contains("active")) b.Classes.Add("active"); }
+            else b.Classes.Remove("active");
+        }
+
+        // Широко — коллекции (вкладки, Мои цвета, палитры, кольцо) переносим в
+        // правую колонку рядом с пикером; узко — возвращаем под пикер в столбик.
+        private bool? _isWide;
+
+        private void SetTwoColumn(bool wide)
+        {
+            var pickerStack = this.FindControl<StackPanel>("PickerStack");
+            var rightHost = this.FindControl<Control>("RightHost");
+            var rightPinned = this.FindControl<StackPanel>("RightPinned");
+            var rightStack = this.FindControl<StackPanel>("RightStack");
+            if (pickerStack is null || rightHost is null || rightPinned is null || rightStack is null) return;
+
+            var tabs = this.FindControl<Border>("CollTabs");
+            var my = this.FindControl<StackPanel>("MyColorsSection");
+            var pm = this.FindControl<PaletteManagerView>("PalettesPanel");
+            var ring = this.FindControl<StackPanel>("RingSection");
+
+            // Снимаем контрол с любого текущего родителя и кладём в нужный список.
+            void Place(Control? c, Avalonia.Controls.Controls dest)
+            {
+                if (c is null) return;
+                pickerStack.Children.Remove(c);
+                rightPinned.Children.Remove(c);
+                rightStack.Children.Remove(c);
+                if (!dest.Contains(c)) dest.Add(c);
+            }
+
+            if (wide)
+            {
+                // Вкладки закреплены сверху правой колонки, прокручивается только контент.
+                Place(tabs, rightPinned.Children);
+                Place(my, rightStack.Children);
+                Place(pm, rightStack.Children);
+                Place(ring, rightStack.Children);
+            }
+            else
+            {
+                Place(tabs, pickerStack.Children);
+                Place(my, pickerStack.Children);
+                Place(pm, pickerStack.Children);
+                Place(ring, pickerStack.Children);
+            }
+            rightHost.IsVisible = wide;
+            UpdateActivePalettePlate();
+        }
 
         private void SetTab(int index)
         {
@@ -768,6 +863,22 @@ namespace Writersword.Styles.UserControls
             foreach (var cont in items.GetRealizedContainers())
                 if (cont.Bounds.Contains(p)) return items.IndexFromContainer(cont);
             return -1;
+        }
+
+        // Закреплённая плашка активной палитры: «+» добавляет текущий цвет без прокрутки.
+        private void OnPlateAdd(object? sender, RoutedEventArgs e)
+            => this.FindControl<PaletteManagerView>("PalettesPanel")?.AddCurrentColor();
+
+        private void UpdateActivePalettePlate()
+        {
+            var pm = this.FindControl<PaletteManagerView>("PalettesPanel");
+            var plate = this.FindControl<Border>("ActivePalettePlate");
+            var name = this.FindControl<TextBlock>("PlateName");
+            if (pm is null || plate is null) return;
+            // В широком режиме палитры и так справа — плашка не нужна.
+            plate.IsVisible = pm.HasActivePalette && _isWide != true;
+            if (name is not null)
+                name.Text = string.IsNullOrWhiteSpace(pm.ActivePaletteName) ? "—" : pm.ActivePaletteName;
         }
 
         // ── RGB / HEX / HSL / HSV (ручной ввод цифрами) ───────────────────
