@@ -55,6 +55,13 @@ namespace Writersword.Modules.TextEditor.Contracts
         void SetSpaceAfter(double pt);
         void ApplyStyle(string styleName);
 
+        // Снимок свойств текущего абзаца для пред-заполнения окна «Абзац» (null — нет абзаца).
+        ParagraphProperties? GetActiveParagraphProperties();
+        // Применяет поля окна «Абзац» к выделенным абзацам одной командой отмены.
+        void ApplyParagraphSettings(ParagraphProperties settings);
+        // Ставит выделенным абзацам структурный уровень (0 — основной текст, 1…9).
+        void SetOutlineLevel(int level);
+
         // ── Списки ────────────────────────────────────────────────────────
         void ToggleBulletList();
         void ToggleNumberedList();

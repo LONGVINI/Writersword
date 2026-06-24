@@ -142,12 +142,25 @@ namespace Writersword.Styles.UserControls
                 loupe.IsVisible = true;
             }
 
-            // Подпись HEX — под лупой (или над ней у нижнего края).
+            // Подпись HEX — под лупой (или над ней у нижнего края), по центру лупы.
             if (label is not null)
             {
+                // Фактические размеры подписи (на первом кадре ещё не измерены — берём запас).
+                double lw = label.Bounds.Width > 0 ? label.Bounds.Width : 70;
+                double lh = label.Bounds.Height > 0 ? label.Bounds.Height : 24;
+
+                // По вертикали: под лупой; у нижнего края — над лупой.
                 double ly = pos.Y + half + 6;
-                if (ly + 30 > Height) ly = pos.Y - half - 30;
-                Canvas.SetLeft(label, pos.X - 30);
+                if (ly + lh > Height) ly = pos.Y - half - 6 - lh;
+
+                // По горизонтали: ровно по центру лупы.
+                double lx = pos.X - lw / 2;
+
+                // Не даём подписи выходить за края экрана (важно у боковых краёв).
+                lx = Math.Clamp(lx, 4, Math.Max(4, Width - lw - 4));
+                ly = Math.Clamp(ly, 4, Math.Max(4, Height - lh - 4));
+
+                Canvas.SetLeft(label, lx);
                 Canvas.SetTop(label, ly);
                 label.IsVisible = true;
             }

@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
@@ -62,9 +63,45 @@ namespace Writersword.Styles.UserControls
 
         private bool _palettePressed, _paletteDragging;
         private int _paletteDragIndex = -1;
-        private Point _palettePressPos;
         private string? _paletteDragHex;
         private bool _paletteDirty;
+
+        // Перетаскивание свотча «Мои цвета» по принципу карточек/палитр (2D-сетка).
+        private Border? _swElem;
+        private Control? _swCell;
+        private ItemsControl? _swList;
+        private IPointer? _swPointer;
+        private int _swTarget = -1;
+        private int _swColumns = 1;
+        private double _swCellW, _swCellH;
+        private Avalonia.Animation.Transitions? _swSavedTransitions;
+        private Avalonia.Threading.DispatcherTimer? _swHoldTimer;
+
+        // ── Шум: поле случайных цветов с зумом по клику ───────────────────
+        // Битмап малого разрешения растягивается до окна с интерполяцией —
+        // получаются мягкие цветовые «облака», как в референсе.
+        private const int NoiseRes = 64;
+        private const double NoiseView = 220;
+        private WriteableBitmap? _noiseBmp;
+        private double[]? _noiseR, _noiseG, _noiseB;   // значения 0..255 для билинейной выборки
+        private string _noisePreset = "rainbow";
+        private bool _noiseBuilt;
+        private readonly Random _noiseRng = new();
+        private ScaleTransform? _noiseScaleT;
+        private TranslateTransform? _noiseTransT;
+        private Border? _noiseSolid;                   // слой однотонной заливки поверх поля
+
+        // Текущее и целевое состояние камеры + параметры анимации перехода.
+        private double _nScale = 1, _nTx, _nTy;
+        private double _nScaleStart = 1, _nTxStart, _nTyStart;
+        private double _nScaleTarget = 1, _nTxTarget, _nTyTarget;
+        private double _nAnimT;
+        private double _nAnimStep = 0.08;              // прирост за тик = 16мс / длительность
+        private Avalonia.Threading.DispatcherTimer? _noiseTimer;
+
+        // Цвет, выбранный кликом: показываем его только в конце наезда (без спойлера).
+        private Color _nPending;
+        private bool _nHasPending;
 
         public ColorEditorOverlay()
         {
@@ -128,6 +165,39 @@ namespace Writersword.Styles.UserControls
                 if (lbl is not null) lbl.IsVisible = panel.MaxWidth > 340;
 
             });
+        }
+
+        // Перехват Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z вешаем на окно, пока редактор живёт
+        // в дереве; реагируем только когда редактор открыт (IsVisible).
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToVisualTree(e);
+            TopLevel.GetTopLevel(this)?.AddHandler(
+                KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
+        }
+
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            TopLevel.GetTopLevel(this)?.RemoveHandler(KeyDownEvent, OnEditorKeyDown);
+            base.OnDetachedFromVisualTree(e);
+        }
+
+        // Отмена/повтор изменений палитр. В текстовом поле (переименование, ввод HEX)
+        // не перехватываем — там работает обычная отмена текста.
+        private void OnEditorKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (!IsVisible) return;
+            if (!e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
+
+            var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
+            if (focused is TextBox) return;
+
+            var pm = this.FindControl<PaletteManagerView>("PalettesPanel");
+            if (pm is null) return;
+
+            bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+            if (e.Key == Key.Z && !shift) { pm.Undo(); e.Handled = true; }
+            else if (e.Key == Key.Y || (e.Key == Key.Z && shift)) { pm.Redo(); e.Handled = true; }
         }
 
         /// <summary>
@@ -395,6 +465,7 @@ namespace Writersword.Styles.UserControls
         private void OnTabWheel(object? sender, RoutedEventArgs e) => SetTab(2);
         private void OnTabValues(object? sender, RoutedEventArgs e) => SetTab(3);
         private void OnTabPalettes(object? sender, RoutedEventArgs e) => SetTab(4);
+        private void OnTabNoise(object? sender, RoutedEventArgs e) => SetTab(5);
 
         // Вкладки коллекций: Мои цвета / Стандартные / Палитры.
         private string _collectionTab = "my";
@@ -479,11 +550,16 @@ namespace Writersword.Styles.UserControls
             ShowPanel("HoneycombPanel", index == 1);
             ShowPanel("WheelPanel", index == 2);
             ShowPanel("ValuesPanel", index == 3);
+            ShowPanel("NoisePanel", index == 5);
 
             ToggleClass(this.FindControl<Button>("TabSpectrumBtn"), "active", index == 0);
             ToggleClass(this.FindControl<Button>("TabHoneycombBtn"), "active", index == 1);
             ToggleClass(this.FindControl<Button>("TabWheelBtn"), "active", index == 2);
             ToggleClass(this.FindControl<Button>("TabValuesBtn"), "active", index == 3);
+            ToggleClass(this.FindControl<Button>("TabNoiseBtn"), "active", index == 5);
+
+            // Шум генерируем лениво — при первом показе вкладки.
+            if (index == 5 && !_noiseBuilt) { _noiseBuilt = true; BuildNoise(); }
         }
 
         private void ShowPanel(string name, bool visible)
@@ -638,6 +714,222 @@ namespace Writersword.Styles.UserControls
             if (_syncing) return;
             _v = Math.Clamp(e.NewValue / 100.0, 0, 1);
             ApplyHsv();
+        }
+
+        // ── Шум ───────────────────────────────────────────────────────────
+
+        // Генерирует поле случайных цветов выбранного набора и сбрасывает камеру.
+        private void BuildNoise()
+        {
+            int n = NoiseRes;
+            _noiseR = new double[n * n];
+            _noiseG = new double[n * n];
+            _noiseB = new double[n * n];
+            _noiseBmp = new WriteableBitmap(
+                new PixelSize(n, n), new Vector(96, 96),
+                PixelFormat.Bgra8888, AlphaFormat.Unpremul);
+
+            IReadOnlyList<string>? pal = _noisePreset == "palette" ? ActivePaletteColors() : null;
+
+            using (var fb = _noiseBmp.Lock())
+            {
+                int stride = fb.RowBytes;
+                var row = new byte[stride];
+                for (int y = 0; y < n; y++)
+                {
+                    for (int x = 0; x < n; x++)
+                    {
+                        var col = NoiseColor(pal);
+                        int idx = y * n + x;
+                        _noiseR[idx] = col.R; _noiseG[idx] = col.G; _noiseB[idx] = col.B;
+                        int o = x * 4;
+                        row[o] = col.B; row[o + 1] = col.G; row[o + 2] = col.R; row[o + 3] = 255;
+                    }
+                    Marshal.Copy(row, 0, IntPtr.Add(fb.Address, y * stride), stride);
+                }
+            }
+
+            var img = this.FindControl<Image>("NoiseImage");
+            if (img is not null)
+            {
+                img.Source = _noiseBmp;
+                if (img.RenderTransform is TransformGroup g)
+                {
+                    foreach (var ch in g.Children)
+                    {
+                        if (ch is ScaleTransform st) _noiseScaleT = st;
+                        else if (ch is TranslateTransform tt) _noiseTransT = tt;
+                    }
+                }
+            }
+            _noiseSolid ??= this.FindControl<Border>("NoiseSolid");
+            ResetNoiseView();
+        }
+
+        // Цвет одного пикселя по выбранному набору.
+        private Color NoiseColor(IReadOnlyList<string>? pal)
+        {
+            double R() => _noiseRng.NextDouble();
+            switch (_noisePreset)
+            {
+                case "skin":
+                    return HsvToRgb(18 + R() * 26, 0.25 + R() * 0.40, 0.55 + R() * 0.40);
+                case "pastel":
+                    return HsvToRgb(R() * 360, 0.18 + R() * 0.27, 0.85 + R() * 0.15);
+                case "gray":
+                {
+                    byte v = (byte)_noiseRng.Next(0, 256);
+                    return Color.FromRgb(v, v, v);
+                }
+                case "neon":
+                    return HsvToRgb(R() * 360, 0.90 + R() * 0.10, 0.95 + R() * 0.05);
+                case "palette":
+                    if (pal is { Count: > 0 })
+                    {
+                        try { return Color.Parse(pal[_noiseRng.Next(pal.Count)]); }
+                        catch { }
+                    }
+                    return HsvToRgb(R() * 360, 0.6 + R() * 0.4, 0.7 + R() * 0.3);
+                default: // rainbow
+                    return HsvToRgb(R() * 360, 0.6 + R() * 0.4, 0.7 + R() * 0.3);
+            }
+        }
+
+        private IReadOnlyList<string>? ActivePaletteColors() =>
+            this.FindControl<PaletteManagerView>("PalettesPanel")?.ActivePaletteColors;
+
+        private void OnNoisePresetChanged(object? sender, SelectionChangedEventArgs e)
+        {
+            if (sender is ComboBox cb && cb.SelectedItem is ComboBoxItem it && it.Tag is string key)
+            {
+                _noisePreset = key;
+                if (_noiseBuilt) BuildNoise();   // перегенерировать уже показанное поле
+            }
+        }
+
+        private void OnNoiseRegen(object? sender, RoutedEventArgs e)
+        {
+            if (_noiseBuilt) BuildNoise();
+        }
+
+        // Возврат камеры к исходному виду (плавно).
+        private void OnNoiseReset(object? sender, RoutedEventArgs e)
+        {
+            _nHasPending = false;
+            if (_noiseSolid is not null) _noiseSolid.Opacity = 0;
+            _nScaleStart = _nScale; _nTxStart = _nTx; _nTyStart = _nTy;
+            _nScaleTarget = 1; _nTxTarget = 0; _nTyTarget = 0;
+            StartNoiseAnim(300);
+        }
+
+        // Клик по полю: запоминаем цвет точки и за пару секунд приближаемся к ней
+        // «до конца» — пока этот цвет не заполнит весь квадрат. Сам цвет выдаётся
+        // только в конце наезда, чтобы не было спойлера.
+        private void OnNoisePressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (sender is not Visual v) return;
+            var p = e.GetPosition(v);
+
+            // Точка в локальных координатах изображения (до трансформации).
+            double localX = (p.X - _nTx) / _nScale;
+            double localY = (p.Y - _nTy) / _nScale;
+
+            _nPending = SampleNoiseAt(localX, localY);
+            _nHasPending = true;
+
+            // Готовим слой однотонной заливки (проявится к концу наезда).
+            if (_noiseSolid is not null)
+            {
+                _noiseSolid.Background = new SolidColorBrush(_nPending);
+                _noiseSolid.Opacity = 0;
+            }
+
+            double s2 = NoiseRes * 2.2;                 // приближаемся глубоко — почти один пиксель
+            double imgSize = NoiseView * s2;
+            _nScaleStart = _nScale; _nTxStart = _nTx; _nTyStart = _nTy;
+            _nScaleTarget = s2;
+            _nTxTarget = Math.Clamp(NoiseView / 2 - localX * s2, NoiseView - imgSize, 0);
+            _nTyTarget = Math.Clamp(NoiseView / 2 - localY * s2, NoiseView - imgSize, 0);
+            StartNoiseAnim(2000);                        // ~2 секунды плавного наезда
+            e.Handled = true;
+        }
+
+        // Билинейная выборка цвета поля в точке (в локальных координатах изображения).
+        private Color SampleNoiseAt(double localX, double localY)
+        {
+            if (_noiseR is null || _noiseG is null || _noiseB is null) return _current;
+
+            double bx = Math.Clamp(localX / NoiseView * NoiseRes - 0.5, 0, NoiseRes - 1.0001);
+            double by = Math.Clamp(localY / NoiseView * NoiseRes - 0.5, 0, NoiseRes - 1.0001);
+            int x0 = (int)Math.Floor(bx), y0 = (int)Math.Floor(by);
+            int x1 = Math.Min(x0 + 1, NoiseRes - 1), y1 = Math.Min(y0 + 1, NoiseRes - 1);
+            double fx = bx - x0, fy = by - y0;
+
+            double Sample(double[] ch)
+            {
+                double top = ch[y0 * NoiseRes + x0] * (1 - fx) + ch[y0 * NoiseRes + x1] * fx;
+                double bot = ch[y1 * NoiseRes + x0] * (1 - fx) + ch[y1 * NoiseRes + x1] * fx;
+                return top * (1 - fy) + bot * fy;
+            }
+
+            byte r = (byte)Math.Clamp(Sample(_noiseR), 0, 255);
+            byte g = (byte)Math.Clamp(Sample(_noiseG), 0, 255);
+            byte b = (byte)Math.Clamp(Sample(_noiseB), 0, 255);
+            return Color.FromRgb(r, g, b);
+        }
+
+        private void StartNoiseAnim(double durationMs)
+        {
+            _nAnimT = 0;
+            _nAnimStep = durationMs <= 0 ? 1 : 16.0 / durationMs;
+            if (_noiseTimer is null)
+            {
+                _noiseTimer = new Avalonia.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(16)
+                };
+                _noiseTimer.Tick += OnNoiseTick;
+            }
+            _noiseTimer.Start();
+        }
+
+        private void OnNoiseTick(object? sender, EventArgs e)
+        {
+            _nAnimT += _nAnimStep;
+            // ease-in-out cubic — мягкий старт и мягкая остановка.
+            double x = _nAnimT >= 1 ? 1 : _nAnimT;
+            double t = x < 0.5 ? 4 * x * x * x : 1 - Math.Pow(-2 * x + 2, 3) / 2;
+            _nScale = _nScaleStart + (_nScaleTarget - _nScaleStart) * t;
+            _nTx = _nTxStart + (_nTxTarget - _nTxStart) * t;
+            _nTy = _nTyStart + (_nTyTarget - _nTyStart) * t;
+            ApplyNoiseTransform();
+
+            // К концу наезда плавно проявляем сплошную заливку — поле становится однотонным.
+            if (_noiseSolid is not null)
+                _noiseSolid.Opacity = _nHasPending ? Math.Clamp((t - 0.6) / 0.4, 0, 1) : 0;
+
+            if (_nAnimT >= 1)
+            {
+                _noiseTimer?.Stop();
+                if (_nHasPending) { _nHasPending = false; SetColor(_nPending); }
+            }
+        }
+
+        private void ResetNoiseView()
+        {
+            _noiseTimer?.Stop();
+            _nHasPending = false;
+            if (_noiseSolid is not null) _noiseSolid.Opacity = 0;
+            _nScale = _nScaleTarget = _nScaleStart = 1;
+            _nTx = _nTxTarget = _nTxStart = 0;
+            _nTy = _nTyTarget = _nTyStart = 0;
+            ApplyNoiseTransform();
+        }
+
+        private void ApplyNoiseTransform()
+        {
+            if (_noiseScaleT is not null) { _noiseScaleT.ScaleX = _nScale; _noiseScaleT.ScaleY = _nScale; }
+            if (_noiseTransT is not null) { _noiseTransT.X = _nTx; _noiseTransT.Y = _nTy; }
         }
 
         // ── Соты ──────────────────────────────────────────────────────────
@@ -808,61 +1100,186 @@ namespace Writersword.Styles.UserControls
             _paletteDragging = false;
             _paletteDragHex = hex;
             _paletteDragIndex = IndexOfPalette(hex);
-            _palettePressPos = e.GetPosition(this);
-            e.Pointer.Capture(b);
+            _swTarget = _paletteDragIndex;
+            _swElem = b;
+            _swPointer = e.Pointer;
+            _swList = (b as Visual)?.FindAncestorOfType<ItemsControl>();
+            _swCell = _swList?.ContainerFromIndex(_paletteDragIndex);
+
+            // Удержание 80 мс -> старт драга; быстрый клик остаётся выбором цвета.
+            _swHoldTimer?.Stop();
+            _swHoldTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
+            _swHoldTimer.Tick += OnPaletteHoldTick;
+            _swHoldTimer.Start();
             e.Handled = true;
+        }
+
+        private void OnPaletteHoldTick(object? sender, EventArgs e)
+        {
+            _swHoldTimer?.Stop();
+            if (!_palettePressed || _paletteDragging || _swElem is null) return;
+            _paletteDragging = true;
+            _swPointer?.Capture(_swElem);
+            if (_swCell is not null) _swCell.ZIndex = 100;
+            _swElem.Opacity = 0.9;
+            if (_swList is not null) _swList.IsHitTestVisible = false;
+            if (_swElem.RenderTransform is TranslateTransform tt)
+            {
+                _swSavedTransitions = tt.Transitions;
+                tt.Transitions = null;
+            }
+            _swTarget = _paletteDragIndex;
+
+            if (_swList is not null)
+            {
+                var cont = _swList.ContainerFromIndex(_paletteDragIndex);
+                if (cont is not null) { _swCellW = cont.Bounds.Width; _swCellH = cont.Bounds.Height; }
+                _swColumns = PaletteColumns(_swList);
+            }
+        }
+
+        private static int PaletteColumns(ItemsControl items)
+        {
+            double minY = double.MaxValue;
+            foreach (var c in items.GetRealizedContainers())
+                if (c.Bounds.Y < minY) minY = c.Bounds.Y;
+            int cols = 0;
+            foreach (var c in items.GetRealizedContainers())
+                if (Math.Abs(c.Bounds.Y - minY) < 1.0) cols++;
+            return Math.Max(1, cols);
         }
 
         private void OnPaletteMoved(object? sender, PointerEventArgs e)
         {
-            if (!_palettePressed) return;
+            if (!_palettePressed || !_paletteDragging || _swElem is null) return;
+            var items = (sender as Visual)?.FindAncestorOfType<ItemsControl>();
+            if (items is null) return;
+            ApplyPaletteDrag(items, e.GetPosition(items));
+        }
 
-            var cur = e.GetPosition(this);
-            if (!_paletteDragging)
+        // Призрак держится под курсором (X и Y); цель — ближайшая ячейка; соседи
+        // разъезжаются с учётом колонок (перенос на строки работает).
+        private void ApplyPaletteDrag(ItemsControl items, Point pointer)
+        {
+            if (_swElem is null) return;
+
+            var dragCont = items.ContainerFromIndex(_paletteDragIndex) as Visual;
+            if (dragCont is not null && _swElem.RenderTransform is TranslateTransform tt)
             {
-                double dx = cur.X - _palettePressPos.X;
-                double dy = cur.Y - _palettePressPos.Y;
-                if (dx * dx + dy * dy < 25) return;
-                _paletteDragging = true;
+                var tl = dragCont.TranslatePoint(new Point(0, 0), items) ?? new Point();
+                tt.X = pointer.X - (tl.X + dragCont.Bounds.Width / 2.0);
+                tt.Y = pointer.Y - (tl.Y + dragCont.Bounds.Height / 2.0);
             }
 
-            var items = this.FindControl<ItemsControl>("PaletteItems");
-            if (items is null) return;
-
-            int target = TargetIndexAt(items, e.GetPosition(items));
-            if (target >= 0 && _paletteDragIndex >= 0 && target != _paletteDragIndex)
+            int target = NearestPaletteCell(items, pointer);
+            if (target < 0) return;
+            if (target != _swTarget)
             {
-                Palette.Move(_paletteDragIndex, target);
-                _paletteDragIndex = target;
+                _swTarget = target;
+                ShiftPaletteCells(items);
             }
         }
 
+        private static int NearestPaletteCell(ItemsControl items, Point p)
+        {
+            int best = -1;
+            double bestD = double.MaxValue;
+            foreach (var cont in items.GetRealizedContainers())
+            {
+                var tl = (cont as Visual)?.TranslatePoint(new Point(0, 0), items) ?? new Point();
+                double cx = tl.X + cont.Bounds.Width / 2.0;
+                double cy = tl.Y + cont.Bounds.Height / 2.0;
+                double dx = cx - p.X, dy = cy - p.Y;
+                double d = dx * dx + dy * dy;
+                if (d < bestD) { bestD = d; best = items.IndexFromContainer(cont); }
+            }
+            return best;
+        }
+
+        private void ShiftPaletteCells(ItemsControl items)
+        {
+            int cols = Math.Max(1, _swColumns);
+            foreach (var cont in items.GetRealizedContainers())
+            {
+                var sw = PaletteSwatchOf(cont);
+                if (sw is null || ReferenceEquals(sw, _swElem)) continue;
+                int i = items.IndexFromContainer(cont);
+                int ni = i;
+                if (_swTarget > _paletteDragIndex && i > _paletteDragIndex && i <= _swTarget) ni = i - 1;
+                else if (_swTarget < _paletteDragIndex && i >= _swTarget && i < _paletteDragIndex) ni = i + 1;
+
+                double tx = 0, ty = 0;
+                if (ni != i)
+                {
+                    tx = (ni % cols - i % cols) * _swCellW;
+                    ty = (ni / cols - i / cols) * _swCellH;
+                }
+                if (sw.RenderTransform is TranslateTransform tt) { tt.X = tx; tt.Y = ty; }
+            }
+        }
+
+        private static Border? PaletteSwatchOf(Control cont)
+            => (cont as ContentPresenter)?.Child as Border ?? cont as Border;
+
         private void OnPaletteReleased(object? sender, PointerReleasedEventArgs e)
         {
+            _swHoldTimer?.Stop();
             if (!_palettePressed) return;
             _palettePressed = false;
-            e.Pointer.Capture(null);
 
-            if (!_paletteDragging)
+            if (_paletteDragging)
             {
-                if (_paletteDragHex is string h) SelectFromHex(h);
+                _swPointer?.Capture(null);
+                var items = (sender as Visual)?.FindAncestorOfType<ItemsControl>();
+                int target = _swTarget;
+
+                // Снимаем смещения без анимации (иначе соседи дёргаются на фиксации),
+                // переходы вернём на следующий тик.
+                var restore = new List<(TranslateTransform t, Avalonia.Animation.Transitions? saved)>();
+                if (items is not null)
+                    foreach (var cont in items.GetRealizedContainers())
+                    {
+                        var sw = PaletteSwatchOf(cont);
+                        if (sw?.RenderTransform is TranslateTransform t)
+                        {
+                            var saved = ReferenceEquals(sw, _swElem) ? _swSavedTransitions : t.Transitions;
+                            t.Transitions = null;
+                            t.X = 0;
+                            t.Y = 0;
+                            restore.Add((t, saved));
+                        }
+                    }
+
+                if (_swElem is not null) _swElem.Opacity = 1;
+                if (_swCell is not null) _swCell.ZIndex = 0;
+
+                if (target >= 0 && _paletteDragIndex >= 0 && target != _paletteDragIndex)
+                {
+                    Palette.Move(_paletteDragIndex, target);
+                    PersistPalette();
+                    _paletteDirty = true;
+                }
+
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    foreach (var (t, saved) in restore) t.Transitions = saved;
+                });
             }
-            else
+            else if (_paletteDragHex is string h)
             {
-                PersistPalette();
-                _paletteDirty = true;
+                SelectFromHex(h);   // быстрый клик — выбрать цвет
             }
+
+            if (_swList is not null) _swList.IsHitTestVisible = true;
 
             _paletteDragging = false;
             _paletteDragIndex = -1;
             _paletteDragHex = null;
-        }
-
-        private static int TargetIndexAt(ItemsControl items, Point p)
-        {
-            foreach (var cont in items.GetRealizedContainers())
-                if (cont.Bounds.Contains(p)) return items.IndexFromContainer(cont);
-            return -1;
+            _swTarget = -1;
+            _swElem = null;
+            _swCell = null;
+            _swList = null;
+            _swPointer = null;
         }
 
         // Закреплённая плашка активной палитры: «+» добавляет текущий цвет без прокрутки.
@@ -1118,7 +1535,9 @@ namespace Writersword.Styles.UserControls
 
         private void OnCancelClick(object? sender, RoutedEventArgs e) => CompleteCancel();
 
-        private void OnCloseClick(object? sender, RoutedEventArgs e) => CompleteCancel();
+        // Крестик = закрыть и применить выбранный цвет (удобнее: выбрал и закрыл).
+        // Явный отказ — только через кнопку «Отмена».
+        private void OnCloseClick(object? sender, RoutedEventArgs e) => CompleteEditor(null);
 
         // ── Преобразования цвета и доступ к проекту ───────────────────────
 

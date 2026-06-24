@@ -69,7 +69,7 @@ namespace Writersword.Modules.TextEditor.Views.StatusBar
         {
             if (_fill is null || _thumb is null) return;
             double w = Math.Max(Bounds.Width - TrackPad * 2, 1);
-            double ratio = (Value - Minimum) / (Maximum - Minimum);
+            double ratio = ValueToRatio(Value);
             ratio = ratio < 0 ? 0 : ratio > 1 ? 1 : ratio;
             double fillW = ratio * w;
 
@@ -104,7 +104,28 @@ namespace Writersword.Modules.TextEditor.Views.StatusBar
             double w = Math.Max(Bounds.Width - TrackPad * 2, 1);
             double ratio = (x - TrackPad) / w;
             ratio = ratio < 0 ? 0 : ratio > 1 ? 1 : ratio;
-            SetCurrentValue(ValueProperty, Minimum + ratio * (Maximum - Minimum));
+            SetCurrentValue(ValueProperty, RatioToValue(ratio));
+        }
+
+        // Нелинейное отображение позиции ползунка в значение масштаба. Левая половина ползунка
+        // (ratio 0..0.5) отвечает за 25..100% — самый ходовой диапазон, поэтому ему отдана
+        // половина длины и тонкий шаг. Правая половина (0.5..1) — 100..500%. Точка 100% всегда
+        // ровно посередине ползунка.
+        private const double MidValue = 100.0;
+        private const double MidRatio = 0.5;
+
+        private double ValueToRatio(double v)
+        {
+            if (v <= MidValue)
+                return (v - Minimum) / (MidValue - Minimum) * MidRatio;
+            return MidRatio + (v - MidValue) / (Maximum - MidValue) * (1 - MidRatio);
+        }
+
+        private double RatioToValue(double r)
+        {
+            if (r <= MidRatio)
+                return Minimum + (r / MidRatio) * (MidValue - Minimum);
+            return MidValue + ((r - MidRatio) / (1 - MidRatio)) * (Maximum - MidValue);
         }
     }
 }

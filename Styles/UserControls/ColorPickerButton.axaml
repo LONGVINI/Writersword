@@ -115,7 +115,11 @@
 						</Style>
 					</Border.Styles>
 
-					<StackPanel Spacing="6" Width="280">
+					<Grid Width="280" RowDefinitions="*,Auto">
+					<ScrollViewer Grid.Row="0" MaxHeight="520"
+					              HorizontalScrollBarVisibility="Disabled"
+					              VerticalScrollBarVisibility="Auto">
+					<StackPanel Spacing="6">
 
 						<!-- Основные -->
 						<StackPanel Spacing="6">
@@ -240,7 +244,10 @@
 								<ItemsControl.ItemTemplate>
 									<DataTemplate>
 										<StackPanel Spacing="4" Margin="0,2">
-											<StackPanel Orientation="Horizontal" Spacing="6">
+											<Button Classes="ghost" Click="OnPalettePopupHeader"
+													        HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="2,1">
+													<Grid ColumnDefinitions="*,Auto">
+													<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
 												<TextBlock Text="{Binding DisplayName}" FontSize="11"
                                                            VerticalAlignment="Center"
                                                            Foreground="{DynamicResource TextSecondaryBrush}"/>
@@ -255,7 +262,13 @@
                                                                Foreground="{DynamicResource SectionProjectFgBrush}"/>
 												</Border>
 											</StackPanel>
-											<ItemsControl ItemsSource="{Binding Palette.Colors}">
+											<Path Grid.Column="1" Classes="chev" Data="M0,0 L5,5 L10,0"
+													      IsVisible="{Binding Expanded}"/>
+												<Path Grid.Column="1" Classes="chev" Data="M0,0 L5,5 L0,10"
+													      IsVisible="{Binding Expanded, Converter={x:Static res:PaletteConverters.Not}}"/>
+												</Grid>
+												</Button>
+												<ItemsControl ItemsSource="{Binding Palette.Colors}" IsVisible="{Binding Expanded}">
 												<ItemsControl.ItemsPanel>
 													<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
 												</ItemsControl.ItemsPanel>
@@ -278,6 +291,10 @@
 						<Border Height="1" Background="{DynamicResource BorderSubtleBrush}" Margin="0,2"/>
 
 						<!-- Полный редактор цвета (квадрат, колесо, соты, значения, палитры, пипетка) -->
+						</StackPanel>
+					</ScrollViewer>
+
+					<StackPanel Grid.Row="1" Spacing="6" Margin="0,6,0,0">
 						<Button Content="{x:Static res:SharedStrings.ColorPicker_Configure}"
                                 HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Center"
@@ -285,6 +302,7 @@
                                 Click="OnConfigureClick"/>
 
 					</StackPanel>
+					</Grid>
 				</Border>
 			</Flyout>
 		</Button.Flyout>

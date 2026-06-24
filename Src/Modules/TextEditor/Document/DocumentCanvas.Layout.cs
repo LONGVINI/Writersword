@@ -473,6 +473,7 @@ namespace Writersword.Modules.TextEditor.Document
             float textWidthPt = Math.Max(pageWidthPt - ml - mr, 1f);
             float canvasWPt = (float)(_canvasWidth * PxToPt);
             float pageXPt = Math.Max((canvasWPt - pageWidthPt) / 2f, 0f);
+            _layoutPageXPt = pageXPt;
             float textXPt = pageXPt + ml;
 
             float pageYPt = PageGapPt;

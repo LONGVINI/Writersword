@@ -379,10 +379,12 @@ namespace Writersword.Styles.UserControls
             if (proj is not null)
                 foreach (var p in proj.ProjectPalettes)
                     if (p.Visible && p.Colors.Count > 0)
-                        PopupPalettes.Add(new PaletteListItem { Palette = p, IsGlobal = false });
+                        PopupPalettes.Add(new PaletteListItem
+                        { Palette = p, IsGlobal = false, Expanded = !IsCollapsed("pp.pal." + p.Id) });
             foreach (var p in _global.Palettes)
                 if (p.Visible && p.Colors.Count > 0)
-                    PopupPalettes.Add(new PaletteListItem { Palette = p, IsGlobal = true });
+                    PopupPalettes.Add(new PaletteListItem
+                    { Palette = p, IsGlobal = true, Expanded = !IsCollapsed("pp.pal." + p.Id) });
             HasPalettes = PopupPalettes.Count > 0;
 
             BasicExpanded = !IsCollapsed("pp.basic");
@@ -409,6 +411,15 @@ namespace Writersword.Styles.UserControls
             }
 
             _global.CollapsedSections[key] = collapsed;
+            SaveGlobalCollapse();
+        }
+
+        // Клик по заголовку отдельной палитры в попапе — сворачивает/разворачивает её.
+        private void OnPalettePopupHeader(object? sender, RoutedEventArgs e)
+        {
+            if (sender is not Control c || c.DataContext is not PaletteListItem item) return;
+            item.Expanded = !item.Expanded;
+            _global.CollapsedSections["pp.pal." + item.Palette.Id] = !item.Expanded;
             SaveGlobalCollapse();
         }
 

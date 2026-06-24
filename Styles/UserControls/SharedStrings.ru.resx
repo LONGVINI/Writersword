@@ -66,6 +66,45 @@
   <data name="ColorEditor_TabValues" xml:space="preserve">
     <value>Значения</value>
   </data>
+  <data name="ColorEditor_TabNoise" xml:space="preserve">
+    <value>Шум</value>
+  </data>
+  <data name="ColorEditor_NoiseRegenerate" xml:space="preserve">
+    <value>Заново</value>
+    <comment>Button: generate a new random noise field</comment>
+  </data>
+  <data name="ColorEditor_NoiseRegenerateHint" xml:space="preserve">
+    <value>Сгенерировать новое поле</value>
+    <comment>Tooltip for the regenerate button on the noise tab</comment>
+  </data>
+  <data name="ColorEditor_NoiseZoomOut" xml:space="preserve">
+    <value>Отдалить</value>
+    <comment>Button: reset the noise camera back to the full view</comment>
+  </data>
+  <data name="ColorEditor_NoiseRainbow" xml:space="preserve">
+    <value>Радужный</value>
+    <comment>Noise preset: full color spectrum</comment>
+  </data>
+  <data name="ColorEditor_NoiseSkin" xml:space="preserve">
+    <value>Телесные</value>
+    <comment>Noise preset: skin tone range</comment>
+  </data>
+  <data name="ColorEditor_NoisePastel" xml:space="preserve">
+    <value>Пастель</value>
+    <comment>Noise preset: soft light tones</comment>
+  </data>
+  <data name="ColorEditor_NoiseGrayscale" xml:space="preserve">
+    <value>Оттенки серого</value>
+    <comment>Noise preset: shades of gray</comment>
+  </data>
+  <data name="ColorEditor_NoiseNeon" xml:space="preserve">
+    <value>Неон</value>
+    <comment>Noise preset: vivid neon colors</comment>
+  </data>
+  <data name="ColorEditor_NoiseFromPalette" xml:space="preserve">
+    <value>Из активной палитры</value>
+    <comment>Noise preset: colors from the active palette</comment>
+  </data>
   <data name="ColorEditor_AvatarRing" xml:space="preserve">
     <value>Кольцо вокруг аватара</value>
   </data>
@@ -107,6 +146,74 @@
   </data>
   <data name="Palette_ToggleVisible" xml:space="preserve">
     <value>Видимость в быстром попапе</value>
+  </data>
+  <data name="Palette_LoadTitle" xml:space="preserve">
+    <value>Загрузить палитру</value>
+    <comment>Button/dialog title: open the import/export palette dialog</comment>
+  </data>
+  <data name="Palette_TabImport" xml:space="preserve">
+    <value>Импорт</value>
+    <comment>Tab label: import a palette from code or file</comment>
+  </data>
+  <data name="Palette_TabExport" xml:space="preserve">
+    <value>Экспорт</value>
+    <comment>Tab label: export the active palette to code or file</comment>
+  </data>
+  <data name="Palette_NamePlaceholder" xml:space="preserve">
+    <value>Название палитры</value>
+    <comment>Placeholder: name of the imported palette</comment>
+  </data>
+  <data name="Palette_ImportHint" xml:space="preserve">
+    <value>Вставьте hex-коды (#RRGGBB через запятую, пробел или с новой строки) или наш JSON</value>
+    <comment>Placeholder: how to paste palette code for import</comment>
+  </data>
+  <data name="Palette_File" xml:space="preserve">
+    <value>Файл…</value>
+    <comment>Button: load palette code from a file</comment>
+  </data>
+  <data name="Palette_Add" xml:space="preserve">
+    <value>Добавить</value>
+    <comment>Button: create the palette from the pasted code</comment>
+  </data>
+  <data name="Palette_ImportEmpty" xml:space="preserve">
+    <value>Не найдено ни одного цвета. Вставьте hex-коды или наш JSON.</value>
+    <comment>Error: the pasted code contains no recognizable colors</comment>
+  </data>
+  <data name="Palette_HexList" xml:space="preserve">
+    <value>Hex-список</value>
+    <comment>Export format tab: plain list of hex codes</comment>
+  </data>
+  <data name="Palette_SaveFile" xml:space="preserve">
+    <value>Сохранить файл…</value>
+    <comment>Button: save the exported palette to a file</comment>
+  </data>
+  <data name="Palette_Copy" xml:space="preserve">
+    <value>Копировать</value>
+    <comment>Button: copy the exported palette code to clipboard</comment>
+  </data>
+  <data name="Palette_Close" xml:space="preserve">
+    <value>Закрыть</value>
+    <comment>Button: close the import/export palette dialog</comment>
+  </data>
+  <data name="Palette_ScopeHintTitle" xml:space="preserve">
+    <value>Область палитры</value>
+    <comment>Tooltip title: explains Local vs Global palette scope</comment>
+  </data>
+  <data name="Palette_ScopeHintBody" xml:space="preserve">
+    <value>Локальная — палитра видна только в этом проекте. Глобальная — во всех проектах.</value>
+    <comment>Tooltip body: explains Local vs Global palette scope</comment>
+  </data>
+  <data name="Palette_OpenFileTitle" xml:space="preserve">
+    <value>Открыть палитру</value>
+    <comment>File dialog title: choose a palette file to import</comment>
+  </data>
+  <data name="Palette_SaveFileTitle" xml:space="preserve">
+    <value>Сохранить палитру</value>
+    <comment>File dialog title: choose where to save the exported palette</comment>
+  </data>
+  <data name="Palette_FileTypeLabel" xml:space="preserve">
+    <value>Палитра (.json, .txt, .hex, .gpl)</value>
+    <comment>File dialog filter label for palette files</comment>
   </data>
   <data name="Common_Ok" xml:space="preserve">
     <value>ОК</value>

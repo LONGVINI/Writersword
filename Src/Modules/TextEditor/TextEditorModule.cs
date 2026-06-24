@@ -376,8 +376,49 @@ namespace Writersword.Modules.TextEditor
 
             if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
                 RefreshSessionCacheOnUIThread();
+            else
+                UpdateCachedZoomOnly();
 
             return _cachedSessionData;
+        }
+
+        /// <summary>
+        /// Освежает в сессионном кэше ТОЛЬКО масштаб из DocumentViewModel.Zoom, не трогая канвас
+        /// (каретку/скролл). Вызывается из GetSessionData на фоновом потоке (autosave-таймер):
+        /// канвас оттуда трогать нельзя, но зум — простое свойство, читать его безопасно. Без
+        /// этого фоновое сохранение писало бы устаревший масштаб (залипал старый, напр. 68%).
+        /// </summary>
+        private void UpdateCachedZoomOnly()
+        {
+            var dvm = _viewModel?.DocumentViewModel;
+            if (dvm is null) return;
+            double zoom = dvm.Zoom;
+
+            try
+            {
+                int para = 0, ch = 0;
+                double scroll = 0;
+                if (_cachedSessionData is not null)
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(_cachedSessionData);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("para", out var p)) para = p.GetInt32();
+                    if (root.TryGetProperty("ch", out var c)) ch = c.GetInt32();
+                    if (root.TryGetProperty("scroll", out var s)) scroll = s.GetDouble();
+                }
+
+                _cachedSessionData = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    para,
+                    ch,
+                    scroll,
+                    zoom
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "UpdateCachedZoomOnly: failed");
+            }
         }
 
         /// <summary>
@@ -400,8 +441,10 @@ namespace Writersword.Modules.TextEditor
 
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                 {
-                    // Восстанавливаем зум до каретки — иначе scroll-offset
-                    // будет пересчитан с неправильным зумом.
+                    // Масштаб — часть состояния вида (SessionData), а не содержимого документа.
+                    // Восстанавливаем его ДО каретки/скролла, иначе scroll-offset пересчитается с
+                    // неправильным зумом. Актуальность кэша обеспечивает GetSessionData (см. ниже):
+                    // на фоновом потоке он освежает зум из DocumentViewModel, поэтому залипания нет.
                     if (zoom > 0.01 && _viewModel?.DocumentViewModel is { } dvm)
                         dvm.Zoom = zoom;
 

@@ -132,6 +132,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             var docVm = new DocumentViewModel(document, _chunkManager, _autoReplace, _spellCheck);
             docVm.CursorContextChanged += OnCursorContextChanged;
+
+            // Зум может меняться не только ползунком, но и из канваса (Ctrl + колесо). Подписываемся
+            // на DocVm.Zoom и подтягиваем ползунок и линейку. Петли нет: если значение уже совпадает,
+            // StatusBar.Zoom не трогаем, поэтому ZoomChanged → SetZoom повторно не срабатывает.
+            docVm.PropertyChanged += (_, ev) =>
+            {
+                if (ev.PropertyName != nameof(docVm.Zoom)) return;
+                double z = docVm.Zoom;
+                if (Math.Abs(StatusBar.Zoom - z) > 0.0001)
+                    StatusBar.Zoom = z;
+                Ruler.Zoom = z;
+            };
             // Устанавливаем начальный активный параграф чтобы команды тулбара
             // (Bold, Italic и др.) работали без предварительного клика в канвас.
             if (docVm.Paragraphs.Count > 0)
@@ -497,6 +509,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetSpaceBefore(double pt) => DocumentViewModel?.SetSpaceBefore(pt);
         public void SetSpaceAfter(double pt) => DocumentViewModel?.SetSpaceAfter(pt);
         public void ApplyStyle(string name) => DocumentViewModel?.ApplyStyle(name);
+
+        public ParagraphProperties? GetActiveParagraphProperties()
+            => DocumentViewModel?.GetActiveParagraphProperties();
+        public void ApplyParagraphSettings(ParagraphProperties settings)
+            => DocumentViewModel?.ApplyParagraphSettings(settings);
+        public void SetOutlineLevel(int level) => DocumentViewModel?.SetOutlineLevel(level);
 
         public void ToggleBulletList() => DocumentViewModel?.ToggleBulletList();
         public void ToggleNumberedList() => DocumentViewModel?.ToggleNumberedList();

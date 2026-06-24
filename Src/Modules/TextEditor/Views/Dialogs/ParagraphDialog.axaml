@@ -1,0 +1,173 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Writersword.Modules.TextEditor.Views.Dialogs.ParagraphDialog"
+        Title="Абзац"
+        Width="540"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        WindowDecorations="None"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent">
+
+	<Panel>
+		<Grid>
+
+			<!-- Подложка (тень) -->
+			<Border Background="{DynamicResource BgBaseBrush}"
+                    CornerRadius="14"
+                    Margin="-2">
+				<Border.Effect>
+					<DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.5" Color="#000000"/>
+				</Border.Effect>
+			</Border>
+
+			<Border Background="{DynamicResource BgBaseBrush}"
+                    BorderBrush="{DynamicResource BorderDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="14"
+                    Padding="20">
+
+				<StackPanel Spacing="14">
+
+					<TextBlock Text="Абзац"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+					<TabControl>
+
+						<TabItem Header="Отступы и интервалы">
+							<StackPanel Spacing="12" Margin="0,12,0,0">
+
+								<TextBlock Text="Общие"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+								<Grid ColumnDefinitions="170,*">
+									<TextBlock Grid.Column="0" Text="Выравнивание:" VerticalAlignment="Center"/>
+									<ComboBox x:Name="AlignmentCombo" Grid.Column="1"
+                                              HorizontalAlignment="Left" Width="230" SelectedIndex="0">
+										<ComboBoxItem>По левому краю</ComboBoxItem>
+										<ComboBoxItem>По центру</ComboBoxItem>
+										<ComboBoxItem>По правому краю</ComboBoxItem>
+										<ComboBoxItem>По ширине</ComboBoxItem>
+									</ComboBox>
+								</Grid>
+
+								<Grid ColumnDefinitions="170,*">
+									<TextBlock Grid.Column="0" Text="Уровень:" VerticalAlignment="Center"/>
+									<ComboBox x:Name="LevelCombo" Grid.Column="1"
+                                              HorizontalAlignment="Left" Width="230" SelectedIndex="0">
+										<ComboBoxItem>Основной текст</ComboBoxItem>
+										<ComboBoxItem>Уровень 1</ComboBoxItem>
+										<ComboBoxItem>Уровень 2</ComboBoxItem>
+										<ComboBoxItem>Уровень 3</ComboBoxItem>
+										<ComboBoxItem>Уровень 4</ComboBoxItem>
+										<ComboBoxItem>Уровень 5</ComboBoxItem>
+										<ComboBoxItem>Уровень 6</ComboBoxItem>
+										<ComboBoxItem>Уровень 7</ComboBoxItem>
+										<ComboBoxItem>Уровень 8</ComboBoxItem>
+										<ComboBoxItem>Уровень 9</ComboBoxItem>
+									</ComboBox>
+								</Grid>
+
+								<TextBlock Text="Отступы"
+                                           FontWeight="SemiBold"
+                                           Margin="0,6,0,0"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+								<Grid ColumnDefinitions="170,*">
+									<TextBlock Grid.Column="0" Text="Слева (см):" VerticalAlignment="Center"/>
+									<NumericUpDown x:Name="LeftIndentBox" Grid.Column="1"
+                                                   HorizontalAlignment="Left" Width="130"
+                                                   Minimum="-55" Maximum="55" Increment="0.1" FormatString="0.##"/>
+								</Grid>
+
+								<Grid ColumnDefinitions="170,*">
+									<TextBlock Grid.Column="0" Text="Справа (см):" VerticalAlignment="Center"/>
+									<NumericUpDown x:Name="RightIndentBox" Grid.Column="1"
+                                                   HorizontalAlignment="Left" Width="130"
+                                                   Minimum="-55" Maximum="55" Increment="0.1" FormatString="0.##"/>
+								</Grid>
+
+								<Grid ColumnDefinitions="170,*">
+									<TextBlock Grid.Column="0" Text="Первая строка:" VerticalAlignment="Center"/>
+									<ComboBox x:Name="FirstLineModeCombo" Grid.Column="1"
+                                              HorizontalAlignment="Left" Width="230" SelectedIndex="0">
+										<ComboBoxItem>(нет)</ComboBoxItem>
+										<ComboBoxItem>Отступ</ComboBoxItem>
+										<ComboBoxItem>Выступ</ComboBoxItem>
+									</ComboBox>
+								</Grid>
+
+								<Grid ColumnDefinitions="170,*">
+									<TextBlock Grid.Column="0" Text="на (см):" VerticalAlignment="Center"/>
+									<NumericUpDown x:Name="FirstLineValueBox" Grid.Column="1"
+                                                   HorizontalAlignment="Left" Width="130"
+                                                   Minimum="0" Maximum="55" Increment="0.1" FormatString="0.##"/>
+								</Grid>
+
+								<TextBlock Text="Интервал"
+                                           FontWeight="SemiBold"
+                                           Margin="0,6,0,0"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+								<Grid ColumnDefinitions="170,*">
+									<TextBlock Grid.Column="0" Text="Перед (пт):" VerticalAlignment="Center"/>
+									<NumericUpDown x:Name="SpaceBeforeBox" Grid.Column="1"
+                                                   HorizontalAlignment="Left" Width="130"
+                                                   Minimum="0" Maximum="1584" Increment="1" FormatString="0.##"/>
+								</Grid>
+
+								<Grid ColumnDefinitions="170,*">
+									<TextBlock Grid.Column="0" Text="После (пт):" VerticalAlignment="Center"/>
+									<NumericUpDown x:Name="SpaceAfterBox" Grid.Column="1"
+                                                   HorizontalAlignment="Left" Width="130"
+                                                   Minimum="0" Maximum="1584" Increment="1" FormatString="0.##"/>
+								</Grid>
+
+								<Grid ColumnDefinitions="170,*">
+									<TextBlock Grid.Column="0" Text="Междустрочный:" VerticalAlignment="Center"/>
+									<ComboBox x:Name="LineSpacingCombo" Grid.Column="1"
+                                              HorizontalAlignment="Left" Width="230" SelectedIndex="0">
+										<ComboBoxItem>Одинарный</ComboBoxItem>
+										<ComboBoxItem>1.5 строки</ComboBoxItem>
+										<ComboBoxItem>Двойной</ComboBoxItem>
+										<ComboBoxItem>Множитель</ComboBoxItem>
+										<ComboBoxItem>Точно</ComboBoxItem>
+										<ComboBoxItem>Минимум</ComboBoxItem>
+									</ComboBox>
+								</Grid>
+
+								<Grid ColumnDefinitions="170,*">
+									<TextBlock Grid.Column="0" Text="значение:" VerticalAlignment="Center"/>
+									<NumericUpDown x:Name="LineSpacingValueBox" Grid.Column="1"
+                                                   HorizontalAlignment="Left" Width="130"
+                                                   Minimum="0" Maximum="1000" Increment="0.1" FormatString="0.##"/>
+								</Grid>
+
+							</StackPanel>
+						</TabItem>
+
+						<TabItem Header="Положение на странице">
+							<TextBlock Text="Появится в следующей версии."
+                                       Margin="0,12,0,0"
+                                       Foreground="{DynamicResource TextMutedBrush}"/>
+						</TabItem>
+
+					</TabControl>
+
+					<StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                Spacing="8"
+                                Margin="0,4,0,0">
+						<Button x:Name="OkBtn" Content="ОК" Width="90" IsDefault="True"/>
+						<Button x:Name="CancelBtn" Content="Отмена" Width="90" IsCancel="True"/>
+					</StackPanel>
+
+				</StackPanel>
+			</Border>
+		</Grid>
+	</Panel>
+</Window>

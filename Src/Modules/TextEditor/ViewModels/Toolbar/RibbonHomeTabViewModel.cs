@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Input;
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
 using ReactiveUI;
 using SkiaSharp;
 using Writersword.Modules.TextEditor.Models.Styles;
 using Writersword.Modules.TextEditor.Contracts;
+using Writersword.Modules.TextEditor.Views.Dialogs;
 
 namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 {
@@ -453,6 +457,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public ICommand SetLineSpacingCommand { get; }
         public ICommand SpaceBeforeCommand { get; }
         public ICommand SpaceAfterCommand { get; }
+        public ICommand OpenParagraphDialogCommand { get; }
+        public ICommand SetOutlineLevelCommand { get; }
 
         // --- Команды: буфер, правка ---
 
@@ -547,6 +553,17 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             SpaceBeforeCommand = ReactiveCommand.Create(() => _target.SetSpaceBefore(6));
             SpaceAfterCommand = ReactiveCommand.Create(() => _target.SetSpaceAfter(6));
+
+            // Кнопка «Абзац…» — открывает модальное окно настроек абзаца.
+            OpenParagraphDialogCommand = ReactiveCommand.CreateFromTask(OpenParagraphDialogAsync);
+
+            // Кнопка «Уровни» — структурный уровень выделенным абзацам.
+            // CommandParameter передаётся строкой из AXAML ("0"…"9").
+            SetOutlineLevelCommand = ReactiveCommand.Create<string>(param =>
+            {
+                if (int.TryParse(param, out int level))
+                    _target.SetOutlineLevel(Math.Clamp(level, 0, 9));
+            });
 
             CutCommand = ReactiveCommand.Create(() => _target.Cut());
             CopyCommand = ReactiveCommand.Create(() => _target.Copy());
@@ -716,6 +733,24 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             }
             _target.EndFontPreview(commit);
             _previewOriginalFont = null;
+        }
+
+        /// <summary>
+        /// Открывает модальное окно «Абзац» через главное окно Avalonia, пред-заполняя его
+        /// свойствами текущего абзаца, и применяет результат к выделенным абзацам.
+        /// </summary>
+        private async Task OpenParagraphDialogAsync()
+        {
+            var lifetime = Application.Current?.ApplicationLifetime
+                as IClassicDesktopStyleApplicationLifetime;
+            var owner = lifetime?.MainWindow;
+            if (owner is null) return;
+
+            var current = _target.GetActiveParagraphProperties() ?? new ParagraphProperties();
+            var dialog = new ParagraphDialog(current);
+            var result = await dialog.ShowDialog<ParagraphProperties?>(owner);
+            if (result is not null)
+                _target.ApplyParagraphSettings(result);
         }
     }
 }

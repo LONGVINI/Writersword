@@ -93,6 +93,36 @@ namespace Writersword.Styles.UserControls
         public static string ColorEditor_TabValues =>
             ResourceManager.GetString("ColorEditor_TabValues", resourceCulture)!;
 
+        public static string ColorEditor_TabNoise =>
+            ResourceManager.GetString("ColorEditor_TabNoise", resourceCulture)!;
+
+        public static string ColorEditor_NoiseRegenerate =>
+            ResourceManager.GetString("ColorEditor_NoiseRegenerate", resourceCulture)!;
+
+        public static string ColorEditor_NoiseRegenerateHint =>
+            ResourceManager.GetString("ColorEditor_NoiseRegenerateHint", resourceCulture)!;
+
+        public static string ColorEditor_NoiseZoomOut =>
+            ResourceManager.GetString("ColorEditor_NoiseZoomOut", resourceCulture)!;
+
+        public static string ColorEditor_NoiseRainbow =>
+            ResourceManager.GetString("ColorEditor_NoiseRainbow", resourceCulture)!;
+
+        public static string ColorEditor_NoiseSkin =>
+            ResourceManager.GetString("ColorEditor_NoiseSkin", resourceCulture)!;
+
+        public static string ColorEditor_NoisePastel =>
+            ResourceManager.GetString("ColorEditor_NoisePastel", resourceCulture)!;
+
+        public static string ColorEditor_NoiseGrayscale =>
+            ResourceManager.GetString("ColorEditor_NoiseGrayscale", resourceCulture)!;
+
+        public static string ColorEditor_NoiseNeon =>
+            ResourceManager.GetString("ColorEditor_NoiseNeon", resourceCulture)!;
+
+        public static string ColorEditor_NoiseFromPalette =>
+            ResourceManager.GetString("ColorEditor_NoiseFromPalette", resourceCulture)!;
+
         public static string ColorEditor_AvatarRing =>
             ResourceManager.GetString("ColorEditor_AvatarRing", resourceCulture)!;
 
@@ -134,6 +164,57 @@ namespace Writersword.Styles.UserControls
 
         public static string Palette_ToggleVisible =>
             ResourceManager.GetString("Palette_ToggleVisible", resourceCulture)!;
+
+        public static string Palette_LoadTitle =>
+            ResourceManager.GetString("Palette_LoadTitle", resourceCulture)!;
+
+        public static string Palette_TabImport =>
+            ResourceManager.GetString("Palette_TabImport", resourceCulture)!;
+
+        public static string Palette_TabExport =>
+            ResourceManager.GetString("Palette_TabExport", resourceCulture)!;
+
+        public static string Palette_NamePlaceholder =>
+            ResourceManager.GetString("Palette_NamePlaceholder", resourceCulture)!;
+
+        public static string Palette_ImportHint =>
+            ResourceManager.GetString("Palette_ImportHint", resourceCulture)!;
+
+        public static string Palette_File =>
+            ResourceManager.GetString("Palette_File", resourceCulture)!;
+
+        public static string Palette_Add =>
+            ResourceManager.GetString("Palette_Add", resourceCulture)!;
+
+        public static string Palette_ImportEmpty =>
+            ResourceManager.GetString("Palette_ImportEmpty", resourceCulture)!;
+
+        public static string Palette_HexList =>
+            ResourceManager.GetString("Palette_HexList", resourceCulture)!;
+
+        public static string Palette_SaveFile =>
+            ResourceManager.GetString("Palette_SaveFile", resourceCulture)!;
+
+        public static string Palette_Copy =>
+            ResourceManager.GetString("Palette_Copy", resourceCulture)!;
+
+        public static string Palette_Close =>
+            ResourceManager.GetString("Palette_Close", resourceCulture)!;
+
+        public static string Palette_ScopeHintTitle =>
+            ResourceManager.GetString("Palette_ScopeHintTitle", resourceCulture)!;
+
+        public static string Palette_ScopeHintBody =>
+            ResourceManager.GetString("Palette_ScopeHintBody", resourceCulture)!;
+
+        public static string Palette_OpenFileTitle =>
+            ResourceManager.GetString("Palette_OpenFileTitle", resourceCulture)!;
+
+        public static string Palette_SaveFileTitle =>
+            ResourceManager.GetString("Palette_SaveFileTitle", resourceCulture)!;
+
+        public static string Palette_FileTypeLabel =>
+            ResourceManager.GetString("Palette_FileTypeLabel", resourceCulture)!;
 
         public static string Common_Ok =>
             ResourceManager.GetString("Common_Ok", resourceCulture)!;

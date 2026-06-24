@@ -8,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -26,7 +27,21 @@ namespace Writersword.Styles.UserControls
     public class PaletteListItem : INotifyPropertyChanged
     {
         public ColorPalette Palette { get; init; } = new();
-        public bool IsGlobal { get; init; }
+
+        // Область палитры (глобальная/локальная). Уведомляющее свойство — чтобы смена
+        // Local/Global обновляла иконку и подсветку на месте, без пересборки списка.
+        private bool _isGlobal;
+        public bool IsGlobal
+        {
+            get => _isGlobal;
+            set
+            {
+                if (_isGlobal == value) return;
+                _isGlobal = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsGlobal)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsLocal)));
+            }
+        }
         public bool IsLocal => !IsGlobal;
 
         // Активная (выбранная) палитра. Уведомляющее свойство — чтобы менять активную
@@ -45,8 +60,25 @@ namespace Writersword.Styles.UserControls
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        // Идёт ли правка имени этой палитры (показывается поле ввода).
-        public bool IsRenaming { get; init; }
+        private void Raise(string name) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+        // Развёрнута ли палитра в быстром попапе (свой сворачиваемый заголовок).
+        private bool _expanded = true;
+        public bool Expanded
+        {
+            get => _expanded;
+            set { if (_expanded == value) return; _expanded = value; Raise(nameof(Expanded)); }
+        }
+
+        // Идёт ли правка имени этой палитры (показывается поле ввода). Уведомляющее —
+        // чтобы включать правку без пересборки списка.
+        private bool _isRenaming;
+        public bool IsRenaming
+        {
+            get => _isRenaming;
+            set { if (_isRenaming == value) return; _isRenaming = value; Raise(nameof(IsRenaming)); }
+        }
 
         public string DisplayName =>
             string.IsNullOrWhiteSpace(Palette.Name) ? "—" : Palette.Name;
@@ -57,6 +89,15 @@ namespace Writersword.Styles.UserControls
 
         // Лента-метка: первые 5 цветов палитры по очереди.
         public IReadOnlyList<string> Preview => Palette.Colors.Take(5).ToList();
+
+        // Обновить вычисляемые поля (имя/видимость/лента) после правки данных палитры.
+        public void RefreshComputed()
+        {
+            Raise(nameof(DisplayName));
+            Raise(nameof(Shown));
+            Raise(nameof(Hidden));
+            Raise(nameof(Preview));
+        }
     }
 
     /// <summary>
@@ -95,36 +136,332 @@ namespace Writersword.Styles.UserControls
         private double _dragShift;
         private int _dragTarget = -1;
 
+        // Автопрокрутка списка при перетаскивании у верх/нижнего края.
+        private ScrollViewer? _rowScroll;
+        private Point _dragPointerInScroll;
+        private Avalonia.Threading.DispatcherTimer? _autoScrollTimer;
+
         // Модальное окно управления палитрами (порядок/видимость/имена).
         private Border? _modal;
         private bool _modalOpen;
         private IDisposable? _layerBoundsSub;
         private List<(ColorPalette p, bool global, bool visible, string name)>? _modalSnapshot;
 
-        // Id палитры, у которой сейчас правится имя (поле ввода в строке).
-        private string? _renamingId;
+        // Окно загрузки палитры (вкладки импорт/экспорт), центрируется над модулем.
+        private Border? _ioModal;
+        private bool _exportJson;   // выбранный формат на вкладке экспорта
 
-        // Состояние перетаскивания свотча «Стандартных цветов».
-        private bool _stdPressed, _stdDragging;
-        private Point _stdPressPos;
-        private string? _stdDragHex;
-        private int _stdDragIndex = -1;
+        // Общее перетаскивание свотча (и «Стандартные», и цвета палитры — одинаково).
+        // Активная коллекция при драге и действие сохранения её порядка в источник.
+        private System.Collections.ObjectModel.ObservableCollection<string>? _swColors;
+        private Action? _swCommit;
 
         // Состояние перетаскивания свотча выбранной палитры.
         private bool _palPressed, _palDragging;
-        private Point _palPressPos;
         private string? _palDragHex;
         private int _palDragIndex = -1;
+        private int _palDragTarget = -1;
+        // Перетаскивание свотча по принципу карточек: сам свотч-Border = призрак,
+        // его ячейку поднимаем по ZIndex, соседи разъезжаются по X.
+        private Border? _swElem;
+        private Border? _swHeader;
+        private Panel? _swPanel;
+        private ItemsControl? _swList;
+        private IPointer? _swPointer;
+        // Метрики сетки (для расчёта смещений при переносе на строки).
+        private int _swColumns = 1;
+        private double _swCellW;
+        private double _swCellH;
+        private Avalonia.Animation.Transitions? _swSavedTransitions;
+        private Avalonia.Threading.DispatcherTimer? _swHoldTimer;
 
         public PaletteManagerView()
         {
             InitializeComponent();
 
-            // Модалку отвязываем от обычной раскладки: при открытии она переносится
-            // в OverlayLayer окна, чтобы лежать поверх всего как отдельное окно.
-            _modal = this.FindControl<Border>("OrderModalRoot");
+            // Мини-окна импорта/экспорта отвязываем от обычной раскладки: при открытии
+            // они переносятся в OverlayLayer окна, чтобы лежать поверх всего по центру.
             var host = this.FindControl<Panel>("RootHost");
-            if (_modal is not null && host is not null) host.Children.Remove(_modal);
+            _modal = null;   // окно управления по шестерёнке удалено; поле оставлено для мёртвого кода
+            _ioModal = this.FindControl<Border>("PaletteIORoot");
+            if (host is not null && _ioModal is not null) host.Children.Remove(_ioModal);
+        }
+
+        // ── Импорт / экспорт палитр ───────────────────────────────────────
+
+        // Показ/скрытие центрируемого мини-окна над модулем редактора.
+        private void ShowOverlay(Border? modal)
+        {
+            if (modal is null) return;
+            var layer = OverlayLayer.GetOverlayLayer(this);
+            var host = this.FindAncestorOfType<ColorEditorOverlay>() as Visual ?? layer;
+            if (layer is not null && !layer.Children.Contains(modal))
+                layer.Children.Add(modal);
+            PositionOverlay(layer, host, modal);
+            _layerBoundsSub?.Dispose();
+            _layerBoundsSub = (host ?? layer)?.GetObservable(BoundsProperty)
+                .Subscribe(_ => PositionOverlay(layer, host, modal));
+            modal.IsVisible = true;
+        }
+
+        private static void PositionOverlay(OverlayLayer? layer, Visual? host, Border modal)
+        {
+            if (layer is null) return;
+            host ??= layer;
+            var p = host.TranslatePoint(new Point(0, 0), layer) ?? new Point();
+            modal.HorizontalAlignment = HorizontalAlignment.Left;
+            modal.VerticalAlignment = VerticalAlignment.Top;
+            modal.Margin = new Thickness(p.X, p.Y, 0, 0);
+            modal.Width = host.Bounds.Width;
+            modal.Height = host.Bounds.Height;
+        }
+
+        private void HideOverlay(Border? modal)
+        {
+            _layerBoundsSub?.Dispose();
+            _layerBoundsSub = null;
+            if (modal is null) return;
+            modal.IsVisible = false;
+            (modal.Parent as OverlayLayer)?.Children.Remove(modal);
+        }
+
+        // ── Окно загрузки палитры (вкладки импорт/экспорт) ──
+
+        private void OnOpenPaletteIO(object? sender, RoutedEventArgs e)
+        {
+            // Сброс полей импорта.
+            var name = this.FindControl<TextBox>("ImportName");
+            var code = this.FindControl<TextBox>("ImportCode");
+            var err = this.FindControl<TextBlock>("ImportError");
+            if (name is not null) name.Text = string.Empty;
+            if (code is not null) code.Text = string.Empty;
+            if (err is not null) err.IsVisible = false;
+            ShowIoTab(import: true);
+            ShowOverlay(_ioModal);
+        }
+
+        private void OnIoTabImport(object? sender, RoutedEventArgs e) => ShowIoTab(import: true);
+        private void OnIoTabExport(object? sender, RoutedEventArgs e) => ShowIoTab(import: false);
+        private void OnIoClose(object? sender, RoutedEventArgs e) => HideOverlay(_ioModal);
+
+        private void ShowIoTab(bool import)
+        {
+            var imp = this.FindControl<StackPanel>("IoImportPanel");
+            var exp = this.FindControl<StackPanel>("IoExportPanel");
+            if (imp is not null) imp.IsVisible = import;
+            if (exp is not null) exp.IsVisible = !import;
+            ToggleClass(this.FindControl<Button>("IoImportTab"), "palAccent", import);
+            ToggleClass(this.FindControl<Button>("IoExportTab"), "palAccent", !import);
+
+            if (!import)
+            {
+                // На вкладке экспорта готовим код активной палитры.
+                _exportJson = false;
+                UpdateExportTabs();
+                FillExportCode();
+            }
+        }
+
+        private void OnImportConfirm(object? sender, RoutedEventArgs e)
+        {
+            var codeBox = this.FindControl<TextBox>("ImportCode");
+            var nameBox = this.FindControl<TextBox>("ImportName");
+            var err = this.FindControl<TextBlock>("ImportError");
+
+            var (parsedName, colors) = ParsePaletteCode(codeBox?.Text ?? string.Empty);
+            if (colors.Count == 0)
+            {
+                if (err is not null)
+                {
+                    err.Text = SharedStrings.Palette_ImportEmpty;
+                    err.IsVisible = true;
+                }
+                return;
+            }
+
+            var proj = CurrentProject;
+            if (proj is null) return;
+
+            var name = (nameBox?.Text ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(name))
+                name = string.IsNullOrWhiteSpace(parsedName) ? SharedStrings.Palette_New : parsedName!.Trim();
+
+            PushUndo();
+            double maxOrder = 0;
+            foreach (var x in proj.ProjectPalettes) if (x.Order > maxOrder) maxOrder = x.Order;
+            foreach (var x in _global.Palettes) if (x.Order > maxOrder) maxOrder = x.Order;
+
+            var p = new ColorPalette { Name = name, Order = maxOrder + 1, Colors = colors };
+            proj.ProjectPalettes.Add(p);
+            SaveProjectDoc();
+            _selected = new PaletteListItem { Palette = p, IsGlobal = false };
+            RebuildPalettes();
+            HideOverlay(_ioModal);
+        }
+
+        private async void OnImportLoadFile(object? sender, RoutedEventArgs e)
+        {
+            var top = TopLevel.GetTopLevel(this);
+            if (top is null) return;
+            var files = await top.StorageProvider.OpenFilePickerAsync(
+                new Avalonia.Platform.Storage.FilePickerOpenOptions
+                {
+                    Title = SharedStrings.Palette_OpenFileTitle,
+                    AllowMultiple = false,
+                    FileTypeFilter = new[]
+                    {
+                        new Avalonia.Platform.Storage.FilePickerFileType(SharedStrings.Palette_FileTypeLabel)
+                        {
+                            Patterns = new[] { "*.json", "*.txt", "*.hex", "*.gpl" }
+                        },
+                        Avalonia.Platform.Storage.FilePickerFileTypes.All
+                    }
+                });
+            if (files is null || files.Count == 0) return;
+            try
+            {
+                await using var s = await files[0].OpenReadAsync();
+                using var r = new System.IO.StreamReader(s);
+                var text = await r.ReadToEndAsync();
+                var code = this.FindControl<TextBox>("ImportCode");
+                if (code is not null) code.Text = text;
+                var nameBox = this.FindControl<TextBox>("ImportName");
+                if (nameBox is not null && string.IsNullOrWhiteSpace(nameBox.Text))
+                    nameBox.Text = System.IO.Path.GetFileNameWithoutExtension(files[0].Name);
+            }
+            catch { }
+        }
+
+        // Разбор кода палитры: сначала пробуем наш JSON (объект/массив строк),
+        // иначе выдёргиваем все hex-коды (#RRGGBB / RRGGBB / #RGB) из текста.
+        private static (string? name, List<string> colors) ParsePaletteCode(string text)
+        {
+            text = (text ?? string.Empty).Trim();
+            var result = new List<string>();
+            if (text.Length == 0) return (null, result);
+
+            if (text.StartsWith("{"))
+            {
+                try
+                {
+                    var p = Newtonsoft.Json.JsonConvert.DeserializeObject<ColorPalette>(text);
+                    if (p?.Colors is { Count: > 0 })
+                    {
+                        foreach (var c in p.Colors) { var n = NormHex(c); if (n != null) result.Add(n); }
+                        if (result.Count > 0) return (p.Name, result);
+                    }
+                }
+                catch { }
+            }
+            else if (text.StartsWith("["))
+            {
+                try
+                {
+                    var arr = Newtonsoft.Json.JsonConvert.DeserializeObject<List<string>>(text);
+                    if (arr is not null)
+                    {
+                        foreach (var c in arr) { var n = NormHex(c); if (n != null) result.Add(n); }
+                        if (result.Count > 0) return (null, result);
+                    }
+                }
+                catch { }
+            }
+
+            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                text, "(?<![0-9A-Fa-f])#?([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})(?![0-9A-Fa-f])"))
+            {
+                var n = NormHex(m.Groups[1].Value);
+                if (n != null && !result.Contains(n)) result.Add(n);
+            }
+            return (null, result);
+        }
+
+        // Нормализует hex в "#RRGGBB" (раскрывает 3-значную форму), иначе null.
+        private static string? NormHex(string? s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return null;
+            s = s.Trim().TrimStart('#');
+            if (s.Length == 3 && IsHex(s))
+                s = $"{s[0]}{s[0]}{s[1]}{s[1]}{s[2]}{s[2]}";
+            if (s.Length == 6 && IsHex(s)) return "#" + s.ToUpperInvariant();
+            return null;
+        }
+
+        private static bool IsHex(string s)
+        {
+            foreach (var ch in s)
+                if (!Uri.IsHexDigit(ch)) return false;
+            return true;
+        }
+
+        // ── Экспорт ──
+
+        private void OnExportHex(object? sender, RoutedEventArgs e)
+        {
+            _exportJson = false; UpdateExportTabs(); FillExportCode();
+        }
+
+        private void OnExportJson(object? sender, RoutedEventArgs e)
+        {
+            _exportJson = true; UpdateExportTabs(); FillExportCode();
+        }
+
+        private void UpdateExportTabs()
+        {
+            ToggleClass(this.FindControl<Button>("ExpHexBtn"), "palAccent", !_exportJson);
+            ToggleClass(this.FindControl<Button>("ExpJsonBtn"), "palAccent", _exportJson);
+        }
+
+        private void FillExportCode()
+        {
+            var box = this.FindControl<TextBox>("ExportCode");
+            if (box is null || _selected is null) return;
+            box.Text = _exportJson
+                // Только Name и Colors — внутренние поля (Id/Order/Visible) для шаринга не нужны.
+                ? Newtonsoft.Json.JsonConvert.SerializeObject(
+                    new { _selected.Palette.Name, _selected.Palette.Colors },
+                    Newtonsoft.Json.Formatting.Indented)
+                : string.Join(Environment.NewLine, _selected.Palette.Colors);
+        }
+
+        private async void OnExportCopy(object? sender, RoutedEventArgs e)
+        {
+            var box = this.FindControl<TextBox>("ExportCode");
+            var top = TopLevel.GetTopLevel(this);
+            if (box?.Text is string t && top?.Clipboard is not null)
+                await top.Clipboard.SetTextAsync(t);
+        }
+
+        private async void OnExportSaveFile(object? sender, RoutedEventArgs e)
+        {
+            var box = this.FindControl<TextBox>("ExportCode");
+            var top = TopLevel.GetTopLevel(this);
+            if (box is null || top is null || _selected is null) return;
+
+            var baseName = string.IsNullOrWhiteSpace(_selected.Palette.Name) ? "palette" : _selected.Palette.Name;
+            var ext = _exportJson ? "json" : "txt";
+            var file = await top.StorageProvider.SaveFilePickerAsync(
+                new Avalonia.Platform.Storage.FilePickerSaveOptions
+                {
+                    Title = SharedStrings.Palette_SaveFileTitle,
+                    SuggestedFileName = baseName + "." + ext,
+                    DefaultExtension = ext,
+                    FileTypeChoices = new[]
+                    {
+                        new Avalonia.Platform.Storage.FilePickerFileType(_exportJson ? "JSON (*.json)" : "Текст (*.txt)")
+                        {
+                            Patterns = new[] { "*." + ext }
+                        }
+                    }
+                });
+            if (file is null) return;
+            try
+            {
+                await using var s = await file.OpenWriteAsync();
+                using var w = new System.IO.StreamWriter(s);
+                await w.WriteAsync(box.Text);
+            }
+            catch { }
         }
 
         // ── Окно управления палитрами (порядок, видимость, имена) ──────────
@@ -228,18 +565,20 @@ namespace Writersword.Styles.UserControls
             int target = idx + dir;
             if (target < 0 || target >= Palettes.Count) return;
 
+            PushUndo();
             Palettes.Move(idx, target);
             if (_modalOpen) ApplyOrderToSources(); else PersistOrder();
         }
 
-        // Кнопка-карандаш: включает правку имени этой палитры (и делает её активной).
+        // Кнопка-карандаш: включает правку имени этой палитры (точечно, без пересборки).
         private void OnRenamePalette(object? sender, RoutedEventArgs e)
         {
             if (sender is Control c && c.DataContext is PaletteListItem item)
             {
-                _selected = item;
-                _renamingId = item.Palette.Id;
-                RebuildPalettes();
+                foreach (var p in Palettes)
+                    if (p.IsRenaming && !ReferenceEquals(p, item)) p.IsRenaming = false;
+                SelectPalette(item);
+                item.IsRenaming = true;
             }
             e.Handled = true;
         }
@@ -260,18 +599,21 @@ namespace Writersword.Styles.UserControls
 
         private void CommitRename(object? sender)
         {
-            if (sender is TextBox tb && tb.DataContext is PaletteListItem item)
-            {
-                item.Palette.Name = (tb.Text ?? string.Empty).Trim();
-                if (item.IsGlobal) SaveGlobal(); else SaveProjectDoc();
-            }
-            _renamingId = null;
-            RebuildPalettes();
+            if (sender is not TextBox tb || tb.DataContext is not PaletteListItem item) return;
+            var newName = (tb.Text ?? string.Empty).Trim();
+            if (item.Palette.Name == newName) { item.IsRenaming = false; return; }
+            PushUndo();
+            item.Palette.Name = newName;
+            item.IsRenaming = false;
+            item.RefreshComputed();   // обновляет отображаемое имя без пересборки списка
+            if (item.IsGlobal) SaveGlobal(); else SaveProjectDoc();
         }
 
         /// <summary>Перезагрузить данные из хранилищ (глобального и проектного).</summary>
         public void Refresh()
         {
+            _undo.Clear();
+            _redo.Clear();
             LoadGlobal();
             ApplyCollapsed();
             RebuildStandard();
@@ -350,74 +692,6 @@ namespace Writersword.Styles.UserControls
             RebuildStandard();
         }
 
-        private void OnStandardPressed(object? sender, PointerPressedEventArgs e)
-        {
-            if (sender is not Border b || b.DataContext is not string hex) return;
-
-            if (e.GetCurrentPoint(b).Properties.IsRightButtonPressed)
-            {
-                _global.StandardColors.RemoveAll(c => Norm(c) == Norm(hex));
-                SaveGlobal();
-                RebuildStandard();
-                e.Handled = true;
-                return;
-            }
-
-            _stdPressed = true;
-            _stdDragging = false;
-            _stdDragHex = hex;
-            _stdDragIndex = Standard.IndexOf(hex);
-            _stdPressPos = e.GetPosition(this);
-            e.Pointer.Capture(b);
-            e.Handled = true;
-        }
-
-        private void OnStandardMoved(object? sender, PointerEventArgs e)
-        {
-            if (!_stdPressed) return;
-
-            var cur = e.GetPosition(this);
-            if (!_stdDragging)
-            {
-                double dx = cur.X - _stdPressPos.X;
-                double dy = cur.Y - _stdPressPos.Y;
-                if (dx * dx + dy * dy < 25) return;
-                _stdDragging = true;
-            }
-
-            var items = this.FindControl<ItemsControl>("StandardItems");
-            if (items is null) return;
-
-            int target = TargetRowAt(items, e.GetPosition(items));
-            if (target >= 0 && _stdDragIndex >= 0 && target != _stdDragIndex)
-            {
-                Standard.Move(_stdDragIndex, target);
-                _stdDragIndex = target;
-            }
-        }
-
-        private void OnStandardReleased(object? sender, PointerReleasedEventArgs e)
-        {
-            if (!_stdPressed) return;
-            _stdPressed = false;
-            e.Pointer.Capture(null);
-
-            if (!_stdDragging)
-            {
-                if (_stdDragHex is string h) ColorPicked?.Invoke(h);
-            }
-            else
-            {
-                _global.StandardColors.Clear();
-                foreach (var c in Standard) _global.StandardColors.Add(Norm(c));
-                SaveGlobal();
-            }
-
-            _stdDragging = false;
-            _stdDragIndex = -1;
-            _stdDragHex = null;
-        }
-
         private void OnRemoveStandard(object? sender, RoutedEventArgs e)
         {
             if (sender is Control c && c.DataContext is string hex)
@@ -430,9 +704,96 @@ namespace Writersword.Styles.UserControls
 
         // ── Палитры ───────────────────────────────────────────────────────
 
-        private void RebuildPalettes()
+        // ── История изменений палитр (Ctrl+Z / Ctrl+Y) ───────────────────
+        // Снимок захватывает оба источника палитр (проектные и глобальные) и
+        // выбранную палитру: одна операция (например, смена области) меняет сразу
+        // оба списка.
+        private sealed class PaletteSnapshot
         {
-            var prevId = _selected?.Palette.Id;
+            public List<ColorPalette> Project = new();
+            public List<ColorPalette> Global = new();
+            public string? SelectedId;
+        }
+
+        private readonly List<PaletteSnapshot> _undo = new();
+        private readonly List<PaletteSnapshot> _redo = new();
+        private const int MaxHistory = 50;
+        private bool _restoring;
+
+        // Глубокая копия списка палитр (через JSON, чтобы копировались все поля).
+        private static List<ColorPalette> CloneList(List<ColorPalette>? src)
+        {
+            if (src is null || src.Count == 0) return new List<ColorPalette>();
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(src);
+            return Newtonsoft.Json.JsonConvert.DeserializeObject<List<ColorPalette>>(json)
+                   ?? new List<ColorPalette>();
+        }
+
+        // Снимок текущего состояния обоих источников и выбранной палитры.
+        private PaletteSnapshot Capture() => new PaletteSnapshot
+        {
+            Project = CloneList(CurrentProject?.ProjectPalettes),
+            Global = CloneList(_global.Palettes),
+            SelectedId = _selected?.Palette.Id
+        };
+
+        // Запомнить состояние ДО изменения. Вызывается в начале каждой операции,
+        // меняющей палитры. Новое действие очищает стек повтора.
+        private void PushUndo()
+        {
+            if (_restoring) return;
+            _undo.Add(Capture());
+            if (_undo.Count > MaxHistory) _undo.RemoveAt(0);
+            _redo.Clear();
+        }
+
+        // Отмена последнего изменения палитр.
+        public void Undo()
+        {
+            if (_undo.Count == 0) return;
+            _redo.Add(Capture());
+            var snap = _undo[_undo.Count - 1];
+            _undo.RemoveAt(_undo.Count - 1);
+            RestoreSnapshot(snap);
+        }
+
+        // Повтор отменённого изменения палитр.
+        public void Redo()
+        {
+            if (_redo.Count == 0) return;
+            _undo.Add(Capture());
+            var snap = _redo[_redo.Count - 1];
+            _redo.RemoveAt(_redo.Count - 1);
+            RestoreSnapshot(snap);
+        }
+
+        // Восстанавливает состояние из снимка: подменяет оба списка-источника,
+        // сохраняет и пересобирает строки, сохраняя выбранную палитру.
+        private void RestoreSnapshot(PaletteSnapshot snap)
+        {
+            _restoring = true;
+            try
+            {
+                var proj = CurrentProject;
+                if (proj is not null)
+                {
+                    proj.ProjectPalettes.Clear();
+                    foreach (var p in snap.Project) proj.ProjectPalettes.Add(p);
+                }
+                _global.Palettes.Clear();
+                foreach (var p in snap.Global) _global.Palettes.Add(p);
+
+                _selected = null;
+                SaveGlobal();
+                SaveProjectDoc();
+                RebuildPalettes(snap.SelectedId);
+            }
+            finally { _restoring = false; }
+        }
+
+        private void RebuildPalettes(string? selectId = null)
+        {
+            var prevId = selectId ?? _selected?.Palette.Id;
 
             var raw = new List<(ColorPalette p, bool g)>();
             var proj = CurrentProject;
@@ -454,7 +815,7 @@ namespace Writersword.Styles.UserControls
 
             Palettes.Clear();
             foreach (var (p, g) in raw)
-                Palettes.Add(new PaletteListItem { Palette = p, IsGlobal = g, IsActive = p.Id == activeId, IsRenaming = p.Id == _renamingId });
+                Palettes.Add(new PaletteListItem { Palette = p, IsGlobal = g, IsActive = p.Id == activeId });
 
             // Основной список — только видимые; окно управления показывает все.
             VisiblePalettes.Clear();
@@ -503,6 +864,8 @@ namespace Writersword.Styles.UserControls
             var proj = CurrentProject;
             if (proj is null) return;
 
+            PushUndo();
+
             double maxOrder = 0;
             foreach (var x in proj.ProjectPalettes) if (x.Order > maxOrder) maxOrder = x.Order;
             foreach (var x in _global.Palettes) if (x.Order > maxOrder) maxOrder = x.Order;
@@ -549,6 +912,8 @@ namespace Writersword.Styles.UserControls
         {
             if (sender is not Control c || c.DataContext is not PaletteListItem item) return;
 
+            PushUndo();
+
             if (item.IsGlobal)
             {
                 _global.Palettes.RemoveAll(x => x.Id == item.Palette.Id);
@@ -560,8 +925,16 @@ namespace Writersword.Styles.UserControls
                 if (!_modalOpen) SaveProjectDoc();
             }
 
-            if (_selected?.Palette.Id == item.Palette.Id) _selected = null;
-            RebuildPalettes();
+            // Точечно убираем строку (без Clear всего списка — иначе падает ContentPresenter).
+            bool wasActive = item.IsActive;
+            Palettes.Remove(item);
+            VisiblePalettes.Remove(item);
+            if (wasActive)
+            {
+                var next = Palettes.FirstOrDefault();
+                if (next is not null) SelectPalette(next);
+                else { _selected = null; LoadSelected(); }
+            }
             e.Handled = true;
         }
 
@@ -596,6 +969,7 @@ namespace Writersword.Styles.UserControls
         private void MoveScope(bool toGlobal)
         {
             if (_selected is null || _selected.IsGlobal == toGlobal) return;
+            PushUndo();
             var p = _selected.Palette;
             var proj = CurrentProject;
 
@@ -612,8 +986,9 @@ namespace Writersword.Styles.UserControls
             }
             SaveGlobal();
             SaveProjectDoc();
-            _selected = new PaletteListItem { Palette = p, IsGlobal = toGlobal };
-            RebuildPalettes();
+            // Обновляем область у текущего элемента на месте (без Clear/пересборки) —
+            // иконка области и подсветка Local/Global меняются по биндингу, без мерцания.
+            _selected.IsGlobal = toGlobal;
         }
 
         // Переключение видимости палитры в быстром попапе (глазик).
@@ -621,9 +996,10 @@ namespace Writersword.Styles.UserControls
         {
             if (sender is Control c && c.DataContext is PaletteListItem item)
             {
+                PushUndo();
                 item.Palette.Visible = !item.Palette.Visible;
+                item.RefreshComputed();   // обновляет иконку глаза и приглушение, без пересборки
                 if (!_modalOpen) { if (item.IsGlobal) SaveGlobal(); else SaveProjectDoc(); }
-                RebuildPalettes();
             }
             e.Handled = true;
         }
@@ -674,6 +1050,26 @@ namespace Writersword.Styles.UserControls
             }
             _dragShift = _rowCard.Bounds.Height + 4;
             _dragTarget = _rowIndex;
+
+            // Прокручиваемый предок — чтобы тянуть список к краю при драге.
+            _rowScroll = _rowCard.FindAncestorOfType<ScrollViewer>();
+            // Стартовая точка курсора — центр карточки (чтобы до первого движения
+            // таймер не считал, что курсор у края, и не прокручивал самовольно).
+            if (_rowScroll is not null)
+            {
+                var c = _rowCard.TranslatePoint(
+                    new Point(_rowCard.Bounds.Width / 2, _rowCard.Bounds.Height / 2), _rowScroll);
+                if (c is Point cp) _dragPointerInScroll = cp;
+            }
+            if (_autoScrollTimer is null)
+            {
+                _autoScrollTimer = new Avalonia.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(16)
+                };
+                _autoScrollTimer.Tick += OnAutoScrollTick;
+            }
+            _autoScrollTimer.Start();
         }
 
         private void OnPaletteRowMoved(object? sender, PointerEventArgs e)
@@ -683,8 +1079,17 @@ namespace Writersword.Styles.UserControls
             var items = (sender as Visual)?.FindAncestorOfType<ItemsControl>();
             if (items is null) return;
 
+            if (_rowScroll is not null) _dragPointerInScroll = e.GetPosition(_rowScroll);
+            ApplyDrag(items, e.GetPosition(items).Y);
+        }
+
+        // Двигает призрак за курсором и пересчитывает слот под ним.
+        private void ApplyDrag(ItemsControl items, double pointerItemsY)
+        {
+            if (_rowCard is null) return;
+
             // Призрак едет за курсором по вертикали.
-            double dy = e.GetPosition(items).Y - _rowStartItemsY;
+            double dy = pointerItemsY - _rowStartItemsY;
             if (_rowCard.RenderTransform is TranslateTransform tt) tt.Y = dy;
 
             // Слот под призраком: соседи плавно разъезжаются, освобождая место.
@@ -697,6 +1102,32 @@ namespace Writersword.Styles.UserControls
                 _dragTarget = target;
                 ShiftRows(items);
             }
+        }
+
+        // Пока курсор удерживается у верх/нижнего края списка — плавно прокручиваем
+        // его, ускоряясь ближе к краю, и пересчитываем положение призрака.
+        private void OnAutoScrollTick(object? sender, EventArgs e)
+        {
+            if (!_rowDragging || _rowScroll is null || _rowList is null) return;
+
+            double vh = _rowScroll.Viewport.Height;
+            double y = _dragPointerInScroll.Y;
+            const double zone = 45;
+
+            double step = 0;
+            if (y < zone) step = -(zone - y) / zone * 14;
+            else if (y > vh - zone) step = (y - (vh - zone)) / zone * 14;
+            if (step == 0) return;
+
+            var off = _rowScroll.Offset;
+            double maxY = Math.Max(0, _rowScroll.Extent.Height - vh);
+            double newY = Math.Clamp(off.Y + step, 0, maxY);
+            if (Math.Abs(newY - off.Y) < 0.01) return;
+            _rowScroll.Offset = new Vector(off.X, newY);
+
+            // Список сдвинулся — пересчитываем призрак и слот под текущим курсором.
+            var p = _rowScroll.TranslatePoint(_dragPointerInScroll, _rowList);
+            if (p is Point pi) ApplyDrag(_rowList, pi.Y);
         }
 
         // Сдвигает соседние строки, чтобы открыть слот на позиции _dragTarget
@@ -721,6 +1152,7 @@ namespace Writersword.Styles.UserControls
         private void OnPaletteRowReleased(object? sender, PointerReleasedEventArgs e)
         {
             _holdTimer?.Stop();
+            _autoScrollTimer?.Stop();
             if (!_rowPressed) return;
             _rowPressed = false;
 
@@ -755,6 +1187,7 @@ namespace Writersword.Styles.UserControls
 
                 if (target >= 0 && _rowIndex >= 0 && target != _rowIndex)
                 {
+                    PushUndo();
                     Palettes.Move(_rowIndex, target);
                     if (_modalOpen) ApplyOrderToSources(); else PersistOrder();
                 }
@@ -783,6 +1216,7 @@ namespace Writersword.Styles.UserControls
             _rowHeader = null;
             _rowList = null;
             _rowPointer = null;
+            _rowScroll = null;
         }
 
         private static int TargetRowAt(ItemsControl items, Point p)
@@ -830,6 +1264,7 @@ namespace Writersword.Styles.UserControls
             var hex = Current();
             if (hex is null) return;
             if (_selected.Palette.Colors.Any(c => Norm(c) == hex)) return;
+            PushUndo();
             _selected.Palette.Colors.Add(hex);
             CurrentColors.Add(hex);
             PersistSelected();
@@ -839,6 +1274,9 @@ namespace Writersword.Styles.UserControls
         // Имя активной палитры (для подписи закреплённой плашки).
         public string ActivePaletteName => _selected?.Palette.Name ?? string.Empty;
 
+        // Цвета активной палитры (для генератора шума из палитры).
+        public IReadOnlyList<string>? ActivePaletteColors => _selected?.Palette.Colors;
+
         // Есть ли активная палитра (плашка показывается только когда есть).
         public bool HasActivePalette => _selected is not null;
 
@@ -847,78 +1285,275 @@ namespace Writersword.Styles.UserControls
 
         private void OnPaletteColorPressed(object? sender, PointerPressedEventArgs e)
         {
-            if (_selected is null || sender is not Border b || b.DataContext is not string hex) return;
+            if (sender is not Border b || b.DataContext is not string hex) return;
+            var items = (b as Visual)?.FindAncestorOfType<ItemsControl>();
+            if (items is null) return;
 
+            bool isStandard = items.Name == "StandardItems";
+            if (!isStandard && _selected is null) return;
+
+            // ПКМ — удалить цвет.
             if (e.GetCurrentPoint(b).Properties.IsRightButtonPressed)
             {
-                _selected.Palette.Colors.RemoveAll(c => Norm(c) == Norm(hex));
-                for (int i = CurrentColors.Count - 1; i >= 0; i--)
-                    if (Norm(CurrentColors[i]) == Norm(hex)) CurrentColors.RemoveAt(i);
-                PersistSelected();
-                RebuildPalettes();
+                if (isStandard)
+                {
+                    _global.StandardColors.RemoveAll(c => Norm(c) == Norm(hex));
+                    SaveGlobal();
+                    RebuildStandard();
+                }
+                else
+                {
+                    PushUndo();
+                    _selected!.Palette.Colors.RemoveAll(c => Norm(c) == Norm(hex));
+                    for (int i = CurrentColors.Count - 1; i >= 0; i--)
+                        if (Norm(CurrentColors[i]) == Norm(hex)) CurrentColors.RemoveAt(i);
+                    PersistSelected();
+                    RebuildPalettes();
+                }
                 e.Handled = true;
                 return;
+            }
+
+            // Коллекция и сохранение её порядка — в зависимости от списка.
+            if (isStandard)
+            {
+                _swColors = Standard;
+                _swCommit = () =>
+                {
+                    _global.StandardColors.Clear();
+                    foreach (var c in Standard) _global.StandardColors.Add(Norm(c));
+                    SaveGlobal();
+                };
+            }
+            else
+            {
+                _swColors = CurrentColors;
+                _swCommit = () =>
+                {
+                    if (_selected is null) return;
+                    _selected.Palette.Colors.Clear();
+                    foreach (var c in CurrentColors) _selected.Palette.Colors.Add(Norm(c));
+                    PersistSelected();
+                    _selected.RefreshComputed();
+                };
             }
 
             _palPressed = true;
             _palDragging = false;
             _palDragHex = hex;
-            _palDragIndex = CurrentColors.IndexOf(hex);
-            _palPressPos = e.GetPosition(this);
-            e.Pointer.Capture(b);
+            _palDragIndex = _swColors.IndexOf(hex);
+            _palDragTarget = _palDragIndex;
+            _swElem = b;
+            _swHeader = b;
+            _swPointer = e.Pointer;
+            _swPanel = (b as Visual)?.FindAncestorOfType<Panel>();
+            _swList = items;
+
+            // Удержание 80 мс -> старт драга (как у карточек). Быстрый клик остаётся кликом.
+            _swHoldTimer?.Stop();
+            _swHoldTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
+            _swHoldTimer.Tick += OnSwatchHoldTick;
+            _swHoldTimer.Start();
             e.Handled = true;
+        }
+
+        private void OnSwatchHoldTick(object? sender, EventArgs e)
+        {
+            _swHoldTimer?.Stop();
+            if (!_palPressed || _palDragging || _swElem is null) return;
+            _palDragging = true;
+            _swPointer?.Capture(_swHeader);
+            if (_swPanel is not null) _swPanel.ZIndex = 100;
+            _swElem.Opacity = 0.9;
+            if (_swList is not null) _swList.IsHitTestVisible = false;
+            // Призрак следует за курсором мгновенно — отключаем переход на время драга.
+            if (_swElem.RenderTransform is TranslateTransform tt)
+            {
+                _swSavedTransitions = tt.Transitions;
+                tt.Transitions = null;
+            }
+            _palDragTarget = _palDragIndex;
+
+            // Метрики сетки: размер ячейки (контейнер с полями) и число колонок в строке.
+            if (_swList is not null)
+            {
+                var cont = _swList.ContainerFromIndex(_palDragIndex);
+                if (cont is not null)
+                {
+                    _swCellW = cont.Bounds.Width;
+                    _swCellH = cont.Bounds.Height;
+                }
+                _swColumns = ComputeColumns(_swList);
+            }
+        }
+
+        // Сколько ячеек помещается в одной строке (по контейнерам верхнего ряда).
+        private static int ComputeColumns(ItemsControl items)
+        {
+            double minY = double.MaxValue;
+            foreach (var c in items.GetRealizedContainers())
+                if (c.Bounds.Y < minY) minY = c.Bounds.Y;
+            int cols = 0;
+            foreach (var c in items.GetRealizedContainers())
+                if (Math.Abs(c.Bounds.Y - minY) < 1.0) cols++;
+            return Math.Max(1, cols);
         }
 
         private void OnPaletteColorMoved(object? sender, PointerEventArgs e)
         {
-            if (!_palPressed) return;
-
-            var cur = e.GetPosition(this);
-            if (!_palDragging)
-            {
-                double dx = cur.X - _palPressPos.X;
-                double dy = cur.Y - _palPressPos.Y;
-                if (dx * dx + dy * dy < 25) return;
-                _palDragging = true;
-            }
-
-            var items = this.FindControl<ItemsControl>("PaletteColorsItems");
+            if (!_palPressed || !_palDragging || _swElem is null) return;
+            var items = (sender as Visual)?.FindAncestorOfType<ItemsControl>();
             if (items is null) return;
+            ApplyColorDrag(items, e.GetPosition(items));
+        }
 
-            int target = TargetRowAt(items, e.GetPosition(items));
-            if (target >= 0 && _palDragIndex >= 0 && target != _palDragIndex)
+        // Призрак держится под курсором (X и Y); цель — ближайшая ячейка сетки;
+        // соседи разъезжаются с учётом числа колонок (перенос на строки работает).
+        private void ApplyColorDrag(ItemsControl items, Point pointer)
+        {
+            if (_swElem is null) return;
+
+            // Смещение призрака = курсор минус центр исходного слота (порядок при драге
+            // не меняем, поэтому слот фиксирован, и трансформ всегда считается верно).
+            var dragCont = items.ContainerFromIndex(_palDragIndex) as Visual;
+            if (dragCont is not null && _swElem.RenderTransform is TranslateTransform tt)
             {
-                CurrentColors.Move(_palDragIndex, target);
-                _palDragIndex = target;
+                var tl = dragCont.TranslatePoint(new Point(0, 0), items) ?? new Point();
+                tt.X = pointer.X - (tl.X + dragCont.Bounds.Width / 2.0);
+                tt.Y = pointer.Y - (tl.Y + dragCont.Bounds.Height / 2.0);
             }
+
+            int target = NearestCell(items, pointer);
+            if (target < 0) return;
+            if (target != _palDragTarget)
+            {
+                _palDragTarget = target;
+                ShiftCells(items);
+            }
+        }
+
+        // Ближайшая ячейка к курсору по 2D-расстоянию (на краях — крайняя, «упирание»).
+        private static int NearestCell(ItemsControl items, Point p)
+        {
+            int best = -1;
+            double bestD = double.MaxValue;
+            foreach (var cont in items.GetRealizedContainers())
+            {
+                var tl = (cont as Visual)?.TranslatePoint(new Point(0, 0), items) ?? new Point();
+                double cx = tl.X + cont.Bounds.Width / 2.0;
+                double cy = tl.Y + cont.Bounds.Height / 2.0;
+                double dx = cx - p.X, dy = cy - p.Y;
+                double d = dx * dx + dy * dy;
+                if (d < bestD) { bestD = d; best = items.IndexFromContainer(cont); }
+            }
+            return best;
+        }
+
+        // Сдвигает соседей в их новые слоты сетки (i±1), включая перенос между строками.
+        private void ShiftCells(ItemsControl items)
+        {
+            int cols = Math.Max(1, _swColumns);
+            foreach (var cont in items.GetRealizedContainers())
+            {
+                var sw = SwatchOf(cont);
+                if (sw is null || ReferenceEquals(sw, _swElem)) continue;
+                int i = items.IndexFromContainer(cont);
+                int ni = i;
+                if (_palDragTarget > _palDragIndex && i > _palDragIndex && i <= _palDragTarget) ni = i - 1;
+                else if (_palDragTarget < _palDragIndex && i >= _palDragTarget && i < _palDragIndex) ni = i + 1;
+
+                double tx = 0, ty = 0;
+                if (ni != i)
+                {
+                    tx = (ni % cols - i % cols) * _swCellW;
+                    ty = (ni / cols - i / cols) * _swCellH;
+                }
+                if (sw.RenderTransform is TranslateTransform tt) { tt.X = tx; tt.Y = ty; }
+            }
+        }
+
+        // Свотч-Border внутри контейнера ячейки.
+        private static Border? SwatchOf(Control cont)
+        {
+            var root = (cont as ContentPresenter)?.Child as Panel ?? cont as Panel;
+            if (root is null) return null;
+            foreach (var ch in root.Children)
+                if (ch is Border bd && bd.Classes.Contains("swatch")) return bd;
+            return null;
         }
 
         private void OnPaletteColorReleased(object? sender, PointerReleasedEventArgs e)
         {
+            _swHoldTimer?.Stop();
             if (!_palPressed) return;
             _palPressed = false;
-            e.Pointer.Capture(null);
 
-            if (!_palDragging)
+            if (_palDragging)
             {
-                if (_palDragHex is string h) ColorPicked?.Invoke(h);
+                _swPointer?.Capture(null);
+                var items = (sender as Visual)?.FindAncestorOfType<ItemsControl>();
+                int target = _palDragTarget;
+
+                // Снимаем смещения БЕЗ анимации: иначе на момент перестановки соседи
+                // дёргаются (переход тянет трансформ к нулю, пока раскладка уже прыгнула
+                // в новые слоты). Переходы вернём на следующий тик.
+                var restore = new List<(TranslateTransform t, Avalonia.Animation.Transitions? saved)>();
+                if (items is not null)
+                    foreach (var cont in items.GetRealizedContainers())
+                    {
+                        var sw = SwatchOf(cont);
+                        if (sw?.RenderTransform is TranslateTransform t)
+                        {
+                            var saved = ReferenceEquals(sw, _swElem) ? _swSavedTransitions : t.Transitions;
+                            t.Transitions = null;
+                            t.X = 0;
+                            t.Y = 0;
+                            restore.Add((t, saved));
+                        }
+                    }
+
+                if (_swElem is not null) _swElem.Opacity = 1;
+                if (_swPanel is not null) _swPanel.ZIndex = 0;
+
+                if (target >= 0 && _palDragIndex >= 0 && target != _palDragIndex && _swColors is not null)
+                {
+                    // Стандартные цвета не входят в undo палитр; для палитр — снимок.
+                    if (!ReferenceEquals(_swColors, Standard)) PushUndo();
+                    _swColors.Move(_palDragIndex, target);
+                    _swCommit?.Invoke();
+                }
+
+                // Возвращаем переходы после применения раскладки — чтобы сама фиксация
+                // не анимировалась, а будущие перетаскивания снова были плавными.
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    foreach (var (t, saved) in restore) t.Transitions = saved;
+                });
             }
-            else if (_selected is not null)
+            else if (_palDragHex is string h)
             {
-                _selected.Palette.Colors.Clear();
-                foreach (var c in CurrentColors) _selected.Palette.Colors.Add(Norm(c));
-                PersistSelected();
-                RebuildPalettes();
+                ColorPicked?.Invoke(h);   // быстрый клик — выбрать цвет
             }
+
+            if (_swList is not null) _swList.IsHitTestVisible = true;
 
             _palDragging = false;
-            _palDragIndex = -1;
             _palDragHex = null;
+            _palDragIndex = -1;
+            _palDragTarget = -1;
+            _swElem = null;
+            _swHeader = null;
+            _swPanel = null;
+            _swList = null;
+            _swPointer = null;
+            _swColors = null;
+            _swCommit = null;
         }
 
         private void OnRemovePaletteColor(object? sender, RoutedEventArgs e)
         {
             if (_selected is null || sender is not Control c || c.DataContext is not string hex) return;
+            PushUndo();
             _selected.Palette.Colors.RemoveAll(x => Norm(x) == Norm(hex));
             for (int i = CurrentColors.Count - 1; i >= 0; i--)
                 if (Norm(CurrentColors[i]) == Norm(hex)) CurrentColors.RemoveAt(i);

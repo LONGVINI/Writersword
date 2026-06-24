@@ -195,6 +195,16 @@ namespace Writersword.Modules.TextEditor.Document
         private int _selEndChar = 0;
         private bool _isSelecting;
 
+        // ── Авто-скролл при выделении у края вьюпорта ─────────────────────
+        // Пока идёт выделение и указатель у верхней/нижней границы видимой области, таймер
+        // прокручивает документ со скоростью, растущей по мере приближения к краю, и продолжает
+        // расширять выделение под текущим указателем. _autoScrollViewportPoint хранит позицию
+        // указателя ОТНОСИТЕЛЬНО вьюпорта (указатель физически не двигается во время авто-скролла,
+        // поэтому его координаты в канвасе пересчитываются из вьюпорт-позиции и текущего offset).
+        private Avalonia.Threading.DispatcherTimer? _autoScrollTimer;
+        private double _autoScrollVelocity;
+        private Point _autoScrollViewportPoint;
+
         // ── Выделение нескольких ячеек ────────────────────────────────────
         // Единый словарь: TableBlock → (startRow, startCol, endRow, endCol).
         // Обновляется при движении курсора, очищается при новом клике.
@@ -371,6 +381,12 @@ namespace Writersword.Modules.TextEditor.Document
         public Action<double>? RecommendedZoomChanged { get; set; }
 
         private double _lastPageOffsetXPx = 0;
+
+        // Горизонтальный центр страницы (pageXPt), запечённый в раскладку при последнем пересчёте.
+        // Рендер сравнивает его с центром по живому _canvasWidth и доводит страницу сдвигом, не
+        // пересобирая раскладку. Во время зум-жеста это центрирует лист без тяжёлой пагинации, а
+        // когда пересчёт уже прошёл — сдвиг нулевой (бесшовно).
+        private float _layoutPageXPt;
         private Action<double>? _pageOffsetXChanged;
         public Action<double>? PageOffsetXChanged
         {
@@ -747,10 +763,44 @@ namespace Writersword.Modules.TextEditor.Document
 
         private double _lastZoom = 1.0;
 
+        // На больших документах RebuildLayouts (пагинация всех абзацев) слишком тяжёл, чтобы
+        // гонять его на каждый шаг зума. Во время жеста масштабирования рендерим уже посчитанную
+        // раскладку, лишь масштабируя её, а полный пересчёт делаем один раз после остановки
+        // (debounce). _zooming на это время заставляет Measure/Arrange пропускать RebuildLayouts.
+        // Флаг гарантированно сбрасывается таймером и принудительно на любом вводе (см.
+        // FinishZoomImmediately), поэтому залипнуть и заблокировать отрисовку/undo не может.
+        private bool _zooming;
+        private DispatcherTimer? _zoomSettleTimer;
+
         private void OnDocVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
+            // Изменение масштаба. Ключевое: НЕ чистим кэш раскладки. В режиме страниц ширина
+            // текста от зума не зависит (она равна ширине страницы), поэтому кэш абзацев валиден,
+            // и RebuildLayouts только пере-позиционирует страницы (центрирование pageXPt) и берёт
+            // абзацы из кэша — это дёшево. Чистка кэша заставляла бы перелейаутить все абзацы на
+            // каждый шаг зума (фриз на больших документах). Текст рисуется векторно с масштабом,
+            // поэтому пере-растеризация не нужна.
+            if (e.PropertyName == nameof(DocumentViewModel.Zoom))
+            {
+                // Скролл при зуме НЕ трогаем. Горизонтально лист центрирует рендер (сдвиг по
+                // живому _canvasWidth). Вертикально — контент просто масштабируется от текущей
+                // прокрутки. Раньше тут синхронно ставилось вертикальное смещение, но ScrollViewer
+                // ещё не знал новую высоту контента (она обновляется в Measure следующим кадром),
+                // поэтому на увеличении смещение обрезалось по старой высоте: на один кадр текст
+                // прыгал вниз и сверху мелькала пустота. Без этой привязки мерцания нет.
+                _lastZoom = Zoom;
+
+                // Тяжёлый RebuildLayouts (пагинация всех абзацев) откладываем: во время жеста
+                // Measure/Arrange его пропускают (флаг _zooming), рендерится посчитанное ранее,
+                // масштабированное под новый зум. Полный пересчёт — после остановки.
+                _zooming = true;
+                InvalidateMeasure();
+                InvalidateVisual();
+                ScheduleZoomSettle();
+                return;
+            }
+
             if (e.PropertyName is nameof(DocumentViewModel.ViewMode)
-                               or nameof(DocumentViewModel.Zoom)
                                or nameof(DocumentViewModel.PageSettings))
             {
                 if (DocVm is not null)
@@ -759,30 +809,39 @@ namespace Writersword.Modules.TextEditor.Document
                 _cellLayoutCache.Clear();
                 RebuildLayouts();
 
-                if (e.PropertyName == nameof(DocumentViewModel.Zoom)
-                    && _parentScrollViewer is { } sv)
-                {
-                    double newZoom = Zoom;
-                    if (Math.Abs(newZoom - _lastZoom) > 0.001)
-                    {
-                        double docOffsetPt = _lastZoom > 0
-                            ? sv.Offset.Y / (_lastZoom * PtToPx) : 0;
-                        _lastZoom = newZoom;
-                        InvalidateMeasure();
-                        Dispatcher.UIThread.Post(() =>
-                        {
-                            double newOffsetPx = docOffsetPt * newZoom * PtToPx;
-                            sv.Offset = new Avalonia.Vector(sv.Offset.X, newOffsetPx);
-                        }, Avalonia.Threading.DispatcherPriority.Loaded);
-                        InvalidateFull();
-                        return;
-                    }
-                }
-
                 _lastZoom = Zoom;
                 InvalidateMeasure();
                 InvalidateFull();
             }
+        }
+
+        // Перезапускает таймер «зум устаканился»: пока жест идёт, он сбрасывается; через ~140мс
+        // после последнего изменения масштаба делаем полный пересчёт раскладки под новый зум.
+        private void ScheduleZoomSettle()
+        {
+            if (_zoomSettleTimer is null)
+            {
+                _zoomSettleTimer = new DispatcherTimer(DispatcherPriority.Background)
+                {
+                    Interval = TimeSpan.FromMilliseconds(140)
+                };
+                _zoomSettleTimer.Tick += (_, _) => FinishZoomImmediately();
+            }
+            _zoomSettleTimer.Stop();
+            _zoomSettleTimer.Start();
+        }
+
+        // Завершает жест масштабирования: сбрасывает флаг и делает полный пересчёт раскладки.
+        // Вызывается таймером после остановки, а также принудительно на любом вводе (клик/клавиша),
+        // чтобы _zooming не мог залипнуть и заблокировать обновление после правок/undo.
+        private void FinishZoomImmediately()
+        {
+            _zoomSettleTimer?.Stop();
+            if (!_zooming) return;
+            _zooming = false;
+            RebuildLayouts();
+            InvalidateMeasure();
+            InvalidateFull();
         }
 
         private void OnParagraphsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -978,7 +1037,14 @@ namespace Writersword.Modules.TextEditor.Document
             // при изменении текста параграфа кеш инвалидируется сам.
             // Clear() вызывает сотни BuildLayout на каждый MeasureOverride,
             // что при быстром наборе текста вызывает лавину аллокаций.
-            RebuildLayouts();
+            // Раскладка берётся из кэша (GetOrBuildLayout проверяет текст и ширину), поэтому
+            // на зуме в режиме страниц это дёшево — абзацы не перелейаутятся, меняется только
+            // позиционирование страниц.
+            // Во время зум-жеста полный пересчёт пропускаем (рендерим уже посчитанное,
+            // масштабированное), иначе на больших документах это лагает. visualH/visualW считаются
+            // из кэшированных _canvasHeight/_canvasWidth, домноженных на зум — размер корректный.
+            if (!_zooming)
+                RebuildLayouts();
 
             double visualH = Math.Max(_canvasHeight * zoom, 100);
             double visualW = availW;
@@ -997,11 +1063,21 @@ namespace Writersword.Modules.TextEditor.Document
                 ? _parentScrollViewer.Viewport.Width : finalSize.Width;
             double logicalW = Math.Max(viewportW / zoom, 1);
 
-            if (Math.Abs(logicalW - _canvasWidth) > 0.5)
+            // При изменении ширины канваса обновляем _canvasWidth. В режиме страниц это влияет
+            // только на центрирование страниц, в режиме потока — на ширину текста (см. ниже).
+            // Во время зум-жеста пересчёт пропускаем — его сделает FinishZoomImmediately.
+            if (!_zooming && Math.Abs(logicalW - _canvasWidth) > 0.5)
             {
                 _canvasWidth = logicalW;
-                _layoutCache.Clear();
-                _cellLayoutCache.Clear();
+                // В режиме страниц ширина текста равна ширине страницы и от logicalW (а значит и
+                // от зума) не зависит — кэш абзацев валиден, чистить его не нужно, иначе на зуме
+                // перелейаутился бы весь документ. RebuildLayouts только пере-центрирует страницы.
+                // В режиме потока ширина текста = logicalW, поэтому при её изменении нужен рефлоу.
+                if (DocVm?.ViewMode != EditorViewMode.Page)
+                {
+                    _layoutCache.Clear();
+                    _cellLayoutCache.Clear();
+                }
                 RebuildLayouts();
             }
 
@@ -1112,4 +1188,4 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
     }
-}
+} 

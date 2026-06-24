@@ -52,6 +52,10 @@
 			<Setter Property="HorizontalContentAlignment" Value="Center"/>
 			<Setter Property="VerticalContentAlignment" Value="Center"/>
 		</Style>
+		<Style Selector="Button.mini.palAccent">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
 		<Style Selector="Button.mini">
 			<Setter Property="Padding" Value="10,3"/>
 			<Setter Property="CornerRadius" Value="6"/>
@@ -136,11 +140,16 @@
 
 		<!-- Карточка палитры (раскрывающаяся). -->
 		<Style Selector="Border.pcard">
-			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
 			<Setter Property="CornerRadius" Value="8"/>
 			<Setter Property="Margin" Value="0,2"/>
 			<Setter Property="BorderThickness" Value="1"/>
 			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
+		<!-- Включённые палитры — фон на полутон светлее базового, чтобы сразу
+		     было видно, какие включены, а какие нет. -->
+		<Style Selector="Border.pcard.shown">
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
 		</Style>
 		<Style Selector="Border.pcard:pointerover">
 			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
@@ -182,6 +191,10 @@
 			<Setter Property="Opacity" Value="1"/>
 			<Setter Property="IsHitTestVisible" Value="True"/>
 		</Style>
+		<Style Selector="Border.pcard.active Button.rowicon">
+			<Setter Property="Opacity" Value="1"/>
+			<Setter Property="IsHitTestVisible" Value="True"/>
+		</Style>
 		<Style Selector="Button.rowicon PathIcon">
 			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
 		</Style>
@@ -212,6 +225,7 @@
 		</Style>
 	</UserControl.Styles>
 
+	<Panel x:Name="RootHost">
 	<StackPanel Spacing="10">
 
 		<!-- Стандартные цвета (глобальные). Сворачиваемая секция. -->
@@ -252,7 +266,18 @@
 							<DataTemplate>
 								<Panel Classes="swatchCell" Width="26" Height="26" Margin="3">
 									<Border Classes="swatch" Background="{Binding}"
-									        PointerPressed="OnStandardPressed" PointerMoved="OnStandardMoved" PointerReleased="OnStandardReleased"/>
+									        PointerPressed="OnPaletteColorPressed" PointerMoved="OnPaletteColorMoved" PointerReleased="OnPaletteColorReleased">
+									<Border.RenderTransform>
+										<TranslateTransform>
+											<TranslateTransform.Transitions>
+												<Transitions>
+													<DoubleTransition Property="X" Duration="0:0:0.16" Easing="CubicEaseOut"/>
+													<DoubleTransition Property="Y" Duration="0:0:0.16" Easing="CubicEaseOut"/>
+												</Transitions>
+											</TranslateTransform.Transitions>
+										</TranslateTransform>
+									</Border.RenderTransform>
+								</Border>
 									<Button Classes="removeBtn" Content="✕" Click="OnRemoveStandard"/>
 								</Panel>
 							</DataTemplate>
@@ -277,16 +302,23 @@
 				</Grid>
 			</Button>
 
-			<StackPanel x:Name="PalettesBody" Spacing="6">
+			<StackPanel x:Name="PalettesBody" Spacing="6" Margin="0,0,8,0">
 				<Grid ColumnDefinitions="*,Auto">
-					<Button Grid.Column="1" Classes="mini" Click="OnNewPalette"
-					        Content="{x:Static res:SharedStrings.Palette_New}"/>
+					<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+						<Button Classes="mini" Click="OnOpenPaletteIO"
+							        ToolTip.Tip="{x:Static res:SharedStrings.Palette_LoadTitle}">
+								<PathIcon Width="14" Height="14"
+								          Data="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+							</Button>
+												<Button Classes="mini palAccent" Click="OnNewPalette"
+						        Content="{x:Static res:SharedStrings.Palette_New}"/>
+					</StackPanel>
 				</Grid>
 
 				<ItemsControl x:Name="PaletteList" ItemsSource="{Binding Palettes, ElementName=Root}">
 					<ItemsControl.ItemTemplate>
 						<DataTemplate>
-							<Border Classes="pcard" Classes.active="{Binding IsActive}" Classes.hidden="{Binding Hidden}">
+							<Border Classes="pcard" Classes.active="{Binding IsActive}" Classes.shown="{Binding Shown}" Classes.hidden="{Binding Hidden}">
 								<Border.RenderTransform>
 									<TranslateTransform>
 										<TranslateTransform.Transitions>
@@ -304,7 +336,7 @@
 									      PointerMoved="OnPaletteRowMoved"
 									      PointerReleased="OnPaletteRowReleased">
 
-										<PathIcon Grid.Column="0" Width="14" Height="14" Margin="0,0,6,0"
+										<PathIcon Grid.Column="0" IsVisible="False" Width="14" Height="14" Margin="0,0,6,0"
 										          VerticalAlignment="Center"
 										          Foreground="{DynamicResource TextSecondaryBrush}"
 										          Data="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
@@ -324,7 +356,7 @@
 											</ItemsControl>
 										</Border>
 
-										<Panel Grid.Column="2" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center">
+										<Panel Grid.Column="0" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center">
 											<PathIcon Width="15" Height="15" IsVisible="{Binding IsGlobal}"
 											          ToolTip.Tip="Глобальная палитра"
 											          Foreground="{DynamicResource SectionGlobalFgBrush}"
@@ -391,6 +423,17 @@
 												</StackPanel>
 											</Border>
 
+											<Border Grid.Column="1" Margin="10,0,0,0"
+											        VerticalAlignment="Center" HorizontalAlignment="Left"
+											        Background="Transparent" Padding="2"
+											        behaviors:TooltipBehavior.Tip="{x:Static res:SharedStrings.Palette_ScopeHintTitle}"
+											        behaviors:TooltipBehavior.Description="{x:Static res:SharedStrings.Palette_ScopeHintBody}"
+											        behaviors:TooltipBehavior.ShowDelay="300">
+												<PathIcon Width="16" Height="16"
+												          Foreground="{DynamicResource TextPrimaryBrush}"
+												          Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
+											</Border>
+
 											<Button Grid.Column="2" Classes="addtile" Click="OnAddPaletteColor"
 											        ToolTip.Tip="{x:Static res:SharedStrings.ColorEditor_AddCurrent}">
 												<Panel Width="12" Height="12">
@@ -413,7 +456,18 @@
 													<DataTemplate>
 														<Panel Classes="swatchCell" Width="26" Height="26" Margin="3">
 															<Border Classes="swatch" Background="{Binding}"
-															        PointerPressed="OnPaletteColorPressed" PointerMoved="OnPaletteColorMoved" PointerReleased="OnPaletteColorReleased"/>
+															        PointerPressed="OnPaletteColorPressed" PointerMoved="OnPaletteColorMoved" PointerReleased="OnPaletteColorReleased">
+																<Border.RenderTransform>
+																	<TranslateTransform>
+																		<TranslateTransform.Transitions>
+																			<Transitions>
+																				<DoubleTransition Property="X" Duration="0:0:0.16" Easing="CubicEaseOut"/>
+																					<DoubleTransition Property="Y" Duration="0:0:0.16" Easing="CubicEaseOut"/>
+																			</Transitions>
+																		</TranslateTransform.Transitions>
+																	</TranslateTransform>
+																</Border.RenderTransform>
+															</Border>
 															<Button Classes="removeBtn" Content="✕" Click="OnRemovePaletteColor"/>
 														</Panel>
 													</DataTemplate>
@@ -431,4 +485,60 @@
 		</StackPanel>
 
 	</StackPanel>
+
+	<!-- Центрируемые мини-окна импорта и экспорта палитр. В конструкторе
+	     выносятся в OverlayLayer окна и центрируются над модулем редактора. -->
+	<!-- Центрируемое окно загрузки палитры: две вкладки — импорт и экспорт. -->
+	<Border x:Name="PaletteIORoot" IsVisible="False" Background="#99000000">
+		<Border Width="380" MaxHeight="560" HorizontalAlignment="Center" VerticalAlignment="Center"
+		        Background="{DynamicResource BgBaseBrush}" CornerRadius="12" Padding="16"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}" BorderThickness="1">
+			<StackPanel Spacing="10">
+				<Grid ColumnDefinitions="Auto,Auto,*">
+					<Button Grid.Column="0" x:Name="IoImportTab" Classes="mini palAccent"
+					        Click="OnIoTabImport" Margin="0,0,6,0"
+					        Content="{x:Static res:SharedStrings.Palette_TabImport}"/>
+					<Button Grid.Column="1" x:Name="IoExportTab" Classes="mini"
+					        Click="OnIoTabExport"
+					        Content="{x:Static res:SharedStrings.Palette_TabExport}"/>
+				</Grid>
+
+				<!-- Импорт -->
+				<StackPanel x:Name="IoImportPanel" Spacing="10">
+					<TextBox x:Name="ImportName"
+					         PlaceholderText="{x:Static res:SharedStrings.Palette_NamePlaceholder}"/>
+					<TextBox x:Name="ImportCode" AcceptsReturn="True" Height="150" TextWrapping="Wrap"
+					         PlaceholderText="{x:Static res:SharedStrings.Palette_ImportHint}"/>
+					<TextBlock x:Name="ImportError" IsVisible="False" FontSize="11" Foreground="#E0573B"/>
+					<Grid ColumnDefinitions="Auto,*,Auto">
+						<Button Grid.Column="0" Classes="mini" Click="OnImportLoadFile"
+						        Content="{x:Static res:SharedStrings.Palette_File}"/>
+						<Button Grid.Column="2" Classes="mini palAccent" Click="OnImportConfirm"
+						        Content="{x:Static res:SharedStrings.Palette_Add}"/>
+					</Grid>
+				</StackPanel>
+
+				<!-- Экспорт -->
+				<StackPanel x:Name="IoExportPanel" Spacing="10" IsVisible="False">
+					<StackPanel Orientation="Horizontal" Spacing="6">
+						<Button x:Name="ExpHexBtn" Classes="mini" Click="OnExportHex"
+						        Content="{x:Static res:SharedStrings.Palette_HexList}"/>
+						<Button x:Name="ExpJsonBtn" Classes="mini" Click="OnExportJson" Content="JSON"/>
+					</StackPanel>
+					<TextBox x:Name="ExportCode" AcceptsReturn="True" Height="160" IsReadOnly="True"
+					         TextWrapping="Wrap"/>
+					<Grid ColumnDefinitions="Auto,*,Auto">
+						<Button Grid.Column="0" Classes="mini" Click="OnExportSaveFile"
+						        Content="{x:Static res:SharedStrings.Palette_SaveFile}"/>
+						<Button Grid.Column="2" Classes="mini palAccent" Click="OnExportCopy"
+						        Content="{x:Static res:SharedStrings.Palette_Copy}"/>
+					</Grid>
+				</StackPanel>
+
+				<Button HorizontalAlignment="Right" Classes="mini" Click="OnIoClose"
+				        Content="{x:Static res:SharedStrings.Palette_Close}"/>
+			</StackPanel>
+		</Border>
+	</Border>
+	</Panel>
 </UserControl>

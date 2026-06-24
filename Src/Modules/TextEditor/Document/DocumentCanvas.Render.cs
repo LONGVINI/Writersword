@@ -105,7 +105,7 @@ namespace Writersword.Modules.TextEditor.Document
                     // Битмап рисуем по его реальному bitmapTopY (не scrollY).
                     canvas.DrawBitmap(cached!, 0, cachedScrollY);
 
-                    if (_caretVisible)
+                    if (_caretVisible && !_zooming)
                     {
                         canvas.Save();
                         canvas.Scale(scale, scale);
@@ -174,7 +174,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (toDisplay is not null)
                     canvas.DrawBitmap(toDisplay, 0, bitmapTopY);
 
-                if (_caretVisible)
+                if (_caretVisible && !_zooming)
                 {
                     canvas.Save();
                     canvas.Scale(scale, scale);
@@ -189,9 +189,9 @@ namespace Writersword.Modules.TextEditor.Document
                 canvas.Scale(scale, scale);
                 var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
                 if (mode == EditorViewMode.Page)
-                    RenderPageMode(canvas, layouts, pages, tables, canvasHeightPt, canvasWidth, _caretVisible);
+                    RenderPageMode(canvas, layouts, pages, tables, canvasHeightPt, canvasWidth, _caretVisible && !_zooming);
                 else
-                    RenderFlowMode(canvas, mode, layouts, tables, canvasHeightPt, canvasWidth, _caretVisible);
+                    RenderFlowMode(canvas, mode, layouts, tables, canvasHeightPt, canvasWidth, _caretVisible && !_zooming);
                 canvas.Restore();
             }
         }
@@ -414,7 +414,29 @@ namespace Writersword.Modules.TextEditor.Document
         {
             float canvasWPt = (float)(canvasWidth * PxToPt);
 
-            canvas.DrawRect(0, 0, canvasWPt, canvasHeightPt, _paintCanvasBg);
+            // Фон заливаем не по canvasWPt (это viewportW/zoom), а по реальным границам канваса:
+            // при увеличении масштаба Bounds шире viewportW, и правый/нижний край оставался бы
+            // незакрашенным — оттуда и проступал чёрный фон при зуме. Переводим Bounds (px экрана)
+            // в координаты рисования (pt до масштаба): экран = pt * PtToPx * zoom, поэтому
+            // pt = px / (PtToPx * zoom). Берём максимум и небольшой запас, чтобы не мерцал край.
+            double z = Math.Max(Zoom, 0.01);
+            float boundsWPt = (float)(Bounds.Width / (PtToPx * z));
+            float boundsHPt = (float)(Bounds.Height / (PtToPx * z));
+            float bgWPt = Math.Max(canvasWPt, boundsWPt) + 2f;
+            float bgHPt = Math.Max(canvasHeightPt, boundsHPt) + 2f;
+
+            canvas.DrawRect(0, 0, bgWPt, bgHPt, _paintCanvasBg);
+
+            // Горизонтальное до-центрирование без пересборки раскладки. pageXPt запечён в позиции
+            // абзацев/страниц при последнем пересчёте (под _canvasWidth того момента). Здесь
+            // считаем центр по ЖИВОМУ _canvasWidth и сдвигаем весь контент на разницу. Во время
+            // зум-жеста (раскладка не пересобирается) это держит лист по центру; когда пересчёт
+            // прошёл — _layoutPageXPt совпадает с текущим, сдвиг нулевой. Фон уже залит выше и не
+            // сдвигается, поэтому правый край не оголяется.
+            float curPageXPt = Math.Max((canvasWPt - GetPageWidthPt()) / 2f, 0f);
+            float pageXShiftPt = curPageXPt - _layoutPageXPt;
+            if (MathF.Abs(pageXShiftPt) > 0.01f)
+                canvas.Translate(pageXShiftPt, 0);
 
             var (firstPage, lastPage) = GetVisiblePageRange(pages);
 

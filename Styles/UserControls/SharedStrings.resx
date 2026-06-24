@@ -84,6 +84,46 @@
     <value>Values</value>
     <comment>Tab label: manual numeric color entry (HEX, RGB, HSL, HSV)</comment>
   </data>
+  <data name="ColorEditor_TabNoise" xml:space="preserve">
+    <value>Noise</value>
+    <comment>Tab label: random color noise field with click-to-zoom</comment>
+  </data>
+  <data name="ColorEditor_NoiseRegenerate" xml:space="preserve">
+    <value>Regenerate</value>
+    <comment>Button: generate a new random noise field</comment>
+  </data>
+  <data name="ColorEditor_NoiseRegenerateHint" xml:space="preserve">
+    <value>Generate a new field</value>
+    <comment>Tooltip for the regenerate button on the noise tab</comment>
+  </data>
+  <data name="ColorEditor_NoiseZoomOut" xml:space="preserve">
+    <value>Zoom out</value>
+    <comment>Button: reset the noise camera back to the full view</comment>
+  </data>
+  <data name="ColorEditor_NoiseRainbow" xml:space="preserve">
+    <value>Rainbow</value>
+    <comment>Noise preset: full color spectrum</comment>
+  </data>
+  <data name="ColorEditor_NoiseSkin" xml:space="preserve">
+    <value>Skin tones</value>
+    <comment>Noise preset: skin tone range</comment>
+  </data>
+  <data name="ColorEditor_NoisePastel" xml:space="preserve">
+    <value>Pastel</value>
+    <comment>Noise preset: soft light tones</comment>
+  </data>
+  <data name="ColorEditor_NoiseGrayscale" xml:space="preserve">
+    <value>Grayscale</value>
+    <comment>Noise preset: shades of gray</comment>
+  </data>
+  <data name="ColorEditor_NoiseNeon" xml:space="preserve">
+    <value>Neon</value>
+    <comment>Noise preset: vivid neon colors</comment>
+  </data>
+  <data name="ColorEditor_NoiseFromPalette" xml:space="preserve">
+    <value>From palette</value>
+    <comment>Noise preset: colors from the active palette</comment>
+  </data>
   <data name="ColorEditor_AvatarRing" xml:space="preserve">
     <value>Ring around avatar</value>
     <comment>Checkbox: draw a colored ring of the character color around the avatar</comment>
@@ -139,6 +179,74 @@
   <data name="Palette_ToggleVisible" xml:space="preserve">
     <value>Show / hide in quick popup</value>
     <comment>Tooltip: toggle palette visibility in the quick color popup</comment>
+  </data>
+  <data name="Palette_LoadTitle" xml:space="preserve">
+    <value>Load palette</value>
+    <comment>Button/dialog title: open the import/export palette dialog</comment>
+  </data>
+  <data name="Palette_TabImport" xml:space="preserve">
+    <value>Import</value>
+    <comment>Tab label: import a palette from code or file</comment>
+  </data>
+  <data name="Palette_TabExport" xml:space="preserve">
+    <value>Export</value>
+    <comment>Tab label: export the active palette to code or file</comment>
+  </data>
+  <data name="Palette_NamePlaceholder" xml:space="preserve">
+    <value>Palette name</value>
+    <comment>Placeholder: name of the imported palette</comment>
+  </data>
+  <data name="Palette_ImportHint" xml:space="preserve">
+    <value>Paste hex codes (#RRGGBB separated by comma, space or new line) or our JSON</value>
+    <comment>Placeholder: how to paste palette code for import</comment>
+  </data>
+  <data name="Palette_File" xml:space="preserve">
+    <value>File…</value>
+    <comment>Button: load palette code from a file</comment>
+  </data>
+  <data name="Palette_Add" xml:space="preserve">
+    <value>Add</value>
+    <comment>Button: create the palette from the pasted code</comment>
+  </data>
+  <data name="Palette_ImportEmpty" xml:space="preserve">
+    <value>No colors found. Paste hex codes or our JSON.</value>
+    <comment>Error: the pasted code contains no recognizable colors</comment>
+  </data>
+  <data name="Palette_HexList" xml:space="preserve">
+    <value>Hex list</value>
+    <comment>Export format tab: plain list of hex codes</comment>
+  </data>
+  <data name="Palette_SaveFile" xml:space="preserve">
+    <value>Save file…</value>
+    <comment>Button: save the exported palette to a file</comment>
+  </data>
+  <data name="Palette_Copy" xml:space="preserve">
+    <value>Copy</value>
+    <comment>Button: copy the exported palette code to clipboard</comment>
+  </data>
+  <data name="Palette_Close" xml:space="preserve">
+    <value>Close</value>
+    <comment>Button: close the import/export palette dialog</comment>
+  </data>
+  <data name="Palette_ScopeHintTitle" xml:space="preserve">
+    <value>Palette scope</value>
+    <comment>Tooltip title: explains Local vs Global palette scope</comment>
+  </data>
+  <data name="Palette_ScopeHintBody" xml:space="preserve">
+    <value>Local — the palette is visible only in this project. Global — in all projects.</value>
+    <comment>Tooltip body: explains Local vs Global palette scope</comment>
+  </data>
+  <data name="Palette_OpenFileTitle" xml:space="preserve">
+    <value>Open palette</value>
+    <comment>File dialog title: choose a palette file to import</comment>
+  </data>
+  <data name="Palette_SaveFileTitle" xml:space="preserve">
+    <value>Save palette</value>
+    <comment>File dialog title: choose where to save the exported palette</comment>
+  </data>
+  <data name="Palette_FileTypeLabel" xml:space="preserve">
+    <value>Palette (.json, .txt, .hex, .gpl)</value>
+    <comment>File dialog filter label for palette files</comment>
   </data>
   <data name="Common_Ok" xml:space="preserve">
     <value>OK</value>

@@ -761,6 +761,32 @@
                                         behaviours:TooltipBehavior.ShowDelay="700">
 									<PathIcon Data="M4 5h16v2H4zm4 5h12v2H8zm-4 7h16v2H4z" Width="14" Height="14"/>
 								</Button>
+								<Button Command="{Binding OpenParagraphDialogCommand}" Classes="RibbonBtn"
+								        behaviours:TooltipBehavior.Tip="Абзац…"
+								        behaviours:TooltipBehavior.ShowDelay="700">
+									<PathIcon Data="M4 4h16v2H4zm0 4h10v2H4zm0 4h16v2H4zm0 4h10v2H4z" Width="14" Height="14"/>
+								</Button>
+								<SplitButton Classes="RibbonSplit"
+								             behaviours:TooltipBehavior.Tip="Уровни структуры"
+								             behaviours:TooltipBehavior.ShowDelay="700">
+									<SplitButton.Content>
+										<PathIcon Data="M3 5h4v2H3zm6 0h12v2H9zM3 11h4v2H3zm6 0h12v2H9zM3 17h4v2H3zm6 0h12v2H9z" Width="14" Height="14"/>
+									</SplitButton.Content>
+									<SplitButton.Flyout>
+										<MenuFlyout>
+											<MenuItem Header="Основной текст" Command="{Binding SetOutlineLevelCommand}" CommandParameter="0"/>
+											<MenuItem Header="Уровень 1" Command="{Binding SetOutlineLevelCommand}" CommandParameter="1"/>
+											<MenuItem Header="Уровень 2" Command="{Binding SetOutlineLevelCommand}" CommandParameter="2"/>
+											<MenuItem Header="Уровень 3" Command="{Binding SetOutlineLevelCommand}" CommandParameter="3"/>
+											<MenuItem Header="Уровень 4" Command="{Binding SetOutlineLevelCommand}" CommandParameter="4"/>
+											<MenuItem Header="Уровень 5" Command="{Binding SetOutlineLevelCommand}" CommandParameter="5"/>
+											<MenuItem Header="Уровень 6" Command="{Binding SetOutlineLevelCommand}" CommandParameter="6"/>
+											<MenuItem Header="Уровень 7" Command="{Binding SetOutlineLevelCommand}" CommandParameter="7"/>
+											<MenuItem Header="Уровень 8" Command="{Binding SetOutlineLevelCommand}" CommandParameter="8"/>
+											<MenuItem Header="Уровень 9" Command="{Binding SetOutlineLevelCommand}" CommandParameter="9"/>
+										</MenuFlyout>
+									</SplitButton.Flyout>
+								</SplitButton>
 							</StackPanel>
 							<StackPanel Orientation="Horizontal" Spacing="2">
 								<ToggleButton IsChecked="{Binding CurrentAlignment, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Left, Mode=OneWay}"

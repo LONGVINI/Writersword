@@ -107,10 +107,29 @@ namespace Writersword.Modules.TextEditor.Document
             return new TableHandleHit { Type = TableHandleType.None };
         }
 
+        protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+        {
+            // Ctrl + колесо — масштабирование (а не прокрутка). Шаг мультипликативный, чтобы
+            // ощущался одинаково на любом масштабе. Меняем DocVm.Zoom: канвас перерисуется, а
+            // TextEditorViewModel подхватит изменение и обновит ползунок и линейку.
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && DocVm is not null)
+            {
+                double factor = e.Delta.Y >= 0 ? 1.1 : 1.0 / 1.1;
+                double newZoom = Math.Clamp(DocVm.Zoom * factor, 0.25, 5.0);
+                if (Math.Abs(newZoom - DocVm.Zoom) > 0.0001)
+                    DocVm.Zoom = newZoom;
+                e.Handled = true;
+                return;
+            }
+
+            base.OnPointerWheelChanged(e);
+        }
+
         protected override void OnPointerPressed(PointerPressedEventArgs e)
         {
             base.OnPointerPressed(e);
             Focus();
+            FinishZoomImmediately();
 
             var pt = e.GetPosition(this);
             double zoom = Zoom;
@@ -312,6 +331,22 @@ namespace Writersword.Modules.TextEditor.Document
             if (!_isSelecting) return;
             if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
 
+            // Авто-скролл выделения у края вьюпорта: чем ближе к верхней/нижней границе,
+            // тем быстрее лист прокручивается, продолжая выделять.
+            UpdateAutoScroll(rawPt);
+
+            ExtendSelectionToPoint(rawPt);
+            e.Handled = true;
+        }
+
+        // Расширяет выделение к точке rawPt (координаты канваса). Вынесено из OnPointerMoved,
+        // чтобы тем же кодом продолжать выделение при авто-скролле у края вьюпорта.
+        private void ExtendSelectionToPoint(Point rawPt)
+        {
+            double zoom = Zoom;
+            float xPt = (float)(rawPt.X / zoom * PxToPt);
+            float yPt = (float)(rawPt.Y / zoom * PxToPt);
+
             var (pi, ci) = HitTest(rawPt);
             bool nowInCell = pi >= 0 && pi < _layouts.Count && _layouts[pi].Cell != null;
 
@@ -335,7 +370,6 @@ namespace Writersword.Modules.TextEditor.Document
                     _caretPara = pi; _caretChar = ci;
                     UpdateSelectionContext();
                     InvalidateFull();
-                    e.Handled = true;
                     return;
                 }
 
@@ -352,7 +386,6 @@ namespace Writersword.Modules.TextEditor.Document
                         _pressCellRow, _pressCellCol,
                         geoEnd.Value.row, geoEnd.Value.col);
                     InvalidateFull();
-                    e.Handled = true;
                     return;
                 }
 
@@ -463,7 +496,87 @@ namespace Writersword.Modules.TextEditor.Document
             _caretPara = pi; _caretChar = ci;
             UpdateSelectionContext();
             InvalidateFull();
-            e.Handled = true;
+        }
+
+        // Включает/выключает авто-скролл в зависимости от близости указателя к краю вьюпорта.
+        // Скорость растёт линейно от 0 на границе зоны до максимума у самого края.
+        private void UpdateAutoScroll(Point rawPt)
+        {
+            if (_parentScrollViewer is not { } sv || sv.Viewport.Height <= 0)
+            {
+                StopAutoScroll();
+                return;
+            }
+
+            double vpH = sv.Viewport.Height;
+            double screenY = rawPt.Y - sv.Offset.Y;
+            _autoScrollViewportPoint = new Point(rawPt.X - sv.Offset.X, screenY);
+
+            const double hotZone = 48.0;   // высота зоны у края
+            const double maxSpeed = 32.0;  // макс. прокрутка за тик (px)
+
+            double v = 0;
+            if (screenY > vpH - hotZone)
+            {
+                double depth = Math.Min(screenY - (vpH - hotZone), hotZone);
+                v = maxSpeed * (depth / hotZone);
+            }
+            else if (screenY < hotZone)
+            {
+                double depth = Math.Min(hotZone - screenY, hotZone);
+                v = -maxSpeed * (depth / hotZone);
+            }
+
+            _autoScrollVelocity = v;
+            if (Math.Abs(v) > 0.01)
+                StartAutoScroll();
+            else
+                StopAutoScroll();
+        }
+
+        private void StartAutoScroll()
+        {
+            if (_autoScrollTimer is null)
+            {
+                _autoScrollTimer = new Avalonia.Threading.DispatcherTimer(
+                    Avalonia.Threading.DispatcherPriority.Background)
+                {
+                    Interval = TimeSpan.FromMilliseconds(16)
+                };
+                _autoScrollTimer.Tick += OnAutoScrollTick;
+            }
+            if (!_autoScrollTimer.IsEnabled)
+                _autoScrollTimer.Start();
+        }
+
+        private void StopAutoScroll()
+        {
+            _autoScrollVelocity = 0;
+            _autoScrollTimer?.Stop();
+        }
+
+        private void OnAutoScrollTick(object? sender, EventArgs e)
+        {
+            if (!_isSelecting || _parentScrollViewer is not { } sv
+                || Math.Abs(_autoScrollVelocity) < 0.01)
+            {
+                StopAutoScroll();
+                return;
+            }
+
+            double maxOff = Math.Max(0, sv.Extent.Height - sv.Viewport.Height);
+            double newY = Math.Clamp(sv.Offset.Y + _autoScrollVelocity, 0, maxOff);
+            if (Math.Abs(newY - sv.Offset.Y) < 0.01)
+                return; // у края — прокручивать некуда, но выделение продолжаем держать
+
+            sv.Offset = new Avalonia.Vector(sv.Offset.X, newY);
+
+            // Указатель физически не двигался — его позиция в канвасе пересчитывается из
+            // сохранённой вьюпорт-позиции и нового offset, и по ней продолжаем выделение.
+            var canvasPt = new Point(
+                _autoScrollViewportPoint.X + sv.Offset.X,
+                _autoScrollViewportPoint.Y + sv.Offset.Y);
+            ExtendSelectionToPoint(canvasPt);
         }
 
         protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -480,6 +593,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             _isSelecting = false;
+            StopAutoScroll();
             UpdateSelectionContext();
         }
 
@@ -558,6 +672,10 @@ namespace Writersword.Modules.TextEditor.Document
         protected override void OnKeyDown(KeyEventArgs e)
         {
             base.OnKeyDown(e);
+
+            // Любой ввод завершает отложенный зум-жест: раскладка пересобирается сразу, поэтому
+            // последующие правки/undo обновляют канвас корректно (не упираются в _zooming).
+            FinishZoomImmediately();
 
             if (_hotKeyService is not null)
             {
@@ -1375,21 +1493,47 @@ namespace Writersword.Modules.TextEditor.Document
             return beforePos ?? atPos;
         }
 
+        // Обновляет контекст форматирования под кареткой и дёргает CursorContextChanged, по
+        // которому тулбар (шрифт, размер, жирный/курсив, цвет) приводится в соответствие позиции
+        // каретки. Вызывается после перемещения каретки клавиатурой (стрелки, Home/End), когда
+        // выделения нет. Для ячейки таблицы — контекст ячейки.
+        private void FireCaretFormatContext()
+        {
+            if (DocVm is null) return;
+            if (_caretPara < 0 || _caretPara >= _layouts.Count) return;
+
+            var pl = _layouts[_caretPara];
+            if (pl.Cell != null)
+            {
+                DocVm.FireTableCellCursorContext(pl.Cell.ParaBlock);
+                return;
+            }
+
+            var pvm = GetVmAt(_caretPara);
+            if (pvm is null) return;
+
+            // Сообщаем абзацу позицию каретки, чтобы BuildCursorContext читал свойства рана именно
+            // под кареткой, а не первого рана абзаца. start == end — это каретка без выделения.
+            pvm.SelectionStart = _caretChar;
+            pvm.SelectionEnd = _caretChar;
+            DocVm.SetActiveParagraph(pvm);
+        }
+
         public void ExecuteNavLeft(bool extend)
         {
             _caretLineHint = -1;
-            bool inCell = IsInCell(_caretPara);
 
             if (HasSel() && !extend)
             { var (sp, sc, _, _) = NormalizeSelection(); _caretPara = sp; _caretChar = sc; }
             else if (_caretChar > 0)
                 _caretChar--;
-            else if (_caretPara > 0 && !inCell)
+            else if (_caretPara > 0)
             { _caretPara--; _caretChar = GetVmAt(_caretPara)?.PlainText?.Length ?? 0; }
-            // В ячейке: не выходим за начало через стрелки
+            // На границе абзаца/ячейки шаг влево уходит в предыдущую полосу по порядку чтения
+            // (в т.ч. в предыдущую ячейку или абзац перед таблицей) — как в Word.
 
             SnapCaretToCorrectSlice();
-            if (!extend) SyncSel(); else ExtendSel();
+            if (!extend) { SyncSel(); FireCaretFormatContext(); } else ExtendSel();
             UpdatePreferredX();
             ResetCaret(); InvalidateFull();
         }
@@ -1397,16 +1541,16 @@ namespace Writersword.Modules.TextEditor.Document
         public void ExecuteNavRight(bool extend)
         {
             _caretLineHint = -1;
-            bool inCell = IsInCell(_caretPara);
             int len = GetVmAt(_caretPara)?.PlainText?.Length ?? 0;
 
             if (HasSel() && !extend)
             { var (_, _, ep, ec) = NormalizeSelection(); _caretPara = ep; _caretChar = ec; }
             else if (_caretChar < len)
                 _caretChar++;
-            else if (_caretPara < _layouts.Count - 1 && !inCell)
+            else if (_caretPara < _layouts.Count - 1)
             { _caretPara++; _caretChar = 0; }
-            // В ячейке: не выходим за конец через стрелки
+            // На границе абзаца/ячейки шаг вправо уходит в следующую полосу по порядку чтения
+            // (в т.ч. в следующую ячейку или абзац после таблицы) — как в Word.
 
             // Если шаг вправо привёл ровно на мягкий перенос (конец визуальной строки, где висит
             // хвостовой пробел, а слово ушло на следующую строку), привязываем каретку к концу
@@ -1417,7 +1561,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (wrapLine >= 0) _caretLineHint = wrapLine;
 
             SnapCaretToCorrectSlice();
-            if (!extend) SyncSel(); else ExtendSel();
+            if (!extend) { SyncSel(); FireCaretFormatContext(); } else ExtendSel();
             UpdatePreferredX();
             ResetCaret(); InvalidateFull();
         }
@@ -1447,7 +1591,7 @@ namespace Writersword.Modules.TextEditor.Document
             _caretLineHint = -1;
             MoveCaretVertically(-1);
             SnapCaretToCorrectSlice();
-            if (!extend) SyncSel(); else ExtendSel();
+            if (!extend) { SyncSel(); FireCaretFormatContext(); } else ExtendSel();
             ResetCaret(); InvalidateFull();
         }
 
@@ -1456,7 +1600,7 @@ namespace Writersword.Modules.TextEditor.Document
             _caretLineHint = -1;
             MoveCaretVertically(+1);
             SnapCaretToCorrectSlice();
-            if (!extend) SyncSel(); else ExtendSel();
+            if (!extend) { SyncSel(); FireCaretFormatContext(); } else ExtendSel();
             ResetCaret(); InvalidateFull();
         }
 
@@ -1475,7 +1619,7 @@ namespace Writersword.Modules.TextEditor.Document
                 else _caretChar = 0;
             }
             SnapCaretToCorrectSlice();
-            if (!extend) SyncSel(); else ExtendSel();
+            if (!extend) { SyncSel(); FireCaretFormatContext(); } else ExtendSel();
             UpdatePreferredX();
             ResetCaret(); InvalidateFull();
         }
@@ -1500,7 +1644,7 @@ namespace Writersword.Modules.TextEditor.Document
                 else _caretChar = len;
             }
             SnapCaretToCorrectSlice();
-            if (!extend) SyncSel(); else ExtendSel();
+            if (!extend) { SyncSel(); FireCaretFormatContext(); } else ExtendSel();
             UpdatePreferredX();
             ResetCaret(); InvalidateFull();
         }
@@ -1676,38 +1820,6 @@ namespace Writersword.Modules.TextEditor.Document
             for (int i = 0; i < _layouts.Count; i++)
                 if (_layouts[i].Cell?.Table == table) return i;
             return -1;
-        }
-
-        private void PruneTableSelectionsByParaRange(int endPi)
-        {
-            int selMin = Math.Min(_selStartPara, endPi);
-            int selMax = Math.Max(_selStartPara, endPi);
-
-            var toRemove = new List<TableBlock>();
-            foreach (var tbl in _tableSelections.Keys)
-            {
-                int tblFirst = -1;
-                int tblLast = -1;
-                for (int i = 0; i < _layouts.Count; i++)
-                {
-                    if (_layouts[i].Cell?.Table != tbl) continue;
-                    if (tblFirst < 0) tblFirst = i;
-                    tblLast = i;
-                }
-                if (tblFirst < 0) { toRemove.Add(tbl); continue; }
-
-                if (tblLast < selMin || tblFirst > selMax)
-                {
-                    toRemove.Add(tbl);
-                    continue;
-                }
-
-                // Таблица целиком вошла в диапазон — снапаем до полного охвата.
-                if (tblFirst >= selMin && tblLast <= selMax)
-                    _tableSelections[tbl] = (0, 0, tbl.RowCount - 1, tbl.ColumnCount - 1);
-            }
-            foreach (var t in toRemove)
-                _tableSelections.Remove(t);
         }
 
     }

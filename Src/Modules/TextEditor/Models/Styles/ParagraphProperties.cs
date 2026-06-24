@@ -85,6 +85,13 @@ namespace Writersword.Modules.TextEditor.Models.Styles
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? StyleName { get; set; }
 
+        /// <summary>
+        /// Структурный уровень абзаца (Outline Level): 0 — основной текст, 1…9 — уровни.
+        /// Не задаёт отступ; это смысловая метка для будущего оглавления и навигатора.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public int OutlineLevel { get; set; }
+
         /// <summary>Создаёт копию свойств.</summary>
         public ParagraphProperties Clone() => (ParagraphProperties)MemberwiseClone();
 
@@ -106,6 +113,7 @@ namespace Writersword.Modules.TextEditor.Models.Styles
             KeepWithNext = src.KeepWithNext;
             PageBreakBefore = src.PageBreakBefore;
             StyleName = src.StyleName;
+            OutlineLevel = src.OutlineLevel;
         }
     }
 }

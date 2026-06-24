@@ -314,8 +314,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
             }
             else
             {
-                if (block.Chunks.Count > 0 && block.Chunks[0].Runs.Count > 0)
-                    rp = block.Chunks[0].Runs[0].Properties;
+                // Без выделения берём свойства рана под кареткой (символ слева от неё, как в Word —
+                // это формат, которым продолжится набор), а не первого рана абзаца.
+                int len = pvm.PlainText?.Length ?? 0;
+                int caretPos = Math.Clamp(pvm.SelectionStart, 0, len);
+                int probe = caretPos > 0 ? caretPos - 1 : 0;
+                rp = GetRunPropsAtOffset(block, probe);
             }
 
             if (rp is not null)
@@ -663,7 +667,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
             ParagraphViewModel? pvm = SelectionParagraphs.Count > 0 ? SelectionParagraphs[0] : _activeParagraph;
             if (pvm is null) return 14;
             var block = pvm.Model;
-            int pos = pvm.SelectionEnd > pvm.SelectionStart ? pvm.SelectionStart : 0;
+            // С выделением — ран под началом выделения; без выделения — ран под кареткой
+            // (символ слева), а не первый ран абзаца.
+            int len = pvm.PlainText?.Length ?? 0;
+            int caretPos = Math.Clamp(pvm.SelectionStart, 0, len);
+            int pos = pvm.SelectionEnd > pvm.SelectionStart
+                ? pvm.SelectionStart
+                : (caretPos > 0 ? caretPos - 1 : 0);
             var rp = GetRunPropsAtOffset(block, pos);
             return rp?.FontSize ?? ResolveStyleFontSize(block.Properties.StyleName);
         }
@@ -706,6 +716,38 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void SetLeftIndentPt(double pt) => ApplyParaProperty(p => p.LeftIndent = pt);
         public void SetFirstLineIndentPt(double pt) => ApplyParaProperty(p => p.FirstLineIndent = pt);
         public void SetRightIndentPt(double pt) => ApplyParaProperty(p => p.RightIndent = pt);
+
+        /// <summary>
+        /// Снимок свойств текущего абзаца (активного или абзаца активной ячейки) для пред-заполнения
+        /// окна «Абзац». Null — нет активного абзаца.
+        /// </summary>
+        public ParagraphProperties? GetActiveParagraphProperties()
+        {
+            if (TableActiveCellParagraph is not null)
+                return TableActiveCellParagraph.Properties.Clone();
+            return _activeParagraph?.Model.Properties.Clone();
+        }
+
+        /// <summary>
+        /// Применяет к выделенным абзацам поля окна «Абзац» (выравнивание, уровень, отступы,
+        /// интервалы, междустрочный) одной командой отмены. Прочие поля (стиль, флаги страницы)
+        /// не трогает.
+        /// </summary>
+        public void ApplyParagraphSettings(ParagraphProperties s) => ApplyParaProperty(p =>
+        {
+            p.Alignment = s.Alignment;
+            p.OutlineLevel = s.OutlineLevel;
+            p.LeftIndent = s.LeftIndent;
+            p.RightIndent = s.RightIndent;
+            p.FirstLineIndent = s.FirstLineIndent;
+            p.SpaceBefore = s.SpaceBefore;
+            p.SpaceAfter = s.SpaceAfter;
+            p.LineSpacingRule = s.LineSpacingRule;
+            p.LineSpacingValue = s.LineSpacingValue;
+        });
+
+        /// <summary>Ставит выделенным абзацам структурный уровень (0 — основной текст, 1…9).</summary>
+        public void SetOutlineLevel(int level) => ApplyParaProperty(p => p.OutlineLevel = level);
 
         // ── ITextEditorCommandTarget: списки ──────────────────────────────
 
