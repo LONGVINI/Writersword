@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:res="using:Writersword.Styles.UserControls"
              xmlns:behaviors="using:Writersword.Infrastructure.Behaviours"
+             xmlns:conv="using:Writersword.Infrastructure.Converters"
              x:Class="Writersword.Styles.UserControls.PaletteManagerView"
              x:Name="Root">
 
@@ -265,7 +266,7 @@
 						<ItemsControl.ItemTemplate>
 							<DataTemplate>
 								<Panel Classes="swatchCell" Width="26" Height="26" Margin="3">
-									<Border Classes="swatch" Background="{Binding}"
+									<Border Classes="swatch" Background="{Binding Converter={x:Static conv:ColorCodeToBrushConverter.Instance}}"
 									        PointerPressed="OnPaletteColorPressed" PointerMoved="OnPaletteColorMoved" PointerReleased="OnPaletteColorReleased">
 									<Border.RenderTransform>
 										<TranslateTransform>
@@ -350,7 +351,7 @@
 												</ItemsControl.ItemsPanel>
 												<ItemsControl.ItemTemplate>
 													<DataTemplate>
-														<Border Width="7" Height="18" Background="{Binding}"/>
+														<Border Width="7" Height="18" Background="{Binding Converter={x:Static conv:ColorCodeToBrushConverter.Instance}}"/>
 													</DataTemplate>
 												</ItemsControl.ItemTemplate>
 											</ItemsControl>
@@ -375,7 +376,7 @@
 											           ToolTip.Tip="{Binding Palette.Name}"
 											           Foreground="{DynamicResource TextPrimaryBrush}"/>
 											<TextBox Classes="renameBox" IsVisible="{Binding IsRenaming}"
-											         Text="{Binding Palette.Name, Mode=TwoWay}"
+											         Text="{Binding Palette.Name, Mode=OneWay}"
 											         behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"
 											         GotFocus="OnRenameGotFocus"
 											         LostFocus="OnRenameCommit" KeyDown="OnRenameKeyDown"/>
@@ -455,7 +456,7 @@
 												<ItemsControl.ItemTemplate>
 													<DataTemplate>
 														<Panel Classes="swatchCell" Width="26" Height="26" Margin="3">
-															<Border Classes="swatch" Background="{Binding}"
+															<Border Classes="swatch" Background="{Binding Converter={x:Static conv:ColorCodeToBrushConverter.Instance}}"
 															        PointerPressed="OnPaletteColorPressed" PointerMoved="OnPaletteColorMoved" PointerReleased="OnPaletteColorReleased">
 																<Border.RenderTransform>
 																	<TranslateTransform>
@@ -501,6 +502,9 @@
 					<Button Grid.Column="1" x:Name="IoExportTab" Classes="mini"
 					        Click="OnIoTabExport"
 					        Content="{x:Static res:SharedStrings.Palette_TabExport}"/>
+					<Button Grid.Column="2" HorizontalAlignment="Right" Content="✕"
+					        Background="Transparent" BorderThickness="0" Padding="8,2" FontSize="15"
+					        Foreground="{DynamicResource TextSecondaryBrush}" Click="OnIoClose"/>
 				</Grid>
 
 				<!-- Импорт -->
@@ -535,8 +539,6 @@
 					</Grid>
 				</StackPanel>
 
-				<Button HorizontalAlignment="Right" Classes="mini" Click="OnIoClose"
-				        Content="{x:Static res:SharedStrings.Palette_Close}"/>
 			</StackPanel>
 		</Border>
 	</Border>

@@ -34,6 +34,7 @@ namespace Writersword.Modules.TextEditor.Document
             List<ParaLayout> layouts;
             List<PageRect> pages;
             List<TableEntry> tables;
+            List<ImageEntry> images;
             float canvasHeightPt;
             double canvasWidth;
 
@@ -42,6 +43,7 @@ namespace Writersword.Modules.TextEditor.Document
                 layouts = _layouts;
                 pages = _pages;
                 tables = _tables;
+                images = _images;
                 canvasHeightPt = _canvasHeightPt;
                 canvasWidth = _canvasWidth;
             }
@@ -154,7 +156,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                 var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
                 if (mode == EditorViewMode.Page)
-                    RenderPageMode(offscreen, layouts, pages, tables, canvasHeightPt, canvasWidth, false);
+                    RenderPageMode(offscreen, layouts, pages, tables, images, canvasHeightPt, canvasWidth, false);
                 else
                     RenderFlowMode(offscreen, mode, layouts, tables, canvasHeightPt, canvasWidth, false);
 
@@ -189,7 +191,7 @@ namespace Writersword.Modules.TextEditor.Document
                 canvas.Scale(scale, scale);
                 var mode = DocVm?.ViewMode ?? EditorViewMode.Draft;
                 if (mode == EditorViewMode.Page)
-                    RenderPageMode(canvas, layouts, pages, tables, canvasHeightPt, canvasWidth, _caretVisible && !_zooming);
+                    RenderPageMode(canvas, layouts, pages, tables, images, canvasHeightPt, canvasWidth, _caretVisible && !_zooming);
                 else
                     RenderFlowMode(canvas, mode, layouts, tables, canvasHeightPt, canvasWidth, _caretVisible && !_zooming);
                 canvas.Restore();
@@ -408,6 +410,7 @@ namespace Writersword.Modules.TextEditor.Document
             List<ParaLayout> layouts,
             List<PageRect> pages,
             List<TableEntry> tables,
+            List<ImageEntry> images,
             float canvasHeightPt,
             double canvasWidth,
             bool drawCaret)
@@ -445,6 +448,18 @@ namespace Writersword.Modules.TextEditor.Document
                 var page = pages[pi];
                 canvas.DrawRect(page.PadLeftPt + 3, page.Ypt + 3, page.WidthPt, page.HeightPt, _paintPageShadow);
                 canvas.DrawRect(page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt, _paintPageWhite);
+            }
+
+            // Изображения-блоки (рисуются поверх белого листа, в координатах в пунктах).
+            // Картинки за текстом (Behind) и блок-картинки (Inline) — рисуются до текста.
+            foreach (var ie in images)
+            {
+                if (ie.PageIndex < firstPage || ie.PageIndex > lastPage) continue;
+                var wm = ie.Block.WrapMode;
+                if (wm == WrapMode.InFront || wm == WrapMode.Square || wm == WrapMode.Tight) continue;
+                var skImg = GetImageBitmap(ie.Block.ImageFileName);
+                if (skImg is null) continue;
+                canvas.DrawImage(skImg, new SKRect(ie.XPt, ie.Ypt, ie.XPt + ie.WidthPt, ie.Ypt + ie.HeightPt));
             }
 
             // Рисуем рамки таблиц (без содержимого) — клипуем по правому краю страницы
@@ -504,12 +519,59 @@ namespace Writersword.Modules.TextEditor.Document
                 }
             }
 
+            // Картинки поверх текста (InFront / Square / Tight) — рисуются после текста.
+            foreach (var ie in images)
+            {
+                if (ie.PageIndex < firstPage || ie.PageIndex > lastPage) continue;
+                var wm = ie.Block.WrapMode;
+                if (wm != WrapMode.InFront && wm != WrapMode.Square && wm != WrapMode.Tight) continue;
+                var skImg = GetImageBitmap(ie.Block.ImageFileName);
+                if (skImg is null) continue;
+                canvas.DrawImage(skImg, new SKRect(ie.XPt, ie.Ypt, ie.XPt + ie.WidthPt, ie.Ypt + ie.HeightPt));
+            }
+
+            // Рамка выделенной картинки — поверх всего.
+            if (_selectedImage is not null)
+            {
+                foreach (var ie in images)
+                {
+                    if (!ReferenceEquals(ie.Block, _selectedImage)) continue;
+                    if (ie.PageIndex < firstPage || ie.PageIndex > lastPage) continue;
+                    canvas.DrawRect(
+                        new SKRect(ie.XPt, ie.Ypt, ie.XPt + ie.WidthPt, ie.Ypt + ie.HeightPt),
+                        _paintImageSelection);
+                }
+            }
+
             // Рисуем выделения всех таблиц из единого словаря.
             foreach (var kv in _tableSelections)
                 RenderTableSelection(canvas, tables, kv.Key, kv.Value.sr, kv.Value.sc, kv.Value.er, kv.Value.ec);
 
             // Полностью попавшие в поток ячейки — заливаем целиком.
             RenderCellFlowFull(canvas, tables);
+        }
+
+        // Загружает и кеширует декодированное изображение по имени файла внутри проекта.
+        private SKImage? GetImageBitmap(string fileName)
+        {
+            if (string.IsNullOrEmpty(fileName)) return null;
+            if (_imageCache.TryGetValue(fileName, out var cached)) return cached;
+
+            SKImage? img = null;
+            try
+            {
+                var ctx = Writersword.Core.Services.CoreServices
+                    .GetService<Writersword.Core.Interfaces.WorkFlows.ITabCollection>()?.ActiveTab?.Context;
+                var bytes = ctx?.ReadFile($"TextEditor/Images/{fileName}");
+                if (bytes is { Length: > 0 })
+                    img = SKImage.FromEncodedData(bytes);
+            }
+            catch { img = null; }
+
+            // Кешируем только удачную загрузку: если файл временно отсутствует
+            // (например, во время операции), при следующем кадре попробуем снова.
+            if (img is not null) _imageCache[fileName] = img;
+            return img;
         }
 
         // Заливает целиком ячейки из _cellFlowFull (полностью попавшие в потоковое выделение).
@@ -774,6 +836,15 @@ namespace Writersword.Modules.TextEditor.Document
                 int lineSelStart = Math.Max(from, ln.FirstCharIndex);
                 int lineSelEnd = Math.Min(to, ln.LastCharIndex + 1);
 
+                // Хвостовые пробелы в конце визуальной строки не подсвечиваем: обрезаем правый
+                // край выделения по последнему непробельному символу строки (как в Word).
+                int lastContentEnd = LastContentCharEnd(ln);
+                if (lastContentEnd >= 0 && lineSelEnd > lastContentEnd)
+                {
+                    lineSelEnd = Math.Max(lineSelStart, lastContentEnd);
+                    if (lineSelEnd <= lineSelStart) continue;
+                }
+
                 // Вырожденный случай (например выделение пустой строки / только переноса):
                 // рисуем прямоугольник как есть одной кистью по началу фрагмента.
                 if (lineSelEnd <= lineSelStart)
@@ -963,6 +1034,36 @@ namespace Writersword.Modules.TextEditor.Document
                 drawLineIdx = layout.GetLineIndexForChar(pos);
             }
 
+            // Хвостовые пробелы на переносимой (не последней) строке — висячие: каретку прижимаем
+            // к концу содержимого строки, чтобы она не уезжала в пустоту за последним словом.
+            if (drawLineIdx >= 0 && drawLineIdx < layout.Lines.Count
+                && !layout.Lines[drawLineIdx].IsLastLine)
+            {
+                int contentEnd = LastContentCharEnd(layout.Lines[drawLineIdx]);
+                if (contentEnd >= 0 && pos > contentEnd)
+                {
+                    caret = layout.HitTestPosition(contentEnd);
+                    pos = contentEnd;
+                }
+            }
+
+            // Стык строк: позиция стоит ровно в начале строки, но по смыслу это конец предыдущей
+            // переносимой строки с хвостовыми пробелами (например только что напечатали пробел,
+            // ставший последним на строке). Рисуем каретку в конце содержимого предыдущей строки,
+            // иначе курсор «прыгает» на следующую строку.
+            else if (drawLineIdx > 0 && drawLineIdx < layout.Lines.Count
+                && pos == layout.Lines[drawLineIdx].FirstCharIndex
+                && !layout.Lines[drawLineIdx - 1].IsLastLine)
+            {
+                int prevContentEnd = LastContentCharEnd(layout.Lines[drawLineIdx - 1]);
+                if (prevContentEnd >= 0 && prevContentEnd < pos)
+                {
+                    caret = layout.HitTestPosition(prevContentEnd);
+                    drawLineIdx -= 1;
+                    pos = prevContentEnd;
+                }
+            }
+
             // RenderParagraphLines рендерит строки со смещением: line.Y - lines[lineFrom].Y.
             // DrawCaret должен использовать тот же yBase, иначе каретка окажется ниже текста
             // на величину lines[lineFrom].Y — что особенно заметно на страницах продолжения.
@@ -1051,6 +1152,20 @@ namespace Writersword.Modules.TextEditor.Document
                     if (c == ' ' || c == '\t') spacesBefore++;
                 }
             return spacesBefore * extra;
+        }
+
+        // Глобальный индекс сразу за последним непробельным символом визуальной строки.
+        // Возвращает -1, если на строке нет непробельных символов (пустая строка/только пробелы).
+        private static int LastContentCharEnd(SKLineLayout line)
+        {
+            int last = -1;
+            foreach (var s in line.Segments)
+                for (int k = 0; k < s.Text.Length; k++)
+                {
+                    char c = s.Text[k];
+                    if (c != ' ' && c != '\t') last = s.GlobalCharOffset + k + 1;
+                }
+            return last;
         }
 
     }

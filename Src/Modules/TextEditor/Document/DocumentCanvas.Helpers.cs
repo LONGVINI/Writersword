@@ -475,6 +475,36 @@ namespace Writersword.Modules.TextEditor.Document
 
         private async Task PasteAsync()
         {
+            // Картинка из буфера обмена — вставляем как изображение и выходим.
+            {
+                var imgClip = TopLevel.GetTopLevel(this)?.Clipboard;
+                if (imgClip is not null && DocVm is not null)
+                {
+                    Avalonia.Media.Imaging.Bitmap? bmp = null;
+                    try { bmp = await imgClip.TryGetBitmapAsync(); }
+                    catch { bmp = null; }
+
+                    if (bmp is not null)
+                    {
+                        byte[]? bytes = null;
+                        try
+                        {
+                            using var ms = new System.IO.MemoryStream();
+                            bmp.Save(ms);
+                            bytes = ms.ToArray();
+                        }
+                        catch { bytes = null; }
+                        finally { bmp.Dispose(); }
+
+                        if (bytes is { Length: > 0 })
+                        {
+                            DocVm.InsertImageBytes(bytes, ".png");
+                            return;
+                        }
+                    }
+                }
+            }
+
             // Внутренний буфер используется только когда есть таблицы.
             // Вставка только параграфов идёт через plain-text путь — он проверен и работает.
             if (!string.IsNullOrEmpty(_internalClipboardJson) && DocVm is not null)

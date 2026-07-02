@@ -1,5 +1,7 @@
 ﻿using System.Windows.Input;
 using ReactiveUI;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Platform.Storage;
 using Writersword.Modules.TextEditor.Contracts;
 using Writersword.Modules.TextEditor.Models.Document;
 
@@ -64,7 +66,30 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             // InsertTableCommand открывает пикер через code-behind RibbonInsertTab.
             // Реальная вставка идёт через InsertTableWithSize(rows, cols).
             InsertTableCommand = ReactiveCommand.Create(() => { });
-            InsertImageCommand = ReactiveCommand.Create(() => { });
+            InsertImageCommand = ReactiveCommand.CreateFromTask(async () =>
+            {
+                var window = (Avalonia.Application.Current?.ApplicationLifetime
+                    as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+                if (window?.StorageProvider is null) return;
+
+                var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+                {
+                    Title = "Вставить изображение",
+                    AllowMultiple = false,
+                    FileTypeFilter = new[]
+                    {
+                        new FilePickerFileType("Изображения")
+                        {
+                            Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.webp" }
+                        }
+                    }
+                });
+
+                if (files.Count == 0) return;
+                var path = files[0].TryGetLocalPath();
+                if (!string.IsNullOrEmpty(path))
+                    _target.InsertImage(path);
+            });
             InsertFloatingTextBoxCommand = ReactiveCommand.Create(() => { });
             InsertShapeRectangleCommand = ReactiveCommand.Create(() => { });
             InsertShapeEllipseCommand = ReactiveCommand.Create(() => { });

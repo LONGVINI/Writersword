@@ -115,11 +115,40 @@ namespace Writersword.Modules.TextEditor.Document
             float FirstRowContentOffsetPt = 0f,
             bool IsContinuation = false);
 
+        // ── Layout изображений ────────────────────────────────────────────
+        // Одна запись = одно изображение-блок на своей странице.
+        private record ImageEntry(
+            ImageBlock Block,
+            float Ypt,
+            float XPt,
+            float WidthPt,
+            float HeightPt,
+            int PageIndex);
+
         // ── Атомарный снимок для render-потока ────────────────────────────
         private readonly object _renderLock = new();
         private List<ParaLayout> _layouts = new();
         private List<PageRect> _pages = new();
         private List<TableEntry> _tables = new();
+        private List<ImageEntry> _images = new();
+
+        // Выделенная картинка (для рамки и удаления). null — ничего не выделено.
+        private ImageBlock? _selectedImage;
+        private readonly SKPaint _paintImageSelection = new()
+        {
+            Style = SKPaintStyle.Stroke,
+            Color = new SKColor(0xE0, 0x7B, 0x39),
+            StrokeWidth = 1.5f,
+            IsAntialias = true
+        };
+
+        // Перетаскивание плавающей картинки.
+        private bool _imageDragging;
+        private bool _imageDragMoved;
+        private float _imgDragStartXPt;
+        private float _imgDragStartYPt;
+        private double _imgDragStartOffX;
+        private double _imgDragStartOffY;
         private double _canvasWidth;
         private double _canvasHeight;
         private float _canvasHeightPt;
@@ -127,6 +156,9 @@ namespace Writersword.Modules.TextEditor.Document
         // ── Кеш лейаутов обычных параграфов ──────────────────────────────
         private readonly Dictionary<ParagraphViewModel,
             (string Text, float Width, SKTextLayout Layout)> _layoutCache = new();
+
+        // Кеш декодированных изображений по имени файла внутри проекта.
+        private readonly Dictionary<string, SKImage?> _imageCache = new();
 
         // Поля live-preview шрифта вынесены в DocumentCanvas.FontPreview.cs.
 
@@ -161,6 +193,12 @@ namespace Writersword.Modules.TextEditor.Document
         private int _caretLineHint = -1;
         private bool _caretVisible = true;
         private float _preferredCaretXPt = 0f;
+
+        // Активна ли серия вертикальных перемещений (Up/Down подряд). В начале серии столбец
+        // (_preferredCaretXPt) захватывается из ЖИВОЙ геометрии каретки и держится до любого
+        // горизонтального перемещения/клика/правки (там вызывается UpdatePreferredX, который
+        // сбрасывает флаг). Так столбец не «уезжает» при многократном Down на короткие строки.
+        private bool _vNavActive;
         private readonly DispatcherTimer _caretTimer;
 
         // ── Анимация скролла ──────────────────────────────────────────────
@@ -515,6 +553,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.Paragraphs.CollectionChanged -= OnParagraphsChanged;
                 _docVm.PropertyChanged -= OnDocVmPropertyChanged;
                 _docVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
+                _docVm.StructureChanged -= OnStructureChanged;
                 _docVm.BeginFontPreviewDelegate = null;
                 _docVm.PreviewFontFamilyDelegate = null;
                 _docVm.EndFontPreviewDelegate = null;
@@ -670,6 +709,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.Paragraphs.CollectionChanged -= OnParagraphsChanged;
                 _docVm.PropertyChanged -= OnDocVmPropertyChanged;
                 _docVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
+                _docVm.StructureChanged -= OnStructureChanged;
                 _docVm.BeginFontPreviewDelegate = null;
                 _docVm.PreviewFontFamilyDelegate = null;
                 _docVm.EndFontPreviewDelegate = null;
@@ -701,6 +741,7 @@ namespace Writersword.Modules.TextEditor.Document
                 DocVm.Paragraphs.CollectionChanged += OnParagraphsChanged;
                 DocVm.PropertyChanged += OnDocVmPropertyChanged;
                 DocVm.ParagraphFormatChanged += OnParagraphFormatChanged;
+                DocVm.StructureChanged += OnStructureChanged;
                 DocVm.BeginFontPreviewDelegate = BeginFontPreviewSession;
                 DocVm.PreviewFontFamilyDelegate = PreviewFontFamilySession;
                 DocVm.EndFontPreviewDelegate = EndFontPreviewSession;
@@ -721,6 +762,17 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             InvalidateMeasure();
+        }
+
+        // Структурное изменение (вставка/удаление картинки и т.п.): пересобираем раскладку
+        // БЕЗ очистки кэша абзацев — текст абзацев не менялся, переформировывать их не нужно,
+        // поэтому операция быстрая даже на большом документе.
+        private void OnStructureChanged()
+        {
+            RebuildLayouts();
+            _caretLineHint = -1;
+            SnapCaretToCorrectSlice();
+            InvalidateFull();
         }
 
         private void OnParagraphFormatChanged()
@@ -1188,4 +1240,4 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
     }
-} 
+}

@@ -8,6 +8,8 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
 using Writersword.Core.Models.Print;
+using Writersword.Core.Services;
+using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Modules.TextEditor.Contracts;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
@@ -151,6 +153,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// DocumentCanvas подписывается чтобы сбросить кеш лейаутов.
         /// </summary>
         public event Action? ParagraphFormatChanged;
+
+        /// <summary>
+        /// Структурное изменение документа (вставка/удаление блока-картинки и т.п.),
+        /// при котором текст абзацев не менялся. Холст пересобирает раскладку БЕЗ очистки
+        /// кэша абзацев — это быстро, в отличие от ParagraphFormatChanged.
+        /// </summary>
+        public event Action? StructureChanged;
 
         // Абзацы, затронутые последним char-форматированием. Канвас забирает этот список
         // в обработчике ParagraphFormatChanged, чтобы инвалидировать кэш раскладки ТОЛЬКО
@@ -314,12 +323,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             }
             else
             {
-                // Без выделения берём свойства рана под кареткой (символ слева от неё, как в Word —
-                // это формат, которым продолжится набор), а не первого рана абзаца.
-                int len = pvm.PlainText?.Length ?? 0;
-                int caretPos = Math.Clamp(pvm.SelectionStart, 0, len);
-                int probe = caretPos > 0 ? caretPos - 1 : 0;
-                rp = GetRunPropsAtOffset(block, probe);
+                if (block.Chunks.Count > 0 && block.Chunks[0].Runs.Count > 0)
+                    rp = block.Chunks[0].Runs[0].Properties;
             }
 
             if (rp is not null)
@@ -348,6 +353,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             ctx.LeftIndentPt = block.Properties.LeftIndent ?? 0;
             ctx.FirstLineIndentPt = block.Properties.FirstLineIndent ?? 0;
             ctx.RightIndentPt = block.Properties.RightIndent ?? 0;
+            ctx.HasSpaceBefore = ResolveEffectiveSpaceBefore(block) > 0;
+            ctx.HasSpaceAfter = ResolveEffectiveSpaceAfter(block) > 0;
             return ctx;
         }
 
@@ -361,6 +368,42 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             var style = _document.FindStyle(styleName ?? "Normal");
             return style?.RunProperties?.FontSize ?? 14.0;
+        }
+
+        // Эффективный интервал перед абзацем (pt): собственное значение, иначе из цепочки стилей BasedOn.
+        private double ResolveEffectiveSpaceBefore(ParagraphBlock block)
+        {
+            if (block.Properties.SpaceBefore.HasValue)
+                return block.Properties.SpaceBefore.Value;
+
+            string? name = block.Properties.StyleName ?? "Normal";
+            for (int guard = 0; name is not null && guard < 16; guard++)
+            {
+                var style = _document.FindStyle(name);
+                if (style is null) break;
+                if (style.ParagraphProperties?.SpaceBefore.HasValue == true)
+                    return style.ParagraphProperties.SpaceBefore.Value;
+                name = style.BasedOn;
+            }
+            return 0.0;
+        }
+
+        // Эффективный интервал после абзаца (pt): собственное значение, иначе из цепочки стилей BasedOn.
+        private double ResolveEffectiveSpaceAfter(ParagraphBlock block)
+        {
+            if (block.Properties.SpaceAfter.HasValue)
+                return block.Properties.SpaceAfter.Value;
+
+            string? name = block.Properties.StyleName ?? "Normal";
+            for (int guard = 0; name is not null && guard < 16; guard++)
+            {
+                var style = _document.FindStyle(name);
+                if (style is null) break;
+                if (style.ParagraphProperties?.SpaceAfter.HasValue == true)
+                    return style.ParagraphProperties.SpaceAfter.Value;
+                name = style.BasedOn;
+            }
+            return 8.0;
         }
 
         // ── Управление параграфами ────────────────────────────────────────
@@ -667,13 +710,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             ParagraphViewModel? pvm = SelectionParagraphs.Count > 0 ? SelectionParagraphs[0] : _activeParagraph;
             if (pvm is null) return 14;
             var block = pvm.Model;
-            // С выделением — ран под началом выделения; без выделения — ран под кареткой
-            // (символ слева), а не первый ран абзаца.
-            int len = pvm.PlainText?.Length ?? 0;
-            int caretPos = Math.Clamp(pvm.SelectionStart, 0, len);
-            int pos = pvm.SelectionEnd > pvm.SelectionStart
-                ? pvm.SelectionStart
-                : (caretPos > 0 ? caretPos - 1 : 0);
+            int pos = pvm.SelectionEnd > pvm.SelectionStart ? pvm.SelectionStart : 0;
             var rp = GetRunPropsAtOffset(block, pos);
             return rp?.FontSize ?? ResolveStyleFontSize(block.Properties.StyleName);
         }
@@ -842,7 +879,92 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             return null;
         }
-        public void InsertImage(string filePath) { }
+        public void InsertImage(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath) || !System.IO.File.Exists(filePath)) return;
+
+            byte[] data;
+            try { data = System.IO.File.ReadAllBytes(filePath); }
+            catch { return; }
+
+            InsertImageBytes(data, System.IO.Path.GetExtension(filePath));
+        }
+
+        /// <summary>
+        /// Вставляет картинку из готовых байтов (файл или буфер обмена). Файл кладётся в проект,
+        /// в документ добавляется ImageBlock под кареткой. Операция попадает в Undo.
+        /// </summary>
+        public void InsertImageBytes(byte[] data, string ext)
+        {
+            if (data is null || data.Length == 0) return;
+
+            // Файлы картинок хранятся внутри проекта (ZIP), доступ — через контекст активной вкладки.
+            var ctx = CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context;
+            if (ctx is null) return;
+
+            if (string.IsNullOrWhiteSpace(ext)) ext = ".png";
+            if (!ext.StartsWith(".")) ext = "." + ext;
+            string fileName = $"img_{System.Guid.NewGuid():N}{ext}";
+            ctx.WriteFile($"TextEditor/Images/{fileName}", data);
+
+            // Размер по умолчанию берём из самого изображения (пиксели при 96 dpi -> пункты),
+            // ширину разумно ограничиваем, сохраняя пропорции.
+            double widthPt = 200, heightPt = 150;
+            try
+            {
+                using var bmp = SkiaSharp.SKBitmap.Decode(data);
+                if (bmp is { Width: > 0, Height: > 0 })
+                {
+                    widthPt = bmp.Width * 72.0 / 96.0;
+                    heightPt = bmp.Height * 72.0 / 96.0;
+                    const double maxWidthPt = 400.0;
+                    if (widthPt > maxWidthPt)
+                    {
+                        double k = maxWidthPt / widthPt;
+                        widthPt = maxWidthPt;
+                        heightPt *= k;
+                    }
+                }
+            }
+            catch { }
+
+            var image = new ImageBlock
+            {
+                ImageFileName = fileName,
+                WidthPt = widthPt,
+                HeightPt = heightPt
+            };
+
+            // Снимок до/после вставки — для Ctrl+Z.
+            BeginEditDelegate?.Invoke("Вставка изображения");
+            var section = _document.Sections[0];
+            int idx = _activeParagraph is not null ? section.Blocks.IndexOf(_activeParagraph.Model) : -1;
+            if (idx >= 0)
+                section.Blocks.Insert(idx + 1, image);
+            else
+                section.Blocks.Add(image);
+            CommitEditDelegate?.Invoke();
+
+            StructureChanged?.Invoke();
+        }
+        public void RemoveImage(ImageBlock image)
+        {
+            if (image is null) return;
+            foreach (var section in _document.Sections)
+            {
+                if (section.Blocks.Contains(image) || section.FloatingObjects.Contains(image))
+                {
+                    // Снимок до/после удаления — для Ctrl+Z.
+                    BeginEditDelegate?.Invoke("Удаление изображения");
+                    section.Blocks.Remove(image);
+                    section.FloatingObjects.Remove(image);
+                    CommitEditDelegate?.Invoke();
+                    StructureChanged?.Invoke();
+                    return;
+                }
+            }
+        }
+
         public void InsertShape(ShapeType st) { }
         public void InsertFloatingTextBox() { }
         public void InsertPageBreak()

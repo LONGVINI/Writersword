@@ -244,6 +244,11 @@ namespace Writersword.Modules.TextEditor
                 _lastDeltaPayload = payload;
 
                 string documentJson = _serializer.Serialize(_viewModel.DocumentViewModel.Document);
+
+                // Удаляем из проекта файлы картинок, на которые в документе больше нет ссылок.
+                try { CleanupUnusedImages(_viewModel.DocumentViewModel.Document); }
+                catch (Exception cex) { _logger.Warning(cex, "CleanupUnusedImages failed"); }
+
                 string localSettingsJson = System.Text.Json.JsonSerializer.Serialize(_localSettings);
 
                 var envelope = new
@@ -263,6 +268,17 @@ namespace Writersword.Modules.TextEditor
                 _logger.Error(ex, "GetCustomData: exception during serialization — returning null. Data will NOT be saved!");
                 return null;
             }
+        }
+
+        // Сверяет файлы в TextEditor/Images с реально используемыми в документе именами
+        // и удаляет лишние. Удаляются только файлы без ссылок — используемые не трогаются.
+        private void CleanupUnusedImages(Writersword.Modules.TextEditor.Models.Document.DocumentModel document)
+        {
+            // Авто-очистка файлов картинок временно отключена: удаление конфликтовало
+            // с восстановлением (recovery) и отменой — после удаления и сохранения картинка
+            // терялась. Переработать так, чтобы учитывать снимки recovery и историю undo,
+            // прежде чем что-либо удалять.
+            _ = document;
         }
 
         public override void SetCustomData(object? data)

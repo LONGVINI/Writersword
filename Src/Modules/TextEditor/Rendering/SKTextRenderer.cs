@@ -3,6 +3,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Writersword.Core.Models.Print;
+using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Rendering;
 using Writersword.Modules.TextEditor.Rendering;
 using Writersword.Modules.TextEditor.Models.Document;
@@ -832,30 +833,70 @@ namespace Writersword.Modules.TextEditor.Rendering
         public static void RenderParagraph(
             SKCanvas canvas, SKTextLayout layout, float paraX, float paraY)
         {
+            // Прямоугольник всего абзаца — для градиента текста в режиме «весь блок».
+            var blockRect = new SKRect(
+                paraX + layout.LeftIndentPt,
+                paraY,
+                paraX + layout.LeftIndentPt + layout.TextAreaWidthPt,
+                paraY + layout.TotalHeightPt);
+
             for (int i = 0; i < layout.Lines.Count; i++)
             {
                 var line = layout.Lines[i];
                 float lineY = paraY + line.Y;
                 float offsetX = LineAlignShift(layout, i);
 
+                // Прямоугольник строки — для градиента текста в режиме «построчно».
+                float lineStartX = paraX + offsetX + (line.Segments.Count > 0 ? line.Segments[0].X : 0f);
+                var lineRect = new SKRect(lineStartX, lineY, lineStartX + line.TextWidth, lineY + line.Height);
+
+                int lastContentSeg = LastContentSegIndex(line);
+                int segIdx = -1;
                 foreach (var seg in line.Segments)
                 {
+                    segIdx++;
                     float segX = paraX + seg.X + offsetX;
                     float baseY = lineY + line.Baseline;
 
-                    if (seg.HighlightColor != SKColors.Transparent)
+                    // Задник за текстом: плоский цвет либо градиент по прямоугольнику сегмента.
+                    // Ширина обрезается по хвостовым пробелам в конце строки.
+                    bool hlGradient = IsGradientCode(seg.HighlightCode);
+                    float hlWidth = SegHighlightWidth(line, segIdx, lastContentSeg);
+                    if (hlWidth > 0f && (seg.HighlightColor != SKColors.Transparent || hlGradient))
                     {
                         using var hlPaint = new SKPaint { Color = seg.HighlightColor };
-                        canvas.DrawRect(segX, lineY, seg.Width, line.Height, hlPaint);
+                        SKShader? hlShader = null;
+                        if (hlGradient)
+                        {
+                            var hlSpec = GradientSpec.Parse(seg.HighlightCode);
+                            hlPaint.Color = GradientShaderFactory.SolidColor(hlSpec);
+                            var hlRect = new SKRect(segX, lineY, segX + hlWidth, lineY + line.Height);
+                            hlShader = GradientShaderFactory.BuildShader(hlSpec, hlRect);
+                            hlPaint.Shader = hlShader;
+                        }
+                        canvas.DrawRect(segX, lineY, hlWidth, line.Height, hlPaint);
+                        hlShader?.Dispose();
+                    }
+
+                    // Цвет либо градиент букв. Для одноцвета путь прежний — без шейдера.
+                    SKColor textColor = seg.Color;
+                    SKShader? textShader = null;
+                    if (IsGradientCode(seg.ColorCode))
+                    {
+                        var spec = GradientSpec.Parse(seg.ColorCode);
+                        textColor = GradientShaderFactory.SolidColor(spec);
+                        var rect = spec.TextFill == GradientTextFill.PerLine ? lineRect : blockRect;
+                        textShader = GradientShaderFactory.BuildShader(spec, rect);
                     }
 
                     var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
                     var font = GetOrCreateFont(typeface, seg.FontSizePt);
                     using var paint = new SKPaint
                     {
-                        Color = seg.Color,
+                        Color = textColor,
                         IsAntialias = true
                     };
+                    if (textShader != null) paint.Shader = textShader;
 
                     canvas.DrawText(seg.Text, segX, baseY, font, paint);
 
@@ -863,10 +904,11 @@ namespace Writersword.Modules.TextEditor.Rendering
                     {
                         using var uPaint = new SKPaint
                         {
-                            Color = seg.Color,
+                            Color = textColor,
                             StrokeWidth = Math.Max(0.5f, seg.FontSizePt * 0.05f),
                             IsAntialias = true
                         };
+                        if (textShader != null) uPaint.Shader = textShader;
                         float underlineY = baseY + seg.FontSizePt * 0.12f;
                         canvas.DrawLine(segX, underlineY, segX + seg.Width, underlineY, uPaint);
                     }
@@ -875,16 +917,23 @@ namespace Writersword.Modules.TextEditor.Rendering
                     {
                         using var sPaint = new SKPaint
                         {
-                            Color = seg.Color,
+                            Color = textColor,
                             StrokeWidth = Math.Max(0.5f, seg.FontSizePt * 0.05f),
                             IsAntialias = true
                         };
+                        if (textShader != null) sPaint.Shader = textShader;
                         float strikeY = baseY - seg.FontSizePt * 0.3f;
                         canvas.DrawLine(segX, strikeY, segX + seg.Width, strikeY, sPaint);
                     }
+
+                    textShader?.Dispose();
                 }
             }
         }
+
+        // Признак того, что строка-код описывает градиент (а не обычный hex).
+        private static bool IsGradientCode(string? code)
+            => code != null && code.StartsWith("grad|", StringComparison.OrdinalIgnoreCase);
 
         // ── Сборка токенов ────────────────────────────────────────────────
 
@@ -948,6 +997,8 @@ namespace Writersword.Modules.TextEditor.Rendering
                         IsStrikethrough = p?.IsStrikethrough ?? false,
                         Color = ParseColor(p?.TextColor),
                         HighlightColor = ParseHighlight(p?.HighlightColor),
+                        ColorCode = p?.TextColor,
+                        HighlightCode = p?.HighlightColor,
                         GlobalCharOffset = globalIndex
                     };
 
@@ -980,6 +1031,8 @@ namespace Writersword.Modules.TextEditor.Rendering
                                         IsStrikethrough = p?.IsStrikethrough ?? false,
                                         Color = ParseColor(p?.TextColor),
                                         HighlightColor = ParseHighlight(p?.HighlightColor),
+                                        ColorCode = p?.TextColor,
+                                        HighlightCode = p?.HighlightColor,
                                         GlobalCharOffset = globalIndex
                                     };
                                 }
@@ -1158,6 +1211,8 @@ namespace Writersword.Modules.TextEditor.Rendering
                     IsStrikethrough = format.IsStrikethrough,
                     Color = format.Color,
                     HighlightColor = format.HighlightColor,
+                    ColorCode = format.ColorCode,
+                    HighlightCode = format.HighlightCode,
                     GlobalCharOffset = globalIdx,
                     X = currentW,
                     Width = charWidth
@@ -1295,6 +1350,34 @@ namespace Writersword.Modules.TextEditor.Rendering
             float effectiveWidth = line.TextWidth - trailingWidth;
             float free = (layout.TextAreaWidthPt - firstExtra) - effectiveWidth;
             return free > 0f ? free / spaces : 0f;
+        }
+
+        // Индекс последнего сегмента строки, содержащего непробельный символ. -1 — таких нет.
+        private static int LastContentSegIndex(SKLineLayout line)
+        {
+            int last = -1;
+            for (int si = 0; si < line.Segments.Count; si++)
+            {
+                var s = line.Segments[si];
+                for (int k = 0; k < s.Text.Length; k++)
+                    if (s.Text[k] != ' ' && s.Text[k] != '\t') { last = si; break; }
+            }
+            return last;
+        }
+
+        // Ширина заливки сегмента с обрезкой хвостовых пробелов в конце визуальной строки:
+        // сегменты целиком из хвостовых пробелов не заливаются, в последнем содержательном
+        // сегменте хвостовые пробелы отсекаются. Для внутренних сегментов — полная ширина.
+        private static float SegHighlightWidth(SKLineLayout line, int segIndex, int lastContentSeg)
+        {
+            var seg = line.Segments[segIndex];
+            if (lastContentSeg < 0) return seg.Width;
+            if (segIndex > lastContentSeg) return 0f;
+            if (segIndex < lastContentSeg) return seg.Width;
+            float right = 0f;
+            for (int k = 0; k < seg.Text.Length && k < seg.GlyphMetrics.Length; k++)
+                if (seg.Text[k] != ' ' && seg.Text[k] != '\t') right = seg.GlyphMetrics[k].Right;
+            return right > 0f ? right : seg.Width;
         }
 
         // ── Измерение текста ──────────────────────────────────────────────
@@ -1665,6 +1748,15 @@ namespace Writersword.Modules.TextEditor.Rendering
             float yBase = clampedFrom < layout.Lines.Count
                                     ? layout.Lines[clampedFrom].Y : 0f;
 
+            // Прямоугольник всего абзаца — для градиента текста в режиме «весь блок».
+            // line.Y == 0 отображается в paraY - yBase, от него и считаем верх блока.
+            float blockTop = paraY - yBase;
+            var blockRect = new SKRect(
+                paraX + layout.LeftIndentPt,
+                blockTop,
+                paraX + layout.LeftIndentPt + layout.TextAreaWidthPt,
+                blockTop + layout.TotalHeightPt);
+
             for (int i = clampedFrom; i < clampedTo; i++)
             {
                 var line = layout.Lines[i];
@@ -1679,27 +1771,61 @@ namespace Writersword.Modules.TextEditor.Rendering
                 bool doJustify = extraPerSpace > 0f;
                 float justifyShift = 0f;
 
+                // Прямоугольник строки — для градиента текста в режиме «построчно».
+                float lineStartX = paraX + lineShift + (line.Segments.Count > 0 ? line.Segments[0].X : 0f);
+                var lineRect = new SKRect(lineStartX, lineY, lineStartX + line.TextWidth, lineY + line.Height);
+
+                int lastContentSeg = LastContentSegIndex(line);
+                int segIdx = -1;
                 foreach (var seg in line.Segments)
                 {
+                    segIdx++;
                     float segX = paraX + seg.X + lineShift + justifyShift;
                     float baseY = lineY + line.Baseline;
                     // Над/подстрочный: смещаем базовую линию сегмента (вверх для надстрочного,
                     // вниз для подстрочного). Для обычного текста BaselineShiftPt = 0.
                     float segBaseY = baseY - seg.BaselineShiftPt;
 
-                    if (seg.HighlightColor != SKColors.Transparent)
+                    // Задник за текстом: плоский цвет либо градиент по прямоугольнику сегмента.
+                    // Ширина обрезается по хвостовым пробелам в конце строки — иначе заливка
+                    // тянется до правого поля и «растёт» при вводе пробелов.
+                    bool hlGradient = IsGradientCode(seg.HighlightCode);
+                    float hlWidth = SegHighlightWidth(line, segIdx, lastContentSeg);
+                    if (hlWidth > 0f && (seg.HighlightColor != SKColors.Transparent || hlGradient))
                     {
                         using var hlPaint = new SKPaint { Color = seg.HighlightColor };
-                        canvas.DrawRect(segX, lineY, seg.Width, line.Height, hlPaint);
+                        SKShader? hlShader = null;
+                        if (hlGradient)
+                        {
+                            var hlSpec = GradientSpec.Parse(seg.HighlightCode);
+                            hlPaint.Color = GradientShaderFactory.SolidColor(hlSpec);
+                            var hlRect = new SKRect(segX, lineY, segX + hlWidth, lineY + line.Height);
+                            hlShader = GradientShaderFactory.BuildShader(hlSpec, hlRect);
+                            hlPaint.Shader = hlShader;
+                        }
+                        canvas.DrawRect(segX, lineY, hlWidth, line.Height, hlPaint);
+                        hlShader?.Dispose();
+                    }
+
+                    // Цвет либо градиент букв. Для одноцвета путь прежний — без шейдера.
+                    SKColor textColor = seg.Color;
+                    SKShader? textShader = null;
+                    if (IsGradientCode(seg.ColorCode))
+                    {
+                        var spec = GradientSpec.Parse(seg.ColorCode);
+                        textColor = GradientShaderFactory.SolidColor(spec);
+                        var rect = spec.TextFill == GradientTextFill.PerLine ? lineRect : blockRect;
+                        textShader = GradientShaderFactory.BuildShader(spec, rect);
                     }
 
                     var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
                     var font = GetOrCreateFont(typeface, seg.FontSizePt);
                     using var paint = new SKPaint
                     {
-                        Color = seg.Color,
+                        Color = textColor,
                         IsAntialias = true
                     };
+                    if (textShader != null) paint.Shader = textShader;
 
                     canvas.DrawText(seg.Text, segX, segBaseY, font, paint);
 
@@ -1707,10 +1833,11 @@ namespace Writersword.Modules.TextEditor.Rendering
                     {
                         using var uPaint = new SKPaint
                         {
-                            Color = seg.Color,
+                            Color = textColor,
                             StrokeWidth = Math.Max(0.5f, seg.FontSizePt * 0.05f),
                             IsAntialias = true
                         };
+                        if (textShader != null) uPaint.Shader = textShader;
                         float underlineY = segBaseY + seg.FontSizePt * 0.12f;
                         canvas.DrawLine(segX, underlineY, segX + seg.Width, underlineY, uPaint);
                     }
@@ -1719,13 +1846,16 @@ namespace Writersword.Modules.TextEditor.Rendering
                     {
                         using var sPaint = new SKPaint
                         {
-                            Color = seg.Color,
+                            Color = textColor,
                             StrokeWidth = Math.Max(0.5f, seg.FontSizePt * 0.05f),
                             IsAntialias = true
                         };
+                        if (textShader != null) sPaint.Shader = textShader;
                         float strikeY = segBaseY - seg.FontSizePt * 0.3f;
                         canvas.DrawLine(segX, strikeY, segX + seg.Width, strikeY, sPaint);
                     }
+
+                    textShader?.Dispose();
 
                     // После сегмента сдвигаем следующие на накопленную добавку по его пробелам —
                     // так растягиваются промежутки между словами при выравнивании по ширине.

@@ -17,11 +17,15 @@
 		<Setter Property="SelectionForegroundBrush" Value="White"/>
 	</Style>
 	<Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
-		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
 	</Style>
 	<Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
 		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+	</Style>
+	<!-- Локальное отключение акцентной окантовки на фокусе: Classes="noAccent" -->
+	<Style Selector="TextBox.noAccent:focus /template/ Border#PART_BorderElement">
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
 	</Style>
 	<Style Selector="TextBox:disabled">
 		<Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>

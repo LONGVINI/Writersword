@@ -1,0 +1,312 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Writersword.Modules.TextEditor.Views.Dialogs.ParagraphSettingsOverlay">
+
+    <UserControl.Styles>
+
+        <Style Selector="TextBlock.Section">
+            <Setter Property="FontSize"          Value="11"/>
+            <Setter Property="FontWeight"        Value="SemiBold"/>
+            <Setter Property="Foreground"        Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <Style Selector="TextBlock.FieldLabel">
+            <Setter Property="FontSize"          Value="12"/>
+            <Setter Property="Foreground"        Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <Style Selector="ComboBox.Field">
+            <Setter Property="Background"          Value="{DynamicResource BgSurfaceBrush}"/>
+            <Setter Property="BorderBrush"         Value="{DynamicResource BorderDefaultBrush}"/>
+            <Setter Property="BorderThickness"     Value="1"/>
+            <Setter Property="CornerRadius"        Value="6"/>
+            <Setter Property="MinHeight"           Value="30"/>
+            <Setter Property="Padding"             Value="10 0"/>
+            <Setter Property="FontSize"            Value="12"/>
+            <Setter Property="Foreground"          Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="ComboBox.Field:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+        </Style>
+        <Style Selector="ComboBox.Field:focus-within /template/ Border#PART_BorderElement">
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+        </Style>
+
+        <Style Selector="NumericUpDown.Field">
+            <Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="MinHeight"       Value="30"/>
+            <Setter Property="FontSize"        Value="12"/>
+            <Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+        </Style>
+
+        <!-- Поле как единый элемент: внутренняя рамка текста убрана, остаётся одна внешняя.
+             При наведении/фокусе рамка остаётся нейтральной (без акцентной обводки). -->
+        <Style Selector="NumericUpDown.Field /template/ TextBox">
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="CornerRadius"    Value="0"/>
+        </Style>
+        <Style Selector="NumericUpDown.Field /template/ TextBox /template/ Border#PART_BorderElement">
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background"      Value="Transparent"/>
+        </Style>
+        <Style Selector="NumericUpDown.Field:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+        </Style>
+        <Style Selector="NumericUpDown.Field:focus-within /template/ Border#PART_BorderElement">
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+        </Style>
+        <Style Selector="NumericUpDown.Field /template/ ButtonSpinner:focus-within /template/ Border#PART_BorderElement">
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+        </Style>
+
+        <Style Selector="ToggleButton.Seg">
+            <Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+            <Setter Property="BorderBrush"                Value="{DynamicResource BorderDefaultBrush}"/>
+            <Setter Property="BorderThickness"            Value="1"/>
+            <Setter Property="CornerRadius"               Value="6"/>
+            <Setter Property="Padding"                    Value="8 0"/>
+            <Setter Property="MinWidth"                   Value="34"/>
+            <Setter Property="MinHeight"                  Value="30"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment"   Value="Center"/>
+            <Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="Cursor"                     Value="Hand"/>
+        </Style>
+        <Style Selector="ToggleButton.Seg:checked /template/ ContentPresenter">
+            <Setter Property="Background"             Value="{DynamicResource AccentDefaultBrush}"/>
+            <Setter Property="TextElement.Foreground" Value="White"/>
+        </Style>
+
+        <Style Selector="ToggleButton.SegSmall">
+            <Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+            <Setter Property="BorderBrush"                Value="{DynamicResource BorderDefaultBrush}"/>
+            <Setter Property="BorderThickness"            Value="1"/>
+            <Setter Property="CornerRadius"               Value="5"/>
+            <Setter Property="Padding"                    Value="6 0"/>
+            <Setter Property="MinWidth"                   Value="28"/>
+            <Setter Property="MinHeight"                  Value="22"/>
+            <Setter Property="FontSize"                   Value="11"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment"   Value="Center"/>
+            <Setter Property="Foreground"                 Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="Cursor"                     Value="Hand"/>
+        </Style>
+        <Style Selector="ToggleButton.SegSmall:checked /template/ ContentPresenter">
+            <Setter Property="Background"             Value="{DynamicResource AccentDefaultBrush}"/>
+            <Setter Property="TextElement.Foreground" Value="White"/>
+        </Style>
+
+        <Style Selector="Button.IconClose">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Width"           Value="28"/>
+            <Setter Property="Height"          Value="28"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="0"/>
+            <Setter Property="Foreground"      Value="{DynamicResource TextMutedBrush}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment"   Value="Center"/>
+            <Setter Property="Cursor"          Value="Hand"/>
+        </Style>
+        <Style Selector="Button.IconClose:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+        </Style>
+
+        <Style Selector="Button.Dialog">
+            <Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="18 8"/>
+            <Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="Cursor"          Value="Hand"/>
+        </Style>
+        <Style Selector="Button.Dialog:pointerover /template/ ContentPresenter">
+            <Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+        </Style>
+        <Style Selector="Button.DialogAccent">
+            <Setter Property="Background"      Value="{DynamicResource AccentDefaultBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="18 8"/>
+            <Setter Property="Foreground"      Value="White"/>
+            <Setter Property="FontWeight"      Value="SemiBold"/>
+            <Setter Property="Cursor"          Value="Hand"/>
+        </Style>
+
+    </UserControl.Styles>
+
+    <Grid>
+
+        <Border x:Name="Scrim" Background="#B3000000"/>
+
+        <Border x:Name="EditorPanel"
+                HorizontalAlignment="Center" VerticalAlignment="Center"
+                Margin="24"
+                Width="430"
+                Background="{DynamicResource BgBaseBrush}"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="16"
+                Padding="20 18">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.55" Color="#000000"/>
+            </Border.Effect>
+
+            <ScrollViewer x:Name="PanelScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Spacing="12">
+
+                    <Grid ColumnDefinitions="* Auto">
+                        <TextBlock Grid.Column="0" Text="Абзац"
+                                   FontSize="16" FontWeight="SemiBold"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        <Button Grid.Column="1" x:Name="CloseBtn" Classes="IconClose">
+                            <PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                                      Width="14" Height="14"/>
+                        </Button>
+                    </Grid>
+
+                    <!-- Выравнивание -->
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <ToggleButton x:Name="AlignLeftBtn" Classes="Seg" ToolTip.Tip="По левому краю">
+                            <PathIcon Data="M15 15H3v2h12v-2zm0-8H3v2h12V7zM3 13h18v-2H3v2zm0 8h18v-2H3v2zM3 3v2h18V3H3z" Width="14" Height="14"/>
+                        </ToggleButton>
+                        <ToggleButton x:Name="AlignCenterBtn" Classes="Seg" ToolTip.Tip="По центру">
+                            <PathIcon Data="M7 15v2h10v-2H7zm-4 6h18v-2H3v2zm0-8h18v-2H3v2zm4-6v2h10V7H7zM3 3v2h18V3H3z" Width="14" Height="14"/>
+                        </ToggleButton>
+                        <ToggleButton x:Name="AlignRightBtn" Classes="Seg" ToolTip.Tip="По правому краю">
+                            <PathIcon Data="M3 21h18v-2H3v2zm6-4h12v-2H9v2zm-6-4h18v-2H3v2zm6-4h12V7H9v2zM3 3v2h18V3H3z" Width="14" Height="14"/>
+                        </ToggleButton>
+                        <ToggleButton x:Name="AlignJustifyBtn" Classes="Seg" ToolTip.Tip="По ширине">
+                            <PathIcon Data="M3 21h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18V7H3v2zm0-6v2h18V3H3z" Width="14" Height="14"/>
+                        </ToggleButton>
+                    </StackPanel>
+
+                    <!-- Отступы -->
+                    <Grid ColumnDefinitions="* Auto">
+                        <TextBlock Grid.Column="0" Classes="Section" Text="ОТСТУПЫ"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                            <ToggleButton x:Name="IndentCmBtn" Classes="SegSmall" Content="см"/>
+                            <ToggleButton x:Name="IndentPtBtn" Classes="SegSmall" Content="пт"/>
+                        </StackPanel>
+                    </Grid>
+                    <Grid ColumnDefinitions="* *" ColumnSpacing="12">
+                        <StackPanel Grid.Column="0" Spacing="3">
+                            <TextBlock Classes="FieldLabel" x:Name="LeftLabel" Text="Слева"/>
+                            <NumericUpDown x:Name="LeftIndentBox" Classes="Field"
+                                           Minimum="-1000" Maximum="1000" Increment="0.25" FormatString="0.##"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="3">
+                            <TextBlock Classes="FieldLabel" x:Name="RightLabel" Text="Справа"/>
+                            <NumericUpDown x:Name="RightIndentBox" Classes="Field"
+                                           Minimum="-1000" Maximum="1000" Increment="0.25" FormatString="0.##"/>
+                        </StackPanel>
+                    </Grid>
+                    <Grid ColumnDefinitions="* *" ColumnSpacing="12">
+                        <StackPanel Grid.Column="0" Spacing="3">
+                            <TextBlock Classes="FieldLabel" Text="Первая строка"/>
+                            <ComboBox x:Name="FirstLineModeCombo" Classes="Field" SelectedIndex="0">
+                                <ComboBoxItem>(нет)</ComboBoxItem>
+                                <ComboBoxItem>Отступ</ComboBoxItem>
+                                <ComboBoxItem>Выступ</ComboBoxItem>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="3">
+                            <TextBlock Classes="FieldLabel" x:Name="FirstLineLabel" Text="на"/>
+                            <NumericUpDown x:Name="FirstLineValueBox" Classes="Field"
+                                           Minimum="0" Maximum="1000" Increment="0.25" FormatString="0.##"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Интервал -->
+                    <Grid ColumnDefinitions="* Auto">
+                        <TextBlock Grid.Column="0" Classes="Section" Text="ИНТЕРВАЛ"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                            <ToggleButton x:Name="IntervalCmBtn" Classes="SegSmall" Content="см"/>
+                            <ToggleButton x:Name="IntervalPtBtn" Classes="SegSmall" Content="пт"/>
+                        </StackPanel>
+                    </Grid>
+                    <Grid ColumnDefinitions="* *" ColumnSpacing="12">
+                        <StackPanel Grid.Column="0" Spacing="3">
+                            <TextBlock Classes="FieldLabel" x:Name="BeforeLabel" Text="Перед"/>
+                            <NumericUpDown x:Name="SpaceBeforeBox" Classes="Field"
+                                           Minimum="0" Maximum="2000" Increment="1" FormatString="0.#"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="3">
+                            <TextBlock Classes="FieldLabel" x:Name="AfterLabel" Text="После"/>
+                            <NumericUpDown x:Name="SpaceAfterBox" Classes="Field"
+                                           Minimum="0" Maximum="2000" Increment="1" FormatString="0.#"/>
+                        </StackPanel>
+                    </Grid>
+                    <Grid ColumnDefinitions="* *" ColumnSpacing="12">
+                        <StackPanel Grid.Column="0" Spacing="3">
+                            <TextBlock Classes="FieldLabel" Text="Междустрочный"/>
+                            <ComboBox x:Name="LineSpacingCombo" Classes="Field" SelectedIndex="0">
+                                <ComboBoxItem>Одинарный</ComboBoxItem>
+                                <ComboBoxItem>1.5 строки</ComboBoxItem>
+                                <ComboBoxItem>Двойной</ComboBoxItem>
+                                <ComboBoxItem>Множитель</ComboBoxItem>
+                                <ComboBoxItem>Точно (пт)</ComboBoxItem>
+                                <ComboBoxItem>Минимум (пт)</ComboBoxItem>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="3">
+                            <TextBlock Classes="FieldLabel" Text="значение"/>
+                            <NumericUpDown x:Name="LineSpacingValueBox" Classes="Field"
+                                           Minimum="0" Maximum="1000" Increment="0.1" FormatString="0.##"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Образец -->
+                    <TextBlock Classes="Section" Text="ОБРАЗЕЦ"/>
+                    <Border Background="{DynamicResource BgSurfaceBrush}"
+                            BorderBrush="{DynamicResource BorderSubtleBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="14 12"
+                            MinHeight="150">
+                        <StackPanel Spacing="5">
+                            <Rectangle Height="6" Width="340" RadiusX="3" RadiusY="3"
+                                       HorizontalAlignment="Left" Opacity="0.3"
+                                       Fill="{DynamicResource TextMutedBrush}"/>
+                            <Rectangle Height="6" Width="280" RadiusX="3" RadiusY="3"
+                                       HorizontalAlignment="Left" Opacity="0.3"
+                                       Fill="{DynamicResource TextMutedBrush}"/>
+                            <TextBlock x:Name="PreviewSample"
+                                       TextWrapping="Wrap"
+                                       FontSize="13"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       Text="Образец текста этого абзаца, который показывает выбранные отступы, выравнивание и интервалы между строками и абзацами."/>
+                            <Rectangle Height="6" Width="320" RadiusX="3" RadiusY="3"
+                                       HorizontalAlignment="Left" Opacity="0.3"
+                                       Fill="{DynamicResource TextMutedBrush}"/>
+                            <Rectangle Height="6" Width="260" RadiusX="3" RadiusY="3"
+                                       HorizontalAlignment="Left" Opacity="0.3"
+                                       Fill="{DynamicResource TextMutedBrush}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                Spacing="10"
+                                Margin="0 6 0 0">
+                        <Button x:Name="CancelBtn" Classes="Dialog" Content="Отмена"/>
+                        <Button x:Name="OkBtn" Classes="DialogAccent" Content="ОК"/>
+                    </StackPanel>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+    </Grid>
+
+</UserControl>

@@ -18,6 +18,7 @@ using Avalonia.VisualTree;
 using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Services;
+using Writersword.Infrastructure.Converters;
 
 namespace Writersword.Styles.UserControls
 {
@@ -103,6 +104,11 @@ namespace Writersword.Styles.UserControls
         private Color _nPending;
         private bool _nHasPending;
 
+        // Полоса-редактор градиента под цветами.
+        private GradientStripEditor? _gradientStrip;
+        private bool _gradientEnabled;
+        private bool _settingGrad;
+
         public ColorEditorOverlay()
         {
             InitializeComponent();
@@ -130,10 +136,20 @@ namespace Writersword.Styles.UserControls
             var pm = this.FindControl<PaletteManagerView>("PalettesPanel");
             if (pm is not null)
             {
-                pm.ColorPicked = SelectFromHex;
-                pm.CurrentColorProvider = () => $"#{_current.R:X2}{_current.G:X2}{_current.B:X2}";
+                pm.ColorPicked = SelectFromCode;
+                pm.CurrentColorProvider = () =>
+                    (_gradientEnabled ? _gradientStrip?.BuildSpec().ToCode() : null)
+                    ?? $"#{_current.R:X2}{_current.G:X2}{_current.B:X2}";
                 pm.ActiveChanged += UpdateActivePalettePlate;
                 UpdateActivePalettePlate();
+            }
+
+            // Полоса градиента: выбор чипа-стопа загружает его цвет в основной выбор.
+            _gradientStrip = this.FindControl<GradientStripEditor>("GradientStrip");
+            if (_gradientStrip is not null)
+            {
+                _gradientStrip.ActiveStopSelected += SelectFromHex;
+                _gradientStrip.SpecChanged += OnStripSpecChanged;
             }
 
             // По умолчанию открыта вкладка «Мои цвета».
@@ -143,27 +159,15 @@ namespace Writersword.Styles.UserControls
             // окна редактор обрезается. Середина (ScrollViewer) прокручивается.
             this.GetObservable(BoundsProperty).Subscribe(b =>
             {
-                var panel = this.FindControl<Border>("EditorPanel");
-                if (panel is null) return;
-                panel.MaxHeight = Math.Max(220, b.Height - 48);
-
-                // Если в модуле есть место — расширяем редактор и раскладываем в две
-                // колонки (пикер слева, коллекции справа). Иначе — один столбец.
-                bool wide = b.Width >= 820;
-                panel.MaxWidth = Math.Min(wide ? 760 : 460, Math.Max(120, b.Width - 48));
-                panel.Width = wide ? 720 : 440;
-                // Перенос панелей делаем вне прохода раскладки (на следующем тике),
-                // иначе ContentPresenter падает с NullReferenceException.
+                if (b.Width <= 0) return;
+                bool wide = ApplyPanelMetrics(b.Width, b.Height);
+                // Перенос панелей во время прохода раскладки роняет ContentPresenter
+                // (NRE), поэтому при изменении размеров откладываем на следующий тик.
                 if (_isWide != wide)
                 {
                     _isWide = wide;
                     Avalonia.Threading.Dispatcher.UIThread.Post(() => SetTwoColumn(wide));
                 }
-
-                // При узкой панели кнопка пипетки сворачивается до одной иконки.
-                var lbl = this.FindControl<TextBlock>("EyedropperLabel");
-                if (lbl is not null) lbl.IsVisible = panel.MaxWidth > 340;
-
             });
         }
 
@@ -255,14 +259,44 @@ namespace Writersword.Styles.UserControls
             this.FindControl<PaletteManagerView>("PalettesPanel")?.Refresh();
             SetCollectionTab(_collectionTab);
 
+            // Входное значение может быть обычным hex либо кодом градиента —
+            // грузим в полосу, а в основной выбор ставим цвет активного стопа.
+            var spec = GradientSpec.Parse(hex);
+            _gradientStrip?.Load(spec);
+            SetGradientEnabled(!spec.IsSolid);
+
             Color c;
-            try { c = Color.Parse(hex); }
+            try { c = Color.Parse(spec.SolidHex); }
             catch { c = Color.FromRgb(0x60, 0x7D, 0x8B); }
 
             SetColor(c);
 
+            // Панель всегда видима (на случай, если прошлые версии оставили Opacity=0).
+            // Раскладку колонок под ширину модуля доложит наблюдатель Bounds — перенос
+            // панелей делается на следующем тике, что безопасно.
+            var editorPanel = this.FindControl<Border>("EditorPanel");
+            if (editorPanel is not null) editorPanel.Opacity = 1;
+
             IsVisible = true;
             return _tcs.Task;
+        }
+
+        // Размеры панели редактора под доступную область; возвращает, нужна ли
+        // двухколоночная раскладка (сам перенос панелей — SetTwoColumn — отдельно).
+        private bool ApplyPanelMetrics(double width, double height)
+        {
+            bool wide = width >= 820;
+            var panel = this.FindControl<Border>("EditorPanel");
+            if (panel is not null)
+            {
+                panel.MaxHeight = Math.Max(220, height - 48);
+                panel.MaxWidth = Math.Min(wide ? 760 : 460, Math.Max(120, width - 48));
+                panel.Width = wide ? 720 : 440;
+
+                var lbl = this.FindControl<TextBlock>("EyedropperLabel");
+                if (lbl is not null) lbl.IsVisible = panel.MaxWidth > 340;
+            }
+            return wide;
         }
 
         // applyAll: null — кольцо только для этого; true — кольца всем; false — убрать у всех.
@@ -272,6 +306,8 @@ namespace Writersword.Styles.UserControls
             var result = new ColorEditResult
             {
                 Hex = $"#{_current.R:X2}{_current.G:X2}{_current.B:X2}",
+                Code = (_gradientEnabled && _gradientStrip is not null)
+                    ? _gradientStrip.BuildSpec().ToCode() : null,
                 Ring = _ring,
                 ApplyAll = applyAll
             };
@@ -326,6 +362,7 @@ namespace Writersword.Styles.UserControls
             try
             {
                 _current = c;
+                _gradientStrip?.SetActiveColor(c);
 
                 var sw = this.FindControl<Border>("PreviewSwatch");
                 if (sw is not null) sw.Background = new SolidColorBrush(c);
@@ -390,7 +427,7 @@ namespace Writersword.Styles.UserControls
                     Canvas.SetTop(wheelThumb, ty - 8);
                 }
 
-                UpdateCardPreview(c);
+                UpdatePreviewVisual();
             }
             finally
             {
@@ -404,9 +441,8 @@ namespace Writersword.Styles.UserControls
             if (t is not null) t.Text = value;
         }
 
-        private void UpdateCardPreview(Color c)
+        private void UpdateCardPreview(IBrush brush)
         {
-            var brush = new SolidColorBrush(c);
             var border = this.FindControl<Border>("PreviewCardBorder");
             if (border is not null) border.BorderBrush = brush;
             var avatar = this.FindControl<Ellipse>("PreviewAvatar");
@@ -456,6 +492,63 @@ namespace Writersword.Styles.UserControls
         {
             try { SetColor(Color.Parse(hex)); }
             catch { }
+        }
+
+        // Клик по сохранённому образцу: если это код градиента — грузим его в полосу
+        // и включаем режим градиента, иначе ведём себя как обычный выбор цвета.
+        private void SelectFromCode(string code)
+        {
+            var spec = GradientSpec.Parse(code);
+            if (!spec.IsSolid)
+            {
+                _gradientStrip?.Load(spec);
+                SetGradientEnabled(true);
+            }
+            try { SetColor(Color.Parse(spec.SolidHex)); }
+            catch { }
+            UpdatePreviewVisual();
+        }
+
+        // Включение/выключение режима градиента: полоса блокируется, а на сохранение
+        // и в превью уходит сплошной цвет.
+        private void SetGradientEnabled(bool on)
+        {
+            _gradientEnabled = on;
+            var chk = this.FindControl<CheckBox>("GradientEnableCheck");
+            if (chk is not null)
+            {
+                _settingGrad = true;
+                chk.IsChecked = on;
+                _settingGrad = false;
+            }
+            if (_gradientStrip is not null) _gradientStrip.IsEnabled = on;
+            UpdatePreviewVisual();
+        }
+
+        private void OnGradientEnableChanged(object? sender, RoutedEventArgs e)
+        {
+            if (_settingGrad) return;
+            _gradientEnabled = (sender as CheckBox)?.IsChecked == true;
+            if (_gradientStrip is not null) _gradientStrip.IsEnabled = _gradientEnabled;
+            UpdatePreviewVisual();
+        }
+
+        private void OnStripSpecChanged() => UpdatePreviewVisual();
+
+        // Текущая кисть для превью: градиент из полосы либо сплошной цвет.
+        private IBrush CurrentBrush()
+        {
+            if (_gradientEnabled && _gradientStrip is not null)
+                return GradientBrushFactory.ToBrush(_gradientStrip.BuildSpec());
+            return new SolidColorBrush(_current);
+        }
+
+        private void UpdatePreviewVisual()
+        {
+            var brush = CurrentBrush();
+            var sw = this.FindControl<Border>("PreviewSwatch");
+            if (sw is not null) sw.Background = brush;
+            UpdateCardPreview(brush);
         }
 
         // ── Вкладки ───────────────────────────────────────────────────────
@@ -1073,12 +1166,25 @@ namespace Writersword.Styles.UserControls
             if (i >= 0) { Palette.RemoveAt(i); PersistPalette(); _paletteDirty = true; }
         }
 
+        // Крестик на свотче «Моих цветов» — удалить именно этот цвет.
+        private void OnRemoveMyColor(object? sender, RoutedEventArgs e)
+        {
+            if (sender is Button b && b.DataContext is string hex)
+                RemovePaletteColor(hex);
+            e.Handled = true;
+        }
+
+        // Текущий выбор как код: градиент (grad|...) при включённом режиме, иначе hex.
+        private string CurrentCode()
+            => (_gradientEnabled ? _gradientStrip?.BuildSpec().ToCode() : null)
+               ?? $"#{_current.R:X2}{_current.G:X2}{_current.B:X2}";
+
         private void OnAddCurrentClick(object? sender, RoutedEventArgs e)
         {
-            var hex = $"#{_current.R:X2}{_current.G:X2}{_current.B:X2}";
-            if (IndexOfPalette(hex) < 0)
+            var code = CurrentCode();
+            if (IndexOfPalette(code) < 0)
             {
-                Palette.Add(Normalize(hex));
+                Palette.Add(Normalize(code));
                 PersistPalette();
                 _paletteDirty = true;
             }
@@ -1219,7 +1325,14 @@ namespace Writersword.Styles.UserControls
         }
 
         private static Border? PaletteSwatchOf(Control cont)
-            => (cont as ContentPresenter)?.Child as Border ?? cont as Border;
+        {
+            var child = (cont as ContentPresenter)?.Child ?? cont;
+            if (child is Border bd) return bd;
+            if (child is Panel p)
+                foreach (var ch in p.Children)
+                    if (ch is Border b) return b;
+            return null;
+        }
 
         private void OnPaletteReleased(object? sender, PointerReleasedEventArgs e)
         {
@@ -1267,7 +1380,7 @@ namespace Writersword.Styles.UserControls
             }
             else if (_paletteDragHex is string h)
             {
-                SelectFromHex(h);   // быстрый клик — выбрать цвет
+                SelectFromCode(h);   // быстрый клик — выбрать цвет или применить градиент
             }
 
             if (_swList is not null) _swList.IsHitTestVisible = true;
@@ -1633,6 +1746,11 @@ namespace Writersword.Styles.UserControls
     public sealed class ColorEditResult
     {
         public string Hex { get; init; } = string.Empty;
+
+        // Полный код выбранного значения: обычный hex для одноцвета либо код
+        // градиента "grad|...". Для одноцвета совпадает с Hex.
+        public string? Code { get; init; }
+
         public bool Ring { get; init; }
         public bool? ApplyAll { get; init; }
     }

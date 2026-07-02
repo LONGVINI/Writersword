@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:uc="using:Writersword.Styles.UserControls"
+             x:Class="Writersword.Styles.UserControls.GradientStripEditor">
+
+	<StackPanel Spacing="8">
+
+		<!-- Тип градиента и сброс. «Построчно» скрыт по умолчанию: это настройка
+		     только для текста, её включает модуль текста через ShowTextFillOption. -->
+		<Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
+			<TextBlock Grid.Column="0" Text="Тип" FontSize="11" VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+			<ComboBox Grid.Column="1" x:Name="KindBox" SelectedIndex="0" MinWidth="118"
+                      VerticalAlignment="Center" SelectionChanged="OnKindChanged">
+				<ComboBoxItem>Линейный</ComboBoxItem>
+				<ComboBoxItem>Радиальный</ComboBoxItem>
+				<ComboBoxItem>Конический</ComboBoxItem>
+			</ComboBox>
+
+			<ToggleButton Grid.Column="3" x:Name="FillToggle" Content="Построчно"
+                          FontSize="11" Padding="8,4" VerticalAlignment="Center"
+                          IsVisible="False"
+                          ToolTip.Tip="Перезапускать градиент на каждой строке текста"
+                          IsCheckedChanged="OnFillChanged"/>
+
+			<Button Grid.Column="4" x:Name="ResetButton" Content="Сброс"
+                    FontSize="11" Padding="12,5" VerticalAlignment="Center"
+                    CornerRadius="4"
+                    Background="{DynamicResource BgSurfaceBrush}"
+                    BorderBrush="{DynamicResource AccentDefaultBrush}" BorderThickness="1"
+                    Foreground="{DynamicResource AccentDefaultBrush}"
+                    ToolTip.Tip="Свести градиент к одному цвету"
+                    Click="OnResetClick"/>
+		</Grid>
+
+		<!-- Угол: слайдер + поле ввода + циферблат (0 сверху, по часовой, шаг 45°).
+		     Для радиального типа скрыт. -->
+		<Grid x:Name="AngleRow" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+			<TextBlock Grid.Column="0" Text="Угол" FontSize="11" VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+			<Slider Grid.Column="1" x:Name="AngleSlider" Minimum="0" Maximum="360"
+                    VerticalAlignment="Center" ValueChanged="OnAngleChanged"/>
+			<TextBox Grid.Column="2" x:Name="AngleBox" Text="0" FontSize="13" Width="48"
+                     VerticalAlignment="Center" HorizontalContentAlignment="Center"
+                     GotFocus="OnAngleBoxGotFocus"
+                     KeyDown="OnAngleBoxKeyDown"
+                     LostFocus="OnAngleBoxCommit"/>
+			<uc:AngleDial Grid.Column="3" x:Name="AngleDial" Width="48" Height="48"
+                          VerticalAlignment="Center"
+                          ToolTip.Tip="Быстрый выбор угла: 0 сверху, по часовой, шаг 45°"/>
+		</Grid>
+
+		<!-- Слой стрелок-маркеров сверху + полоса-превью снизу -->
+		<Grid RowDefinitions="22,28">
+			<Canvas Grid.Row="0" x:Name="StopsLayer" ClipToBounds="False" Margin="8,0"
+                    Background="Transparent" SizeChanged="OnLayerSizeChanged"/>
+
+			<Border Grid.Row="1" x:Name="Bar" CornerRadius="6" Margin="8,0"
+                    BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1"
+                    PointerPressed="OnBarPressed" PointerMoved="OnBarMoved"
+                    PointerReleased="OnBarReleased"/>
+		</Grid>
+
+	</StackPanel>
+</UserControl>

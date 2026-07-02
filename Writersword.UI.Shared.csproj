@@ -21,6 +21,7 @@
 		<Compile Include="Src\Infrastructure\Behaviours\FocusOnVisibleBehavior.cs" />
 		<Compile Include="Src\Infrastructure\Behaviours\TooltipBehavior.cs" />
 		<Compile Include="Src\Infrastructure\Controls\ItalicCaretTextBox.cs" />
+		<Compile Include="Src\Infrastructure\Converters\GradientBrushFactory.cs" />
 	</ItemGroup>
 
 	<!-- UserControls — явно после Remove выше -->
@@ -35,6 +36,9 @@
 		<AvaloniaXaml Include="Styles\UserControls\EyedropperOverlay.axaml" />
 		<Compile Include="Styles\UserControls\PaletteManagerView.axaml.cs" />
 		<AvaloniaXaml Include="Styles\UserControls\PaletteManagerView.axaml" />
+		<Compile Include="Styles\UserControls\GradientStripEditor.axaml.cs" />
+		<AvaloniaXaml Include="Styles\UserControls\GradientStripEditor.axaml" />
+		<Compile Include="Styles\UserControls\AngleDial.cs" />
 		<Compile Include="Styles\UserControls\StandardColors.cs" />
 		<Compile Include="Styles\UserControls\RibbonScrollContainer.axaml.cs" />
 		<AvaloniaXaml Include="Styles\UserControls\RibbonScrollContainer.axaml" />

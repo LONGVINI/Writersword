@@ -1,15 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using System.Windows.Input;
-using Avalonia;
-using Avalonia.Controls.ApplicationLifetimes;
 using ReactiveUI;
 using SkiaSharp;
+using IBrush = Avalonia.Media.IBrush;
+using SolidColorBrush = Avalonia.Media.SolidColorBrush;
+using Color = Avalonia.Media.Color;
 using Writersword.Modules.TextEditor.Models.Styles;
 using Writersword.Modules.TextEditor.Contracts;
-using Writersword.Modules.TextEditor.Views.Dialogs;
 
 namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 {
@@ -44,6 +43,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         /// <summary>Правый отступ активного абзаца в pt. Используется линейкой.</summary>
         public double RightIndentPt { get; set; }
+
+        /// <summary>Есть ли у абзаца эффективный интервал перед (с учётом стиля).</summary>
+        public bool HasSpaceBefore { get; set; }
+
+        /// <summary>Есть ли у абзаца эффективный интервал после (с учётом стиля).</summary>
+        public bool HasSpaceAfter { get; set; }
     }
 
     /// <summary>
@@ -86,6 +91,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         private TextAlignment _currentAlignment = TextAlignment.Left;
         private string _currentStyleName = "Normal";
+        private bool _isSpaceBefore;
+        private bool _isSpaceAfter;
+        private int _outlineLevel;
 
         // --- Адаптивное отображение ---
 
@@ -457,8 +465,52 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public ICommand SetLineSpacingCommand { get; }
         public ICommand SpaceBeforeCommand { get; }
         public ICommand SpaceAfterCommand { get; }
-        public ICommand OpenParagraphDialogCommand { get; }
         public ICommand SetOutlineLevelCommand { get; }
+
+        // --- Состояние: интервалы до/после и уровень структуры ---
+
+        public bool IsSpaceBefore
+        {
+            get => _isSpaceBefore;
+            set => this.RaiseAndSetIfChanged(ref _isSpaceBefore, value);
+        }
+
+        public bool IsSpaceAfter
+        {
+            get => _isSpaceAfter;
+            set => this.RaiseAndSetIfChanged(ref _isSpaceAfter, value);
+        }
+
+        public int OutlineLevel
+        {
+            get => _outlineLevel;
+            private set
+            {
+                this.RaiseAndSetIfChanged(ref _outlineLevel, value);
+                this.RaisePropertyChanged(nameof(OutlineLevelLabel));
+                this.RaisePropertyChanged(nameof(OutlineLevelBrush));
+            }
+        }
+
+        /// <summary>Подпись текущего уровня структуры для кнопки риббона.</summary>
+        public string OutlineLevelLabel => _outlineLevel <= 0 ? "Основной текст" : $"Уровень {_outlineLevel}";
+
+        /// <summary>Цвет текущего уровня структуры: серый для основного текста, далее градиент к серому.</summary>
+        public IBrush OutlineLevelBrush => new SolidColorBrush(Color.Parse(OutlineLevelHex(_outlineLevel)));
+
+        private static string OutlineLevelHex(int lvl) => lvl switch
+        {
+            <= 0 => "#8A8A8A",
+            1 => "#E07B39",
+            2 => "#D67D43",
+            3 => "#CB7F4E",
+            4 => "#C18158",
+            5 => "#B68463",
+            6 => "#AC866D",
+            7 => "#A18877",
+            8 => "#978A82",
+            _ => "#8C8C8C"
+        };
 
         // --- Команды: буфер, правка ---
 
@@ -551,18 +603,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                     _target.SetLineSpacing(v);
             });
 
-            SpaceBeforeCommand = ReactiveCommand.Create(() => _target.SetSpaceBefore(6));
-            SpaceAfterCommand = ReactiveCommand.Create(() => _target.SetSpaceAfter(6));
-
-            // Кнопка «Абзац…» — открывает модальное окно настроек абзаца.
-            OpenParagraphDialogCommand = ReactiveCommand.CreateFromTask(OpenParagraphDialogAsync);
-
-            // Кнопка «Уровни» — структурный уровень выделенным абзацам.
-            // CommandParameter передаётся строкой из AXAML ("0"…"9").
+            SpaceBeforeCommand = ReactiveCommand.Create(() => _target.SetSpaceBefore(IsSpaceBefore ? 8 : 0));
+            SpaceAfterCommand = ReactiveCommand.Create(() => _target.SetSpaceAfter(IsSpaceAfter ? 8 : 0));
             SetOutlineLevelCommand = ReactiveCommand.Create<string>(param =>
             {
-                if (int.TryParse(param, out int level))
-                    _target.SetOutlineLevel(Math.Clamp(level, 0, 9));
+                if (int.TryParse(param, out int lvl))
+                    _target.SetOutlineLevel(lvl);
             });
 
             CutCommand = ReactiveCommand.Create(() => _target.Cut());
@@ -605,6 +651,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             _currentAlignment = ctx.Alignment;
             _currentStyleName = ctx.StyleName;
 
+            // Интервалы берём по эффективному значению (с учётом стиля) из CursorContext,
+            // уровень структуры — из собственных свойств абзаца.
+            _isSpaceBefore = ctx.HasSpaceBefore;
+            _isSpaceAfter = ctx.HasSpaceAfter;
+            _outlineLevel = _target.GetActiveParagraphProperties()?.OutlineLevel ?? 0;
+
             this.RaisePropertyChanged(nameof(IsBold));
             this.RaisePropertyChanged(nameof(IsItalic));
             this.RaisePropertyChanged(nameof(IsUnderline));
@@ -624,6 +676,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             this.RaisePropertyChanged(nameof(HighlightColorPick));
             this.RaisePropertyChanged(nameof(CurrentAlignment));
             this.RaisePropertyChanged(nameof(CurrentStyleName));
+            this.RaisePropertyChanged(nameof(IsSpaceBefore));
+            this.RaisePropertyChanged(nameof(IsSpaceAfter));
+            this.RaisePropertyChanged(nameof(OutlineLevel));
+            this.RaisePropertyChanged(nameof(OutlineLevelLabel));
+            this.RaisePropertyChanged(nameof(OutlineLevelBrush));
         }
 
         /// <summary>
@@ -733,24 +790,6 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             }
             _target.EndFontPreview(commit);
             _previewOriginalFont = null;
-        }
-
-        /// <summary>
-        /// Открывает модальное окно «Абзац» через главное окно Avalonia, пред-заполняя его
-        /// свойствами текущего абзаца, и применяет результат к выделенным абзацам.
-        /// </summary>
-        private async Task OpenParagraphDialogAsync()
-        {
-            var lifetime = Application.Current?.ApplicationLifetime
-                as IClassicDesktopStyleApplicationLifetime;
-            var owner = lifetime?.MainWindow;
-            if (owner is null) return;
-
-            var current = _target.GetActiveParagraphProperties() ?? new ParagraphProperties();
-            var dialog = new ParagraphDialog(current);
-            var result = await dialog.ShowDialog<ParagraphProperties?>(owner);
-            if (result is not null)
-                _target.ApplyParagraphSettings(result);
         }
     }
 }

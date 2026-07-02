@@ -179,123 +179,143 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         // ── Вертикальная навигация ────────────────────────────────────────
+        // Абсолютная геометрия каретки (в pt), согласованная с отрисовкой DrawCaret:
+        // absXPt — абсолютный X каретки (с учётом отступа абзаца и выравнивания),
+        // lineTopPt — абсолютный Y верха строки каретки, lineHeightPt — высота строки.
+        private bool TryGetCaretGeometry(out float absXPt, out float lineTopPt, out float lineHeightPt)
+        {
+            absXPt = 0f; lineTopPt = 0f; lineHeightPt = 0f;
+            if (_caretPara < 0 || _caretPara >= _layouts.Count) return false;
+            var pl = _layouts[_caretPara];
+            var layout = GetRenderLayout(pl, (float)(_canvasWidth * PxToPt));
+            if (layout is null || layout.Lines.Count == 0) return false;
+
+            int pos = Clamp(_caretChar, 0, pl.Vm.PlainText?.Length ?? 0);
+            var caret = layout.HitTestPosition(pos);
+            int drawLineIdx = layout.GetLineIndexForChar(pos);
+            float yBase = pl.LineFrom < layout.Lines.Count ? layout.Lines[pl.LineFrom].Y : 0f;
+            float firstLineBaked = (drawLineIdx == 0) ? layout.FirstLineIndentPt : 0f;
+            float caretAlignOffset = LineAlignShift(layout, drawLineIdx) - firstLineBaked
+                + JustifyShiftBeforeChar(layout, drawLineIdx, pos);
+
+            absXPt = pl.AbsXPt + caret.X + caretAlignOffset;
+            lineTopPt = pl.Ypt + (caret.Y - yBase);
+            lineHeightPt = caret.Height > 0.01f ? caret.Height : FallbackLinePt;
+            return true;
+        }
+
+        // Перемещение каретки вверх/вниз — чисто геометрическое, тем же HitTest, что и клик.
+        // Берём абсолютную точку каретки, держим целевой X (_preferredCaretXPt, абсолютный) и
+        // шагаем по Y за границу текущей строки в направлении dir, пока HitTest не попадёт на
+        // другую позицию. Это автоматически работает с разными абзацными отступами, разной
+        // высотой строк, межабзацными интервалами и таблицами (вход в нужную колонку, переход
+        // между строками таблицы, выход из неё) — без спец-логики «в ячейке/не в ячейке».
         private void MoveCaretVertically(int dir)
         {
-            bool inCell = IsInCell(_caretPara);
-            var layout = GetLayoutAt(_caretPara);
-            if (layout is null)
+            if (_layouts.Count == 0) return;
+
+            if (!TryGetCaretGeometry(out float curXPt, out float lineTopPt, out float lineHeightPt))
             {
-                if (!inCell)
-                {
-                    _caretPara = Clamp(_caretPara + dir, 0, _layouts.Count - 1);
-                    _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
-                }
+                // Нет геометрии (пустой/неинициализированный layout) — индексный фолбэк.
+                _caretPara = Clamp(_caretPara + dir, 0, _layouts.Count - 1);
+                _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
                 return;
             }
 
-            int lineIdx = layout.GetLineIndexForChar(_caretChar);
-            int targetLine = lineIdx + dir;
-
-            if (targetLine >= 0 && targetLine < layout.Lines.Count)
+            // Начало серии вертикальных перемещений — фиксируем столбец из ТЕКУЩЕЙ позиции каретки
+            // (живая геометрия, без устаревшего значения). Дальше при Up/Down подряд он держится.
+            if (!_vNavActive)
             {
-                _caretChar = layout.GetCharIndexForVerticalMove(
-                    _caretChar, dir, _preferredCaretXPt);
-                return;
+                _preferredCaretXPt = curXPt;
+                _vNavActive = true;
             }
 
-            if (inCell)
+            float curCenterPt = lineTopPt + lineHeightPt * 0.5f;
+            float lineBottomPt = lineTopPt + lineHeightPt;
+            float width = (float)(_canvasWidth * PxToPt);
+
+            float bestCenterPt = float.NaN;
+
+            // Шаг 1: соседняя визуальная строка ВНУТРИ текущего абзаца (многострочный абзац).
             {
-                // В ячейке: переходим на параграф выше/ниже в той же ячейке
-                var cell = GetCurrentCell()!;
-                int newParaIdx = _caretPara + dir;
-                if (newParaIdx >= 0 && newParaIdx < _layouts.Count)
+                var pl = _layouts[_caretPara];
+                var lay = GetRenderLayout(pl, width);
+                if (lay is not null && lay.Lines.Count > 0)
                 {
-                    var next = _layouts[newParaIdx];
-                    if (next.Cell?.Cell == cell.Cell)
+                    int lf = Clamp(pl.LineFrom, 0, lay.Lines.Count - 1);
+                    float yBase = lay.Lines[lf].Y;
+                    int lineTo = Math.Min(pl.LineTo, lay.Lines.Count);
+                    float bestDelta = float.MaxValue;
+
+                    for (int li = pl.LineFrom; li < lineTo; li++)
                     {
-                        _caretPara = newParaIdx;
-                        var nextLayout = next.Layout
-                            ?? GetOrBuildLayout(next.Vm, (float)(_canvasWidth * PxToPt));
-                        if (nextLayout.Lines.Count > 0)
-                        {
-                            var fl = dir > 0 ? nextLayout.Lines[0] : nextLayout.Lines[^1];
-                            var hit = nextLayout.HitTestPoint(
-                                _preferredCaretXPt - nextLayout.LeftIndentPt,
-                                fl.Y + fl.Height * 0.5f);
-                            _caretChar = hit.CharIndex;
-                        }
-                        else _caretChar = 0;
-                        return;
+                        var line = lay.Lines[li];
+                        float c = pl.Ypt + (line.Y - yBase) + line.Height * 0.5f;
+                        float d = c - curCenterPt;
+                        if (dir > 0 && d > 0.5f && d < bestDelta) { bestDelta = d; bestCenterPt = c; }
+                        else if (dir < 0 && d < -0.5f && -d < bestDelta) { bestDelta = -d; bestCenterPt = c; }
                     }
                 }
-                // Упёрлись в край ячейки — переходим на параграф вне таблицы.
-                // Ищем ближайший layout который не принадлежит этой таблице.
-                var tableBlock = cell.Table;
-                if (dir < 0)
-                {
-                    // Ищем вверх — первый layout не из этой таблицы
-                    for (int i = _caretPara - 1; i >= 0; i--)
-                    {
-                        if (_layouts[i].Cell?.Table != tableBlock)
-                        {
-                            _caretPara = i;
-                            var lyt = _layouts[i].Layout;
-                            if (lyt is not null && lyt.Lines.Count > 0)
-                                _caretChar = lyt.Lines[^1].LastCharIndex + 1;
-                            else
-                                _caretChar = GetVmAt(i)?.PlainText?.Length ?? 0;
-                            return;
-                        }
-                    }
-                }
-                else
-                {
-                    // Ищем вниз — первый layout не из этой таблицы
-                    for (int i = _caretPara + 1; i < _layouts.Count; i++)
-                    {
-                        if (_layouts[i].Cell?.Table != tableBlock)
-                        {
-                            _caretPara = i;
-                            var lyt = _layouts[i].Layout;
-                            if (lyt is not null && lyt.Lines.Count > 0)
-                                _caretChar = lyt.Lines[0].FirstCharIndex;
-                            else
-                                _caretChar = 0;
-                            return;
-                        }
-                    }
-                }
-                return;
             }
 
-            // Обычный параграф
-            if (dir < 0 && _caretPara > 0)
+            // Шаг 2: соседней строки в текущем абзаце нет — ищем ближайшую по вертикали ДРУГУЮ
+            // полосу среди ВСЕХ layout (следующий абзац / ячейка соседней строки таблицы / абзац
+            // за таблицей). Сканируем по Ypt/HeightPt без построения раскладки (дёшево), берём
+            // ближайший в направлении dir. Окном соседних индексов это не находилось: в таблице
+            // ячейка строки ниже идёт в порядке чтения далеко. Конкретную колонку под столбцом
+            // определит сам HitTest по _preferredCaretXPt.
+            if (float.IsNaN(bestCenterPt))
             {
-                _caretPara--;
-                var prev = GetLayoutAt(_caretPara);
-                if (prev is not null && prev.Lines.Count > 0)
+                int targetIdx = -1;
+                float bestEdge = dir > 0 ? float.MaxValue : float.MinValue;
+
+                for (int i = 0; i < _layouts.Count; i++)
                 {
-                    var ll = prev.Lines[^1];
-                    var hit = prev.HitTestPoint(
-                        _preferredCaretXPt - prev.LeftIndentPt,
-                        ll.Y + ll.Height * 0.5f);
-                    _caretChar = hit.CharIndex;
+                    if (i == _caretPara) continue;
+                    var p = _layouts[i];
+                    if (dir > 0)
+                    {
+                        if (p.Ypt >= lineBottomPt - 0.5f && p.Ypt < bestEdge)
+                        { bestEdge = p.Ypt; targetIdx = i; }
+                    }
+                    else
+                    {
+                        float pBot = p.Ypt + p.HeightPt;
+                        if (pBot <= lineTopPt + 0.5f && pBot > bestEdge)
+                        { bestEdge = pBot; targetIdx = i; }
+                    }
                 }
-                else _caretChar = GetVmAt(_caretPara)?.PlainText?.Length ?? 0;
+
+                if (targetIdx >= 0)
+                {
+                    var tp = _layouts[targetIdx];
+                    var tlay = GetRenderLayout(tp, width);
+                    if (tlay is not null && tlay.Lines.Count > 0)
+                    {
+                        int lf = Clamp(tp.LineFrom, 0, tlay.Lines.Count - 1);
+                        float yBase = tlay.Lines[lf].Y;
+                        int lineTo = Math.Min(tp.LineTo, tlay.Lines.Count);
+                        int li = dir > 0 ? lf : Math.Max(lf, lineTo - 1);
+                        var line = tlay.Lines[li];
+                        bestCenterPt = tp.Ypt + (line.Y - yBase) + line.Height * 0.5f;
+                    }
+                    else
+                    {
+                        bestCenterPt = tp.Ypt + tp.HeightPt * 0.5f;
+                    }
+                }
             }
-            else if (dir > 0 && _caretPara < _layouts.Count - 1)
+
+            if (float.IsNaN(bestCenterPt)) return; // край документа — некуда
+
+            // Бьём тем же HitTest, что и клик, по сохранённому абсолютному X и центру найденной
+            // строки — каретка встаёт в тот же экранный столбец на соседней строке/в ячейке.
+            float pxPerPt = (float)(PtToPx * Zoom);
+            var (pi, ci) = HitTest(new Avalonia.Point(_preferredCaretXPt * pxPerPt, bestCenterPt * pxPerPt));
+            if (pi >= 0 && pi < _layouts.Count)
             {
-                _caretPara++;
-                var next = GetLayoutAt(_caretPara);
-                if (next is not null && next.Lines.Count > 0)
-                {
-                    var fl = next.Lines[0];
-                    var hit = next.HitTestPoint(
-                        _preferredCaretXPt - next.LeftIndentPt,
-                        fl.Y + fl.Height * 0.5f);
-                    _caretChar = hit.CharIndex;
-                }
-                else _caretChar = 0;
+                _caretPara = pi;
+                _caretChar = ci;
             }
         }
 
@@ -307,10 +327,15 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void UpdatePreferredX()
         {
-            var layout = GetLayoutAt(_caretPara);
-            if (layout is null) return;
-            var caret = layout.HitTestPosition(_caretChar);
-            _preferredCaretXPt = caret.X;
+            // Храним АБСОЛЮТНЫЙ X каретки (с учётом отступа абзаца и выравнивания), а не локальный.
+            // Иначе при разных абзацных отступах один и тот же локальный X = разный экранный, и
+            // вертикальная навигация съезжала. Геометрия — та же, что у отрисовки каретки.
+            if (TryGetCaretGeometry(out float absXPt, out _, out _))
+                _preferredCaretXPt = absXPt;
+
+            // Это горизонтальное перемещение/клик/правка — следующая серия Up/Down заново возьмёт
+            // столбец из текущей позиции каретки.
+            _vNavActive = false;
         }
 
         private void SnapCaretToCorrectSlice()

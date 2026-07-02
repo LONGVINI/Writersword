@@ -176,6 +176,48 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // ── Выделение картинки кликом ──────────────────────────────────
+            // Учитываем горизонтальный сдвиг центрирования листа — он применяется при
+            // отрисовке ко всему содержимому, но не запечён в координатах раскладки.
+            float canvasWPt = (float)(_canvasWidth * PxToPt);
+            float pageShiftXPt = Math.Max((canvasWPt - GetPageWidthPt()) / 2f, 0f) - _layoutPageXPt;
+            for (int ii = 0; ii < _images.Count; ii++)
+            {
+                var ie = _images[ii];
+                float imgLeft = ie.XPt + pageShiftXPt;
+                if (xPt >= imgLeft && xPt <= imgLeft + ie.WidthPt
+                    && yPt >= ie.Ypt && yPt <= ie.Ypt + ie.HeightPt)
+                {
+                    _selectedImage = ie.Block;
+                    _logger.Debug("[IMG] selected image {F} mode={M}", ie.Block.ImageFileName, ie.Block.WrapMode);
+                    _isSelecting = false;
+                    _tableSelections.Clear();
+
+                    // Плавающую картинку можно перетаскивать. Блок (Inline) не двигаем —
+                    // его режим меняется отдельно (клавиша F / будущая панель настроек).
+                    if (ie.Block.WrapMode != WrapMode.Inline)
+                    {
+                        _imageDragging = true;
+                        _imageDragMoved = false;
+                        _imgDragStartXPt = xPt;
+                        _imgDragStartYPt = yPt;
+                        _imgDragStartOffX = ie.Block.OffsetXPt;
+                        _imgDragStartOffY = ie.Block.OffsetYPt;
+                        BeginEdit("Перемещение изображения");
+                        e.Pointer.Capture(this);
+                    }
+
+                    InvalidateFull();
+                    e.Handled = true;
+                    return;
+                }
+            }
+            if (_selectedImage is not null)
+            {
+                _selectedImage = null;
+                InvalidateFull();
+            }
+
             var (pi, ci) = HitTest(pt);
 
             // Определяем: это ячейка таблицы?
@@ -246,6 +288,22 @@ namespace Writersword.Modules.TextEditor.Document
             var rawPt = e.GetPosition(this);
             float xPt = (float)(rawPt.X / zoom * PxToPt);
             float yPt = (float)(rawPt.Y / zoom * PxToPt);
+
+            // ── Перетаскивание плавающей картинки ─────────────────────────
+            if (_imageDragging && _selectedImage is not null)
+            {
+                if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+                {
+                    _imageDragging = false;
+                    return;
+                }
+                _imageDragMoved = true;
+                _selectedImage.OffsetXPt = _imgDragStartOffX + (xPt - _imgDragStartXPt);
+                _selectedImage.OffsetYPt = _imgDragStartOffY + (yPt - _imgDragStartYPt);
+                RebuildLayouts();
+                InvalidateFull();
+                return;
+            }
 
             // ── Drag ручки таблицы ────────────────────────────────────────
             if (_tableDragMode != TableDragMode.None)
@@ -583,6 +641,15 @@ namespace Writersword.Modules.TextEditor.Document
         {
             base.OnPointerReleased(e);
 
+            if (_imageDragging)
+            {
+                // Фиксируем перемещение в Undo только если картинку реально двигали.
+                if (_imageDragMoved) CommitEdit();
+                else _pendingSnapshot = null;
+                _imageDragging = false;
+                _imageDragMoved = false;
+            }
+
             if (_tableDragMode != TableDragMode.None)
             {
                 FinishTableDrag();
@@ -676,6 +743,44 @@ namespace Writersword.Modules.TextEditor.Document
             // Любой ввод завершает отложенный зум-жест: раскладка пересобирается сразу, поэтому
             // последующие правки/undo обновляют канвас корректно (не упираются в _zooming).
             FinishZoomImmediately();
+
+            // Удаление выделенной картинки — раньше хоткеев и прочей обработки.
+            if (_selectedImage is not null && (e.Key == Key.Delete || e.Key == Key.Back))
+            {
+                _logger.Debug("[IMG] delete selected image {F}", _selectedImage.ImageFileName);
+                DocVm?.RemoveImage(_selectedImage);
+                _selectedImage = null;
+                e.Handled = true;
+                return;
+            }
+
+            // Временный переключатель режима выделенной картинки: F — блок <-> плавающая (поверх).
+            // Постоянная панель настроек с галочками будет добавлена отдельным пушем.
+            if (_selectedImage is not null && e.Key == Key.F && e.KeyModifiers == KeyModifiers.None)
+            {
+                BeginEdit("Режим изображения");
+                if (_selectedImage.WrapMode == WrapMode.Inline)
+                {
+                    var entry = _images.FirstOrDefault(x => ReferenceEquals(x.Block, _selectedImage));
+                    var pg = entry is not null && entry.PageIndex >= 0 && entry.PageIndex < _pages.Count
+                        ? _pages[entry.PageIndex] : null;
+                    if (entry is not null && pg is not null)
+                    {
+                        _selectedImage.OffsetXPt = entry.XPt - pg.PadLeftPt - pg.MarginLeftPt;
+                        _selectedImage.OffsetYPt = entry.Ypt - pg.Ypt - pg.PadTopPt;
+                    }
+                    _selectedImage.WrapMode = WrapMode.InFront;
+                }
+                else
+                {
+                    _selectedImage.WrapMode = WrapMode.Inline;
+                }
+                CommitEdit();
+                RebuildLayouts();
+                InvalidateFull();
+                e.Handled = true;
+                return;
+            }
 
             if (_hotKeyService is not null)
             {
@@ -1029,7 +1134,7 @@ namespace Writersword.Modules.TextEditor.Document
                     InvalidateFull();
                 };
 
-                TextUndoStack.Push(cmd);
+                PushTextCommand(cmd);
                 UpdatePreferredX();
                 SyncSel(); ResetCaret();
                 return;
@@ -1473,6 +1578,9 @@ namespace Writersword.Modules.TextEditor.Document
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
             SyncSel(); ResetCaret(); InvalidateFull();
+            // Каретка перешла на новый абзац — обновляем активный абзац и контекст форматирования,
+            // иначе команды абзаца (интервалы, выравнивание и т.д.) применялись бы к прежнему.
+            FireCaretFormatContext();
         }
 
         // Возвращает форматирование рана в позиции каретки: берём символ ПЕРЕД кареткой
@@ -1667,15 +1775,52 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteUndo()
         {
-            if (TextUndoStack is not null && TextUndoStack.CanUndo && DocVm is not null)
+            // Откатываем строго в хронологическом порядке: какой стек трогать, решает _undoOrder.
+            if (_undoOrder.Last is not null)
             {
-                _logger.Debug("[UNDO] ExecuteUndo (text): '{D}'", TextUndoStack.UndoDescription);
-                TextUndoStack.Undo(DocVm.Document);
+                var src = _undoOrder.Last.Value;
+                _undoOrder.RemoveLast();
+                _redoOrder.Push(src);
+                if (src == UndoSource.Text) UndoTextStep();
+                else UndoSnapshotStep();
                 return;
             }
-            if (UndoStack is null) { _logger.Warning("[UNDO] ExecuteUndo: UndoStack is null"); return; }
-            if (!UndoStack.CanUndo) { _logger.Debug("[UNDO] ExecuteUndo: nothing to undo"); return; }
-            _logger.Debug("[UNDO] ExecuteUndo: '{D}'", UndoStack.UndoDescription);
+
+            // Фолбэк, если порядок пуст (команда попала в стек мимо учёта).
+            if (TextUndoStack is not null && TextUndoStack.CanUndo && DocVm is not null) { UndoTextStep(); return; }
+            if (UndoStack is not null && UndoStack.CanUndo) { UndoSnapshotStep(); return; }
+            _logger.Debug("[UNDO] ExecuteUndo: nothing to undo");
+        }
+
+        public void ExecuteRedo()
+        {
+            if (_redoOrder.Count > 0)
+            {
+                var src = _redoOrder.Pop();
+                _undoOrder.AddLast(src);
+                if (src == UndoSource.Text) RedoTextStep();
+                else RedoSnapshotStep();
+                return;
+            }
+
+            if (TextUndoStack is not null && TextUndoStack.CanRedo && DocVm is not null) { RedoTextStep(); return; }
+            if (UndoStack is not null && UndoStack.CanRedo) { RedoSnapshotStep(); return; }
+            _logger.Debug("[UNDO] ExecuteRedo: nothing to redo");
+        }
+
+        // Откат одной операционной (текстовой) команды.
+        private void UndoTextStep()
+        {
+            if (TextUndoStack is null || DocVm is null || !TextUndoStack.CanUndo) return;
+            _logger.Debug("[UNDO] ExecuteUndo (text): '{D}'", TextUndoStack.UndoDescription);
+            TextUndoStack.Undo(DocVm.Document);
+        }
+
+        // Откат одного снапшота документа (цвет, картинки, таблицы, вставка и т.п.).
+        private void UndoSnapshotStep()
+        {
+            if (UndoStack is null || !UndoStack.CanUndo) return;
+            _logger.Debug("[UNDO] ExecuteUndo (snapshot): '{D}'", UndoStack.UndoDescription);
             _cellLayoutCache.Clear();
             _cellVmCache.Clear();
             UndoStack.Undo();
@@ -1685,17 +1830,19 @@ namespace Writersword.Modules.TextEditor.Document
             SyncSel(); ResetCaret(); InvalidateFull();
         }
 
-        public void ExecuteRedo()
+        // Повтор одной операционной (текстовой) команды.
+        private void RedoTextStep()
         {
-            if (TextUndoStack is not null && TextUndoStack.CanRedo && DocVm is not null)
-            {
-                _logger.Debug("[UNDO] ExecuteRedo (text): '{D}'", TextUndoStack.RedoDescription);
-                TextUndoStack.Redo(DocVm.Document);
-                return;
-            }
-            if (UndoStack is null) { _logger.Warning("[UNDO] ExecuteRedo: UndoStack is null"); return; }
-            if (!UndoStack.CanRedo) { _logger.Debug("[UNDO] ExecuteRedo: nothing to redo"); return; }
-            _logger.Debug("[UNDO] ExecuteRedo: '{D}'", UndoStack.RedoDescription);
+            if (TextUndoStack is null || DocVm is null || !TextUndoStack.CanRedo) return;
+            _logger.Debug("[UNDO] ExecuteRedo (text): '{D}'", TextUndoStack.RedoDescription);
+            TextUndoStack.Redo(DocVm.Document);
+        }
+
+        // Повтор одного снапшота документа.
+        private void RedoSnapshotStep()
+        {
+            if (UndoStack is null || !UndoStack.CanRedo) return;
+            _logger.Debug("[UNDO] ExecuteRedo (snapshot): '{D}'", UndoStack.RedoDescription);
             _cellLayoutCache.Clear();
             _cellVmCache.Clear();
             UndoStack.Redo();

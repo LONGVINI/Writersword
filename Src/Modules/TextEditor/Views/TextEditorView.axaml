@@ -6,6 +6,7 @@
              xmlns:doc="using:Writersword.Modules.TextEditor.Document"
              xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
              xmlns:ui="using:Writersword.Styles.UserControls"
+             xmlns:dlg="using:Writersword.Modules.TextEditor.Views.Dialogs"
              x:Class="Writersword.Modules.TextEditor.Views.TextEditorView"
              x:DataType="vm:TextEditorViewModel"
              ui:ModalHost.IsHost="True">
@@ -16,6 +17,11 @@
 		<ui:ColorEditorOverlay x:Name="ColorEditorOverlay"
 		                       Grid.Row="0" Grid.RowSpan="3"
 		                       ZIndex="200"/>
+
+		<!-- Оверлей настроек абзаца — поверх всего модуля -->
+		<dlg:ParagraphSettingsOverlay x:Name="ParagraphOverlay"
+		                              Grid.Row="0" Grid.RowSpan="3"
+		                              ZIndex="210"/>
 
 		<!-- Строка 0: Ribbon -->
 		<toolbar:RibbonView Grid.Row="0"

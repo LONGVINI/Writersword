@@ -39,6 +39,15 @@ namespace Writersword.Core.Models.Rendering
         public SKColor HighlightColor { get; init; } = SKColors.Transparent;
 
         /// <summary>
+        /// Исходный код цвета текста (hex либо код градиента "grad|..."). Если это
+        /// градиент — при отрисовке строится SKShader, иначе используется плоский Color.
+        /// </summary>
+        public string? ColorCode { get; init; }
+
+        /// <summary>Исходный код цвета выделения (hex либо код градиента).</summary>
+        public string? HighlightCode { get; init; }
+
+        /// <summary>
         /// X-позиция начала сегмента в pt относительно начала строки.
         /// Устанавливается при вёрстке строки.
         /// </summary>

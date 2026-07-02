@@ -12,11 +12,11 @@
 	</Style>
 
 	<Style Selector="ComboBox:pointerover">
-		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
 	</Style>
 
 	<Style Selector="ComboBox:focus">
-		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
 	</Style>
 
 	<Style Selector="ComboBox:disabled">

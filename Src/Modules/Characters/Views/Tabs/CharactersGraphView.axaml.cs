@@ -8,6 +8,7 @@ using Serilog;
 using SkiaSharp;
 using System;
 using System.Linq;
+using Writersword.Core.Models.Project;
 using Writersword.Modules.Characters.Models.Enums;
 using Writersword.Modules.Characters.ViewModels;
 
@@ -247,7 +248,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
                     foreach (var edge in _viewModel.Edges)
                     {
                         var alpha = edge.IsHighlighted ? 220 : 60;
-                        var color = SKColor.Parse(edge.EdgeColor).WithAlpha((byte)alpha);
+                        var color = ResolveColor(edge.EdgeColor, (byte)alpha);
 
                         using var paint = new SKPaint
                         {
@@ -305,12 +306,21 @@ namespace Writersword.Modules.Characters.Views.Tabs
                     canvas.DrawPath(path, paint);
                 }
 
+                // Цвет узла/ребра может быть кодом градиента (grad|...). Skia парсит
+                // только сплошной hex, поэтому сводим к первому цвету спека.
+                private static SKColor ResolveColor(string? code, byte alpha)
+                {
+                    var hex = GradientSpec.Parse(code).SolidHex;
+                    var color = SKColor.TryParse(hex, out var c) ? c : new SKColor(0x60, 0x7D, 0x8B);
+                    return color.WithAlpha(alpha);
+                }
+
                 private void DrawNodes(SKCanvas canvas)
                 {
                     foreach (var node in _viewModel.Nodes)
                     {
                         var alpha = node.IsDimmed ? 80 : 255;
-                        var nodeColor = SKColor.Parse(node.Color).WithAlpha((byte)alpha);
+                        var nodeColor = ResolveColor(node.Color, (byte)alpha);
                         var size = (float)node.Size;
                         var cx = (float)(node.X + size / 2.0);
                         var cy = (float)(node.Y + size / 2.0);

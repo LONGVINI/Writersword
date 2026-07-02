@@ -262,7 +262,7 @@
                                            FontSize="12"
                                            VerticalAlignment="Center"/>
 								<ComboBox Grid.Column="1"
-                                          ItemsSource="{Binding ((vm:TextEditorSettingsViewModel)$parent[UserControl].DataContext).AvailableFonts}"
+                                          ItemsSource="{Binding $parent[UserControl].DataContext.AvailableFonts}"
                                           SelectedItem="{Binding FontFamily}"
                                           HorizontalAlignment="Stretch"
                                           Height="28"

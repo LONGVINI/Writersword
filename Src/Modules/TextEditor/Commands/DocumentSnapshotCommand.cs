@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Writersword.Core.Interfaces.Modules;
@@ -35,6 +36,29 @@ namespace Writersword.Modules.TextEditor.Commands
         public Action<int, int>? RestoreCaretCallback { get; set; }
 
         public string Description { get; }
+
+        /// <summary>
+        /// Имена файлов картинок, на которые ссылается снимок (до и после). Используется
+        /// очисткой неиспользуемых картинок, чтобы не удалять файлы, нужные для Undo/Redo.
+        /// </summary>
+        public IEnumerable<string> ReferencedImageFiles
+        {
+            get
+            {
+                foreach (var n in ExtractImageNames(_before)) yield return n;
+                if (_after is not null)
+                    foreach (var n in ExtractImageNames(_after)) yield return n;
+            }
+        }
+
+        private static IEnumerable<string> ExtractImageNames(string json)
+        {
+            foreach (System.Text.RegularExpressions.Match m in
+                System.Text.RegularExpressions.Regex.Matches(json, "\"ImageFileName\"\\s*:\\s*\"([^\"]+)\""))
+            {
+                yield return m.Groups[1].Value;
+            }
+        }
 
         public DocumentSnapshotCommand(DocumentViewModel docVm, string description,
             int caretPara, int caretChar)

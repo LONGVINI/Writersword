@@ -347,7 +347,7 @@ namespace Writersword.Styles.UserControls
                     var p = Newtonsoft.Json.JsonConvert.DeserializeObject<ColorPalette>(text);
                     if (p?.Colors is { Count: > 0 })
                     {
-                        foreach (var c in p.Colors) { var n = NormHex(c); if (n != null) result.Add(n); }
+                        foreach (var c in p.Colors) { var n = NormColorCode(c); if (n != null) result.Add(n); }
                         if (result.Count > 0) return (p.Name, result);
                     }
                 }
@@ -360,11 +360,19 @@ namespace Writersword.Styles.UserControls
                     var arr = Newtonsoft.Json.JsonConvert.DeserializeObject<List<string>>(text);
                     if (arr is not null)
                     {
-                        foreach (var c in arr) { var n = NormHex(c); if (n != null) result.Add(n); }
+                        foreach (var c in arr) { var n = NormColorCode(c); if (n != null) result.Add(n); }
                         if (result.Count > 0) return (null, result);
                     }
                 }
                 catch { }
+            }
+
+            // Одиночный код градиента вставлен как обычный текст — берём целиком,
+            // иначе regex ниже разобрал бы его внутренние hex на отдельные цвета.
+            if (text.StartsWith("grad|", StringComparison.OrdinalIgnoreCase))
+            {
+                result.Add(text);
+                return (null, result);
             }
 
             foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
@@ -385,6 +393,15 @@ namespace Writersword.Styles.UserControls
                 s = $"{s[0]}{s[0]}{s[1]}{s[1]}{s[2]}{s[2]}";
             if (s.Length == 6 && IsHex(s)) return "#" + s.ToUpperInvariant();
             return null;
+        }
+
+        // Принимает код градиента "grad|..." как есть, иначе нормализует hex.
+        private static string? NormColorCode(string? s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return null;
+            var t = s.Trim();
+            if (t.StartsWith("grad|", StringComparison.OrdinalIgnoreCase)) return t;
+            return NormHex(t);
         }
 
         private static bool IsHex(string s)

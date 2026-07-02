@@ -1,13 +1,14 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:res="using:Writersword.Styles.UserControls"
+             xmlns:conv="using:Writersword.Infrastructure.Converters"
              x:Class="Writersword.Styles.UserControls.ColorEditorOverlay"
              x:Name="OverlayRoot">
 
 	<UserControl.Styles>
 		<Style Selector="Border.paletteSwatch">
-			<Setter Property="Width" Value="22"/>
-			<Setter Property="Height" Value="22"/>
+			<Setter Property="Width" Value="26"/>
+			<Setter Property="Height" Value="26"/>
 			<Setter Property="Margin" Value="3"/>
 			<Setter Property="CornerRadius" Value="999"/>
 			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
@@ -17,6 +18,29 @@
 		<Style Selector="Border.paletteSwatch:pointerover">
 			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
 			<Setter Property="BorderThickness" Value="2.5"/>
+		</Style>
+		<Style Selector="Button.removeBtn">
+			<Setter Property="Width" Value="14"/>
+			<Setter Property="Height" Value="14"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="FontSize" Value="9"/>
+			<Setter Property="CornerRadius" Value="7"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Background" Value="#E6202020"/>
+			<Setter Property="Foreground" Value="White"/>
+			<Setter Property="HorizontalAlignment" Value="Right"/>
+			<Setter Property="VerticalAlignment" Value="Top"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="Margin" Value="0,-3,-3,0"/>
+			<Setter Property="Opacity" Value="0"/>
+			<Setter Property="IsHitTestVisible" Value="False"/>
+		</Style>
+		<Style Selector="Border.paletteSwatch:pointerover Button.removeBtn">
+			<Setter Property="Opacity" Value="1"/>
+			<Setter Property="IsHitTestVisible" Value="True"/>
 		</Style>
 
 		<Style Selector="Button.tab">
@@ -270,7 +294,7 @@
 								</ItemsControl.ItemsPanel>
 								<ItemsControl.ItemTemplate>
 									<DataTemplate>
-										<Border Width="20" Height="20" CornerRadius="999" Background="{Binding}"
+										<Border Width="20" Height="20" CornerRadius="999" Background="{Binding Converter={x:Static conv:ColorCodeToBrushConverter.Instance}}"
 										        BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1"/>
 									</DataTemplate>
 								</ItemsControl.ItemTemplate>
@@ -285,7 +309,8 @@
 
 				<!-- Прокручиваемая середина -->
 				<Grid Grid.Row="3" ColumnDefinitions="*,Auto">
-				<ScrollViewer Grid.Column="0"
+				<Grid Grid.Column="0" RowDefinitions="*,Auto">
+				<ScrollViewer Grid.Row="0"
                               HorizontalScrollBarVisibility="Disabled"
                               VerticalScrollBarVisibility="Auto" AllowAutoHide="False" Padding="0,0,18,0">
 					<StackPanel x:Name="PickerStack" Spacing="14">
@@ -634,7 +659,7 @@
 									</ItemsControl.ItemsPanel>
 									<ItemsControl.ItemTemplate>
 										<DataTemplate>
-											<Border Classes="paletteSwatch" Background="{Binding}"
+											<Border Classes="paletteSwatch" Background="{Binding Converter={x:Static conv:ColorCodeToBrushConverter.Instance}}"
                                                     PointerPressed="OnPalettePressed"
                                                     PointerMoved="OnPaletteMoved"
                                                     PointerReleased="OnPaletteReleased">
@@ -648,6 +673,16 @@
 														</TranslateTransform.Transitions>
 													</TranslateTransform>
 												</Border.RenderTransform>
+													<Button Classes="removeBtn" Click="OnRemoveMyColor">
+														<Viewbox Width="8" Height="8" Stretch="Uniform">
+															<Canvas Width="8" Height="8">
+																<Line StartPoint="0.6,0.6" EndPoint="7.4,7.4"
+	                                                                  Stroke="White" StrokeThickness="1.1" StrokeLineCap="Round"/>
+																<Line StartPoint="7.4,0.6" EndPoint="0.6,7.4"
+	                                                                  Stroke="White" StrokeThickness="1.1" StrokeLineCap="Round"/>
+															</Canvas>
+														</Viewbox>
+													</Button>
 											</Border>
 										</DataTemplate>
 									</ItemsControl.ItemTemplate>
@@ -698,6 +733,39 @@
 
 					</StackPanel>
 				</ScrollViewer>
+
+				<!-- Полоса градиента: отдельная фиксированная часть внизу левой колонки,
+				     видна на всех вкладках, правую колонку не трогает. -->
+				<StackPanel Grid.Row="1" Margin="0,16,18,0" Spacing="6">
+					<Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+						<CheckBox Grid.Column="0" x:Name="GradientEnableCheck" Content="Градиент" FontSize="12"
+                                  Foreground="{DynamicResource TextSecondaryBrush}"
+                                  IsCheckedChanged="OnGradientEnableChanged"/>
+						<Border Grid.Column="1" Width="16" Height="16" CornerRadius="999"
+                                HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Background="{DynamicResource BgSurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderDefaultBrush}" BorderThickness="1">
+							<ToolTip.Tip>
+								<StackPanel Spacing="4" MaxWidth="270">
+									<TextBlock TextWrapping="Wrap"><Run Text="Клик по полосе" Foreground="{DynamicResource AccentDefaultBrush}" FontWeight="SemiBold"/><Run Text=" — добавить метку цвета"/></TextBlock>
+									<TextBlock TextWrapping="Wrap"><Run Text="Тяни метку" Foreground="{DynamicResource AccentDefaultBrush}" FontWeight="SemiBold"/><Run Text=" — переместить её по полосе"/></TextBlock>
+									<TextBlock TextWrapping="Wrap"><Run Text="Двойной клик по метке" Foreground="{DynamicResource AccentDefaultBrush}" FontWeight="SemiBold"/><Run Text=" — дублировать её"/></TextBlock>
+									<TextBlock TextWrapping="Wrap"><Run Text="ПКМ по метке" Foreground="{DynamicResource AccentDefaultBrush}" FontWeight="SemiBold"/><Run Text=" — удалить метку цвета"/></TextBlock>
+								</StackPanel>
+							</ToolTip.Tip>
+							<Panel Width="10" Height="10">
+								<Ellipse Width="1.8" Height="1.8"
+                                         Fill="{DynamicResource TextSecondaryBrush}"
+                                         HorizontalAlignment="Center" VerticalAlignment="Top"/>
+								<Rectangle Width="1.8" Height="5.6" RadiusX="0.9" RadiusY="0.9"
+                                           Fill="{DynamicResource TextSecondaryBrush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Bottom"/>
+							</Panel>
+						</Border>
+					</Grid>
+					<res:GradientStripEditor x:Name="GradientStrip"/>
+				</StackPanel>
+				</Grid>
 
 				<DockPanel Grid.Column="1" x:Name="RightHost" IsVisible="False"
 				           Width="320" Margin="14,0,-10,0">

@@ -385,7 +385,10 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (pl.Vm == pvm)
                 {
-                    float newH = Math.Max(newLayout.BlockHeightPt, FallbackLinePt);
+                    // Высота как в полном пересборе page-режима: строки + интервал ПОСЛЕ.
+                    // Интервал «перед» — это отступ до абзаца, в высоту записи не входит,
+                    // иначе при наборе абзац «толстеет» на Space Before и текст прыгает.
+                    float newH = Math.Max(newLayout.TotalHeightPt + newLayout.SpaceAfterPt, FallbackLinePt);
                     if (!seenPvm)
                     {
                         // Считаем дельту по первому вхождению этого pvm.
@@ -484,6 +487,7 @@ namespace Writersword.Modules.TextEditor.Document
             var newLayouts = new List<ParaLayout>();
             var newPages = new List<PageRect>();
             var newTables = new List<TableEntry>();
+            var newImages = new List<ImageEntry>();
 
             newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
 
@@ -795,6 +799,42 @@ namespace Writersword.Modules.TextEditor.Document
                     continue;
                 }
 
+                if (block is ImageBlock imageBlock)
+                {
+                    float imgWpt = (float)imageBlock.WidthPt;
+                    float imgHpt = (float)imageBlock.HeightPt;
+                    if (imgWpt > 0f && imgHpt > 0f)
+                    {
+                        if (imageBlock.WrapMode == WrapMode.Inline)
+                        {
+                            // Блок: занимает собственную строку, сдвигает текст ниже.
+                            // Перенос на новую страницу, если не влезает в остаток.
+                            float available = pageBottomPt - contentYPt;
+                            bool atPageTop = contentYPt <= pageYPt + mt + 0.5f;
+                            if (imgHpt > available && !atPageTop)
+                            {
+                                pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                                pageBottomPt = pageYPt + pageHeightPt - mb;
+                                contentYPt = pageYPt + mt;
+                                pageIdx++;
+                                newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                            }
+
+                            newImages.Add(new ImageEntry(imageBlock, contentYPt, textXPt, imgWpt, imgHpt, pageIdx));
+                            contentYPt += imgHpt;
+                        }
+                        else
+                        {
+                            // Плавающая: позиция по смещению относительно области страницы,
+                            // текст не сдвигается (обтекание пока не реализовано).
+                            float fx = pageXPt + ml + (float)imageBlock.OffsetXPt;
+                            float fy = pageYPt + mt + (float)imageBlock.OffsetYPt;
+                            newImages.Add(new ImageEntry(imageBlock, fy, fx, imgWpt, imgHpt, pageIdx));
+                        }
+                    }
+                    continue;
+                }
+
                 if (block is not ParagraphBlock paraBlock) continue;
 
                 if (!pvmByBlock.TryGetValue(paraBlock, out var pvm)) continue;
@@ -896,6 +936,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _layouts = newLayouts;
                 _pages = newPages;
                 _tables = newTables;
+                _images = newImages;
                 _canvasHeightPt = newCanvasH;
                 _canvasHeight = newCanvasH * PtToPx;
             }

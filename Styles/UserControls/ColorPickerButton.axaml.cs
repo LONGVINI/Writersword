@@ -258,8 +258,10 @@ namespace Writersword.Styles.UserControls
                     RingEnabled, CurrentProject?.AvatarRingsAll ?? false);
                 if (result is null) return;
 
-                if (!string.IsNullOrWhiteSpace(result.Hex))
-                    HexColor = result.Hex;
+                // Code несёт полный выбор: код градиента либо обычный hex одноцвета.
+                var picked = !string.IsNullOrWhiteSpace(result.Code) ? result.Code! : result.Hex;
+                if (!string.IsNullOrWhiteSpace(picked))
+                    HexColor = picked;
 
                 if (result.ApplyAll is bool applyVal)
                 {
@@ -376,15 +378,19 @@ namespace Writersword.Styles.UserControls
 
             PopupPalettes.Clear();
             var proj = CurrentProject;
+
+            // Единый порядок с окном управления: проектные и глобальные вместе,
+            // сортировка по Order (стабильно), а не «сначала все проектные, потом все
+            // глобальные». Иначе быстрый список расходится с окном управления.
+            var raw = new List<(ColorPalette p, bool g)>();
             if (proj is not null)
-                foreach (var p in proj.ProjectPalettes)
-                    if (p.Visible && p.Colors.Count > 0)
-                        PopupPalettes.Add(new PaletteListItem
-                        { Palette = p, IsGlobal = false, Expanded = !IsCollapsed("pp.pal." + p.Id) });
-            foreach (var p in _global.Palettes)
+                foreach (var p in proj.ProjectPalettes) raw.Add((p, false));
+            foreach (var p in _global.Palettes) raw.Add((p, true));
+
+            foreach (var (p, g) in raw.OrderBy(x => x.p.Order))
                 if (p.Visible && p.Colors.Count > 0)
                     PopupPalettes.Add(new PaletteListItem
-                    { Palette = p, IsGlobal = true, Expanded = !IsCollapsed("pp.pal." + p.Id) });
+                    { Palette = p, IsGlobal = g, Expanded = !IsCollapsed("pp.pal." + p.Id) });
             HasPalettes = PopupPalettes.Count > 0;
 
             BasicExpanded = !IsCollapsed("pp.basic");
@@ -471,7 +477,8 @@ namespace Writersword.Styles.UserControls
             try
             {
                 _syncingColorView = true;
-                _colorView.Color = Color.Parse(hex);
+                _colorView.Color = Color.Parse(
+                    Writersword.Core.Models.Project.GradientSpec.Parse(hex).SolidHex);
             }
             catch { }
             finally
@@ -495,5 +502,9 @@ namespace Writersword.Styles.UserControls
         // Инверсия bool: для биндинга «свёрнутого» шеврона секции.
         public static readonly IValueConverter Not =
             new FuncValueConverter<bool, bool>(b => !b);
+
+        // bool -> ScaleY: раскрыто = 1, свёрнуто = 0 (для анимации схлопывания).
+        public static readonly IValueConverter Scale =
+            new FuncValueConverter<bool, double>(b => b ? 1.0 : 0.0);
     }
 }

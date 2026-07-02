@@ -232,6 +232,26 @@ namespace Writersword.Core.Models.Rendering
                     IsTrailingEdge = false
                 };
 
+            // Хвостовые пробелы на переносимой (не последней) строке — висячие: клик правее
+            // последнего слова ставит каретку в конец содержимого строки, а не на LastCharIndex+1
+            // (который для переносимой строки уже является первым символом следующей строки, из-за
+            // чего каретка «прыгает вниз»).
+            if (!line.IsLastLine)
+            {
+                int contentEnd = LastNonSpaceEnd(line);
+                if (contentEnd <= line.LastCharIndex)
+                {
+                    float contentRight = GetCaretXInLine(line, contentEnd);
+                    if (xPt >= contentRight)
+                        return new SKHitTestResult
+                        {
+                            CharIndex = contentEnd,
+                            IsInside = false,
+                            IsTrailingEdge = true
+                        };
+                }
+            }
+
             if (xPt >= totalWidth)
                 return new SKHitTestResult
                 {
@@ -272,6 +292,20 @@ namespace Writersword.Core.Models.Rendering
                 IsInside = false,
                 IsTrailingEdge = true
             };
+        }
+
+        // Глобальный индекс сразу за последним непробельным символом строки.
+        // Если непробельных нет — возвращает FirstCharIndex.
+        private static int LastNonSpaceEnd(SKLineLayout line)
+        {
+            int last = line.FirstCharIndex;
+            foreach (var seg in line.Segments)
+                for (int k = 0; k < seg.Text.Length; k++)
+                {
+                    char c = seg.Text[k];
+                    if (c != ' ' && c != '\t') last = seg.GlobalCharOffset + k + 1;
+                }
+            return last;
         }
 
         private static float GetCaretXInLine(SKLineLayout line, int charIndex)

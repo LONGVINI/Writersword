@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:cp="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.ColorPicker"
              xmlns:res="using:Writersword.Styles.UserControls"
+             xmlns:conv="using:Writersword.Infrastructure.Converters"
              x:Class="Writersword.Styles.UserControls.ColorPickerButton"
              x:Name="Root"
              Width="20" Height="20">
@@ -10,7 +11,7 @@
             Padding="0" CornerRadius="999"
             BorderThickness="1.5"
             BorderBrush="{DynamicResource BorderSubtleBrush}"
-            Background="{Binding HexColor, ElementName=Root}"
+            Background="{Binding HexColor, ElementName=Root, Converter={x:Static conv:ColorCodeToBrushConverter.Instance}}"
             VerticalAlignment="Stretch"
             HorizontalAlignment="Stretch"
             ToolTip.Tip="{x:Static res:SharedStrings.ColorPicker_ChangeColor}">
@@ -42,7 +43,17 @@
 				</Flyout.FlyoutPresenterTheme>
 				<Border Background="{DynamicResource BgPanelBrush}"
                         BorderBrush="{DynamicResource BorderDefaultBrush}"
-                        BorderThickness="1" CornerRadius="8" Padding="12">
+                        BorderThickness="1" CornerRadius="8" Padding="8">
+
+					<!-- Прозрачный фон/трек скроллбара (убираем тёмную подложку). -->
+					<Border.Resources>
+						<SolidColorBrush x:Key="ScrollBarBackground" Color="Transparent"/>
+						<SolidColorBrush x:Key="ScrollBarBackgroundPointerOver" Color="Transparent"/>
+						<SolidColorBrush x:Key="ScrollBarBackgroundDisabled" Color="Transparent"/>
+						<SolidColorBrush x:Key="ScrollBarTrackFill" Color="Transparent"/>
+						<SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="Transparent"/>
+						<SolidColorBrush x:Key="ScrollBarPanningBackground" Color="Transparent"/>
+					</Border.Resources>
 
 					<!-- Стили образцов, крестиков, заголовков секций и бейджей.
 					     Лежат внутри попапа флаута, потому что стили самого
@@ -58,7 +69,7 @@
 							<Setter Property="Template">
 								<ControlTemplate>
 									<Border CornerRadius="13"
-                                            Background="{Binding}"
+                                            Background="{Binding Converter={x:Static conv:ColorCodeToBrushConverter.Instance}}"
                                             BorderBrush="{DynamicResource BorderSubtleBrush}"
                                             BorderThickness="1.5"/>
 								</ControlTemplate>
@@ -109,21 +120,154 @@
 						</Style>
 
 						<Style Selector="TextBlock.section">
-							<Setter Property="FontSize" Value="11"/>
+							<Setter Property="FontSize" Value="12"/>
+							<Setter Property="FontWeight" Value="SemiBold"/>
 							<Setter Property="VerticalAlignment" Value="Center"/>
-							<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+							<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+						</Style>
+
+						<!-- Заголовок секции-«папки»: полоска с фоном. -->
+						<Style Selector="Button.ghost.sechdr /template/ ContentPresenter">
+							<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+							<Setter Property="CornerRadius" Value="8"/>
+							<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+							<Setter Property="BorderThickness" Value="1"/>
+						</Style>
+						<!-- Убираем «сжатие» (scale при нажатии) у ВСЕХ кнопок попапа.
+						     Перебиваем transform-operations единичной трансформацией и
+						     убираем сам переход трансформа на ContentPresenter. -->
+						<Style Selector="Button /template/ ContentPresenter#PART_ContentPresenter">
+							<Setter Property="RenderTransform" Value="scale(1)"/>
+							<Setter Property="Transitions" Value="{x:Null}"/>
+						</Style>
+						<Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+							<Setter Property="RenderTransform" Value="scale(1)"/>
+						</Style>
+						<Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+							<Setter Property="RenderTransform" Value="scale(1)"/>
+						</Style>
+						<Style Selector="Button">
+							<Setter Property="RenderTransform" Value="scale(1)"/>
+						</Style>
+						<Style Selector="Button:pressed">
+							<Setter Property="RenderTransform" Value="scale(1)"/>
+						</Style>
+						<!-- Шапка секции: фон не мигает при нажатии. -->
+						<Style Selector="Button.ghost.sechdr:pressed /template/ ContentPresenter#PART_ContentPresenter">
+							<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+						</Style>
+						<Style Selector="Button.ghost.sechdr:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+							<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+						</Style>
+
+						<!-- Наведение на заголовки: подсветка текста и шеврона (кликабельно). -->
+						<Style Selector="Button.ghost.sechdr:pointerover TextBlock.section">
+							<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+						</Style>
+						<Style Selector="Button.ghost.sechdr:pointerover Path.chev">
+							<Setter Property="Stroke" Value="{DynamicResource AccentDefaultBrush}"/>
+						</Style>
+						<Style Selector="Button.ghost:pointerover TextBlock.palname">
+							<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+						</Style>
+						<Style Selector="Button.ghost:pointerover Path.chev">
+							<Setter Property="Stroke" Value="{DynamicResource AccentDefaultBrush}"/>
+						</Style>
+						<!-- Раскрытая секция: низ шапки срастается с блоком цветов. -->
+						<Style Selector="Button.ghost.sechdr.open /template/ ContentPresenter">
+							<Setter Property="CornerRadius" Value="8,8,0,0"/>
+							<Setter Property="BorderThickness" Value="1,1,1,0"/>
+						</Style>
+
+						<!-- Тело секции под кнопкой-заголовком: блок с рамкой и лёгким фоном. -->
+						<Style Selector="Border.secblock">
+							<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+							<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+							<Setter Property="BorderThickness" Value="1,0,1,1"/>
+							<Setter Property="CornerRadius" Value="0,0,8,8"/>
+							<Setter Property="Padding" Value="6"/>
+							<Setter Property="Margin" Value="0,0,0,0"/>
+							<!-- Прижат к низу: при схлопывании уезжает вверх под шапку (а не обрезается снизу). -->
+							<Setter Property="VerticalAlignment" Value="Bottom"/>
+						</Style>
+
+						<!-- Схлопыватель: контент обрезается по высоте (уезжает вверх под шапку,
+						     не сжимаясь), список снизу плавно смещается. MaxHeight подобран
+						     близко к реальной высоте (иначе «мёртвая зона» делает анимацию резкой):
+						     collapser — секции цветов, collapserS — цвета одной палитры,
+						     collapserL — список палитр (переменная высота). -->
+						<Style Selector="Border.collapser, Border.collapserS, Border.collapserL">
+							<Setter Property="MaxHeight" Value="0"/>
+							<Setter Property="Transitions">
+								<Transitions>
+									<DoubleTransition Property="MaxHeight" Duration="0:0:0.32" Easing="CubicEaseInOut"/>
+								</Transitions>
+							</Setter>
+						</Style>
+						<Style Selector="Border.collapser.open">
+							<Setter Property="MaxHeight" Value="170"/>
+						</Style>
+						<Style Selector="Border.collapserS.open">
+							<Setter Property="MaxHeight" Value="140"/>
+						</Style>
+						<Style Selector="Border.collapserL.open">
+							<Setter Property="MaxHeight" Value="1400"/>
+						</Style>
+
+						<!-- Палитра-блок: свёрнутая — плоская строка, раскрытая — блок чуть
+						     темнее секции, со своей рамкой (видно, что открыта). -->
+						<!-- Карточка палитры — лёгкий контейнер; вид задают шапка и блок цветов
+						     (как у секций). Скругление/обрезка по краю — на самой карточке. -->
+						<Style Selector="Border.palcard">
+							<Setter Property="Background" Value="Transparent"/>
+							<Setter Property="BorderThickness" Value="0"/>
+						</Style>
+
+						<!-- Шапка палитры: тёмная полоска-кнопка на весь верх. -->
+						<Style Selector="Button.ghost.palhdr /template/ ContentPresenter">
+							<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
+							<Setter Property="CornerRadius" Value="7"/>
+							<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+							<Setter Property="BorderThickness" Value="1"/>
+						</Style>
+						<Style Selector="Button.ghost.palhdr.open /template/ ContentPresenter">
+							<Setter Property="CornerRadius" Value="7,7,0,0"/>
+							<Setter Property="BorderThickness" Value="1,1,1,0"/>
+						</Style>
+						<!-- Блок цветов палитры: срастается с шапкой (как secblock у секций). -->
+						<Style Selector="Border.palbody">
+							<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+							<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+							<Setter Property="BorderThickness" Value="1,0,1,1"/>
+							<Setter Property="CornerRadius" Value="0,0,7,7"/>
+							<Setter Property="Padding" Value="6,2,6,6"/>
+							<Setter Property="VerticalAlignment" Value="Bottom"/>
+						</Style>
+
+						<!-- Скроллбар: всегда виден, без тёмной подложки-трека. -->
+						<Style Selector="ScrollBar">
+							<Setter Property="Background" Value="Transparent"/>
+							<Setter Property="BorderThickness" Value="0"/>
+						</Style>
+						<Style Selector="ScrollBar /template/ Border">
+							<Setter Property="Background" Value="Transparent"/>
+							<Setter Property="BorderBrush" Value="Transparent"/>
+							<Setter Property="BorderThickness" Value="0"/>
+						</Style>
+						<Style Selector="ScrollBar /template/ Grid">
+							<Setter Property="Background" Value="Transparent"/>
 						</Style>
 					</Border.Styles>
 
 					<Grid Width="280" RowDefinitions="*,Auto">
-					<ScrollViewer Grid.Row="0" MaxHeight="520"
+					<ScrollViewer Grid.Row="0" MaxHeight="520" AllowAutoHide="False"
 					              HorizontalScrollBarVisibility="Disabled"
 					              VerticalScrollBarVisibility="Auto">
-					<StackPanel Spacing="6">
+					<StackPanel Spacing="6" Margin="8,0,8,0">
 
 						<!-- Основные -->
 						<StackPanel Spacing="6">
-							<Button Classes="ghost" Tag="pp.basic" Click="OnSectionHeader"
+							<Button Classes="ghost sechdr" Classes.open="{Binding BasicExpanded, ElementName=Root}" Tag="pp.basic" Click="OnSectionHeader"
                                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                                     Padding="6,4">
 								<Grid ColumnDefinitions="*,Auto">
@@ -135,8 +279,16 @@
                                           IsVisible="{Binding BasicExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Not}}"/>
 								</Grid>
 							</Button>
-							<ItemsControl ItemsSource="{Binding PresetColors, ElementName=Root}"
-                                          IsVisible="{Binding BasicExpanded, ElementName=Root}">
+							<LayoutTransformControl ClipToBounds="True" Margin="0,-6,0,0">
+								<LayoutTransformControl.LayoutTransform>
+									<ScaleTransform ScaleY="{Binding BasicExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Scale}}">
+										<ScaleTransform.Transitions>
+											<Transitions><DoubleTransition Property="ScaleY" Duration="0:0:0.22" Easing="CubicEaseOut"/></Transitions>
+										</ScaleTransform.Transitions>
+									</ScaleTransform>
+								</LayoutTransformControl.LayoutTransform>
+								<Border Classes="secblock">
+								<ItemsControl ItemsSource="{Binding PresetColors, ElementName=Root}">
 								<ItemsControl.ItemsPanel>
 									<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
 								</ItemsControl.ItemsPanel>
@@ -150,12 +302,14 @@
 									</DataTemplate>
 								</ItemsControl.ItemTemplate>
 							</ItemsControl>
+							</Border>
+							</LayoutTransformControl>
 						</StackPanel>
 
 						<!-- Мои цвета (закреплённые проекта) -->
 						<StackPanel Spacing="6" IsVisible="{Binding HasPinnedColors, ElementName=Root}">
 							<Border Height="1" Background="{DynamicResource BorderSubtleBrush}" Margin="0,2"/>
-							<Button Classes="ghost" Tag="pp.mine" Click="OnSectionHeader"
+							<Button Classes="ghost sechdr" Classes.open="{Binding MineExpanded, ElementName=Root}" Tag="pp.mine" Click="OnSectionHeader"
                                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                                     Padding="6,4">
 								<Grid ColumnDefinitions="*,Auto">
@@ -167,31 +321,37 @@
                                           IsVisible="{Binding MineExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Not}}"/>
 								</Grid>
 							</Button>
-							<ItemsControl ItemsSource="{Binding PinnedColors, ElementName=Root}"
-                                          IsVisible="{Binding MineExpanded, ElementName=Root}">
+							<LayoutTransformControl ClipToBounds="True" Margin="0,-6,0,0">
+								<LayoutTransformControl.LayoutTransform>
+									<ScaleTransform ScaleY="{Binding MineExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Scale}}">
+										<ScaleTransform.Transitions>
+											<Transitions><DoubleTransition Property="ScaleY" Duration="0:0:0.22" Easing="CubicEaseOut"/></Transitions>
+										</ScaleTransform.Transitions>
+									</ScaleTransform>
+								</LayoutTransformControl.LayoutTransform>
+								<Border Classes="secblock">
+								<ItemsControl ItemsSource="{Binding PinnedColors, ElementName=Root}">
 								<ItemsControl.ItemsPanel>
 									<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
 								</ItemsControl.ItemsPanel>
 								<ItemsControl.ItemTemplate>
 									<DataTemplate>
-										<Panel Classes="swatchCell" Width="26" Height="26" Margin="2">
+										<Border Width="26" Height="26" Margin="2">
 											<Button Classes="swatch"
                                                     Command="{Binding SelectPresetCommand, ElementName=Root}"
                                                     CommandParameter="{Binding}"/>
-											<Button Classes="removeBtn" Content="✕" IsVisible="False"
-                                                    Command="{Binding RemovePinnedCommand, ElementName=Root}"
-                                                    CommandParameter="{Binding}"
-                                                    ToolTip.Tip="{x:Static res:SharedStrings.ColorPicker_RemoveFromPalette}"/>
-										</Panel>
+										</Border>
 									</DataTemplate>
 								</ItemsControl.ItemTemplate>
 							</ItemsControl>
+							</Border>
+							</LayoutTransformControl>
 						</StackPanel>
 
 						<!-- Недавние -->
 						<StackPanel Spacing="6" IsVisible="{Binding HasRecentColors, ElementName=Root}">
 							<Border Height="1" Background="{DynamicResource BorderSubtleBrush}" Margin="0,2"/>
-							<Button Classes="ghost" Tag="pp.recent" Click="OnSectionHeader"
+							<Button Classes="ghost sechdr" Classes.open="{Binding RecentExpanded, ElementName=Root}" Tag="pp.recent" Click="OnSectionHeader"
                                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                                     Padding="6,4">
 								<Grid ColumnDefinitions="*,Auto">
@@ -203,8 +363,16 @@
                                           IsVisible="{Binding RecentExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Not}}"/>
 								</Grid>
 							</Button>
-							<ItemsControl ItemsSource="{Binding RecentColors, ElementName=Root}"
-                                          IsVisible="{Binding RecentExpanded, ElementName=Root}">
+							<LayoutTransformControl ClipToBounds="True" Margin="0,-6,0,0">
+								<LayoutTransformControl.LayoutTransform>
+									<ScaleTransform ScaleY="{Binding RecentExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Scale}}">
+										<ScaleTransform.Transitions>
+											<Transitions><DoubleTransition Property="ScaleY" Duration="0:0:0.22" Easing="CubicEaseOut"/></Transitions>
+										</ScaleTransform.Transitions>
+									</ScaleTransform>
+								</LayoutTransformControl.LayoutTransform>
+								<Border Classes="secblock">
+								<ItemsControl ItemsSource="{Binding RecentColors, ElementName=Root}">
 								<ItemsControl.ItemsPanel>
 									<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
 								</ItemsControl.ItemsPanel>
@@ -214,7 +382,7 @@
 											<Button Classes="swatch"
                                                     Command="{Binding SelectPresetCommand, ElementName=Root}"
                                                     CommandParameter="{Binding}"/>
-											<Button Classes="removeBtn" Content="✕" IsVisible="False"
+											<Button Classes="removeBtn" Content="✕"
                                                     Command="{Binding RemoveRecentCommand, ElementName=Root}"
                                                     CommandParameter="{Binding}"
                                                     ToolTip.Tip="{x:Static res:SharedStrings.ColorPicker_RemoveFromPalette}"/>
@@ -222,12 +390,14 @@
 									</DataTemplate>
 								</ItemsControl.ItemTemplate>
 							</ItemsControl>
+							</Border>
+							</LayoutTransformControl>
 						</StackPanel>
 
 						<!-- Палитры (видимые) -->
 						<StackPanel Spacing="6" IsVisible="{Binding HasPalettes, ElementName=Root}">
 							<Border Height="1" Background="{DynamicResource BorderSubtleBrush}" Margin="0,2"/>
-							<Button Classes="ghost" Tag="pp.palettes" Click="OnSectionHeader"
+							<Button Classes="ghost sechdr" Classes.open="{Binding PalettesExpanded, ElementName=Root}" Tag="pp.palettes" Click="OnSectionHeader"
                                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                                     Padding="6,4">
 								<Grid ColumnDefinitions="*,Auto">
@@ -239,18 +409,28 @@
                                           IsVisible="{Binding PalettesExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Not}}"/>
 								</Grid>
 							</Button>
-							<ItemsControl ItemsSource="{Binding PopupPalettes, ElementName=Root}"
-                                          IsVisible="{Binding PalettesExpanded, ElementName=Root}">
+							<LayoutTransformControl ClipToBounds="True" Margin="0,-6,0,0">
+								<LayoutTransformControl.LayoutTransform>
+									<ScaleTransform ScaleY="{Binding PalettesExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Scale}}">
+										<ScaleTransform.Transitions>
+											<Transitions><DoubleTransition Property="ScaleY" Duration="0:0:0.22" Easing="CubicEaseOut"/></Transitions>
+										</ScaleTransform.Transitions>
+									</ScaleTransform>
+								</LayoutTransformControl.LayoutTransform>
+								<Border Classes="secblock">
+								<ItemsControl ItemsSource="{Binding PopupPalettes, ElementName=Root}">
 								<ItemsControl.ItemTemplate>
 									<DataTemplate>
-										<StackPanel Spacing="4" Margin="0,2">
-											<Button Classes="ghost" Click="OnPalettePopupHeader"
-													        HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="2,1">
+										<Border Classes="palcard" Classes.open="{Binding Expanded}"
+													        Margin="0,3" Padding="0" CornerRadius="8">
+												<StackPanel Spacing="0">
+											<Button Classes="ghost palhdr" Classes.open="{Binding Expanded}" Click="OnPalettePopupHeader"
+													        HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="8,5">
 													<Grid ColumnDefinitions="*,Auto">
 													<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
-												<TextBlock Text="{Binding DisplayName}" FontSize="11"
+												<TextBlock Classes="palname" Text="{Binding DisplayName}" FontSize="11" FontWeight="Medium"
                                                            VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"/>
 												<Border Classes="badge" IsVisible="{Binding IsGlobal}"
                                                         Background="{DynamicResource SectionGlobalBgBrush}">
 													<TextBlock Text="{x:Static res:SharedStrings.Palette_Global}"
@@ -268,7 +448,16 @@
 													      IsVisible="{Binding Expanded, Converter={x:Static res:PaletteConverters.Not}}"/>
 												</Grid>
 												</Button>
-												<ItemsControl ItemsSource="{Binding Palette.Colors}" IsVisible="{Binding Expanded}">
+												<LayoutTransformControl ClipToBounds="True">
+												<LayoutTransformControl.LayoutTransform>
+													<ScaleTransform ScaleY="{Binding Expanded, Converter={x:Static res:PaletteConverters.Scale}}">
+														<ScaleTransform.Transitions>
+															<Transitions><DoubleTransition Property="ScaleY" Duration="0:0:0.22" Easing="CubicEaseOut"/></Transitions>
+														</ScaleTransform.Transitions>
+													</ScaleTransform>
+												</LayoutTransformControl.LayoutTransform>
+												<Border Classes="palbody">
+												<ItemsControl ItemsSource="{Binding Palette.Colors}">
 												<ItemsControl.ItemsPanel>
 													<ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
 												</ItemsControl.ItemsPanel>
@@ -282,23 +471,26 @@
 													</DataTemplate>
 												</ItemsControl.ItemTemplate>
 											</ItemsControl>
+												</Border>
+											</LayoutTransformControl>
 										</StackPanel>
+										</Border>
 									</DataTemplate>
 								</ItemsControl.ItemTemplate>
 							</ItemsControl>
+							</Border>
+							</LayoutTransformControl>
 						</StackPanel>
 
-						<Border Height="1" Background="{DynamicResource BorderSubtleBrush}" Margin="0,2"/>
-
-						<!-- Полный редактор цвета (квадрат, колесо, соты, значения, палитры, пипетка) -->
 						</StackPanel>
 					</ScrollViewer>
 
-					<StackPanel Grid.Row="1" Spacing="6" Margin="0,6,0,0">
+					<StackPanel Grid.Row="1" Spacing="6" Margin="8,6,8,0">
 						<Button Content="{x:Static res:SharedStrings.ColorPicker_Configure}"
                                 HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Center"
                                 FontSize="11" Padding="8,6" CornerRadius="6"
+                                Background="{DynamicResource AccentDefaultBrush}" Foreground="White"
                                 Click="OnConfigureClick"/>
 
 					</StackPanel>

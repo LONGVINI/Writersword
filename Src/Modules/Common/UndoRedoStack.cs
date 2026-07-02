@@ -22,6 +22,9 @@ namespace Writersword.Modules.Common
         public bool CanUndo => _undoStack.Count > 0;
         public bool CanRedo => _redoStack.Count > 0;
 
+        /// <summary>Все команды в истории (undo + redo) — для анализа, например ссылок на ресурсы.</summary>
+        public IEnumerable<IUndoableCommand> AllCommands => _undoStack.Concat(_redoStack);
+
         public string? UndoDescription => CanUndo ? _undoStack.Peek().Description : null;
         public string? RedoDescription => CanRedo ? _redoStack.Peek().Description : null;
 

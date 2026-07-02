@@ -9,6 +9,7 @@
              xmlns:conv="using:Writersword.Modules.Characters.Converters"
              xmlns:behaviors="using:Writersword.Infrastructure.Behaviours"
              xmlns:infra="using:Writersword.Infrastructure.Controls"
+             xmlns:icv="using:Writersword.Infrastructure.Converters"
              x:Class="Writersword.Modules.Characters.Views.Tabs.CharactersListView"
              x:DataType="vm:CharactersViewModel">
 
@@ -294,7 +295,7 @@
                                                     <Border Classes="card-root"
                                                             CornerRadius="10"
                                                             Background="{DynamicResource BgPanelBrush}"
-                                                            BorderBrush="{Binding Color}"
+                                                            BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
                                                             BorderThickness="2"
                                                             ClipToBounds="False"
                                                             Margin="6"
@@ -386,7 +387,7 @@
                                                                     <Panel>
                                                                         <Ellipse Width="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
                                                                                  Height="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
-                                                                                 Fill="{Binding Color}"/>
+                                                                                 Fill="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
                                                                         <TextBlock Text="{Binding FallbackIcon}"
                                                                                    FontSize="{Binding $parent[UserControl].DataContext.CardIconFontSize, FallbackValue=30}"
                                                                                    HorizontalAlignment="Center"
@@ -394,7 +395,7 @@
                                                                                    Foreground="White"
                                                                                    IsHitTestVisible="False"/>
                                                                         <Border CornerRadius="999"
-                                                                            BorderBrush="{Binding Color}"
+                                                                            BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
                                                                             BorderThickness="2"
                                                                             IsVisible="{Binding AvatarRing}"
                                                                             IsHitTestVisible="False"
@@ -457,7 +458,7 @@
                                                                     <Panel>
                                                                         <Ellipse Width="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
                                                                                  Height="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
-                                                                                 Fill="{Binding Color}"/>
+                                                                                 Fill="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
                                                                         <Ellipse Width="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
                                                                                  Height="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}">
                                                                             <Ellipse.Fill>
@@ -466,7 +467,7 @@
                                                                             </Ellipse.Fill>
                                                                         </Ellipse>
                                                                         <Border CornerRadius="999"
-                                                                            BorderBrush="{Binding Color}"
+                                                                            BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
                                                                             BorderThickness="2"
                                                                             IsVisible="{Binding AvatarRing}"
                                                                             IsHitTestVisible="False"

@@ -8,7 +8,13 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using System;
+using System.Linq;
+using Writersword.Modules.TextEditor.Document;
+using Writersword.Modules.TextEditor.Models.Styles;
+using Writersword.Modules.TextEditor.ViewModels;
 using Writersword.Modules.TextEditor.ViewModels.Toolbar;
+using Writersword.Modules.TextEditor.Views;
+using Writersword.Modules.TextEditor.Views.Dialogs;
 using Writersword.Styles.UserControls;
 
 namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
@@ -418,6 +424,31 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             if (DataContext is RibbonHomeTabViewModel vm)
                 vm.SelectFontSizeCommand.Execute(sizeStr);
             lb.SelectedItem = null;
+        }
+
+        // ── Настройки абзаца ──────────────────────────────────────────────
+
+        // Открывает оверлей настроек абзаца внутри того же модуля (TextEditorView), которому
+        // принадлежит этот риббон. Результат применяется одной командой отмены.
+        private async void OnParagraphSettingsClick(object? sender, RoutedEventArgs e)
+        {
+            var host = this.FindAncestorOfType<TextEditorView>();
+            if (host is null) return;
+
+            var canvas = host.FindControl<DocumentCanvas>("PageCanvas")
+                         ?? host.GetVisualDescendants().OfType<DocumentCanvas>().FirstOrDefault();
+            if (canvas?.DataContext is not DocumentViewModel doc) return;
+
+            var overlay = host.FindControl<ParagraphSettingsOverlay>("ParagraphOverlay")
+                          ?? host.GetVisualDescendants().OfType<ParagraphSettingsOverlay>().FirstOrDefault();
+            if (overlay is null) return;
+
+            var current = doc.GetActiveParagraphProperties();
+            if (current is null) return;
+
+            var result = await overlay.ShowAsync(current);
+            if (result is not null)
+                doc.ApplyParagraphSettings(result);
         }
     }
 }
