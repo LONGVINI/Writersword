@@ -3,7 +3,7 @@
              xmlns:uc="using:Writersword.Styles.UserControls"
              x:Class="Writersword.Styles.UserControls.GradientStripEditor">
 
-	<StackPanel Spacing="8">
+	<StackPanel Spacing="8" ClipToBounds="False">
 
 		<!-- Тип градиента и сброс. «Построчно» скрыт по умолчанию: это настройка
 		     только для текста, её включает модуль текста через ShowTextFillOption. -->
@@ -51,12 +51,14 @@
                           ToolTip.Tip="Быстрый выбор угла: 0 сверху, по часовой, шаг 45°"/>
 		</Grid>
 
-		<!-- Слой стрелок-маркеров сверху + полоса-превью снизу -->
-		<Grid RowDefinitions="22,28">
-			<Canvas Grid.Row="0" x:Name="StopsLayer" ClipToBounds="False" Margin="8,0"
+		<!-- Слой стрелок-маркеров сверху + полоса-превью снизу.
+		     ClipToBounds=False на сетке и слое — чтобы толстая обводка выделенного
+		     маркера не обрезалась по краям. -->
+		<Grid RowDefinitions="22,28" ClipToBounds="False">
+			<Canvas Grid.Row="0" x:Name="StopsLayer" ClipToBounds="False" Margin="10,0"
                     Background="Transparent" SizeChanged="OnLayerSizeChanged"/>
 
-			<Border Grid.Row="1" x:Name="Bar" CornerRadius="6" Margin="8,0"
+			<Border Grid.Row="1" x:Name="Bar" CornerRadius="6" Margin="10,0"
                     BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1"
                     PointerPressed="OnBarPressed" PointerMoved="OnBarMoved"
                     PointerReleased="OnBarReleased"/>

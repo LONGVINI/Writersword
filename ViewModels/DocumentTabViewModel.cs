@@ -279,6 +279,7 @@ namespace Writersword.ViewModels
             _project.ProjectRecentColors = newProject.ProjectRecentColors;
             _project.AvatarRingsAll = newProject.AvatarRingsAll;
             _project.ProjectPalettes = newProject.ProjectPalettes;
+            _project.GlobalPaletteOrder = newProject.GlobalPaletteOrder;
 
             this.RaisePropertyChanged(nameof(Content));
 

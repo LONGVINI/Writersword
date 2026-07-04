@@ -281,11 +281,10 @@
 							</Button>
 							<LayoutTransformControl ClipToBounds="True" Margin="0,-6,0,0">
 								<LayoutTransformControl.LayoutTransform>
-									<ScaleTransform ScaleY="{Binding BasicExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Scale}}">
-										<ScaleTransform.Transitions>
-											<Transitions><DoubleTransition Property="ScaleY" Duration="0:0:0.22" Easing="CubicEaseOut"/></Transitions>
-										</ScaleTransform.Transitions>
-									</ScaleTransform>
+									<!-- Переход ScaleY навешивается кодом после показа попапа
+									     (SetCollapseTransitions): объявленный в разметке, он проигрывал
+									     анимацию сворачивания прямо при построении содержимого. -->
+									<ScaleTransform ScaleY="{Binding BasicExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Scale}}"/>
 								</LayoutTransformControl.LayoutTransform>
 								<Border Classes="secblock">
 								<ItemsControl ItemsSource="{Binding PresetColors, ElementName=Root}">
@@ -323,11 +322,7 @@
 							</Button>
 							<LayoutTransformControl ClipToBounds="True" Margin="0,-6,0,0">
 								<LayoutTransformControl.LayoutTransform>
-									<ScaleTransform ScaleY="{Binding MineExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Scale}}">
-										<ScaleTransform.Transitions>
-											<Transitions><DoubleTransition Property="ScaleY" Duration="0:0:0.22" Easing="CubicEaseOut"/></Transitions>
-										</ScaleTransform.Transitions>
-									</ScaleTransform>
+									<ScaleTransform ScaleY="{Binding MineExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Scale}}"/>
 								</LayoutTransformControl.LayoutTransform>
 								<Border Classes="secblock">
 								<ItemsControl ItemsSource="{Binding PinnedColors, ElementName=Root}">
@@ -365,11 +360,7 @@
 							</Button>
 							<LayoutTransformControl ClipToBounds="True" Margin="0,-6,0,0">
 								<LayoutTransformControl.LayoutTransform>
-									<ScaleTransform ScaleY="{Binding RecentExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Scale}}">
-										<ScaleTransform.Transitions>
-											<Transitions><DoubleTransition Property="ScaleY" Duration="0:0:0.22" Easing="CubicEaseOut"/></Transitions>
-										</ScaleTransform.Transitions>
-									</ScaleTransform>
+									<ScaleTransform ScaleY="{Binding RecentExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Scale}}"/>
 								</LayoutTransformControl.LayoutTransform>
 								<Border Classes="secblock">
 								<ItemsControl ItemsSource="{Binding RecentColors, ElementName=Root}">
@@ -411,11 +402,7 @@
 							</Button>
 							<LayoutTransformControl ClipToBounds="True" Margin="0,-6,0,0">
 								<LayoutTransformControl.LayoutTransform>
-									<ScaleTransform ScaleY="{Binding PalettesExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Scale}}">
-										<ScaleTransform.Transitions>
-											<Transitions><DoubleTransition Property="ScaleY" Duration="0:0:0.22" Easing="CubicEaseOut"/></Transitions>
-										</ScaleTransform.Transitions>
-									</ScaleTransform>
+									<ScaleTransform ScaleY="{Binding PalettesExpanded, ElementName=Root, Converter={x:Static res:PaletteConverters.Scale}}"/>
 								</LayoutTransformControl.LayoutTransform>
 								<Border Classes="secblock">
 								<ItemsControl ItemsSource="{Binding PopupPalettes, ElementName=Root}">
@@ -450,11 +437,7 @@
 												</Button>
 												<LayoutTransformControl ClipToBounds="True">
 												<LayoutTransformControl.LayoutTransform>
-													<ScaleTransform ScaleY="{Binding Expanded, Converter={x:Static res:PaletteConverters.Scale}}">
-														<ScaleTransform.Transitions>
-															<Transitions><DoubleTransition Property="ScaleY" Duration="0:0:0.22" Easing="CubicEaseOut"/></Transitions>
-														</ScaleTransform.Transitions>
-													</ScaleTransform>
+													<ScaleTransform ScaleY="{Binding Expanded, Converter={x:Static res:PaletteConverters.Scale}}"/>
 												</LayoutTransformControl.LayoutTransform>
 												<Border Classes="palbody">
 												<ItemsControl ItemsSource="{Binding Palette.Colors}">

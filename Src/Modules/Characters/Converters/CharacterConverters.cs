@@ -156,4 +156,5 @@ namespace Writersword.Modules.Characters.Converters
             => value is bool b && b ? "▼" : "▶";
         public object? ConvertBack(object? value, Type t, object? p, CultureInfo c) => throw new NotImplementedException();
     }
+
 }

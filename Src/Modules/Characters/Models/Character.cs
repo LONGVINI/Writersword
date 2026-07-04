@@ -50,6 +50,10 @@ namespace Writersword.Modules.Characters.Models
         public bool IsCollective { get; set; } = false;
         public string PopulationNote { get; set; } = string.Empty;
 
+        // Закладка-ленточка на карточке группы (визуальный признак «не одиночный
+        // персонаж»). По умолчанию включена; переключается в редакторе цвета.
+        public bool GroupBookmark { get; set; } = true;
+
         // ── Привязка к локациям (заглушки до модуля Locations) ───────────
         public string? BirthLocationId { get; set; }
         public string? CurrentLocationId { get; set; }

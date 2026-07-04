@@ -327,6 +327,18 @@
                                                             <Style Selector="Border.card-root:pointerover StackPanel.card-edit-btns">
                                                                 <Setter Property="Opacity" Value="1"/>
                                                             </Style>
+                                                            <!-- Закладка группы гаснет при наведении — уступает место
+                                                                 кнопкам правки/удаления, чтобы не перекрывать их. -->
+                                                            <Style Selector="Border.card-root Path.group-bookmark">
+                                                                <Setter Property="Transitions">
+                                                                    <Transitions>
+                                                                        <DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+                                                                    </Transitions>
+                                                                </Setter>
+                                                            </Style>
+                                                            <Style Selector="Border.card-root:pointerover Path.group-bookmark">
+                                                                <Setter Property="Opacity" Value="0"/>
+                                                            </Style>
                                                             <!-- Цветопикер тоже только при наведении на карточку. -->
                                                             <Style Selector="Border.card-root colorControls|ColorPickerButton">
                                                                 <Setter Property="Opacity" Value="0"/>
@@ -355,6 +367,21 @@
                                                                 </TranslateTransform.Transitions>
                                                             </TranslateTransform>
                                                         </Border.RenderTransform>
+
+                                                        <Panel>
+
+                                                        <!-- Признак группы: закладка-ленточка, свисающая с верхнего края
+                                                             карточки, цветом персонажа. Управляется настройкой GroupBookmark;
+                                                             при наведении гаснет, чтобы не спорить с кнопками правки. -->
+                                                        <Path Classes="group-bookmark"
+                                                              IsVisible="{Binding ShowGroupBookmark}"
+                                                              IsHitTestVisible="False"
+                                                              ZIndex="6"
+                                                              HorizontalAlignment="Right"
+                                                              VerticalAlignment="Top"
+                                                              Margin="0,-1,12,0"
+                                                              Data="M0,0 H14 V20 L7,14 L0,20 Z"
+                                                              Fill="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
 
                                                         <StackPanel Orientation="Vertical">
 
@@ -496,6 +523,8 @@
                                                                     PreviewName="{Binding Name}"
                                                                     PreviewFallback="{Binding FallbackIcon}"
                                                                     RingEnabled="{Binding AvatarRing, Mode=TwoWay}"
+                                                                    PreviewIsGroup="{Binding IsCollective}"
+                                                                    BookmarkEnabled="{Binding GroupBookmark, Mode=TwoWay}"
                                                                     ApplyRingToAllCommand="{Binding ApplyRingToAllCommand}"
                                                                     HorizontalAlignment="Left"
                                                                     VerticalAlignment="Top"
@@ -596,6 +625,8 @@
                                                             </Panel>
 
                                                         </StackPanel>
+
+                                                        </Panel>
                                                     </Border>
 
                                                 </DataTemplate>
@@ -693,6 +724,14 @@
                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                        IsHitTestVisible="False"/>
                         </Panel>
+                        <!-- Закладка группы — как на реальной карточке. -->
+                        <Path x:Name="DragGhostBookmark"
+                              IsVisible="False"
+                              IsHitTestVisible="False"
+                              HorizontalAlignment="Right"
+                              VerticalAlignment="Top"
+                              Margin="0,-1,12,0"
+                              Data="M0,0 H14 V20 L7,14 L0,20 Z"/>
                     </Panel>
                     <Panel Height="{Binding CardNameHeight, FallbackValue=40}">
                         <Border Background="{DynamicResource BgPanelBrush}" CornerRadius="0,0,8,8"/>

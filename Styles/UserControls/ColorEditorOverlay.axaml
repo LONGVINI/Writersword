@@ -264,6 +264,12 @@
                                             Width="52" Height="52" CornerRadius="999"
                                             BorderThickness="2" IsVisible="False" IsHitTestVisible="False"
                                             HorizontalAlignment="Center" VerticalAlignment="Center"/>
+									<!-- Закладка группы — как на реальной карточке группы. -->
+									<Path x:Name="PreviewBookmark"
+                                          IsVisible="False" IsHitTestVisible="False"
+                                          HorizontalAlignment="Right" VerticalAlignment="Top"
+                                          Margin="0,0,10,0"
+                                          Data="M0,0 H12 V17 L6,12 L0,17 Z"/>
 								</Panel>
 								<Border Height="36">
 									<TextBlock x:Name="PreviewNameText" Text="Aa"
@@ -313,7 +319,7 @@
 				<ScrollViewer Grid.Row="0"
                               HorizontalScrollBarVisibility="Disabled"
                               VerticalScrollBarVisibility="Auto" AllowAutoHide="False" Padding="0,0,18,0">
-					<StackPanel x:Name="PickerStack" Spacing="14">
+					<StackPanel x:Name="PickerStack" Spacing="12">
 
 						<!-- Вкладки выбора -->
 						<Border Background="{DynamicResource BgSurfaceBrush}" CornerRadius="8"
@@ -547,12 +553,12 @@
 							</Grid>
 
 							<!-- Значения: градиентные ползунки + поля (RGB / HSL / HSV). HEX — наверху. -->
-							<StackPanel x:Name="ValuesPanel" IsVisible="False" Spacing="12">
+							<StackPanel x:Name="ValuesPanel" IsVisible="False" Spacing="8">
 
 								<StackPanel Spacing="4">
 									<TextBlock Text="RGB (0–255)" Classes="groupLabel"/>
 									<Grid ColumnDefinitions="16,*,Auto" RowDefinitions="Auto,Auto,Auto"
-                                          ColumnSpacing="8" RowSpacing="8">
+                                          ColumnSpacing="8" RowSpacing="6">
 										<TextBlock Grid.Row="0" Grid.Column="0" Text="R" Classes="fieldLabel"/>
 										<Slider Grid.Row="0" Grid.Column="1" x:Name="SlR" Classes="grad"
                                                 Minimum="0" Maximum="255" ValueChanged="OnValRgbSlider"/>
@@ -574,7 +580,7 @@
 								<StackPanel Spacing="4">
 									<TextBlock Text="HSL (H 0–360, S/L 0–100)" Classes="groupLabel"/>
 									<Grid ColumnDefinitions="16,*,Auto" RowDefinitions="Auto,Auto,Auto"
-                                          ColumnSpacing="8" RowSpacing="8">
+                                          ColumnSpacing="8" RowSpacing="6">
 										<TextBlock Grid.Row="0" Grid.Column="0" Text="H" Classes="fieldLabel"/>
 										<Slider Grid.Row="0" Grid.Column="1" x:Name="SlHslH" Classes="grad"
                                                 Minimum="0" Maximum="360" ValueChanged="OnValHslSlider"/>
@@ -596,7 +602,7 @@
 								<StackPanel Spacing="4">
 									<TextBlock Text="HSV / HSB (H 0–360, S/V 0–100)" Classes="groupLabel"/>
 									<Grid ColumnDefinitions="16,*,Auto" RowDefinitions="Auto,Auto,Auto"
-                                          ColumnSpacing="8" RowSpacing="8">
+                                          ColumnSpacing="8" RowSpacing="6">
 										<TextBlock Grid.Row="0" Grid.Column="0" Text="H" Classes="fieldLabel"/>
 										<Slider Grid.Row="0" Grid.Column="1" x:Name="SlHsvH" Classes="grad"
                                                 Minimum="0" Maximum="360" ValueChanged="OnValHsvSlider"/>
@@ -700,6 +706,13 @@
                                           Content="{x:Static res:SharedStrings.ColorEditor_AvatarRing}"
                                           Click="OnRingCheckChanged"
                                           VerticalAlignment="Center" Margin="0,0,12,6"/>
+								<!-- Закладка-ленточка на карточке группы; показывается
+								     только когда редактируется группа. -->
+								<CheckBox x:Name="BookmarkCheck"
+                                          Content="Закладка группы"
+                                          IsVisible="False"
+                                          Click="OnBookmarkCheckChanged"
+                                          VerticalAlignment="Center" Margin="0,0,12,6"/>
 								<Button x:Name="RingAllButton" Click="OnRingAllClick"
                                         Padding="12,6" CornerRadius="6" Margin="0,0,0,6"
                                         VerticalAlignment="Center"
@@ -731,13 +744,9 @@
 							</Border>
 						</StackPanel>
 
-					</StackPanel>
-				</ScrollViewer>
-
-				<!-- Полоса градиента: отдельная фиксированная часть внизу левой колонки,
-				     видна на всех вкладках, правую колонку не трогает. -->
-				<StackPanel Grid.Row="1" Margin="0,16,18,0" Spacing="6">
-					<Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+					<!-- Полоса градиента: последняя часть общей прокрутки левой колонки. -->
+					<StackPanel Margin="0,6,18,0" Spacing="6">
+					<Grid ColumnDefinitions="*,Auto">
 						<CheckBox Grid.Column="0" x:Name="GradientEnableCheck" Content="Градиент" FontSize="12"
                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                   IsCheckedChanged="OnGradientEnableChanged"/>
@@ -765,6 +774,8 @@
 					</Grid>
 					<res:GradientStripEditor x:Name="GradientStrip"/>
 				</StackPanel>
+					</StackPanel>
+				</ScrollViewer>
 				</Grid>
 
 				<DockPanel Grid.Column="1" x:Name="RightHost" IsVisible="False"

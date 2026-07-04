@@ -28,6 +28,18 @@ namespace Writersword.Styles.UserControls
             public Control? Chip;
         }
 
+        // Снимок состояния редактора для отмены/повтора (Ctrl+Z / Ctrl+Y).
+        private sealed class Snap
+        {
+            public GradientKind Kind;
+            public double Angle;
+            public GradientTextFill Fill;
+            public List<(double Pos, Color Col)> Stops = new();
+            public int ActiveIndex;
+            // Номер записи в общей хронологии с историей палитр (см. UndoClock).
+            public long Seq;
+        }
+
         // Геометрия маркера: прямоугольник 16x13 с остриём в точке (8,20).
         private const string PinGeometry = "M0,0 H16 V13 H10 L8,20 L6,13 H0 Z";
         private const double PinTipX = 8;
@@ -46,6 +58,11 @@ namespace Writersword.Styles.UserControls
         private double _dragStartRatio;
         private Stop? _lastPressStop;
         private long _lastPressTick;
+
+        private readonly Stack<Snap> _undo = new();
+        private readonly Stack<Snap> _redo = new();
+        private bool _lastOpWasAngle;
+        private bool _dragIsNew;
 
         private Border _bar = null!;
         private Canvas _layer = null!;
@@ -75,6 +92,21 @@ namespace Writersword.Styles.UserControls
             _angleDial = this.FindControl<AngleDial>("AngleDial")!;
             _angleDial.UserAngleChanged += OnDialAngleChanged;
             _ready = true;
+        }
+
+        // Пока градиент не включён (IsEnabled=false) — приглушаем весь редактор,
+        // чтобы было видно, что циферблат угла и полоса пока не работают.
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+            if (change.Property == IsEnabledProperty)
+            {
+                Opacity = IsEnabled ? 1.0 : 0.4;
+                // Полоса и маркеры перекрашиваются вместе: у выключенной полосы
+                // и трек, и заливка маркеров нейтрально-серые.
+                RebuildBar();
+                RebuildArrows();
+            }
         }
 
         // Показать переключатель «Построчно» — включает модуль текста, которому нужна
@@ -132,8 +164,9 @@ namespace Writersword.Styles.UserControls
             _active.Col = c;
             // Только перекрашиваем активный маркер и полосу. Полная пересборка стрелок
             // здесь недопустима: во время перетаскивания она уничтожает захваченный
-            // указателем маркер, и стоп перестаёт двигаться.
-            if (_active.Chip is Path ap)
+            // указателем маркер, и стоп перестаёт двигаться. У выключенной полосы
+            // заливка маркера остаётся нейтрально-серой (цвет стопа не показываем).
+            if (IsEnabled && _active.Chip is Path ap)
                 ap.Fill = new SolidColorBrush(c);
             RebuildBar();
             RaiseChanged();
@@ -144,6 +177,7 @@ namespace Writersword.Styles.UserControls
         private void OnKindChanged(object? sender, SelectionChangedEventArgs e)
         {
             if (!_ready || _suppress) return;
+            PushUndo(false);
             _kind = (GradientKind)Math.Clamp(_kindBox.SelectedIndex, 0, 2);
             UpdateAngleUi();
             RaiseChanged();
@@ -152,6 +186,7 @@ namespace Writersword.Styles.UserControls
         private void OnAngleChanged(object? sender, RangeBaseValueChangedEventArgs e)
         {
             if (!_ready || _suppress) return;
+            PushUndo(true);
             // Слайдер — в компасной системе (0 сверху, по часовой), как поле и циферблат.
             // Во внутреннюю математику (0 вправо, против часовой) конвертируем для отрисовки.
             _angle = InternalFromCompass(e.NewValue);
@@ -162,6 +197,7 @@ namespace Writersword.Styles.UserControls
         private void OnFillChanged(object? sender, RoutedEventArgs e)
         {
             if (!_ready || _suppress) return;
+            PushUndo(false);
             _fill = _fillToggle.IsChecked == true ? GradientTextFill.PerLine : GradientTextFill.Block;
             RaiseChanged();
         }
@@ -170,6 +206,7 @@ namespace Writersword.Styles.UserControls
         private void OnResetClick(object? sender, RoutedEventArgs e)
         {
             if (!_ready) return;
+            PushUndo(false);
             var col = _active?.Col ?? (_stops.Count > 0 ? _stops[0].Col : Colors.Black);
             _stops.Clear();
             var single = new Stop { Pos = 0, Col = col };
@@ -257,11 +294,13 @@ namespace Writersword.Styles.UserControls
             if (w <= 0) return;
             double ratio = Math.Clamp(e.GetPosition(_bar).X / w, 0, 1);
 
+            PushUndo(false);
             var stop = new Stop { Pos = ratio, Col = SampleAt(ratio) };
             _stops.Add(stop);
             _active = stop;
             Rebuild();
             BeginDrag(stop, e.Pointer, _bar);
+            _dragIsNew = true;
             RaiseChanged();
             e.Handled = true;
         }
@@ -323,6 +362,7 @@ namespace Writersword.Styles.UserControls
             if (pos > 1) pos = stop.Pos - offset;
             pos = Math.Clamp(pos, 0, 1);
 
+            PushUndo(false);
             var copy = new Stop { Pos = pos, Col = stop.Col };
             _stops.Add(copy);
             _active = copy;
@@ -335,6 +375,7 @@ namespace Writersword.Styles.UserControls
         private void RemoveStop(Stop stop)
         {
             if (_stops.Count <= 1) return;
+            PushUndo(false);
             _stops.Remove(stop);
             if (_active == stop)
                 _active = _stops.OrderBy(s => s.Pos).First();
@@ -370,6 +411,7 @@ namespace Writersword.Styles.UserControls
             _dragStop = stop;
             _dragChip = stop.Chip;
             _dragMoved = false;
+            _dragIsNew = false;
             _dragStartRatio = stop.Pos;
             pointer.Capture(captureTarget);
             HighlightActive();
@@ -383,7 +425,11 @@ namespace Writersword.Styles.UserControls
             double w = _layer.Bounds.Width;
             if (w <= 0) return;
             double nr = Math.Clamp(p.X / w, 0, 1);
-            if (Math.Abs(nr - _dragStartRatio) > 0.002) _dragMoved = true;
+            if (Math.Abs(nr - _dragStartRatio) > 0.002)
+            {
+                if (!_dragMoved && !_dragIsNew) PushUndo(false);
+                _dragMoved = true;
+            }
             _dragStop.Pos = nr;
             if (_dragChip != null)
                 Canvas.SetLeft(_dragChip, _dragStop.Pos * w - PinTipX);
@@ -416,8 +462,20 @@ namespace Writersword.Styles.UserControls
             RebuildArrows();
         }
 
+        // Нейтральный серый выключенного состояния — общий для полосы-трека и
+        // заливки маркеров, чтобы в приглушённом виде они выглядели одинаково.
+        private static readonly Color DisabledTrackColor = Color.FromRgb(0x5A, 0x5A, 0x5A);
+
         private void RebuildBar()
         {
+            // Пока градиент не включён — полоса всегда нейтрально-серая (это трек, а не
+            // превью цвета). Цвет/градиент показываем только когда полоса активна.
+            if (!IsEnabled)
+            {
+                _bar.Background = new SolidColorBrush(DisabledTrackColor);
+                return;
+            }
+
             var sorted = _stops.OrderBy(s => s.Pos).ToList();
             if (sorted.Count == 1)
             {
@@ -446,11 +504,16 @@ namespace Writersword.Styles.UserControls
 
             foreach (var s in _stops)
             {
-                bool isActive = ReferenceEquals(s, _active);
+                // У выключенной полосы активный стоп рамкой не подсвечивается —
+                // выделение показываем только когда градиент включён.
+                bool isActive = ReferenceEquals(s, _active) && IsEnabled;
                 var pin = new Path
                 {
                     Data = Geometry.Parse(PinGeometry),
-                    Fill = new SolidColorBrush(s.Col),
+                    // Пока градиент не включён, заливка маркера нейтрально-серая,
+                    // как и полоса-трек: цвета стопов показываются только у
+                    // активной полосы.
+                    Fill = new SolidColorBrush(IsEnabled ? s.Col : DisabledTrackColor),
                     Stroke = isActive ? accent : subtle,
                     StrokeThickness = isActive ? 2 : 1,
                     Tag = s
@@ -477,7 +540,9 @@ namespace Writersword.Styles.UserControls
             {
                 if (child is Path p && p.Tag is Stop s)
                 {
-                    bool isActive = ReferenceEquals(s, _active);
+                    // Как и при пересборке: у выключенной полосы рамку выделения
+                    // не показываем.
+                    bool isActive = ReferenceEquals(s, _active) && IsEnabled;
                     p.Stroke = isActive ? accent : subtle;
                     p.StrokeThickness = isActive ? 2 : 1;
                 }
@@ -488,6 +553,106 @@ namespace Writersword.Styles.UserControls
         {
             if (_suppress) return;
             SpecChanged?.Invoke();
+        }
+
+        // ── Отмена / повтор ──────────────────────────────────────────────
+
+        public bool CanUndo => _undo.Count > 0;
+        public bool CanRedo => _redo.Count > 0;
+
+        // Номера крайних записей — для маршрутизации Ctrl+Z/Ctrl+Y между полосой
+        // градиента и историей палитр (см. UndoClock).
+        public long LastUndoSeq => _undo.Count > 0 ? _undo.Peek().Seq : -1;
+        public long LastRedoSeq => _redo.Count > 0 ? _redo.Peek().Seq : -1;
+
+        /// <summary>Безвозвратно очистить историю изменений градиента.</summary>
+        public void ClearHistory()
+        {
+            _undo.Clear();
+            _redo.Clear();
+            _lastOpWasAngle = false;
+        }
+
+        private Snap Capture() => new Snap
+        {
+            Kind = _kind,
+            Angle = _angle,
+            Fill = _fill,
+            Stops = _stops.Select(s => (s.Pos, s.Col)).ToList(),
+            ActiveIndex = _active != null ? _stops.IndexOf(_active) : 0
+        };
+
+        // Запоминаем состояние ДО изменения. Подряд идущие изменения угла (таскание
+        // слайдера/циферблата) сливаются в одну запись, чтобы Ctrl+Z откатывал их разом.
+        private void PushUndo(bool isAngle)
+        {
+            if (isAngle && _lastOpWasAngle)
+            {
+                // Продолжение таскания угла: запись уже есть, но её номер обновляем,
+                // чтобы маршрутизация Ctrl+Z считала градиент последним изменением.
+                if (_undo.Count > 0) _undo.Peek().Seq = UndoClock.Next();
+                _lastOpWasAngle = true;
+                return;
+            }
+            var snap = Capture();
+            snap.Seq = UndoClock.Next();
+            _undo.Push(snap);
+            _redo.Clear();
+            _lastOpWasAngle = isAngle;
+        }
+
+        // Встречный снимок для повтора наследует номер отменяемой записи —
+        // хронология с историей палитр сохраняется.
+        public void Undo()
+        {
+            if (_undo.Count == 0) return;
+            var snap = _undo.Pop();
+            var back = Capture();
+            back.Seq = snap.Seq;
+            _redo.Push(back);
+            RestoreSnap(snap);
+            _lastOpWasAngle = false;
+        }
+
+        public void Redo()
+        {
+            if (_redo.Count == 0) return;
+            var snap = _redo.Pop();
+            var back = Capture();
+            back.Seq = snap.Seq;
+            _undo.Push(back);
+            RestoreSnap(snap);
+            _lastOpWasAngle = false;
+        }
+
+        private void RestoreSnap(Snap s)
+        {
+            _kind = s.Kind;
+            _angle = s.Angle;
+            _fill = s.Fill;
+
+            _stops.Clear();
+            foreach (var (p, c) in s.Stops)
+                _stops.Add(new Stop { Pos = p, Col = c });
+            if (_stops.Count == 0)
+                _stops.Add(new Stop { Pos = 0, Col = Colors.Black });
+
+            _active = (s.ActiveIndex >= 0 && s.ActiveIndex < _stops.Count)
+                ? _stops[s.ActiveIndex] : _stops[0];
+
+            _suppress = true;
+            try
+            {
+                _kindBox.SelectedIndex = (int)_kind;
+                _angleSlider.Value = CompassFromInternal(_angle);
+                _fillToggle.IsChecked = _fill == GradientTextFill.PerLine;
+                UpdateAngleUi();
+            }
+            finally { _suppress = false; }
+
+            Rebuild();
+            if (_active != null) ActiveStopSelected?.Invoke(ToHex(_active.Col));
+            RaiseChanged();
         }
 
         // ── Помощники ────────────────────────────────────────────────────

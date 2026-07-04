@@ -32,41 +32,59 @@
                     BorderThickness="0,0,0,1"
                     Padding="4,0">
 				<Border.Styles>
-					<Style Selector="Button.tab-active">
+					<!-- Дефолты вкладок заданы стилем, а не атрибутами: локальные
+					     значения приоритетнее сеттеров класса, из-за чего подсветка
+					     активной вкладки (tab-active) раньше перебивалась и не была
+					     видна. Толщина рамки постоянная (низ 2px), у неактивных
+					     рамка прозрачная — высота кнопок не дёргается. -->
+					<Style Selector="Button.tab">
+						<Setter Property="FontSize" Value="12"/>
+						<Setter Property="Padding" Value="12,8"/>
+						<Setter Property="Background" Value="Transparent"/>
 						<Setter Property="BorderThickness" Value="0,0,0,2"/>
+						<Setter Property="BorderBrush" Value="Transparent"/>
+						<Setter Property="CornerRadius" Value="0"/>
+						<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+					</Style>
+					<Style Selector="Button.tab:pointerover">
+						<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+					</Style>
+					<Style Selector="Button.tab.tab-active">
+						<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+						<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+						<Setter Property="FontWeight" Value="SemiBold"/>
+					</Style>
+					<Style Selector="Button.tab.tab-active:pointerover">
 						<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 						<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
 					</Style>
-					<Style Selector="Button.tab-active:pointerover">
-						<Setter Property="BorderThickness" Value="0,0,0,2"/>
-						<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+					<!-- Шаблон Fluent при наведении красит текст через свой
+					     ContentPresenter — перекрываем его для активной вкладки,
+					     чтобы акцентный цвет не сбрасывался под курсором. -->
+					<Style Selector="Button.tab.tab-active /template/ ContentPresenter#PART_ContentPresenter">
+						<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+					</Style>
+					<Style Selector="Button.tab.tab-active:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+						<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
 					</Style>
 				</Border.Styles>
 				<StackPanel Orientation="Horizontal">
 					<Button Content="{x:Static loc:CharactersStrings.Tab_Characters}"
                             Command="{ReflectionBinding GoToCharactersCommand}"
-                            Classes.tab-active="{Binding IsTab0Active}"
-                            FontSize="12" Padding="12,8"
-                            Background="Transparent" BorderThickness="0"
-                            Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            Classes="tab"
+                            Classes.tab-active="{Binding IsTab0Active}"/>
 					<Button Content="{x:Static loc:CharactersStrings.Tab_Edit}"
                             Command="{ReflectionBinding GoToEditCommand}"
-                            Classes.tab-active="{Binding IsTab1Active}"
-                            FontSize="12" Padding="12,8"
-                            Background="Transparent" BorderThickness="0"
-                            Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            Classes="tab"
+                            Classes.tab-active="{Binding IsTab1Active}"/>
 					<Button Content="{x:Static loc:CharactersStrings.Tab_Relationships}"
                             Command="{ReflectionBinding GoToRelationshipsCommand}"
-                            Classes.tab-active="{Binding IsTab2Active}"
-                            FontSize="12" Padding="12,8"
-                            Background="Transparent" BorderThickness="0"
-                            Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            Classes="tab"
+                            Classes.tab-active="{Binding IsTab2Active}"/>
 					<Button Content="{x:Static loc:CharactersStrings.Tab_Templates}"
                             Command="{ReflectionBinding GoToTemplatesCommand}"
-                            Classes.tab-active="{Binding IsTab3Active}"
-                            FontSize="12" Padding="12,8"
-                            Background="Transparent" BorderThickness="0"
-                            Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            Classes="tab"
+                            Classes.tab-active="{Binding IsTab3Active}"/>
 				</StackPanel>
 			</Border>
 

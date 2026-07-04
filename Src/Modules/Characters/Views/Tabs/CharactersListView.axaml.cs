@@ -84,6 +84,58 @@ namespace Writersword.Modules.Characters.Views.Tabs
             if (DataContext is CharactersViewModel vm && vm.CanRedo) vm.Redo();
         }
 
+        // Прокрутка к только что созданному персонажу или группе. Вызывается
+        // вьюмоделью сразу после добавления, когда раскладка ещё не построила
+        // новую карточку, поэтому сама работа откладывается до конца прохода
+        // раскладки.
+        private void ScrollToCharacter(string? folderId, string characterId)
+        {
+            Dispatcher.UIThread.Post(
+                () => ScrollToCharacterCore(folderId, characterId),
+                DispatcherPriority.Background);
+        }
+
+        private void ScrollToCharacterCore(string? folderId, string characterId)
+        {
+            if (DataContext is not CharactersViewModel vm) return;
+
+            var folder = (folderId is not null
+                    ? vm.Folders.FirstOrDefault(f => f.FolderId == folderId)
+                    : null)
+                ?? vm.Folders.FirstOrDefault(f => f.Characters.Any(c => c.Id == characterId));
+            if (folder is null) return;
+
+            int index = -1;
+            var visible = folder.VisibleCharacters;
+            for (int i = 0; i < visible.Count; i++)
+                if (visible[i].Id == characterId) { index = i; break; }
+            if (index < 0) return;
+
+            // Репитер нужной папки ищем по живому дереву: кэш репитеров
+            // (_folderItemsCtrlCache) заполняется только на время перетаскивания.
+            var repeater = this.GetVisualDescendants()
+                .OfType<ItemsRepeater>()
+                .FirstOrDefault(r => r.DataContext is CharacterFolderViewModel fv
+                                     && fv.FolderId == folder.FolderId);
+            if (repeater is null) return;
+
+            try
+            {
+                // GetOrCreateElement реализует элемент, даже если его контейнер ещё
+                // не создан (позиция далеко за пределами видимой области), после
+                // чего карточку можно подвести в видимую область.
+                var element = repeater.GetOrCreateElement(index);
+                if (element is null) return;
+                repeater.UpdateLayout();
+                element.BringIntoView();
+            }
+            catch (ArgumentException)
+            {
+                // Индекс успел устареть (список перестроился между постом и
+                // выполнением) — прокрутку просто пропускаем.
+            }
+        }
+
         protected override void OnLoaded(RoutedEventArgs e)
         {
             base.OnLoaded(e);
@@ -98,6 +150,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
             {
                 _avatarService = vmAvatar.AvatarService;
                 vmAvatar.BindAvatarPickerCallback = BindAvatarPicker;
+                vmAvatar.ScrollToCharacterCallback = ScrollToCharacter;
 
                 // Привязываем уже существующие items (если данные загружены до OnLoaded).
                 foreach (var folder in vmAvatar.Folders)
@@ -931,10 +984,22 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
             _ghostText.Text = item.Name;
 
-            var brush = Color.TryParse(item.Color, out var parsed)
-                ? new SolidColorBrush(parsed)
-                : new SolidColorBrush(Color.FromRgb(96, 125, 139));
+            // Кисть строится тем же конвертером, что и на карточке: код цвета
+            // может быть градиентом ("grad|..."), и простой Color.TryParse ронял
+            // призрак в дефолтный серо-синий.
+            var brush = Writersword.Infrastructure.Converters.ColorCodeToBrushConverter.Instance
+                    .Convert(item.Color, typeof(IBrush), null,
+                        System.Globalization.CultureInfo.InvariantCulture) as IBrush
+                ?? new SolidColorBrush(Color.FromRgb(96, 125, 139));
             _ghostBorder.BorderBrush = brush;
+
+            // Закладка группы — как на реальной карточке.
+            var bookmark = this.FindControl<Avalonia.Controls.Shapes.Path>("DragGhostBookmark");
+            if (bookmark is not null)
+            {
+                bookmark.IsVisible = item.ShowGroupBookmark;
+                bookmark.Fill = brush;
+            }
 
             // Кружок-аватар: заливка цветом персонажа, поверх — картинка (если есть),
             // иначе запасной значок. Делает призрак похожим на реальную карточку.

@@ -21,6 +21,17 @@ using Writersword.Core.Services;
 namespace Writersword.Styles.UserControls
 {
     /// <summary>
+    /// Общий счётчик порядка изменений для истории редактора цвета: каждая запись
+    /// undo (палитры и полоса градиента) получает возрастающий номер, по которому
+    /// Ctrl+Z/Ctrl+Y выбирают, чьё изменение было последним.
+    /// </summary>
+    public static class UndoClock
+    {
+        private static long _seq;
+        public static long Next() => ++_seq;
+    }
+
+    /// <summary>
     /// Элемент списка палитр: сама палитра, признак глобальной и представления
     /// для биндинга строки (имя, видимость, лента-метка из первых цветов).
     /// </summary>
@@ -618,12 +629,31 @@ namespace Writersword.Styles.UserControls
         {
             if (sender is not TextBox tb || tb.DataContext is not PaletteListItem item) return;
             var newName = (tb.Text ?? string.Empty).Trim();
-            if (item.Palette.Name == newName) { item.IsRenaming = false; return; }
+            if (item.Palette.Name == newName)
+            {
+                item.IsRenaming = false;
+                ReleaseRenameFocus(tb);
+                return;
+            }
             PushUndo();
             item.Palette.Name = newName;
             item.IsRenaming = false;
             item.RefreshComputed();   // обновляет отображаемое имя без пересборки списка
             if (item.IsGlobal) SaveGlobal(); else SaveProjectDoc();
+            ReleaseRenameFocus(tb);
+        }
+
+        // После подтверждения имени по Enter поле скрывается, но фокус остаётся на
+        // невидимом TextBox — и Ctrl+Z уходил в него как текстовая отмена вместо
+        // отката палитр. Снимаем фокус, только если он ещё на этом поле (при
+        // подтверждении потерей фокуса он уже ушёл к новому элементу — не трогаем).
+        // IFocusManager не даёт публичного сброса фокуса, поэтому переводим фокус
+        // на сам менеджер палитр (Focusable включается точечно здесь же).
+        private void ReleaseRenameFocus(TextBox tb)
+        {
+            if (!tb.IsFocused) return;
+            Focusable = true;
+            Focus();
         }
 
         /// <summary>Перезагрузить данные из хранилищ (глобального и проектного).</summary>
@@ -694,6 +724,7 @@ namespace Writersword.Styles.UserControls
 
         private void OnResetStandard(object? sender, RoutedEventArgs e)
         {
+            PushUndo(std: true);
             _global.StandardColors = StandardColors.Default();
             SaveGlobal();
             RebuildStandard();
@@ -704,6 +735,7 @@ namespace Writersword.Styles.UserControls
             var hex = Current();
             if (hex is null || _global.StandardColors.Count >= StandardColors.MaxCount) return;
             if (_global.StandardColors.Any(c => Norm(c) == hex)) return;
+            PushUndo(std: true);
             _global.StandardColors.Add(hex);
             SaveGlobal();
             RebuildStandard();
@@ -713,6 +745,7 @@ namespace Writersword.Styles.UserControls
         {
             if (sender is Control c && c.DataContext is string hex)
             {
+                PushUndo(std: true);
                 _global.StandardColors.RemoveAll(x => Norm(x) == Norm(hex));
                 SaveGlobal();
                 RebuildStandard();
@@ -722,14 +755,22 @@ namespace Writersword.Styles.UserControls
         // ── Палитры ───────────────────────────────────────────────────────
 
         // ── История изменений палитр (Ctrl+Z / Ctrl+Y) ───────────────────
-        // Снимок захватывает оба источника палитр (проектные и глобальные) и
-        // выбранную палитру: одна операция (например, смена области) меняет сразу
-        // оба списка.
+        // Снимок захватывает оба источника палитр (проектные и глобальные),
+        // стандартные цвета и выбранную палитру: одна операция (например, смена
+        // области) меняет сразу оба списка. Seq — номер записи в общей хронологии
+        // с полосой градиента (см. UndoClock).
         private sealed class PaletteSnapshot
         {
             public List<ColorPalette> Project = new();
             public List<ColorPalette> Global = new();
+            public List<string> Standard = new();
+            public Dictionary<string, double> GlobalOrder = new();
             public string? SelectedId;
+            public long Seq;
+            // Где произошло изменение: true — секция стандартных цветов,
+            // false — именованные палитры. По этому признаку оверлей показывает
+            // вкладку, в которой откат/повтор виден.
+            public bool StdSection;
         }
 
         private readonly List<PaletteSnapshot> _undo = new();
@@ -746,42 +787,80 @@ namespace Writersword.Styles.UserControls
                    ?? new List<ColorPalette>();
         }
 
-        // Снимок текущего состояния обоих источников и выбранной палитры.
+        // Снимок текущего состояния обоих источников, стандартных цветов и
+        // выбранной палитры.
         private PaletteSnapshot Capture() => new PaletteSnapshot
         {
             Project = CloneList(CurrentProject?.ProjectPalettes),
             Global = CloneList(_global.Palettes),
+            Standard = new List<string>(_global.StandardColors ?? new List<string>()),
+            GlobalOrder = CurrentProject?.GlobalPaletteOrder is { } go
+                ? new Dictionary<string, double>(go)
+                : new Dictionary<string, double>(),
             SelectedId = _selected?.Palette.Id
         };
 
         // Запомнить состояние ДО изменения. Вызывается в начале каждой операции,
-        // меняющей палитры. Новое действие очищает стек повтора.
-        private void PushUndo()
+        // меняющей палитры. Новое действие очищает стек повтора. std — операция
+        // относится к секции стандартных цветов (для показа нужной вкладки).
+        private void PushUndo(bool std = false)
         {
             if (_restoring) return;
-            _undo.Add(Capture());
+            var snap = Capture();
+            snap.Seq = UndoClock.Next();
+            snap.StdSection = std;
+            _undo.Add(snap);
             if (_undo.Count > MaxHistory) _undo.RemoveAt(0);
             _redo.Clear();
         }
 
-        // Отмена последнего изменения палитр.
+        // Есть ли что откатывать/повторять и номера крайних записей — для
+        // маршрутизации Ctrl+Z/Ctrl+Y между палитрами и полосой градиента.
+        public bool CanUndo => _undo.Count > 0;
+        public bool CanRedo => _redo.Count > 0;
+        public long LastUndoSeq => _undo.Count > 0 ? _undo[_undo.Count - 1].Seq : -1;
+        public long LastRedoSeq => _redo.Count > 0 ? _redo[_redo.Count - 1].Seq : -1;
+
+        /// <summary>Безвозвратно очистить историю изменений палитр.</summary>
+        public void ClearHistory()
+        {
+            _undo.Clear();
+            _redo.Clear();
+        }
+
+        // Срабатывает после отката/повтора; параметр — относилась ли операция к
+        // секции стандартных цветов (true) или к именованным палитрам (false).
+        // Оверлей по нему показывает вкладку, где произошло изменение.
+        public event Action<bool>? HistoryApplied;
+
+        // Отмена последнего изменения палитр. Встречный снимок для повтора
+        // наследует номер и секцию отменяемой записи — хронология с градиентом
+        // и адрес вкладки сохраняются.
         public void Undo()
         {
             if (_undo.Count == 0) return;
-            _redo.Add(Capture());
             var snap = _undo[_undo.Count - 1];
             _undo.RemoveAt(_undo.Count - 1);
+            var back = Capture();
+            back.Seq = snap.Seq;
+            back.StdSection = snap.StdSection;
+            _redo.Add(back);
             RestoreSnapshot(snap);
+            HistoryApplied?.Invoke(snap.StdSection);
         }
 
         // Повтор отменённого изменения палитр.
         public void Redo()
         {
             if (_redo.Count == 0) return;
-            _undo.Add(Capture());
             var snap = _redo[_redo.Count - 1];
             _redo.RemoveAt(_redo.Count - 1);
+            var back = Capture();
+            back.Seq = snap.Seq;
+            back.StdSection = snap.StdSection;
+            _undo.Add(back);
             RestoreSnapshot(snap);
+            HistoryApplied?.Invoke(snap.StdSection);
         }
 
         // Восстанавливает состояние из снимка: подменяет оба списка-источника,
@@ -796,13 +875,18 @@ namespace Writersword.Styles.UserControls
                 {
                     proj.ProjectPalettes.Clear();
                     foreach (var p in snap.Project) proj.ProjectPalettes.Add(p);
+                    proj.GlobalPaletteOrder.Clear();
+                    foreach (var kv in snap.GlobalOrder)
+                        proj.GlobalPaletteOrder[kv.Key] = kv.Value;
                 }
                 _global.Palettes.Clear();
                 foreach (var p in snap.Global) _global.Palettes.Add(p);
+                _global.StandardColors = new List<string>(snap.Standard);
 
                 _selected = null;
                 SaveGlobal();
                 SaveProjectDoc();
+                RebuildStandard();
                 RebuildPalettes(snap.SelectedId);
             }
             finally { _restoring = false; }
@@ -812,16 +896,37 @@ namespace Writersword.Styles.UserControls
         {
             var prevId = selectId ?? _selected?.Palette.Id;
 
-            var raw = new List<(ColorPalette p, bool g)>();
+            var raw = new List<(ColorPalette p, bool g, double ord)>();
             var proj = CurrentProject;
             if (proj is not null)
-                foreach (var p in proj.ProjectPalettes) raw.Add((p, false));
-            foreach (var p in _global.Palettes) raw.Add((p, true));
+                foreach (var p in proj.ProjectPalettes) raw.Add((p, false, p.Order));
 
-            // Единый порядок отображения — по полю Order (общий для локальных и
-            // глобальных). OrderBy стабилен, так что старые данные (Order=0) сохранят
-            // текущий порядок до первой перестановки.
-            raw = raw.OrderBy(x => x.p.Order).ToList();
+            // Позиция глобальной палитры — проектная: берётся из ссылок проекта
+            // (Id -> позиция), чтобы перестановка в одном проекте не смещала
+            // порядок в других. Для палитры без ссылки (создана или переставлена
+            // в другом проекте) отправной точкой служит её глобальный Order.
+            var order = proj?.GlobalPaletteOrder;
+            foreach (var p in _global.Palettes)
+                raw.Add((p, true, order is not null && order.TryGetValue(p.Id, out var o) ? o : p.Order));
+
+            // Ссылки на несуществующие глобальные палитры (удалены в другом
+            // проекте) вычищаем; если палитра появится снова — ссылка создастся
+            // заново при первой перестановке.
+            if (proj is not null && order is not null && order.Count > 0)
+            {
+                var alive = new HashSet<string>(_global.Palettes.Select(x => x.Id));
+                var stale = order.Keys.Where(id => !alive.Contains(id)).ToList();
+                if (stale.Count > 0)
+                {
+                    foreach (var id in stale) order.Remove(id);
+                    SaveProjectDoc();
+                }
+            }
+
+            // Единый порядок отображения — по вычисленной позиции. OrderBy стабилен,
+            // так что старые данные (Order=0) сохранят текущий порядок до первой
+            // перестановки.
+            raw = raw.OrderBy(x => x.ord).ToList();
 
             // Активной остаётся та же палитра независимо от видимости — чтобы скрытие
             // глазиком ничего не переставляло и не перепрыгивало. Если активной нет —
@@ -831,7 +936,7 @@ namespace Writersword.Styles.UserControls
                 : (raw.Count > 0 ? raw[0].p.Id : null);
 
             Palettes.Clear();
-            foreach (var (p, g) in raw)
+            foreach (var (p, g, _) in raw)
                 Palettes.Add(new PaletteListItem { Palette = p, IsGlobal = g, IsActive = p.Id == activeId });
 
             // Основной список — только видимые; окно управления показывает все.
@@ -1248,10 +1353,18 @@ namespace Writersword.Styles.UserControls
         // Нужно во время работы окна, чтобы перестановка не терялась при пересборке.
         private void ApplyOrderToSources()
         {
-            // Сквозной порядок: позиция в общем списке = Order палитры.
-            for (int i = 0; i < Palettes.Count; i++) Palettes[i].Palette.Order = i;
-
+            // Сквозной порядок: позиция в общем списке = Order палитры. Для
+            // глобальных палитр позиция дополнительно пишется в ссылки проекта —
+            // у каждого проекта своя расстановка; глобальный Order при этом
+            // обновляется тоже и служит отправной точкой для проектов без ссылок.
             var proj = CurrentProject;
+            for (int i = 0; i < Palettes.Count; i++)
+            {
+                var item = Palettes[i];
+                item.Palette.Order = i;
+                if (item.IsGlobal && proj is not null)
+                    proj.GlobalPaletteOrder[item.Palette.Id] = i;
+            }
             if (proj is not null)
             {
                 var ordered = Palettes.Where(x => !x.IsGlobal).Select(x => x.Palette).ToList();
@@ -1314,6 +1427,7 @@ namespace Writersword.Styles.UserControls
             {
                 if (isStandard)
                 {
+                    PushUndo(std: true);
                     _global.StandardColors.RemoveAll(c => Norm(c) == Norm(hex));
                     SaveGlobal();
                     RebuildStandard();
@@ -1534,10 +1648,17 @@ namespace Writersword.Styles.UserControls
 
                 if (target >= 0 && _palDragIndex >= 0 && target != _palDragIndex && _swColors is not null)
                 {
-                    // Стандартные цвета не входят в undo палитр; для палитр — снимок.
-                    if (!ReferenceEquals(_swColors, Standard)) PushUndo();
+                    // Снимок в историю делается и для палитр, и для стандартных цветов.
+                    PushUndo(std: ReferenceEquals(_swColors, Standard));
                     _swColors.Move(_palDragIndex, target);
                     _swCommit?.Invoke();
+                }
+                else if (_palDragHex is string held)
+                {
+                    // Зажал дольше порога, но не перенёс (слот не сменился) — это
+                    // клик: выбираем цвет, иначе чуть затянутое нажатие по свотчу
+                    // «не прожималось».
+                    ColorPicked?.Invoke(held);
                 }
 
                 // Возвращаем переходы после применения раскладки — чтобы сама фиксация

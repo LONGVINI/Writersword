@@ -60,6 +60,23 @@ namespace Writersword.Modules.Characters.ViewModels
             }
         }
 
+        // Закладка-ленточка на карточке группы. Хранится в модели персонажа,
+        // переключается из редактора цвета. Показ на карточке — ShowGroupBookmark:
+        // закладка рисуется только у групп и только когда включена.
+        private bool _groupBookmark;
+        public bool GroupBookmark
+        {
+            get => _groupBookmark;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _groupBookmark, value);
+                this.RaisePropertyChanged(nameof(ShowGroupBookmark));
+                OnGroupBookmarkChanged?.Invoke(Id, value);
+            }
+        }
+
+        public bool ShowGroupBookmark => IsCollective && _groupBookmark;
+
         // Ленивая загрузка — битмап создаётся только при первом обращении.
         public Bitmap? AvatarBitmap
         {
@@ -153,6 +170,7 @@ namespace Writersword.Modules.Characters.ViewModels
         public Action<string>? OnDeleteRequested { get; set; }        // (id)
         public Action<string, string>? OnColorChanged { get; set; }   // (id, newColor)
         public Action<string, bool>? OnAvatarRingChanged { get; set; } // (id, ringEnabled)
+        public Action<string, bool>? OnGroupBookmarkChanged { get; set; } // (id, bookmarkEnabled)
         public Action<bool>? OnApplyRingToAll { get; set; }            // (ringEnabled — ко всем персонажам)
 
         // êîìàíäû  âûïîëíÿþòñÿ èç AXAML íàïðÿìóþ ÷åðåç {Binding}
@@ -181,6 +199,7 @@ namespace Writersword.Modules.Characters.ViewModels
             ShortDescription = character.ShortDescription;
             _color = character.Color;
             _avatarRing = character.AvatarRing;
+            _groupBookmark = character.GroupBookmark;
             FallbackIcon = character.FallbackIcon;
             IsCollective = character.IsCollective;
             RelationshipsCount = relationshipsCount;

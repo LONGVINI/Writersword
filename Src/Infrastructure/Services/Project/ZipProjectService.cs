@@ -124,7 +124,8 @@ namespace Writersword.Infrastructure.Services.Project
                         project.ProjectPinnedColors,
                         project.ProjectRecentColors,
                         project.AvatarRingsAll,
-                        project.ProjectPalettes
+                        project.ProjectPalettes,
+                        project.GlobalPaletteOrder
                     };
 
                     var projectJson = JsonHelper.Serialize(projectMeta);

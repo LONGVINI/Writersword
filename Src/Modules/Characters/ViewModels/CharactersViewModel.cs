@@ -49,6 +49,12 @@ namespace Writersword.Modules.Characters.ViewModels
         // Вызывается для каждого созданного CharacterListItemViewModel.
         public Action<CharacterListItemViewModel>? BindAvatarPickerCallback { get; set; }
 
+        // Задаётся из CharactersListView code-behind. Вызывается после создания
+        // персонажа или группы (folderId, characterId), чтобы список прокрутился
+        // к новой карточке: папка может находиться за пределами видимой области,
+        // а её элементы — быть ещё не реализованными раскладкой.
+        public Action<string?, string>? ScrollToCharacterCallback { get; set; }
+
         private string _undoToastMessage = string.Empty;
         public string UndoToastMessage
         {
@@ -482,12 +488,21 @@ namespace Writersword.Modules.Characters.ViewModels
             _logger.Information("Onboarding dismissed — can restart via Templates tab");
         }
 
+        // Проектная настройка «кольцо у всех аватаров» (переключается в редакторе
+        // цвета кнопкой «включить/убрать у всех»). Пока она включена, новые
+        // персонажи и группы создаются сразу с кольцом.
+        private static bool ProjectRingsAll =>
+            Writersword.Core.Services.CoreServices
+                .GetService<Writersword.Core.Interfaces.WorkFlows.ITabCollection>()
+                ?.ActiveTab?.Context?.Project?.AvatarRingsAll ?? false;
+
         private void CreateCharacter()
         {
             var anketas = GetActiveAnketas();
             var character = anketas.Count > 0
                 ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: false)
                 : _characterService.Create(CharactersStrings.Character_DefaultName);
+            character.AvatarRing = ProjectRingsAll;
             AddCharacterToActiveFolderVm(character, isNaming: true);
         }
 
@@ -497,6 +512,7 @@ namespace Writersword.Modules.Characters.ViewModels
             var character = anketas.Count > 0
                 ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: true)
                 : _characterService.Create(CharactersStrings.Character_DefaultName);
+            character.AvatarRing = ProjectRingsAll;
             AddCharacterToActiveFolderVm(character, isNaming: true);
         }
 
@@ -507,6 +523,7 @@ namespace Writersword.Modules.Characters.ViewModels
                 ? new[] { collective }
                 : System.Array.Empty<CharacterAnketa>();
             var character = _characterService.CreateCollective(CharactersStrings.Character_DefaultName, anketas);
+            character.AvatarRing = ProjectRingsAll;
             AddCharacterToActiveFolderVm(character, isNaming: true);
         }
 
@@ -531,6 +548,10 @@ namespace Writersword.Modules.Characters.ViewModels
             {
                 RefreshFolderViewModels(inlineBeingNamedId: character.Id);
             }
+
+            // Подводим список к новой карточке — иначе создание из прокрученного
+            // вверх положения происходит «за кадром» и выглядит как ничего.
+            ScrollToCharacterCallback?.Invoke(folderId, character.Id);
         }
 
         private List<CharacterAnketa> GetActiveAnketas() =>
@@ -821,7 +842,13 @@ namespace Writersword.Modules.Characters.ViewModels
                             Name = item.Name,
                             Color = item.Color,
                             FallbackIcon = item.FallbackIcon,
-                            AvatarPath = item.AvatarPath
+                            AvatarPath = item.AvatarPath,
+                            // Признаки группы и кольца копируются, иначе на время
+                            // перетаскивания карточка-плейсхолдер теряет закладку
+                            // и кольцо и выглядит чужой.
+                            IsCollective = item.IsCollective,
+                            GroupBookmark = item.GroupBookmark,
+                            AvatarRing = item.AvatarRing
                         },
                         0, false, AvatarService)
                     { IsPlaceholder = true, IsDragging = true };
@@ -1284,6 +1311,14 @@ namespace Writersword.Modules.Characters.ViewModels
                 var character = _characterService.GetById(id);
                 if (character is null || character.AvatarRing == on) return;
                 character.AvatarRing = on;
+                _characterService.Update(character);
+            };
+
+            item.OnGroupBookmarkChanged = (id, on) =>
+            {
+                var character = _characterService.GetById(id);
+                if (character is null || character.GroupBookmark == on) return;
+                character.GroupBookmark = on;
                 _characterService.Update(character);
             };
 

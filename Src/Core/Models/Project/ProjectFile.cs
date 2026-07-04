@@ -54,6 +54,15 @@ namespace Writersword.Core.Models.Project
         public List<ColorPalette> ProjectPalettes { get; set; } = new();
 
         /// <summary>
+        /// Порядок отображения глобальных палитр в этом проекте: Id палитры ->
+        /// позиция в общем списке. Лёгкие ссылки, чтобы перестановка глобальных
+        /// палитр в одном проекте не смещала их в других. Ссылка на палитру,
+        /// удалённую в другом проекте, вычищается при первом ненахождении.
+        /// </summary>
+        [JsonProperty("GlobalPaletteOrder")]
+        public Dictionary<string, double> GlobalPaletteOrder { get; set; } = new();
+
+        /// <summary>
         /// Конфигурация WorkModes.
         /// НЕ сериализуется — загружается из workspace.json при открытии.
         /// </summary>

@@ -41,12 +41,38 @@ namespace Writersword.Styles.UserControls
         private bool _syncing;
         private bool _ring;
         private bool _ringsAllState;
+        // Редактируется карточка группы: показывается галка закладки-ленточки и
+        // сама закладка в превью; состояние возвращается в результате редактора.
+        private bool _isGroupCard;
+        private bool _bookmark = true;
         private TaskCompletionSource<ColorEditResult?>? _tcs;
 
         // Текущий цвет редактора и его HSV-представление (оттенок сохраняется
         // при уходе насыщенности в ноль, чтобы полоса не прыгала на красный).
         private Color _current;
         private double _h, _s, _v;
+
+        // ── История изменений основного цвета (Ctrl+Z / Ctrl+Y) ──────────
+        // Каждое изменение цвета (ползунки RGB/HSL/HSV, точка на квадрате и
+        // колесе, полоса оттенка, соты, HEX, поля значений, пипетка, свотчи)
+        // попадает в историю. Границей записи служит жест: пока кнопка мыши
+        // зажата (таскание точки или ползунка), изменения сливаются в одну
+        // запись, отпускание закрывает её — следующее изменение начинает новую.
+        // Для изменений без жеста (клавиатура, поток от генератора) действует
+        // короткое окно слияния по времени.
+        private sealed class ColorSnap
+        {
+            public Color Value;
+            public long Seq;
+        }
+
+        private readonly List<ColorSnap> _colorUndo = new();
+        private readonly List<ColorSnap> _colorRedo = new();
+        private const int MaxColorHistory = 100;
+        private const int ColorMergeMs = 500;
+        private bool _restoringColor;
+        private long _lastColorPushTick;
+        private bool _colorGestureActive;
 
         private bool _showPreview;
         private bool _previewCollapsed;
@@ -107,12 +133,27 @@ namespace Writersword.Styles.UserControls
         // Полоса-редактор градиента под цветами.
         private GradientStripEditor? _gradientStrip;
         private bool _gradientEnabled;
+        // Градиент включён автоматически кликом по образцу-градиенту, а не галкой:
+        // последующий выбор простого цвета выключает его обратно. Ручное включение
+        // галкой пометку не ставит — тогда простой цвет режим не сбрасывает.
+        private bool _gradientAutoEnabled;
         private bool _settingGrad;
 
         public ColorEditorOverlay()
         {
             InitializeComponent();
             IsVisible = false;
+
+            // Границы жеста изменения цвета для истории Ctrl+Z: пока кнопка мыши
+            // зажата — изменения сливаются в одну запись, отпускание (или потеря
+            // захвата) закрывает её. Обработчики туннельные и ловят и уже
+            // обработанные события — стандартные ползунки гасят их сами.
+            AddHandler(PointerPressedEvent, OnColorGesturePressed,
+                RoutingStrategies.Tunnel, handledEventsToo: true);
+            AddHandler(PointerReleasedEvent, OnColorGestureReleased,
+                RoutingStrategies.Tunnel, handledEventsToo: true);
+            AddHandler(PointerCaptureLostEvent, OnColorGestureCaptureLost,
+                RoutingStrategies.Tunnel, handledEventsToo: true);
 
             // Клик/протяжка по дорожке градиентного ползунка: значение моментально
             // переходит под курсор и сразу тянется одним движением.
@@ -152,6 +193,12 @@ namespace Writersword.Styles.UserControls
                 _gradientStrip.SpecChanged += OnStripSpecChanged;
             }
 
+            // После Ctrl+Z/Ctrl+Y показываем вкладку, где произошло изменение —
+            // иначе откат в невидимой секции остаётся незамеченным.
+            var palettesPanel = this.FindControl<PaletteManagerView>("PalettesPanel");
+            if (palettesPanel is not null)
+                palettesPanel.HistoryApplied += OnPaletteHistoryApplied;
+
             // По умолчанию открыта вкладка «Мои цвета».
             SetCollectionTab("my");
 
@@ -186,6 +233,76 @@ namespace Writersword.Styles.UserControls
             base.OnDetachedFromVisualTree(e);
         }
 
+        // Начало/конец жеста (нажатие и отпускание кнопки мыши в редакторе).
+        private void OnColorGesturePressed(object? sender, PointerPressedEventArgs e)
+            => _colorGestureActive = true;
+
+        private void OnColorGestureReleased(object? sender, PointerReleasedEventArgs e)
+            => EndColorGesture();
+
+        private void OnColorGestureCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+            => EndColorGesture();
+
+        // Отпустили мышку — запись жеста закрыта: следующее изменение цвета
+        // попадёт в отдельную запись истории, а не сольётся с предыдущей.
+        private void EndColorGesture()
+        {
+            _colorGestureActive = false;
+            _lastColorPushTick = 0;
+        }
+
+        // Запоминает состояние ДО изменения цвета; продолжение жеста (или поток
+        // изменений в пределах окна слияния) лишь обновляет номер записи в общей
+        // хронологии, чтобы маршрутизация Ctrl+Z считала цвет последним изменением.
+        private void PushColorUndo(Color next)
+        {
+            if (_restoringColor || next == _current) return;
+            long now = Environment.TickCount64;
+            _colorRedo.Clear();
+            if (_colorUndo.Count > 0 && _lastColorPushTick != 0
+                && (_colorGestureActive || now - _lastColorPushTick <= ColorMergeMs))
+            {
+                _colorUndo[_colorUndo.Count - 1].Seq = UndoClock.Next();
+                _lastColorPushTick = now;
+                return;
+            }
+            _colorUndo.Add(new ColorSnap { Value = _current, Seq = UndoClock.Next() });
+            if (_colorUndo.Count > MaxColorHistory) _colorUndo.RemoveAt(0);
+            _lastColorPushTick = now;
+        }
+
+        private long LastColorUndoSeq =>
+            _colorUndo.Count > 0 ? _colorUndo[_colorUndo.Count - 1].Seq : -1;
+        private long LastColorRedoSeq =>
+            _colorRedo.Count > 0 ? _colorRedo[_colorRedo.Count - 1].Seq : -1;
+
+        // Откат цвета: встречная запись для повтора наследует номер отменяемой.
+        // Сброс времени слияния — чтобы следующее изменение не приклеилось к
+        // записи, оставшейся до отката.
+        private void ColorUndo()
+        {
+            if (_colorUndo.Count == 0) return;
+            var snap = _colorUndo[_colorUndo.Count - 1];
+            _colorUndo.RemoveAt(_colorUndo.Count - 1);
+            _colorRedo.Add(new ColorSnap { Value = _current, Seq = snap.Seq });
+            _lastColorPushTick = 0;
+            _restoringColor = true;
+            try { SetColor(snap.Value); }
+            finally { _restoringColor = false; }
+        }
+
+        private void ColorRedo()
+        {
+            if (_colorRedo.Count == 0) return;
+            var snap = _colorRedo[_colorRedo.Count - 1];
+            _colorRedo.RemoveAt(_colorRedo.Count - 1);
+            _colorUndo.Add(new ColorSnap { Value = _current, Seq = snap.Seq });
+            _lastColorPushTick = 0;
+            _restoringColor = true;
+            try { SetColor(snap.Value); }
+            finally { _restoringColor = false; }
+        }
+
         // Отмена/повтор изменений палитр. В текстовом поле (переименование, ввод HEX)
         // не перехватываем — там работает обычная отмена текста.
         private void OnEditorKeyDown(object? sender, KeyEventArgs e)
@@ -193,22 +310,88 @@ namespace Writersword.Styles.UserControls
             if (!IsVisible) return;
             if (!e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
 
-            var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
-            if (focused is TextBox) return;
-
-            var pm = this.FindControl<PaletteManagerView>("PalettesPanel");
-            if (pm is null) return;
-
             bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-            if (e.Key == Key.Z && !shift) { pm.Undo(); e.Handled = true; }
-            else if (e.Key == Key.Y || (e.Key == Key.Z && shift)) { pm.Redo(); e.Handled = true; }
+            bool undo = e.Key == Key.Z && !shift;
+            bool redo = e.Key == Key.Y || (e.Key == Key.Z && shift);
+            if (!undo && !redo) return;
+
+            // Скрытое поле (например, погасший ввод имени палитры) может продолжать
+            // держать фокус — текстовым полем считаем только реально видимое, иначе
+            // Ctrl+Z уходит в невидимый TextBox и «не срабатывает».
+            var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
+            if (focused is TextBox tb && tb.IsEffectivelyVisible)
+            {
+                // В текстовых полях самого редактора (имя палитры, HEX и т.п.)
+                // работает обычная текстовая отмена — событие не трогаем. Поле
+                // вне редактора — гасим: фон меняться не должен.
+                if (!this.IsVisualAncestorOf(tb))
+                    e.Handled = true;
+                return;
+            }
+
+            // Пока редактор открыт, Ctrl+Z/Ctrl+Y полностью изолированы от
+            // подложки: событие гасится всегда, даже когда откатывать нечего.
+            // Иначе нажатие проваливается в модуль под редактором (например,
+            // список персонажей) и незаметно откатывает операции там.
+            e.Handled = true;
+
+            // Отмена и повтор идут в единой хронологии трёх историй: полосы
+            // градиента, палитр и основного цвета (см. UndoClock). Откатывается
+            // изменение с наибольшим номером; повторяется отменённое последним,
+            // то есть с наименьшим. Побочные смены цвета при откате градиента и
+            // палитр (выбор активного стопа и т.п.) в историю цвета не пишутся —
+            // на время отката поднимается _restoringColor.
+            var pm = this.FindControl<PaletteManagerView>("PalettesPanel");
+            if (undo)
+            {
+                long g = _gradientStrip is not null && _gradientStrip.CanUndo
+                    ? _gradientStrip.LastUndoSeq : -1;
+                long p = pm is not null && pm.CanUndo ? pm.LastUndoSeq : -1;
+                long c = LastColorUndoSeq;
+                if (g < 0 && p < 0 && c < 0) return;
+                if (g >= p && g >= c)
+                {
+                    _restoringColor = true;
+                    try { _gradientStrip!.Undo(); }
+                    finally { _restoringColor = false; }
+                }
+                else if (p >= c)
+                {
+                    _restoringColor = true;
+                    try { pm!.Undo(); }
+                    finally { _restoringColor = false; }
+                }
+                else ColorUndo();
+            }
+            else
+            {
+                long g = _gradientStrip is not null && _gradientStrip.CanRedo
+                    ? _gradientStrip.LastRedoSeq : long.MaxValue;
+                long p = pm is not null && pm.CanRedo ? pm.LastRedoSeq : long.MaxValue;
+                long c = _colorRedo.Count > 0 ? LastColorRedoSeq : long.MaxValue;
+                if (g == long.MaxValue && p == long.MaxValue && c == long.MaxValue) return;
+                if (g <= p && g <= c)
+                {
+                    _restoringColor = true;
+                    try { _gradientStrip!.Redo(); }
+                    finally { _restoringColor = false; }
+                }
+                else if (p <= c)
+                {
+                    _restoringColor = true;
+                    try { pm!.Redo(); }
+                    finally { _restoringColor = false; }
+                }
+                else ColorRedo();
+            }
         }
 
         /// <summary>
         /// Показывает редактор поверх модуля. Возвращает выбранный HEX или null при отмене.
         /// </summary>
         public Task<ColorEditResult?> ShowAsync(string hex, bool showPreview,
-            Bitmap? image, string? name, string? fallback, bool ringEnabled, bool ringsAllState)
+            Bitmap? image, string? name, string? fallback, bool ringEnabled, bool ringsAllState,
+            bool isGroup = false, bool bookmarkEnabled = true)
         {
             _tcs?.TrySetResult(null);
             _tcs = new TaskCompletionSource<ColorEditResult?>();
@@ -245,6 +428,16 @@ namespace Writersword.Styles.UserControls
             _paletteDirty = false;
             var ringCheck = this.FindControl<CheckBox>("RingCheck");
             if (ringCheck is not null) ringCheck.IsChecked = ringEnabled;
+
+            // Настройка закладки-ленточки доступна только для карточек групп.
+            _isGroupCard = isGroup;
+            _bookmark = bookmarkEnabled;
+            var bookmarkCheck = this.FindControl<CheckBox>("BookmarkCheck");
+            if (bookmarkCheck is not null)
+            {
+                bookmarkCheck.IsVisible = showPreview && isGroup;
+                bookmarkCheck.IsChecked = bookmarkEnabled;
+            }
             // Подпись кнопки переключателя: если у всех включено — «убрать у всех», иначе «включить у всех».
             var ringAllBtn = this.FindControl<Button>("RingAllButton");
             if (ringAllBtn is not null)
@@ -261,15 +454,26 @@ namespace Writersword.Styles.UserControls
 
             // Входное значение может быть обычным hex либо кодом градиента —
             // грузим в полосу, а в основной выбор ставим цвет активного стопа.
+            // Историю полосы чистим на случай, если прошлый сеанс редактора
+            // завершился в обход обычного закрытия (палитры чистит Refresh выше).
             var spec = GradientSpec.Parse(hex);
+            _gradientStrip?.ClearHistory();
             _gradientStrip?.Load(spec);
             SetGradientEnabled(!spec.IsSolid);
+            // Стартовое состояние задано входным значением, автопометки нет:
+            // выбор простого цвета сам по себе градиент не выключит.
+            _gradientAutoEnabled = false;
 
             Color c;
             try { c = Color.Parse(spec.SolidHex); }
             catch { c = Color.FromRgb(0x60, 0x7D, 0x8B); }
 
             SetColor(c);
+
+            // Начальная установка цвета при открытии — не действие пользователя:
+            // история очищается уже после неё, чтобы первый Ctrl+Z не откатывал
+            // на цвет из прошлого сеанса редактора.
+            ClearUndoHistory();
 
             // Панель всегда видима (на случай, если прошлые версии оставили Opacity=0).
             // Раскладку колонок под ширину модуля доложит наблюдатель Bounds — перенос
@@ -309,8 +513,10 @@ namespace Writersword.Styles.UserControls
                 Code = (_gradientEnabled && _gradientStrip is not null)
                     ? _gradientStrip.BuildSpec().ToCode() : null,
                 Ring = _ring,
+                Bookmark = _bookmark,
                 ApplyAll = applyAll
             };
+            ClearUndoHistory();
             IsVisible = false;
             var tcs = _tcs;
             _tcs = null;
@@ -321,10 +527,24 @@ namespace Writersword.Styles.UserControls
         {
             // Палитра применяется сразу (через «+»), поэтому сохраняем её и при отмене.
             if (_paletteDirty) SaveActiveDocument();
+            ClearUndoHistory();
             IsVisible = false;
             var tcs = _tcs;
             _tcs = null;
             tcs?.TrySetResult(null);
+        }
+
+        // Закрытие редактора безвозвратно очищает его историю Ctrl+Z (палитры и
+        // градиент). Истории других модулей (например, текстового редактора) это
+        // не затрагивает — у них собственные стеки.
+        private void ClearUndoHistory()
+        {
+            _gradientStrip?.ClearHistory();
+            this.FindControl<PaletteManagerView>("PalettesPanel")?.ClearHistory();
+            _colorUndo.Clear();
+            _colorRedo.Clear();
+            _lastColorPushTick = 0;
+            _colorGestureActive = false;
         }
 
         // Палитра живёт в ProjectFile, но её изменение не помечает проект «грязным»,
@@ -358,6 +578,7 @@ namespace Writersword.Styles.UserControls
 
         private void Render(Color c)
         {
+            PushColorUndo(c);
             _syncing = true;
             try
             {
@@ -453,6 +674,18 @@ namespace Writersword.Styles.UserControls
                 ring.BorderBrush = brush;
                 ring.IsVisible = _ring;
             }
+            var bookmark = this.FindControl<Avalonia.Controls.Shapes.Path>("PreviewBookmark");
+            if (bookmark is not null)
+            {
+                bookmark.IsVisible = _isGroupCard && _bookmark;
+                bookmark.Fill = brush;
+            }
+        }
+
+        private void OnBookmarkCheckChanged(object? sender, RoutedEventArgs e)
+        {
+            _bookmark = (sender as CheckBox)?.IsChecked == true;
+            UpdatePreviewVisual();
         }
 
         private void OnRingCheckChanged(object? sender, RoutedEventArgs e)
@@ -502,7 +735,17 @@ namespace Writersword.Styles.UserControls
             if (!spec.IsSolid)
             {
                 _gradientStrip?.Load(spec);
+                // Выключенный градиент образец-градиент включает «взаймы»:
+                // помечаем, чтобы выбор простого цвета вернул всё как было.
+                if (!_gradientEnabled) _gradientAutoEnabled = true;
                 SetGradientEnabled(true);
+            }
+            else if (_gradientAutoEnabled)
+            {
+                // Градиент включался только автоматически — выбор простого цвета
+                // возвращает редактор в одноцветный режим.
+                _gradientAutoEnabled = false;
+                SetGradientEnabled(false);
             }
             try { SetColor(Color.Parse(spec.SolidHex)); }
             catch { }
@@ -529,6 +772,9 @@ namespace Writersword.Styles.UserControls
         {
             if (_settingGrad) return;
             _gradientEnabled = (sender as CheckBox)?.IsChecked == true;
+            // Галка — явное решение пользователя: автопометка снимается, выбор
+            // простого цвета режим больше не переключает.
+            _gradientAutoEnabled = false;
             if (_gradientStrip is not null) _gradientStrip.IsEnabled = _gradientEnabled;
             UpdatePreviewVisual();
         }
@@ -566,6 +812,15 @@ namespace Writersword.Styles.UserControls
         private void OnColMy(object? sender, RoutedEventArgs e) => SetCollectionTab("my");
         private void OnColStd(object? sender, RoutedEventArgs e) => SetCollectionTab("std");
         private void OnColPal(object? sender, RoutedEventArgs e) => SetCollectionTab("pal");
+
+        // Откат/повтор истории палитр: переключаемся на вкладку той секции, где
+        // изменение произошло (стандартные цвета или палитры), чтобы результат
+        // был виден сразу.
+        private void OnPaletteHistoryApplied(bool std)
+        {
+            var tab = std ? "std" : "pal";
+            if (_collectionTab != tab) SetCollectionTab(tab);
+        }
 
         private void SetCollectionTab(string tab)
         {
@@ -1372,6 +1627,13 @@ namespace Writersword.Styles.UserControls
                     PersistPalette();
                     _paletteDirty = true;
                 }
+                else if (_paletteDragHex is string held)
+                {
+                    // Зажал дольше порога, но не перенёс (слот не сменился) — это
+                    // клик: выбираем цвет, иначе чуть затянутое нажатие по свотчу
+                    // «не прожималось».
+                    SelectFromCode(held);
+                }
 
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                 {
@@ -1752,6 +2014,9 @@ namespace Writersword.Styles.UserControls
         public string? Code { get; init; }
 
         public bool Ring { get; init; }
+        // Закладка-ленточка карточки группы (имеет смысл только когда
+        // редактировалась группа).
+        public bool Bookmark { get; init; } = true;
         public bool? ApplyAll { get; init; }
     }
 }
