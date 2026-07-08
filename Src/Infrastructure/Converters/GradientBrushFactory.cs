@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Data.Converters;
@@ -86,8 +87,21 @@ namespace Writersword.Infrastructure.Converters
     {
         public static readonly ColorCodeToBrushConverter Instance = new();
 
+        // Карточки персонажей вешают этот конвертер сразу на несколько своих
+        // свойств (рамка, закладка, аватар, кольцо), а сам список виртуализирован —
+        // контейнеры пересоздаются и перепривязываются на каждый скролл и на
+        // каждое перетаскивание карточки. Без кэша это был разбор строки
+        // цвета/градиента и аллокация нового IBrush на каждую такую перепривязку,
+        // на каждое из 7 свойств каждой видимой карточки. Кэш по строке кода
+        // убирает повторный разбор для повторяющихся значений — сам разбор и
+        // результат не меняются, один и тот же Brush просто переиспользуется.
+        private static readonly ConcurrentDictionary<string, IBrush> Cache = new();
+
         public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-            => GradientBrushFactory.FromCode(value as string);
+        {
+            var code = value as string ?? string.Empty;
+            return Cache.GetOrAdd(code, GradientBrushFactory.FromCode);
+        }
 
         public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
             => throw new NotImplementedException();

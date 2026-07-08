@@ -169,6 +169,19 @@ namespace Writersword.Infrastructure.Dock
                         Avalonia.Threading.Dispatcher.UIThread.Post(
                             () => _isRerendering = false,
                             Avalonia.Threading.DispatcherPriority.Render);
+
+                        // После пересборды дерева переприцепляем кэшированные вьюхи:
+                        // они остаются висеть на презентерах СТАРОГО дерева, и новые
+                        // ContentPresenter-ы не могут их принять — панель показывается
+                        // пустой. RecreateDocumentViews отцепляет вью от мёртвого
+                        // родителя (GetOrCreateView) и переустанавливает Content.
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                        {
+                            var tab = App.Services.GetRequiredService<ITabCollection>()
+                                .ActiveTab as DocumentTabViewModel;
+                            if (tab != null)
+                                RecreateDocumentViews(rootToNormalize, tab);
+                        }, Avalonia.Threading.DispatcherPriority.Loaded);
                     },
                     Avalonia.Threading.DispatcherPriority.Loaded);
             }
@@ -187,18 +200,17 @@ namespace Writersword.Infrastructure.Dock
                 var module = tab.ModuleContext.GetModule(moduleType);
                 if (module != null)
                 {
-                    var newView = module.CreateView();
-                    if (newView != null)
+                    // Переиспользуем кэшированную вью модуля вместо пересоздания,
+                    // прикрепление отложенное: плейсхолдер встаёт мгновенно, тяжёлая
+                    // вью цепляется следующим проходом диспетчера. GetOrCreateView
+                    // отцепляет её от устаревшего ContentPresenter и восстанавливает
+                    // DataContext, если тот был обнулён путями закрытия/детача.
+                    SetContentDeferred(doc, () =>
                     {
-                        // Обнуляем DataContext старого вью ДО замены Content.
-                        // Без этого ItemsControl внутри вью держит FilteredCharacters
-                        // через CollectionChangedEventManager — вью не освобождается GC.
-                        if (doc.Content is Avalonia.Controls.Control oldCtrl)
-                            oldCtrl.DataContext = null;
-                        doc.Content = null;
-                        doc.Content = newView;
-                        _logger.LogDebug("View recreated for: {moduleType}", moduleType);
-                    }
+                        var newView = module.GetOrCreateView();
+                        _logger.LogDebug("View reattached (deferred) for: {moduleType}", moduleType);
+                        return newView;
+                    });
                 }
                 return;
             }
@@ -206,6 +218,13 @@ namespace Writersword.Infrastructure.Dock
             if (dockable is IDock dock && dock.VisibleDockables != null)
                 foreach (var child in dock.VisibleDockables.ToList())
                     RecreateDocumentViews(child, tab);
+
+            // Флоат-окна живут в отдельных корнях (Windows у RootDock) — обходим и их,
+            // иначе вынесенная панель после пересборки дерева остаётся пустой.
+            if (dockable is IRootDock rootWithWindows && rootWithWindows.Windows != null)
+                foreach (var wnd in rootWithWindows.Windows.ToList())
+                    if (wnd.Layout != null)
+                        RecreateDocumentViews(wnd.Layout, tab);
         }
 
         /// <summary>
@@ -454,70 +473,22 @@ namespace Writersword.Infrastructure.Dock
                     return 0;
                 }
 
-                _logger.LogDebug("Restoring module: {moduleType}", moduleType);
+                // Прикрепление отложенное: документ немедленно получает плейсхолдер,
+                // а загрузка/переиспользование модуля и прикрепление тяжёлой вьюхи
+                // происходят следующим проходом диспетчера (LoadModuleAndGetView).
+                document.Context = moduleType;
+                document.CanClose = slot.IsCloseable;
+                document.CanFloat = slot.IsCloseable;
 
-                var project = tab.GetProject();
-                var cacheService = App.Services.GetRequiredService<IZipCacheService>();
-                var cacheResult = cacheService.LoadCacheWithSession(tab.FilePath!, project.Id);
-
-                object? customDataToRestore = null;
-                object? sessionDataToRestore = null;
-
-                if (cacheResult.HasValue)
+                SetContentDeferred(document, () =>
                 {
-                    cacheResult.Value.CustomData.TryGetValue(moduleType, out customDataToRestore);
-                    cacheResult.Value.SessionData.TryGetValue(moduleType, out sessionDataToRestore);
-                    if (customDataToRestore != null)
-                        _logger.LogDebug("Using cache data for: {moduleType}", moduleType);
-                }
-
-                if (customDataToRestore == null
-                    && project.ModulesData.TryGetValue(moduleType, out var fileData))
-                {
-                    customDataToRestore = fileData;
-                    _logger.LogDebug("Using project file data for: {moduleType}", moduleType);
-                }
-
-                if (customDataToRestore == null)
-                    _logger.LogWarning("No data found for module: {moduleType} — will load empty", moduleType);
-
-                var module = tab.ModuleContext.CreateModule(moduleType);
-
-                if (module?.ViewModel == null)
-                {
-                    _logger.LogWarning("Failed to create module: {moduleType}", moduleType);
-                    document.Content = null;
-                    return 0;
-                }
-
-                module.Context = tab.Context;
-
-                if (customDataToRestore != null)
-                    module.SetCustomData(customDataToRestore);
-
-                if (sessionDataToRestore != null)
-                {
-                    module.SetSessionData(sessionDataToRestore);
-                    _logger.LogDebug("Restored session data for: {moduleType}", moduleType);
-                }
-
-                var moduleView = module.CreateView();
-                if (moduleView != null)
-                {
-                    document.Content = moduleView;
-                    document.Context = moduleType;
-                    document.Title = module.Title;
-                    document.CanClose = slot.IsCloseable;
-                    document.CanFloat = slot.IsCloseable;
-
-                    _logger.LogDebug("Module restored: {moduleType}", moduleType);
-                    count++;
-                }
-                else
-                {
-                    _logger.LogWarning("CreateView returned null for: {moduleType}", moduleType);
-                    document.Content = null;
-                }
+                    var view = LoadModuleAndGetView(tab, moduleType);
+                    var m = tab.ModuleContext.GetModule(moduleType);
+                    if (m != null) document.Title = m.Title;
+                    _logger.LogDebug("Module attached (deferred): {moduleType}", moduleType);
+                    return view;
+                });
+                count++;
             }
 
             if (dockable is IDock dock && dock.VisibleDockables != null)
@@ -827,70 +798,27 @@ namespace Writersword.Infrastructure.Dock
                 return null;
             }
 
-            var project = tab.GetProject();
-            var cacheService = App.Services.GetRequiredService<IZipCacheService>();
-            var cacheResult = cacheService.LoadCacheWithSession(tab.FilePath!, project.Id);
-
-            object? customDataToRestore = null;
-            object? sessionDataToRestore = null;
-
-            if (cacheResult.HasValue)
-            {
-                cacheResult.Value.CustomData.TryGetValue(slot.ModuleType, out customDataToRestore);
-                cacheResult.Value.SessionData.TryGetValue(slot.ModuleType, out sessionDataToRestore);
-                if (customDataToRestore != null)
-                    _logger.LogDebug("Using cache data for: {ModuleType}", slot.ModuleType);
-            }
-
-            if (customDataToRestore == null
-                && project.ModulesData.TryGetValue(slot.ModuleType, out var fileData))
-            {
-                customDataToRestore = fileData;
-                _logger.LogDebug("Using project file data for: {ModuleType}", slot.ModuleType);
-            }
-
-            if (customDataToRestore == null)
-                _logger.LogWarning("No data found for module: {ModuleType} — will load empty", slot.ModuleType);
-
-            var module = tab.ModuleContext.CreateModule(slot.ModuleType);
-
-            if (module?.ViewModel == null)
-            {
-                _logger.LogWarning("Module not created: {ModuleType}", slot.ModuleType);
-                return null;
-            }
-
-            module.Context = tab.Context;
-
-            if (customDataToRestore != null)
-            {
-                module.SetCustomData(customDataToRestore);
-                _logger.LogDebug("Restored data for: {ModuleType}", slot.ModuleType);
-            }
-
-            if (sessionDataToRestore != null)
-            {
-                module.SetSessionData(sessionDataToRestore);
-                _logger.LogDebug("Restored session data for: {ModuleType}", slot.ModuleType);
-            }
-
-            var moduleView = module.CreateView();
-            if (moduleView == null)
-            {
-                _logger.LogWarning("No View: {ModuleType}", slot.ModuleType);
-                return null;
-            }
-
+            // Документ создаётся сразу с плейсхолдером — построение layout мгновенно.
+            // Загрузка модуля (или переиспользование живого) и прикрепление вьюхи
+            // выполняются отложенно, по одному модулю на проход диспетчера.
             var doc = new Document
             {
                 Id = $"Module_{slot.ModuleType}",
-                Title = module.Title,
-                Content = moduleView,
+                Title = slot.ModuleType,
                 Context = slot.ModuleType,
                 CanClose = slot.IsCloseable,
                 CanFloat = slot.IsCloseable,
                 Factory = this
             };
+
+            SetContentDeferred(doc, () =>
+            {
+                var view = LoadModuleAndGetView(tab, slot.ModuleType);
+                var m = tab.ModuleContext.GetModule(slot.ModuleType);
+                if (m != null) doc.Title = m.Title;
+                _logger.LogDebug("Document content attached (deferred): {ModuleType}", slot.ModuleType);
+                return view;
+            });
 
             _logger.LogDebug("Document created: {ModuleType}, CanClose={CanClose}",
                 slot.ModuleType, doc.CanClose);
@@ -1309,6 +1237,107 @@ namespace Writersword.Infrastructure.Dock
         /// </summary>
         public void NormalizeAfterRerender(IRootDock rootDock)
             => NormalizeProportionsRecursive(rootDock);
+
+        /// <summary>
+        /// Помечает существующий layout текущим корнем без пересоздания — мягкая
+        /// реактивация вкладки после Suspend. DetachViewsFromLayout обнуляет
+        /// _currentRootDock, и без восстановления перестают работать пересборки
+        /// после перемещения панелей (MoveDockable/CloseDockable).
+        /// </summary>
+        public void AttachToLayout(IRootDock rootDock) => _currentRootDock = rootDock;
+
+        /// <summary>
+        /// Отложенное прикрепление вьюхи модуля: в Content немедленно ставится лёгкий
+        /// плейсхолдер (переключение уходит в кадр мгновенно), а тяжёлая загрузка и
+        /// прикрепление вьюхи выполняются следующим проходом диспетчера с фоновым
+        /// приоритетом — каждый модуль в своём кадре, ввод пользователя не блокируется.
+        /// </summary>
+        private void SetContentDeferred(Document doc, Func<Avalonia.Controls.Control?> provideView)
+        {
+            var previous = doc.Content as Avalonia.Controls.Control;
+            doc.Content = new ModuleLoadingPlaceholder();
+
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                try
+                {
+                    var view = provideView();
+                    if (view == null)
+                    {
+                        doc.Content = null;
+                        return;
+                    }
+
+                    // Старую вьюху отвязываем только если это действительно другой контрол:
+                    // у переиспользуемой (кэш модуля) DataContext трогать нельзя.
+                    if (previous is not null && !ReferenceEquals(previous, view))
+                        previous.DataContext = null;
+
+                    PaneAutoHideBehavior.Attach(view);
+                    doc.Content = null;
+                    doc.Content = view;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Deferred module view attach failed: {Id}", doc.Id);
+                }
+            }, Avalonia.Threading.DispatcherPriority.Background);
+        }
+
+        /// <summary>
+        /// Загружает модуль (или переиспользует живой) и возвращает его вьюху.
+        /// Живой модуль отдаётся без чтения кеша и без SetCustomData — его состояние
+        /// свежее любого кеша. Новый модуль создаётся с данными из кеша либо из
+        /// project.ModulesData. Вызывается из отложенного прикрепления.
+        /// </summary>
+        private Avalonia.Controls.Control? LoadModuleAndGetView(DocumentTabViewModel tab, string moduleType)
+        {
+            var existing = tab.ModuleContext.GetModule(moduleType);
+            if (existing?.ViewModel != null)
+                return existing.GetOrCreateView();
+
+            var project = tab.GetProject();
+            var cacheService = App.Services.GetRequiredService<IZipCacheService>();
+            var cacheResult = cacheService.LoadCacheWithSession(tab.FilePath!, project.Id);
+
+            object? customDataToRestore = null;
+            object? sessionDataToRestore = null;
+
+            if (cacheResult.HasValue)
+            {
+                cacheResult.Value.CustomData.TryGetValue(moduleType, out customDataToRestore);
+                cacheResult.Value.SessionData.TryGetValue(moduleType, out sessionDataToRestore);
+                if (customDataToRestore != null)
+                    _logger.LogDebug("Using cache data for: {ModuleType}", moduleType);
+            }
+
+            if (customDataToRestore == null
+                && project.ModulesData.TryGetValue(moduleType, out var fileData))
+            {
+                customDataToRestore = fileData;
+                _logger.LogDebug("Using project file data for: {ModuleType}", moduleType);
+            }
+
+            if (customDataToRestore == null)
+                _logger.LogWarning("No data found for module: {ModuleType} — will load empty", moduleType);
+
+            var module = tab.ModuleContext.CreateModule(moduleType);
+            if (module?.ViewModel == null)
+            {
+                _logger.LogWarning("Module not created: {ModuleType}", moduleType);
+                return null;
+            }
+
+            module.Context = tab.Context;
+
+            if (customDataToRestore != null)
+                module.SetCustomData(customDataToRestore);
+
+            if (sessionDataToRestore != null)
+                module.SetSessionData(sessionDataToRestore);
+
+            return module.GetOrCreateView();
+        }
 
         /// <summary>
         /// Перехват смены активного документа в Dock

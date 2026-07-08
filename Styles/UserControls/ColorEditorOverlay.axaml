@@ -155,10 +155,35 @@
 
 	<Grid>
 
-		<!-- Скрим: затемняет и блокирует только модуль. Клик НЕ закрывает. -->
-		<Border Background="#F2000000"/>
+		<!-- Скрим: затемняет и блокирует только модуль. Клик НЕ закрывает.
+		     Полностью непрозрачный (#FF, не #F2): при малейшей прозрачности движок
+		     обязан на каждый кадр перерисовывать и подмешивать всё, что за скримом —
+		     сотни разноцветных карточек, — а это самая тяжёлая часть кадра при
+		     перетаскивании в палитре. Сплошной чёрный визуально идентичен, но
+		     позволяет пропустить перерисовку перекрытого содержимого. -->
+		<Border Background="#FF000000"/>
 
-		<!-- Панель редактора. Ширина и высота ограничиваются в коде под размер модуля. -->
+		<!-- Тень панели редактора — отдельная статичная подложка. Раньше DropShadowEffect
+		     висел прямо на EditorPanel, и Avalonia пересчитывала блюр (BlurRadius 32)
+		     на каждое обновление внутри панели (драг точки/ползунка) — это тормозило
+		     не только сам редактор, а весь кадр целиком, вместе с модулем персонажей
+		     за ним. Здесь тень не содержит интерактивного содержимого и не
+		     перерисовывается на каждое движение, только при изменении размера панели. -->
+		<Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                Margin="24"
+                Width="{Binding Bounds.Width, ElementName=EditorPanel}"
+                Height="{Binding Bounds.Height, ElementName=EditorPanel}"
+                Background="{DynamicResource BgBaseBrush}"
+                CornerRadius="16"
+                IsHitTestVisible="False">
+			<Border.Effect>
+				<DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.55" Color="#000000"/>
+			</Border.Effect>
+		</Border>
+
+		<!-- Панель редактора. Ширина и высота ограничиваются в коде под размер модуля.
+		     Без эффекта — интерактивное содержимое обновляется свободно, не трогая
+		     блюр тени выше. -->
 		<Border x:Name="EditorPanel"
                 HorizontalAlignment="Center" VerticalAlignment="Center"
                 Margin="24"
@@ -168,9 +193,6 @@
                 BorderThickness="1"
                 CornerRadius="16"
                 Padding="20">
-			<Border.Effect>
-				<DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.55" Color="#000000"/>
-			</Border.Effect>
 
 			<Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
 
@@ -201,7 +223,8 @@
 						<StackPanel Orientation="Horizontal" Spacing="6">
 							<TextBlock Text="HEX" FontSize="10" VerticalAlignment="Center"
                                        Foreground="{DynamicResource TextSecondaryBrush}"/>
-							<TextBox x:Name="HexBox" MaxLength="7" FontSize="14" Width="110"
+							<!-- 9 символов: #AARRGGBB — HEX с альфа-каналом. -->
+							<TextBox x:Name="HexBox" MaxLength="9" FontSize="14" Width="110"
                                      KeyDown="OnHexKeyDown" LostFocus="OnHexCommit"/>
 						</StackPanel>
 						<Button x:Name="EyedropperButton" Click="OnEyedropperClick"
@@ -409,6 +432,18 @@
 									        Classes="accentOutline"
 									        Click="OnNoiseReset"
 									        Content="{x:Static res:SharedStrings.ColorEditor_NoiseZoomOut}"/>
+
+									<!-- Альфа-канал: 0 — «без цвета», 255 — непрозрачно. -->
+									<Grid Width="220" ColumnDefinitions="18,*,40">
+										<TextBlock Grid.Column="0" Text="A" VerticalAlignment="Center"
+										           Foreground="{DynamicResource TextSecondaryBrush}"/>
+										<Slider Grid.Column="1" x:Name="SliderANoise" Classes="grad"
+										        Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
+										        ValueChanged="OnAlphaSliderChanged"/>
+										<TextBlock Grid.Column="2" x:Name="LabelANoise"
+										           VerticalAlignment="Center" HorizontalAlignment="Right"
+										           Foreground="{DynamicResource TextPrimaryBrush}"/>
+									</Grid>
 								</StackPanel>
 
 							<StackPanel x:Name="SpectrumPanel" Spacing="12">
@@ -476,7 +511,7 @@
 									</StackPanel>
 								</Viewbox>
 
-								<Grid ColumnDefinitions="18,*,40" RowDefinitions="Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="10">
+								<Grid ColumnDefinitions="18,*,40" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="10">
 									<TextBlock Grid.Row="0" Grid.Column="0" Text="R" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextSecondaryBrush}"/>
 									<Slider Grid.Row="0" Grid.Column="1" x:Name="SliderR" Classes="grad"
@@ -503,6 +538,16 @@
 									<TextBlock Grid.Row="2" Grid.Column="2" x:Name="LabelB"
                                                VerticalAlignment="Center" HorizontalAlignment="Right"
                                                Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+									<!-- Альфа-канал: 0 — «без цвета», 255 — непрозрачно. -->
+									<TextBlock Grid.Row="3" Grid.Column="0" Text="A" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+									<Slider Grid.Row="3" Grid.Column="1" x:Name="SliderA" Classes="grad"
+                                            Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
+                                            ValueChanged="OnAlphaSliderChanged"/>
+									<TextBlock Grid.Row="3" Grid.Column="2" x:Name="LabelA"
+                                               VerticalAlignment="Center" HorizontalAlignment="Right"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
 								</Grid>
 							</StackPanel>
 
@@ -511,15 +556,29 @@
                                     VerticalAlignment="Center"
                                     Background="{DynamicResource BgSurfaceBrush}"
                                     CornerRadius="10" Padding="8">
-								<Viewbox Stretch="Uniform" StretchDirection="DownOnly"
-                                         HorizontalAlignment="Center">
-									<Canvas x:Name="HoneycombCanvas"/>
-								</Viewbox>
+								<StackPanel Spacing="8">
+									<Viewbox Stretch="Uniform" StretchDirection="DownOnly"
+                                             HorizontalAlignment="Center">
+										<Canvas x:Name="HoneycombCanvas"/>
+									</Viewbox>
+
+									<!-- Альфа-канал: 0 — «без цвета», 255 — непрозрачно. -->
+									<Grid ColumnDefinitions="18,*,40">
+										<TextBlock Grid.Column="0" Text="A" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+										<Slider Grid.Column="1" x:Name="SliderAHoney" Classes="grad"
+                                                Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
+                                                ValueChanged="OnAlphaSliderChanged"/>
+										<TextBlock Grid.Column="2" x:Name="LabelAHoney"
+                                                   VerticalAlignment="Center" HorizontalAlignment="Right"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
+									</Grid>
+								</StackPanel>
 							</Border>
 
 							<!-- Колесо (масштабируется), ползунок V справа -->
 							<Grid x:Name="WheelPanel" IsVisible="False"
-                                  ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                                  ColumnDefinitions="*,Auto,Auto" VerticalAlignment="Center">
 								<Viewbox Grid.Column="0" Stretch="Uniform" StretchDirection="DownOnly"
                                          HorizontalAlignment="Center" MaxHeight="200">
 									<Panel x:Name="Wheel" Width="200" Height="200"
@@ -550,6 +609,18 @@
                                             HorizontalAlignment="Center"
                                             ValueChanged="OnWheelValueChanged"/>
 								</StackPanel>
+
+								<!-- Альфа-канал: 0 — «без цвета», 255 — непрозрачно. -->
+								<StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center" Margin="12,0,0,0">
+									<TextBlock Text="A" HorizontalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+									<Slider x:Name="SliderAWheel" Orientation="Vertical"
+                                            Minimum="0" Maximum="255" Height="170"
+                                            HorizontalAlignment="Center"
+                                            ValueChanged="OnAlphaSliderChanged"/>
+									<TextBlock x:Name="LabelAWheel" HorizontalAlignment="Center"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+								</StackPanel>
 							</Grid>
 
 							<!-- Значения: градиентные ползунки + поля (RGB / HSL / HSV). HEX — наверху. -->
@@ -557,7 +628,7 @@
 
 								<StackPanel Spacing="4">
 									<TextBlock Text="RGB (0–255)" Classes="groupLabel"/>
-									<Grid ColumnDefinitions="16,*,Auto" RowDefinitions="Auto,Auto,Auto"
+									<Grid ColumnDefinitions="16,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto"
                                           ColumnSpacing="8" RowSpacing="6">
 										<TextBlock Grid.Row="0" Grid.Column="0" Text="R" Classes="fieldLabel"/>
 										<Slider Grid.Row="0" Grid.Column="1" x:Name="SlR" Classes="grad"
@@ -574,6 +645,12 @@
                                                 Minimum="0" Maximum="255" ValueChanged="OnValRgbSlider"/>
 										<TextBox Grid.Row="2" Grid.Column="2" x:Name="TxtB" Classes="valnum"
                                                  KeyDown="OnRgbKey" LostFocus="OnRgbCommit"/>
+										<!-- Альфа-канал: 0 — «без цвета», 255 — непрозрачно. -->
+										<TextBlock Grid.Row="3" Grid.Column="0" Text="A" Classes="fieldLabel"/>
+										<Slider Grid.Row="3" Grid.Column="1" x:Name="SlA" Classes="grad"
+                                                Minimum="0" Maximum="255" ValueChanged="OnAlphaSliderChanged"/>
+										<TextBox Grid.Row="3" Grid.Column="2" x:Name="TxtA" Classes="valnum"
+                                                 KeyDown="OnAlphaKey" LostFocus="OnAlphaCommit"/>
 									</Grid>
 								</StackPanel>
 

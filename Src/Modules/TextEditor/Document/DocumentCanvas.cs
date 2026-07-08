@@ -178,6 +178,36 @@ namespace Writersword.Modules.TextEditor.Document
         // выделенному диапазону). BuildTableLayout строит раскладку из него. Пусто вне превью.
         private readonly Dictionary<ParagraphBlock, ParagraphBlock> _cellFontPreview = new();
 
+        // Кеш раскладок таблиц. BuildTableLayout перевёрстывает параграфы всех ячеек таблицы,
+        // и без кеша это выполнялось при каждом пересборе раскладки — то есть на каждый
+        // введённый символ. Инвалидируется вместе с _cellLayoutCache.
+        private readonly Dictionary<TableBlock, (float Width, SKTableLayout Layout)> _tableLayoutCache = new();
+
+        // Общая точка сброса кешей содержимого ячеек: поабзацного и табличного.
+        // Все операции, меняющие содержимое или структуру таблиц, вызывают этот метод.
+        private void InvalidateCellLayoutCaches()
+        {
+            _cellLayoutCache.Clear();
+            _tableLayoutCache.Clear();
+        }
+
+        // Возвращает раскладку таблицы из кеша либо строит и кеширует её.
+        // Во время live-preview шрифта кеш не используется: раскладка зависит от
+        // временной карты _cellFontPreview и не должна переживать предпросмотр.
+        private SKTableLayout GetOrBuildTableLayout(TableBlock table, float textWidthPt)
+        {
+            bool previewActive = _cellFontPreview.Count > 0;
+            if (!previewActive
+                && _tableLayoutCache.TryGetValue(table, out var cached)
+                && Math.Abs(cached.Width - textWidthPt) < 0.1f)
+                return cached.Layout;
+
+            var layout = _renderer.BuildTableLayout(table, textWidthPt, _styleResolver!, _cellFontPreview);
+            if (!previewActive)
+                _tableLayoutCache[table] = (textWidthPt, layout);
+            return layout;
+        }
+
         // ── Дебаунс пересчёта ─────────────────────────────────────────────
         private System.Threading.CancellationTokenSource _rebuildCts = new();
 
@@ -271,24 +301,22 @@ namespace Writersword.Modules.TextEditor.Document
             int StartRow, int StartCol,
             int EndRow, int EndCol);
 
-        // ── Bitmap-кеш для мигания каретки ────────────────────────────────
+        // ── Bitmap-кеш для мигания каретки и скролла ──────────────────────
         //
-        // Двойной буфер: render-bitmap пишем, display-bitmap читает compositor.
-        // Когда размер не меняется — пересоздания нет вообще (0 аллокаций за кадр).
-        // Word делает то же самое на GPU; мы делаем на CPU с теми же принципами.
+        // render-bitmap — CPU-буфер, в который выполняется офскрин-растеризация текста.
+        // После рендера с него снимается иммутабельный SKImage (_displayImage): DrawImage
+        // такого снимка не копирует пиксели при каждом кадре, а GPU кэширует текстуру
+        // по uniqueID изображения. Повторные кадры (мигание каретки, чужие инвалидации,
+        // скролл в пределах overscan) стоят один блит закэшированной текстуры.
         private readonly object _bitmapLock = new();
-        private SKBitmap? _renderBitmap;   // пишем на render-треде
-        private SKBitmap? _displayBitmap;  // читаем на compositor-треде
+        private SKBitmap? _renderBitmap;   // офскрин-цель, пишем на render-треде
+        private SKImage? _displayImage;    // иммутабельный снимок, читает compositor
         private int _bitmapW;
         private int _bitmapH;
         private float _lastFullRenderScrollY;
         // Очередь для освобождения битмапов старого размера.
         private readonly System.Collections.Concurrent.ConcurrentQueue<SKBitmap> _bitmapDisposeQueue = new();
 
-        // Алиасы для _caretOnlyRedraw fast-path (читаются на compositor-треде).
-        private SKBitmap? _lastFullRenderBitmap { get { lock (_bitmapLock) return _displayBitmap; } }
-        private int _lastFullRenderWidth { get { lock (_bitmapLock) return _bitmapW; } }
-        private int _lastFullRenderHeight { get { lock (_bitmapLock) return _bitmapH; } }
         private bool _caretOnlyRedraw = false;
         private volatile bool _isTransitioning;
 
@@ -467,8 +495,10 @@ namespace Writersword.Modules.TextEditor.Document
                 _caretOnlyRedraw = true;
                 InvalidateVisual();
             };
-            _caretTimer.Start();
             GotFocus += OnGotFocusHandler;
+            // Каретка мигает только пока редактор в фокусе: без фокуса таймер остановлен
+            // и редактор не генерирует кадры вообще — окно не перерисовывается в покое.
+            LostFocus += OnLostFocusHandler;
         }
 
         // ── HotKey ───────────────────────────────────────────────────────
@@ -546,6 +576,7 @@ namespace Writersword.Modules.TextEditor.Document
             // Останавливаем таймер — он держит ссылку на this через замыкание и мешает GC.
             _caretTimer.Stop();
             GotFocus -= OnGotFocusHandler;
+            LostFocus -= OnLostFocusHandler;
 
             // Отписываемся от DocumentViewModel и всех ParagraphViewModel.
             if (_docVm is not null)
@@ -569,6 +600,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.CommitRunPropertyGranularDelegate = null;
                 _docVm.CommitTextEditsDelegate = null;
                 _docVm.CommitParagraphPropertyGranularDelegate = null;
+                _docVm.GetCaretWordRangeDelegate = null;
 
                 // Снимаем делегаты с каждого параграфа — иначе замыкания удерживают canvas.
                 foreach (var pvm in _docVm.Paragraphs)
@@ -585,6 +617,7 @@ namespace Writersword.Modules.TextEditor.Document
             // Дренируем очередь через Background-Post, а не при следующем reattach:
             // при смене вкладки создаётся НОВЫЙ канвас, старый никогда не reattach-ится,
             // поэтому его очередь без этого фикса держит нативную SkiaSharp-память вечно.
+            SKImage? staleImage;
             lock (_bitmapLock)
             {
                 if (_renderBitmap is not null)
@@ -592,11 +625,8 @@ namespace Writersword.Modules.TextEditor.Document
                     _bitmapDisposeQueue.Enqueue(_renderBitmap);
                     _renderBitmap = null;
                 }
-                if (_displayBitmap is not null)
-                {
-                    _bitmapDisposeQueue.Enqueue(_displayBitmap);
-                    _displayBitmap = null;
-                }
+                staleImage = _displayImage;
+                _displayImage = null;
             }
 
             var queueSnapshot = _bitmapDisposeQueue;
@@ -604,6 +634,7 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 while (queueSnapshot.TryDequeue(out var stale))
                     stale?.Dispose();
+                staleImage?.Dispose();
             }, Avalonia.Threading.DispatcherPriority.Background);
 
             // SKPaint не диспозим здесь: DockFactory переиспользует DocumentCanvas
@@ -611,12 +642,13 @@ namespace Writersword.Modules.TextEditor.Document
             // на detach, при повторном reattach рендер упадёт с disposed-объектами.
             // SKPaint — крошечные нативные объекты (~200 байт), GC соберёт при финализации.
 
-            // Очищаем кеши и списки лейаутов.
-            // _layouts держит ссылки на SKTextLayout (нативные SkiaSharp объекты).
-            // Явная очистка освобождает нативную память без ожидания GC финализаторов.
-            _layoutCache.Clear();
-            _cellLayoutCache.Clear();
-            _cellVmCache.Clear();
+            // Списки лейаутов очищаем, а КЕШИ вёрстки (_layoutCache, ячейки, таблицы)
+            // сохраняем: DockFactory переиспользует канвас при перемещении панелей
+            // (detach → reattach), и с живыми кешами RebuildLayouts после reattach
+            // собирает раскладку без перевёрстки текста — на больших документах это
+            // разница между мгновенно и секундами. Кеши самоинвалидируются (текст и
+            // ширина проверяются в GetOrBuildLayout), а при закрытии вкладки канвас
+            // умирает целиком и нативную память соберёт GC.
             lock (_renderLock)
             {
                 _layouts = new System.Collections.Generic.List<ParaLayout>();
@@ -630,6 +662,26 @@ namespace Writersword.Modules.TextEditor.Document
         private void OnGotFocusHandler(object? sender, Avalonia.Input.FocusChangedEventArgs e)
         {
             _ = PrefetchClipboardAsync();
+
+            // Возобновляем мигание каретки.
+            _caretVisible = true;
+            _caretTimer.Stop();
+            _caretTimer.Start();
+            _caretOnlyRedraw = true;
+            InvalidateVisual();
+        }
+
+        private void OnLostFocusHandler(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            // Без фокуса каретка не мигает и не показывается — редактор перестаёт
+            // генерировать кадры, композитор окна спит, пока его не разбудит кто-то другой.
+            _caretTimer.Stop();
+            if (_caretVisible)
+            {
+                _caretVisible = false;
+                _caretOnlyRedraw = true;
+                InvalidateVisual();
+            }
         }
 
         private async Task PrefetchClipboardAsync()
@@ -691,7 +743,12 @@ namespace Writersword.Modules.TextEditor.Document
             if (sender is not ScrollViewer sv) return;
             _scrollOffsetY = sv.Offset.Y;
             _viewportHeight = sv.Viewport.Height;
-            InvalidateFull();
+            // Контент не менялся — скролл лишь сдвигает окно по уже отрисованному
+            // overscan-битмапу. Ветка _caretOnlyRedraw в RenderWithSKCanvas переиспользует
+            // битмап, пока вьюпорт внутри его диапазона, и уходит в полный рендер только
+            // когда прокрутка выходит за край отрисованной области.
+            _caretOnlyRedraw = true;
+            InvalidateVisual();
         }
 
         protected override void OnDataContextChanged(EventArgs e)
@@ -725,13 +782,14 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.CommitRunPropertyGranularDelegate = null;
                 _docVm.CommitTextEditsDelegate = null;
                 _docVm.CommitParagraphPropertyGranularDelegate = null;
+                _docVm.GetCaretWordRangeDelegate = null;
             }
 
             _docVm = DataContext as DocumentViewModel;
             _layoutCache.Clear();
             _pvmFocusHandlers.Clear();
             _cellVmCache.Clear();
-            _cellLayoutCache.Clear();
+            InvalidateCellLayoutCaches();
             ResetUndoOrder();
 
             if (DocVm is not null)
@@ -757,6 +815,7 @@ namespace Writersword.Modules.TextEditor.Document
                 DocVm.CommitRunPropertyGranularDelegate = CommitRunPropertyGranular;
                 DocVm.CommitTextEditsDelegate = CommitTextEditsGranular;
                 DocVm.CommitParagraphPropertyGranularDelegate = CommitParagraphPropertyGranular;
+                DocVm.GetCaretWordRangeDelegate = GetCaretWordRange;
                 foreach (var pvm in DocVm.Paragraphs)
                     WirePvm(pvm);
             }
@@ -793,7 +852,7 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 // Затронутые неизвестны (например, форматирование ячейки) — полный сброс.
                 _layoutCache.Clear();
-                _cellLayoutCache.Clear();
+                InvalidateCellLayoutCaches();
             }
 
             RebuildLayouts();
@@ -858,7 +917,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (DocVm is not null)
                     _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
                 _layoutCache.Clear();
-                _cellLayoutCache.Clear();
+                InvalidateCellLayoutCaches();
                 RebuildLayouts();
 
                 _lastZoom = Zoom;
@@ -867,8 +926,6 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
-        // Перезапускает таймер «зум устаканился»: пока жест идёт, он сбрасывается; через ~140мс
-        // после последнего изменения масштаба делаем полный пересчёт раскладки под новый зум.
         private void ScheduleZoomSettle()
         {
             if (_zoomSettleTimer is null)
@@ -883,9 +940,6 @@ namespace Writersword.Modules.TextEditor.Document
             _zoomSettleTimer.Start();
         }
 
-        // Завершает жест масштабирования: сбрасывает флаг и делает полный пересчёт раскладки.
-        // Вызывается таймером после остановки, а также принудительно на любом вводе (клик/клавиша),
-        // чтобы _zooming не мог залипнуть и заблокировать обновление после правок/undo.
         private void FinishZoomImmediately()
         {
             _zoomSettleTimer?.Stop();
@@ -983,12 +1037,6 @@ namespace Writersword.Modules.TextEditor.Document
         // ── Дебаунс пересчёта ─────────────────────────────────────────────
         private void ScheduleRebuild(int dirtyParaIdx)
         {
-            // Во время массовой перестройки VM (undo/загрузка/структурные операции) Paragraphs
-            // переполняется тысячами Add-событий, и поабзацная инкрементальная раскладка здесь
-            // бессмысленна: каждый вызов делает _layouts.Any(...) — проход по всем раскладкам,
-            // что на тысячах абзацев даёт O(n^2) (десятки секунд). Пропускаем её — общий
-            // пересбор выполнит отложенный RebuildLayouts ниже (и/или FireParagraphFormatChanged
-            // от вызвавшей операции).
             if (DocVm?.IsBulkRebuilding != true)
             {
                 ParagraphViewModel? dirtyPvm = null;
@@ -997,14 +1045,6 @@ namespace Writersword.Modules.TextEditor.Document
                     dirtyPvm = DocVm.Paragraphs[dirtyParaIdx];
                     _layoutCache.Remove(dirtyPvm);
 
-                    // Считаем, сколько НЕ-ячейковых слайсов у этого абзаца.
-                    //   0  — новый абзац (Enter/вставка): быстрая вставка.
-                    //   1  — абзац на одной странице: быстрый поабзацный апдейт.
-                    //  >1  — абзац разорван между страницами (несколько слайсов). Быстрый путь
-                    //        ставит LineTo = все строки в КАЖДЫЙ слайс, и каждый слайс рисует
-                    //        весь абзац — текст лезет за границу страницы, на кадр, до фонового
-                    //        пересчёта. Это и есть мерцание на стыке страниц. Поэтому быстрый
-                    //        путь пропускаем и доверяем полному RebuildLayouts ниже.
                     int sliceCount = _layouts.Count(l => l.Vm == dirtyPvm && l.Cell is null);
                     if (sliceCount == 1)
                     {
@@ -1035,10 +1075,8 @@ namespace Writersword.Modules.TextEditor.Document
 
                 double oldCanvasH = _canvasHeight;
                 RebuildLayouts();
-                SnapCaretToCorrectSlice(); // обновляет _caretLineHint по актуальному положению каретки
+                SnapCaretToCorrectSlice(); 
 
-                // Если после предыдущего rebuild был запрошен переход к якорю разрыва —
-                // применяем его сейчас, когда _layouts актуальны.
                 if (_pendingFocusBlock is not null && DocVm is not null)
                 {
                     var anchorVm = DocVm.Paragraphs.FirstOrDefault(p => p.Model == _pendingFocusBlock);
@@ -1066,8 +1104,8 @@ namespace Writersword.Modules.TextEditor.Document
                 else
                     InvalidateFull();
 
-                // После полного rebuild _layouts актуален — прокручиваем к каретке.
-                // Нужно при Enter: ResetCaret вызывается до rebuild, каретка вне _layouts.
+                // После полного rebuild _layouts актуален — прокручиваем к каретке
+                // Нужно при Enter: ResetCaret вызывается до rebuild, каретка вне _layouts
                 ScrollToCaret();
 
             }, DispatcherPriority.Background);
@@ -1085,16 +1123,6 @@ namespace Writersword.Modules.TextEditor.Document
             if (_styleResolver is null && DocVm is not null)
                 _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
 
-            // Не чистим _layoutCache здесь: GetOrBuildLayout проверяет Text и Width,
-            // при изменении текста параграфа кеш инвалидируется сам.
-            // Clear() вызывает сотни BuildLayout на каждый MeasureOverride,
-            // что при быстром наборе текста вызывает лавину аллокаций.
-            // Раскладка берётся из кэша (GetOrBuildLayout проверяет текст и ширину), поэтому
-            // на зуме в режиме страниц это дёшево — абзацы не перелейаутятся, меняется только
-            // позиционирование страниц.
-            // Во время зум-жеста полный пересчёт пропускаем (рендерим уже посчитанное,
-            // масштабированное), иначе на больших документах это лагает. visualH/visualW считаются
-            // из кэшированных _canvasHeight/_canvasWidth, домноженных на зум — размер корректный.
             if (!_zooming)
                 RebuildLayouts();
 
@@ -1128,7 +1156,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (DocVm?.ViewMode != EditorViewMode.Page)
                 {
                     _layoutCache.Clear();
-                    _cellLayoutCache.Clear();
+                    InvalidateCellLayoutCaches();
                 }
                 RebuildLayouts();
             }

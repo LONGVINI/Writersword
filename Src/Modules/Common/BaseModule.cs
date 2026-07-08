@@ -185,10 +185,24 @@ namespace Writersword.Modules.Common
                 return _cachedView;
             }
 
-            // Отсоединяем от устаревшего ContentPresenter перед передачей новому.
+            // Отсоединяем от устаревшего родителя перед передачей новому.
+            // ContentPresenter — обычный случай в доке; ContentControl, Decorator
+            // и Panel встречаются во флоат-окнах и обёртках. Без отцепления новый
+            // хост не может принять контрол («already has visual parent»).
             var oldParent = _cachedView.GetVisualParent();
-            if (oldParent is ContentPresenter cp)
-                cp.Content = null;
+            switch (oldParent)
+            {
+                case ContentPresenter cp: cp.Content = null; break;
+                case ContentControl cc: cc.Content = null; break;
+                case Decorator d: d.Child = null; break;
+                case Panel p: p.Children.Remove(_cachedView); break;
+            }
+
+            // Восстанавливаем DataContext: пути закрытия/пересоздания в DockFactory
+            // обнуляют его у старого Content, а вью у нас кэшированная — без
+            // восстановления она возвращается «пустой» (привязки мертвы).
+            if (_cachedView.DataContext is null && ViewModel is not null)
+                _cachedView.DataContext = ViewModel;
 
             return _cachedView;
         }

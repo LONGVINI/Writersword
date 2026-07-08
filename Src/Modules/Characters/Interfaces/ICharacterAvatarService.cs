@@ -20,6 +20,7 @@ namespace Writersword.Modules.Characters.Interfaces
         // ── Загрузка ──────────────────────────────────────────────────────
 
         Bitmap? LoadBitmap(string? avatarRef);
+        Bitmap? LoadBitmap(string? avatarRef, int maxSide);
         byte[]? LoadAvatarBytes(string? avatarRef);
 
         // ── Паки ──────────────────────────────────────────────────────────

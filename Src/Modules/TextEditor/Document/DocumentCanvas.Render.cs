@@ -80,21 +80,22 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (_caretOnlyRedraw)
             {
-                SKBitmap? cached;
+                SKImage? cached;
                 int cachedW, cachedH;
                 float cachedScrollY;
                 lock (_bitmapLock)
                 {
-                    cached = _lastFullRenderBitmap;
-                    cachedW = _lastFullRenderWidth;
-                    cachedH = _lastFullRenderHeight;
+                    cached = _displayImage;
+                    cachedW = _bitmapW;
+                    cachedH = _bitmapH;
                     cachedScrollY = _lastFullRenderScrollY;
                 }
 
-                // Кеш валиден если scroll находится внутри overscan-диапазона битмапа.
+                // Кеш валиден если scroll находится внутри overscan-диапазона снимка.
                 // cachedScrollY хранит bitmapTopY — верхний край последнего рендера.
-                // Если пользователь проскроллил так что viewport ещё внутри битмапа —
-                // можно переиспользовать битмап без перерисовки.
+                // Если пользователь проскроллил так что viewport ещё внутри снимка —
+                // переиспользуем его без перерисовки. DrawImage иммутабельного снимка
+                // не копирует пиксели: GPU держит текстуру в кэше по uniqueID.
                 bool scrollInRange = cached is not null
                     && cachedW == pixelW
                     && scrollY >= cachedScrollY - 0.5f
@@ -104,8 +105,8 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     _caretOnlyRedraw = false;
 
-                    // Битмап рисуем по его реальному bitmapTopY (не scrollY).
-                    canvas.DrawBitmap(cached!, 0, cachedScrollY);
+                    // Снимок рисуем по его реальному bitmapTopY (не scrollY).
+                    canvas.DrawImage(cached!, 0, cachedScrollY);
 
                     if (_caretVisible && !_zooming)
                     {
@@ -133,9 +134,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (_renderBitmap is null || _renderBitmap.Width != pixelW || _renderBitmap.Height != pixelH)
                 {
                     if (_renderBitmap is not null) _bitmapDisposeQueue.Enqueue(_renderBitmap);
-                    if (_displayBitmap is not null) _bitmapDisposeQueue.Enqueue(_displayBitmap);
                     _renderBitmap = new SKBitmap(pixelW, pixelH, SKColorType.Bgra8888, SKAlphaType.Premul);
-                    _displayBitmap = new SKBitmap(pixelW, pixelH, SKColorType.Bgra8888, SKAlphaType.Premul);
                     _bitmapW = pixelW;
                     _bitmapH = pixelH;
                 }
@@ -162,19 +161,33 @@ namespace Writersword.Modules.TextEditor.Document
 
                 offscreen.Restore();
 
-                // Атомарно свапаем render и display буферы.
-                SKBitmap? toDisplay;
+                // Снимаем иммутабельный снимок (одна копия пикселей за содержательный
+                // рендер). Все последующие кадры — мигание каретки, чужие инвалидации
+                // окна, скролл в пределах overscan — рисуют этот снимок без копирования:
+                // GPU кэширует его текстуру по uniqueID.
+                // Именно FromPixelCopy, а не FromBitmap: FromBitmap заворачивает ту же
+                // память без смены generation ID, и GPU-кэш продолжает отдавать старую
+                // текстуру — на экране остаётся прежний кадр, хотя битмап уже перерисован.
+                var newImage = SKImage.FromPixelCopy(
+                    new SKImageInfo(renderTarget.Width, renderTarget.Height,
+                        SKColorType.Bgra8888, SKAlphaType.Premul),
+                    renderTarget.GetPixels(),
+                    renderTarget.RowBytes);
+                SKImage? oldImage;
                 lock (_bitmapLock)
                 {
-                    (_renderBitmap, _displayBitmap) = (_displayBitmap, _renderBitmap);
-                    // Сохраняем bitmapTopY — верхний край отрисованного битмапа.
+                    oldImage = _displayImage;
+                    _displayImage = newImage;
+                    // Сохраняем bitmapTopY — верхний край отрисованного снимка.
                     // Используется в cache check: scroll внутри [bitmapTopY, bitmapTopY+H]?
                     _lastFullRenderScrollY = bitmapTopY;
-                    toDisplay = _displayBitmap;
                 }
+                // Рендер выполняется только на render-треде, старый снимок в этом кадре
+                // уже никем не используется — освобождаем сразу.
+                oldImage?.Dispose();
 
-                if (toDisplay is not null)
-                    canvas.DrawBitmap(toDisplay, 0, bitmapTopY);
+                if (newImage is not null)
+                    canvas.DrawImage(newImage, 0, bitmapTopY);
 
                 if (_caretVisible && !_zooming)
                 {
@@ -836,9 +849,10 @@ namespace Writersword.Modules.TextEditor.Document
                 int lineSelStart = Math.Max(from, ln.FirstCharIndex);
                 int lineSelEnd = Math.Min(to, ln.LastCharIndex + 1);
 
-                // Хвостовые пробелы в конце визуальной строки не подсвечиваем: обрезаем правый
-                // край выделения по последнему непробельному символу строки (как в Word).
-                int lastContentEnd = LastContentCharEnd(ln);
+                // Хвостовые пробелы обрезаем только на строках с мягким переносом: там они
+                // визуально «висят» на переносе. На последней строке абзаца пробелы стоят
+                // в пределах строки и выделяются целиком (как в Word).
+                int lastContentEnd = ln.IsLastLine ? -1 : LastContentCharEnd(ln);
                 if (lastContentEnd >= 0 && lineSelEnd > lastContentEnd)
                 {
                     lineSelEnd = Math.Max(lineSelStart, lastContentEnd);
@@ -910,6 +924,12 @@ namespace Writersword.Modules.TextEditor.Document
                 left += leftShift;
                 width += rightShift - leftShift;
             }
+
+            // Запас справа: ширина прямоугольника считается по advance-ширинам глифов,
+            // а рисунок последней буквы выступает правее на пару пикселей — без запаса
+            // выделение выглядит так, будто не дотягивается до конца текста. Смежные
+            // прямоугольники рисуются слева направо и перекрывают запас предыдущего.
+            width += SKTextRenderer.HighlightRightOverhangPt;
 
             canvas.DrawRect(left, yPt + (rectTop - yBase), width, rectHeight, paint);
         }

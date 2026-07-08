@@ -26,9 +26,12 @@
 					</ControlTemplate>
 				</Setter>
 			</Style>
+			<!-- Подсветка при наведении — ТОЛЬКО цветом рамки (отрисовка). Толщину
+			     не трогаем: BorderThickness — свойство раскладки, его смена
+			     инвалидирует measure и заставляет ItemsRepeater перемерять все
+			     видимые карточки (77 мс, «мерцает всё окно»). Оставляем 1.5. -->
 			<Style Selector="Button#TriggerButton:pointerover /template/ Border">
 				<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
-				<Setter Property="BorderThickness" Value="2"/>
 			</Style>
 		</Button.Styles>
 		<Button.Flyout>
@@ -294,9 +297,23 @@
 								<ItemsControl.ItemTemplate>
 									<DataTemplate>
 										<Border Width="26" Height="26" Margin="2">
-											<Button Classes="swatch"
-                                                    Command="{Binding SelectPresetCommand, ElementName=Root}"
-                                                    CommandParameter="{Binding}"/>
+											<Panel>
+												<Button Classes="swatch"
+                                                        Command="{Binding SelectPresetCommand, ElementName=Root}"
+                                                        CommandParameter="{Binding}"/>
+												<!-- «Без цвета»: белый кружок с полным крестом (как лампочка
+												     в схемотехнике) поверх прозрачного образца; клики проходят
+												     в кнопку. -->
+												<Panel IsHitTestVisible="False"
+												       IsVisible="{Binding Converter={x:Static res:PaletteConverters.IsNoColor}}">
+													<Ellipse Width="22" Height="22" Fill="White"
+													         HorizontalAlignment="Center" VerticalAlignment="Center"/>
+													<Line StartPoint="6,20" EndPoint="20,6"
+													      Stroke="#E53935" StrokeThickness="2"/>
+													<Line StartPoint="6,6" EndPoint="20,20"
+													      Stroke="#E53935" StrokeThickness="2"/>
+												</Panel>
+											</Panel>
 										</Border>
 									</DataTemplate>
 								</ItemsControl.ItemTemplate>
@@ -332,9 +349,23 @@
 								<ItemsControl.ItemTemplate>
 									<DataTemplate>
 										<Border Width="26" Height="26" Margin="2">
-											<Button Classes="swatch"
-                                                    Command="{Binding SelectPresetCommand, ElementName=Root}"
-                                                    CommandParameter="{Binding}"/>
+											<Panel>
+												<Button Classes="swatch"
+                                                        Command="{Binding SelectPresetCommand, ElementName=Root}"
+                                                        CommandParameter="{Binding}"/>
+												<!-- «Без цвета»: белый кружок с полным крестом (как лампочка
+												     в схемотехнике) поверх прозрачного образца; клики проходят
+												     в кнопку. -->
+												<Panel IsHitTestVisible="False"
+												       IsVisible="{Binding Converter={x:Static res:PaletteConverters.IsNoColor}}">
+													<Ellipse Width="22" Height="22" Fill="White"
+													         HorizontalAlignment="Center" VerticalAlignment="Center"/>
+													<Line StartPoint="6,20" EndPoint="20,6"
+													      Stroke="#E53935" StrokeThickness="2"/>
+													<Line StartPoint="6,6" EndPoint="20,20"
+													      Stroke="#E53935" StrokeThickness="2"/>
+												</Panel>
+											</Panel>
 										</Border>
 									</DataTemplate>
 								</ItemsControl.ItemTemplate>

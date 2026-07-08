@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels"
+             xmlns:views="using:Writersword.Modules.Characters.Views"
              xmlns:onb="using:Writersword.Modules.Characters.Views.Onboarding"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              xmlns:ui="using:Writersword.Styles.UserControls"
@@ -22,6 +23,10 @@
 
 		<!-- Оверлей редактора цвета — внутри модуля, поверх всего -->
 		<ui:ColorEditorOverlay x:Name="ColorEditorOverlay" ZIndex="200"/>
+
+		<!-- Окно настроек карточки (кольцо, закладка, толщина рамки) — по центру
+		     модуля, со скримом, как редактор цвета -->
+		<views:CardSettingsOverlay x:Name="CardSettingsOverlayControl" ZIndex="150"/>
 
 		<Grid RowDefinitions="Auto,*">
 

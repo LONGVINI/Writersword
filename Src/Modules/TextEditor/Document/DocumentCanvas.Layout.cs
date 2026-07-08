@@ -47,10 +47,6 @@ namespace Writersword.Modules.TextEditor.Document
                     maxCellPadTop = Math.Max(maxCellPadTop, cl.PadTopPt + cl.Borders.Top.WidthPt);
             }
 
-            _logger.Debug(
-                "[CELLS] tableYPt={TY:F1} rowFrom={RF} rowTo={RT} effectiveRowTo={ERT} rowOffsetY={ROY:F1} firstRowOffset={FRO:F1} lastRowVisH={LRV:F1}",
-                tableYPt, rowFrom, rowTo, effectiveRowTo, rowOffsetY, firstRowOffset, lastRowVisibleH);
-
             foreach (var rowLayout in tableLayout.Rows)
             {
                 if (rowLayout.Row < rowFrom || rowLayout.Row >= effectiveRowTo) continue;
@@ -68,11 +64,6 @@ namespace Writersword.Modules.TextEditor.Document
                 foreach (var cellLayout in rowLayout.Cells)
                 {
                     if (cellLayout.Row != rowLayout.Row) continue;
-
-                    _logger.Debug(
-                        "[CELLS] row={R} col={C} isCont={IC} isSplit={IS} cellYpt={CYT:F1} rowOffsetY={ROY:F1}",
-                        rowLayout.Row, cellLayout.Column,
-                        isContinuationFirstRow, isByCellSplit, cellLayout.Ypt, rowOffsetY);
 
                     float cellBT = cellLayout.Borders.Top.WidthPt;
                     float cellBB = cellLayout.Borders.Bottom.WidthPt;
@@ -227,10 +218,6 @@ namespace Writersword.Modules.TextEditor.Document
                             float consumedContent = effectiveOffset - cellPadTopTotal;
                             absParaY += effectiveOffset - Math.Min(cellPara.Ypt, consumedContent);
                         }
-
-                        _logger.Debug(
-                            "[CELLS]   pi={PI} P={P:F1} cCutY={CCY:F1} lineFrom={LF} lineTo={LT} absParaY={APY:F1}",
-                            pi, P, contentCutY < float.MaxValue ? contentCutY : -1f, lineFrom, lineTo, absParaY);
 
                         float paraHeight;
                         if (pi == lastVisiblePi)
@@ -525,7 +512,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (block is TableBlock tableBlock)
                 {
-                    var tableLayout = _renderer.BuildTableLayout(tableBlock, textWidthPt, _styleResolver!, _cellFontPreview);
+                    var tableLayout = GetOrBuildTableLayout(tableBlock, textWidthPt);
                     float tableXPt = textXPt + (float)tableBlock.LeftIndentPt;
                     bool byCell = tableBlock.SplitMode == TableSplitMode.ByCell;
                     float fullPageH = pageHeightPt - mt - mb;
@@ -539,11 +526,6 @@ namespace Writersword.Modules.TextEditor.Document
                     float sliceStartY = contentYPt;
                     bool isFirstSlice = true;
 
-                    _logger.Debug(
-                        "[TBL] START rows={R} totalH={H:F1} contentY={CY:F1} pageBottom={PB:F1} pageIdx={PI} byCell={BC}",
-                        tableLayout.Rows.Count, tableLayout.TotalHeightPt,
-                        contentYPt, pageBottomPt, pageIdx, byCell);
-
                     for (int ri = 0; ri < tableLayout.Rows.Count; ri++)
                     {
                         var row = tableLayout.Rows[ri];
@@ -556,12 +538,6 @@ namespace Writersword.Modules.TextEditor.Document
                         // На верхней позиции страницы зазор не требуется — строка уже некуда двигать.
                         const float MinRowEndGapPt = 8f;
                         float fittingAvailable = atPageTop ? available : available - MinRowEndGapPt;
-
-                        _logger.Debug(
-                            "[TBL] row={RI} rowH={RH:F1} offset={OF:F1} effectiveH={EH:F1} " +
-                            "available={AV:F1} fittingAvailable={FA:F1} atPageTop={AT} contentY={CY:F1} pageBottom={PB:F1}",
-                            ri, row.HeightPt, sliceFirstRowOffset, effectiveH,
-                            available, fittingAvailable, atPageTop, contentYPt, pageBottomPt);
 
                         if (effectiveH > fittingAvailable && (!atPageTop || sliceFirstRowOffset > 0f || effectiveH > fullPageH))
                         {
@@ -641,11 +617,6 @@ namespace Writersword.Modules.TextEditor.Document
                                 float visibleH = snapH + splitCellPadBottom + splitCellPadTop;
                                 float nextOffset = sliceFirstRowOffset + snapH;
 
-                                _logger.Debug(
-                                    "[TBL] BYCELL-SPLIT ri={RI} sliceStartY={SSY:F1} rowFrom={RF} rowTo={RT} " +
-                                    "visibleH={VH:F1} nextOffset={NO:F1} pageIdx={PI}",
-                                    ri, sliceStartY, rowFrom, ri + 1, visibleH, nextOffset, pageIdx);
-
                                 int teIdx = newTables.Count;
                                 newTables.Add(new TableEntry(tableBlock, tableLayout,
                                     sliceStartY, tableXPt, pageIdx,
@@ -665,10 +636,6 @@ namespace Writersword.Modules.TextEditor.Document
                                 sliceStartY = contentYPt;
                                 sliceStartOffset = nextOffset;
 
-                                _logger.Debug(
-                                    "[TBL] BYCELL-NEWPAGE pageIdx={PI} newContentY={CY:F1} sliceStartY={SSY:F1} nextOffset={NO:F1}",
-                                    pageIdx, contentYPt, sliceStartY, nextOffset);
-
                                 rowFrom = ri;
                                 sliceFirstRowOffset = nextOffset;
                                 isFirstSlice = false;
@@ -678,9 +645,6 @@ namespace Writersword.Modules.TextEditor.Document
                             else if (!forceByCell)
                             {
                                 // ByRow: только строка 0 может уйти на следующую страницу целиком.
-                                _logger.Debug(
-                                    "[TBL] BYROW-SPLIT ri={RI} sliceStartY={SSY:F1} rowFrom={RF} pageIdx={PI}",
-                                    ri, sliceStartY, rowFrom, pageIdx);
                                 if (ri > rowFrom)
                                 {
                                     int teIdx = newTables.Count;
@@ -773,9 +737,6 @@ namespace Writersword.Modules.TextEditor.Document
                     }
 
                     // Финальный слайс
-                    _logger.Debug(
-                        "[TBL] FINAL sliceStartY={SSY:F1} rowFrom={RF} contentY={CY:F1} pageIdx={PI}",
-                        sliceStartY, rowFrom, contentYPt, pageIdx);
                     if (rowFrom < tableLayout.Rows.Count)
                     {
                         int teIdx = newTables.Count;
@@ -790,12 +751,14 @@ namespace Writersword.Modules.TextEditor.Document
                             rowFrom, -1, sliceStartOffset, -1f);
                     }
 
-                    contentYPt += FallbackLinePt;
+                    // Зазор после таблицы не добавляется: расстояние до следующего блока
+                    // управляется интервалом перед следующего параграфа. Печатная раскладка
+                    // (BuildPageLayout) ведёт себя так же.
 
                     // Запоминаем позицию этой таблицы для якоря после неё.
                     lastTableXPt = tableXPt;
                     lastTableRightPt = tableXPt + tableLayout.TotalWidthPt;
-                    lastTableBotPt = contentYPt - FallbackLinePt; // истинный нижний край таблицы
+                    lastTableBotPt = contentYPt; // истинный нижний край таблицы
                     continue;
                 }
 
@@ -848,7 +811,6 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     float anchorXPt = textXPt + (float)((TableBlock)blocks[bi + 1]).LeftIndentPt;
                     // Сдвигаем каретку чуть левее таблицы чтобы она не перекрывалась рамкой.
-                    _logger.Debug("[ANCHOR] BEFORE table bi={BI} Ypt={Y:F1} AbsXPt={X:F1}", bi, contentYPt, anchorXPt - AnchorMarginPt);
                     newLayouts.Add(new ParaLayout(
                         pvm, layout, contentYPt, FallbackLinePt,
                         pageIdx, 0, 0,
@@ -863,7 +825,6 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     float anchorY = lastTableBotPt - FallbackLinePt;
                     // Сдвигаем каретку чуть правее таблицы чтобы она не перекрывалась рамкой.
-                    _logger.Debug("[ANCHOR] AFTER table bi={BI} Ypt={Y:F1} AbsXPt={X:F1} lastTableBotPt={B:F1}", bi, anchorY, lastTableRightPt + AnchorMarginPt, lastTableBotPt);
                     newLayouts.Add(new ParaLayout(
                         pvm, layout, anchorY, FallbackLinePt,
                         pageIdx, 0, 0,
@@ -967,7 +928,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (block is TableBlock tableBlock)
                 {
-                    var tableLayout = _renderer.BuildTableLayout(tableBlock, textWidthPt, _styleResolver!, _cellFontPreview);
+                    var tableLayout = GetOrBuildTableLayout(tableBlock, textWidthPt);
                     float tableXPt = padWPt + (float)tableBlock.LeftIndentPt;
                     int teIdx = newTables.Count;
                     newTables.Add(new TableEntry(tableBlock, tableLayout, yPt, tableXPt, 0));
@@ -976,7 +937,7 @@ namespace Writersword.Modules.TextEditor.Document
 
                     lastTableRightPt = tableXPt + tableLayout.TotalWidthPt;
                     lastTableBotPt = yPt + tableLayout.TotalHeightPt;
-                    yPt += tableLayout.TotalHeightPt + FallbackLinePt;
+                    yPt += tableLayout.TotalHeightPt;
                     continue;
                 }
 

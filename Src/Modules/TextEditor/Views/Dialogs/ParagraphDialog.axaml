@@ -8,7 +8,6 @@
         WindowStartupLocation="CenterOwner"
         CanResize="False"
         WindowDecorations="None"
-        SystemDecorations="None"
         TransparencyLevelHint="Transparent"
         Background="Transparent">
 

@@ -55,7 +55,7 @@ namespace Writersword.Modules.TextEditor.Document
             _activeTableBlock.RowCount++;
             if (above) _activeCellRow++;
             CommitEdit();
-            _cellLayoutCache.Clear();
+            InvalidateCellLayoutCaches();
             RebuildLayouts();
             InvalidateFull();
         }
@@ -99,7 +99,7 @@ namespace Writersword.Modules.TextEditor.Document
             foreach (var cell in targets) cell.BackgroundColor = value;
             CommitEdit();
 
-            _cellLayoutCache.Clear();
+            InvalidateCellLayoutCaches();
             RebuildLayouts();
             InvalidateFull();
         }
@@ -116,7 +116,7 @@ namespace Writersword.Modules.TextEditor.Document
             CommitEdit();
             if (_activeTableBlock.RowCount <= 0) { ExecuteTableDelete(); return; }
             _activeCellRow = Clamp(_activeCellRow, 0, _activeTableBlock.RowCount - 1);
-            _cellLayoutCache.Clear();
+            InvalidateCellLayoutCaches();
             RebuildLayouts();
             InvalidateFull();
         }
@@ -138,7 +138,7 @@ namespace Writersword.Modules.TextEditor.Document
             _activeTableBlock.ColumnCount++;
             if (left) _activeCellCol++;
             CommitEdit();
-            _cellLayoutCache.Clear();
+            InvalidateCellLayoutCaches();
             RebuildLayouts();
             InvalidateFull();
         }
@@ -157,7 +157,7 @@ namespace Writersword.Modules.TextEditor.Document
             CommitEdit();
             if (_activeTableBlock.ColumnCount <= 0) { ExecuteTableDelete(); return; }
             _activeCellCol = Clamp(_activeCellCol, 0, _activeTableBlock.ColumnCount - 1);
-            _cellLayoutCache.Clear();
+            InvalidateCellLayoutCaches();
             RebuildLayouts();
             InvalidateFull();
         }
@@ -169,7 +169,7 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.Document.Sections[0].Blocks.Remove(_activeTableBlock);
             CommitEdit();
             _cellVmCache.Clear();
-            _cellLayoutCache.Clear();
+            InvalidateCellLayoutCaches();
             DocVm.RebuildParagraphViewModelsPublic();
             NotifyLeftCell();
             _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));

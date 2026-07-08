@@ -114,7 +114,8 @@
         <!-- список папок и карточек -->
         <Panel Grid.Row="1">
             <ScrollViewer Focusable="False"
-                          HorizontalScrollBarVisibility="Disabled">
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Visible">
                 <StackPanel>
 
                     <TextBlock Text="{x:Static loc:CharactersStrings.Placeholder_NoCharacters}"
@@ -296,7 +297,7 @@
                                                             CornerRadius="10"
                                                             Background="{DynamicResource BgPanelBrush}"
                                                             BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
-                                                            BorderThickness="2"
+                                                            BorderThickness="{Binding CardBorderThickness}"
                                                             ClipToBounds="False"
                                                             Margin="6"
                                                             Cursor="Hand"
@@ -351,6 +352,18 @@
                                                             <Style Selector="Border.card-root:pointerover colorControls|ColorPickerButton">
                                                                 <Setter Property="Opacity" Value="1"/>
                                                             </Style>
+                                                            <!-- Шестерёнка настроек карточки — тоже только при наведении. -->
+                                                            <Style Selector="Border.card-root Button.card-cfg">
+                                                                <Setter Property="Opacity" Value="0"/>
+                                                                <Setter Property="Transitions">
+                                                                    <Transitions>
+                                                                        <DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+                                                                    </Transitions>
+                                                                </Setter>
+                                                            </Style>
+                                                            <Style Selector="Border.card-root:pointerover Button.card-cfg">
+                                                                <Setter Property="Opacity" Value="1"/>
+                                                            </Style>
                                                         </Border.Styles>
 
                                                         <Border.RenderTransform>
@@ -383,10 +396,67 @@
                                                               Data="M0,0 H14 V20 L7,14 L0,20 Z"
                                                               Fill="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
 
-                                                        <StackPanel Orientation="Vertical">
+                                                        <DockPanel>
 
-                                                            <!-- цветная зона -->
-                                                            <Panel Height="{Binding $parent[UserControl].DataContext.CardTopHeight, FallbackValue=60}">
+                                                            <!-- цветная зона: сверху у плитки, слева у строки списка -->
+                                                            <Panel DockPanel.Dock="{Binding $parent[UserControl].DataContext.CardZoneDock}"
+                                                                   Width="{Binding $parent[UserControl].DataContext.CardZoneWidth}"
+                                                                   Height="{Binding $parent[UserControl].DataContext.CardTopHeight, FallbackValue=60}">
+
+                                                                <!-- Полоса-аватар: картинка (или заливка цветом) на всю цветную
+                                                                     зону. Включается настройкой «Вид аватара: полоска». -->
+                                                                <Button Background="Transparent"
+                                                                        BorderThickness="0"
+                                                                        Padding="0"
+                                                                        HorizontalAlignment="Stretch"
+                                                                        VerticalAlignment="Stretch"
+                                                                        HorizontalContentAlignment="Stretch"
+                                                                        VerticalContentAlignment="Stretch"
+                                                                        ZIndex="2"
+                                                                        IsVisible="{Binding ShowAvatarStrip}">
+                                                                    <Button.Styles>
+                                                                        <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                                                            <Setter Property="Background" Value="Transparent"/>
+                                                                        </Style>
+                                                                        <Style Selector="Button:pressed /template/ ContentPresenter">
+                                                                            <Setter Property="Background" Value="Transparent"/>
+                                                                        </Style>
+                                                                    </Button.Styles>
+                                                                    <Button.Flyout>
+                                                                        <Flyout Placement="Bottom">
+                                                                            <StackPanel Spacing="6" Margin="4" MinWidth="140">
+                                                                                <TextBlock Text="{x:Static res:CharactersStrings.AvatarPickerFlyout_Title}"
+                                                                                           FontSize="11"
+                                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                                           Margin="0,0,0,2"/>
+                                                                                <Button Content="{x:Static res:CharactersStrings.AvatarPickerFlyout_Upload}"
+                                                                                        Command="{Binding OpenAvatarPickerCommand}"
+                                                                                        HorizontalAlignment="Stretch"
+                                                                                        Padding="8,4"/>
+                                                                                <Button Content="{x:Static res:CharactersStrings.Button_DeleteAvatar}"
+                                                                                        Command="{Binding RemoveAvatarCommand}"
+                                                                                        HorizontalAlignment="Stretch"
+                                                                                        Padding="8,4"/>
+                                                                            </StackPanel>
+                                                                        </Flyout>
+                                                                    </Button.Flyout>
+                                                                    <Panel>
+                                                                        <Border Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+                                                                                CornerRadius="{Binding $parent[UserControl].DataContext.CardZoneCornerRadius}"/>
+                                                                        <Border CornerRadius="{Binding $parent[UserControl].DataContext.CardZoneCornerRadius}"
+                                                                                ClipToBounds="True"
+                                                                                IsVisible="{Binding AvatarBitmap, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                                                            <Image Source="{Binding AvatarBitmap}" Stretch="UniformToFill"/>
+                                                                        </Border>
+                                                                        <TextBlock Text="{Binding FallbackIcon}"
+                                                                                   FontSize="{Binding $parent[UserControl].DataContext.CardIconFontSize, FallbackValue=30}"
+                                                                                   HorizontalAlignment="Center"
+                                                                                   VerticalAlignment="Center"
+                                                                                   Foreground="White"
+                                                                                   IsHitTestVisible="False"
+                                                                                   IsVisible="{Binding AvatarBitmap, Converter={x:Static ObjectConverters.IsNull}}"/>
+                                                                    </Panel>
+                                                                </Button>
 
                                                                 <!-- Кружок без аватарки: клик сразу открывает выбор фото -->
                                                                 <Button Background="Transparent"
@@ -397,7 +467,7 @@
                                                                     VerticalAlignment="Center"
                                                                     ZIndex="2"
                                                                     Command="{Binding OpenAvatarPickerCommand}"
-                                                                    IsVisible="{Binding AvatarPath, Converter={x:Static StringConverters.IsNullOrEmpty}}"
+                                                                    IsVisible="{Binding ShowCircleNoPhoto}"
                                                                     ToolTip.Tip="{x:Static res:CharactersStrings.AvatarPickerFlyout_Upload}">
                                                                     <Button.Styles>
                                                                         <Style Selector="Button:pointerover /template/ ContentPresenter">
@@ -451,7 +521,7 @@
                                                                     HorizontalAlignment="Center"
                                                                     VerticalAlignment="Center"
                                                                     ZIndex="2"
-                                                                    IsVisible="{Binding AvatarPath, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                                                    IsVisible="{Binding ShowCirclePhoto}">
                                                                     <Button.Styles>
                                                                         <Style Selector="Button:pointerover /template/ ContentPresenter">
                                                                             <Setter Property="Background" Value="Transparent"/>
@@ -515,65 +585,18 @@
                                                                     </Panel>
                                                                 </Button>
 
-                                                                <!-- цветопикер и кнопки edit/delete: hover-only через opacity -->
-                                                                <colorControls:ColorPickerButton
-                                                                    ShowCardPreview="True"
-                                                                    HexColor="{Binding Color, Mode=TwoWay}"
-                                                                    PreviewImage="{Binding AvatarBitmap}"
-                                                                    PreviewName="{Binding Name}"
-                                                                    PreviewFallback="{Binding FallbackIcon}"
-                                                                    RingEnabled="{Binding AvatarRing, Mode=TwoWay}"
-                                                                    PreviewIsGroup="{Binding IsCollective}"
-                                                                    BookmarkEnabled="{Binding GroupBookmark, Mode=TwoWay}"
-                                                                    ApplyRingToAllCommand="{Binding ApplyRingToAllCommand}"
-                                                                    HorizontalAlignment="Left"
-                                                                    VerticalAlignment="Top"
-                                                                    Margin="5"
-                                                                    Width="{Binding $parent[UserControl].DataContext.CardColorButtonSize, FallbackValue=20}"
-                                                                    Height="{Binding $parent[UserControl].DataContext.CardColorButtonSize, FallbackValue=20}"
-                                                                    ToolTip.Tip="{x:Static loc:CharactersStrings.ColorPicker_Tooltip}"/>
-                                                                <StackPanel Classes="card-edit-btns"
-                                                                            Orientation="Vertical"
-                                                                            Spacing="2"
-                                                                            HorizontalAlignment="Right"
-                                                                            VerticalAlignment="Top"
-                                                                            Margin="4"
-                                                                            IsVisible="{Binding IsShowingNameDisplay}">
-                                                                    <Button Command="{Binding RequestDeleteCommand}"
-                                                                            Padding="4,3"
-                                                                            Background="#88000000"
-                                                                            BorderThickness="0" CornerRadius="4"
-                                                                            ToolTip.Tip="{x:Static loc:CharactersStrings.Character_DeleteTooltip}">
-                                                                        <Button.Styles>
-                                                                            <Style Selector="Button:pointerover /template/ ContentPresenter">
-                                                                                <Setter Property="Background" Value="#BB660000"/>
-                                                                            </Style>
-                                                                        </Button.Styles>
-                                                                        <PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                                                                                  Width="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
-                                                                                  Height="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
-                                                                                  Foreground="White"/>
-                                                                    </Button>
-                                                                    <Button Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
-                                                                            CommandParameter="{Binding Id}"
-                                                                            Padding="4,3"
-                                                                            Background="#88000000"
-                                                                            BorderThickness="0" CornerRadius="4"
-                                                                            ToolTip.Tip="{x:Static loc:CharactersStrings.Character_EditTooltip}">
-                                                                        <PathIcon Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                                                                                  Width="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
-                                                                                  Height="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
-                                                                                  Foreground="White"/>
-                                                                    </Button>
-                                                                </StackPanel>
                                                             </Panel>
 
-                                                            <!-- зона имени -->
-                                                            <Panel Height="{Binding $parent[UserControl].DataContext.CardNameHeight, FallbackValue=40}">
+                                                            <!-- зона имени: в строке списка прижимается влево и ограничена
+                                                                 по ширине, в плитке — во всю ширину карточки -->
+                                                            <Panel Height="{Binding $parent[UserControl].DataContext.CardNameHeight, FallbackValue=40}"
+                                                                   MinWidth="{Binding $parent[UserControl].DataContext.CardNameMinWidth}"
+                                                                   HorizontalAlignment="{Binding $parent[UserControl].DataContext.CardNamePanelAlignment}"
+                                                                   MaxWidth="{Binding $parent[UserControl].DataContext.CardNameMaxWidth}">
                                                                 <TextBox Text="{ReflectionBinding InlineName}"
                                                                          PlaceholderText="{x:Static loc:CharactersStrings.Character_NamePlaceholder}"
                                                                          FontSize="12" FontWeight="Medium"
-                                                                         TextAlignment="Center"
+                                                                         TextAlignment="{Binding $parent[UserControl].DataContext.CardNameAlignment}"
                                                                          Background="{DynamicResource BgPanelBrush}"
                                                                          BorderBrush="{DynamicResource AccentDefaultBrush}"
                                                                          BorderThickness="0,1,0,0"
@@ -585,7 +608,7 @@
                                                                          behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsBeingNamed}"/>
                                                                 <TextBox Text="{ReflectionBinding PendingRename}"
                                                                          FontSize="12" FontWeight="Medium"
-                                                                         TextAlignment="Center"
+                                                                         TextAlignment="{Binding $parent[UserControl].DataContext.CardNameAlignment}"
                                                                          Background="{DynamicResource BgPanelBrush}"
                                                                          BorderBrush="{DynamicResource AccentDefaultBrush}"
                                                                          BorderThickness="0,1,0,0"
@@ -601,7 +624,7 @@
                                                                         Padding="6,4"
                                                                         HorizontalAlignment="Stretch"
                                                                         VerticalAlignment="Stretch"
-                                                                        HorizontalContentAlignment="Center"
+                                                                        HorizontalContentAlignment="{Binding $parent[UserControl].DataContext.CardNamePanelAlignment}"
                                                                         IsVisible="{Binding IsShowingNameDisplay}"
                                                                         ToolTip.Tip="{x:Static loc:CharactersStrings.Character_RenameTooltip}">
                                                                     <Button.Styles>
@@ -616,7 +639,7 @@
                                                                                FontSize="12" FontWeight="Medium"
                                                                                TextWrapping="NoWrap"
                                                                                TextTrimming="CharacterEllipsis"
-                                                                               TextAlignment="Center"
+                                                                               TextAlignment="{Binding $parent[UserControl].DataContext.CardNameAlignment}"
                                                                                VerticalAlignment="Center"
                                                                                Foreground="{DynamicResource TextPrimaryBrush}"
                                                                                ToolTip.Tip="{Binding Name}"
@@ -624,6 +647,83 @@
                                                                 </Button>
                                                             </Panel>
 
+                                                        </DockPanel>
+
+                                                        <!-- цветопикер, шестерёнка настроек и кнопки edit/delete живут на
+                                                             уровне всей карточки (hover-only через opacity): в плитке это
+                                                             углы цветной зоны, в строке списка — углы строки. -->
+                                                        <StackPanel Orientation="{Binding $parent[UserControl].DataContext.CardControlsOrientation}"
+                                                                    Spacing="3"
+                                                                    HorizontalAlignment="{Binding $parent[UserControl].DataContext.CardPickerHAlign}"
+                                                                    VerticalAlignment="{Binding $parent[UserControl].DataContext.CardControlsVAlign}"
+                                                                    Margin="{Binding $parent[UserControl].DataContext.CardPickerMargin}"
+                                                                    ZIndex="4">
+                                                            <colorControls:ColorPickerButton
+                                                                ShowCardPreview="True"
+                                                                HexColor="{Binding Color, Mode=TwoWay}"
+                                                                PreviewImage="{Binding AvatarBitmap}"
+                                                                PreviewName="{Binding Name}"
+                                                                PreviewFallback="{Binding FallbackIcon}"
+                                                                RingEnabled="{Binding AvatarRing, Mode=TwoWay}"
+                                                                PreviewIsGroup="{Binding IsCollective}"
+                                                                BookmarkEnabled="{Binding GroupBookmark, Mode=TwoWay}"
+                                                                ApplyRingToAllCommand="{Binding ApplyRingToAllCommand}"
+                                                                Width="{Binding $parent[UserControl].DataContext.CardColorButtonSize, FallbackValue=20}"
+                                                                Height="{Binding $parent[UserControl].DataContext.CardColorButtonSize, FallbackValue=20}"
+                                                                ToolTip.Tip="{x:Static loc:CharactersStrings.ColorPicker_Tooltip}"/>
+
+                                                            <!-- Настройки карточки: открывает окно по центру модуля
+                                                                 (CardSettingsOverlay) — кольцо, закладка, толщина рамки. -->
+                                                            <Button Classes="card-cfg"
+                                                                    Width="{Binding $parent[UserControl].DataContext.CardColorButtonSize, FallbackValue=20}"
+                                                                    Height="{Binding $parent[UserControl].DataContext.CardColorButtonSize, FallbackValue=20}"
+                                                                    Padding="0" CornerRadius="999"
+                                                                    Background="#88000000" BorderThickness="0"
+                                                                    HorizontalContentAlignment="Center"
+                                                                    VerticalContentAlignment="Center"
+                                                                    Click="OnCardSettingsClick"
+                                                                    ToolTip.Tip="Настройки карточки">
+                                                                <PathIcon Data="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"
+                                                                          Width="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
+                                                                          Height="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
+                                                                          Foreground="White"/>
+                                                            </Button>
+                                                        </StackPanel>
+
+                                                        <StackPanel Classes="card-edit-btns"
+                                                                    Orientation="{Binding $parent[UserControl].DataContext.CardControlsOrientation}"
+                                                                    Spacing="2"
+                                                                    HorizontalAlignment="Right"
+                                                                    VerticalAlignment="{Binding $parent[UserControl].DataContext.CardControlsVAlign}"
+                                                                    Margin="{Binding $parent[UserControl].DataContext.CardEditBtnsMargin}"
+                                                                    ZIndex="4"
+                                                                    IsVisible="{Binding IsShowingNameDisplay}">
+                                                            <Button Command="{Binding RequestDeleteCommand}"
+                                                                    Padding="4,3"
+                                                                    Background="#88000000"
+                                                                    BorderThickness="0" CornerRadius="4"
+                                                                    ToolTip.Tip="{x:Static loc:CharactersStrings.Character_DeleteTooltip}">
+                                                                <Button.Styles>
+                                                                    <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                                                        <Setter Property="Background" Value="#BB660000"/>
+                                                                    </Style>
+                                                                </Button.Styles>
+                                                                <PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                                                                          Width="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
+                                                                          Height="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
+                                                                          Foreground="White"/>
+                                                            </Button>
+                                                            <Button Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
+                                                                    CommandParameter="{Binding Id}"
+                                                                    Padding="4,3"
+                                                                    Background="#88000000"
+                                                                    BorderThickness="0" CornerRadius="4"
+                                                                    ToolTip.Tip="{x:Static loc:CharactersStrings.Character_EditTooltip}">
+                                                                <PathIcon Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+                                                                          Width="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
+                                                                          Height="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
+                                                                          Foreground="White"/>
+                                                            </Button>
                                                         </StackPanel>
 
                                                         </Panel>

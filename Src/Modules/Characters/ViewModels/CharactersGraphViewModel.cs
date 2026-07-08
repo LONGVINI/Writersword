@@ -158,6 +158,29 @@ namespace Writersword.Modules.Characters.ViewModels
             _logger.Debug("Graph refreshed: {Nodes} nodes, {Edges} edges", Nodes.Count, Edges.Count);
         }
 
+        /// <summary>
+        /// Точечное удаление одного узла и его рёбер — без полной пересборки графа.
+        /// Позиции остальных узлов не пересчитываются, чтобы раскладка не дёргалась.
+        /// </summary>
+        public void RemoveCharacterNode(string characterId)
+        {
+            var node = Nodes.FirstOrDefault(n => n.CharacterId == characterId);
+            if (node == null) return;
+
+            if (FocusedCharacterId == characterId)
+                ClearFocus();
+
+            var edgesToRemove = Edges
+                .Where(e => e.Source.CharacterId == characterId || e.Target.CharacterId == characterId)
+                .ToList();
+            foreach (var edge in edgesToRemove)
+                Edges.Remove(edge);
+
+            Nodes.Remove(node);
+
+            _logger.Debug("Graph node removed: {CharacterId}, {Nodes} nodes, {Edges} edges left", characterId, Nodes.Count, Edges.Count);
+        }
+
         private void ResetView() { OffsetX = 0; OffsetY = 0; Scale = 1.0; }
 
         private void ClearFocus()

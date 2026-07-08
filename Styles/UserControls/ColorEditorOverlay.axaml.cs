@@ -52,6 +52,12 @@ namespace Writersword.Styles.UserControls
         private Color _current;
         private double _h, _s, _v;
 
+        // Альфа-канал текущего цвета. Внутренние контролы (квадрат, колесо,
+        // ползунки RGB/HSL/HSV) работают в непрозрачном RGB и альфу сохраняют;
+        // задаётся ползунком A и 8-значным HEX (#AARRGGBB). Полностью
+        // прозрачное значение — это «без цвета».
+        private byte _alpha = 255;
+
         // ── История изменений основного цвета (Ctrl+Z / Ctrl+Y) ──────────
         // Каждое изменение цвета (ползунки RGB/HSL/HSV, точка на квадрате и
         // колесе, полоса оттенка, соты, HEX, поля значений, пипетка, свотчи)
@@ -159,8 +165,9 @@ namespace Writersword.Styles.UserControls
             // переходит под курсор и сразу тянется одним движением.
             foreach (var name in new[]
             {
-                "SliderR", "SliderG", "SliderB",
-                "SlR", "SlG", "SlB",
+                "SliderR", "SliderG", "SliderB", "SliderA",
+                "SliderAHoney", "SliderANoise",
+                "SlR", "SlG", "SlB", "SlA",
                 "SlHslH", "SlHslS", "SlHslL",
                 "SlHsvH", "SlHsvS", "SlHsvV"
             })
@@ -509,7 +516,11 @@ namespace Writersword.Styles.UserControls
             if (_paletteDirty) SaveActiveDocument();
             var result = new ColorEditResult
             {
-                Hex = $"#{_current.R:X2}{_current.G:X2}{_current.B:X2}",
+                // С неполной альфой отдаём 8-значный HEX (#AARRGGBB); альфа 0 —
+                // это «без цвета». Конвертеры кистей проекта понимают альфу.
+                Hex = _current.A < 255
+                    ? $"#{_current.A:X2}{_current.R:X2}{_current.G:X2}{_current.B:X2}"
+                    : $"#{_current.R:X2}{_current.G:X2}{_current.B:X2}",
                 Code = (_gradientEnabled && _gradientStrip is not null)
                     ? _gradientStrip.BuildSpec().ToCode() : null,
                 Ring = _ring,
@@ -563,9 +574,12 @@ namespace Writersword.Styles.UserControls
 
         // ── Применение/отрисовка цвета ────────────────────────────────────
 
-        // Цвет из внешнего источника (RGB, HEX, соты, палитра, пипетка): пересчёт HSV.
+        // Цвет из внешнего источника (RGB, HEX, соты, палитра, пипетка): пересчёт
+        // HSV. Альфа берётся из пришедшего цвета (8-значный HEX и «без цвета»
+        // задают её явно, обычный 6-значный выбор возвращает непрозрачность).
         private void SetColor(Color c)
         {
+            _alpha = c.A;
             var (h, s, v) = RgbToHsv(c);
             if (s > 1e-4) _h = h;
             _s = s;
@@ -573,11 +587,17 @@ namespace Writersword.Styles.UserControls
             Render(c);
         }
 
+        // Сохраняет текущую альфу при выборе из внутренних контролов RGB/HSL/HSV.
+        private Color WithAlpha(Color c) => Color.FromArgb(_alpha, c.R, c.G, c.B);
+
         // Цвет из внутреннего источника (квадрат, оттенок, колесо): HSV не трогаем.
         private void ApplyHsv() => Render(HsvToRgb(_h, _s, _v));
 
         private void Render(Color c)
         {
+            // Итоговый цвет всегда несёт текущую альфу: внутренние источники
+            // отдают непрозрачный RGB, альфа живёт отдельным каналом.
+            c = Color.FromArgb(_alpha, c.R, c.G, c.B);
             PushColorUndo(c);
             _syncing = true;
             try
@@ -588,26 +608,41 @@ namespace Writersword.Styles.UserControls
                 var sw = this.FindControl<Border>("PreviewSwatch");
                 if (sw is not null) sw.Background = new SolidColorBrush(c);
 
-                var hexStr = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+                // HEX: с альфой — 8 значений (#AARRGGBB), непрозрачный — обычные 6.
+                var rgbHex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+                var hexStr = c.A < 255 ? $"#{c.A:X2}{c.R:X2}{c.G:X2}{c.B:X2}" : rgbHex;
                 var hb = this.FindControl<TextBox>("HexBox");
                 if (hb is not null) hb.Text = hexStr;
-                HighlightHoneycomb(hexStr);
+                HighlightHoneycomb(rgbHex);
 
-                // Ползунки RGB (вкладка «Спектр»)
+                // Ползунки RGB + альфа (вкладка «Спектр»)
                 var sr = this.FindControl<Slider>("SliderR"); if (sr is not null) sr.Value = c.R;
                 var sg = this.FindControl<Slider>("SliderG"); if (sg is not null) sg.Value = c.G;
                 var sb = this.FindControl<Slider>("SliderB"); if (sb is not null) sb.Value = c.B;
+                var sa = this.FindControl<Slider>("SliderA"); if (sa is not null) sa.Value = c.A;
+
+                // Альфа-ползунки остальных вкладок (Соты / Колесо / Шум); альфа
+                // вкладки «Значения» (SlA) идёт вместе с остальными ползунками
+                // этой вкладки внутри UpdateGradients.
+                var saHoney = this.FindControl<Slider>("SliderAHoney"); if (saHoney is not null) saHoney.Value = c.A;
+                var saWheel = this.FindControl<Slider>("SliderAWheel"); if (saWheel is not null) saWheel.Value = c.A;
+                var saNoise = this.FindControl<Slider>("SliderANoise"); if (saNoise is not null) saNoise.Value = c.A;
 
                 // Градиентные ползунки (значения + цвет треков).
                 UpdateGradients(c);
                 var lr = this.FindControl<TextBlock>("LabelR"); if (lr is not null) lr.Text = c.R.ToString();
                 var lg = this.FindControl<TextBlock>("LabelG"); if (lg is not null) lg.Text = c.G.ToString();
                 var lb = this.FindControl<TextBlock>("LabelB"); if (lb is not null) lb.Text = c.B.ToString();
+                var la = this.FindControl<TextBlock>("LabelA"); if (la is not null) la.Text = c.A.ToString();
+                var laHoney = this.FindControl<TextBlock>("LabelAHoney"); if (laHoney is not null) laHoney.Text = c.A.ToString();
+                var laWheel = this.FindControl<TextBlock>("LabelAWheel"); if (laWheel is not null) laWheel.Text = c.A.ToString();
+                var laNoise = this.FindControl<TextBlock>("LabelANoise"); if (laNoise is not null) laNoise.Text = c.A.ToString();
 
                 // Текстовые поля (вкладка «Значения»)
                 SetText("TxtR", c.R.ToString(CultureInfo.InvariantCulture));
                 SetText("TxtG", c.G.ToString(CultureInfo.InvariantCulture));
                 SetText("TxtB", c.B.ToString(CultureInfo.InvariantCulture));
+                SetText("TxtA", c.A.ToString(CultureInfo.InvariantCulture));
                 var (hl_h, hl_s, hl_l) = RgbToHsl(c);
                 SetText("TxtHslH", ((int)Math.Round(hl_h)).ToString(CultureInfo.InvariantCulture));
                 SetText("TxtHslS", ((int)Math.Round(hl_s * 100)).ToString(CultureInfo.InvariantCulture));
@@ -892,8 +927,15 @@ namespace Writersword.Styles.UserControls
             UpdateActivePalettePlate();
         }
 
+        // Индекс текущей вкладки пикера (Спектр/Соты/Колесо/Значения/Шум). Нужен,
+        // чтобы UpdateGradients пересобирал тяжёлые треки-градиенты только для
+        // видимой сейчас вкладки, а не для всех сразу на каждое движение мыши.
+        private int _activeTab;
+
         private void SetTab(int index)
         {
+            _activeTab = index;
+
             ShowPanel("SpectrumPanel", index == 0);
             ShowPanel("HoneycombPanel", index == 1);
             ShowPanel("WheelPanel", index == 2);
@@ -908,6 +950,11 @@ namespace Writersword.Styles.UserControls
 
             // Шум генерируем лениво — при первом показе вкладки.
             if (index == 5 && !_noiseBuilt) { _noiseBuilt = true; BuildNoise(); }
+
+            // Треки-градиенты пересобираются только для видимой вкладки (см.
+            // UpdateGradients) — при переключении досчитываем их для только что
+            // показанной, иначе она осталась бы с состоянием от прошлой вкладки.
+            UpdateGradients(_current);
         }
 
         private void ShowPanel(string name, bool visible)
@@ -1681,10 +1728,20 @@ namespace Writersword.Styles.UserControls
             var sr = this.FindControl<Slider>("SliderR");
             var sg = this.FindControl<Slider>("SliderG");
             var sb = this.FindControl<Slider>("SliderB");
-            SetColor(Color.FromRgb(
+            SetColor(WithAlpha(Color.FromRgb(
                 (byte)(sr?.Value ?? 0),
                 (byte)(sg?.Value ?? 0),
-                (byte)(sb?.Value ?? 0)));
+                (byte)(sb?.Value ?? 0))));
+        }
+
+        // Ползунок альфы: меняет только канал прозрачности текущего цвета. Общий
+        // обработчик для альфа-ползунков всех вкладок (Спектр, Соты, Колесо,
+        // Значения, Шум) — читает значение из события, а не по имени контрола.
+        private void OnAlphaSliderChanged(object? sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (_syncing) return;
+            _alpha = (byte)Math.Clamp(e.NewValue, 0, 255);
+            ApplyHsv();
         }
 
         // ── Градиентные ползунки вкладки «Значения» ───────────────────────
@@ -1692,15 +1749,15 @@ namespace Writersword.Styles.UserControls
         private void OnValRgbSlider(object? sender, RangeBaseValueChangedEventArgs e)
         {
             if (_syncing) return;
-            SetColor(Color.FromRgb(
-                (byte)SliderVal("SlR"), (byte)SliderVal("SlG"), (byte)SliderVal("SlB")));
+            SetColor(WithAlpha(Color.FromRgb(
+                (byte)SliderVal("SlR"), (byte)SliderVal("SlG"), (byte)SliderVal("SlB"))));
         }
 
         private void OnValHslSlider(object? sender, RangeBaseValueChangedEventArgs e)
         {
             if (_syncing) return;
-            SetColor(HslToRgb(
-                SliderVal("SlHslH"), SliderVal("SlHslS") / 100.0, SliderVal("SlHslL") / 100.0));
+            SetColor(WithAlpha(HslToRgb(
+                SliderVal("SlHslH"), SliderVal("SlHslS") / 100.0, SliderVal("SlHslL") / 100.0)));
         }
 
         private void OnValHsvSlider(object? sender, RangeBaseValueChangedEventArgs e)
@@ -1766,28 +1823,64 @@ namespace Writersword.Styles.UserControls
         }
 
         // Обновляет значения и градиенты-треки всех градиентных ползунков под текущий цвет.
+        //
+        // Значения (числа) ставятся всегда — они дешёвые. А вот пересборка
+        // треков-градиентов (аллокация LinearGradientBrush + перерисовка) —
+        // самая тяжёлая часть перерисовки при перетаскивании, и она нужна
+        // только той вкладке, которую сейчас видно. Скрытым вкладкам это
+        // не нужно вообще: при перетаскивании, например, SV-квадрата на
+        // «Спектре» треки скрытой вкладки «Значения» больше не пересобираются
+        // на каждый пиксель. При переключении вкладки (SetTab) UpdateGradients
+        // зовётся заново — показанная вкладка сразу получает актуальные треки.
         private void UpdateGradients(Color c)
         {
             var (lh, ls, ll) = RgbToHsl(c);
 
-            SetSliderVal("SlR", c.R); SetSliderVal("SlG", c.G); SetSliderVal("SlB", c.B);
+            SetSliderVal("SlR", c.R); SetSliderVal("SlG", c.G); SetSliderVal("SlB", c.B); SetSliderVal("SlA", c.A);
             SetSliderVal("SlHslH", lh); SetSliderVal("SlHslS", ls * 100); SetSliderVal("SlHslL", ll * 100);
             SetSliderVal("SlHsvH", _h); SetSliderVal("SlHsvS", _s * 100); SetSliderVal("SlHsvV", _v * 100);
 
-            var rGrad = Grad(Color.FromRgb(0, c.G, c.B), Color.FromRgb(255, c.G, c.B));
-            var gGrad = Grad(Color.FromRgb(c.R, 0, c.B), Color.FromRgb(c.R, 255, c.B));
-            var bGrad = Grad(Color.FromRgb(c.R, c.G, 0), Color.FromRgb(c.R, c.G, 255));
+            // Трек альфы: от полностью прозрачного к непрозрачному текущему RGB.
+            // Общий для вкладок с альфа-ползунком — ниже красит только свою.
+            var aGrad = Grad(Color.FromArgb(0, c.R, c.G, c.B), Color.FromArgb(255, c.R, c.G, c.B));
 
-            SetSliderBg("SliderR", rGrad); SetSliderBg("SliderG", gGrad); SetSliderBg("SliderB", bGrad);
-            SetSliderBg("SlR", Clone(rGrad)); SetSliderBg("SlG", Clone(gGrad)); SetSliderBg("SlB", Clone(bGrad));
+            switch (_activeTab)
+            {
+                case 0: // Спектр
+                {
+                    var rGrad = Grad(Color.FromRgb(0, c.G, c.B), Color.FromRgb(255, c.G, c.B));
+                    var gGrad = Grad(Color.FromRgb(c.R, 0, c.B), Color.FromRgb(c.R, 255, c.B));
+                    var bGrad = Grad(Color.FromRgb(c.R, c.G, 0), Color.FromRgb(c.R, c.G, 255));
+                    SetSliderBg("SliderR", rGrad); SetSliderBg("SliderG", gGrad); SetSliderBg("SliderB", bGrad);
+                    SetSliderBg("SliderA", aGrad);
+                    break;
+                }
+                case 1: // Соты
+                    SetSliderBg("SliderAHoney", aGrad);
+                    break;
+                case 2: // Колесо — альфа там простой вертикальный ползунок без трека-градиента.
+                    break;
+                case 3: // Значения
+                {
+                    var rGrad = Grad(Color.FromRgb(0, c.G, c.B), Color.FromRgb(255, c.G, c.B));
+                    var gGrad = Grad(Color.FromRgb(c.R, 0, c.B), Color.FromRgb(c.R, 255, c.B));
+                    var bGrad = Grad(Color.FromRgb(c.R, c.G, 0), Color.FromRgb(c.R, c.G, 255));
+                    SetSliderBg("SlR", rGrad); SetSliderBg("SlG", gGrad); SetSliderBg("SlB", bGrad);
+                    SetSliderBg("SlA", aGrad);
 
-            SetSliderBg("SlHslH", HRainbow());
-            SetSliderBg("SlHslS", Grad(HslToRgb(lh, 0, ll), HslToRgb(lh, 1, ll)));
-            SetSliderBg("SlHslL", Grad(HslToRgb(lh, ls, 0), HslToRgb(lh, ls, 0.5), HslToRgb(lh, ls, 1)));
+                    SetSliderBg("SlHslH", HRainbow());
+                    SetSliderBg("SlHslS", Grad(HslToRgb(lh, 0, ll), HslToRgb(lh, 1, ll)));
+                    SetSliderBg("SlHslL", Grad(HslToRgb(lh, ls, 0), HslToRgb(lh, ls, 0.5), HslToRgb(lh, ls, 1)));
 
-            SetSliderBg("SlHsvH", HRainbow());
-            SetSliderBg("SlHsvS", Grad(HsvToRgb(_h, 0, _v), HsvToRgb(_h, 1, _v)));
-            SetSliderBg("SlHsvV", Grad(HsvToRgb(_h, _s, 0), HsvToRgb(_h, _s, 1)));
+                    SetSliderBg("SlHsvH", HRainbow());
+                    SetSliderBg("SlHsvS", Grad(HsvToRgb(_h, 0, _v), HsvToRgb(_h, 1, _v)));
+                    SetSliderBg("SlHsvV", Grad(HsvToRgb(_h, _s, 0), HsvToRgb(_h, _s, 1)));
+                    break;
+                }
+                case 5: // Шум
+                    SetSliderBg("SliderANoise", aGrad);
+                    break;
+            }
         }
 
         private static LinearGradientBrush Clone(LinearGradientBrush src)
@@ -1834,7 +1927,7 @@ namespace Writersword.Styles.UserControls
             int r = ReadInt("TxtR", 0, 255);
             int g = ReadInt("TxtG", 0, 255);
             int b = ReadInt("TxtB", 0, 255);
-            SetColor(Color.FromRgb((byte)r, (byte)g, (byte)b));
+            SetColor(WithAlpha(Color.FromRgb((byte)r, (byte)g, (byte)b)));
         }
 
         private void OnHslKey(object? sender, KeyEventArgs e) { if (e.Key == Key.Enter) CommitHsl(); }
@@ -1846,7 +1939,7 @@ namespace Writersword.Styles.UserControls
             double h = ReadInt("TxtHslH", 0, 360);
             double s = ReadInt("TxtHslS", 0, 100) / 100.0;
             double l = ReadInt("TxtHslL", 0, 100) / 100.0;
-            SetColor(HslToRgb(h, s, l));
+            SetColor(WithAlpha(HslToRgb(h, s, l)));
         }
 
         private void OnHsvKey(object? sender, KeyEventArgs e) { if (e.Key == Key.Enter) CommitHsv(); }
@@ -1858,6 +1951,17 @@ namespace Writersword.Styles.UserControls
             _h = ReadInt("TxtHsvH", 0, 360);
             _s = ReadInt("TxtHsvS", 0, 100) / 100.0;
             _v = ReadInt("TxtHsvV", 0, 100) / 100.0;
+            ApplyHsv();
+        }
+
+        // Числовое поле альфы вкладки «Значения» (TxtA рядом с SlA).
+        private void OnAlphaKey(object? sender, KeyEventArgs e) { if (e.Key == Key.Enter) CommitAlpha(); }
+        private void OnAlphaCommit(object? sender, RoutedEventArgs e) => CommitAlpha();
+
+        private void CommitAlpha()
+        {
+            if (_syncing) return;
+            _alpha = (byte)ReadInt("TxtA", 0, 255);
             ApplyHsv();
         }
 

@@ -12,6 +12,7 @@ using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Inline;
 using Writersword.Modules.TextEditor.Commands;
 using Writersword.Modules.TextEditor.ViewModels;
+using Writersword.Modules.TextEditor.ViewModels.Blocks;
 
 namespace Writersword.Modules.TextEditor.Document
 {
@@ -137,8 +138,10 @@ namespace Writersword.Modules.TextEditor.Document
             float yPt = (float)(pt.Y / zoom * PxToPt);
 
             // ── Проверяем ручки таблицы ПЕРВЫМИ ─────────────────────────
+            // В read-only (режим сравнения) ручки не работают: ширины колонок
+            // и позиция таблицы — часть данных документа.
             var handleHit = HitTestTableHandle(xPt, yPt);
-            if (handleHit.Type != TableHandleType.None)
+            if (handleHit.Type != TableHandleType.None && !IsEditingBlocked)
             {
                 _tableDragMode = (TableDragMode)(int)handleHit.Type;
                 _tableDragEntryIdx = handleHit.EntryIdx;
@@ -257,6 +260,40 @@ namespace Writersword.Modules.TextEditor.Document
             _cellFlowRanges.Clear();
             _cellFlowFull.Clear();
 
+            // Двойной клик выделяет слово под курсором, тройной — абзац (как в Word).
+            // Выделение фиксируется сразу: _isSelecting сбрасывается, чтобы движение мыши
+            // после клика не схлопывало его обратно в каретку.
+            if (e.ClickCount >= 2 && pi >= 0 && pi < _layouts.Count)
+            {
+                string clickText = GetVmAt(pi)?.PlainText ?? string.Empty;
+                if (e.ClickCount == 2)
+                {
+                    var (wordStart, wordEnd) = WordBoundsAt(clickText, ci);
+                    if (wordEnd > wordStart)
+                    {
+                        _selStartPara = pi; _selStartChar = wordStart;
+                        _selEndPara = pi; _selEndChar = wordEnd;
+                        _caretPara = pi; _caretChar = wordEnd;
+                        _isSelecting = false;
+                    }
+                }
+                else
+                {
+                    // Абзац может быть разрезан на несколько слайсов (перенос по страницам) —
+                    // расширяем диапазон на соседние слайсы того же параграфа.
+                    var clickVm = GetVmAt(pi);
+                    int firstSlice = pi, lastSlice = pi;
+                    while (firstSlice > 0 && ReferenceEquals(_layouts[firstSlice - 1].Vm, clickVm))
+                        firstSlice--;
+                    while (lastSlice + 1 < _layouts.Count && ReferenceEquals(_layouts[lastSlice + 1].Vm, clickVm))
+                        lastSlice++;
+                    _selStartPara = firstSlice; _selStartChar = 0;
+                    _selEndPara = lastSlice; _selEndChar = clickText.Length;
+                    _caretPara = lastSlice; _caretChar = clickText.Length;
+                    _isSelecting = false;
+                }
+            }
+
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
 
@@ -267,7 +304,14 @@ namespace Writersword.Modules.TextEditor.Document
             if (!nowInCell)
             {
                 var pvm = GetVmAt(_caretPara);
-                if (pvm is not null) DocVm?.SetActiveParagraph(pvm);
+                if (pvm is not null)
+                {
+                    // Каретка без выделения: передаём её позицию в pvm, чтобы контекст
+                    // риббона читал свойства рана под кареткой, а не первого рана абзаца.
+                    pvm.SelectionStart = _caretChar;
+                    pvm.SelectionEnd = _caretChar;
+                    DocVm?.SetActiveParagraph(pvm);
+                }
             }
             else
             {
@@ -278,6 +322,50 @@ namespace Writersword.Modules.TextEditor.Document
             UpdateSelectionContext();
             ResetCaretNoScroll(); InvalidateFull();
             e.Handled = true;
+        }
+
+        // Границы «слова» вокруг позиции offset для выделения двойным кликом.
+        // Буквы, цифры и подчёркивание образуют слово; группа пробелов и группа
+        // прочих символов (пунктуация) выделяются как самостоятельные блоки.
+        private static (int start, int end) WordBoundsAt(string text, int offset)
+        {
+            if (string.IsNullOrEmpty(text)) return (0, 0);
+            int len = text.Length;
+            int i = Math.Clamp(offset, 0, len);
+            if (i >= len) i = len - 1;
+
+            // Каретка стоит между символами: если справа не «словесный» символ,
+            // а слева — словесный, двигаемся к слову слева (клик у правого края слова).
+            if (i > 0 && !IsWordChar(text[i]) && IsWordChar(text[i - 1])) i--;
+
+            Func<char, bool> sameGroup;
+            char c = text[i];
+            if (IsWordChar(c)) sameGroup = IsWordChar;
+            else if (char.IsWhiteSpace(c)) sameGroup = char.IsWhiteSpace;
+            else sameGroup = ch => !IsWordChar(ch) && !char.IsWhiteSpace(ch);
+
+            int start = i, end = i + 1;
+            while (start > 0 && sameGroup(text[start - 1])) start--;
+            while (end < len && sameGroup(text[end])) end++;
+            return (start, end);
+        }
+
+        private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+
+        // Слово под кареткой для команд без выделения (смена регистра как в Word).
+        // Возвращает параграф каретки и границы слова [From, To); null — если каретка
+        // вне текста, на пустом параграфе или на группе пробелов.
+        private (ParagraphViewModel Pvm, int From, int To)? GetCaretWordRange()
+        {
+            var pvm = GetVmAt(_caretPara);
+            if (pvm is null) return null;
+            string text = pvm.PlainText ?? string.Empty;
+            if (text.Length == 0) return null;
+
+            var (wordStart, wordEnd) = WordBoundsAt(text, _caretChar);
+            if (wordEnd <= wordStart) return null;
+            if (char.IsWhiteSpace(text[wordStart])) return null;
+            return (pvm, wordStart, wordEnd);
         }
 
         protected override void OnPointerMoved(PointerEventArgs e)
@@ -323,7 +411,7 @@ namespace Writersword.Modules.TextEditor.Document
                     {
                         _activeTableBlock.LeftIndentPt = _tableDragStartVal + deltaPt;
                         if (DocVm is not null) DocVm.ActiveTable = _activeTableBlock;
-                        _cellLayoutCache.Clear();
+                        InvalidateCellLayoutCaches();
                         RebuildLayouts();
                         NotifyCaretEnteredTableCallback();
                         InvalidateFull();
@@ -342,7 +430,7 @@ namespace Writersword.Modules.TextEditor.Document
                         _activeTableBlock.Columns[_tableDragColIndex].WidthType = TableColumnWidthType.Fixed;
                         _activeTableBlock.Columns[_tableDragColIndex].WidthValue = newMm;
                         if (DocVm is not null) DocVm.ActiveTable = _activeTableBlock;
-                        _cellLayoutCache.Clear();
+                        InvalidateCellLayoutCaches();
                         RebuildLayouts();
                         NotifyCaretEnteredTableCallback();
                         InvalidateFull();
@@ -687,10 +775,16 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         // ── Keyboard ─────────────────────────────────────────────────────
+        // Редактирование заблокировано: документ в режиме сравнения (read-only).
+        // Навигация, выделение, копирование и прокрутка остаются доступными.
+        private bool IsEditingBlocked => DocVm?.IsReadOnly == true;
+
         protected override void OnTextInput(TextInputEventArgs e)
         {
             base.OnTextInput(e);
+            RecoverFromStuckTransition();
             if (string.IsNullOrEmpty(e.Text)) return;
+            if (IsEditingBlocked) { e.Handled = true; return; }
             _caretLineHint = -1;
 
             if (_isCellRangeSelecting)
@@ -739,6 +833,7 @@ namespace Writersword.Modules.TextEditor.Document
         protected override void OnKeyDown(KeyEventArgs e)
         {
             base.OnKeyDown(e);
+            RecoverFromStuckTransition();
 
             // Любой ввод завершает отложенный зум-жест: раскладка пересобирается сразу, поэтому
             // последующие правки/undo обновляют канвас корректно (не упираются в _zooming).
@@ -884,7 +979,7 @@ namespace Writersword.Modules.TextEditor.Document
                     {
                         if (_activeTableBlock is null) return;
                         _activeTableBlock.LeftIndentPt = leftIndentPt; // без ограничений
-                        _cellLayoutCache.Clear();
+                        InvalidateCellLayoutCaches();
                         RebuildLayouts();
                         NotifyCaretEnteredTableCallback();
                         InvalidateFull();
@@ -1092,6 +1187,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void InsertText(string text)
         {
+            if (IsEditingBlocked) return;
             if (IsInCell(_caretPara))
             {
                 CellInsertText(text);
@@ -1160,6 +1256,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void CellInsertText(string text)
         {
+            if (IsEditingBlocked) return;
             var cell = GetCurrentCell();
             if (cell is null) return;
 
@@ -1181,6 +1278,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteDeleteBackSmart()
         {
+            if (IsEditingBlocked) return;
             _caretLineHint = -1;
 
             if (_isCellRangeSelecting)
@@ -1206,6 +1304,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteDeleteForwardSmart()
         {
+            if (IsEditingBlocked) return;
             _caretLineHint = -1;
 
             if (_isCellRangeSelecting)
@@ -1231,6 +1330,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteNewParagraphSmart()
         {
+            if (IsEditingBlocked) return;
             if (IsInCell(_caretPara))
             {
                 CellNewParagraph();
@@ -1361,7 +1461,7 @@ namespace Writersword.Modules.TextEditor.Document
                     targetBlock = cell.Cell.Paragraphs[cell.Cell.Paragraphs.Count - 1];
             }
 
-            _cellLayoutCache.Clear();
+            InvalidateCellLayoutCaches();
             _cellVmCache.Clear();
             double oldCanvasH = _canvasHeight;
             RebuildLayouts();
@@ -1641,7 +1741,8 @@ namespace Writersword.Modules.TextEditor.Document
             // (в т.ч. в предыдущую ячейку или абзац перед таблицей) — как в Word.
 
             SnapCaretToCorrectSlice();
-            if (!extend) { SyncSel(); FireCaretFormatContext(); } else ExtendSel();
+            if (!extend) { SyncSel(); UpdateSelectionContext(); FireCaretFormatContext(); }
+            else { ExtendSel(); UpdateSelectionContext(); }
             UpdatePreferredX();
             ResetCaret(); InvalidateFull();
         }
@@ -1669,7 +1770,8 @@ namespace Writersword.Modules.TextEditor.Document
             if (wrapLine >= 0) _caretLineHint = wrapLine;
 
             SnapCaretToCorrectSlice();
-            if (!extend) { SyncSel(); FireCaretFormatContext(); } else ExtendSel();
+            if (!extend) { SyncSel(); UpdateSelectionContext(); FireCaretFormatContext(); }
+            else { ExtendSel(); UpdateSelectionContext(); }
             UpdatePreferredX();
             ResetCaret(); InvalidateFull();
         }
@@ -1699,7 +1801,8 @@ namespace Writersword.Modules.TextEditor.Document
             _caretLineHint = -1;
             MoveCaretVertically(-1);
             SnapCaretToCorrectSlice();
-            if (!extend) { SyncSel(); FireCaretFormatContext(); } else ExtendSel();
+            if (!extend) { SyncSel(); UpdateSelectionContext(); FireCaretFormatContext(); }
+            else { ExtendSel(); UpdateSelectionContext(); }
             ResetCaret(); InvalidateFull();
         }
 
@@ -1708,7 +1811,8 @@ namespace Writersword.Modules.TextEditor.Document
             _caretLineHint = -1;
             MoveCaretVertically(+1);
             SnapCaretToCorrectSlice();
-            if (!extend) { SyncSel(); FireCaretFormatContext(); } else ExtendSel();
+            if (!extend) { SyncSel(); UpdateSelectionContext(); FireCaretFormatContext(); }
+            else { ExtendSel(); UpdateSelectionContext(); }
             ResetCaret(); InvalidateFull();
         }
 
@@ -1727,7 +1831,8 @@ namespace Writersword.Modules.TextEditor.Document
                 else _caretChar = 0;
             }
             SnapCaretToCorrectSlice();
-            if (!extend) { SyncSel(); FireCaretFormatContext(); } else ExtendSel();
+            if (!extend) { SyncSel(); UpdateSelectionContext(); FireCaretFormatContext(); }
+            else { ExtendSel(); UpdateSelectionContext(); }
             UpdatePreferredX();
             ResetCaret(); InvalidateFull();
         }
@@ -1752,7 +1857,8 @@ namespace Writersword.Modules.TextEditor.Document
                 else _caretChar = len;
             }
             SnapCaretToCorrectSlice();
-            if (!extend) { SyncSel(); FireCaretFormatContext(); } else ExtendSel();
+            if (!extend) { SyncSel(); UpdateSelectionContext(); FireCaretFormatContext(); }
+            else { ExtendSel(); UpdateSelectionContext(); }
             UpdatePreferredX();
             ResetCaret(); InvalidateFull();
         }
@@ -1766,6 +1872,7 @@ namespace Writersword.Modules.TextEditor.Document
             _caretPara = _selEndPara; _caretChar = _selEndChar;
             SnapCaretToCorrectSlice();
             UpdatePreferredX();
+            UpdateSelectionContext();
             InvalidateFull();
         }
 
@@ -1775,6 +1882,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteUndo()
         {
+            if (IsEditingBlocked) return;
             // Откатываем строго в хронологическом порядке: какой стек трогать, решает _undoOrder.
             if (_undoOrder.Last is not null)
             {
@@ -1794,6 +1902,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         public void ExecuteRedo()
         {
+            if (IsEditingBlocked) return;
             if (_redoOrder.Count > 0)
             {
                 var src = _redoOrder.Pop();
@@ -1821,7 +1930,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (UndoStack is null || !UndoStack.CanUndo) return;
             _logger.Debug("[UNDO] ExecuteUndo (snapshot): '{D}'", UndoStack.UndoDescription);
-            _cellLayoutCache.Clear();
+            InvalidateCellLayoutCaches();
             _cellVmCache.Clear();
             UndoStack.Undo();
             RebuildLayouts();
@@ -1843,7 +1952,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (UndoStack is null || !UndoStack.CanRedo) return;
             _logger.Debug("[UNDO] ExecuteRedo (snapshot): '{D}'", UndoStack.RedoDescription);
-            _cellLayoutCache.Clear();
+            InvalidateCellLayoutCaches();
             _cellVmCache.Clear();
             UndoStack.Redo();
             RebuildLayouts();
@@ -1952,7 +2061,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             CommitEdit();
             _cellVmCache.Clear();
-            _cellLayoutCache.Clear();
+            InvalidateCellLayoutCaches();
             DocVm.RebuildParagraphViewModelsPublic();
             _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
             _caretChar = 0;

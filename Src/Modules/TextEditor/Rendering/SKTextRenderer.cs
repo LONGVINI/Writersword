@@ -1365,12 +1365,22 @@ namespace Writersword.Modules.TextEditor.Rendering
             return last;
         }
 
+        // Запас заливки справа в pt: перекрывает вынос рисунка глифа за его advance-ширину,
+        // иначе последняя буква закрашенного фрагмента остаётся закрытой не целиком.
+        // Внутри сплошной заливки запас перекрывается прямоугольником следующего сегмента.
+        // Публичная: тем же запасом пользуется отрисовка выделения в DocumentCanvas.
+        public const float HighlightRightOverhangPt = 1.5f;
+
         // Ширина заливки сегмента с обрезкой хвостовых пробелов в конце визуальной строки:
         // сегменты целиком из хвостовых пробелов не заливаются, в последнем содержательном
         // сегменте хвостовые пробелы отсекаются. Для внутренних сегментов — полная ширина.
+        // Обрезка действует только на строках с мягким переносом: на последней строке
+        // абзаца хвостовые пробелы никуда не переносятся, стоят в пределах строки и
+        // закрашиваются целиком (как в Word).
         private static float SegHighlightWidth(SKLineLayout line, int segIndex, int lastContentSeg)
         {
             var seg = line.Segments[segIndex];
+            if (line.IsLastLine) return seg.Width;
             if (lastContentSeg < 0) return seg.Width;
             if (segIndex > lastContentSeg) return 0f;
             if (segIndex < lastContentSeg) return seg.Width;
@@ -1786,11 +1796,27 @@ namespace Writersword.Modules.TextEditor.Rendering
                     // вниз для подстрочного). Для обычного текста BaselineShiftPt = 0.
                     float segBaseY = baseY - seg.BaselineShiftPt;
 
+                    // Число пробелов в сегменте: используется и для растяжки заливки,
+                    // и для накопления сдвига последующих сегментов при выравнивании по ширине.
+                    int segSpaces = 0;
+                    foreach (var c in seg.Text)
+                        if (c == ' ' || c == '\t') segSpaces++;
+
                     // Задник за текстом: плоский цвет либо градиент по прямоугольнику сегмента.
                     // Ширина обрезается по хвостовым пробелам в конце строки — иначе заливка
                     // тянется до правого поля и «растёт» при вводе пробелов.
                     bool hlGradient = IsGradientCode(seg.HighlightCode);
                     float hlWidth = SegHighlightWidth(line, segIdx, lastContentSeg);
+                    // При выравнивании по ширине межсловные пробелы визуально шире на добавку
+                    // растяжки — расширяем заливку на неё, иначе между словами остаются
+                    // незакрашенные щели. Хвостовые пробелы строки (segIdx >= lastContentSeg)
+                    // по-прежнему не заливаются.
+                    if (doJustify && segSpaces > 0 && segIdx < lastContentSeg)
+                        hlWidth += segSpaces * extraPerSpace;
+                    // Запас справа только для реально рисуемой заливки (hlWidth > 0):
+                    // хвостовые пробелы с нулевой шириной заливки не появляются.
+                    if (hlWidth > 0f)
+                        hlWidth += HighlightRightOverhangPt;
                     if (hlWidth > 0f && (seg.HighlightColor != SKColors.Transparent || hlGradient))
                     {
                         using var hlPaint = new SKPaint { Color = seg.HighlightColor };
@@ -1860,12 +1886,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     // После сегмента сдвигаем следующие на накопленную добавку по его пробелам —
                     // так растягиваются промежутки между словами при выравнивании по ширине.
                     if (doJustify)
-                    {
-                        int segSpaces = 0;
-                        foreach (var c in seg.Text)
-                            if (c == ' ' || c == '\t') segSpaces++;
                         justifyShift += segSpaces * extraPerSpace;
-                    }
                 }
             }
         }

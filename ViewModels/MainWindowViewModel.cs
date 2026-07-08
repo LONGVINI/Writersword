@@ -218,23 +218,16 @@ namespace Writersword.ViewModels
                     }
                 }
 
-                // Инициализация прошла успешно — теперь деактивируем предыдущую вкладку.
+                // Инициализация прошла успешно — мягко приостанавливаем предыдущую вкладку.
+                // Модули и layout остаются живыми: возврат на вкладку мгновенный, без
+                // пересоздания модулей и повторной десериализации (для больших документов
+                // это были секунды заморозки UI). Полная деактивация (с уничтожением
+                // модулей) происходит только при закрытии вкладки.
                 if (previousTab != null && previousTab != tab && previousTab.Workspace != null)
                 {
-                    _logger.LogDebug("Deactivating previous tab: {Title}", previousTab.Title);
-                    previousTab.Workspace.Deactivate();
-                    _ = System.Threading.Tasks.Task.Run(() =>
-                    {
-                        // blocking: true — ждём завершения каждого прохода.
-                        // Выполняется в Task.Run, UI не блокируется.
-                        // Порядок важен: сначала собираем объекты, затем ждём
-                        // финализаторов (SKBitmap, SKFont, SKTypeface),
-                        // затем собираем то что финализаторы освободили.
-                        GC.Collect(2, GCCollectionMode.Forced, blocking: true);
-                        GC.WaitForPendingFinalizers();
-                        GC.Collect(2, GCCollectionMode.Forced, blocking: true);
-                    });
-                    _logger.LogDebug("Previous tab deactivated");
+                    _logger.LogDebug("Suspending previous tab: {Title}", previousTab.Title);
+                    previousTab.Workspace.Suspend();
+                    _logger.LogDebug("Previous tab suspended");
                 }
 
                 DockLayout = null;

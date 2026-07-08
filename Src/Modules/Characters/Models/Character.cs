@@ -54,6 +54,14 @@ namespace Writersword.Modules.Characters.Models
         // персонаж»). По умолчанию включена; переключается в редакторе цвета.
         public bool GroupBookmark { get; set; } = true;
 
+        // Толщина цветной рамки карточки в списке. Настраивается из окна
+        // настроек карточки (шестерёнка под пикером цвета).
+        public double FrameThickness { get; set; } = 2;
+
+        // Вид аватара на карточке: false — кружок, true — «полоска» (картинка
+        // или заливка цветом на всю верхнюю зону карточки).
+        public bool AvatarStrip { get; set; } = false;
+
         // ── Привязка к локациям (заглушки до модуля Locations) ───────────
         public string? BirthLocationId { get; set; }
         public string? CurrentLocationId { get; set; }

@@ -198,7 +198,9 @@ namespace Writersword.Modules.Characters.Services
         // драйверов. Уменьшаем до безопасного размера перед отдачей в UI.
         private const int AvatarMaxSide = 512;
 
-        public Bitmap? LoadBitmap(string? avatarRef)
+        public Bitmap? LoadBitmap(string? avatarRef) => LoadBitmap(avatarRef, AvatarMaxSide);
+
+        public Bitmap? LoadBitmap(string? avatarRef, int maxSide)
         {
             var bytes = LoadAvatarBytes(avatarRef);
             if (bytes == null) return null;
@@ -209,10 +211,10 @@ namespace Writersword.Modules.Characters.Services
 
                 var w = bitmap.PixelSize.Width;
                 var h = bitmap.PixelSize.Height;
-                if (w <= AvatarMaxSide && h <= AvatarMaxSide)
+                if (w <= maxSide && h <= maxSide)
                     return bitmap;
 
-                var scale = (double)AvatarMaxSide / Math.Max(w, h);
+                var scale = (double)maxSide / Math.Max(w, h);
                 var target = new Avalonia.PixelSize(
                     Math.Max(1, (int)Math.Round(w * scale)),
                     Math.Max(1, (int)Math.Round(h * scale)));

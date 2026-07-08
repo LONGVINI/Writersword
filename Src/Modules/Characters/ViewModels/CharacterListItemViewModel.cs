@@ -77,6 +77,55 @@ namespace Writersword.Modules.Characters.ViewModels
 
         public bool ShowGroupBookmark => IsCollective && _groupBookmark;
 
+        // Толщина цветной рамки карточки. Хранится в модели персонажа; карточка
+        // биндится к CardBorderThickness (готовый Thickness для Border).
+        private double _frameThickness = 2;
+        public double FrameThickness
+        {
+            get => _frameThickness;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _frameThickness, value);
+                this.RaisePropertyChanged(nameof(CardBorderThickness));
+                OnFrameThicknessChanged?.Invoke(Id, value);
+            }
+        }
+
+        public Avalonia.Thickness CardBorderThickness => new(_frameThickness);
+
+        // Вид аватара: кружок (по умолчанию) или «полоска» — картинка/заливка
+        // на всю верхнюю зону карточки. Видимость вариантов — через Show*-свойства,
+        // чтобы разметка не собирала условия из нескольких биндингов.
+        private bool _avatarStrip;
+        public bool AvatarStrip
+        {
+            get => _avatarStrip;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _avatarStrip, value);
+                RaiseAvatarViewProps();
+                OnAvatarStripChanged?.Invoke(Id, value);
+            }
+        }
+
+        public bool ShowAvatarStrip => _avatarStrip;
+        public bool ShowCircleNoPhoto => !_avatarStrip && string.IsNullOrEmpty(_avatarPath);
+        public bool ShowCirclePhoto => !_avatarStrip && !string.IsNullOrEmpty(_avatarPath);
+
+        private void RaiseAvatarViewProps()
+        {
+            this.RaisePropertyChanged(nameof(ShowAvatarStrip));
+            this.RaisePropertyChanged(nameof(ShowCircleNoPhoto));
+            this.RaisePropertyChanged(nameof(ShowCirclePhoto));
+        }
+
+        // Размер декодирования аватара для карточки списка. Кружок ~48px, полоска и
+        // крупные плитки — до ~150px логических; с запасом на high-DPI хватает 256.
+        // Полноразмерное 512 (AvatarMaxSide в сервисе) остаётся редактору/пикеру, где
+        // картинка крупная. Меньший размер = вчетверо меньше памяти и текстуры GPU на
+        // каждую карточку из сотен.
+        private const int CardAvatarDecodeSize = 256;
+
         // Ленивая загрузка — битмап создаётся только при первом обращении.
         public Bitmap? AvatarBitmap
         {
@@ -86,7 +135,7 @@ namespace Writersword.Modules.Characters.ViewModels
                 {
                     _bitmapLoaded = true;
                     if (!string.IsNullOrEmpty(_avatarPath) && _avatarService != null)
-                        try { _avatarBitmap = _avatarService.LoadBitmap(_avatarPath); }
+                        try { _avatarBitmap = _avatarService.LoadBitmap(_avatarPath, CardAvatarDecodeSize); }
                         catch { }
                 }
                 return _avatarBitmap;
@@ -171,6 +220,8 @@ namespace Writersword.Modules.Characters.ViewModels
         public Action<string, string>? OnColorChanged { get; set; }   // (id, newColor)
         public Action<string, bool>? OnAvatarRingChanged { get; set; } // (id, ringEnabled)
         public Action<string, bool>? OnGroupBookmarkChanged { get; set; } // (id, bookmarkEnabled)
+        public Action<string, double>? OnFrameThicknessChanged { get; set; } // (id, толщина рамки)
+        public Action<string, bool>? OnAvatarStripChanged { get; set; } // (id, полоска вместо кружка)
         public Action<bool>? OnApplyRingToAll { get; set; }            // (ringEnabled — ко всем персонажам)
 
         // êîìàíäû  âûïîëíÿþòñÿ èç AXAML íàïðÿìóþ ÷åðåç {Binding}
@@ -200,6 +251,8 @@ namespace Writersword.Modules.Characters.ViewModels
             _color = character.Color;
             _avatarRing = character.AvatarRing;
             _groupBookmark = character.GroupBookmark;
+            _frameThickness = character.FrameThickness;
+            _avatarStrip = character.AvatarStrip;
             FallbackIcon = character.FallbackIcon;
             IsCollective = character.IsCollective;
             RelationshipsCount = relationshipsCount;
@@ -277,6 +330,7 @@ namespace Writersword.Modules.Characters.ViewModels
             _avatarPath = avatarRef;
             this.RaisePropertyChanged(nameof(AvatarPath));
             this.RaisePropertyChanged(nameof(AvatarBitmap));
+            RaiseAvatarViewProps();   // видимость кружка с фото/без зависит от пути
             OnAvatarChanged?.Invoke(Id, avatarRef);
         }
 

@@ -225,7 +225,7 @@ namespace Writersword.Modules.TextEditor.Document
                     CommitEdit();
                     if (applied > 0)
                     {
-                        _cellLayoutCache.Clear();
+                        InvalidateCellLayoutCaches();
                         RebuildLayouts();
                         InvalidateFull();
                     }

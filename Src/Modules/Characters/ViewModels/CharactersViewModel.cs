@@ -222,6 +222,51 @@ namespace Writersword.Modules.Characters.ViewModels
         // Количество колонок — используется для расчётов drag.
         public int CardsPerRow => _cardsPerRow;
 
+        // ── Горизонтальная строка списка ──────────────────────────────────
+        // В режиме List карточка раскладывается строкой: кружок слева, имя
+        // справа (для сплита с другими модулями). Если контейнер слишком узкий
+        // и строка сжимается — возвращаемся к обычной вертикальной карточке.
+        private const double ListRowThreshold = 340.0;
+        public bool UseListRowLayout => IsListMode && _containerWidth >= ListRowThreshold;
+
+        // Параметры раскладки карточки, зависящие от строки/плитки: докинг
+        // цветной зоны, её ширина, выравнивание и ограничение блока имени.
+        public Avalonia.Controls.Dock CardZoneDock =>
+            UseListRowLayout ? Avalonia.Controls.Dock.Left : Avalonia.Controls.Dock.Top;
+        public double CardZoneWidth => UseListRowLayout ? 64.0 : double.NaN;
+        public Avalonia.Media.TextAlignment CardNameAlignment =>
+            UseListRowLayout ? Avalonia.Media.TextAlignment.Left : Avalonia.Media.TextAlignment.Center;
+        public Avalonia.Layout.HorizontalAlignment CardNamePanelAlignment =>
+            UseListRowLayout ? Avalonia.Layout.HorizontalAlignment.Left
+                             : Avalonia.Layout.HorizontalAlignment.Stretch;
+        public double CardNameMaxWidth => UseListRowLayout ? 320.0 : double.PositiveInfinity;
+        // Минимум блока имени нужен только строке (поля ввода имени не должны
+        // схлопываться); в плитке минимум задаёт сама сетка.
+        public double CardNameMinWidth => UseListRowLayout ? 160.0 : 0.0;
+
+        // Кнопки карточки (пикер, шестерёнка, правка/удаление): в плитке — углы
+        // цветной зоны, вертикально; в строке — правый край строки, горизонтально
+        // и по центру высоты, чтобы не наезжать на аватар слева.
+        public Avalonia.Layout.Orientation CardControlsOrientation =>
+            UseListRowLayout ? Avalonia.Layout.Orientation.Horizontal
+                             : Avalonia.Layout.Orientation.Vertical;
+        public Avalonia.Layout.VerticalAlignment CardControlsVAlign =>
+            UseListRowLayout ? Avalonia.Layout.VerticalAlignment.Center
+                             : Avalonia.Layout.VerticalAlignment.Top;
+        public Avalonia.Layout.HorizontalAlignment CardPickerHAlign =>
+            UseListRowLayout ? Avalonia.Layout.HorizontalAlignment.Right
+                             : Avalonia.Layout.HorizontalAlignment.Left;
+        public Avalonia.Thickness CardPickerMargin =>
+            UseListRowLayout ? new Avalonia.Thickness(0, 0, 76, 0) : new Avalonia.Thickness(5);
+        public Avalonia.Thickness CardEditBtnsMargin =>
+            UseListRowLayout ? new Avalonia.Thickness(0, 0, 10, 0) : new Avalonia.Thickness(4);
+
+        // Скругление «полоски»-аватара повторяет углы карточки: в плитке зона
+        // сверху, в строке списка — слева.
+        public Avalonia.CornerRadius CardZoneCornerRadius =>
+            UseListRowLayout ? new Avalonia.CornerRadius(8, 0, 0, 8)
+                             : new Avalonia.CornerRadius(8, 8, 0, 0);
+
         // Минимальная ширина слота (карточка + margin 6px с каждой стороны).
         // Передаётся в UniformGridLayout.MinItemWidth из code-behind.
         // UniformGridLayout сам вычислит число колонок и растянет карточки через ItemsStretch.Fill.
@@ -308,6 +353,19 @@ namespace Writersword.Modules.Characters.ViewModels
             this.RaisePropertyChanged(nameof(CardColorButtonSize));
             this.RaisePropertyChanged(nameof(CardsPerRow));
             this.RaisePropertyChanged(nameof(CardMinWidth));
+            this.RaisePropertyChanged(nameof(UseListRowLayout));
+            this.RaisePropertyChanged(nameof(CardZoneDock));
+            this.RaisePropertyChanged(nameof(CardZoneWidth));
+            this.RaisePropertyChanged(nameof(CardNameAlignment));
+            this.RaisePropertyChanged(nameof(CardNamePanelAlignment));
+            this.RaisePropertyChanged(nameof(CardNameMaxWidth));
+            this.RaisePropertyChanged(nameof(CardNameMinWidth));
+            this.RaisePropertyChanged(nameof(CardControlsOrientation));
+            this.RaisePropertyChanged(nameof(CardControlsVAlign));
+            this.RaisePropertyChanged(nameof(CardPickerHAlign));
+            this.RaisePropertyChanged(nameof(CardPickerMargin));
+            this.RaisePropertyChanged(nameof(CardEditBtnsMargin));
+            this.RaisePropertyChanged(nameof(CardZoneCornerRadius));
         }
 
         // ── карточка персонажа ─────────────────────────────────────────────
@@ -670,7 +728,48 @@ namespace Writersword.Modules.Characters.ViewModels
                 IsCardOpen = false;
                 SelectedCharacterCard = null;
             }
-            RefreshAll();
+
+            RefreshTags();
+            RemoveCharacterFromFilteredList(characterId);
+            RemoveCharacterFromFolderViewModels(characterId);
+            GraphViewModel.RemoveCharacterNode(characterId);
+        }
+
+        /// <summary>
+        /// Точечное удаление одной карточки из отфильтрованного списка — без полной
+        /// пересборки FilteredCharacters. ApplyFilters создаёт новый
+        /// CharacterListItemViewModel для каждого персонажа в списке, что при
+        /// сотнях персонажей даёт заметный фриз при удалении одной карточки.
+        /// Если карточки нет в списке (отфильтрована поиском/тегом), ничего не делает.
+        /// </summary>
+        private void RemoveCharacterFromFilteredList(string characterId)
+        {
+            var item = FilteredCharacters.FirstOrDefault(c => c.Id == characterId);
+            if (item is not null)
+                FilteredCharacters.Remove(item);
+        }
+
+        /// <summary>
+        /// Точечное удаление одной карточки из Folders (что реально рисует список
+        /// в модуле) — без RefreshFolderViewModelsAsync. Тот метод делает
+        /// Folders.Clear() и заново, батчами, создаёт CharacterFolderViewModel и
+        /// CharacterListItemViewModel для ВСЕХ папок и ВСЕХ персонажей — то есть
+        /// удаление одной карточки полностью пересобирало весь список. Модель
+        /// (_folders[].CharacterIds) уже обновлена в DeleteCharacterCore выше,
+        /// здесь только убираем соответствующий элемент из уже существующих
+        /// ViewModel-папок.
+        /// </summary>
+        private void RemoveCharacterFromFolderViewModels(string characterId)
+        {
+            foreach (var folderVm in Folders)
+            {
+                var item = folderVm.Characters.FirstOrDefault(c => c.Id == characterId);
+                if (item is not null)
+                {
+                    folderVm.Characters.Remove(item);
+                    break;
+                }
+            }
         }
 
         public void RestoreFromTrash(string characterId)
@@ -848,7 +947,9 @@ namespace Writersword.Modules.Characters.ViewModels
                             // и кольцо и выглядит чужой.
                             IsCollective = item.IsCollective,
                             GroupBookmark = item.GroupBookmark,
-                            AvatarRing = item.AvatarRing
+                            AvatarRing = item.AvatarRing,
+                            FrameThickness = item.FrameThickness,
+                            AvatarStrip = item.AvatarStrip
                         },
                         0, false, AvatarService)
                     { IsPlaceholder = true, IsDragging = true };
@@ -1322,6 +1423,22 @@ namespace Writersword.Modules.Characters.ViewModels
                 _characterService.Update(character);
             };
 
+            item.OnFrameThicknessChanged = (id, v) =>
+            {
+                var character = _characterService.GetById(id);
+                if (character is null || Math.Abs(character.FrameThickness - v) < 0.01) return;
+                character.FrameThickness = v;
+                _characterService.Update(character);
+            };
+
+            item.OnAvatarStripChanged = (id, on) =>
+            {
+                var character = _characterService.GetById(id);
+                if (character is null || character.AvatarStrip == on) return;
+                character.AvatarStrip = on;
+                _characterService.Update(character);
+            };
+
             item.OnApplyRingToAll = (on) =>
             {
                 var previous = new List<(string id, bool old)>();
@@ -1340,6 +1457,27 @@ namespace Writersword.Modules.Characters.ViewModels
             };
 
             BindAvatarPickerCallback?.Invoke(item);
+        }
+
+        /// <summary>
+        /// Применить состояние закладки-ленточки ко всем группам (из окна
+        /// настроек карточки). Персист идёт через колбэки самих карточек.
+        /// </summary>
+        public void ApplyBookmarkToAllGroups(bool on)
+        {
+            foreach (var folder in Folders)
+                foreach (var vm in folder.Characters)
+                    if (vm.IsCollective) vm.GroupBookmark = on;
+        }
+
+        /// <summary>
+        /// Применить толщину рамки ко всем карточкам (из окна настроек карточки).
+        /// </summary>
+        public void ApplyFrameThicknessToAll(double v)
+        {
+            foreach (var folder in Folders)
+                foreach (var vm in folder.Characters)
+                    vm.FrameThickness = v;
         }
 
         // Применяет состояние кольца к одному персонажу: модель + персист + VM во всех папках.

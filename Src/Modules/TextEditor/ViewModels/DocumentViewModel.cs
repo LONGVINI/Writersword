@@ -108,6 +108,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
             string, bool>? CommitTextEditsDelegate
         { get; set; }
 
+        // Диапазон слова под кареткой: параграф и границы [From, To) в его тексте.
+        // Позиция каретки живёт в канвасе, DocVm её не знает. Используется сменой
+        // регистра без выделения — команда применяется к текущему слову (как в Word).
+        public Func<(ParagraphViewModel Pvm, int From, int To)?>? GetCaretWordRangeDelegate
+        { get; set; }
+
         // Гранулярный коммит свойств абзаца (выравнивание/отступы/интервалы) через TextUndoStack.
         // Канвас строит SetParagraphPropertyCommand на каждый абзац и пушит одной командой.
         // Возвращает true, если обработал; иначе ApplyParaProperty идёт снапшотным путём.
@@ -323,8 +329,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
             }
             else
             {
-                if (block.Chunks.Count > 0 && block.Chunks[0].Runs.Count > 0)
-                    rp = block.Chunks[0].Runs[0].Properties;
+                // Каретка без выделения: свойства символа слева от каретки (как в Word).
+                // SelectionStart == SelectionEnd — позиция каретки, переданная канвасом.
+                int caretPos = Math.Max(0, pvm.SelectionStart - 1);
+                rp = GetRunPropsAtOffset(block, caretPos);
             }
 
             if (rp is not null)
@@ -493,33 +501,52 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ToggleAllCaps() => ApplyCharProperty(p => p.IsAllCaps = !p.IsAllCaps);
 
         /// <summary>
-        /// Меняет регистр выделенного текста (сами буквы, не форматирование), сохраняя
-        /// форматирование ранов. Без выделения менять нечего (позиции каретки в DocVm нет).
+        /// Меняет регистр текста (сами буквы, не форматирование), сохраняя форматирование
+        /// ранов. С выделением работает по его границам; без выделения применяется к слову
+        /// под кареткой (как в Word), диапазон которого запрашивается у канваса.
         /// </summary>
         public void ChangeCase(TextCaseMode mode)
         {
-            if (SelectionParagraphs.Count == 0) return;
-
-            // Собираем правки (paraId, from, старый текст, новый текст) по выделенным диапазонам.
-            var edits = new System.Collections.Generic.List<(System.Guid ParaId, int From, string OldText, string NewText)>();
-            for (int i = 0; i < SelectionParagraphs.Count; i++)
+            if (IsReadOnly) return;
+            // Целевые диапазоны: (параграф, from, to) по выделению либо слово под кареткой.
+            var targets = new System.Collections.Generic.List<(ParagraphViewModel Pvm, int From, int To)>();
+            if (SelectionParagraphs.Count > 0)
             {
-                var pvm = SelectionParagraphs[i];
-                var block = pvm.Model;
-                string full = block.GetPlainText();
+                for (int i = 0; i < SelectionParagraphs.Count; i++)
+                {
+                    var pvm = SelectionParagraphs[i];
+                    int len = pvm.Model.GetPlainText().Length;
+                    int from = (SelectionParagraphs.Count == 1 || i == 0) ? pvm.SelectionStart : 0;
+                    int to = (SelectionParagraphs.Count == 1 || i == SelectionParagraphs.Count - 1) ? pvm.SelectionEnd : len;
+                    from = Math.Clamp(from, 0, len);
+                    to = Math.Clamp(to, from, len);
+                    if (to > from) targets.Add((pvm, from, to));
+                }
+            }
+            else
+            {
+                var word = GetCaretWordRangeDelegate?.Invoke();
+                if (word is null) return;
+                targets.Add(word.Value);
+            }
+            if (targets.Count == 0) return;
+
+            // Собираем правки (paraId, from, старый текст, новый текст) по диапазонам.
+            var edits = new System.Collections.Generic.List<(System.Guid ParaId, int From, string OldText, string NewText)>();
+            foreach (var (pvm, from, to) in targets)
+            {
+                string full = pvm.Model.GetPlainText();
                 int len = full.Length;
-                int from = (SelectionParagraphs.Count == 1 || i == 0) ? pvm.SelectionStart : 0;
-                int to = (SelectionParagraphs.Count == 1 || i == SelectionParagraphs.Count - 1) ? pvm.SelectionEnd : len;
-                from = Math.Clamp(from, 0, len);
-                to = Math.Clamp(to, from, len);
-                if (to <= from) continue;
+                int f = Math.Clamp(from, 0, len);
+                int t = Math.Clamp(to, f, len);
+                if (t <= f) continue;
 
                 char[] chars = full.ToCharArray();
-                ApplyCaseToRange(chars, from, to, mode);
-                string newText = new string(chars, from, to - from);
-                string oldText = full.Substring(from, to - from);
+                ApplyCaseToRange(chars, f, t, mode);
+                string newText = new string(chars, f, t - f);
+                string oldText = full.Substring(f, t - f);
                 if (oldText != newText)
-                    edits.Add((block.Id, from, oldText, newText));
+                    edits.Add((pvm.Model.Id, f, oldText, newText));
             }
             if (edits.Count == 0) return;
 
@@ -533,17 +560,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             // Запасной путь (канвас не подключён) — снапшот.
             BeginEditDelegate?.Invoke("Change case");
-            for (int i = 0; i < SelectionParagraphs.Count; i++)
+            foreach (var (pvm, from, to) in targets)
             {
-                var pvm = SelectionParagraphs[i];
-                int len = pvm.Model.GetPlainText().Length;
-                int s = (SelectionParagraphs.Count == 1 || i == 0) ? pvm.SelectionStart : 0;
-                int e = (SelectionParagraphs.Count == 1 || i == SelectionParagraphs.Count - 1) ? pvm.SelectionEnd : len;
-                TransformParagraphRange(pvm.Model, s, e, mode);
+                TransformParagraphRange(pvm.Model, from, to, mode);
                 pvm.RefreshPlainTextFromModel();
             }
             CommitEditDelegate?.Invoke();
-            _lastFormatAffected = SelectionParagraphs.ToList();
+            _lastFormatAffected = targets.ConvertAll(t => t.Pvm);
             FireCursorContextChanged();
             ParagraphFormatChanged?.Invoke();
         }
@@ -1274,6 +1297,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void ApplyCharProperty(Action<RunProperties> mutate, bool clearAll = false)
         {
+            if (IsReadOnly) return;
             _log.Information("[FONT] ApplyCharProperty: tableCell={TC} clearAll={CA} granularDelegate={GD} active={AP} selStart={SS} selEnd={SE}",
                 TableActiveCellParagraph is not null, clearAll,
                 CommitRunPropertyGranularDelegate is not null, _activeParagraph is not null,
@@ -1423,6 +1447,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void ApplyParaProperty(Action<ParagraphProperties> mutate)
         {
+            if (IsReadOnly) return;
             // Режим таблицы: применяем к параграфу активной ячейки (снапшотный путь как был).
             if (TableActiveCellParagraph is not null)
             {
@@ -1480,6 +1505,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void InsertBlock(BlockModel block)
         {
+            if (IsReadOnly) return;
             if (_document.Sections.Count == 0) return;
             var section = _document.Sections[0];
 

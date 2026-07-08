@@ -143,6 +143,12 @@ namespace Writersword.Infrastructure.Services.Storage
                 var activeModules = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     getModulesCallback());
 
+                // DispatcherOperation не поддерживает ConfigureAwait напрямую (это не Task),
+                // а завершает его именно UI-поток — без явного ухода вся дальнейшая сборка
+                // CustomData по всем персонажам и запись в кэш выполнялись бы на UI-потоке,
+                // и при большом числе персонажей фризили интерфейс каждые _interval секунд.
+                await Task.Run(() => { }).ConfigureAwait(false);
+
                 if (_getActiveModules == null)
                 {
                     _logger.LogDebug("Skipped: service stopped during execution");
@@ -201,12 +207,33 @@ namespace Writersword.Infrastructure.Services.Storage
 
                             if (kvp.Value is string currentStr && savedData is string savedStr)
                             {
-                                if (currentStr != savedStr) { dataChanged = true; break; }
+                                if (currentStr != savedStr)
+                                {
+                                    dataChanged = true;
+                                    _logger.LogDebug("Cache diff in module: {Module}", kvp.Key);
+                                    break;
+                                }
                             }
-                            else if (!Equals(kvp.Value, savedData))
+                            else if (kvp.Value == null || savedData == null)
                             {
-                                dataChanged = true;
-                                break;
+                                if (!Equals(kvp.Value, savedData)) { dataChanged = true; break; }
+                            }
+                            else
+                            {
+                                // Модуль вернул объект (не строку): из файла данные приходят
+                                // JObject-ом, из живого модуля — .NET-объектом. Equals для такой
+                                // пары всегда false — кеш писался при каждом проходе даже без
+                                // изменений, и при каждом запуске появлялся диалог восстановления.
+                                // Сравниваем содержимое как JSON.
+                                var currentJson = Newtonsoft.Json.Linq.JToken.FromObject(kvp.Value);
+                                var savedJson = savedData as Newtonsoft.Json.Linq.JToken
+                                    ?? Newtonsoft.Json.Linq.JToken.FromObject(savedData);
+                                if (!Newtonsoft.Json.Linq.JToken.DeepEquals(currentJson, savedJson))
+                                {
+                                    dataChanged = true;
+                                    _logger.LogDebug("Cache diff in module: {Module}", kvp.Key);
+                                    break;
+                                }
                             }
                         }
                     }

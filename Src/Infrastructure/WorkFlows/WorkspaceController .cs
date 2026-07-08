@@ -167,8 +167,15 @@ namespace Writersword.Infrastructure.Workspace
             Dictionary<string, object?>? pendingCustomData = null;
             Dictionary<string, object?>? pendingSessionData = null;
 
+            // Сбор данных модулей (сериализация документов!) нужен только если новый
+            // WorkMode реально создаст модуль с нуля: живые модули переиспользуются
+            // как есть (DockFactory), а их состояние свежее любого кеша. Без этой
+            // проверки каждый переклик воркмода сериализовал весь документ на UI-потоке.
+            bool willCreateNewModules = newMode.ModuleSlots
+                .Any(s => _tab.ModuleContext.GetModule(s.ModuleType) == null);
+
             var allModulesNow = _tab.ModuleContext.GetAllModules();
-            if (allModulesNow.Count > 0)
+            if (allModulesNow.Count > 0 && willCreateNewModules)
             {
                 var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
                 var cacheService = App.Services.GetRequiredService<IZipCacheService>();
@@ -210,7 +217,11 @@ namespace Writersword.Infrastructure.Workspace
             _activeWorkMode = newMode;
 
             _dockFactory.DetachViewsFromLayout(_dockLayout);
-            ClearModulesNotInNewWorkMode(newMode);
+
+            // Модули, которых нет в новом WorkMode, НЕ уничтожаются — паркуются живыми
+            // в контексте вкладки. Возврат в прежний WorkMode переиспользует их мгновенно,
+            // без десериализации данных и повторной вёрстки. Память: модули живут до
+            // закрытия вкладки — осознанная цена за мгновенное переключение.
 
             // CreateLayout читает кеш — к этому моменту он уже удалён,
             // поэтому LoadCacheWithSession вернёт null и модули загрузятся
@@ -496,6 +507,24 @@ namespace Writersword.Infrastructure.Workspace
         /// </summary>
         public void Activate()
         {
+            // Мягкая реактивация после Suspend: layout и модули живы, пересоздавать
+            // нечего — только вернуть коллбэки и автосейв. Возврат на вкладку мгновенный.
+            if (_dockLayout != null)
+            {
+                _logger.LogDebug("Reactivating workspace (soft, layout alive)");
+
+                _dockFactory.AttachToLayout(_dockLayout);
+                _dockFactory.OnModuleClosed = (moduleType) =>
+                {
+                    Dispatcher.UIThread.Post(() => HandleModuleClosedInDock(moduleType));
+                };
+
+                if (!string.IsNullOrEmpty(_projectPath))
+                    _autoSave.Start(_projectPath, _tab.GetProject());
+
+                return;
+            }
+
             _logger.LogDebug("Activating workspace");
 
             ResetDegenerateSerializedLayoutIfNeeded(_activeWorkMode);
@@ -510,10 +539,60 @@ namespace Writersword.Infrastructure.Workspace
             if (!string.IsNullOrEmpty(_projectPath))
                 _autoSave.Start(_projectPath, _tab.GetProject());
 
+            // Модули создаются отложенно (плейсхолдеры + фоновые прикрепления в очереди
+            // диспетчера). Локальные настройки применяем тем же приоритетом ПОСЛЕ них:
+            // очередь FIFO в рамках приоритета гарантирует, что модули уже созданы.
             if (_fileStorage != null)
-                ApplyLocalSettingsToModules(_fileStorage);
+            {
+                var storage = _fileStorage;
+                Dispatcher.UIThread.Post(
+                    () => ApplyLocalSettingsToModules(storage),
+                    DispatcherPriority.Background);
+            }
 
             _logger.LogDebug("Workspace activated");
+        }
+
+        /// <summary>
+        /// Мягкая приостановка workspace при уходе с вкладки: модули, вьюхи и layout
+        /// остаются живыми, возврат на вкладку не требует пересоздания и повторной
+        /// загрузки данных (для больших документов это секунды заморозки UI).
+        /// Float-окна живут в отдельных корнях и без пересоздания layout не
+        /// восстанавливаются — при их наличии выполняется полная деактивация.
+        /// </summary>
+        public void Suspend()
+        {
+            if (_dockLayout == null) return;
+
+            if (_dockLayout.Windows != null && _dockLayout.Windows.Count > 0)
+            {
+                _logger.LogDebug("Suspend: float windows present — falling back to full Deactivate");
+                Deactivate();
+                return;
+            }
+
+            _logger.LogDebug("Suspending workspace (modules kept alive)");
+
+            var (serializedLayout, updatedSlots) = _dockFactory.SerializeCurrentLayout(
+                _dockLayout, _activeWorkMode, _tab.ModuleContext);
+            if (serializedLayout != null)
+            {
+                _activeWorkMode.SerializedDockLayout = serializedLayout;
+                _activeWorkMode.ModuleSlots = updatedSlots;
+            }
+
+            _autoSave.Stop();
+
+            // Сбрасываем состояние модулей в кеш (асинхронность внутри сервиса),
+            // чтобы при падении приложения на другой вкладке данные не потерялись.
+            var cacheService = App.Services.GetRequiredService<ICacheUpdateService>();
+            cacheService.SaveToCache();
+
+            // Отцепляем вьюхи от презентеров текущего дерева: при возврате DockControl
+            // построит новые презентеры, и RecreateAllDocumentViews переприцепит вьюхи.
+            _dockFactory.DetachViewsFromLayout(_dockLayout);
+
+            _logger.LogDebug("Workspace suspended");
         }
 
         private void ApplyLocalSettingsToModules(IProjectFileStorage storage)

@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Writersword.Modules.Characters.Interfaces;
 using Writersword.Modules.Characters.ViewModels;
+using Writersword.Modules.Characters.Views;
 using Writersword.Modules.Characters.Views.Avatars;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -23,6 +24,14 @@ namespace Writersword.Modules.Characters.Views.Tabs
         // Пауза удержания перед стартом перетаскивания. Быстрый клик уходит кнопкам
         // карточки, перетаскивание начинается только после зажатия и последующего движения.
         private const long DragHoldDelayMs = 90;
+
+        // Троттлинг пересчёта позиции вставки при перетаскивании. Призрак летит за
+        // мышью каждый кадр (это дёшево — двигается только его позиция), а тяжёлый
+        // пересчёт целевого индекса и раскладка (UpdatePreview → возможный
+        // BeginFlipAnimation с UpdateLayout) запускаются не чаще ~10 раз в секунду.
+        // Раньше стояло 16 мс (60/сек), и каждый переход между ячейками форсил полный
+        // проход раскладки всего дерева карточек — отсюда дёрганье при перетаскивании.
+        private const long PreviewRecalcThrottleMs = 100;
 
 
         private Point _dragStartPoint;
@@ -84,14 +93,45 @@ namespace Writersword.Modules.Characters.Views.Tabs
             if (DataContext is CharactersViewModel vm && vm.CanRedo) vm.Redo();
         }
 
+        // Открывает окно настроек карточки по центру модуля (CardSettingsOverlay
+        // хостится в CharactersModuleView поверх содержимого, со скримом).
+        private void OnCardSettingsClick(object? sender, RoutedEventArgs e)
+        {
+            if (sender is not Control c || c.DataContext is not CharacterListItemViewModel item) return;
+            var host = this.FindAncestorOfType<CharactersModuleView>();
+            var overlay = host?.FindControl<CardSettingsOverlay>("CardSettingsOverlayControl");
+            overlay?.ShowFor(item, DataContext as CharactersViewModel);
+            e.Handled = true;
+        }
+
         // Прокрутка к только что созданному персонажу или группе. Вызывается
         // вьюмоделью сразу после добавления, когда раскладка ещё не построила
         // новую карточку, поэтому сама работа откладывается до конца прохода
         // раскладки.
+        //
+        // _scrollRequestSeq гасит гонку при быстром массовом добавлении: если
+        // несколько запросов на прокрутку встают в очередь UI-потока подряд
+        // (персонажи добавляются быстрее, чем раскладка успевает осесть),
+        // GetOrCreateElement/BringIntoView для устаревших индексов сталкивались
+        // друг с другом и оставляли в репитере нереализованный (пустой)
+        // контейнер, пока список не перестраивался вручную. Выполняется только
+        // самый последний запрос на момент, когда очередь до него дошла.
+        private string? _pendingScrollFolderId;
+        private string? _pendingScrollCharacterId;
+        private long _scrollRequestSeq;
+
         private void ScrollToCharacter(string? folderId, string characterId)
         {
+            var seq = System.Threading.Interlocked.Increment(ref _scrollRequestSeq);
+            _pendingScrollFolderId = folderId;
+            _pendingScrollCharacterId = characterId;
+
             Dispatcher.UIThread.Post(
-                () => ScrollToCharacterCore(folderId, characterId),
+                () =>
+                {
+                    if (seq != _scrollRequestSeq) return;
+                    ScrollToCharacterCore(_pendingScrollFolderId, _pendingScrollCharacterId!);
+                },
                 DispatcherPriority.Background);
         }
 
@@ -452,7 +492,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 MoveGhost(pos);
 
                 var now = Environment.TickCount64;
-                if (now - _lastPreviewTick >= 16)
+                if (now - _lastPreviewTick >= PreviewRecalcThrottleMs)
                 {
                     _lastPreviewTick = now;
                     UpdatePreview(pos);
@@ -771,17 +811,24 @@ namespace Writersword.Modules.Characters.Views.Tabs
                         row = cells.Where(c => Math.Abs(c.cy - ny) <= halfRow).ToList();
                     }
 
-                    int rowMin = row.Min(c => c.idx);
-                    int countLeft = row.Count(c => c.cx < pos.X);
-                    int target = rowMin + countLeft;
+                    var nearest = row.OrderBy(c => Math.Abs(c.cx - pos.X)).First();
+                    int target = nearest.idx;
 
-                    // Есть строка ниже => текущая строка заполнена: не вылезаем за её правый
-                    // край, иначе плейсхолдер перескочил бы в начало следующей строки. В
-                    // последней строке кап не нужен — справа реальные пустые ячейки, и
-                    // countLeft даёт дозапись в конец списка.
                     bool hasRowBelow = cells.Any(c => c.cy > pos.Y + halfRow);
-                    if (hasRowBelow)
-                        target = Math.Min(target, rowMin + row.Count - 1);
+                    if (!hasRowBelow)
+                    {
+                        var right = row.OrderByDescending(c => c.cx).First();
+                        double colPitch = double.MaxValue;
+                        var xs = row.Select(c => c.cx).OrderBy(x => x).ToList();
+                        for (int i = 1; i < xs.Count; i++)
+                        {
+                            double d = xs[i] - xs[i - 1];
+                            if (d > 1 && d < colPitch) colPitch = d;
+                        }
+                        if (colPitch == double.MaxValue) colPitch = _slotWidth > 1 ? _slotWidth : 100;
+                        if (pos.X > right.cx + colPitch / 2.0)
+                            target = right.idx + 1;
+                    }
 
                     return Math.Clamp(target, 0, folderVm.Characters.Count);
                 }
@@ -992,6 +1039,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
                         System.Globalization.CultureInfo.InvariantCulture) as IBrush
                 ?? new SolidColorBrush(Color.FromRgb(96, 125, 139));
             _ghostBorder.BorderBrush = brush;
+            _ghostBorder.BorderThickness = new Thickness(item.FrameThickness);
 
             // Закладка группы — как на реальной карточке.
             var bookmark = this.FindControl<Avalonia.Controls.Shapes.Path>("DragGhostBookmark");

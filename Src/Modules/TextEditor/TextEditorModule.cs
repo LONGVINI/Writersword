@@ -142,11 +142,35 @@ namespace Writersword.Modules.TextEditor
 
         // ── BaseModule ────────────────────────────────────────────────────
 
+        /// <summary>
+        /// Реакция на смену контекста: режим сравнения делает документ read-only.
+        /// Защита стоит на уровне вьюмодели (форматирование, абзацы, вставка блоков)
+        /// и канваса (ввод, удаление, Enter, буфер обмена, undo/redo, ручки таблиц) —
+        /// листать и копировать можно, изменять данные нельзя.
+        /// </summary>
+        protected override void OnContextChanged(DocumentContext? context)
+        {
+            ApplyReadOnlyFromContext();
+        }
+
+        private void ApplyReadOnlyFromContext()
+        {
+            var docVm = _viewModel?.DocumentViewModel;
+            if (docVm is null) return;
+            bool readOnly = Context?.IsInCompareMode == true;
+            if (docVm.IsReadOnly != readOnly)
+                docVm.IsReadOnly = readOnly;
+        }
+
         public override Control? CreateView()
         {
             _viewModel ??= CreateAndInitViewModel();
             var view = new TextEditorView(_undoStack) { DataContext = _viewModel };
             _lastCreatedView = view;
+
+            // Контекст мог быть установлен до создания вьюмодели —
+            // применяем read-only режима сравнения сейчас.
+            ApplyReadOnlyFromContext();
 
             // Передаём сервис хоткеев в канвас после создания View.
             if (_hotKeyService is not null)
@@ -237,7 +261,6 @@ namespace Writersword.Modules.TextEditor
 
                 if (!hasChanges && _baselineCustomData is not null)
                 {
-                    _logger.Debug("GetCustomData: no changes, returning baseline (len={L})", _baselineCustomData.Length);
                     return _baselineCustomData;
                 }
 
@@ -258,8 +281,11 @@ namespace Writersword.Modules.TextEditor
                     local = localSettingsJson,
                 };
                 var result = System.Text.Json.JsonSerializer.Serialize(envelope);
-                _baselineCustomData = null; // сбрасываем — теперь есть реальные изменения
-                _logger.Debug("GetCustomData: serialized document, len={L}", result.Length);
+                // Кешируем результат как новую базовую линию: пока дельта не покажет новых
+                // изменений, следующие опросы возвращают эту же строку без повторной
+                // сериализации всего документа на UI-потоке. Признак несохранённых изменений
+                // не теряется — хост сравнивает возвращённые данные с файлом на диске.
+                _baselineCustomData = result;
                 return result;
             }
             catch (Exception ex)

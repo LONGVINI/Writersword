@@ -112,6 +112,8 @@ namespace Writersword.Styles.UserControls
 
         public IReadOnlyList<string> PresetColors { get; } = new[]
         {
+            // «Без цвета» — полностью прозрачное значение (перечёркнутый образец).
+            "#00000000",
             "#F44336", "#E91E63", "#9C27B0", "#673AB7", "#3F51B5", "#2196F3",
             "#03A9F4", "#00BCD4", "#009688", "#4CAF50", "#8BC34A", "#FFEB3B",
             "#FFC107", "#FF9800", "#FF5722", "#795548", "#607D8B", "#9E9E9E",
@@ -601,5 +603,11 @@ namespace Writersword.Styles.UserControls
         // bool -> ScaleY: раскрыто = 1, свёрнуто = 0 (для анимации схлопывания).
         public static readonly IValueConverter Scale =
             new FuncValueConverter<bool, double>(b => b ? 1.0 : 0.0);
+
+        // Код цвета -> является ли он «без цвета» (полностью прозрачным):
+        // для отрисовки перечёркнутого образца.
+        public static readonly IValueConverter IsNoColor =
+            new FuncValueConverter<string?, bool>(s =>
+                string.Equals(s?.Trim(), "#00000000", StringComparison.OrdinalIgnoreCase));
     }
 }

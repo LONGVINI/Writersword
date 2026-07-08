@@ -149,6 +149,16 @@ namespace Writersword.Views
             this.Opened += (s, e) =>
             {
                 _logger.LogDebug("MainWindowView opened - DataContext: {DataContextType}", DataContext?.GetType().Name);
+
+                // Диагностика производительности рендера — выключена. Для включения
+                // заменить None на нужный набор флагов, например:
+                //   Avalonia.Rendering.RendererDebugOverlays.Fps
+                //   | Avalonia.Rendering.RendererDebugOverlays.DirtyRects
+                //   | Avalonia.Rendering.RendererDebugOverlays.LayoutTimeGraph
+                //   | Avalonia.Rendering.RendererDebugOverlays.RenderTimeGraph;
+                this.RendererDiagnostics.DebugOverlays =
+                    Avalonia.Rendering.RendererDebugOverlays.None;
+
                 EnsureThickFrameAndSubclass();
                 if (WindowState == WindowState.Maximized)
                     ScheduleMaximizedPadding();

@@ -240,6 +240,12 @@ namespace Writersword.Infrastructure.Services.WorkModes
                     tabCollection.Tabs?.FirstOrDefault(t => t.FilePath == _currentProjectPath) as DocumentTabViewModel,
                     DispatcherPriority.Background);
 
+                // DispatcherOperation не поддерживает ConfigureAwait напрямую (это не Task),
+                // а завершает его именно UI-поток — без явного ухода вся дальнейшая сборка
+                // конфигурации workspace (в т.ч. сериализация лэйаута) выполнялась бы на
+                // UI-потоке вместо фонового, для которого она и задумана (Task.Run в ScheduleSave).
+                await Task.Run(() => { }).ConfigureAwait(false);
+
                 if (activeTab?.Workspace == null)
                 {
                     _logger.LogWarning("No workspace for project: {Path}", _currentProjectPath);
@@ -257,6 +263,8 @@ namespace Writersword.Infrastructure.Services.WorkModes
                         var layout = activeTab.Workspace.GetCurrentLayout();
                         return (wms, active, factory, layout);
                     }, DispatcherPriority.Background);
+
+                await Task.Run(() => { }).ConfigureAwait(false);
 
                 if (allWorkModes == null || allWorkModes.Count == 0)
                 {
@@ -284,6 +292,8 @@ namespace Writersword.Infrastructure.Services.WorkModes
                         var (serializedLayout, updatedSlots) = await Dispatcher.UIThread.InvokeAsync(() =>
                             dockFactory.SerializeCurrentLayout(currentLayout, wm, activeTab.ModuleContext),
                             DispatcherPriority.Background);
+
+                        await Task.Run(() => { }).ConfigureAwait(false);
 
                         var activeToSave = new WorkMode
                         {

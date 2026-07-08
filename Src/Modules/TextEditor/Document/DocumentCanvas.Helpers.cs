@@ -96,7 +96,7 @@ namespace Writersword.Modules.TextEditor.Document
             _cellFlowFull.Clear();
 
             CommitEdit();
-            _cellLayoutCache.Clear();
+            InvalidateCellLayoutCaches();
             RebuildLayouts();
             InvalidateFull();
         }
@@ -385,6 +385,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         private async Task CutAsync()
         {
+            if (IsEditingBlocked) return;
             BeginEdit("Cut");
             await CopyAsync();
 
@@ -475,6 +476,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         private async Task PasteAsync()
         {
+            if (IsEditingBlocked) return;
             // Картинка из буфера обмена — вставляем как изображение и выходим.
             {
                 var imgClip = TopLevel.GetTopLevel(this)?.Clipboard;
@@ -507,7 +509,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Внутренний буфер используется только когда есть таблицы.
             // Вставка только параграфов идёт через plain-text путь — он проверен и работает.
-            if (!string.IsNullOrEmpty(_internalClipboardJson) && DocVm is not null)
+            if (!string.IsNullOrEmpty(_internalClipboardJson) && DocVm is not null && !IsInCell(_caretPara))
             {
                 var opts = new JsonSerializerOptions();
                 var blocks = JsonSerializer.Deserialize<List<ClipboardBlock>>(_internalClipboardJson, opts);
@@ -581,7 +583,7 @@ namespace Writersword.Modules.TextEditor.Document
                     }
 
                     CommitEdit();
-                    _cellLayoutCache.Clear();
+                    InvalidateCellLayoutCaches();
 
                     var oldCts2 = _rebuildCts;
                     _rebuildCts = new System.Threading.CancellationTokenSource();
@@ -676,7 +678,7 @@ namespace Writersword.Modules.TextEditor.Document
             // Если удалили таблицы — нужен rebuild перед вставкой текста.
             if (_tableSelections.Count == 0 && DocVm is not null)
             {
-                _cellLayoutCache.Clear();
+                InvalidateCellLayoutCaches();
                 DocVm.RebuildParagraphViewModelsPublic();
                 RebuildLayouts();
                 _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
@@ -769,6 +771,37 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     clipBestYDist = yDist;
                     clipBestIdx = i;
+                }
+            }
+
+            // ── Фаза 0.5: геометрия таблицы ───────────────────────────────
+            // Клик внутри таблицы, но мимо clip-прямоугольников параграфов ячеек
+            // (например пустая ячейка на странице продолжения): определяем ячейку
+            // геометрически по строкам и колонкам слайса и берём ближайший по Y
+            // параграф именно этой ячейки — иначе двухпроходной поиск ниже уводит
+            // каретку к ближайшему тексту чужой ячейки.
+            if (clipBestIdx < 0)
+            {
+                var geo = HitTestTableCellGeometric(xPt, yPt);
+                if (geo.HasValue)
+                {
+                    float geoBestDist = float.MaxValue;
+                    for (int i = 0; i < layouts.Count; i++)
+                    {
+                        var pl = layouts[i];
+                        var c = pl.Cell;
+                        if (c == null || c.Table != geo.Value.table) continue;
+                        if (c.Cell.Row != geo.Value.row || c.Cell.Column != geo.Value.col) continue;
+
+                        float top = pl.Ypt;
+                        float bot = pl.Ypt + pl.HeightPt;
+                        float yDist = yPt < top ? top - yPt : yPt > bot ? yPt - bot : 0f;
+                        if (yDist < geoBestDist)
+                        {
+                            geoBestDist = yDist;
+                            clipBestIdx = i;
+                        }
+                    }
                 }
             }
 
@@ -1118,8 +1151,27 @@ namespace Writersword.Modules.TextEditor.Document
             return first >= 0 ? first : 0;
         }
 
+        // Снимает залипший флаг перехода, если канвас реально находится в живом визуальном
+        // дереве. При выключении соседнего модуля dock переприцепляет канвас редактора
+        // (detach -> reattach), и порядок событий Attached/Detached может закончиться на
+        // Detached — тогда _isTransitioning остаётся true, и RenderWithSKCanvas глушит
+        // отрисовку навсегда: модель печатает и счётчик символов растёт, но кадры не выходят
+        // и каретка стоит на месте. Наличие TopLevel означает, что переход уже завершён,
+        // поэтому флаг сбрасываем и форсируем полный кадр.
+        private void RecoverFromStuckTransition()
+        {
+            if (_isTransitioning && TopLevel.GetTopLevel(this) is not null)
+            {
+                _isTransitioning = false;
+                _caretOnlyRedraw = false;
+                InvalidateVisual();
+            }
+        }
+
         private void InvalidateFull()
         {
+            if (_isTransitioning && TopLevel.GetTopLevel(this) is not null)
+                _isTransitioning = false;
             _caretOnlyRedraw = false;
             InvalidateVisual();
         }

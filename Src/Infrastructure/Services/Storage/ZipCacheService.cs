@@ -417,17 +417,32 @@ namespace Writersword.Infrastructure.Services.Storage
 
                     // Хеш файла проекта — для быстрого сравнения при открытии.
                     // Позволяет пропустить загрузку 400 МБ данных до показа диалога восстановления.
-                    try
+                    // Сам файл проекта в этот момент может быть кратковременно занят другой
+                    // операцией сохранения (ZipFileStorageService держит его открытым в
+                    // RELEASE-режиме) — несколько попыток с паузой снимают эту гонку без
+                    // изменения результата при успехе.
+                    const int hashReadAttempts = 3;
+                    for (int attempt = 1; attempt <= hashReadAttempts; attempt++)
                     {
-                        using var sha = SHA256.Create();
-                        using var fs = File.OpenRead(projectPath);
-                        var hashBytes = sha.ComputeHash(fs);
-                        metadata.ProjectFileHash = Convert.ToHexString(hashBytes);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to compute project file hash");
-                        metadata.ProjectFileHash = "";
+                        try
+                        {
+                            using var sha = SHA256.Create();
+                            using var fs = File.OpenRead(projectPath);
+                            var hashBytes = sha.ComputeHash(fs);
+                            metadata.ProjectFileHash = Convert.ToHexString(hashBytes);
+                            break;
+                        }
+                        catch (IOException ex) when (attempt < hashReadAttempts)
+                        {
+                            _logger.LogDebug(ex, "Project file busy, retrying hash computation ({Attempt}/{Total})", attempt, hashReadAttempts);
+                            await Task.Delay(100 * attempt).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to compute project file hash");
+                            metadata.ProjectFileHash = "";
+                            break;
+                        }
                     }
 
                     // Перезаписываем метаданные.

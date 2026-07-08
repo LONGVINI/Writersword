@@ -1,5 +1,6 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dockFluent="using:Dock.Avalonia.Themes.Fluent"
              x:Class="Writersword.App"
              RequestedThemeVariant="Dark">
 	<Application.Resources>
@@ -13,8 +14,9 @@
 	</Application.Resources>
 	<Application.Styles>
 		<FluentTheme />
-		<!-- Fluent тема для Dock -->
-		<StyleInclude Source="avares://Dock.Avalonia.Themes.Fluent/DockFluentTheme.axaml"/>
+		<!-- Fluent тема для Dock. CacheDocumentTabContent держит вьюхи документов
+		     живыми при переключении вкладок — без пересоздания контента. -->
+		<dockFluent:DockFluentTheme CacheDocumentTabContent="True"/>
 		<!-- Кастомные стили контролов -->
 		<StyleInclude Source="avares://Writersword/Styles/Controls.axaml"/>
 		<!-- Кастомные стили -->
