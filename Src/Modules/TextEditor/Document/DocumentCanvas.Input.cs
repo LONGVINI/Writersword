@@ -316,7 +316,7 @@ namespace Writersword.Modules.TextEditor.Document
             else
             {
                 var cell = _layouts[_caretPara].Cell!;
-                DocVm?.FireTableCellCursorContext(cell.ParaBlock);
+                FireCellCursorContext(cell.ParaBlock);
             }
 
             UpdateSelectionContext();
@@ -1012,6 +1012,47 @@ namespace Writersword.Modules.TextEditor.Document
             CaretLeftTable?.Invoke();
         }
 
+        // Обновляет контекст риббона для ячейки с УЧЁТОМ реальной позиции каретки/выделения,
+        // чтобы поле шрифта и кнопки формата показывали ран под кареткой, а не первый ран.
+        private void FireCellCursorContext(ParagraphBlock cellPara)
+        {
+            if (DocVm is null) return;
+            int s = _caretChar, e = _caretChar;
+            if (HasSel())
+            {
+                var (sp, sc, ep, ec) = NormalizeSelection();
+                if (sp == ep && GetVmAt(sp)?.Model == cellPara) { s = sc; e = ec; }
+            }
+
+            DocVm.FireTableCellCursorContext(cellPara, s, e);
+        }
+
+        // Диапазоны всех выделенных абзацев текущей ячейки (Id, From, To) — для форматирования
+        // символов сразу по нескольким абзацам ячейки. Пустой список: нет выделения или не в ячейке.
+        private System.Collections.Generic.IReadOnlyList<(System.Guid ParaId, int From, int To)> GetCellSelectionRanges()
+        {
+            var result = new System.Collections.Generic.List<(System.Guid, int, int)>();
+            if (!IsInCell(_caretPara) || !HasSel()) return result;
+
+            var (sp, sc, ep, ec) = NormalizeSelection();
+            var seen = new System.Collections.Generic.HashSet<System.Guid>();
+            for (int i = sp; i <= ep && i < _layouts.Count; i++)
+            {
+                var pl = _layouts[i];
+                if (pl.Cell is null) continue;
+                var vm = pl.Vm;
+                if (vm?.Model is null || !seen.Add(vm.Model.Id)) continue;
+
+                int len = vm.PlainText?.Length ?? 0;
+                int from = (i == sp) ? sc : 0;
+                int to = (i == ep) ? ec : len;
+                from = Clamp(from, 0, len);
+                to = Clamp(to, from, len);
+                if (to > from) result.Add((vm.Model.Id, from, to));
+            }
+            return result;
+        }
+
         private void NotifyCaretEnteredTableCallback()
         {
             if (_activeCellTableEntryIdx < 0 || _activeCellTableEntryIdx >= _tables.Count) return;
@@ -1059,7 +1100,7 @@ namespace Writersword.Modules.TextEditor.Document
                     _caretPara = i;
                     _caretChar = 0;
                     UpdateCellContext(true, true);
-                    if (DocVm is not null) DocVm.FireTableCellCursorContext(pl.Cell!.ParaBlock);
+                    FireCellCursorContext(pl.Cell!.ParaBlock);
                     SyncSel(); ResetCaret(); InvalidateFull();
                     return;
                 }
@@ -1110,7 +1151,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _caretPara = prevCellStart;
                 _caretChar = GetVmAt(prevCellStart)?.PlainText?.Length ?? 0;
                 UpdateCellContext(true, true);
-                if (DocVm is not null) DocVm.FireTableCellCursorContext(_layouts[prevCellStart].Cell!.ParaBlock);
+                FireCellCursorContext(_layouts[prevCellStart].Cell!.ParaBlock);
                 SyncSel(); ResetCaret(); InvalidateFull();
             }
         }
@@ -1154,9 +1195,10 @@ namespace Writersword.Modules.TextEditor.Document
                 string t = startCell.ParaBlock.GetPlainText();
                 int s2 = Clamp(sc, 0, t.Length);
                 int e2 = Clamp(ec, 0, t.Length);
-                SetCellParaText(startCell.Cell, startCell.CellParaIndex, t[..s2] + t[e2..]);
+                SpliceCellText(startCell.Cell, startCell.CellParaIndex, s2, e2, string.Empty);
                 _caretChar = s2;
                 _caretPara = sp;
+                _cellDeleteResultPara = startCell.ParaBlock;
             }
             else
             {
@@ -1168,8 +1210,15 @@ namespace Writersword.Modules.TextEditor.Document
                 int s2 = Clamp(sc, 0, st.Length);
                 int e2 = Clamp(ec, 0, et.Length);
 
-                // Оставляем начало первого параграфа + конец последнего
-                SetCellParaText(startCell.Cell, startCell.CellParaIndex, st[..s2] + et[e2..]);
+                // Оставляем начало первого параграфа + конец последнего, СОХРАНЯЯ форматирование:
+                // обрезаем начало startPara до s2 и хвост endPara от e2 через SpliceText (раны
+                // сохраняются), затем дописываем раны хвоста endPara. Плоский SetCellParaText это
+                // склеивал в один ран и стирал цвет/жирность/подчёркивание.
+                startPara.SpliceText(s2, st.Length, string.Empty);
+                endPara.SpliceText(0, e2, string.Empty);
+                AppendParagraphRuns(startPara, endPara);
+                if (_cellVmCache.TryGetValue(startPara, out var startVm2))
+                    startVm2.RefreshPlainTextFromModel();
 
                 // Удаляем промежуточные и последний параграфы
                 int fromIdx = startCell.CellParaIndex + 1;
@@ -1179,15 +1228,24 @@ namespace Writersword.Modules.TextEditor.Document
 
                 _caretChar = s2;
                 _caretPara = sp;
+                _cellDeleteResultPara = startPara;
             }
 
             SyncSel();
             return true;
         }
 
+        // Абзац ячейки, оставшийся после последнего CellDeleteSelection (куда встаёт каретка).
+        // Нужен потому, что сразу после удаления раскладка ещё не пересобрана и GetCurrentCell()
+        // отдаёт устаревший (возможно удалённый) абзац.
+        private ParagraphBlock? _cellDeleteResultPara;
+
         private void InsertText(string text)
         {
             if (IsEditingBlocked) return;
+            _logger.Debug("[DIAG] InsertText #{Id} '{T}' caretPara={P} caretChar={C} attached={A} focused={F}",
+                GetHashCode(), text, _caretPara, _caretChar,
+                VisualRoot is not null, IsFocused);
             if (IsInCell(_caretPara))
             {
                 CellInsertText(text);
@@ -1260,20 +1318,38 @@ namespace Writersword.Modules.TextEditor.Document
             var cell = GetCurrentCell();
             if (cell is null) return;
 
-            BeginEdit("Type text");
+            // Быстрый путь без выделения — операционная вставка (без снапшота всего документа),
+            // чтобы Ctrl+Z/Ctrl+Y в таблице не тормозили. Вставка поверх выделения остаётся на
+            // снапшотном пути ниже.
+            if (!HasSel())
+            {
+                string t0 = cell.ParaBlock.GetPlainText();
+                int pos0 = Clamp(_caretChar, 0, t0.Length);
+                if (OperationalCellInsert(cell.Cell, cell.CellParaIndex, pos0, text))
+                    return;
+            }
 
-            if (HasSel()) { CellDeleteSelection(); RebuildAfterCellEdit(); }
+            var tableCell = cell.Cell;
+            bool useCell = BeginCellEdit(tableCell, "Type text");
+            if (!useCell) BeginEdit("Type text");
+
+            // Удаление выделения меняет абзацы ячейки — пересобираем, чтобы GetCurrentCell()
+            // ниже отдавал актуальный слайс (иначе вставка уходила в устаревший/удалённый абзац).
+            if (HasSel()) { CellDeleteSelection(); RebuildAfterCellEdit(_cellDeleteResultPara); }
 
             cell = GetCurrentCell();
-            if (cell is null) { CommitEdit(); return; }
+            if (cell is null)
+            {
+                if (useCell) _pendingCellCmd = null; else CommitEdit();
+                return;
+            }
 
             string t = cell.ParaBlock.GetPlainText();
             int pos = Clamp(_caretChar, 0, t.Length);
-            SetCellParaText(cell.Cell, cell.CellParaIndex, t[..pos] + text + t[pos..]);
+            SpliceCellText(tableCell, cell.CellParaIndex, pos, pos, text);
             _caretChar = pos + text.Length;
 
-            CommitEdit();
-            RebuildAfterCellEdit();
+            FinishCellStructuralEdit(useCell, tableCell, cell.ParaBlock);
         }
 
         public void ExecuteDeleteBackSmart()
@@ -1344,36 +1420,74 @@ namespace Writersword.Modules.TextEditor.Document
             var cell = GetCurrentCell();
             if (cell is null) return;
 
-            BeginEdit("Delete");
+            // Операционное удаление одного символа без выделения (без снапшота всего документа).
+            // Слияние абзацев ячейки (Backspace в начале абзаца) остаётся на снапшотном пути ниже.
+            if (!HasSel())
+            {
+                string t0 = cell.ParaBlock.GetPlainText();
+                if (_caretChar > 0 && t0.Length > 0)
+                {
+                    int p0 = Clamp(_caretChar, 1, t0.Length);
+                    if (OperationalCellDeleteRange(cell.Cell, cell.CellParaIndex, p0 - 1, p0,
+                        caretAfterRevert: p0))
+                        return;
+                }
+            }
+
+            var tableCell = cell.Cell;
+            bool useCell = BeginCellEdit(tableCell, "Delete");
+            if (!useCell) BeginEdit("Delete");
 
             if (HasSel())
             {
                 CellDeleteSelection();
-                CommitEdit();
-                RebuildAfterCellEdit();
+                var selTarget = _cellDeleteResultPara
+                    ?? (tableCell.Paragraphs.Count > 0 ? tableCell.Paragraphs[0] : null);
+                FinishCellStructuralEdit(useCell, tableCell, selTarget);
                 return;
             }
 
             string t = cell.ParaBlock.GetPlainText();
+            ParagraphBlock? mergeTarget = null;
 
             if (_caretChar > 0 && t.Length > 0)
             {
                 int p = Clamp(_caretChar, 1, t.Length);
-                SetCellParaText(cell.Cell, cell.CellParaIndex, t[..(p - 1)] + t[p..]);
+                SpliceCellText(tableCell, cell.CellParaIndex, p - 1, p, string.Empty);
                 _caretChar = p - 1;
+                mergeTarget = cell.ParaBlock;
             }
             else if (cell.CellParaIndex > 0)
             {
-                var prev = cell.Cell.Paragraphs[cell.CellParaIndex - 1];
+                var prev = tableCell.Paragraphs[cell.CellParaIndex - 1];
                 string pt = prev.GetPlainText();
-                SetCellParaText(cell.Cell, cell.CellParaIndex - 1, pt + t);
-                cell.Cell.Paragraphs.RemoveAt(cell.CellParaIndex);
+                // Слияние с сохранением ранов: дописываем раны текущего абзаца в предыдущий,
+                // а не склеиваем текст в один ран (иначе теряется форматирование, напр. жирное
+                // в конце строки).
+                AppendParagraphRuns(prev, cell.ParaBlock);
+                if (_cellVmCache.TryGetValue(prev, out var prevVm))
+                    prevVm.RefreshPlainTextFromModel();
+                tableCell.Paragraphs.RemoveAt(cell.CellParaIndex);
                 _caretChar = pt.Length;
+                mergeTarget = prev;
             }
             // else: начало первого параграфа ячейки — блокируем (нельзя выйти)
 
-            CommitEdit();
-            RebuildAfterCellEdit();
+            FinishCellStructuralEdit(useCell, tableCell, mergeTarget);
+        }
+
+        // Завершение структурной правки ячейки: коммитит лёгкую CellParagraphsCommand (или снапшот)
+        // и пересобирает ячейку с кареткой на caretTarget. Если ничего не изменилось (caretTarget
+        // null, напр. Backspace в самом начале ячейки) — незавершённую команду отбрасываем.
+        private void FinishCellStructuralEdit(bool useCell, TableCell tableCell, ParagraphBlock? caretTarget)
+        {
+            if (useCell)
+            {
+                if (caretTarget is not null) CommitCellEdit(tableCell, caretTarget);
+                else _pendingCellCmd = null;
+            }
+            else CommitEdit();
+            RebuildAfterCellEdit(caretTarget);
         }
 
         private void CellDeleteForward()
@@ -1381,66 +1495,93 @@ namespace Writersword.Modules.TextEditor.Document
             var cell = GetCurrentCell();
             if (cell is null) return;
 
-            BeginEdit("Delete");
+            // Операционное удаление одного символа справа без выделения (без снапшота).
+            // Слияние со следующим абзацем ячейки остаётся на снапшотном пути ниже.
+            if (!HasSel())
+            {
+                string t0 = cell.ParaBlock.GetPlainText();
+                if (_caretChar < t0.Length)
+                {
+                    int p0 = Clamp(_caretChar, 0, t0.Length - 1);
+                    if (OperationalCellDeleteRange(cell.Cell, cell.CellParaIndex, p0, p0 + 1,
+                        caretAfterRevert: p0))
+                        return;
+                }
+            }
+
+            var tableCell = cell.Cell;
+            bool useCell = BeginCellEdit(tableCell, "Delete");
+            if (!useCell) BeginEdit("Delete");
 
             if (HasSel())
             {
                 CellDeleteSelection();
-                CommitEdit();
-                RebuildAfterCellEdit();
+                var selTarget = _cellDeleteResultPara
+                    ?? (tableCell.Paragraphs.Count > 0 ? tableCell.Paragraphs[0] : null);
+                FinishCellStructuralEdit(useCell, tableCell, selTarget);
                 return;
             }
 
             string t = cell.ParaBlock.GetPlainText();
+            var curBlock = cell.ParaBlock;
 
             if (_caretChar < t.Length)
             {
                 int p = Clamp(_caretChar, 0, t.Length - 1);
-                SetCellParaText(cell.Cell, cell.CellParaIndex, t[..p] + t[(p + 1)..]);
+                SpliceCellText(tableCell, cell.CellParaIndex, p, p + 1, string.Empty);
             }
-            else if (cell.CellParaIndex < cell.Cell.Paragraphs.Count - 1)
+            else if (cell.CellParaIndex < tableCell.Paragraphs.Count - 1)
             {
-                var next = cell.Cell.Paragraphs[cell.CellParaIndex + 1];
-                string nt = next.GetPlainText();
-                SetCellParaText(cell.Cell, cell.CellParaIndex, t + nt);
-                cell.Cell.Paragraphs.RemoveAt(cell.CellParaIndex + 1);
+                var next = tableCell.Paragraphs[cell.CellParaIndex + 1];
+                // Слияние с сохранением ранов: дописываем раны следующего абзаца в текущий.
+                AppendParagraphRuns(cell.ParaBlock, next);
+                if (_cellVmCache.TryGetValue(cell.ParaBlock, out var curVm))
+                    curVm.RefreshPlainTextFromModel();
+                tableCell.Paragraphs.RemoveAt(cell.CellParaIndex + 1);
             }
             // else: конец последнего параграфа ячейки — блокируем
 
-            CommitEdit();
-            RebuildAfterCellEdit();
+            FinishCellStructuralEdit(useCell, tableCell, curBlock);
         }
 
         private void CellNewParagraph()
         {
-            BeginEdit("New paragraph");
+            var cell0 = GetCurrentCell();
+            if (cell0 is null) return;
+            var tableCell = cell0.Cell;
 
-            if (HasSel())
-            {
-                CellDeleteSelection();
-                RebuildAfterCellEdit();
-            }
+            bool useCell = BeginCellEdit(tableCell, "New paragraph");
+            if (!useCell) BeginEdit("New paragraph");
+
+            // Удаление выделения меняет абзацы ячейки — пересобираем, чтобы GetCurrentCell()
+            // ниже отдавал актуальный слайс.
+            if (HasSel()) { CellDeleteSelection(); RebuildAfterCellEdit(_cellDeleteResultPara); }
 
             var cell = GetCurrentCell();
-            if (cell is null) { CommitEdit(); return; }
+            if (cell is null)
+            {
+                if (useCell) _pendingCellCmd = null; else CommitEdit();
+                return;
+            }
 
             string t = cell.ParaBlock.GetPlainText();
             int pos = Clamp(_caretChar, 0, t.Length);
 
-            SetCellParaText(cell.Cell, cell.CellParaIndex, t[..pos]);
+            // Делим абзац ячейки с СОХРАНЕНИЕМ ранов (шрифты/формат): head = [0, pos),
+            // tail = [pos, len). Клонируем абзац целиком и вырезаем лишнее сплайсом — раны и
+            // их свойства сохраняются, в отличие от плоского SetCellParaText, который стирал
+            // форматирование при Enter.
+            var srcPara = cell.ParaBlock;
+            var head = CloneParagraphBlock(srcPara, 0, t.Length);
+            head.SpliceText(pos, t.Length, string.Empty);
+            var newPara = CloneParagraphBlock(srcPara, 0, t.Length);
+            newPara.SpliceText(0, pos, string.Empty);
 
-            var newPara = new ParagraphBlock();
-            if (pos < t.Length)
-            {
-                var chunk = new TextChunk();
-                chunk.Runs.Add(new RunModel { Text = t[pos..] });
-                newPara.Chunks.Add(chunk);
-            }
+            cell.Cell.Paragraphs[cell.CellParaIndex] = head;
             cell.Cell.Paragraphs.Insert(cell.CellParaIndex + 1, newPara);
             _caretChar = 0;
 
-            CommitEdit();
-            RebuildAfterCellEdit(newPara);
+            FinishCellStructuralEdit(useCell, tableCell, newPara);
         }
 
         private void RebuildAfterCellEdit(ParagraphBlock? explicitTarget = null)
@@ -1487,7 +1628,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Контекст ячейки для линейки
             if (IsInCell(_caretPara) && DocVm is not null)
-                DocVm.FireTableCellCursorContext(_layouts[_caretPara].Cell!.ParaBlock);
+                FireCellCursorContext(_layouts[_caretPara].Cell!.ParaBlock);
 
             SyncSel(); ResetCaret(); InvalidateFull();
         }
@@ -1516,13 +1657,216 @@ namespace Writersword.Modules.TextEditor.Document
                 vm.PlainText = text;
         }
 
+        // Правит текст абзаца ячейки с СОХРАНЕНИЕМ ранов (шрифты, размер, цвет): удаляет
+        // [from, to) и вставляет insert через ParagraphBlock.SpliceText — как в обычных
+        // абзацах. В отличие от SetCellParaText не схлопывает абзац в один ран, поэтому
+        // разные шрифты внутри ячейки не теряются при вводе/удалении.
+        private void SpliceCellText(TableCell cell, int paraIdx, int from, int to, string insert)
+        {
+            if (paraIdx < 0 || paraIdx >= cell.Paragraphs.Count) return;
+            var para = cell.Paragraphs[paraIdx];
+            para.SpliceText(from, to, insert);
+            if (_cellVmCache.TryGetValue(para, out var vm))
+                vm.RefreshPlainTextFromModel();
+        }
+
+        // Дописывает раны src в конец dst с СОХРАНЕНИЕМ форматирования (шрифты/жирность и т.п.).
+        // Используется при слиянии абзацев ячейки (Backspace/Delete на границе), чтобы не терять
+        // форматирование, как это делал плоский SetCellParaText (склеивал текст в один ран).
+        private static void AppendParagraphRuns(ParagraphBlock dst, ParagraphBlock src)
+        {
+            foreach (var chunk in src.Chunks)
+            {
+                if (chunk.Runs.Count == 0) continue;
+                var c = new TextChunk();
+                foreach (var run in chunk.Runs)
+                {
+                    if (string.IsNullOrEmpty(run.Text)) continue;
+                    c.Runs.Add(run.Clone());
+                }
+                if (c.Runs.Count > 0) dst.Chunks.Add(c);
+            }
+        }
+
+        // Восстановление каретки после Apply (Redo) и Revert (Undo) операционной правки в ячейке.
+        // Находит абзац ячейки по Id, пересобирает раскладку таблицы и ставит каретку в нужную
+        // позицию. Общий колбэк для операционных ввода/удаления в ячейке.
+        private void RestoreCellCaretAfterOp(Guid paraId, int charPos)
+        {
+            if (DocVm is null) return;
+            _caretChar = charPos;
+            var block = Writersword.Modules.TextEditor.Commands.DocumentModelHelper
+                .FindParagraph(DocVm.Document, paraId);
+            if (block is not null)
+                RebuildAfterCellEdit(block);
+            else
+                RebuildAfterCellEdit();
+        }
+
+        // Незавершённая структурная правка ячейки (между BeginCellEdit и CommitCellEdit).
+        private Writersword.Modules.TextEditor.Commands.CellParagraphsCommand? _pendingCellCmd;
+
+        // Начинает дешёвую обратимую структурную правку одной ячейки (Enter, слияние, удаление
+        // выделения) вместо снапшота всего документа. Возвращает false если лёгкого стека нет —
+        // тогда вызывающий откатывается на старый BeginEdit/CommitEdit.
+        private bool BeginCellEdit(TableCell cell, string desc)
+        {
+            if (TextUndoStack is null || DocVm is null) return false;
+            int caretParaIdx = (IsInCell(_caretPara) ? GetCurrentCell()?.CellParaIndex : null) ?? 0;
+            _pendingCellCmd = new Writersword.Modules.TextEditor.Commands.CellParagraphsCommand(
+                cell, desc, caretParaIdx, _caretChar);
+            return true;
+        }
+
+        // Завершает структурную правку ячейки: снимает пост-состояние, ставит колбэк восстановления
+        // и пушит в лёгкий стек. caretPara — абзац ячейки, где должна оказаться каретка.
+        private void CommitCellEdit(TableCell cell, ParagraphBlock caretPara)
+        {
+            if (_pendingCellCmd is null) return;
+            int idx = cell.Paragraphs.IndexOf(caretPara);
+            if (idx < 0) idx = 0;
+            _pendingCellCmd.Commit(idx, _caretChar);
+            _pendingCellCmd.AfterChange = RestoreCellStructuralCaret;
+            PushTextCommand(_pendingCellCmd);
+            _pendingCellCmd = null;
+        }
+
+        // Восстановление каретки/раскладки после Apply (Redo) и Revert (Undo) структурной правки ячейки.
+        private void RestoreCellStructuralCaret(TableCell cell, int caretParaIdx, int caretChar)
+        {
+            _caretChar = caretChar;
+            if (cell.Paragraphs.Count == 0) { RebuildAfterCellEdit(); return; }
+            int idx = Math.Clamp(caretParaIdx, 0, cell.Paragraphs.Count - 1);
+            RebuildAfterCellEdit(cell.Paragraphs[idx]);
+        }
+
+        // Операционная вставка текста в абзац ячейки (без снапшота всего документа): пишет
+        // InsertTextCommand в лёгкий текстовый стек по Id абзаца ячейки. Форматирование в точке
+        // вставки наследуется. Undo/Redo идут точечно — отсюда быстрый Ctrl+Z/Ctrl+Y в таблице.
+        private bool OperationalCellInsert(TableCell cell, int paraIdx, int pos, string text)
+        {
+            if (TextUndoStack is null || DocVm is null) return false;
+            if (paraIdx < 0 || paraIdx >= cell.Paragraphs.Count) return false;
+            var para = cell.Paragraphs[paraIdx];
+
+            int p = Clamp(pos, 0, para.GetPlainText().Length);
+            var cmd = new Writersword.Modules.TextEditor.Commands.InsertTextCommand(para.Id, p, text);
+            cmd.Apply(DocVm.Document);
+            if (_cellVmCache.TryGetValue(para, out var vm))
+                vm.RefreshPlainTextFromModel();
+            _caretChar = p + text.Length;
+
+            cmd.RestoreCaretCallback = RestoreCellCaretAfterOp;
+            PushTextCommand(cmd);
+            RebuildAfterCellEdit(para);
+            return true;
+        }
+
+        // Операционное удаление диапазона [from, to) в абзаце ячейки (без снапшота): DeleteTextCommand
+        // по Id абзаца ячейки. caretAfterRevert — позиция каретки после Undo.
+        private bool OperationalCellDeleteRange(TableCell cell, int paraIdx, int from, int to, int caretAfterRevert)
+        {
+            if (TextUndoStack is null || DocVm is null) return false;
+            if (paraIdx < 0 || paraIdx >= cell.Paragraphs.Count) return false;
+            var para = cell.Paragraphs[paraIdx];
+
+            string t = para.GetPlainText();
+            int f = Clamp(from, 0, t.Length);
+            int tt = Clamp(to, 0, t.Length);
+            if (tt <= f) return false;
+
+            var cmd = new Writersword.Modules.TextEditor.Commands.DeleteTextCommand(
+                para.Id, f, tt - f, caretAfterRevert: caretAfterRevert);
+            cmd.Apply(DocVm.Document);
+            if (_cellVmCache.TryGetValue(para, out var vm))
+                vm.RefreshPlainTextFromModel();
+            _caretChar = f;
+
+            cmd.RestoreCaretCallback = RestoreCellCaretAfterOp;
+            PushTextCommand(cmd);
+            RebuildAfterCellEdit(para);
+            return true;
+        }
+
         // ── Публичные команды ─────────────────────────────────────────────
+        // Операционно удаляет диапазон [from, to) в одном абзаце (layout-слайс layoutIdx).
+        // Пишет DeleteTextCommand в лёгкий текстовый стек — Undo/Redo идут точечно, без
+        // снапшота и полного пересбора документа. caretAfterRevert — позиция каретки после
+        // Undo (для Backspace — за восстановленным текстом, для Delete/выделения — на месте).
+        // Возвращает false если условия быстрого пути не выполнены (нет стека, ячейка,
+        // пустой диапазон) — вызывающий тогда уходит на снапшотный путь.
+        private bool OperationalDeleteRange(int layoutIdx, int from, int to, int caretAfterRevert)
+        {
+            if (TextUndoStack is null || DocVm is null) return false;
+            if (layoutIdx < 0 || layoutIdx >= _layouts.Count) return false;
+            if (_layouts[layoutIdx].Cell is not null) return false;
+
+            var vm = _layouts[layoutIdx].Vm;
+            if (vm?.Model is null) return false;
+
+            string t = vm.PlainText ?? "";
+            int f = Clamp(from, 0, t.Length);
+            int tt = Clamp(to, 0, t.Length);
+            if (tt <= f) return false;
+
+            var cmd = new Writersword.Modules.TextEditor.Commands.DeleteTextCommand(
+                vm.Model.Id, f, tt - f, caretAfterRevert: caretAfterRevert);
+            cmd.Apply(DocVm.Document);
+            vm.RefreshPlainTextFromModel();
+            _caretPara = layoutIdx;
+            _caretChar = f;
+
+            cmd.RestoreCaretCallback = (paraId, charPos) =>
+            {
+                for (int i = 0; i < _layouts.Count; i++)
+                {
+                    if (_layouts[i].Cell is null && _layouts[i].Vm?.Model?.Id == paraId)
+                    {
+                        _caretPara = i;
+                        _caretChar = charPos;
+                        _layouts[i].Vm?.RefreshPlainTextFromModel();
+                        break;
+                    }
+                }
+                SnapCaretToCorrectSlice();
+                SyncSel();
+                ResetCaret();
+                InvalidateFull();
+            };
+
+            PushTextCommand(cmd);
+            UpdatePreferredX();
+            SyncSel(); ResetCaret();
+            return true;
+        }
+
         public void ExecuteDeleteBack()
         {
             _caretLineHint = -1;
             var pvm = GetVmAt(_caretPara);
             if (pvm is null) return;
             string text = pvm.PlainText ?? "";
+
+            // Операционное удаление (лёгкий текстовый стек, без снапшота всего документа) —
+            // покрывает частые случаи: выделение в пределах одного абзаца и посимвольный
+            // Backspace. Снапшот сериализует и при Undo/Redo пересобирает весь документ
+            // (пересоздаёт все ViewModel и раскладку), из-за чего Ctrl+Z/Ctrl+Y тормозят на
+            // больших файлах. Структурные случаи (многоабзацное/табличное выделение, слияние
+            // абзацев, якоря таблиц и разрывов) остаются на снапшотном пути ниже.
+            if (HasSel() && _tableSelections.Count == 0)
+            {
+                var (sp, sc, ep, ec) = NormalizeSelection();
+                if (sp == ep && !IsInCell(sp)
+                    && OperationalDeleteRange(sp, sc, ec, caretAfterRevert: ec))
+                    return;
+            }
+            else if (!HasSel() && !IsInCell(_caretPara) && _caretChar > 0 && text.Length > 0
+                && OperationalDeleteRange(_caretPara, _caretChar - 1, _caretChar,
+                    caretAfterRevert: _caretChar))
+            {
+                return;
+            }
+
             BeginEdit("Delete");
             if (HasSel()) { DeleteSelection(); CommitEdit(); ResetCaret(); InvalidateFull(); return; }
             if (_caretChar > 0 && text.Length > 0)
@@ -1584,6 +1928,24 @@ namespace Writersword.Modules.TextEditor.Document
             var pvm = GetVmAt(_caretPara);
             if (pvm is null) return;
             string text = pvm.PlainText ?? "";
+
+            // Операционное удаление (лёгкий текстовый стек, без снапшота всего документа) —
+            // выделение в пределах одного абзаца и посимвольный Delete справа. Структурные
+            // случаи остаются на снапшотном пути ниже.
+            if (HasSel() && _tableSelections.Count == 0)
+            {
+                var (sp, sc, ep, ec) = NormalizeSelection();
+                if (sp == ep && !IsInCell(sp)
+                    && OperationalDeleteRange(sp, sc, ec, caretAfterRevert: ec))
+                    return;
+            }
+            else if (!HasSel() && !IsInCell(_caretPara) && _caretChar < text.Length
+                && OperationalDeleteRange(_caretPara, _caretChar, _caretChar + 1,
+                    caretAfterRevert: _caretChar))
+            {
+                return;
+            }
+
             BeginEdit("Delete");
             if (HasSel()) { DeleteSelection(); CommitEdit(); ResetCaret(); InvalidateFull(); return; }
             if (_caretChar < text.Length)
@@ -1713,7 +2075,7 @@ namespace Writersword.Modules.TextEditor.Document
             var pl = _layouts[_caretPara];
             if (pl.Cell != null)
             {
-                DocVm.FireTableCellCursorContext(pl.Cell.ParaBlock);
+                FireCellCursorContext(pl.Cell.ParaBlock);
                 return;
             }
 

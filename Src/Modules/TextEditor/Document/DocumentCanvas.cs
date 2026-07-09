@@ -318,7 +318,21 @@ namespace Writersword.Modules.TextEditor.Document
         private readonly System.Collections.Concurrent.ConcurrentQueue<SKBitmap> _bitmapDisposeQueue = new();
 
         private bool _caretOnlyRedraw = false;
+        // Контент изменился и требует полного рендера. Пока флаг поднят, быстрый путь
+        // (_caretOnlyRedraw — мигание каретки, скролл по кэш-снимку) не имеет права
+        // подменить полный рендер: иначе скролл-событие, пришедшее в одном батче с
+        // правкой текста (ScrollToCaret при печати у края страницы), перетирало запрос
+        // полного рендера, и на экране вечно оставался старый снимок.
+        private bool _contentDirty = true;
         private volatile bool _isTransitioning;
+
+        // Текущий сфокусированный канвас. Хоткеи редактора приходят через глобальный
+        // _hotKeyService и исполняются в TextEditorModule.ExecuteHotKey, которому нужен
+        // именно активный документ. Раньше он брал _lastCreatedView, но при переключении
+        // воркмодов/вкладок это уже другой экземпляр (или его PageCanvas отвязан) — и
+        // Enter/Copy/навигация уходили в чужой канвас. Ссылка обновляется на фокусе и
+        // сбрасывается при откреплении из дерева.
+        internal static DocumentCanvas? FocusedInstance;
 
         // ── Буфер обмена ─────────────────────────────────────────────────
         private string? _clipboardCache;
@@ -560,9 +574,35 @@ namespace Writersword.Modules.TextEditor.Document
                 stale?.Dispose();
 
             base.OnAttachedToVisualTree(e);
+
+            // Возвращаем подписки, снятые в OnDetachedFromVisualTree. Раньше они жили
+            // только в конструкторе: при переиспользовании кэшированной вьюхи (detach →
+            // reattach) конструктор не вызывается, и после переприцепки фокусная логика
+            // и мигание каретки оставались мёртвыми. Пара -=/+= защищает от двойной
+            // подписки при первом attach после конструктора.
+            GotFocus -= OnGotFocusHandler;
+            GotFocus += OnGotFocusHandler;
+            LostFocus -= OnLostFocusHandler;
+            LostFocus += OnLostFocusHandler;
+
+            if (IsFocused)
+            {
+                _caretVisible = true;
+                _caretTimer.Stop();
+                _caretTimer.Start();
+            }
+
+            _logger.Debug("[DIAG] Canvas ATTACHED #{Id} focused={F}", GetHashCode(), IsFocused);
+
+            // Восстанавливаем подписки на DocumentViewModel и параграфы, снятые при
+            // detach: у переиспользуемой вьюхи DataContext не меняется, и без этого
+            // цепочка «ввод → PlainText → перерисовка» оставалась мёртвой навсегда.
+            WireDocVmSubscriptions();
+
             RebuildDpiCache();
             SubscribeToScrollViewer();
             _ = PrefetchClipboardAsync();
+            InvalidateFull();
             Avalonia.Threading.Dispatcher.UIThread.Post(
                 InvalidateMeasure,
                 Avalonia.Threading.DispatcherPriority.Loaded);
@@ -570,7 +610,9 @@ namespace Writersword.Modules.TextEditor.Document
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
+            _logger.Debug("[DIAG] Canvas DETACHED #{Id}", GetHashCode());
             _isTransitioning = true;
+            if (ReferenceEquals(FocusedInstance, this)) FocusedInstance = null;
             base.OnDetachedFromVisualTree(e);
 
             // Останавливаем таймер — он держит ссылку на this через замыкание и мешает GC.
@@ -661,6 +703,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void OnGotFocusHandler(object? sender, Avalonia.Input.FocusChangedEventArgs e)
         {
+            FocusedInstance = this;
             _ = PrefetchClipboardAsync();
 
             // Возобновляем мигание каретки.
@@ -796,31 +839,57 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
                 _lastZoom = DocVm.Zoom;
-                DocVm.Paragraphs.CollectionChanged += OnParagraphsChanged;
-                DocVm.PropertyChanged += OnDocVmPropertyChanged;
-                DocVm.ParagraphFormatChanged += OnParagraphFormatChanged;
-                DocVm.StructureChanged += OnStructureChanged;
-                DocVm.BeginFontPreviewDelegate = BeginFontPreviewSession;
-                DocVm.PreviewFontFamilyDelegate = PreviewFontFamilySession;
-                DocVm.EndFontPreviewDelegate = EndFontPreviewSession;
-                DocVm.FocusEditorDelegate = FocusEditorFromHost;
-                DocVm.OnPageBreakInserted = block => _pendingFocusBlock = block;
-                DocVm.UndoDelegate = ExecuteUndo;
-                DocVm.RedoDelegate = ExecuteRedo;
-                DocVm.CutDelegate = ExecuteCut;
-                DocVm.CopyDelegate = ExecuteCopy;
-                DocVm.PasteDelegate = ExecutePaste;
-                DocVm.BeginEditDelegate = BeginEdit;
-                DocVm.CommitEditDelegate = CommitEdit;
-                DocVm.CommitRunPropertyGranularDelegate = CommitRunPropertyGranular;
-                DocVm.CommitTextEditsDelegate = CommitTextEditsGranular;
-                DocVm.CommitParagraphPropertyGranularDelegate = CommitParagraphPropertyGranular;
-                DocVm.GetCaretWordRangeDelegate = GetCaretWordRange;
-                foreach (var pvm in DocVm.Paragraphs)
-                    WirePvm(pvm);
+                WireDocVmSubscriptions();
             }
 
             InvalidateMeasure();
+        }
+
+        /// <summary>
+        /// Подписки канваса на DocumentViewModel, его параграфы и делегаты.
+        /// Вызывается из OnDataContextChanged и ПОВТОРНО из OnAttachedToVisualTree:
+        /// при detach все подписки снимаются, а у кэшированной вьюхи (переиспользование
+        /// в доке) OnDataContextChanged не срабатывает — без повторной подписки ввод
+        /// менял модель, но перерисовка не запускалась (цепочка PlainText →
+        /// ScheduleRebuild → InvalidateFull была мертва). Идемпотентен: перед каждой
+        /// подпиской выполняется отписка.
+        /// </summary>
+        private void WireDocVmSubscriptions()
+        {
+            if (DocVm is null) return;
+
+            DocVm.Paragraphs.CollectionChanged -= OnParagraphsChanged;
+            DocVm.PropertyChanged -= OnDocVmPropertyChanged;
+            DocVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
+            DocVm.StructureChanged -= OnStructureChanged;
+
+            DocVm.Paragraphs.CollectionChanged += OnParagraphsChanged;
+            DocVm.PropertyChanged += OnDocVmPropertyChanged;
+            DocVm.ParagraphFormatChanged += OnParagraphFormatChanged;
+            DocVm.StructureChanged += OnStructureChanged;
+            DocVm.BeginFontPreviewDelegate = BeginFontPreviewSession;
+            DocVm.PreviewFontFamilyDelegate = PreviewFontFamilySession;
+            DocVm.EndFontPreviewDelegate = EndFontPreviewSession;
+            DocVm.FocusEditorDelegate = FocusEditorFromHost;
+            DocVm.OnPageBreakInserted = block => _pendingFocusBlock = block;
+            DocVm.UndoDelegate = ExecuteUndo;
+            DocVm.RedoDelegate = ExecuteRedo;
+            DocVm.CutDelegate = ExecuteCut;
+            DocVm.CopyDelegate = ExecuteCopy;
+            DocVm.PasteDelegate = ExecutePaste;
+            DocVm.BeginEditDelegate = BeginEdit;
+            DocVm.CommitEditDelegate = CommitEdit;
+            DocVm.CommitRunPropertyGranularDelegate = CommitRunPropertyGranular;
+            DocVm.GetCellSelectionRangesDelegate = GetCellSelectionRanges;
+            DocVm.CommitTextEditsDelegate = CommitTextEditsGranular;
+            DocVm.CommitParagraphPropertyGranularDelegate = CommitParagraphPropertyGranular;
+            DocVm.GetCaretWordRangeDelegate = GetCaretWordRange;
+
+            foreach (var pvm in DocVm.Paragraphs)
+            {
+                UnwirePvm(pvm);
+                WirePvm(pvm);
+            }
         }
 
         // Структурное изменение (вставка/удаление картинки и т.п.): пересобираем раскладку

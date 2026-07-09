@@ -15,6 +15,11 @@ namespace Writersword.Modules.TextEditor.Commands
         private readonly int _charPos;
         private readonly int _length;
 
+        // Позиция каретки после Revert (Undo). Для Backspace каретка возвращается за
+        // восстановленный символ (_charPos + _length), для Delete — остаётся на месте (_charPos).
+        // После Apply (Redo) каретка всегда встаёт в начало удалённого диапазона (_charPos).
+        private readonly int _caretAfterRevert;
+
         /// <summary>
         /// Снапшоты удалённых runs.
         /// Заполняются при первом Apply и используются в Revert.
@@ -23,12 +28,20 @@ namespace Writersword.Modules.TextEditor.Commands
 
         public string Description { get; }
 
+        /// <summary>
+        /// Вызывается после Apply (Redo) и Revert (Undo) для восстановления позиции каретки.
+        /// Параметры: Id параграфа и символьная позиция каретки.
+        /// Устанавливается DocumentCanvas после Push, чтобы не тянуть зависимость на UI в команду.
+        /// </summary>
+        public Action<Guid, int>? RestoreCaretCallback { get; set; }
+
         public DeleteTextCommand(Guid paraId, int charPos, int length,
-            string description = "Delete text")
+            int caretAfterRevert, string description = "Delete text")
         {
             _paraId = paraId;
             _charPos = charPos;
             _length = length;
+            _caretAfterRevert = caretAfterRevert;
             Description = description;
         }
 
@@ -42,6 +55,7 @@ namespace Writersword.Modules.TextEditor.Commands
                 _deletedRuns = DocumentModelHelper.GetRunsInRange(para, _charPos, _length);
 
             DocumentModelHelper.DeleteRange(para, _charPos, _length);
+            RestoreCaretCallback?.Invoke(_paraId, _charPos);
         }
 
         public void Revert(DocumentModel doc)
@@ -50,6 +64,7 @@ namespace Writersword.Modules.TextEditor.Commands
             var para = DocumentModelHelper.FindParagraph(doc, _paraId);
             if (para is null) return;
             DocumentModelHelper.RestoreRuns(para, _charPos, _deletedRuns);
+            RestoreCaretCallback?.Invoke(_paraId, _caretAfterRevert);
         }
 
         public bool TryMerge(ITextCommand next) => false;

@@ -225,13 +225,19 @@ namespace Writersword.Modules.TextEditor.Document
                     CommitEdit();
                     if (applied > 0)
                     {
+                        // Раскладка абзацев ячеек кешируется в _layoutCache по cell-VM, а
+                        // GetOrBuildLayout проверяет только текст и ширину, не форматирование.
+                        // Без явного сброса смена шрифта/формата в ячейке остаётся невидимой.
+                        foreach (var t in targets)
+                            if (_cellVmCache.TryGetValue(t.block, out var cvm))
+                                _layoutCache.Remove(cvm);
                         InvalidateCellLayoutCaches();
                         RebuildLayouts();
                         InvalidateFull();
                     }
                     _logger.Information("[FONT] Commit all targets (cell/mixed): applied={N}", applied);
                     if (DocVm.TableActiveCellParagraph is { } cpr)
-                        DocVm.FireTableCellCursorContext(cpr);
+                        FireCellCursorContext(cpr);
                     else
                         DocVm.FireCursorContextChanged();
                     return;
@@ -240,7 +246,7 @@ namespace Writersword.Modules.TextEditor.Document
                 DocVm?.SetFontFamily(font);
                 _logger.Information("[FONT] Commit via SetFontFamily (fallback)");
                 if (DocVm?.TableActiveCellParagraph is { } cp)
-                    DocVm.FireTableCellCursorContext(cp);
+                    FireCellCursorContext(cp);
                 return;
             }
 
@@ -366,6 +372,20 @@ namespace Writersword.Modules.TextEditor.Document
                 pvm.RefreshPlainTextFromModel();
                 _layoutCache.Remove(pvm);
             }
+
+            // Абзацы внутри ячеек таблиц не входят в DocVm.Paragraphs — их раскладка
+            // кешируется по cell-VM. Без этой инвалидации смена шрифта/формата в ячейке
+            // не видна (кеш проверяет только текст и ширину, не форматирование).
+            bool cellTouched = false;
+            foreach (var kv in _cellVmCache)
+            {
+                if (!idSet.Contains(kv.Key.Id)) continue;
+                kv.Value.RefreshPlainTextFromModel();
+                _layoutCache.Remove(kv.Value);
+                cellTouched = true;
+            }
+            if (cellTouched)
+                InvalidateCellLayoutCaches();
 
             RebuildLayouts();
             // Сбрасываем подсказку строки каретки: после смены шрифта абзац мог перетечь

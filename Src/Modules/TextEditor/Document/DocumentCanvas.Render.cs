@@ -25,6 +25,9 @@ namespace Writersword.Modules.TextEditor.Document
 
         internal void RenderWithSKCanvas(SKCanvas canvas)
         {
+            _logger.Debug("[DIAG] Render #{Id} trans={T} caretOnly={C} dirty={D} bounds={W:F0}x{H:F0}",
+                GetHashCode(), _isTransitioning, _caretOnlyRedraw, _contentDirty,
+                Bounds.Width, Bounds.Height);
             if (_isTransitioning) return;
 
             // Дренируем очередь битмапов ожидающих удаления.
@@ -78,7 +81,7 @@ namespace Writersword.Modules.TextEditor.Document
             // scrollYInPts нужен только для DrawCaret (рисуется в координатах документа).
             float scrollYInPts = scale > 0f ? scrollY / scale : 0f;
 
-            if (_caretOnlyRedraw)
+            if (_caretOnlyRedraw && !_contentDirty)
             {
                 SKImage? cached;
                 int cachedW, cachedH;
@@ -104,6 +107,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (scrollInRange)
                 {
                     _caretOnlyRedraw = false;
+                    _logger.Debug("[DIAG] Render #{Id}: CACHE path", GetHashCode());
 
                     // Снимок рисуем по его реальному bitmapTopY (не scrollY).
                     canvas.DrawImage(cached!, 0, cachedScrollY);
@@ -186,6 +190,10 @@ namespace Writersword.Modules.TextEditor.Document
                 // уже никем не используется — освобождаем сразу.
                 oldImage?.Dispose();
 
+                // Полный рендер выполнен — быстрые пути снова могут рисовать из кэша.
+                _contentDirty = false;
+                _logger.Debug("[DIAG] Render #{Id}: FULL path done", GetHashCode());
+
                 if (newImage is not null)
                     canvas.DrawImage(newImage, 0, bitmapTopY);
 
@@ -208,6 +216,7 @@ namespace Writersword.Modules.TextEditor.Document
                 else
                     RenderFlowMode(canvas, mode, layouts, tables, canvasHeightPt, canvasWidth, _caretVisible && !_zooming);
                 canvas.Restore();
+                _contentDirty = false;
             }
         }
 

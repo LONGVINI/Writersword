@@ -1008,6 +1008,13 @@ namespace Writersword.Modules.TextEditor.Rendering
                     foreach (char ch in run.Text)
                     {
                         SKRunSegment charFormat = format;
+                        char drawCh = ch;
+
+                        // Управляющие символы (\r, \n, \t и прочие C0 < U+0020) не имеют глифа и
+                        // рисуются шрифтом как .notdef — квадрат (□). Затекают в текст ячейки при
+                        // вставке многострочного текста. Рисуем как пробел, сохраняя счётчик
+                        // символов, чтобы каретка/хит-тест не смещались.
+                        if (ch < ' ') drawCh = ' ';
 
                         // Проверяем глифы только для символов вне Basic Latin (U+0080+).
                         // Basic Latin всегда есть в любом текстовом шрифте — проверять незачем,
@@ -1039,7 +1046,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                             }
                         }
 
-                        tokens.Add((ch.ToString(), charFormat, globalIndex));
+                        tokens.Add((drawCh.ToString(), charFormat, globalIndex));
                         globalIndex++;
                     }
                 }

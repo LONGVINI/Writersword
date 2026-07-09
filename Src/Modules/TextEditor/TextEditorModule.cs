@@ -166,6 +166,8 @@ namespace Writersword.Modules.TextEditor
         {
             _viewModel ??= CreateAndInitViewModel();
             var view = new TextEditorView(_undoStack) { DataContext = _viewModel };
+            _logger.Debug("[DIAG] TextEditorView CREATED #{Id} (prev=#{Prev})",
+                view.GetHashCode(), _lastCreatedView?.GetHashCode() ?? 0);
             _lastCreatedView = view;
 
             // Контекст мог быть установлен до создания вьюмодели —
@@ -551,7 +553,8 @@ namespace Writersword.Modules.TextEditor
         /// </summary>
         public void ExecuteHotKey(string id)
         {
-            var canvas = _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
+            var canvas = DocumentCanvas.FocusedInstance
+                ?? _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
 
             if (canvas is not null)
             {

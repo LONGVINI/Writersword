@@ -101,6 +101,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Action<RunProperties>, string, bool>? CommitRunPropertyGranularDelegate
         { get; set; }
 
+        // Диапазоны всех выделенных абзацев текущей ячейки таблицы (Id, From, To). Позиция
+        // выделения живёт в канвасе. Используется форматированием символов в ячейке, чтобы
+        // применять к ВСЕМ выделенным абзацам ячейки, а не к одному активному.
+        public Func<System.Collections.Generic.IReadOnlyList<(System.Guid ParaId, int From, int To)>>?
+            GetCellSelectionRangesDelegate
+        { get; set; }
+
         // Гранулярный коммит изменений текста с сохранением форматирования (смена регистра).
         // Канвас строит ChangeCaseCommand на каждый диапазон и пушит одной командой в TextUndoStack.
         // Возвращает true, если обработал; иначе ChangeCase идёт снапшотным запасным путём.
@@ -301,10 +308,17 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// Обновляет контекст линейки/риббона для параграфа внутри ячейки таблицы.
         /// Вызывается из DocumentCanvas при каждом изменении позиции каретки в таблице.
         /// </summary>
-        public void FireTableCellCursorContext(ParagraphBlock cellPara)
+        public void FireTableCellCursorContext(ParagraphBlock cellPara, int selStart = 0, int selEnd = 0)
         {
             TableActiveCellParagraph = cellPara;
-            var tempVm = new ParagraphViewModel(cellPara);
+            var tempVm = new ParagraphViewModel(cellPara)
+            {
+                // Реальная позиция каретки/выделения в ячейке — иначе BuildCursorContext
+                // всегда читал бы первый ран, и риббон показывал бы один шрифт независимо
+                // от того, где стоит каретка и что выделено.
+                SelectionStart = selStart,
+                SelectionEnd = selEnd
+            };
             CursorContextChanged?.Invoke(BuildCursorContext(tempVm));
         }
 
@@ -1302,6 +1316,22 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 TableActiveCellParagraph is not null, clearAll,
                 CommitRunPropertyGranularDelegate is not null, _activeParagraph is not null,
                 _selectionStart, _selectionEnd);
+            // Ячейка таблицы: применяем операционно ко ВСЕМ выделенным абзацам ячейки (диапазоны
+            // отдаёт канвас), а не к одному активному — иначе формат «через строку» не проходил.
+            // Без выделения / при очистке — старый снапшотный путь (умеет ставить свойство пустому
+            // рану для «ожидающего» форматирования).
+            if (TableActiveCellParagraph is not null && !clearAll
+                && CommitRunPropertyGranularDelegate is not null)
+            {
+                var cellRanges = GetCellSelectionRangesDelegate?.Invoke();
+                if (cellRanges is { Count: > 0 }
+                    && CommitRunPropertyGranularDelegate(cellRanges, mutate, "Format text"))
+                {
+                    FireCursorContextChanged();
+                    return;
+                }
+            }
+
             // Ячейка таблицы, очистка форматирования или нет лёгкого пути — снапшот (как было).
             if (TableActiveCellParagraph is not null || clearAll
                 || CommitRunPropertyGranularDelegate is null || _activeParagraph is null)

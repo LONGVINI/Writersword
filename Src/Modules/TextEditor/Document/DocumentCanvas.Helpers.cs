@@ -364,15 +364,21 @@ namespace Writersword.Modules.TextEditor.Document
                 dstCell.Paragraphs.Clear();
                 foreach (var para in srcCell.Paragraphs)
                 {
-                    var newPara = new ParagraphBlock();
+                    var newPara = new ParagraphBlock
+                    {
+                        Properties = para.Properties.Clone(),
+                        ListProperties = para.ListProperties?.Clone()
+                    };
                     newPara.Chunks.Clear();
                     foreach (var chunk in para.Chunks)
                     {
                         var newChunk = new TextChunk();
                         foreach (var run in chunk.Runs)
-                            newChunk.Runs.Add(new RunModel { Text = run.Text });
+                            newChunk.Runs.Add(run.Clone());
                         newPara.Chunks.Add(newChunk);
                     }
+                    if (newPara.Chunks.Count == 0)
+                        newPara.Chunks.Add(new TextChunk());
                     dstCell.Paragraphs.Add(newPara);
                 }
                 if (dstCell.Paragraphs.Count == 0)
@@ -474,6 +480,58 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
+        // Вставляет скопированный блок ячеек в таблицу под кареткой «сетка в сетку».
+        // Операционной командой PasteCellsCommand (обратимо, без снапшота документа).
+        // Возвращает false если вставку выполнить нельзя (нет ячейки/стека/таблицы).
+        private bool TryPasteCellsIntoTable(TableBlock copied)
+        {
+            if (TextUndoStack is null || DocVm is null) return false;
+
+            var info = GetCurrentCell();
+            if (info is null) return false;
+
+            var table = info.Table;
+            var anchorCell = info.Cell;
+            int row0 = anchorCell.Row;
+            int col0 = anchorCell.Column;
+
+            // Источник: относительные координаты скопированных ячеек + параграфы + фон.
+            var source = new List<(int r, int c, List<ParagraphBlock> paras, string? bg)>();
+            foreach (var cell in copied.Cells)
+                source.Add((cell.Row, cell.Column, cell.Paragraphs, cell.BackgroundColor));
+            if (source.Count == 0) return false;
+
+            var cmd = new Writersword.Modules.TextEditor.Commands.PasteCellsCommand(
+                table, row0, col0, source);
+
+            cmd.AfterChange = () =>
+            {
+                InvalidateCellLayoutCaches();
+                _cellVmCache.Clear();
+                RebuildLayouts();
+
+                // Каретку — в якорную ячейку (её первый параграф).
+                for (int i = 0; i < _layouts.Count; i++)
+                {
+                    if (ReferenceEquals(_layouts[i].Cell?.Cell, anchorCell))
+                    {
+                        _caretPara = i;
+                        _caretChar = 0;
+                        break;
+                    }
+                }
+                SnapCaretToCorrectSlice();
+                NotifyCaretEnteredTableCallback();
+                SyncSel();
+                ResetCaret();
+                InvalidateFull();
+            };
+
+            cmd.Apply(DocVm.Document);
+            PushTextCommand(cmd);
+            return true;
+        }
+
         private async Task PasteAsync()
         {
             if (IsEditingBlocked) return;
@@ -505,6 +563,21 @@ namespace Writersword.Modules.TextEditor.Document
                         }
                     }
                 }
+            }
+
+            // Каретка в ячейке, а в буфере блок таблицы (2+ ячейки) — вставляем «сетка в сетку»:
+            // содержимое скопированных ячеек ложится в целевые начиная с текущей. Операционно,
+            // без снапшота. Одиночная ячейка сюда не попадает — она уходит на plain-text путь ниже.
+            if (IsInCell(_caretPara) && TextUndoStack != null
+                && !string.IsNullOrEmpty(_internalClipboardJson) && DocVm is not null)
+            {
+                var cellOpts = new JsonSerializerOptions();
+                var cellBlocks = JsonSerializer.Deserialize<List<ClipboardBlock>>(_internalClipboardJson, cellOpts);
+                var copiedTable = cellBlocks?
+                    .FirstOrDefault(b => b.Kind == ClipboardBlockKind.Table && b.Table != null)?.Table;
+                if (copiedTable != null && copiedTable.Cells.Count >= 2
+                    && TryPasteCellsIntoTable(copiedTable))
+                    return;
             }
 
             // Внутренний буфер используется только когда есть таблицы.
@@ -1172,6 +1245,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (_isTransitioning && TopLevel.GetTopLevel(this) is not null)
                 _isTransitioning = false;
+            _contentDirty = true;
             _caretOnlyRedraw = false;
             InvalidateVisual();
         }

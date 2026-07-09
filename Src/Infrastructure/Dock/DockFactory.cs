@@ -1252,13 +1252,27 @@ namespace Writersword.Infrastructure.Dock
         /// прикрепление вьюхи выполняются следующим проходом диспетчера с фоновым
         /// приоритетом — каждый модуль в своём кадре, ввод пользователя не блокируется.
         /// </summary>
+        // Актуальный маркер отложенного задания для каждого документа: если для документа
+        // запланировано новое прикрепление, устаревшие задания в очереди отменяются —
+        // без этого два наслоившихся задания (закрытие модуля + пересборка) дёргали
+        // одну вьюху туда-сюда, и второе могло отцепить только что прицепленную.
+        private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Document, object> _deferredTokens = new();
+
         private void SetContentDeferred(Document doc, Func<Avalonia.Controls.Control?> provideView)
         {
             var previous = doc.Content as Avalonia.Controls.Control;
+            var token = new object();
+            _deferredTokens.Remove(doc);
+            _deferredTokens.Add(doc, token);
             doc.Content = new ModuleLoadingPlaceholder();
 
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
+                // Задание устарело: для этого документа запланировано более новое.
+                if (!_deferredTokens.TryGetValue(doc, out var current)
+                    || !ReferenceEquals(current, token))
+                    return;
+
                 try
                 {
                     var view = provideView();
@@ -1276,6 +1290,9 @@ namespace Writersword.Infrastructure.Dock
                     PaneAutoHideBehavior.Attach(view);
                     doc.Content = null;
                     doc.Content = view;
+                    _logger.LogDebug("[DIAG] Deferred attach {Id}: view #{Hash} prev=#{Prev} sameView={Same}",
+                        doc.Id, view.GetHashCode(), previous?.GetHashCode() ?? 0,
+                        ReferenceEquals(previous, view));
                 }
                 catch (Exception ex)
                 {

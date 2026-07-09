@@ -375,7 +375,14 @@ namespace Writersword.Modules.TextEditor.Document
                     // Высота как в полном пересборе page-режима: строки + интервал ПОСЛЕ.
                     // Интервал «перед» — это отступ до абзаца, в высоту записи не входит,
                     // иначе при наборе абзац «толстеет» на Space Before и текст прыгает.
-                    float newH = Math.Max(newLayout.TotalHeightPt + newLayout.SpaceAfterPt, FallbackLinePt);
+                    // Нижней отсечки к FallbackLinePt для непустого абзаца быть не должно:
+                    // полный пересбор её не применяет, и при строке чуть ниже FallbackLinePt
+                    // newH оказывался больше сохранённого HeightPt — каждое нажатие давало
+                    // ложный yShift ~1px и весь текст ниже дёргался. FallbackLinePt нужен
+                    // только для пустого абзаца (строк нет).
+                    float newH = newLayout.Lines.Count == 0
+                        ? FallbackLinePt
+                        : newLayout.TotalHeightPt + newLayout.SpaceAfterPt;
                     if (!seenPvm)
                     {
                         // Считаем дельту по первому вхождению этого pvm.
