@@ -17,6 +17,85 @@
         <conv:IntIsZeroConverter x:Key="IntIsZeroConverter"/>
     </UserControl.Resources>
 
+    <!-- Стили карточек вынесены из шаблона на уровень вью: стили, объявленные
+         внутри DataTemplate, создаются заново для каждой карточки (свой набор
+         Style и Transitions на каждый экземпляр из сотен), а здесь существуют
+         в одном экземпляре и применяются селекторами точно так же. -->
+    <UserControl.Styles>
+        <!-- Карточка «взята»: приподнимаем тенью при зажатии. -->
+        <Style Selector="Border.card-root.picked">
+            <Setter Property="BoxShadow" Value="0 0 16 2 #99FFFFFF"/>
+            <Setter Property="ZIndex" Value="20"/>
+        </Style>
+        <!-- При наведении карточка слегка приподнимается — видно, что её можно двигать. -->
+        <Style Selector="Border.card-root:pointerover">
+            <Setter Property="BoxShadow" Value="0 0 10 1 #55FFFFFF"/>
+            <Setter Property="ZIndex" Value="10"/>
+        </Style>
+        <!-- Кнопки edit/delete появляются только при наведении. Это освобождает
+             пространство в маленьких карточках и улучшает UX. -->
+        <Style Selector="Border.card-root StackPanel.card-edit-btns">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.card-root:pointerover StackPanel.card-edit-btns">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
+        <!-- Закладка группы гаснет при наведении — уступает место
+             кнопкам правки/удаления, чтобы не перекрывать их. -->
+        <Style Selector="Border.card-root Path.group-bookmark">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.card-root:pointerover Path.group-bookmark">
+            <Setter Property="Opacity" Value="0"/>
+        </Style>
+        <!-- Цветопикер тоже только при наведении на карточку. -->
+        <Style Selector="Border.card-root colorControls|ColorPickerButton">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.card-root:pointerover colorControls|ColorPickerButton">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
+        <!-- Шестерёнка настроек карточки — тоже только при наведении. -->
+        <Style Selector="Border.card-root Button.card-cfg">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.card-root:pointerover Button.card-cfg">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
+        <!-- «Плоские» кнопки: без подсветки фона при наведении и нажатии.
+             Заменяет одинаковые инлайновые Button.Styles в шаблонах карточки
+             и заголовка папки. -->
+        <Style Selector="Button.flat:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.flat:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <!-- Круговой ободок аватара при наведении на кнопку-кружок. -->
+        <Style Selector="Button.avatar-btn:pointerover Border.avatar-ring">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
+    </UserControl.Styles>
+
     <Grid RowDefinitions="Auto,*,Auto">
 
         <!-- toolbar -->
@@ -158,20 +237,13 @@
                                                                               LeftPreferredWidth="260"
                                                                               RightPreferredWidth="210">
                                                     <Panel Margin="0,0,12,0" ClipToBounds="True">
-                                                        <Button Command="{Binding SelectOrRenameCommand}"
+                                                        <Button Classes="flat"
+                                                                Command="{Binding SelectOrRenameCommand}"
                                                                 Background="Transparent" BorderThickness="0"
                                                                 Padding="0" VerticalAlignment="Center"
                                                                 HorizontalAlignment="Stretch"
                                                                 HorizontalContentAlignment="Stretch"
                                                                 IsVisible="{Binding !IsRenaming}">
-                                                            <Button.Styles>
-                                                                <Style Selector="Button:pointerover /template/ ContentPresenter">
-                                                                    <Setter Property="Background" Value="Transparent"/>
-                                                                </Style>
-                                                                <Style Selector="Button:pressed /template/ ContentPresenter">
-                                                                    <Setter Property="Background" Value="Transparent"/>
-                                                                </Style>
-                                                            </Button.Styles>
                                                             <TextBlock Text="{Binding Name}"
                                                                        FontSize="13" FontWeight="SemiBold"
                                                                        Foreground="{DynamicResource TextPrimaryBrush}"
@@ -201,20 +273,13 @@
                                                                       Foreground="{DynamicResource TextMutedBrush}"
                                                                       Opacity="0.4"/>
                                                         </Button>
-                                                        <Button Command="{Binding StartEditCommentCommand}"
+                                                        <Button Classes="flat"
+                                                                Command="{Binding StartEditCommentCommand}"
                                                                 Background="Transparent" BorderThickness="0"
                                                                 Padding="0" VerticalAlignment="Center"
                                                                 HorizontalAlignment="Stretch"
                                                                 HorizontalContentAlignment="Stretch"
                                                                 IsVisible="{Binding Comment, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                                            <Button.Styles>
-                                                                <Style Selector="Button:pointerover /template/ ContentPresenter">
-                                                                    <Setter Property="Background" Value="Transparent"/>
-                                                                </Style>
-                                                                <Style Selector="Button:pressed /template/ ContentPresenter">
-                                                                    <Setter Property="Background" Value="Transparent"/>
-                                                                </Style>
-                                                            </Button.Styles>
                                                             <TextBlock Text="{Binding Comment}"
                                                                        FontSize="11" FontStyle="Italic"
                                                                        Foreground="{DynamicResource TextSecondaryBrush}"
@@ -280,17 +345,20 @@
                                     </Border>
 
                                     <!-- карточки персонажей -->
-                                    <ItemsRepeater ItemsSource="{Binding VisibleCharacters}"
+                                    <!-- PerfItemsRepeater — временная замена ItemsRepeater
+                                         с замером времени Measure/Arrange (диагностика лагов).
+                                         Вернуть ItemsRepeater после расследования. -->
+                                    <controls:PerfItemsRepeater ItemsSource="{Binding VisibleCharacters}"
                                                    IsVisible="{Binding IsExpanded}"
                                                    Margin="12,8">
-                                            <ItemsRepeater.Layout>
+                                            <controls:PerfItemsRepeater.Layout>
                                                 <UniformGridLayout MaximumRowsOrColumns="20"
                                                                    MinItemWidth="152"
                                                                    MinColumnSpacing="0"
                                                                    MinRowSpacing="0"
                                                                    ItemsStretch="Fill"/>
-                                            </ItemsRepeater.Layout>
-                                            <ItemsRepeater.ItemTemplate>
+                                            </controls:PerfItemsRepeater.Layout>
+                                            <controls:PerfItemsRepeater.ItemTemplate>
                                                 <DataTemplate DataType="vm:CharacterListItemViewModel">
 
                                                     <Border Classes="card-root"
@@ -304,67 +372,9 @@
                                                             Opacity="{Binding DragOpacity}"
                                                             IsHitTestVisible="{Binding !IsDragging}">
 
-                                                        <!-- Стили hover: кнопки edit/delete появляются только при наведении.
-                                                             Это освобождает пространство в маленьких карточках и улучшает UX. -->
-                                                        <Border.Styles>
-                                                            <!-- Карточка «взята»: приподнимаем тенью при зажатии. -->
-                                                            <Style Selector="Border.card-root.picked">
-                                                                <Setter Property="BoxShadow" Value="0 0 16 2 #99FFFFFF"/>
-                                                                <Setter Property="ZIndex" Value="20"/>
-                                                            </Style>
-                                                            <!-- При наведении карточка слегка приподнимается — видно, что её можно двигать. -->
-                                                            <Style Selector="Border.card-root:pointerover">
-                                                                <Setter Property="BoxShadow" Value="0 0 10 1 #55FFFFFF"/>
-                                                                <Setter Property="ZIndex" Value="10"/>
-                                                            </Style>
-                                                            <Style Selector="Border.card-root StackPanel.card-edit-btns">
-                                                                <Setter Property="Opacity" Value="0"/>
-                                                                <Setter Property="Transitions">
-                                                                    <Transitions>
-                                                                        <DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
-                                                                    </Transitions>
-                                                                </Setter>
-                                                            </Style>
-                                                            <Style Selector="Border.card-root:pointerover StackPanel.card-edit-btns">
-                                                                <Setter Property="Opacity" Value="1"/>
-                                                            </Style>
-                                                            <!-- Закладка группы гаснет при наведении — уступает место
-                                                                 кнопкам правки/удаления, чтобы не перекрывать их. -->
-                                                            <Style Selector="Border.card-root Path.group-bookmark">
-                                                                <Setter Property="Transitions">
-                                                                    <Transitions>
-                                                                        <DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
-                                                                    </Transitions>
-                                                                </Setter>
-                                                            </Style>
-                                                            <Style Selector="Border.card-root:pointerover Path.group-bookmark">
-                                                                <Setter Property="Opacity" Value="0"/>
-                                                            </Style>
-                                                            <!-- Цветопикер тоже только при наведении на карточку. -->
-                                                            <Style Selector="Border.card-root colorControls|ColorPickerButton">
-                                                                <Setter Property="Opacity" Value="0"/>
-                                                                <Setter Property="Transitions">
-                                                                    <Transitions>
-                                                                        <DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
-                                                                    </Transitions>
-                                                                </Setter>
-                                                            </Style>
-                                                            <Style Selector="Border.card-root:pointerover colorControls|ColorPickerButton">
-                                                                <Setter Property="Opacity" Value="1"/>
-                                                            </Style>
-                                                            <!-- Шестерёнка настроек карточки — тоже только при наведении. -->
-                                                            <Style Selector="Border.card-root Button.card-cfg">
-                                                                <Setter Property="Opacity" Value="0"/>
-                                                                <Setter Property="Transitions">
-                                                                    <Transitions>
-                                                                        <DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
-                                                                    </Transitions>
-                                                                </Setter>
-                                                            </Style>
-                                                            <Style Selector="Border.card-root:pointerover Button.card-cfg">
-                                                                <Setter Property="Opacity" Value="1"/>
-                                                            </Style>
-                                                        </Border.Styles>
+                                                        <!-- Стили hover карточки объявлены на уровне UserControl
+                                                             (UserControl.Styles) — один экземпляр на весь список
+                                                             вместо копии на каждую карточку. -->
 
                                                         <Border.RenderTransform>
                                                             <TranslateTransform>
@@ -405,7 +415,8 @@
 
                                                                 <!-- Полоса-аватар: картинка (или заливка цветом) на всю цветную
                                                                      зону. Включается настройкой «Вид аватара: полоска». -->
-                                                                <Button Background="Transparent"
+                                                                <Button Classes="flat"
+                                                                        Background="Transparent"
                                                                         BorderThickness="0"
                                                                         Padding="0"
                                                                         HorizontalAlignment="Stretch"
@@ -414,14 +425,6 @@
                                                                         VerticalContentAlignment="Stretch"
                                                                         ZIndex="2"
                                                                         IsVisible="{Binding ShowAvatarStrip}">
-                                                                    <Button.Styles>
-                                                                        <Style Selector="Button:pointerover /template/ ContentPresenter">
-                                                                            <Setter Property="Background" Value="Transparent"/>
-                                                                        </Style>
-                                                                        <Style Selector="Button:pressed /template/ ContentPresenter">
-                                                                            <Setter Property="Background" Value="Transparent"/>
-                                                                        </Style>
-                                                                    </Button.Styles>
                                                                     <Button.Flyout>
                                                                         <Flyout Placement="Bottom">
                                                                             <StackPanel Spacing="6" Margin="4" MinWidth="140">
@@ -459,7 +462,8 @@
                                                                 </Button>
 
                                                                 <!-- Кружок без аватарки: клик сразу открывает выбор фото -->
-                                                                <Button Background="Transparent"
+                                                                <Button Classes="flat avatar-btn"
+                                                                    Background="Transparent"
                                                                     BorderThickness="0"
                                                                     Padding="0"
                                                                     ClipToBounds="False"
@@ -469,18 +473,6 @@
                                                                     Command="{Binding OpenAvatarPickerCommand}"
                                                                     IsVisible="{Binding ShowCircleNoPhoto}"
                                                                     ToolTip.Tip="{x:Static res:CharactersStrings.AvatarPickerFlyout_Upload}">
-                                                                    <Button.Styles>
-                                                                        <Style Selector="Button:pointerover /template/ ContentPresenter">
-                                                                            <Setter Property="Background" Value="Transparent"/>
-                                                                        </Style>
-                                                                        <Style Selector="Button:pressed /template/ ContentPresenter">
-                                                                            <Setter Property="Background" Value="Transparent"/>
-                                                                        </Style>
-                                                                        <!-- Круговой ободок при наведении -->
-                                                                        <Style Selector="Button:pointerover Border.avatar-ring">
-                                                                            <Setter Property="Opacity" Value="1"/>
-                                                                        </Style>
-                                                                    </Button.Styles>
                                                                     <Panel>
                                                                         <Ellipse Width="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
                                                                                  Height="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
@@ -514,7 +506,8 @@
                                                                 </Button>
 
                                                                 <!-- Кружок с аватаркой: клик показывает меню Upload/Delete -->
-                                                                <Button Background="Transparent"
+                                                                <Button Classes="flat avatar-btn"
+                                                                    Background="Transparent"
                                                                     BorderThickness="0"
                                                                     Padding="0"
                                                                     ClipToBounds="False"
@@ -522,18 +515,6 @@
                                                                     VerticalAlignment="Center"
                                                                     ZIndex="2"
                                                                     IsVisible="{Binding ShowCirclePhoto}">
-                                                                    <Button.Styles>
-                                                                        <Style Selector="Button:pointerover /template/ ContentPresenter">
-                                                                            <Setter Property="Background" Value="Transparent"/>
-                                                                        </Style>
-                                                                        <Style Selector="Button:pressed /template/ ContentPresenter">
-                                                                            <Setter Property="Background" Value="Transparent"/>
-                                                                        </Style>
-                                                                        <!-- Круговой ободок при наведении -->
-                                                                        <Style Selector="Button:pointerover Border.avatar-ring">
-                                                                            <Setter Property="Opacity" Value="1"/>
-                                                                        </Style>
-                                                                    </Button.Styles>
                                                                     <Button.Flyout>
                                                                         <Flyout Placement="Bottom">
                                                                             <StackPanel Spacing="6" Margin="4" MinWidth="140">
@@ -618,7 +599,8 @@
                                                                          VerticalAlignment="Stretch"
                                                                          IsVisible="{Binding IsRenaming}"
                                                                          behaviors:FocusOnVisibleBehavior.Enabled="{Binding IsRenaming}"/>
-                                                                <Button Command="{Binding StartRenameCommand}"
+                                                                <Button Classes="flat"
+                                                                        Command="{Binding StartRenameCommand}"
                                                                         Background="Transparent"
                                                                         BorderThickness="0"
                                                                         Padding="6,4"
@@ -627,14 +609,6 @@
                                                                         HorizontalContentAlignment="{Binding $parent[UserControl].DataContext.CardNamePanelAlignment}"
                                                                         IsVisible="{Binding IsShowingNameDisplay}"
                                                                         ToolTip.Tip="{x:Static loc:CharactersStrings.Character_RenameTooltip}">
-                                                                    <Button.Styles>
-                                                                        <Style Selector="Button:pointerover /template/ ContentPresenter">
-                                                                            <Setter Property="Background" Value="Transparent"/>
-                                                                        </Style>
-                                                                        <Style Selector="Button:pressed /template/ ContentPresenter">
-                                                                            <Setter Property="Background" Value="Transparent"/>
-                                                                        </Style>
-                                                                    </Button.Styles>
                                                                     <TextBlock Text="{Binding Name}"
                                                                                FontSize="12" FontWeight="Medium"
                                                                                TextWrapping="NoWrap"
@@ -730,8 +704,8 @@
                                                     </Border>
 
                                                 </DataTemplate>
-                                            </ItemsRepeater.ItemTemplate>
-                                        </ItemsRepeater>
+                                            </controls:PerfItemsRepeater.ItemTemplate>
+                                        </controls:PerfItemsRepeater>
 
                                 </StackPanel>
                             </DataTemplate>
@@ -751,7 +725,11 @@
                                FontSize="14"
                                Foreground="{DynamicResource TextSecondaryBrush}"
                                HorizontalAlignment="Center"/>
-                    <ProgressBar IsIndeterminate="True"
+                    <!-- IsIndeterminate привязан к IsLoading, а не задан константой:
+                         бесконечная анимация бегунка живёт по псевдоклассу
+                         :indeterminate независимо от видимости и инвалидирует
+                         раскладку каждый кадр всё время жизни модуля. -->
+                    <ProgressBar IsIndeterminate="{Binding IsLoading}"
                                  Width="200"
                                  Height="4"/>
                 </StackPanel>

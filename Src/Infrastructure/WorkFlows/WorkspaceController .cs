@@ -164,50 +164,31 @@ namespace Writersword.Infrastructure.Workspace
             // доступными после CreateLayout — Task.Run должен быть строго после него.
             string? pendingCachePath = null;
             string? pendingCacheProjectId = null;
-            Dictionary<string, object?>? pendingCustomData = null;
-            Dictionary<string, object?>? pendingSessionData = null;
 
-            // Сбор данных модулей (сериализация документов!) нужен только если новый
-            // WorkMode реально создаст модуль с нуля: живые модули переиспользуются
-            // как есть (DockFactory), а их состояние свежее любого кеша. Без этой
-            // проверки каждый переклик воркмода сериализовал весь документ на UI-потоке.
+            // Сбор данных модулей нужен только если новый WorkMode реально создаст
+            // модуль с нуля: живые модули переиспользуются как есть (DockFactory),
+            // а их состояние свежее любого кеша. Без этой проверки каждый переклик
+            // воркмода собирал данные всех модулей.
             bool willCreateNewModules = newMode.ModuleSlots
                 .Any(s => _tab.ModuleContext.GetModule(s.ModuleType) == null);
 
             var allModulesNow = _tab.ModuleContext.GetAllModules();
             if (allModulesNow.Count > 0 && willCreateNewModules)
             {
-                var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
                 var cacheService = App.Services.GetRequiredService<IZipCacheService>();
-                var (customData, sessionData) = stateCollector.CollectAllData(allModulesNow);
 
-                if (customData.Count > 0)
-                {
-                    var project = _tab.GetProject();
+                // Удаляем устаревший кеш чтобы отложенные загрузки новых модулей
+                // читали project.ModulesData, а не файл с данными на 10 секунд старше.
+                // Сам сбор данных модулей выполняется ЦЕЛИКОМ в фоновой задаче после
+                // CreateLayout: сериализация сотен персонажей или целого документа
+                // на UI-потоке блокировала каждое переключение воркмода на сотни мс.
+                // Тяжёлые модули (IStateSnapshotModule) внутри GetCustomData сами
+                // прыгают на UI-поток только за быстрым снимком — как при периодическом
+                // автосохранении CacheUpdateService, это тот же проверенный путь.
+                cacheService.DeleteCache(_projectPath);
 
-                    // Обновляем project.ModulesData в памяти.
-                    // CreateLayout использует это как fallback когда кеш недоступен —
-                    // модули получат актуальные данные без блокировки UI-потока.
-                    foreach (var kvp in customData)
-                        project.ModulesData[kvp.Key] = kvp.Value;
-
-                    // Удаляем устаревший кеш чтобы CreateLayout читал из project.ModulesData,
-                    // а не из файла с данными на 10 секунд старше только что собранных.
-                    cacheService.DeleteCache(_projectPath);
-
-                    // Запоминаем данные — Task.Run запустим ПОСЛЕ CreateLayout
-                    // чтобы избежать race condition с LoadCacheWithSession (IOException).
-                    pendingCachePath = _projectPath;
-                    pendingCacheProjectId = project.Id;
-                    pendingCustomData = customData;
-                    pendingSessionData = sessionData;
-
-                    _logger.LogDebug("Module data updated in-memory for WorkMode switch: {Count} modules", customData.Count);
-                }
-                else
-                {
-                    _logger.LogWarning("No module data collected before WorkMode switch — cache not updated");
-                }
+                pendingCachePath = _projectPath;
+                pendingCacheProjectId = _tab.GetProject().Id;
             }
 
             CloseAllFloatWindows();
@@ -216,7 +197,9 @@ namespace Writersword.Infrastructure.Workspace
             newMode.IsActive = true;
             _activeWorkMode = newMode;
 
-            _dockFactory.DetachViewsFromLayout(_dockLayout);
+            // clearDataContext: false — модули паркуются живыми и их вью переиспользуются
+            // при возврате в воркмод; разрыв биндингов больших вью занимал секунды UI-потока.
+            _dockFactory.DetachViewsFromLayout(_dockLayout, clearDataContext: false);
 
             // Модули, которых нет в новом WorkMode, НЕ уничтожаются — паркуются живыми
             // в контексте вкладки. Возврат в прежний WorkMode переиспользует их мгновенно,
@@ -224,25 +207,58 @@ namespace Writersword.Infrastructure.Workspace
             // закрытия вкладки — осознанная цена за мгновенное переключение.
 
             // CreateLayout читает кеш — к этому моменту он уже удалён,
-            // поэтому LoadCacheWithSession вернёт null и модули загрузятся
-            // из project.ModulesData (обновлён выше).
+            // поэтому LoadCacheWithSession вернёт null и создаваемые с нуля модули
+            // загрузятся из project.ModulesData. Их записи в ModulesData собранными
+            // данными не затрагиваются (собираются только живые модули, а они
+            // переиспользуются без чтения данных), поэтому отложенное обновление
+            // словаря в фоновой задаче ниже на CreateLayout не влияет.
+            var layoutStopwatch = System.Diagnostics.Stopwatch.StartNew();
             _dockLayout = _dockFactory.CreateLayout(newMode, _tab);
+            layoutStopwatch.Stop();
+            if (layoutStopwatch.ElapsedMilliseconds > 50)
+            {
+                _logger.LogWarning(
+                    "WorkMode switch CreateLayout took {ElapsedMs}ms on UI thread for: {Title}",
+                    layoutStopwatch.ElapsedMilliseconds, newMode.Title);
+            }
 
-            // Async-сохранение СТРОГО ПОСЛЕ CreateLayout — здесь нет race condition.
+            // Async-сбор данных модулей и сохранение СТРОГО ПОСЛЕ CreateLayout — здесь нет race condition.
             // До CreateLayout Task.Run и LoadCacheWithSession конкурировали за .wsasd → IOException.
             // GetAwaiter().GetResult() здесь замораживал UI на 100-500мс и ломал фокус TextBox.
-            if (pendingCustomData != null && pendingCachePath != null && pendingCacheProjectId != null)
+            if (pendingCachePath != null && pendingCacheProjectId != null)
             {
+                var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
                 var cacheServiceForSave = App.Services.GetRequiredService<IZipCacheService>();
+                var modulesToCollect = allModulesNow;
                 var path = pendingCachePath;
                 var pid = pendingCacheProjectId;
-                var cd = pendingCustomData;
-                var sd = pendingSessionData;
                 _ = Task.Run(async () =>
                 {
                     try
                     {
-                        await cacheServiceForSave.SaveCacheAsync(path, pid, cd, sd ?? new Dictionary<string, object?>());
+                        // Сбор данных модулей на фоновом потоке: сериализация сотен
+                        // персонажей и целых документов не касается UI-потока. Модули
+                        // с IStateSnapshotModule внутри GetCustomData прыгают на UI
+                        // только за быстрым снимком модели.
+                        var (cd, sd) = stateCollector.CollectAllData(modulesToCollect);
+
+                        if (cd.Count == 0)
+                        {
+                            _logger.LogWarning("No module data collected after WorkMode switch — cache not updated");
+                            return;
+                        }
+
+                        // Обновляем project.ModulesData строго на UI-потоке: словарь
+                        // читается кодом UI (fallback в DockFactory при создании модулей),
+                        // запись с фонового потока создала бы гонку.
+                        var project = _tab.GetProject();
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            foreach (var kvp in cd)
+                                project.ModulesData[kvp.Key] = kvp.Value;
+                        });
+
+                        await cacheServiceForSave.SaveCacheAsync(path, pid, cd, sd);
                         _logger.LogDebug("Cache saved async after WorkMode switch: {Count} modules", cd.Count);
                     }
                     catch (Exception ex)
@@ -573,6 +589,10 @@ namespace Writersword.Infrastructure.Workspace
 
             _logger.LogDebug("Suspending workspace (modules kept alive)");
 
+            // Диагностика провисаний: Suspend выполняется синхронно на UI-потоке
+            // при каждом уходе с вкладки. Замеряем каждый этап отдельно.
+            var suspendStopwatch = System.Diagnostics.Stopwatch.StartNew();
+
             var (serializedLayout, updatedSlots) = _dockFactory.SerializeCurrentLayout(
                 _dockLayout, _activeWorkMode, _tab.ModuleContext);
             if (serializedLayout != null)
@@ -581,6 +601,8 @@ namespace Writersword.Infrastructure.Workspace
                 _activeWorkMode.ModuleSlots = updatedSlots;
             }
 
+            long serializeMs = suspendStopwatch.ElapsedMilliseconds;
+
             _autoSave.Stop();
 
             // Сбрасываем состояние модулей в кеш (асинхронность внутри сервиса),
@@ -588,9 +610,24 @@ namespace Writersword.Infrastructure.Workspace
             var cacheService = App.Services.GetRequiredService<ICacheUpdateService>();
             cacheService.SaveToCache();
 
+            long cacheMs = suspendStopwatch.ElapsedMilliseconds - serializeMs;
+
             // Отцепляем вьюхи от презентеров текущего дерева: при возврате DockControl
             // построит новые презентеры, и RecreateAllDocumentViews переприцепит вьюхи.
-            _dockFactory.DetachViewsFromLayout(_dockLayout);
+            // clearDataContext: false — модули живы, вью переиспользуются при возврате;
+            // разрыв и восстановление биндингов больших вью занимали секунды UI-потока.
+            _dockFactory.DetachViewsFromLayout(_dockLayout, clearDataContext: false);
+
+            suspendStopwatch.Stop();
+            long detachMs = suspendStopwatch.ElapsedMilliseconds - serializeMs - cacheMs;
+            if (suspendStopwatch.ElapsedMilliseconds > 50)
+            {
+                _logger.LogWarning(
+                    "Workspace Suspend took {ElapsedMs}ms on UI thread for: {Title} " +
+                    "(serializeLayout={SerializeMs}ms, scheduleCache={CacheMs}ms, detachViews={DetachMs}ms)",
+                    suspendStopwatch.ElapsedMilliseconds, _tab.Title,
+                    serializeMs, cacheMs, detachMs);
+            }
 
             _logger.LogDebug("Workspace suspended");
         }

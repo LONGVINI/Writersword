@@ -34,7 +34,7 @@ namespace Writersword.Modules.TextEditor
         public string Description => TextEditorStrings.Description;
     }
 
-    public sealed class TextEditorModule : BaseModule, IConfigurableModule, IUndoableModule, IHotKeyProvider
+    public sealed class TextEditorModule : BaseModule, IConfigurableModule, IUndoableModule, IHotKeyProvider, IStateSnapshotModule, IPreparedDataModule
     {
         private static readonly ILogger _logger = Log.ForContext<TextEditorModule>();
 
@@ -77,6 +77,53 @@ namespace Writersword.Modules.TextEditor
         // меняется позиция каретки или скролл. GetSessionData() читает его безопасно
         // с любого потока — никакого обращения к visual tree не нужно.
         private string? _cachedSessionData;
+
+        // Версия снимка данных документа. Инкрементируется на UI-потоке при каждом
+        // снимке с изменениями и при загрузке данных в SetCustomData. Фоновая
+        // сериализация обновляет _baselineCustomData только если её снимок всё ещё
+        // актуален — устаревший результат не затирает более свежие данные.
+        private long _snapshotVersion;
+
+        // Синхронизация доступа к _baselineCustomData и _snapshotVersion:
+        // базовая линия читается и пишется как с UI-потока, так и с фоновых
+        // потоков сериализации снимков.
+        private readonly object _baselineSync = new();
+
+        /// <summary>
+        /// Снимок состояния документа для двухфазного сбора данных.
+        /// Document — глубокий клон живой модели, изолированный от правок пользователя.
+        /// Version — версия снимка для защиты базовой линии от устаревших результатов.
+        /// </summary>
+        private sealed class DocumentStateSnapshot
+        {
+            public DocumentModel Document { get; }
+            public string LocalSettingsJson { get; }
+            public long Version { get; }
+
+            public DocumentStateSnapshot(DocumentModel document, string localSettingsJson, long version)
+            {
+                Document = document;
+                LocalSettingsJson = localSettingsJson;
+                Version = version;
+            }
+        }
+
+        /// <summary>
+        /// Результат фоновой подготовки данных документа (PrepareCustomData).
+        /// Содержит десериализованную модель и прединициализированную дельту —
+        /// на UI-потоке остаётся только построение вьюмоделей (LoadDocument).
+        /// BaselineJson заполнен только для конвертного формата (v2/v3),
+        /// для legacy-формата он null — как и в прежнем SetCustomData.
+        /// </summary>
+        private sealed class PreparedDocumentData
+        {
+            public DocumentModel? Document { get; set; }
+            public TextEditorSettings? LocalSettings { get; set; }
+            public string? CachedSessionData { get; set; }
+            public string? BaselineJson { get; set; }
+            public DeltaCachePayload? InitialDelta { get; set; }
+            public int EnvelopeVersion { get; set; }
+        }
 
         public override string moduleType => "TextEditor";
         public override object? ViewModel => _viewModel;
@@ -166,8 +213,6 @@ namespace Writersword.Modules.TextEditor
         {
             _viewModel ??= CreateAndInitViewModel();
             var view = new TextEditorView(_undoStack) { DataContext = _viewModel };
-            _logger.Debug("[DIAG] TextEditorView CREATED #{Id} (prev=#{Prev})",
-                view.GetHashCode(), _lastCreatedView?.GetHashCode() ?? 0);
             _lastCreatedView = view;
 
             // Контекст мог быть установлен до создания вьюмодели —
@@ -235,15 +280,37 @@ namespace Writersword.Modules.TextEditor
             // GetCustomData может вызываться с фонового потока (авто-сохранение).
             // Вся работа с моделью документа должна быть на UI-потоке, иначе
             // "Collection was modified" при одновременном Ctrl+Z или вводе текста.
+            // Но полная JSON-сериализация документа на UI-потоке недопустимо дорога
+            // для больших документов, поэтому сбор разделён на две фазы:
+            // TakeStateSnapshot — быстрый снимок модели на UI-потоке (клон без JSON),
+            // SerializeStateSnapshot — тяжёлая сериализация снимка на потоке вызывающего.
             if (!Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
-                return Avalonia.Threading.Dispatcher.UIThread.Invoke(GetCustomData);
+            {
+                object? snapshot = Avalonia.Threading.Dispatcher.UIThread.Invoke(TakeStateSnapshot);
+                return snapshot is null ? null : SerializeStateSnapshot(snapshot);
+            }
+
+            object? uiSnapshot = TakeStateSnapshot();
+            return uiSnapshot is null ? null : SerializeStateSnapshot(uiSnapshot);
+        }
+
+        /// <summary>
+        /// Фаза 1 сбора данных: быстрый снимок состояния документа на UI-потоке.
+        /// Строит дельту, и если изменений нет — возвращает готовую базовую линию (строку).
+        /// При наличии изменений возвращает DocumentStateSnapshot с глубоким клоном модели —
+        /// его сериализация выполняется отдельно через SerializeStateSnapshot на любом потоке.
+        /// </summary>
+        public object? TakeStateSnapshot()
+        {
+            if (!Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+                return Avalonia.Threading.Dispatcher.UIThread.Invoke(TakeStateSnapshot);
 
             if (_viewModel?.DocumentViewModel is null)
             {
                 // Логируем Warning чтобы зафиксировать факт возврата null.
                 // Если это происходит при сохранении — данные TextEditor не попадут в файл.
                 // ViewModel null означает что CreateView() не был вызван для этого модуля.
-                _logger.Warning("GetCustomData: _viewModel or DocumentViewModel is null — returning null. " +
+                _logger.Warning("TakeStateSnapshot: _viewModel or DocumentViewModel is null — returning null. " +
                     "Module type: {Type}", moduleType);
                 return null;
             }
@@ -261,14 +328,19 @@ namespace Writersword.Modules.TextEditor
                                   || payload.ChangedAnnotations.Count > 0
                                   || payload.RemovedAnnotations.Count > 0;
 
-                if (!hasChanges && _baselineCustomData is not null)
+                if (!hasChanges)
                 {
-                    return _baselineCustomData;
+                    lock (_baselineSync)
+                    {
+                        if (_baselineCustomData is not null)
+                            return _baselineCustomData;
+                    }
+                    // Базовая линия отсутствует (сериализация предыдущего снимка ещё
+                    // не завершилась) — снимаем полный снимок, чтобы вызывающий код
+                    // гарантированно получил актуальные данные.
                 }
 
                 _lastDeltaPayload = payload;
-
-                string documentJson = _serializer.Serialize(_viewModel.DocumentViewModel.Document);
 
                 // Удаляем из проекта файлы картинок, на которые в документе больше нет ссылок.
                 try { CleanupUnusedImages(_viewModel.DocumentViewModel.Document); }
@@ -276,24 +348,75 @@ namespace Writersword.Modules.TextEditor
 
                 string localSettingsJson = System.Text.Json.JsonSerializer.Serialize(_localSettings);
 
+                DocumentModel documentClone = DocumentCloner.Clone(_viewModel.DocumentViewModel.Document);
+
+                long version;
+                lock (_baselineSync)
+                {
+                    version = ++_snapshotVersion;
+                    // Базовая линия устарела: содержимое изменилось, а новая строка
+                    // появится только после сериализации снимка. До этого момента
+                    // параллельные вызовы не должны получать старую строку как актуальную.
+                    _baselineCustomData = null;
+                }
+
+                return new DocumentStateSnapshot(documentClone, localSettingsJson, version);
+            }
+            catch (Exception ex)
+            {
+                // Логируем Error с полным стектрейсом — это позволит найти причину при следующем возникновении.
+                _logger.Error(ex, "TakeStateSnapshot: exception — returning null. Data will NOT be saved!");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Фаза 2 сбора данных: тяжёлая JSON-сериализация снимка.
+        /// Можно вызывать с любого потока — снимок содержит клон модели,
+        /// изолированный от правок пользователя на UI-потоке.
+        /// Результат идентичен прежнему результату GetCustomData на момент снятия снимка.
+        /// </summary>
+        public object? SerializeStateSnapshot(object snapshot)
+        {
+            // Изменений не было — снимок уже является готовой строкой данных (базовой линией).
+            if (snapshot is string baseline)
+                return baseline;
+
+            if (snapshot is not DocumentStateSnapshot documentSnapshot)
+            {
+                _logger.Error("SerializeStateSnapshot: unexpected snapshot type {Type} — returning null",
+                    snapshot.GetType().FullName);
+                return null;
+            }
+
+            try
+            {
+                string documentJson = _serializer.Serialize(documentSnapshot.Document);
+
                 var envelope = new
                 {
                     v = 2,
                     doc = documentJson,
-                    local = localSettingsJson,
+                    local = documentSnapshot.LocalSettingsJson,
                 };
                 var result = System.Text.Json.JsonSerializer.Serialize(envelope);
-                // Кешируем результат как новую базовую линию: пока дельта не покажет новых
-                // изменений, следующие опросы возвращают эту же строку без повторной
-                // сериализации всего документа на UI-потоке. Признак несохранённых изменений
-                // не теряется — хост сравнивает возвращённые данные с файлом на диске.
-                _baselineCustomData = result;
+
+                lock (_baselineSync)
+                {
+                    // Кешируем результат как новую базовую линию: пока дельта не покажет новых
+                    // изменений, следующие опросы возвращают эту же строку без повторной
+                    // сериализации всего документа. Обновляем только если за время сериализации
+                    // не был снят более свежий снимок — устаревшая строка не затирает актуальную.
+                    if (documentSnapshot.Version == _snapshotVersion)
+                        _baselineCustomData = result;
+                }
+
                 return result;
             }
             catch (Exception ex)
             {
                 // Логируем Error с полным стектрейсом — это позволит найти причину при следующем возникновении.
-                _logger.Error(ex, "GetCustomData: exception during serialization — returning null. Data will NOT be saved!");
+                _logger.Error(ex, "SerializeStateSnapshot: exception during serialization — returning null. Data will NOT be saved!");
                 return null;
             }
         }
@@ -311,8 +434,20 @@ namespace Writersword.Modules.TextEditor
 
         public override void SetCustomData(object? data)
         {
-            _viewModel ??= CreateAndInitViewModel();
+            // Синхронный путь: подготовка и применение на текущем потоке.
+            // DockFactory при отложенном прикреплении вызывает PrepareCustomData
+            // на фоновом потоке и ApplyPreparedCustomData на UI-потоке раздельно —
+            // тяжёлая десериализация документа не блокирует интерфейс.
+            ApplyPreparedCustomData(PrepareCustomData(data));
+        }
 
+        /// <summary>
+        /// Фаза 1 восстановления: парсинг конверта, десериализация документа и расчёт
+        /// начальной дельты. Можно вызывать с любого потока — модель ещё не привязана
+        /// к вьюмоделям, гонок с UI нет. Возвращает null если данные пусты или нечитаемы.
+        /// </summary>
+        public object? PrepareCustomData(object? data)
+        {
             string? raw = data switch
             {
                 string s when !string.IsNullOrWhiteSpace(s) => s,
@@ -320,87 +455,133 @@ namespace Writersword.Modules.TextEditor
                 _ => null
             };
 
-            if (raw is not null)
+            if (raw is null)
+                return null;
+
+            try
             {
-                try
+                using var envelope = System.Text.Json.JsonDocument.Parse(raw);
+                var root = envelope.RootElement;
+
+                int envelopeVersion = root.TryGetProperty("v", out var ver) ? ver.GetInt32() : 1;
+
+                if ((envelopeVersion == 2 || envelopeVersion == 3)
+                    && root.TryGetProperty("doc", out var docProp)
+                    && root.TryGetProperty("local", out var localProp))
                 {
-                    using var envelope = System.Text.Json.JsonDocument.Parse(raw);
-                    var root = envelope.RootElement;
+                    string docJson = docProp.GetString() ?? string.Empty;
+                    string localJson = localProp.GetString() ?? string.Empty;
 
-                    int envelopeVersion = root.TryGetProperty("v", out var ver) ? ver.GetInt32() : 1;
+                    var prepared = new PreparedDocumentData { EnvelopeVersion = envelopeVersion };
 
-                    if ((envelopeVersion == 2 || envelopeVersion == 3)
-                        && root.TryGetProperty("doc", out var docProp)
-                        && root.TryGetProperty("local", out var localProp))
+                    if (!string.IsNullOrWhiteSpace(localJson))
                     {
-                        string docJson = docProp.GetString() ?? string.Empty;
-                        string localJson = localProp.GetString() ?? string.Empty;
-
-                        if (!string.IsNullOrWhiteSpace(localJson))
-                        {
-                            var savedLocal = System.Text.Json.JsonSerializer
-                                .Deserialize<TextEditorSettings>(localJson);
-                            if (savedLocal is not null)
-                            {
-                                _localSettings = savedLocal;
-                                _logger.Debug("Local settings restored: MonitorSizeInches={V}",
-                                    _localSettings.MonitorSizeInches);
-                            }
-                        }
-
-                        // Восстанавливаем позицию каретки из поля "caret" (версия 3+).
-                        if (envelopeVersion >= 3
-                            && root.TryGetProperty("caret", out var caretProp)
-                            && caretProp.ValueKind == System.Text.Json.JsonValueKind.String)
-                        {
-                            _cachedSessionData = caretProp.GetString();
-                        }
-
-                        DocumentModel? doc = _serializer.Deserialize(docJson);
-                        if (doc is not null)
-                        {
-                            _viewModel.LoadDocument(doc, _localSettings);
-
-                            // Инициализируем _lastDeltaPayload сразу после загрузки.
-                            _lastDeltaPayload = _serializer.BuildDeltaPayload(doc, null);
-
-                            // Строим baseline без caret — именно это GetCustomData будет
-                            // возвращать пока нет изменений. Файл тоже перезапишется без caret
-                            // при следующем сохранении → хеши совпадут.
-                            _baselineCustomData = System.Text.Json.JsonSerializer.Serialize(new
-                            {
-                                v = 2,
-                                doc = docJson,
-                                local = localJson.Length > 0 ? localJson
-                                        : System.Text.Json.JsonSerializer.Serialize(_localSettings),
-                            });
-
-
-                            // Каретку восстанавливаем ПОСЛЕ загрузки документа.
-                            if (_cachedSessionData is not null)
-                                RestoreCaretFromCache();
-
-                            _logger.Debug("Document loaded (v{V}), title={Title}", envelopeVersion, doc.Title);
-                            return;
-                        }
+                        var savedLocal = System.Text.Json.JsonSerializer
+                            .Deserialize<TextEditorSettings>(localJson);
+                        if (savedLocal is not null)
+                            prepared.LocalSettings = savedLocal;
                     }
-                    else
+
+                    // Позиция каретки из поля "caret" (версия 3+).
+                    if (envelopeVersion >= 3
+                        && root.TryGetProperty("caret", out var caretProp)
+                        && caretProp.ValueKind == System.Text.Json.JsonValueKind.String)
                     {
-                        DocumentModel? doc = _serializer.Deserialize(raw);
-                        if (doc is not null)
-                        {
-                            _viewModel.LoadDocument(doc, _localSettings);
-                            _lastDeltaPayload = _serializer.BuildDeltaPayload(doc, null);
-                            _logger.Debug("Document loaded (legacy), title={Title}", doc.Title);
-                            return;
-                        }
+                        prepared.CachedSessionData = caretProp.GetString();
                     }
-                    _logger.Warning("Deserialize returned null");
+
+                    DocumentModel? doc = _serializer.Deserialize(docJson);
+                    if (doc is not null)
+                    {
+                        prepared.Document = doc;
+
+                        // Начальная дельта считается здесь же: хеширование всего документа —
+                        // ощутимая CPU-работа, и на UI-потоке ей делать нечего.
+                        prepared.InitialDelta = _serializer.BuildDeltaPayload(doc, null);
+
+                        // Строим baseline без caret — именно это GetCustomData будет
+                        // возвращать пока нет изменений. Файл тоже перезапишется без caret
+                        // при следующем сохранении → хеши совпадут.
+                        prepared.BaselineJson = System.Text.Json.JsonSerializer.Serialize(new
+                        {
+                            v = 2,
+                            doc = docJson,
+                            local = localJson.Length > 0 ? localJson
+                                    : System.Text.Json.JsonSerializer.Serialize(_localSettings),
+                        });
+
+                        return prepared;
+                    }
                 }
-                catch (Exception ex)
+                else
                 {
-                    _logger.Warning(ex, "Deserialization error");
+                    DocumentModel? legacyDoc = _serializer.Deserialize(raw);
+                    if (legacyDoc is not null)
+                    {
+                        return new PreparedDocumentData
+                        {
+                            Document = legacyDoc,
+                            InitialDelta = _serializer.BuildDeltaPayload(legacyDoc, null),
+                            EnvelopeVersion = envelopeVersion
+                        };
+                    }
                 }
+                _logger.Warning("PrepareCustomData: Deserialize returned null");
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "PrepareCustomData: deserialization error");
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Фаза 2 восстановления: применение подготовленных данных. Только UI-поток —
+        /// здесь строятся вьюмодели (LoadDocument) и восстанавливается каретка.
+        /// При prepared == null загружается пустой документ (как прежний SetCustomData
+        /// при нечитаемых данных).
+        /// </summary>
+        public void ApplyPreparedCustomData(object? prepared)
+        {
+            _viewModel ??= CreateAndInitViewModel();
+
+            if (prepared is PreparedDocumentData p && p.Document is not null)
+            {
+                if (p.LocalSettings is not null)
+                {
+                    _localSettings = p.LocalSettings;
+                    _logger.Debug("Local settings restored: MonitorSizeInches={V}",
+                        _localSettings.MonitorSizeInches);
+                }
+
+                if (p.CachedSessionData is not null)
+                    _cachedSessionData = p.CachedSessionData;
+
+                _viewModel.LoadDocument(p.Document, _localSettings);
+
+                // Инициализируем _lastDeltaPayload рассчитанной в фазе 1 дельтой.
+                _lastDeltaPayload = p.InitialDelta;
+
+                if (p.BaselineJson is not null)
+                {
+                    lock (_baselineSync)
+                    {
+                        // Инкремент версии инвалидирует снимки, снятые до загрузки:
+                        // их фоновая сериализация не затрёт базовую линию нового документа.
+                        _snapshotVersion++;
+                        _baselineCustomData = p.BaselineJson;
+                    }
+                }
+
+                // Каретку восстанавливаем ПОСЛЕ загрузки документа.
+                // BaselineJson != null означает конвертный формат (v2/v3) — legacy-путь
+                // каретку в SetCustomData не восстанавливал, сохраняем это поведение.
+                if (p.BaselineJson is not null && _cachedSessionData is not null)
+                    RestoreCaretFromCache();
+
+                _logger.Debug("Document loaded (v{V}), title={Title}", p.EnvelopeVersion, p.Document.Title);
+                return;
             }
 
             _viewModel.LoadNewDocument(_localSettings);

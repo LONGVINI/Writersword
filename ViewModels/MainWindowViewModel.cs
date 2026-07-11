@@ -156,6 +156,15 @@ namespace Writersword.ViewModels
             _logger.LogDebug("MainWindowViewModel initialized");
         }
 
+        // Версия активации вкладки. Инкрементируется при каждом входе в
+        // OnTabActivatedAsync. Метод асинхронный: при быстрых кликах по вкладкам
+        // несколько активаций перемешиваются на await-ах, и продолжение УСТАРЕВШЕЙ
+        // активации (например, долгая первая инициализация вкладки А) выполнялось
+        // после переключения на вкладку Б — перезаписывало DockLayout чужим layout,
+        // и на экране оставался вечный плейсхолдер. После каждого await выполнение
+        // продолжается только если эта активация всё ещё последняя.
+        private long _tabActivationVersion;
+
         /// <summary>
         /// Обработчик активации вкладки
         /// Сохраняет и деактивирует предыдущую, инициализирует и активирует новую
@@ -163,23 +172,43 @@ namespace Writersword.ViewModels
         /// </summary>
         public async Task OnTabActivatedAsync(DocumentTabViewModel tab, DocumentTabViewModel? previousTab)
         {
+            long activationVersion = ++_tabActivationVersion;
+
             try
             {
                 _logger.LogDebug("Tab activated: {Title}, previous: {PreviousTitle}",
                     tab.Title, previousTab?.Title ?? "none");
 
-                // Сохраняем ДО инициализации новой вкладки — но деактивируем ПОСЛЕ.
-                // Если пользователь нажмёт Cancel в диалоге восстановления,
-                // предыдущая вкладка останется живой и не нужно будет
-                // пересоздавать все модули (что вешало UI на 78K слов JSON).
+                // Сохранение workspace.json предыдущей вкладки НЕ ожидается: SaveWorkspaceAsync
+                // собирает конфигурацию и перезаписывает ZIP-архив проекта, и await этой
+                // операции задерживал активацию новой вкладки на всё время записи файла
+                // (для больших проектов — секунды). Сохранение идёт параллельно активации:
+                // сбор конфигурации читает UI-состояние через диспетчер, запись файла
+                // выполняется на фоновом потоке. Состояние layout не теряется даже при
+                // немедленном возврате на вкладку — Suspend ниже сериализует его в память.
                 if (previousTab != null && previousTab != tab && previousTab.Workspace != null)
-                    await previousTab.Workspace.SaveWorkspaceAsync();
+                {
+                    var workspaceToSave = previousTab.Workspace;
+                    var saveTask = workspaceToSave.SaveWorkspaceAsync();
+                    _ = saveTask.ContinueWith(
+                        t => _logger.LogError(t.Exception, "Background workspace save failed on tab switch"),
+                        TaskContinuationOptions.OnlyOnFaulted);
+                }
 
                 if (!tab.IsLoaded)
                 {
                     _logger.LogDebug("Initializing workspace for: {Title}", tab.Title);
 
                     bool success = await _projectWorkflow.EnsureWorkspaceInitialized(tab);
+
+                    // Пока шла инициализация, пользователь мог переключиться на другую
+                    // вкладку — та активация уже обновила UI. Продолжать нельзя:
+                    // перезапишем DockLayout устаревшим layout и экран "зависнет".
+                    if (activationVersion != _tabActivationVersion)
+                    {
+                        _logger.LogDebug("Tab activation superseded during init: {Title}", tab.Title);
+                        return;
+                    }
 
                     if (!success)
                     {

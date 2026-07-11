@@ -25,9 +25,6 @@ namespace Writersword.Modules.TextEditor.Document
 
         internal void RenderWithSKCanvas(SKCanvas canvas)
         {
-            _logger.Debug("[DIAG] Render #{Id} trans={T} caretOnly={C} dirty={D} bounds={W:F0}x{H:F0}",
-                GetHashCode(), _isTransitioning, _caretOnlyRedraw, _contentDirty,
-                Bounds.Width, Bounds.Height);
             if (_isTransitioning) return;
 
             // Дренируем очередь битмапов ожидающих удаления.
@@ -107,7 +104,6 @@ namespace Writersword.Modules.TextEditor.Document
                 if (scrollInRange)
                 {
                     _caretOnlyRedraw = false;
-                    _logger.Debug("[DIAG] Render #{Id}: CACHE path", GetHashCode());
 
                     // Снимок рисуем по его реальному bitmapTopY (не scrollY).
                     canvas.DrawImage(cached!, 0, cachedScrollY);
@@ -192,7 +188,6 @@ namespace Writersword.Modules.TextEditor.Document
 
                 // Полный рендер выполнен — быстрые пути снова могут рисовать из кэша.
                 _contentDirty = false;
-                _logger.Debug("[DIAG] Render #{Id}: FULL path done", GetHashCode());
 
                 if (newImage is not null)
                     canvas.DrawImage(newImage, 0, bitmapTopY);

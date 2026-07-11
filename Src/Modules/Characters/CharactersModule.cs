@@ -24,7 +24,7 @@ using Writersword.Modules.Common;
 
 namespace Writersword.Modules.Characters
 {
-    public class CharactersModule : BaseModule, IHotKeyProvider
+    public class CharactersModule : BaseModule, IHotKeyProvider, IPreparedDataModule
     {
         private static readonly ILogger _logger = Log.ForContext<CharactersModule>();
 
@@ -204,24 +204,55 @@ namespace Writersword.Modules.Characters
             data.IsFirstLaunch = false;
             if (_anketaService is CharacterAnketaService as_)
                 data.CustomAnketas = as_.GetCustom().ToList();
-            _logger.Debug("GetCustomData: {CharCount} characters, {FolderCount} folders, {RelCount} relationships",
+            // Verbose вместо Debug: вызывается фоновым аутосейвом каждые несколько
+            // секунд и при штатном уровне лога только засоряет вывод.
+            _logger.Verbose("GetCustomData: {CharCount} characters, {FolderCount} folders, {RelCount} relationships",
                 data.Characters.Count, data.Folders.Count, data.Relationships.Count);
             return data;
         }
 
         public override void SetCustomData(object? data)
         {
-            if (data == null) return;
+            // Синхронный путь: подготовка и применение на текущем потоке.
+            // DockFactory при отложенном прикреплении вызывает PrepareCustomData
+            // на фоновом потоке и ApplyPreparedCustomData на UI-потоке раздельно —
+            // десериализация сотен персонажей не блокирует интерфейс.
+            ApplyPreparedCustomData(PrepareCustomData(data));
+        }
+
+        /// <summary>
+        /// Фаза 1 восстановления: десериализация данных модуля в DTO.
+        /// Можно вызывать с любого потока — результат не привязан к UI.
+        /// Возвращает null если данные пусты или нечитаемы.
+        /// </summary>
+        public object? PrepareCustomData(object? data)
+        {
+            if (data == null) return null;
 
             try
             {
-                CharactersModuleData? moduleData = data is CharactersModuleData d ? d
+                return data is CharactersModuleData d ? d
                     : data is string s
                         ? JsonConvert.DeserializeObject<CharactersModuleData>(s)
                         : JsonConvert.DeserializeObject<CharactersModuleData>(JsonConvert.SerializeObject(data));
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "PrepareCustomData failed");
+                return null;
+            }
+        }
 
-                if (moduleData == null) return;
+        /// <summary>
+        /// Фаза 2 восстановления: загрузка подготовленных данных в сервисы и вьюмодель.
+        /// Вызывать только на UI-потоке.
+        /// </summary>
+        public void ApplyPreparedCustomData(object? prepared)
+        {
+            if (prepared is not CharactersModuleData moduleData) return;
 
+            try
+            {
                 _moduleData = moduleData;
                 bool isFirst = moduleData.IsFirstLaunch;
 

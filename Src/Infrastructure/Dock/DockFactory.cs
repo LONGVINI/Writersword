@@ -18,7 +18,9 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Writersword.Core.Enums;
+using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.WorkModes;
 using Writersword.Core.Services;
@@ -115,8 +117,18 @@ namespace Writersword.Infrastructure.Dock
                 _logger.LogDebug("CloseDockable called: {moduleType}, _isMoving={IsMoving}, CanClose={CanClose}",
     moduleType, _isMoving, doc.CanClose);
 
-                if (doc.Content is Avalonia.Controls.Control closingCtrl)
+                // Вью модуля живёт внутри стабильного хоста (ModuleContentHost) —
+                // DataContext отвязывается у самой вью, а не только у обёртки.
+                if (doc.Content is ModuleContentHost closingHost)
+                {
+                    if (closingHost.Content is Avalonia.Controls.Control closingInner)
+                        closingInner.DataContext = null;
+                    closingHost.Content = null;
+                }
+                else if (doc.Content is Avalonia.Controls.Control closingCtrl)
+                {
                     closingCtrl.DataContext = null;
+                }
                 doc.Content = null;
                 base.CloseDockable(dockable);
                 OnModuleClosed?.Invoke(moduleType);
@@ -480,9 +492,9 @@ namespace Writersword.Infrastructure.Dock
                 document.CanClose = slot.IsCloseable;
                 document.CanFloat = slot.IsCloseable;
 
-                SetContentDeferred(document, () =>
+                SetContentDeferredAsync(document, async () =>
                 {
-                    var view = LoadModuleAndGetView(tab, moduleType);
+                    var view = await LoadModuleAndGetViewAsync(tab, moduleType);
                     var m = tab.ModuleContext.GetModule(moduleType);
                     if (m != null) document.Title = m.Title;
                     _logger.LogDebug("Module attached (deferred): {moduleType}", moduleType);
@@ -811,9 +823,9 @@ namespace Writersword.Infrastructure.Dock
                 Factory = this
             };
 
-            SetContentDeferred(doc, () =>
+            SetContentDeferredAsync(doc, async () =>
             {
-                var view = LoadModuleAndGetView(tab, slot.ModuleType);
+                var view = await LoadModuleAndGetViewAsync(tab, slot.ModuleType);
                 var m = tab.ModuleContext.GetModule(slot.ModuleType);
                 if (m != null) doc.Title = m.Title;
                 _logger.LogDebug("Document content attached (deferred): {ModuleType}", slot.ModuleType);
@@ -988,8 +1000,18 @@ namespace Writersword.Infrastructure.Dock
         /// его View всё ещё числится дочерним у ContentPresenter старого Document.
         /// Если не очистить Content — Avalonia падает при попытке добавить View в новый Document:
         /// "already has a visual parent"
+        /// <para>
+        /// clearDataContext управляет обнулением DataContext у вьюх:
+        /// true — модули уничтожаются (Deactivate, ReloadFromGlobalConfig): биндинги нужно
+        /// разорвать, иначе CollectionChangedEventManager держит сильную ссылку на коллекции
+        /// вьюмодели и она не собирается GC.
+        /// false — модули остаются живыми (Suspend, SwitchWorkMode): вью переиспользуется
+        /// при возврате, а синхронный разрыв и последующее восстановление ВСЕХ биндингов
+        /// больших вью (сотни персонажей, тысячи параграфов) занимали секунды UI-потока.
+        /// Утечки нет — вьюмодель и её коллекции живы намеренно, пока жив модуль.
+        /// </para>
         /// </summary>
-        public void DetachViewsFromLayout(IRootDock? oldLayout)
+        public void DetachViewsFromLayout(IRootDock? oldLayout, bool clearDataContext = true)
         {
             if (oldLayout == null)
                 return;
@@ -997,21 +1019,21 @@ namespace Writersword.Infrastructure.Dock
             if (_currentRootDock == oldLayout)
                 _currentRootDock = null;
 
-            DetachViewsRecursive(oldLayout);
+            DetachViewsRecursive(oldLayout, clearDataContext);
 
             if (oldLayout.Windows != null)
             {
                 foreach (var window in oldLayout.Windows)
                 {
                     if (window.Layout != null)
-                        DetachViewsRecursive(window.Layout);
+                        DetachViewsRecursive(window.Layout, clearDataContext);
                 }
             }
 
-            _logger.LogDebug("Views detached from old layout");
+            _logger.LogDebug("Views detached from old layout (clearDataContext={Clear})", clearDataContext);
         }
 
-        private void DetachViewsRecursive(IDockable dockable)
+        private void DetachViewsRecursive(IDockable dockable, bool clearDataContext)
         {
             if (dockable is Document document)
             {
@@ -1023,8 +1045,29 @@ namespace Writersword.Infrastructure.Dock
                     // на ObservableCollection пока ItemsControl/view жив.
                     // DataContext = null принудительно отвязывает все биндинги —
                     // WeakEventManager.Entry удаляется, коллекция персонажей освобождается.
-                    if (document.Content is Avalonia.Controls.Control ctrl)
-                        ctrl.DataContext = null;
+                    // Выполняется только при уничтожении модулей (см. описание метода).
+                    if (clearDataContext)
+                    {
+                        // Вью модуля живёт внутри стабильного хоста — DataContext
+                        // отвязывается у самой вью, а не только у обёртки.
+                        if (document.Content is ModuleContentHost hostCtrl)
+                        {
+                            if (hostCtrl.Content is Avalonia.Controls.Control innerView)
+                                innerView.DataContext = null;
+                            hostCtrl.Content = null;
+                        }
+                        else if (document.Content is Avalonia.Controls.Control ctrl)
+                        {
+                            ctrl.DataContext = null;
+                        }
+                    }
+                    else if (document.Content is ModuleContentHost aliveHost)
+                    {
+                        // Модули живы: вью освобождается из хоста, чтобы при возврате
+                        // GetOrCreateView мог прицепить её к новому хосту без конфликта
+                        // визуальных родителей. DataContext вью не трогаем.
+                        aliveHost.Content = null;
+                    }
                     document.Content = null;
                 }
                 return;
@@ -1033,7 +1076,7 @@ namespace Writersword.Infrastructure.Dock
             if (dockable is IDock dock && dock.VisibleDockables != null)
             {
                 foreach (var child in dock.VisibleDockables)
-                    DetachViewsRecursive(child);
+                    DetachViewsRecursive(child, clearDataContext);
             }
         }
 
@@ -1258,27 +1301,65 @@ namespace Writersword.Infrastructure.Dock
         // одну вьюху туда-сюда, и второе могло отцепить только что прицепленную.
         private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Document, object> _deferredTokens = new();
 
+        /// <summary>
+        /// Возвращает стабильный хост содержимого документа, создавая его при
+        /// необходимости, и содержимое хоста до перепланирования (для отвязки
+        /// DataContext у заменённых вью). Презентеры Dock 12 не отслеживают смену
+        /// Document.Content, поэтому вся подмена плейсхолдер → вьюха выполняется
+        /// внутри хоста — его identity для презентера не меняется.
+        /// </summary>
+        private static ModuleContentHost GetOrCreateContentHost(Document doc, out Avalonia.Controls.Control? previousContent)
+        {
+            if (doc.Content is ModuleContentHost existingHost)
+            {
+                previousContent = existingHost.Content as Avalonia.Controls.Control;
+                return existingHost;
+            }
+
+            previousContent = doc.Content as Avalonia.Controls.Control;
+            return new ModuleContentHost();
+        }
+
         private void SetContentDeferred(Document doc, Func<Avalonia.Controls.Control?> provideView)
         {
-            var previous = doc.Content as Avalonia.Controls.Control;
             var token = new object();
             _deferredTokens.Remove(doc);
             _deferredTokens.Add(doc, token);
-            doc.Content = new ModuleLoadingPlaceholder();
 
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            var host = GetOrCreateContentHost(doc, out var previous);
+
+            // Загрузка по видимости: колбэк выполнится только когда плейсхолдер
+            // реально появился на экране. Модули на невидимых вкладках дока не
+            // гидрируются вообще — сколько бы модулей ни было в воркмоде, работу
+            // получают только видимые панели; остальные — в момент первого показа.
+            var placeholder = new ModuleLoadingPlaceholder();
+            placeholder.LoadRequested = () =>
             {
+                _logger.LogDebug("Deferred attach started (sync): {Id}", doc.Id);
+
                 // Задание устарело: для этого документа запланировано более новое.
                 if (!_deferredTokens.TryGetValue(doc, out var current)
                     || !ReferenceEquals(current, token))
+                {
+                    _logger.LogDebug("Deferred attach superseded (sync): {Id}", doc.Id);
                     return;
+                }
+
+                // Документ уже не принадлежит текущему layout (быстрое переключение
+                // воркмодов/вкладок заменило дерево) — прикреплять нельзя, иначе
+                // GetOrCreateView украдёт вью у живого презентера актуальной панели.
+                if (!IsDocumentInCurrentLayout(doc))
+                {
+                    _logger.LogDebug("Deferred attach skipped, document not in current layout: {Id}", doc.Id);
+                    return;
+                }
 
                 try
                 {
                     var view = provideView();
                     if (view == null)
                     {
-                        doc.Content = null;
+                        host.Content = null;
                         return;
                     }
 
@@ -1288,44 +1369,292 @@ namespace Writersword.Infrastructure.Dock
                         previous.DataContext = null;
 
                     PaneAutoHideBehavior.Attach(view);
-                    doc.Content = null;
-                    doc.Content = view;
-                    _logger.LogDebug("[DIAG] Deferred attach {Id}: view #{Hash} prev=#{Prev} sameView={Same}",
-                        doc.Id, view.GetHashCode(), previous?.GetHashCode() ?? 0,
-                        ReferenceEquals(previous, view));
+                    host.Content = null;
+                    host.Content = view;
+                    _logger.LogDebug("Deferred attach completed (sync): {Id}", doc.Id);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Deferred module view attach failed: {Id}", doc.Id);
                 }
-            }, Avalonia.Threading.DispatcherPriority.Background);
+            };
+            host.Content = placeholder;
+            if (!ReferenceEquals(doc.Content, host))
+                doc.Content = host;
+
+            StartDeferredAttachWatchdog(doc, token);
         }
+
+        /// <summary>
+        /// Проверяет что Document принадлежит текущему корневому layout (включая
+        /// флоат-окна). Отложенные прикрепления УСТАРЕВШИХ Document-ов — из layout-ов,
+        /// уже заменённых быстрым переключением воркмодов или вкладок — должны
+        /// пропускаться: их GetOrCreateView отцепляет кэшированную вью модуля от
+        /// живого презентера актуального layout, и панель оставалась пустой
+        /// с вечным плейсхолдером.
+        /// </summary>
+        private bool IsDocumentInCurrentLayout(Document doc)
+        {
+            var root = _currentRootDock;
+            if (root == null) return false;
+
+            if (ContainsDockableRecursive(root, doc)) return true;
+
+            if (root.Windows != null)
+            {
+                foreach (var wnd in root.Windows)
+                {
+                    if (wnd.Layout != null && ContainsDockableRecursive(wnd.Layout, doc))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ContainsDockableRecursive(IDockable current, Document target)
+        {
+            if (ReferenceEquals(current, target)) return true;
+
+            if (current is IDock dock && dock.VisibleDockables != null)
+            {
+                foreach (var child in dock.VisibleDockables)
+                {
+                    if (ContainsDockableRecursive(child, target))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Вотчдог отложенного прикрепления: если через 10 секунд документ всё ещё
+        /// показывает плейсхолдер и задание не было заменено более новым — пишет
+        /// ошибку в лог и, если документ принадлежит текущему layout, перезапускает
+        /// прикрепление. Самовосстановление ситуации "Модуль загружается" навсегда:
+        /// каждая попытка логируется, по логу видно на чём именно застряло.
+        /// </summary>
+        private void StartDeferredAttachWatchdog(Document doc, object token)
+        {
+            Avalonia.Threading.DispatcherTimer.RunOnce(() =>
+            {
+                // Содержимое панели живёт внутри стабильного хоста (ModuleContentHost).
+                var hostContent = (doc.Content as ModuleContentHost)?.Content;
+
+                // Лог на каждом срабатывании: по нему видно что вотчдог вообще
+                // выполнился и в каком состоянии находился документ.
+                _logger.LogDebug(
+                    "Deferred attach watchdog: {Id}, content={ContentType}, tokenAlive={TokenAlive}",
+                    doc.Id,
+                    hostContent?.GetType().Name ?? doc.Content?.GetType().Name ?? "null",
+                    _deferredTokens.TryGetValue(doc, out var t) && ReferenceEquals(t, token));
+
+                if (!_deferredTokens.TryGetValue(doc, out var current)
+                    || !ReferenceEquals(current, token)
+                    || hostContent is not ModuleLoadingPlaceholder placeholder)
+                    return;
+
+                // Загрузка не стартовала — панель ни разу не показывалась (невидимая
+                // вкладка дока). Это намеренная ленивость, а не зависание: загрузка
+                // начнётся при первом показе. Перепроверяем позже.
+                if (!placeholder.LoadStarted)
+                {
+                    StartDeferredAttachWatchdog(doc, token);
+                    return;
+                }
+
+                if (!IsDocumentInCurrentLayout(doc))
+                {
+                    // Документ устарел (layout сменился) — плейсхолдер невидим, ретрай не нужен.
+                    _logger.LogWarning(
+                        "Deferred attach stuck on stale document (not in current layout): {Id}", doc.Id);
+                    return;
+                }
+
+                var moduleType = doc.Id?.Replace("Module_", "");
+                var tab = App.Services.GetRequiredService<ITabCollection>().ActiveTab as DocumentTabViewModel;
+
+                if (string.IsNullOrEmpty(moduleType) || tab == null)
+                {
+                    _logger.LogError(
+                        "Deferred attach did not complete within 10s and cannot be retried: {Id}", doc.Id);
+                    return;
+                }
+
+                _logger.LogError(
+                    "Deferred attach did not complete within 10s: {Id} — retrying", doc.Id);
+
+                SetContentDeferredAsync(doc, async () =>
+                {
+                    var view = await LoadModuleAndGetViewAsync(tab, moduleType);
+                    var m = tab.ModuleContext.GetModule(moduleType);
+                    if (m != null) doc.Title = m.Title;
+                    return view;
+                });
+            }, TimeSpan.FromSeconds(10));
+        }
+
+        /// <summary>
+        /// Асинхронный вариант отложенного прикрепления: тяжёлая загрузка данных модуля
+        /// (чтение ZIP-кеша, десериализация документа) выполняется на фоновом потоке
+        /// внутри provideViewAsync, а UI-поток занят только созданием вьюмоделей и
+        /// прикреплением вьюхи. Плейсхолдер ставится немедленно — переключение уходит
+        /// в кадр без задержки.
+        /// </summary>
+        private void SetContentDeferredAsync(Document doc, Func<Task<Avalonia.Controls.Control?>> provideViewAsync)
+        {
+            var token = new object();
+            _deferredTokens.Remove(doc);
+            _deferredTokens.Add(doc, token);
+
+            var host = GetOrCreateContentHost(doc, out var previous);
+
+            // Загрузка по видимости: колбэк выполнится только когда плейсхолдер
+            // реально появился на экране. Модули на невидимых вкладках дока не
+            // гидрируются вообще — сколько бы модулей ни было в воркмоде, работу
+            // получают только видимые панели; остальные — в момент первого показа.
+            var placeholder = new ModuleLoadingPlaceholder();
+            placeholder.LoadRequested = async () =>
+            {
+                _logger.LogDebug("Deferred attach started (async): {Id}", doc.Id);
+
+                // Задание устарело: для этого документа запланировано более новое.
+                if (!_deferredTokens.TryGetValue(doc, out var current)
+                    || !ReferenceEquals(current, token))
+                {
+                    _logger.LogDebug("Deferred attach superseded (async): {Id}", doc.Id);
+                    return;
+                }
+
+                // Документ уже не принадлежит текущему layout (быстрое переключение
+                // воркмодов/вкладок заменило дерево) — прикреплять нельзя, иначе
+                // GetOrCreateView украдёт вью у живого презентера актуальной панели.
+                if (!IsDocumentInCurrentLayout(doc))
+                {
+                    _logger.LogDebug("Deferred attach skipped, document not in current layout: {Id}", doc.Id);
+                    return;
+                }
+
+                try
+                {
+                    var view = await provideViewAsync();
+
+                    // Пока шла фоновая загрузка, могло появиться более новое задание —
+                    // прикреплять устаревшую вьюху нельзя, она отцепит актуальную.
+                    if (!_deferredTokens.TryGetValue(doc, out var afterLoad)
+                        || !ReferenceEquals(afterLoad, token))
+                        return;
+
+                    // Повторная проверка после фоновой загрузки: за это время layout
+                    // мог смениться ещё раз.
+                    if (!IsDocumentInCurrentLayout(doc))
+                    {
+                        _logger.LogDebug("Deferred attach skipped after load, document not in current layout: {Id}", doc.Id);
+                        return;
+                    }
+
+                    if (view == null)
+                    {
+                        host.Content = null;
+                        return;
+                    }
+
+                    // Старую вьюху отвязываем только если это действительно другой контрол:
+                    // у переиспользуемой (кэш модуля) DataContext трогать нельзя.
+                    if (previous is not null && !ReferenceEquals(previous, view))
+                        previous.DataContext = null;
+
+                    PaneAutoHideBehavior.Attach(view);
+                    host.Content = null;
+                    host.Content = view;
+                    _logger.LogDebug("Deferred attach completed (async): {Id}", doc.Id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Deferred module view attach failed: {Id}", doc.Id);
+                }
+            };
+            host.Content = placeholder;
+            if (!ReferenceEquals(doc.Content, host))
+                doc.Content = host;
+
+            StartDeferredAttachWatchdog(doc, token);
+        }
+
+        // Незавершённые загрузки модулей. Доступ только с UI-потока (все отложенные
+        // прикрепления идут через диспетчер), поэтому блокировки не нужны.
+        // Пока загрузка в await-окне (чтение кеша, десериализация на фоне), второй
+        // отложенный вызов для того же модуля должен получить ТУ ЖЕ задачу — без
+        // дедупликации два наслоившихся задания (CreateLayout + пересборка вьюх)
+        // проходили проверку GetModule до регистрации модуля и создавали его дважды:
+        // один экземпляр получал данные, второй (пустой) прикреплялся в UI.
+        private readonly Dictionary<(DocumentTabViewModel Tab, string ModuleType), Task<Avalonia.Controls.Control?>> _moduleLoadTasks = new();
 
         /// <summary>
         /// Загружает модуль (или переиспользует живой) и возвращает его вьюху.
         /// Живой модуль отдаётся без чтения кеша и без SetCustomData — его состояние
         /// свежее любого кеша. Новый модуль создаётся с данными из кеша либо из
         /// project.ModulesData. Вызывается из отложенного прикрепления.
+        /// Конкурентные вызовы для одного модуля дедуплицируются: все ожидают одну
+        /// и ту же задачу загрузки, модуль создаётся ровно один раз.
         /// </summary>
-        private Avalonia.Controls.Control? LoadModuleAndGetView(DocumentTabViewModel tab, string moduleType)
+        private async Task<Avalonia.Controls.Control?> LoadModuleAndGetViewAsync(DocumentTabViewModel tab, string moduleType)
+        {
+            var key = (tab, moduleType);
+            if (_moduleLoadTasks.TryGetValue(key, out var inFlight))
+                return await inFlight;
+
+            var loadTask = LoadModuleAndGetViewCoreAsync(tab, moduleType);
+            if (loadTask.IsCompleted)
+                return await loadTask;
+
+            _moduleLoadTasks[key] = loadTask;
+            try
+            {
+                return await loadTask;
+            }
+            finally
+            {
+                if (_moduleLoadTasks.TryGetValue(key, out var current) && ReferenceEquals(current, loadTask))
+                    _moduleLoadTasks.Remove(key);
+            }
+        }
+
+        /// <summary>
+        /// Тело загрузки модуля. Чтение ZIP-кеша (дисковая операция) и десериализация
+        /// данных модулей с поддержкой IPreparedDataModule выполняются на фоновом
+        /// потоке — раньше весь путь (включая десериализацию целого документа) шёл
+        /// на UI-потоке и замораживал интерфейс при первом открытии модуля в воркмоде.
+        /// </summary>
+        private async Task<Avalonia.Controls.Control?> LoadModuleAndGetViewCoreAsync(DocumentTabViewModel tab, string moduleType)
         {
             var existing = tab.ModuleContext.GetModule(moduleType);
             if (existing?.ViewModel != null)
                 return existing.GetOrCreateView();
 
             var project = tab.GetProject();
-            var cacheService = App.Services.GetRequiredService<IZipCacheService>();
-            var cacheResult = cacheService.LoadCacheWithSession(tab.FilePath!, project.Id);
 
             object? customDataToRestore = null;
             object? sessionDataToRestore = null;
 
-            if (cacheResult.HasValue)
+            // У несохранённого проекта нет пути к файлу — кеш не читается,
+            // данные берутся из project.ModulesData. Без этой проверки чтение
+            // кеша падало в фоновой задаче и модуль оставался с плейсхолдером.
+            var filePath = tab.FilePath;
+            if (!string.IsNullOrEmpty(filePath))
             {
-                cacheResult.Value.CustomData.TryGetValue(moduleType, out customDataToRestore);
-                cacheResult.Value.SessionData.TryGetValue(moduleType, out sessionDataToRestore);
-                if (customDataToRestore != null)
-                    _logger.LogDebug("Using cache data for: {ModuleType}", moduleType);
+                var cacheService = App.Services.GetRequiredService<IZipCacheService>();
+                var projectId = project.Id;
+                var cacheResult = await Task.Run(() => cacheService.LoadCacheWithSession(filePath, projectId));
+
+                if (cacheResult.HasValue)
+                {
+                    cacheResult.Value.CustomData.TryGetValue(moduleType, out customDataToRestore);
+                    cacheResult.Value.SessionData.TryGetValue(moduleType, out sessionDataToRestore);
+                    if (customDataToRestore != null)
+                        _logger.LogDebug("Using cache data for: {ModuleType}", moduleType);
+                }
             }
 
             if (customDataToRestore == null
@@ -1345,15 +1674,51 @@ namespace Writersword.Infrastructure.Dock
                 return null;
             }
 
+            _logger.LogDebug("Module instance ready: {ModuleType}", moduleType);
+
             module.Context = tab.Context;
 
             if (customDataToRestore != null)
-                module.SetCustomData(customDataToRestore);
+            {
+                if (module is IPreparedDataModule preparedDataModule)
+                {
+                    // Фаза 1 — парсинг и десериализация на фоновом потоке,
+                    // фаза 2 — применение (создание вьюмоделей) на UI-потоке.
+                    // Применение выполняется ОТДЕЛЬНЫМ проходом диспетчера: между
+                    // созданием модуля и применением данных обрабатывается
+                    // накопившийся ввод — наведения и клики не замирают на всё
+                    // время загрузки модуля одним куском.
+                    var dataForPrepare = customDataToRestore;
+                    var prepared = await Task.Run(() => preparedDataModule.PrepareCustomData(dataForPrepare));
+                    _logger.LogDebug("Module data prepared (background): {ModuleType}", moduleType);
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+                        () => preparedDataModule.ApplyPreparedCustomData(prepared),
+                        Avalonia.Threading.DispatcherPriority.Loaded);
+                    _logger.LogDebug("Module data applied: {ModuleType}", moduleType);
+                }
+                else
+                {
+                    var dataToApply = customDataToRestore;
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+                        () => module.SetCustomData(dataToApply),
+                        Avalonia.Threading.DispatcherPriority.Loaded);
+                    _logger.LogDebug("Module data applied (legacy path): {ModuleType}", moduleType);
+                }
+            }
 
             if (sessionDataToRestore != null)
                 module.SetSessionData(sessionDataToRestore);
 
-            return module.GetOrCreateView();
+            _logger.LogDebug("Creating module view: {ModuleType}", moduleType);
+
+            // Создание вьюхи — тоже отдельным проходом: инфляция AXAML больших
+            // модулей заметно дорогая, ввод между проходами остаётся живым.
+            var createdView = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+                () => module.GetOrCreateView(),
+                Avalonia.Threading.DispatcherPriority.Loaded);
+
+            _logger.LogDebug("Module view ready: {ModuleType}", moduleType);
+            return createdView;
         }
 
         /// <summary>

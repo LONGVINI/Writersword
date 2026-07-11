@@ -115,6 +115,14 @@ namespace Writersword.Infrastructure.Services.WorkModes
             if (_isDisposed || _currentProject == null || _currentProjectPath == null)
                 return;
 
+            // Захватываем путь и проект в момент вызова: сохранение выполняется
+            // параллельно переключению вкладок, и Stop() (вызывается из Suspend)
+            // обнуляет поля сервиса раньше, чем сохранение доходит до записи.
+            // Без захвата сбор конфигурации и валидация видели null и сохранение
+            // молча отменялось ("Validation failed: no tab for project null").
+            var projectPath = _currentProjectPath;
+            var project = _currentProject;
+
             try
             {
                 _logger.LogDebug("Force saving workspace.json");
@@ -127,7 +135,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
                 _cts = null;
 
                 var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
-                var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
+                var fileStorage = projectWorkflow.GetFileStorageForProject(projectPath);
 
                 if (fileStorage == null)
                 {
@@ -135,23 +143,45 @@ namespace Writersword.Infrastructure.Services.WorkModes
                     return;
                 }
 
-                var currentConfig = await CollectCurrentConfigurationAsync(CancellationToken.None);
-
-                if (currentConfig == null)
+                // Семафор сериализует принудительное сохранение с дебаунс-сохранениями
+                // (ScheduleSave) и с параллельными вызовами SaveNowAsync: раньше вызов
+                // не синхронизировался и две записи могли конкурировать за ZIP-файл.
+                if (!await _saveSemaphore.WaitAsync(TimeSpan.FromSeconds(15)).ConfigureAwait(false))
                 {
-                    _logger.LogWarning("CollectCurrentConfigurationAsync returned null");
+                    _logger.LogWarning("SaveNowAsync skipped: another save operation is still running");
                     return;
                 }
 
-                if (!ValidateConfiguration(currentConfig))
+                try
                 {
-                    _logger.LogError("Validation failed in SaveNowAsync, refusing to save");
-                    return;
-                }
+                    // ConfigureAwait(false): продолжения не возвращаются на UI-поток.
+                    // Раньше await захватывал UI-контекст, и перезапись ZIP-архива
+                    // проекта (SaveToZip) выполнялась на UI-потоке — при переключении
+                    // вкладок это блокировало интерфейс на время записи файла.
+                    var currentConfig = await CollectCurrentConfigurationAsync(projectPath, project, CancellationToken.None).ConfigureAwait(false);
 
-                var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
-                workspaceConfigService.SaveToZip(fileStorage, currentConfig);
-                _logger.LogDebug("Force save successful");
+                    if (currentConfig == null)
+                    {
+                        _logger.LogWarning("CollectCurrentConfigurationAsync returned null");
+                        return;
+                    }
+
+                    if (!ValidateConfiguration(currentConfig, projectPath, project))
+                    {
+                        _logger.LogError("Validation failed in SaveNowAsync, refusing to save");
+                        return;
+                    }
+
+                    // Явный уход в пул потоков: WaitAsync и Collect могли завершиться
+                    // синхронно, оставив выполнение на UI-потоке несмотря на ConfigureAwait.
+                    var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
+                    await Task.Run(() => workspaceConfigService.SaveToZip(fileStorage, currentConfig)).ConfigureAwait(false);
+                    _logger.LogDebug("Force save successful");
+                }
+                finally
+                {
+                    _saveSemaphore.Release();
+                }
             }
             catch (Exception ex)
             {
@@ -164,12 +194,17 @@ namespace Writersword.Infrastructure.Services.WorkModes
             if (_isDisposed || _currentProject == null || _currentProjectPath == null)
                 return;
 
+            // Захватываем путь и проект в момент старта: Stop() может обнулить
+            // поля сервиса пока сохранение выполняется на фоновом потоке.
+            var projectPath = _currentProjectPath;
+            var project = _currentProject;
+
             try
             {
                 if (token.IsCancellationRequested) return;
 
                 var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
-                var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
+                var fileStorage = projectWorkflow.GetFileStorageForProject(projectPath);
 
                 if (fileStorage == null)
                 {
@@ -177,7 +212,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
                     return;
                 }
 
-                var currentConfig = await CollectCurrentConfigurationAsync(token);
+                var currentConfig = await CollectCurrentConfigurationAsync(projectPath, project, token);
 
                 if (token.IsCancellationRequested) return;
 
@@ -187,7 +222,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
                     return;
                 }
 
-                if (!ValidateConfiguration(currentConfig))
+                if (!ValidateConfiguration(currentConfig, projectPath, project))
                 {
                     _logger.LogError("Configuration validation failed, refusing to save");
                     return;
@@ -213,19 +248,22 @@ namespace Writersword.Infrastructure.Services.WorkModes
         /// Собрать текущую конфигурацию из активного workspace.
         /// Активный WorkMode сериализуется из реального layout.
         /// Неактивные берутся как есть из ModuleSlots.
+        /// Путь и проект передаются параметрами (захвачены вызывающим кодом):
+        /// поля сервиса могут быть обнулены Stop() пока сохранение идёт в фоне.
         /// </summary>
-        private async Task<WorkspaceLocalConfig?> CollectCurrentConfigurationAsync(CancellationToken token)
+        private async Task<WorkspaceLocalConfig?> CollectCurrentConfigurationAsync(
+            string projectPath, ProjectFile? project, CancellationToken token)
         {
             try
             {
-                if (string.IsNullOrEmpty(_currentProjectPath))
+                if (string.IsNullOrEmpty(projectPath))
                 {
                     _logger.LogWarning("No project path");
                     return null;
                 }
 
                 var projectWorkflow = App.Services.GetRequiredService<IProjectWorkflow>();
-                var fileStorage = projectWorkflow.GetFileStorageForProject(_currentProjectPath);
+                var fileStorage = projectWorkflow.GetFileStorageForProject(projectPath);
 
                 if (fileStorage == null)
                 {
@@ -237,7 +275,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
 
                 var tabCollection = App.Services.GetRequiredService<ITabCollection>();
                 var activeTab = await Dispatcher.UIThread.InvokeAsync(() =>
-                    tabCollection.Tabs?.FirstOrDefault(t => t.FilePath == _currentProjectPath) as DocumentTabViewModel,
+                    tabCollection.Tabs?.FirstOrDefault(t => t.FilePath == projectPath) as DocumentTabViewModel,
                     DispatcherPriority.Background);
 
                 // DispatcherOperation не поддерживает ConfigureAwait напрямую (это не Task),
@@ -248,7 +286,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
 
                 if (activeTab?.Workspace == null)
                 {
-                    _logger.LogWarning("No workspace for project: {Path}", _currentProjectPath);
+                    _logger.LogWarning("No workspace for project: {Path}", projectPath);
                     return null;
                 }
 
@@ -346,7 +384,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
 
                 var config = new WorkspaceLocalConfig
                 {
-                    ProjectName = _currentProject?.Title ?? "Unknown",
+                    ProjectName = project?.Title ?? "Unknown",
                     WorkModes = workModesToSave
                 };
 
@@ -365,25 +403,25 @@ namespace Writersword.Infrastructure.Services.WorkModes
             }
         }
 
-        private bool ValidateConfiguration(WorkspaceLocalConfig config)
+        private bool ValidateConfiguration(WorkspaceLocalConfig config, string projectPath, ProjectFile? project)
         {
             try
             {
                 var tabCollection = App.Services.GetRequiredService<ITabCollection>();
-                var activeTab = tabCollection.Tabs?.FirstOrDefault(t => t.FilePath == _currentProjectPath) as DocumentTabViewModel;
+                var activeTab = tabCollection.Tabs?.FirstOrDefault(t => t.FilePath == projectPath) as DocumentTabViewModel;
 
                 if (activeTab == null)
                 {
-                    _logger.LogError("Validation failed: no tab for project {Path}", _currentProjectPath);
+                    _logger.LogError("Validation failed: no tab for project {Path}", projectPath);
                     return false;
                 }
 
-                if (_currentProject != null)
+                if (project != null)
                 {
-                    if (activeTab.GetProject()?.Id != _currentProject.Id)
+                    if (activeTab.GetProject()?.Id != project.Id)
                     {
                         _logger.LogError("Validation failed: ProjectId mismatch. Expected {Expected}, got {Actual}",
-                            _currentProject.Id, activeTab.GetProject()?.Id);
+                            project.Id, activeTab.GetProject()?.Id);
                         return false;
                     }
                 }

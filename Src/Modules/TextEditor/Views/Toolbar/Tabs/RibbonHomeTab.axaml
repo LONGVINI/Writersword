@@ -810,8 +810,16 @@
                                         </MenuFlyout>
                                     </Button.Flyout>
                                     <StackPanel Orientation="Horizontal" Spacing="1">
-                                        <PathIcon Data="M3 9h12V7H3v2zm0 4h12v-2H3v2zm0 4h12v-2H3v2zm14 0h4v-2h-4v2zm0-10v2h4V7h-4zm0 6h4v-2h-4v2z"
-                                                  Width="14" Height="14" Foreground="{Binding OutlineLevelBrush}"/>
+                                        <Panel Width="14" Height="14">
+                                            <PathIcon Data="M3 9h12V7H3v2zm0 4h12v-2H3v2zm0 4h12v-2H3v2zm14 0h4v-2h-4v2zm0-10v2h4V7h-4zm0 6h4v-2h-4v2z"
+                                                      Width="14" Height="14"
+                                                      Foreground="{Binding OutlineLevelBrush}"
+                                                      Opacity="{Binding OutlineIconOpacity}"/>
+                                            <TextBlock Text="{Binding OutlineLevelDigit}"
+                                                       Foreground="{Binding OutlineLevelBrush}"
+                                                       FontSize="11" FontWeight="Bold"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Panel>
                                         <PathIcon Data="M7 10l5 5 5-5z" Width="8" Height="8" Foreground="{DynamicResource TextMutedBrush}"/>
                                     </StackPanel>
                                 </Button>

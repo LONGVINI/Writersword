@@ -71,6 +71,20 @@ namespace Writersword.Modules.Characters.Views.Tabs
         private double _autoScrollVel;
         private Point _lastDragPos;
 
+        // ── Временная диагностика раскладки списка ─────────────────────────
+        // Раз в секунду пишет в общий лог одну сводку: сколько проходов
+        // раскладки прошло по вью, сколько раз и как долго каждый репитер
+        // папки мерился и раскладывался (PerfItemsRepeater), сколько раз у
+        // него менялся EffectiveViewport и сколько реализовано элементов.
+        // Строка пишется только при ненулевой активности. Убрать вместе с
+        // вызовами Start/StopPerfDiagnostics после завершения расследования.
+        private static readonly Serilog.ILogger _perfLog =
+            Serilog.Log.ForContext<CharactersListView>();
+        private DispatcherTimer? _perfTimer;
+        private int _perfSelfLayoutCount;
+        private readonly HashSet<ItemsRepeater> _perfHookedRepeaters = new();
+        private readonly Dictionary<ItemsRepeater, int> _perfRepeaterViewportCounts = new();
+
         public CharactersListView()
         {
             InitializeComponent();
@@ -226,6 +240,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
                             vmSub.UpdateContainerWidth(b.Width - 40);
                     });
             }
+
+            StartPerfDiagnostics();
         }
 
         protected override void OnDataContextChanged(EventArgs e)
@@ -244,6 +260,96 @@ namespace Writersword.Modules.Characters.Views.Tabs
             _containerBoundsSubscription = null;
             _cardsPerRowSubscription?.Dispose();
             _cardsPerRowSubscription = null;
+            StopPerfDiagnostics();
+        }
+
+        private void StartPerfDiagnostics()
+        {
+            LayoutUpdated -= OnPerfSelfLayoutUpdated;
+            LayoutUpdated += OnPerfSelfLayoutUpdated;
+            if (_perfTimer is null)
+            {
+                _perfTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                _perfTimer.Tick += OnPerfTimerTick;
+            }
+            _perfSelfLayoutCount = 0;
+            _perfTimer.Start();
+        }
+
+        private void StopPerfDiagnostics()
+        {
+            _perfTimer?.Stop();
+            LayoutUpdated -= OnPerfSelfLayoutUpdated;
+            foreach (var repeater in _perfHookedRepeaters)
+                repeater.EffectiveViewportChanged -= OnPerfRepeaterViewportChanged;
+            _perfHookedRepeaters.Clear();
+            _perfRepeaterViewportCounts.Clear();
+        }
+
+        private void OnPerfSelfLayoutUpdated(object? sender, EventArgs e)
+            => _perfSelfLayoutCount++;
+
+        private void OnPerfRepeaterViewportChanged(object? sender, EffectiveViewportChangedEventArgs e)
+        {
+            if (sender is ItemsRepeater repeater)
+                _perfRepeaterViewportCounts[repeater] =
+                    _perfRepeaterViewportCounts.GetValueOrDefault(repeater) + 1;
+        }
+
+        private void OnPerfTimerTick(object? sender, EventArgs e)
+        {
+            // Подцепляем появившиеся репитеры (папки создаются прогрессивно).
+            foreach (var repeater in this.GetVisualDescendants().OfType<ItemsRepeater>())
+            {
+                if (_perfHookedRepeaters.Add(repeater))
+                    repeater.EffectiveViewportChanged += OnPerfRepeaterViewportChanged;
+            }
+
+            bool hasRepeaterActivity = false;
+            foreach (var repeater in _perfHookedRepeaters)
+            {
+                if (repeater is Controls.PerfItemsRepeater perf
+                    && (perf.MeasureCount > 0 || perf.ArrangeCount > 0))
+                { hasRepeaterActivity = true; break; }
+            }
+            if (!hasRepeaterActivity)
+                foreach (var count in _perfRepeaterViewportCounts.Values)
+                    if (count > 0) { hasRepeaterActivity = true; break; }
+
+            if (_perfSelfLayoutCount == 0 && !hasRepeaterActivity)
+                return;
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append("passes=").Append(_perfSelfLayoutCount);
+            foreach (var repeater in _perfHookedRepeaters)
+            {
+                int viewportCount = _perfRepeaterViewportCounts.GetValueOrDefault(repeater);
+                var perf = repeater as Controls.PerfItemsRepeater;
+                int measureCount = perf?.MeasureCount ?? 0;
+                int arrangeCount = perf?.ArrangeCount ?? 0;
+                if (measureCount == 0 && arrangeCount == 0 && viewportCount == 0)
+                    continue;
+
+                var folderName =
+                    (repeater.DataContext as CharacterFolderViewModel)?.Name ?? "?";
+                int realized = 0;
+                foreach (var _ in repeater.GetVisualChildren()) realized++;
+
+                sb.Append("; '").Append(folderName)
+                  .Append("': measure=").Append(measureCount)
+                  .Append(" (").Append(Math.Round(perf?.MeasureMs ?? 0)).Append(" ms)")
+                  .Append(", arrange=").Append(arrangeCount)
+                  .Append(" (").Append(Math.Round(perf?.ArrangeMs ?? 0)).Append(" ms)")
+                  .Append(", viewport=").Append(viewportCount)
+                  .Append(", realized=").Append(realized);
+
+                perf?.ResetPerfCounters();
+            }
+
+            _perfLog.Debug("[CharactersPerf] {Summary}", sb.ToString());
+
+            _perfSelfLayoutCount = 0;
+            _perfRepeaterViewportCounts.Clear();
         }
 
         private void UpdateGridLayouts(int cols)
@@ -251,12 +357,21 @@ namespace Writersword.Modules.Characters.Views.Tabs
             double minItemWidth = (DataContext as CharactersViewModel)?.CardMinWidth ?? 152.0;
             foreach (var repeater in this.GetVisualDescendants().OfType<ItemsRepeater>())
             {
-                if (repeater.Layout is UniformGridLayout layout)
+                switch (repeater.Layout)
                 {
-                    if (layout.MaximumRowsOrColumns != cols)
-                        layout.MaximumRowsOrColumns = cols;
-                    if (Math.Abs(layout.MinItemWidth - minItemWidth) > 0.5)
-                        layout.MinItemWidth = minItemWidth;
+                    case Controls.UniformCardGridLayout cardLayout:
+                        if (cardLayout.MaxColumns != cols)
+                            cardLayout.MaxColumns = cols;
+                        if (Math.Abs(cardLayout.MinItemWidth - minItemWidth) > 0.5)
+                            cardLayout.MinItemWidth = minItemWidth;
+                        break;
+
+                    case UniformGridLayout layout:
+                        if (layout.MaximumRowsOrColumns != cols)
+                            layout.MaximumRowsOrColumns = cols;
+                        if (Math.Abs(layout.MinItemWidth - minItemWidth) > 0.5)
+                            layout.MinItemWidth = minItemWidth;
+                        break;
                 }
             }
         }
@@ -549,7 +664,9 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 {
                     _dragTargetFolderId = targetFolderVm.FolderId;
                     _dragTargetIndex = targetFolderVm.Characters.Count;
-                    var snapshot = SnapshotPositions();
+                    // Свёрнутая цель не показывает карточек — поштучно двигаются
+                    // только карточки папки-источника, остальные едут блоком.
+                    var snapshot = SnapshotPositions(FindPlaceholderFolder(vm), targetFolderVm);
                     vm.UpdateDragPreview(_dragCandidate.Id, _dragTargetFolderId, _dragTargetIndex);
                     BeginFlipAnimation(snapshot);
                 }
@@ -577,21 +694,77 @@ namespace Writersword.Modules.Characters.Views.Tabs
             {
                 int newPh = Math.Min(targetIndex, targetFolderVm.Characters.Count - 1);
                 snap = SnapshotPositions(targetFolderVm, Math.Min(oldPh, newPh), Math.Max(oldPh, newPh));
+
+                vm.UpdateDragPreview(_dragCandidate.Id, _dragTargetFolderId, _dragTargetIndex);
+                BeginFlipAnimation(snap);
             }
             else
             {
-                // Кросс-папка: двигаются обе папки целиком — снимок всего окна.
-                snap = SnapshotPositions();
-            }
+                // Кросс-папка: поштучно двигаются только карточки папки-источника
+                // (откуда уходит плейсхолдер) и папки-цели. Карточки остальных
+                // папок смещаются единым блоком вместе со своей папкой — их
+                // поштучный FLIP стоил сотни переводов координат на каждый шаг
+                // и давал рывок при пересечении границы папок; застрявшие
+                // трансформы таких карточек доводит мягкая чистка в
+                // BeginFlipAnimation.
+                // Замер этапов кросс-папочного шага — временная диагностика
+                // остаточного рывка на границе папок.
+                var swSnap = System.Diagnostics.Stopwatch.StartNew();
+                snap = SnapshotPositions(FindPlaceholderFolder(vm), targetFolderVm);
+                swSnap.Stop();
 
-            vm.UpdateDragPreview(_dragCandidate.Id, _dragTargetFolderId, _dragTargetIndex);
-            BeginFlipAnimation(snap);
+                var swData = System.Diagnostics.Stopwatch.StartNew();
+                vm.UpdateDragPreview(_dragCandidate.Id, _dragTargetFolderId, _dragTargetIndex);
+                swData.Stop();
+
+                var swFlip = System.Diagnostics.Stopwatch.StartNew();
+                BeginFlipAnimation(snap);
+                swFlip.Stop();
+
+                _perfLog.Debug(
+                    "[CrossStep] '{Target}': snapshot={Snap:F1} ms, data={Data:F1} ms, flip={Flip:F1} ms, cards={Cards}",
+                    targetFolderVm.Name,
+                    swSnap.Elapsed.TotalMilliseconds,
+                    swData.Elapsed.TotalMilliseconds,
+                    swFlip.Elapsed.TotalMilliseconds,
+                    snap.Count);
+            }
         }
 
         // Снимаем визуальные позиции (с текущим TranslateTransform) в координатах
         // репитера, а не вьюпорта: прокрутка не должна порождать ложные дельты FLIP.
         // Не сбрасываем — карточки в середине анимации не прерываются.
         private Dictionary<string, Point> SnapshotPositions() => SnapshotPositions(null, 0, 0);
+
+        // Папка, в которой сейчас находится плейсхолдер перетаскивания.
+        private static CharacterFolderViewModel? FindPlaceholderFolder(CharactersViewModel vm)
+        {
+            foreach (var folder in vm.Folders)
+                for (int i = 0; i < folder.Characters.Count; i++)
+                    if (folder.Characters[i].IsPlaceholder)
+                        return folder;
+            return null;
+        }
+
+        // Снимок карточек двух папок — источника и цели кросс-папочного шага.
+        private Dictionary<string, Point> SnapshotPositions(
+            CharacterFolderViewModel? first, CharacterFolderViewModel? second)
+        {
+            var ids = new HashSet<string>();
+            if (first is not null)
+                foreach (var c in first.Characters) ids.Add(c.Id);
+            if (second is not null)
+                foreach (var c in second.Characters) ids.Add(c.Id);
+
+            var result = new Dictionary<string, Point>();
+            foreach (var (id, border, repeater) in EnumerateLiveCards())
+            {
+                if (!ids.Contains(id)) continue;
+                var pt = border.TranslatePoint(new Point(0, 0), repeater);
+                if (pt.HasValue) result[id] = pt.Value;
+            }
+            return result;
+        }
 
         // Если задана папка с диапазоном [lo..hi] — снимаем только её карточки в этом
         // диапазоне (только они и сдвигаются при перестановке), остальные статичны и
@@ -1130,7 +1303,18 @@ namespace Writersword.Modules.Characters.Views.Tabs
             if (Math.Abs(newY - off.Y) < 0.1) return;
             _dragScroll.Offset = new Vector(off.X, newY);
             MoveGhost(_lastDragPos);
-            UpdatePreview(_lastDragPos);
+
+            // Пересчёт позиции вставки — под тем же троттлингом, что и в
+            // OnGlobalPointerMoved. Таймер тикает каждые 16 мс, и без ограничения
+            // UpdatePreview (перестановка коллекции + FLIP + синхронный UpdateLayout)
+            // выполнялся до 60 раз в секунду на всём протяжении автопрокрутки —
+            // ввод и отрисовка на это время замирали.
+            var now = Environment.TickCount64;
+            if (now - _lastPreviewTick >= PreviewRecalcThrottleMs)
+            {
+                _lastPreviewTick = now;
+                UpdatePreview(_lastDragPos);
+            }
         }
 
         private void OnGlobalPointerWheel(object? sender, PointerWheelEventArgs e)
@@ -1143,7 +1327,15 @@ namespace Writersword.Modules.Characters.Views.Tabs
             var p = e.GetPosition(this);
             _lastDragPos = p;
             MoveGhost(p);
-            UpdatePreview(p);
+
+            // Тот же троттлинг, что и в OnGlobalPointerMoved: быстрые щелчки колеса
+            // шли подряд и каждый запускал полный пересчёт вставки с UpdateLayout.
+            var now = Environment.TickCount64;
+            if (now - _lastPreviewTick >= PreviewRecalcThrottleMs)
+            {
+                _lastPreviewTick = now;
+                UpdatePreview(p);
+            }
             e.Handled = true;
         }
     }

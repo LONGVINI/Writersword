@@ -592,8 +592,6 @@ namespace Writersword.Modules.TextEditor.Document
                 _caretTimer.Start();
             }
 
-            _logger.Debug("[DIAG] Canvas ATTACHED #{Id} focused={F}", GetHashCode(), IsFocused);
-
             // Восстанавливаем подписки на DocumentViewModel и параграфы, снятые при
             // detach: у переиспользуемой вьюхи DataContext не меняется, и без этого
             // цепочка «ввод → PlainText → перерисовка» оставалась мёртвой навсегда.
@@ -610,7 +608,6 @@ namespace Writersword.Modules.TextEditor.Document
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
-            _logger.Debug("[DIAG] Canvas DETACHED #{Id}", GetHashCode());
             _isTransitioning = true;
             if (ReferenceEquals(FocusedInstance, this)) FocusedInstance = null;
             base.OnDetachedFromVisualTree(e);
@@ -652,6 +649,12 @@ namespace Writersword.Modules.TextEditor.Document
             // Отменяем фоновый rebuild.
             _rebuildCts.Cancel();
 
+            // Останавливаем прогрев кеша раскладки: его проходы перепланируют себя
+            // через диспетчер и без остановки продолжали бы шейпить отцепленную вьюху.
+            // При повторном прикреплении measure перезапустит прогрев с того же места —
+            // уже зашейпленные абзацы лежат в кеше и повторно не обрабатываются.
+            _layoutWarmupActive = false;
+
             // Не диспозим bitmap напрямую — render-тред (compositor) может держать
             // локальную ссылку cached на тот же объект и рисовать его прямо сейчас.
             // Добавляем в очередь и зануляем: bitmap живёт пока render-тред не завершит
@@ -684,19 +687,15 @@ namespace Writersword.Modules.TextEditor.Document
             // на detach, при повторном reattach рендер упадёт с disposed-объектами.
             // SKPaint — крошечные нативные объекты (~200 байт), GC соберёт при финализации.
 
-            // Списки лейаутов очищаем, а КЕШИ вёрстки (_layoutCache, ячейки, таблицы)
-            // сохраняем: DockFactory переиспользует канвас при перемещении панелей
-            // (detach → reattach), и с живыми кешами RebuildLayouts после reattach
-            // собирает раскладку без перевёрстки текста — на больших документах это
-            // разница между мгновенно и секундами. Кеши самоинвалидируются (текст и
-            // ширина проверяются в GetOrBuildLayout), а при закрытии вкладки канвас
+            // Списки раскладки (_layouts, _pages, _tables) и кеши вёрстки СОХРАНЯЕМ:
+            // DockFactory переиспользует канвас при переключении вкладок и воркмодов
+            // (detach → reattach), и с живой раскладкой MeasureOverride после reattach
+            // пропускает полный проход пагинации по отпечатку (LayoutsMatchCurrentState) —
+            // на больших документах это разница между мгновенно и секундами.
+            // Актуальность гарантирует отпечаток: смена документа создаёт новый
+            // DocumentViewModel (ловится по ссылке), изменение ширины/режима/стилей
+            // ловится по остальным полям отпечатка. При закрытии вкладки канвас
             // умирает целиком и нативную память соберёт GC.
-            lock (_renderLock)
-            {
-                _layouts = new System.Collections.Generic.List<ParaLayout>();
-                _pages = new System.Collections.Generic.List<PageRect>();
-                _tables = new System.Collections.Generic.List<TableEntry>();
-            }
 
             UnsubscribeFromScrollViewer();
         }
@@ -1192,8 +1191,26 @@ namespace Writersword.Modules.TextEditor.Document
             if (_styleResolver is null && DocVm is not null)
                 _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
 
-            if (!_zooming)
-                RebuildLayouts();
+            // Пересчёт раскладки выполняется только если отпечаток не совпал:
+            // measure вызывается при каждом переприкреплении вьюхи (переключение
+            // вкладок и воркмодов) и после каждого InvalidateMeasure, а полный проход
+            // пагинации большого документа занимает секунды даже с тёплым кешем
+            // лейаутов. Все содержательные изменения (ввод, форматирование, таблицы,
+            // смена документа, ширины, режима, стилей) идут через прямые вызовы
+            // RebuildLayouts либо меняют поля отпечатка — пропуск безопасен.
+            if (!_zooming && !LayoutsMatchCurrentState())
+            {
+                // Холодный кеш большого документа: синхронный пересчёт зашейпил бы
+                // тысячи абзацев и заблокировал UI-поток на секунды. Вместо этого
+                // запускается порционный прогрев кеша (PumpLayoutWarmup): абзацы
+                // шейпятся с бюджетом времени на проход диспетчера, UI остаётся
+                // отзывчивым, а полный пересчёт выполняется после прогрева по
+                // InvalidateMeasure — уже с тёплым кешем, за десятки миллисекунд.
+                if (ShouldWarmupBeforeRebuild())
+                    StartLayoutWarmup();
+                else
+                    RebuildLayouts();
+            }
 
             double visualH = Math.Max(_canvasHeight * zoom, 100);
             double visualW = availW;
@@ -1234,6 +1251,155 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         // ── Пересчёт лейаута ──────────────────────────────────────────────
+
+        // Отпечаток состояния, для которого построены _layouts/_pages/_tables.
+        // Обновляется в конце RebuildLayouts; MeasureOverride сравнивает его с текущим
+        // состоянием и пропускает полный пересчёт при совпадении. Смена документа
+        // создаёт новый DocumentViewModel (LoadDocument), смена карты шрифтов — новый
+        // StyleResolver (сеттер ScriptFontMap), поэтому оба случая ловятся сравнением
+        // ссылок. Ширина и режим отображения сравниваются по значению.
+        private object? _layoutsFingerprintDocVm;
+        private object? _layoutsFingerprintParagraphs;
+        private object? _layoutsFingerprintStyleResolver;
+        private int _layoutsFingerprintParagraphCount = -1;
+        private double _layoutsFingerprintWidth = double.NaN;
+        private EditorViewMode _layoutsFingerprintViewMode = (EditorViewMode)(-1);
+
+        /// <summary>
+        /// Возвращает true если текущая раскладка (_layouts/_pages/_tables) построена
+        /// ровно для текущего состояния канваса и полный пересчёт в measure не нужен.
+        /// </summary>
+        private bool LayoutsMatchCurrentState()
+        {
+            if (DocVm is null) return false;
+
+            return _layouts.Count > 0
+                && ReferenceEquals(_layoutsFingerprintDocVm, DocVm)
+                && ReferenceEquals(_layoutsFingerprintParagraphs, DocVm.Paragraphs)
+                && _layoutsFingerprintParagraphCount == DocVm.Paragraphs.Count
+                && ReferenceEquals(_layoutsFingerprintStyleResolver, _styleResolver)
+                && !double.IsNaN(_layoutsFingerprintWidth)
+                && Math.Abs(_layoutsFingerprintWidth - _canvasWidth) < 0.5
+                && _layoutsFingerprintViewMode == DocVm.ViewMode;
+        }
+
+        // ── Порционный прогрев кеша раскладки ─────────────────────────────
+        // Холодное построение раскладки большого документа (шейпинг тысяч абзацев
+        // через Skia) блокировало UI-поток на секунды при первом открытии модуля
+        // в воркмоде. Прогрев шейпит абзацы порциями с бюджетом времени на проход
+        // диспетчера: между проходами UI обрабатывает ввод и рендер, а полный
+        // пересчёт раскладки выполняется один раз после прогрева с тёплым кешем.
+        // Работа целиком на UI-потоке — гонок с вводом и моделью нет по построению.
+        private bool _layoutWarmupActive;
+        private const int WarmupColdThreshold = 200;
+        private const int WarmupPassBudgetMs = 30;
+
+        /// <summary>
+        /// Актуальна ли кеш-запись раскладки абзаца для текущей ширины текста.
+        /// Условие идентично проверке в GetOrBuildLayout: несовпадение текста или
+        /// ширины означает, что абзац будет перешейплен заново.
+        /// </summary>
+        private bool IsLayoutCacheEntryValid(ParagraphViewModel pvm, float widthPt)
+        {
+            return _layoutCache.TryGetValue(pvm, out var cached)
+                && cached.Text == (pvm.PlainText ?? string.Empty)
+                && Math.Abs(cached.Width - widthPt) < 0.1f;
+        }
+
+        /// <summary>
+        /// Возвращает true если раскладку нужно строить через прогрев: документ большой
+        /// и значительная часть абзацев ещё не зашейплена (холодный кеш) либо их кеш
+        /// устарел (другая ширина текста). Для тёплого кеша и маленьких документов
+        /// синхронный пересчёт занимает миллисекунды и прогрев не нужен.
+        /// </summary>
+        private bool ShouldWarmupBeforeRebuild()
+        {
+            if (_layoutWarmupActive) return true;
+            if (DocVm is null) return false;
+
+            var paragraphs = DocVm.Paragraphs;
+            if (paragraphs.Count < WarmupColdThreshold) return false;
+
+            float widthPt = GetCurrentTextWidthPt();
+            int uncached = 0;
+            foreach (var pvm in paragraphs)
+            {
+                if (!IsLayoutCacheEntryValid(pvm, widthPt))
+                {
+                    uncached++;
+                    if (uncached >= WarmupColdThreshold)
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        private void StartLayoutWarmup()
+        {
+            if (_layoutWarmupActive) return;
+            _layoutWarmupActive = true;
+            _logger.Debug("Layout warmup started: {Count} paragraphs, cache={CacheCount}",
+                DocVm?.Paragraphs.Count ?? 0, _layoutCache.Count);
+            Dispatcher.UIThread.Post(PumpLayoutWarmup, DispatcherPriority.Loaded);
+        }
+
+        /// <summary>
+        /// Один проход прогрева: шейпит незакешированные абзацы пока не исчерпан
+        /// бюджет времени, затем перепланирует себя. Когда все абзацы зашейплены —
+        /// вызывает InvalidateMeasure: пересчёт раскладки в measure пройдёт быстро,
+        /// целиком из кеша. Приоритет Loaded — выше Background, проход не голодает
+        /// при непрерывных layout-инвалидациях.
+        /// </summary>
+        private void PumpLayoutWarmup()
+        {
+            if (!_layoutWarmupActive) return;
+
+            if (DocVm is null)
+            {
+                _layoutWarmupActive = false;
+                return;
+            }
+
+            if (_styleResolver is null)
+                _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
+
+            float widthPt = GetCurrentTextWidthPt();
+            var passStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            bool allShaped = true;
+
+            var paragraphs = DocVm.Paragraphs;
+            for (int i = 0; i < paragraphs.Count; i++)
+            {
+                var pvm = paragraphs[i];
+
+                // Проверка идентична GetOrBuildLayout: запись с устаревшим текстом
+                // или другой шириной будет перешейплена — такой абзац не пропускаем,
+                // иначе вся перевёрстка свалилась бы в финальный синхронный проход.
+                if (IsLayoutCacheEntryValid(pvm, widthPt)) continue;
+
+                GetOrBuildLayout(pvm, widthPt);
+
+                if (passStopwatch.ElapsedMilliseconds >= WarmupPassBudgetMs)
+                {
+                    allShaped = false;
+                    break;
+                }
+            }
+
+            if (!allShaped)
+            {
+                Dispatcher.UIThread.Post(PumpLayoutWarmup, DispatcherPriority.Loaded);
+                return;
+            }
+
+            _layoutWarmupActive = false;
+            _logger.Debug("Layout warmup finished: cache={CacheCount} — scheduling rebuild", _layoutCache.Count);
+
+            // Пересчёт через measure: раскладка соберётся из тёплого кеша.
+            InvalidateMeasure();
+            InvalidateFull();
+        }
+
         private void RebuildLayouts()
         {
             if (DocVm is null)
@@ -1247,11 +1413,25 @@ namespace Writersword.Modules.TextEditor.Document
                     _canvasHeightPt = emptyH;
                     _canvasHeight = emptyH * PtToPx;
                 }
+
+                // Раскладка пуста — отпечаток недействителен.
+                _layoutsFingerprintDocVm = null;
+                _layoutsFingerprintParagraphs = null;
+                _layoutsFingerprintStyleResolver = null;
+                _layoutsFingerprintParagraphCount = -1;
+                _layoutsFingerprintWidth = double.NaN;
+                _layoutsFingerprintViewMode = (EditorViewMode)(-1);
                 return;
             }
 
             if (_styleResolver is null)
                 _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
+
+            // Диагностика провисаний UI-потока: полный пересчёт раскладки выполняется
+            // синхронно (MeasureOverride/ScheduleRebuild), и на больших документах при
+            // холодном кеше лейаутов это главный кандидат на заморозку интерфейса.
+            // Замер пишется в лог только когда пересчёт превысил порог.
+            var rebuildStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
             switch (DocVm.ViewMode)
             {
@@ -1270,6 +1450,26 @@ namespace Writersword.Modules.TextEditor.Document
                         break;
                     }
             }
+
+            rebuildStopwatch.Stop();
+            if (rebuildStopwatch.ElapsedMilliseconds > 50)
+            {
+                _logger.Warning(
+                    "RebuildLayouts took {ElapsedMs}ms on UI thread: mode={Mode}, paragraphs={ParaCount}, layoutCache={CacheCount}",
+                    rebuildStopwatch.ElapsedMilliseconds,
+                    DocVm.ViewMode,
+                    DocVm.Paragraphs.Count,
+                    _layoutCache.Count);
+            }
+
+            // Фиксируем отпечаток состояния, для которого построена раскладка —
+            // последующие measure-проходы с тем же состоянием пропустят пересчёт.
+            _layoutsFingerprintDocVm = DocVm;
+            _layoutsFingerprintParagraphs = DocVm.Paragraphs;
+            _layoutsFingerprintStyleResolver = _styleResolver;
+            _layoutsFingerprintParagraphCount = DocVm.Paragraphs.Count;
+            _layoutsFingerprintWidth = _canvasWidth;
+            _layoutsFingerprintViewMode = DocVm.ViewMode;
         }
 
 

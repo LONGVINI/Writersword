@@ -1243,9 +1243,6 @@ namespace Writersword.Modules.TextEditor.Document
         private void InsertText(string text)
         {
             if (IsEditingBlocked) return;
-            _logger.Debug("[DIAG] InsertText #{Id} '{T}' caretPara={P} caretChar={C} attached={A} focused={F}",
-                GetHashCode(), text, _caretPara, _caretChar,
-                VisualRoot is not null, IsFocused);
             if (IsInCell(_caretPara))
             {
                 CellInsertText(text);

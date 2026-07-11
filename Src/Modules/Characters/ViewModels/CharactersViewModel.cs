@@ -299,7 +299,7 @@ namespace Writersword.Modules.Characters.ViewModels
                 _cardNameHeight = 40.0;
                 _cardIconSize = 30.0;
                 _cardsPerRow = 1;
-                RaiseCardDimensionProperties();
+                RaiseCardDimensionPropertiesIfChanged();
                 return;
             }
 
@@ -336,6 +336,52 @@ namespace Writersword.Modules.Characters.ViewModels
             _cardNameHeight = Math.Round(totalH * 0.36);
             _cardIconSize = Math.Round(cardW * (30.0 / 148.0));
             _cardsPerRow = n;
+
+            RaiseCardDimensionPropertiesIfChanged();
+        }
+
+        // Снимок значений, при которых карточкам в последний раз рассылались
+        // уведомления о размерах. Пересчёт приходит с каждым изменением ширины
+        // контейнера (перетаскивание сплиттера, ресайз окна, появление панелей):
+        // если наблюдаемые карточками значения не изменились, повторная рассылка
+        // только заставляла каждую реализованную карточку заново прогонять два
+        // десятка рефлексивных привязок и перемерять раскладку всего списка.
+        // _cardWidth в снимок не входит: в шаблоне карточки на него никто не
+        // привязан (он нужен призраку и расчётам drag, которые читают свойство
+        // напрямую), а его дробные изменения при плавном ресайзе открывали бы
+        // рассылку на каждый пиксель. Все зависящие от него привязываемые
+        // значения (CardActionIconSize, CardColorButtonSize) округляются и
+        // проверяются в снимке отдельно.
+        private CharactersViewMode _raisedViewMode = (CharactersViewMode)(-1);
+        private bool _raisedUseListRow;
+        private double _raisedTopHeight = -1.0;
+        private double _raisedNameHeight = -1.0;
+        private double _raisedIconSize = -1.0;
+        private double _raisedActionIconSize = -1.0;
+        private double _raisedColorButtonSize = -1.0;
+        private int _raisedCardsPerRow = -1;
+
+        private void RaiseCardDimensionPropertiesIfChanged()
+        {
+            bool changed =
+                _raisedViewMode != _viewMode
+                || _raisedUseListRow != UseListRowLayout
+                || _raisedCardsPerRow != _cardsPerRow
+                || Math.Abs(_raisedTopHeight - _cardTopHeight) > 0.01
+                || Math.Abs(_raisedNameHeight - _cardNameHeight) > 0.01
+                || Math.Abs(_raisedIconSize - _cardIconSize) > 0.01
+                || Math.Abs(_raisedActionIconSize - CardActionIconSize) > 0.01
+                || Math.Abs(_raisedColorButtonSize - CardColorButtonSize) > 0.01;
+            if (!changed) return;
+
+            _raisedViewMode = _viewMode;
+            _raisedUseListRow = UseListRowLayout;
+            _raisedCardsPerRow = _cardsPerRow;
+            _raisedTopHeight = _cardTopHeight;
+            _raisedNameHeight = _cardNameHeight;
+            _raisedIconSize = _cardIconSize;
+            _raisedActionIconSize = CardActionIconSize;
+            _raisedColorButtonSize = CardColorButtonSize;
 
             RaiseCardDimensionProperties();
         }
@@ -811,9 +857,10 @@ namespace Writersword.Modules.Characters.ViewModels
             _refreshCts = null;
         }
 
-        // Прогрессивная загрузка: папки добавляются пустыми,
-        // затем карточки заполняются батчами по 25 штук с
-        // Background-приоритетом между батчами — UI не фризится.
+        // Прогрессивная загрузка: папки добавляются пустыми, затем карточки
+        // заполняются небольшими батчами с Background-приоритетом между
+        // батчами — UI не фризится. Размер батча задаётся в
+        // RefreshFolderViewModelsProgressiveAsync.
         private async Task RefreshFolderViewModelsAsync()
         {
             CancelLoad();
@@ -1235,6 +1282,10 @@ namespace Writersword.Modules.Characters.ViewModels
             string? inlineBeingNamedId = null,
             string? newlyCreatedFolderId = null)
         {
+            // Поштучно: создание карточки стоит ~20 мс, и батч из 25 штук
+            // замораживал UI на ~500 мс на каждую пачку. Замер показал, что
+            // общая скорость загрузки от размера батча не меняется (узкое
+            // место — создание карточек), поэтому выбран самый плавный режим.
             const int batchSize = 1;
 
             var allChars = await Task.Run(() => _characterService.GetAll().ToList(), ct);
@@ -1295,6 +1346,13 @@ namespace Writersword.Modules.Characters.ViewModels
                     // Отпускаем поток между батчами — UI успевает обработать события.
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
                         () => { }, Avalonia.Threading.DispatcherPriority.Background);
+
+                    // Оверлей «Loading characters...» нужен только пока на экране
+                    // пусто. Как только первые карточки реально отрисованы,
+                    // затемнение снимается, а остальные батчи дозагружаются уже
+                    // без него — раньше оверлей висел до самого конца загрузки.
+                    if (IsLoading && vm.Characters.Count > 0)
+                        IsLoading = false;
                 }
             }
 
@@ -1341,6 +1399,11 @@ namespace Writersword.Modules.Characters.ViewModels
 
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
                         () => { }, Avalonia.Threading.DispatcherPriority.Background);
+
+                    // Та же логика для карточек вне групп: первые видимые
+                    // карточки снимают оверлей загрузки.
+                    if (IsLoading && ungrouped.Characters.Count > 0)
+                        IsLoading = false;
                 }
             }
         }

@@ -489,6 +489,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 this.RaiseAndSetIfChanged(ref _outlineLevel, value);
                 this.RaisePropertyChanged(nameof(OutlineLevelLabel));
                 this.RaisePropertyChanged(nameof(OutlineLevelBrush));
+                this.RaisePropertyChanged(nameof(IsBodyTextLevel));
+                this.RaisePropertyChanged(nameof(IsOutlineNumbered));
+                this.RaisePropertyChanged(nameof(OutlineLevelDigit));
+                this.RaisePropertyChanged(nameof(OutlineIconOpacity));
             }
         }
 
@@ -497,6 +501,20 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         /// <summary>Цвет текущего уровня структуры: серый для основного текста, далее градиент к серому.</summary>
         public IBrush OutlineLevelBrush => new SolidColorBrush(Color.Parse(OutlineLevelHex(_outlineLevel)));
+
+        /// <summary>Истина, когда абзац на основном тексте (уровень 0) — показываем иконку-линии.</summary>
+        public bool IsBodyTextLevel => _outlineLevel <= 0;
+
+        /// <summary>Истина для уровней 1..9 — показываем цифру уровня.</summary>
+        public bool IsOutlineNumbered => _outlineLevel > 0;
+
+        /// <summary>Цифра текущего уровня структуры (пусто на основном тексте).</summary>
+        public string OutlineLevelDigit => _outlineLevel > 0
+            ? _outlineLevel.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : string.Empty;
+
+        /// <summary>Прозрачность иконки-линий: полная на основном тексте, приглушённая под цифрой уровня.</summary>
+        public double OutlineIconOpacity => _outlineLevel > 0 ? 0.4 : 1.0;
 
         private static string OutlineLevelHex(int lvl) => lvl switch
         {
@@ -681,6 +699,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             this.RaisePropertyChanged(nameof(OutlineLevel));
             this.RaisePropertyChanged(nameof(OutlineLevelLabel));
             this.RaisePropertyChanged(nameof(OutlineLevelBrush));
+            this.RaisePropertyChanged(nameof(IsBodyTextLevel));
+            this.RaisePropertyChanged(nameof(IsOutlineNumbered));
+            this.RaisePropertyChanged(nameof(OutlineLevelDigit));
+            this.RaisePropertyChanged(nameof(OutlineIconOpacity));
         }
 
         /// <summary>
