@@ -95,8 +95,13 @@ namespace Writersword.Infrastructure.Services.Storage
                     _projectPaths.Remove(existing.Id);
                 }
 
-                // Загружаем через ZipProjectService
-                var project = await _zipService.LoadFromZipAsync(filePath);
+                // Загружаем через ZipProjectService.
+                // Task.Run обязателен: LoadFromZipAsync читает ZIP и десериализует
+                // JSON всего проекта синхронно на вызывающем контексте — без ухода
+                // в пул потоков вся распаковка и парсинг выполнялись на UI-потоке
+                // и замораживали интерфейс на секунды при активации непрогруженной
+                // вкладки (LoadAsync вызывается из UI-контекста активации).
+                var project = await Task.Run(() => _zipService.LoadFromZipAsync(filePath));
 
                 if (project != null)
                 {

@@ -79,6 +79,13 @@ namespace Writersword.Behaviors
         private int _currentVisualIndex = -1;
         private double _tabWidth = 180;
 
+        // Ворота гидрации удержаны этим экземпляром на время перетаскивания.
+        // Вкладка переключается СРАЗУ на старте drag (строится layout с окнами
+        // модулей и плейсхолдерами), но загрузка вью модулей удерживается
+        // воротами и стартует только при отпускании кнопки мыши — перетаскивание
+        // остаётся плавным, а пользователь сразу видит нужный проект.
+        private bool _hydrationHoldActive = false;
+
         private readonly Dictionary<TranslateTransform, CancellationTokenSource> _activeAnimations = new();
         private readonly Dictionary<TranslateTransform, double> _targetPositions = new();
 
@@ -203,6 +210,10 @@ namespace Writersword.Behaviors
                 button.Transitions = null;
             }
 
+            // Кнопка отпущена — освобождаем ворота гидрации: отложенные загрузки
+            // вью модулей стартуют сейчас, при любом исходе отпускания.
+            ReleaseHydrationHoldIfActive();
+
             var viewModel = _control.DataContext as TabBarViewModel;
             if (viewModel == null)
             {
@@ -260,6 +271,21 @@ namespace Writersword.Behaviors
             _originalIndex = -1;
             _currentVisualIndex = -1;
             _currentOffsetX = 0;
+
+            // Страховка: ворота не должны остаться удержанными ни при каком
+            // пути завершения перетаскивания (потеря захвата, ошибка).
+            ReleaseHydrationHoldIfActive();
+        }
+
+        /// <summary>
+        /// Освободить ворота гидрации, если они удержаны этим перетаскиванием.
+        /// Повторный вызов безопасен.
+        /// </summary>
+        private void ReleaseHydrationHoldIfActive()
+        {
+            if (!_hydrationHoldActive) return;
+            _hydrationHoldActive = false;
+            Writersword.Infrastructure.Dock.ModuleHydrationGate.Release();
         }
 
         /// <summary>
@@ -279,11 +305,22 @@ namespace Writersword.Behaviors
             _activeAnimations.Clear();
             _targetPositions.Clear();
 
-            var viewModel = _control.DataContext as TabBarViewModel;
-            if (viewModel != null && _draggedButton.DataContext is DocumentTabViewModel tab)
+            // Вкладка переключается СРАЗУ: строится layout нового проекта с окнами
+            // модулей и плейсхолдерами. Но перед активацией удерживаются ворота
+            // гидрации — загрузка вью модулей (данные, вьюмодели, вью) не стартует,
+            // пока кнопка мыши не отпущена. Перетаскивание остаётся плавным:
+            // плейсхолдеры и смена layout дешёвые, вся тяжесть отложена.
+            if (_draggedButton.DataContext is DocumentTabViewModel tab)
             {
-                viewModel.ActiveTab = tab;
-                _logger.LogDebug("Activated tab: {Title}", tab.Title);
+                var activationViewModel = _control.DataContext as TabBarViewModel;
+                if (activationViewModel != null && !ReferenceEquals(activationViewModel.ActiveTab, tab))
+                {
+                    Writersword.Infrastructure.Dock.ModuleHydrationGate.Hold();
+                    _hydrationHoldActive = true;
+
+                    _logger.LogDebug("Activating tab on drag start (hydration held): {Title}", tab.Title);
+                    activationViewModel.ActivateTab(tab);
+                }
             }
 
             if (_draggedPresenter != null)

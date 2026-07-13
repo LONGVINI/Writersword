@@ -1066,7 +1066,56 @@ namespace Writersword.Infrastructure.Dock
                         // Модули живы: вью освобождается из хоста, чтобы при возврате
                         // GetOrCreateView мог прицепить её к новому хосту без конфликта
                         // визуальных родителей. DataContext вью не трогаем.
+                        //
+                        // Временная замерялка: снятие вью с визуального дерева
+                        // (aliveHost.Content = null) — основной источник провисания
+                        // Suspend на UI-потоке. Разбиваем стоимость по фазам и считаем
+                        // реализованные элементы, чтобы понять, во что упирается время:
+                        // в число карточек/аватаров или в шторм перемеров репитеров.
+                        var probeSw = System.Diagnostics.Stopwatch.StartNew();
+
+                        int visuals = 0, images = 0;
+                        var repeaters = new System.Collections.Generic.List<
+                            Writersword.Modules.Characters.Controls.PerfItemsRepeater>();
+                        if (aliveHost.Content is Avalonia.Visual innerVisual)
+                        {
+                            foreach (var d in Avalonia.VisualTree.VisualExtensions
+                                         .GetVisualDescendants(innerVisual))
+                            {
+                                visuals++;
+                                if (d is Writersword.Modules.Characters.Controls.PerfItemsRepeater rep)
+                                    repeaters.Add(rep);
+                                else if (d is Avalonia.Controls.Image)
+                                    images++;
+                            }
+                        }
+                        long enumMs = probeSw.ElapsedMilliseconds;
+
+                        int measuresBefore = 0;
+                        foreach (var r in repeaters) measuresBefore += r.MeasureCount;
+
                         aliveHost.Content = null;
+                        long hostNullMs = probeSw.ElapsedMilliseconds - enumMs;
+
+                        document.Content = null;
+                        long docNullMs = probeSw.ElapsedMilliseconds - enumMs - hostNullMs;
+
+                        int measuresAfter = 0;
+                        foreach (var r in repeaters) measuresAfter += r.MeasureCount;
+                        probeSw.Stop();
+
+                        if (probeSw.ElapsedMilliseconds > 30)
+                        {
+                            _logger.LogWarning(
+                                "Detach probe [{Id}]: total={Total}ms " +
+                                "(enumTree={Enum}ms, hostContentNull={Host}ms, docContentNull={Doc}ms) | " +
+                                "visuals={Visuals}, repeaters={Rep}, images={Img}, " +
+                                "repeaterMeasuresDuringDetach={Storm}",
+                                document.Id, probeSw.ElapsedMilliseconds, enumMs, hostNullMs, docNullMs,
+                                visuals, repeaters.Count, images, measuresAfter - measuresBefore);
+                        }
+
+                        return;
                     }
                     document.Content = null;
                 }

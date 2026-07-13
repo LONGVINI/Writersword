@@ -76,6 +76,10 @@ namespace Writersword.Modules.Characters
 
             locService.LanguageChanged += _onLanguageChanged;
 
+            // Контекст мог быть установлен до создания вьюмодели — применяем
+            // read-only режима сравнения сейчас.
+            _viewModel.IsReadOnly = Context?.IsInCompareMode == true;
+
             base.Initialize();
             _logger.Debug("Initialized");
         }
@@ -84,6 +88,11 @@ namespace Writersword.Modules.Characters
         {
             if (_characterService is CharacterService cs) cs.SetContext(context);
             if (_avatarService is CharacterAvatarService avs) avs.SetContext(context);
+
+            // Режим сравнения версий делает данные модуля неизменяемыми —
+            // по аналогии с read-only текстового редактора.
+            if (_viewModel is not null)
+                _viewModel.IsReadOnly = context?.IsInCompareMode == true;
         }
 
         public override Control? CreateView() =>

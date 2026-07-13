@@ -2,6 +2,7 @@ using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Writersword.Core.Services;
 using Writersword.Modules.Characters.Interfaces;
 using Writersword.Modules.Characters.Models;
 
@@ -25,6 +26,14 @@ namespace Writersword.Modules.Characters.Services
         }
 
         public void SetContext(object? context) => _context = context;
+
+        // Режим сравнения версий (восстановление после несохранённой сессии):
+        // любые изменения данных модуля запрещены, пока пользователь не выбрал
+        // версию в баннере. Это последний рубеж — независимо от того, какой
+        // путь UI привёл к записи, данные остаются нетронутыми.
+        private bool IsReadOnly =>
+            _context is DocumentContext ctx
+            && ctx.IsInCompareMode;
 
         public IReadOnlyList<Character> GetAll() => _characters.AsReadOnly();
 
@@ -83,6 +92,11 @@ namespace Writersword.Modules.Characters.Services
 
         public void Update(Character character)
         {
+            if (IsReadOnly)
+            {
+                _logger.Debug("Update ignored (compare mode): {Id}", character.Id);
+                return;
+            }
             var idx = _characters.FindIndex(c => c.Id == character.Id);
             if (idx >= 0)
             {
@@ -93,6 +107,11 @@ namespace Writersword.Modules.Characters.Services
 
         public void Delete(string id)
         {
+            if (IsReadOnly)
+            {
+                _logger.Debug("Delete ignored (compare mode): {Id}", id);
+                return;
+            }
             _characters.RemoveAll(c => c.Id == id);
             _logger.Debug("Character deleted: {Id}", id);
         }
@@ -144,6 +163,11 @@ namespace Writersword.Modules.Characters.Services
 
         public void ApplyAnketa(string characterId, CharacterAnketa anketa, bool randomize = false)
         {
+            if (IsReadOnly)
+            {
+                _logger.Debug("ApplyAnketa ignored (compare mode): {Id}", characterId);
+                return;
+            }
             var character = GetById(characterId);
             if (character == null) return;
 
@@ -162,6 +186,11 @@ namespace Writersword.Modules.Characters.Services
 
         public void RandomizeParameters(string characterId)
         {
+            if (IsReadOnly)
+            {
+                _logger.Debug("RandomizeParameters ignored (compare mode): {Id}", characterId);
+                return;
+            }
             var character = GetById(characterId);
             if (character == null) return;
             _anketaService.RandomizeParameters(character.Parameters);
@@ -172,6 +201,7 @@ namespace Writersword.Modules.Characters.Services
 
         public void SetAvatar(string characterId, byte[] data, string extension)
         {
+            if (IsReadOnly) return;
             var character = GetById(characterId);
             if (character == null) return;
             character.AvatarPath = $"{AvatarFolder}/{characterId}/avatar{extension}";
@@ -180,6 +210,7 @@ namespace Writersword.Modules.Characters.Services
 
         public void DeleteAvatar(string characterId)
         {
+            if (IsReadOnly) return;
             var character = GetById(characterId);
             if (character == null) return;
             character.AvatarPath = null;

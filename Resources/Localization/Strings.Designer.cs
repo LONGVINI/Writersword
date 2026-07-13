@@ -1535,6 +1535,24 @@ namespace Writersword.Resources.Localization {
                 return ResourceManager.GetString("Notification_ProjectOpened", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Release to open the tab….
+        /// </summary>
+        public static string TabBar_ReleaseToOpen {
+            get {
+                return ResourceManager.GetString("TabBar_ReleaseToOpen", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Loading module….
+        /// </summary>
+        public static string Module_Loading {
+            get {
+                return ResourceManager.GetString("Module_Loading", resourceCulture);
+            }
+        }
         
         /// <summary>
         ///   Ищет локализованную строку, похожую на Project saved.

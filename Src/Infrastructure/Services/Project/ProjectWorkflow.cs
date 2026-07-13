@@ -96,6 +96,7 @@ namespace Writersword.Infrastructure.Services.Project
                         _logger.LogDebug("Cache found - Cache: {CacheDate}, Save: {SaveDate}", cacheDate, saveDate);
 
                         bool dataIsSame = false;
+                        bool hashMatched = false;
 
                         if (!string.IsNullOrEmpty(cacheMeta?.ProjectFileHash))
                         {
@@ -106,12 +107,20 @@ namespace Writersword.Infrastructure.Services.Project
                                 using var fs = File.OpenRead(filePath);
                                 return Convert.ToHexString(sha.ComputeHash(fs));
                             });
-                            dataIsSame = currentHash == cacheMeta.ProjectFileHash;
-                            _logger.LogDebug("Hash comparison: {Result}", dataIsSame ? "SAME" : "DIFFERENT");
+                            hashMatched = currentHash == cacheMeta.ProjectFileHash;
+                            dataIsSame = hashMatched;
+                            _logger.LogDebug("Hash comparison: {Result}", hashMatched ? "SAME" : "DIFFERENT");
                         }
-                        else
+
+                        if (!hashMatched)
                         {
-                            // Старый кеш без хеша файла — загружаем данные для сравнения.
+                            // Несовпадение хеша файла НЕ означает несовпадение данных модулей:
+                            // ZIP проекта перезаписывается и без правок содержимого — например,
+                            // автосохранение workspace.json (layout) при каждом переключении
+                            // вкладки меняет хеш всего файла. Раньше это сразу трактовалось как
+                            // «есть несохранённые данные», и каждая вкладка при каждом запуске
+                            // открывалась в режиме восстановления. Теперь при несовпадении хеша
+                            // выполняется полное каноническое сравнение данных модулей.
                             var savedProject = await _projectService.LoadAsync(filePath);
                             var cache = await Task.Run(() => _cacheService.LoadCache(filePath));
                             if (savedProject != null && cache != null)
@@ -122,43 +131,29 @@ namespace Writersword.Infrastructure.Services.Project
                                 dataIsSame = _comparisonService.AreDataEqual(cache, savedRelevantOnOpen);
                             }
                             if (dataIsSame) project = savedProject;
-                            _logger.LogDebug("Legacy comparison: {Result}", dataIsSame ? "SAME" : "DIFFERENT");
+                            _logger.LogDebug("Full data comparison: {Result}", dataIsSame ? "SAME" : "DIFFERENT");
                         }
 
                         if (dataIsSame)
                         {
-                            _logger.LogDebug("Data is identical, skipping Recovery dialog");
+                            _logger.LogDebug("Data is identical, skipping recovery");
                             project ??= await _projectService.LoadAsync(filePath);
                         }
                         else
                         {
-                            _logger.LogDebug("Data differs, showing Recovery dialog");
+                            // Модальный диалог восстановления убран: он блокировал всё
+                            // приложение в момент открытия/активации вкладки (в том числе
+                            // ломал drag вкладок) и заставлял выбирать версию вслепую.
+                            // Вместо него проект сразу открывается в Compare-режиме:
+                            // показывается восстановленная (кешевая) версия, а сверху —
+                            // немодальный баннер «Переключить версию / Сохранить /
+                            // Отклонить». Обе версии сохраняются, пока пользователь
+                            // явно не выберет; автосейв кеша в этом режиме отключён.
+                            _logger.LogDebug("Data differs — opening in Compare mode with recovery banner");
 
-                            recoveryChoice = await _dialogService.ShowRecoveryDialogAsync(cacheDate.Value, saveDate);
-                            _logger.LogDebug("Recovery choice: {Choice}", recoveryChoice);
-
-                            switch (recoveryChoice)
-                            {
-                                case RecoveryDialogResult.Restore:
-                                    project = await LoadProjectWithCacheData(filePath);
-                                    _cacheService.DeleteCache(filePath);
-                                    _logger.LogDebug("Restored from cache (cache deleted)");
-                                    break;
-
-                                case RecoveryDialogResult.OpenSaved:
-                                    project = await _projectService.LoadAsync(filePath);
-                                    _logger.LogDebug("Opened saved version (cache remains)");
-                                    break;
-
-                                case RecoveryDialogResult.Compare:
-                                    project = await LoadProjectWithCacheData(filePath);
-                                    _logger.LogDebug("Compare mode - viewing cache");
-                                    break;
-
-                                case RecoveryDialogResult.Cancel:
-                                    _logger.LogDebug("Open cancelled by user");
-                                    return null;
-                            }
+                            recoveryChoice = RecoveryDialogResult.Compare;
+                            project = await LoadProjectWithCacheData(filePath);
+                            _logger.LogDebug("Compare mode - viewing cache");
                         }
                     }
                 }
@@ -315,38 +310,23 @@ namespace Writersword.Infrastructure.Services.Project
 
                         if (dataIsSame)
                         {
-                            _logger.LogDebug("Data is identical, skipping Recovery dialog");
+                            _logger.LogDebug("Data is identical, skipping recovery");
                             project = savedProject;
                         }
                         else
                         {
-                            _logger.LogDebug("Data differs, showing Recovery dialog");
+                            // Модальный диалог восстановления убран: активация вкладки
+                            // (в том числе при перетаскивании) не должна прерываться
+                            // блокирующим окном. Вкладка сразу открывается в Compare-режиме:
+                            // показывается восстановленная (кешевая) версия + немодальный
+                            // баннер «Переключить версию / Сохранить / Отклонить».
+                            // Обе версии сохраняются, пока пользователь явно не выберет;
+                            // автосейв кеша в этом режиме отключён.
+                            _logger.LogDebug("Data differs — opening in Compare mode with recovery banner");
 
-                            recoveryChoice = await _dialogService.ShowRecoveryDialogAsync(cacheDate.Value, saveDate);
-                            _logger.LogDebug("Recovery choice: {Choice}", recoveryChoice);
-
-                            switch (recoveryChoice)
-                            {
-                                case RecoveryDialogResult.Restore:
-                                    project = await LoadProjectWithCacheData(filePath);
-                                    _cacheService.DeleteCache(filePath);
-                                    _logger.LogDebug("Restored from cache (cache deleted)");
-                                    break;
-
-                                case RecoveryDialogResult.OpenSaved:
-                                    project = await _projectService.LoadAsync(filePath);
-                                    _logger.LogDebug("Opened saved version (cache remains)");
-                                    break;
-
-                                case RecoveryDialogResult.Compare:
-                                    project = await LoadProjectWithCacheData(filePath);
-                                    _logger.LogDebug("Compare mode - viewing cache");
-                                    break;
-
-                                case RecoveryDialogResult.Cancel:
-                                    _logger.LogDebug("Open cancelled by user");
-                                    return false;
-                            }
+                            recoveryChoice = RecoveryDialogResult.Compare;
+                            project = await LoadProjectWithCacheData(filePath);
+                            _logger.LogDebug("Compare mode - viewing cache");
                         }
                     }
                 }

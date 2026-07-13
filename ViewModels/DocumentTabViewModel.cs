@@ -215,7 +215,13 @@ namespace Writersword.ViewModels
                 if (activeModules.Count == 0)
                     return;
 
-                var (customData, sessionData) = stateCollector.CollectAllData(activeModules);
+                // Сбор данных модулей на фоновом потоке: полная сериализация документа
+                // и сотен персонажей выполнялась здесь синхронно на UI-потоке и давала
+                // жёсткое провисание в момент каждого переключения вкладки. Тяжёлые
+                // модули (IStateSnapshotModule) внутри GetCustomData сами прыгают на
+                // UI-поток только за быстрым снимком модели — тот же проверенный путь,
+                // что у периодического автосейва CacheUpdateService.
+                var (customData, sessionData) = await Task.Run(() => stateCollector.CollectAllData(activeModules));
 
                 if (customData.Count == 0)
                     return;
@@ -224,29 +230,38 @@ namespace Writersword.ViewModels
 
                 if (savedProject != null)
                 {
-                    bool dataChanged = customData.Count != savedProject.ModulesData.Count;
-
-                    if (!dataChanged)
+                    // Сравнение в фоне и КАНОНИЧЕСКОЕ (через IHashService: объект,
+                    // JObject и JSON-строка с одинаковым содержимым дают один хеш).
+                    // Наивное сравнение Equals(объект, строка-из-ZIP) всегда давало
+                    // «изменилось» для модулей, возвращающих объекты (Characters),
+                    // кеш писался при каждом переключении вкладки без единой правки,
+                    // и при следующем открытии вкладка попадала в режим восстановления.
+                    var hashService = App.Services.GetRequiredService<Writersword.Core.Interfaces.Services.IHashService>();
+                    bool dataChanged = await Task.Run(() =>
                     {
+                        if (customData.Count != savedProject.ModulesData.Count)
+                            return true;
+
                         foreach (var kvp in customData)
                         {
                             if (!savedProject.ModulesData.TryGetValue(kvp.Key, out var savedData))
-                            {
-                                dataChanged = true;
-                                break;
-                            }
+                                return true;
 
                             if (kvp.Value is string currentStr && savedData is string savedStr)
                             {
-                                if (currentStr != savedStr) { dataChanged = true; break; }
+                                // Быстрый путь для строковых данных (TextEditor).
+                                if (currentStr != savedStr
+                                    && hashService.ComputeHash(currentStr) != hashService.ComputeHash(savedStr))
+                                    return true;
                             }
-                            else if (!Equals(kvp.Value, savedData))
+                            else if (hashService.ComputeHash(kvp.Value) != hashService.ComputeHash(savedData))
                             {
-                                dataChanged = true;
-                                break;
+                                return true;
                             }
                         }
-                    }
+
+                        return false;
+                    });
 
                     if (dataChanged)
                     {

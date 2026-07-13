@@ -485,6 +485,14 @@
     <value>Project opened</value>
     <comment>Toast notification when project is opened</comment>
   </data>
+  <data name="TabBar_ReleaseToOpen" xml:space="preserve">
+    <value>Release to open the tab…</value>
+    <comment>Overlay message shown in the content area while a tab is being dragged</comment>
+  </data>
+  <data name="Module_Loading" xml:space="preserve">
+    <value>Loading module…</value>
+    <comment>Placeholder text shown while a module view is being loaded</comment>
+  </data>
   <data name="Notification_ProjectClosed" xml:space="preserve">
     <value>Project closed</value>
     <comment>Toast notification when project is closed</comment>

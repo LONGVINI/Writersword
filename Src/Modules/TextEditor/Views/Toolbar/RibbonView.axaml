@@ -75,6 +75,21 @@
 					<Setter Property="Background" Value="#2E7D32"/>
 				</Style>
 
+				<!-- Контекстная вкладка «Формат» (картинка) — заголовок оранжевый -->
+				<Style Selector="TabItem.ImageContextTab > TextBlock">
+					<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+					<Setter Property="FontWeight" Value="Medium"/>
+				</Style>
+				<Style Selector="TabItem.ImageContextTab:selected">
+					<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+				</Style>
+				<Style Selector="TabItem.ImageContextTab:selected > TextBlock">
+					<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+				</Style>
+				<Style Selector="TabItem.ImageContextTab:pointerover">
+					<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+				</Style>
+
 			</TabControl.Styles>
 
 			<!-- ── Главная ──────────────────────────────────────────────── -->
@@ -118,6 +133,17 @@
 					<TextBlock Text="Работа с таблицами"/>
 				</TabItem.Header>
 				<tabs:RibbonTableTab DataContext="{Binding Table}"/>
+			</TabItem>
+
+			<!-- ── Формат (КОНТЕКСТНАЯ, картинка) ───────────────────────── -->
+			<!-- Видна только когда на канвасе выделено изображение.         -->
+			<!-- IsImageTabVisible управляется из TextEditorViewModel.        -->
+			<TabItem Classes="ImageContextTab"
+                     IsVisible="{Binding IsImageTabVisible}">
+				<TabItem.Header>
+					<TextBlock Text="Формат"/>
+				</TabItem.Header>
+				<tabs:RibbonImageTab DataContext="{Binding Image}"/>
 			</TabItem>
 
 		</TabControl>

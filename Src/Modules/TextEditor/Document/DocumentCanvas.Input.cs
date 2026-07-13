@@ -179,6 +179,33 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
+            // ── Ручки изменения размера выделенной картинки ────────────────
+            // Проверяем ПЕРЕД повторным выделением: клик по углу уже выделенной
+            // картинки должен запускать ресайз, а не снимать выделение.
+            if (_selectedImage is not null && !IsEditingBlocked)
+            {
+                int corner = HitTestImageHandle(xPt, yPt);
+                if (corner >= 0)
+                {
+                    _imageResizing = true;
+                    _imageResizeMoved = false;
+                    _imageResizeCorner = corner;
+                    _imgResizeStartXPt = xPt;
+                    _imgResizeStartYPt = yPt;
+                    _imgResizeStartW = _selectedImage.WidthPt;
+                    _imgResizeStartH = _selectedImage.HeightPt;
+                    _imgResizeStartOffX = _selectedImage.OffsetXPt;
+                    _imgResizeStartOffY = _selectedImage.OffsetYPt;
+                    BeginEdit("Изменение размера изображения");
+                    Cursor = new Cursor(corner is 0 or 2
+                        ? StandardCursorType.TopLeftCorner
+                        : StandardCursorType.TopRightCorner);
+                    e.Pointer.Capture(this);
+                    e.Handled = true;
+                    return;
+                }
+            }
+
             // ── Выделение картинки кликом ──────────────────────────────────
             // Учитываем горизонтальный сдвиг центрирования листа — он применяется при
             // отрисовке ко всему содержимому, но не запечён в координатах раскладки.
@@ -210,6 +237,10 @@ namespace Writersword.Modules.TextEditor.Document
                         e.Pointer.Capture(this);
                     }
 
+                    // Риббон должен отразить выравнивание выделенной картинки
+                    // и показать контекстную вкладку «Формат».
+                    DocVm?.FireCursorContextChanged();
+                    ImageSelectionChanged?.Invoke(true);
                     InvalidateFull();
                     e.Handled = true;
                     return;
@@ -218,6 +249,10 @@ namespace Writersword.Modules.TextEditor.Document
             if (_selectedImage is not null)
             {
                 _selectedImage = null;
+                // Снятие выделения — риббон возвращается к выравниванию абзаца,
+                // контекстная вкладка скрывается.
+                DocVm?.FireCursorContextChanged();
+                ImageSelectionChanged?.Invoke(false);
                 InvalidateFull();
             }
 
@@ -376,6 +411,33 @@ namespace Writersword.Modules.TextEditor.Document
             var rawPt = e.GetPosition(this);
             float xPt = (float)(rawPt.X / zoom * PxToPt);
             float yPt = (float)(rawPt.Y / zoom * PxToPt);
+
+            // ── Изменение размера выделенной картинки ─────────────────────
+            if (_imageResizing && _selectedImage is not null)
+            {
+                if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+                {
+                    _imageResizing = false;
+                    return;
+                }
+                ApplyImageResize(xPt, yPt);
+                return;
+            }
+
+            // Наведение на угловой маркер выделенной картинки — диагональный курсор.
+            if (!_imageResizing && !_imageDragging && _tableDragMode == TableDragMode.None
+                && _selectedImage is not null
+                && !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            {
+                int hoverCorner = HitTestImageHandle(xPt, yPt);
+                if (hoverCorner >= 0)
+                {
+                    Cursor = new Cursor(hoverCorner is 0 or 2
+                        ? StandardCursorType.TopLeftCorner
+                        : StandardCursorType.TopRightCorner);
+                    return;
+                }
+            }
 
             // ── Перетаскивание плавающей картинки ─────────────────────────
             if (_imageDragging && _selectedImage is not null)
@@ -729,6 +791,20 @@ namespace Writersword.Modules.TextEditor.Document
         {
             base.OnPointerReleased(e);
 
+            if (_imageResizing)
+            {
+                // Фиксируем изменение размера в Undo только если реально тянули маркер.
+                if (_imageResizeMoved) CommitEdit();
+                else _pendingSnapshot = null;
+                _imageResizing = false;
+                _imageResizeMoved = false;
+                _imageResizeCorner = -1;
+                e.Pointer.Capture(null);
+                Cursor = new Cursor(StandardCursorType.Ibeam);
+                e.Handled = true;
+                return;
+            }
+
             if (_imageDragging)
             {
                 // Фиксируем перемещение в Undo только если картинку реально двигали.
@@ -750,6 +826,85 @@ namespace Writersword.Modules.TextEditor.Document
             _isSelecting = false;
             StopAutoScroll();
             UpdateSelectionContext();
+        }
+
+        // Возвращает индекс углового маркера выделенной картинки под точкой (xPt,yPt)
+        // в пунктах, либо -1. Индексы: 0 — верх-лево, 1 — верх-право, 2 — низ-право, 3 — низ-лево.
+        private int HitTestImageHandle(float xPt, float yPt)
+        {
+            if (_selectedImage is null) return -1;
+
+            float canvasWPt = (float)(_canvasWidth * PxToPt);
+            float pageShiftXPt = Math.Max((canvasWPt - GetPageWidthPt()) / 2f, 0f) - _layoutPageXPt;
+
+            for (int ii = 0; ii < _images.Count; ii++)
+            {
+                var ie = _images[ii];
+                if (!ReferenceEquals(ie.Block, _selectedImage)) continue;
+
+                float left = ie.XPt + pageShiftXPt;
+                float right = left + ie.WidthPt;
+                float top = ie.Ypt;
+                float bottom = top + ie.HeightPt;
+
+                var corners = new[]
+                {
+                    (cx: left,  cy: top),
+                    (cx: right, cy: top),
+                    (cx: right, cy: bottom),
+                    (cx: left,  cy: bottom)
+                };
+                for (int c = 0; c < corners.Length; c++)
+                {
+                    if (Math.Abs(xPt - corners[c].cx) <= ImageHandleHitPt
+                        && Math.Abs(yPt - corners[c].cy) <= ImageHandleHitPt)
+                        return c;
+                }
+                break;
+            }
+            return -1;
+        }
+
+        // Применяет новый размер выделенной картинки по текущей позиции указателя.
+        private void ApplyImageResize(float xPt, float yPt)
+        {
+            if (_selectedImage is null) return;
+
+            int corner = _imageResizeCorner;
+            float sx = (corner == 1 || corner == 2) ? 1f : -1f; // правые углы растят ширину
+            float sy = (corner == 2 || corner == 3) ? 1f : -1f; // нижние углы растят высоту
+
+            double newW = _imgResizeStartW + sx * (xPt - _imgResizeStartXPt);
+            double newH = _imgResizeStartH + sy * (yPt - _imgResizeStartYPt);
+
+            const double minPt = 12.0;
+
+            if (_selectedImage.LockAspectRatio && _imgResizeStartW > 0.0 && _imgResizeStartH > 0.0)
+            {
+                double aspect = _imgResizeStartH / _imgResizeStartW;
+                newH = newW * aspect;
+                if (newW < minPt) { newW = minPt; newH = minPt * aspect; }
+                if (newH < minPt) { newH = minPt; newW = minPt / aspect; }
+            }
+            else
+            {
+                if (newW < minPt) newW = minPt;
+                if (newH < minPt) newH = minPt;
+            }
+
+            // Для плавающей картинки при тяге за левый/верхний угол смещаем якорь,
+            // чтобы противоположный угол оставался на месте.
+            if (_selectedImage.WrapMode != WrapMode.Inline)
+            {
+                if (sx < 0f) _selectedImage.OffsetXPt = _imgResizeStartOffX + (_imgResizeStartW - newW);
+                if (sy < 0f) _selectedImage.OffsetYPt = _imgResizeStartOffY + (_imgResizeStartH - newH);
+            }
+
+            _selectedImage.WidthPt = newW;
+            _selectedImage.HeightPt = newH;
+            _imageResizeMoved = true;
+            RebuildLayouts();
+            InvalidateFull();
         }
 
         private void FinishTableDrag()
@@ -845,6 +1000,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _logger.Debug("[IMG] delete selected image {F}", _selectedImage.ImageFileName);
                 DocVm?.RemoveImage(_selectedImage);
                 _selectedImage = null;
+                ImageSelectionChanged?.Invoke(false);
                 e.Handled = true;
                 return;
             }

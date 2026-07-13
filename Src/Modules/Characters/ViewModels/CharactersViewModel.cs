@@ -41,6 +41,17 @@ namespace Writersword.Modules.Characters.ViewModels
             private set => this.RaiseAndSetIfChanged(ref _isLoading, value);
         }
 
+        // Режим сравнения версий (восстановление после несохранённой сессии):
+        // данные модуля нельзя изменять, пока пользователь не выбрал версию.
+        // Устанавливается модулем из Context.IsInCompareMode. Сейчас блокирует
+        // перетаскивание карточек в списке.
+        private bool _isReadOnly;
+        public bool IsReadOnly
+        {
+            get => _isReadOnly;
+            set => this.RaiseAndSetIfChanged(ref _isReadOnly, value);
+        }
+
         public CharactersTrashService Trash => _trash;
         public ICharacterAvatarService? AvatarService => _avatarService;
         public ICharacterService CharacterService => _characterService;
@@ -70,8 +81,8 @@ namespace Writersword.Modules.Characters.ViewModels
         public bool CanRedo => _undoRedoStack.CanRedo;
         public string? UndoDescription => _undoRedoStack.UndoDescription;
         public string? RedoDescription => _undoRedoStack.RedoDescription;
-        public void Undo() => _undoRedoStack.Undo();
-        public void Redo() => _undoRedoStack.Redo();
+        public void Undo() { if (IsReadOnly) return; _undoRedoStack.Undo(); }
+        public void Redo() { if (IsReadOnly) return; _undoRedoStack.Redo(); }
         public void PushCommand(IUndoableCommand command) => _undoRedoStack.Push(command);
 
         private static readonly IReadOnlyList<KeyGesture> _blockedGestures = new[]
@@ -602,6 +613,7 @@ namespace Writersword.Modules.Characters.ViewModels
 
         private void CreateCharacter()
         {
+            if (IsReadOnly) return;
             var anketas = GetActiveAnketas();
             var character = anketas.Count > 0
                 ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: false)
@@ -612,6 +624,7 @@ namespace Writersword.Modules.Characters.ViewModels
 
         private void CreateCharacterRandomized()
         {
+            if (IsReadOnly) return;
             var anketas = GetActiveAnketas();
             var character = anketas.Count > 0
                 ? _characterService.CreateFromAnketas(CharactersStrings.Character_DefaultName, anketas, randomize: true)
@@ -622,6 +635,7 @@ namespace Writersword.Modules.Characters.ViewModels
 
         private void CreateCollectiveCharacter()
         {
+            if (IsReadOnly) return;
             var collective = _anketaService.GetById("builtin_collective");
             var anketas = collective is not null
                 ? new[] { collective }
@@ -722,6 +736,7 @@ namespace Writersword.Modules.Characters.ViewModels
 
         private void DeleteCharacter(string characterId)
         {
+            if (IsReadOnly) return;
             var character = _characterService.GetById(characterId);
             if (character is null) return;
 
@@ -826,17 +841,95 @@ namespace Writersword.Modules.Characters.ViewModels
 
             var targetFolder = _folders.FirstOrDefault(f => f.Id == origFolderId)
                 ?? _folders.FirstOrDefault();
+            int clampedIdx = 0;
             if (targetFolder is not null)
             {
-                var clampedIdx = Math.Min(origIndex, targetFolder.CharacterIds.Count);
+                clampedIdx = Math.Min(origIndex, targetFolder.CharacterIds.Count);
                 targetFolder.CharacterIds.Insert(clampedIdx, character.Id);
             }
 
-            RefreshAll();
+            RefreshTags();
+
+            // Точечная вставка вместо полного RefreshAll(): восстановление одной
+            // карточки не должно сносить Folders.Clear()'ом весь список и заново
+            // прогрессивно строить сотни CharacterListItemViewModel — иначе
+            // возвращённые карточки «появляются заново» пачкой. Симметрично
+            // удалению (RemoveCharacterFrom*). Модель (_folders[].CharacterIds и
+            // сервис через CreateWithId в _trash.Restore) уже согласована выше.
+            var folderVm = targetFolder is null
+                ? null
+                : Folders.FirstOrDefault(f => f.FolderId == targetFolder.Id);
+
+            // Папки ещё не построены (вьюха отсоединена или первый показ) —
+            // подстраховываемся полным рефрешем.
+            if (folderVm is null)
+            {
+                RefreshAll();
+                return;
+            }
+
+            InsertCharacterIntoFolderViewModels(folderVm, character, clampedIdx);
+            InsertCharacterIntoFilteredList(character);
+            GraphViewModel.Refresh();
+        }
+
+        /// <summary>
+        /// Точечная вставка карточки в уже существующую ViewModel-папку — зеркало
+        /// RemoveCharacterFromFolderViewModels. GroupBookmark, IsCollective, цвет и
+        /// аватар берутся из модели персонажа, поэтому закладка групповой карточки
+        /// сохраняется без отдельной обработки.
+        /// </summary>
+        private void InsertCharacterIntoFolderViewModels(
+            CharacterFolderViewModel folderVm, Character character, int index)
+        {
+            if (folderVm.Characters.Any(c => c.Id == character.Id)) return;
+
+            var relCount = _relationshipService.GetAllForCharacter(character.Id).Count;
+            var item = new CharacterListItemViewModel(character, relCount, false, _avatarService);
+            BindCharacterItemCallbacks(item);
+
+            var clampedIdx = Math.Min(index, folderVm.Characters.Count);
+            folderVm.Characters.Insert(clampedIdx, item);
+            folderVm.IsExpanded = true;
+        }
+
+        /// <summary>
+        /// Точечная вставка в отфильтрованный список — зеркало
+        /// RemoveCharacterFromFilteredList. Персонаж добавляется только если
+        /// проходит текущие фильтры. Позиция — в конец: CreateWithId возвращает
+        /// персонажа последним в _characterService.GetAll(), поэтому это совпадает
+        /// с порядком, который дал бы полный ApplyFilters.
+        /// </summary>
+        private void InsertCharacterIntoFilteredList(Character character)
+        {
+            if (!PassesCurrentFilters(character)) return;
+            if (FilteredCharacters.Any(c => c.Id == character.Id)) return;
+
+            var relCount = _relationshipService.GetAllForCharacter(character.Id).Count;
+            FilteredCharacters.Add(new CharacterListItemViewModel(character, relCount, false, _avatarService));
+        }
+
+        /// <summary>
+        /// Проходит ли персонаж активные фильтры списка. Поиск делегируется
+        /// _characterService.Search, чтобы не дублировать его логику.
+        /// </summary>
+        private bool PassesCurrentFilters(Character c)
+        {
+            if (!string.IsNullOrWhiteSpace(SearchQuery)
+                && !_characterService.Search(SearchQuery).Any(x => x.Id == c.Id))
+                return false;
+            if (ActiveTagFilters.Any() && !c.Tags.Any(t => ActiveTagFilters.Contains(t)))
+                return false;
+            if (FilterImportance.HasValue && c.ImportanceLevel != FilterImportance.Value)
+                return false;
+            if (FilterCollectiveOnly && !c.IsCollective)
+                return false;
+            return true;
         }
 
         private void DuplicateCharacter(string characterId)
         {
+            if (IsReadOnly) return;
             var copy = _characterService.Duplicate(characterId);
             RefreshAll();
             OpenCharacter(copy.Id);
@@ -855,6 +948,13 @@ namespace Writersword.Modules.Characters.ViewModels
             _refreshCts?.Cancel();
             _refreshCts?.Dispose();
             _refreshCts = null;
+
+            // Прерываем и прогрессивное наполнение списка карточек: при перезагрузке
+            // данных (SetCustomData) недобавленные карточки строились бы по старому
+            // набору персонажей.
+            _filterCts?.Cancel();
+            _filterCts?.Dispose();
+            _filterCts = null;
         }
 
         // Прогрессивная загрузка: папки добавляются пустыми, затем карточки
@@ -885,11 +985,31 @@ namespace Writersword.Modules.Characters.ViewModels
         public Task RequestProgressiveRefreshAsync()
             => RefreshFolderViewModelsAsync();
 
+        /// <summary>
+        /// Готовит VM к отсоединению вьюхи (workmode switch, dock move). Прерывает
+        /// незавершённую прогрессивную загрузку и очищает список папок.
+        /// Без очистки при повторном attach ItemsRepeater синхронно реализует и
+        /// раскладывает все ранее построенные карточки одним проходом и фризит UI
+        /// на ~секунду — ещё до того, как OnLoaded запустит прогрессивный рефреш.
+        /// Данные не теряются: RequestProgressiveRefreshAsync восстанавливает список
+        /// из _folders и сервиса при следующем подключении вьюхи.
+        /// </summary>
+        public void PrepareForReattach()
+        {
+            CancelLoad();
+            Folders.Clear();
+        }
+
         private void RefreshTags()
         {
             AvailableTags.Clear();
             foreach (var tag in _characterService.GetAllTags()) AvailableTags.Add(tag);
         }
+
+        // Отмена незавершённого прогрессивного наполнения списка: новый вызов
+        // ApplyFilters (поиск, фильтры, повторная загрузка данных) прерывает
+        // предыдущий проход между батчами.
+        private System.Threading.CancellationTokenSource? _filterCts;
 
         private void ApplyFilters()
         {
@@ -904,11 +1024,43 @@ namespace Writersword.Modules.Characters.ViewModels
                 all = all.Where(c => c.ImportanceLevel == FilterImportance.Value).ToList().AsReadOnly();
             if (FilterCollectiveOnly)
                 all = all.Where(c => c.IsCollective).ToList().AsReadOnly();
+
+            _filterCts?.Cancel();
+            _filterCts?.Dispose();
+            _filterCts = new System.Threading.CancellationTokenSource();
+
+            // Прогрессивное наполнение списка: карточки добавляются батчами с
+            // Background-приоритетом между ними — тот же паттерн, что у
+            // RefreshFolderViewModelsProgressiveAsync. Создание сотен
+            // CharacterListItemViewModel (включая аватарки) одним проходом
+            // блокировало UI-поток на секунды при загрузке модуля.
+            _ = ApplyFiltersProgressiveAsync(all, _filterCts.Token);
+        }
+
+        private async Task ApplyFiltersProgressiveAsync(
+            IReadOnlyList<Character> all,
+            System.Threading.CancellationToken ct)
+        {
+            const int BatchSize = 30;
+
             FilteredCharacters.Clear();
-            foreach (var c in all)
+
+            for (int i = 0; i < all.Count; i += BatchSize)
             {
-                var relCount = _relationshipService.GetAllForCharacter(c.Id).Count;
-                FilteredCharacters.Add(new CharacterListItemViewModel(c, relCount, false, _avatarService));
+                if (ct.IsCancellationRequested) return;
+
+                int end = System.Math.Min(i + BatchSize, all.Count);
+                for (int j = i; j < end; j++)
+                {
+                    var c = all[j];
+                    var relCount = _relationshipService.GetAllForCharacter(c.Id).Count;
+                    FilteredCharacters.Add(new CharacterListItemViewModel(c, relCount, false, _avatarService));
+                }
+
+                // Отдаём диспетчер между батчами: ввод и рендер не блокируются.
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+                    () => { },
+                    Avalonia.Threading.DispatcherPriority.Background);
             }
         }
 
@@ -968,6 +1120,7 @@ namespace Writersword.Modules.Characters.ViewModels
 
         public void BeginDragPreview(string charId)
         {
+            if (IsReadOnly) return;
             _previewDragCharId = charId;
             foreach (var folder in Folders)
             {
@@ -1221,6 +1374,7 @@ namespace Writersword.Modules.Characters.ViewModels
                     IsSelected = folder.Id == ActiveFolderId,
                     IsRenaming = folder.Id == newlyCreatedFolderId,
                     OnSelectRequested = id => ActiveFolderId = id,
+                    IsReadOnlyProvider = () => IsReadOnly,
                     EditCommand = EditCharacterCommand,
                     ConfirmCommand = ConfirmInlineNameCommand,
                     CancelCommand = CancelInlineNameCommand,
@@ -1259,6 +1413,7 @@ namespace Writersword.Modules.Characters.ViewModels
                     IsSelected = "ungrouped" == ActiveFolderId,
                     IsRenaming = false,
                     OnSelectRequested = id => ActiveFolderId = id,
+                    IsReadOnlyProvider = () => IsReadOnly,
                     EditCommand = EditCharacterCommand,
                     ConfirmCommand = ConfirmInlineNameCommand,
                     CancelCommand = CancelInlineNameCommand,
@@ -1312,6 +1467,7 @@ namespace Writersword.Modules.Characters.ViewModels
                     IsSelected = folder.Id == ActiveFolderId,
                     IsRenaming = folder.Id == newlyCreatedFolderId,
                     OnSelectRequested = id => ActiveFolderId = id,
+                    IsReadOnlyProvider = () => IsReadOnly,
                     EditCommand = EditCharacterCommand,
                     ConfirmCommand = ConfirmInlineNameCommand,
                     CancelCommand = CancelInlineNameCommand,
@@ -1374,6 +1530,7 @@ namespace Writersword.Modules.Characters.ViewModels
                     IsSelected = "ungrouped" == ActiveFolderId,
                     IsRenaming = false,
                     OnSelectRequested = id => ActiveFolderId = id,
+                    IsReadOnlyProvider = () => IsReadOnly,
                     EditCommand = EditCharacterCommand,
                     ConfirmCommand = ConfirmInlineNameCommand,
                     CancelCommand = CancelInlineNameCommand,
@@ -1561,6 +1718,7 @@ namespace Writersword.Modules.Characters.ViewModels
 
         private void CreateFolder()
         {
+            if (IsReadOnly) return;
             var folder = new CharacterFolder
             {
                 Id = Guid.NewGuid().ToString(),
@@ -1596,6 +1754,7 @@ namespace Writersword.Modules.Characters.ViewModels
                 IsSelected = folder.Id == ActiveFolderId,
                 IsRenaming = isRenaming,
                 OnSelectRequested = id => ActiveFolderId = id,
+                IsReadOnlyProvider = () => IsReadOnly,
                 EditCommand = EditCharacterCommand,
                 ConfirmCommand = ConfirmInlineNameCommand,
                 CancelCommand = CancelInlineNameCommand,
@@ -1607,6 +1766,7 @@ namespace Writersword.Modules.Characters.ViewModels
 
         private void ConfirmDeleteFolder(string folderId)
         {
+            if (IsReadOnly) return;
             var folder = _folders.FirstOrDefault(f => f.Id == folderId);
             if (folder is null) return;
             _folders.Remove(folder);
@@ -1647,6 +1807,7 @@ namespace Writersword.Modules.Characters.ViewModels
                 IsSelected = "ungrouped" == ActiveFolderId,
                 IsRenaming = false,
                 OnSelectRequested = id => ActiveFolderId = id,
+                IsReadOnlyProvider = () => IsReadOnly,
                 EditCommand = EditCharacterCommand,
                 ConfirmCommand = ConfirmInlineNameCommand,
                 CancelCommand = CancelInlineNameCommand,
@@ -1673,6 +1834,7 @@ namespace Writersword.Modules.Characters.ViewModels
 
         public void MoveCharacterToFolder(string characterId, string folderId)
         {
+            if (IsReadOnly) return;
             foreach (var f in _folders) f.CharacterIds.Remove(characterId);
             var target = _folders.FirstOrDefault(f => f.Id == folderId);
             if (target is not null && !target.CharacterIds.Contains(characterId))
@@ -1682,6 +1844,7 @@ namespace Writersword.Modules.Characters.ViewModels
 
         public void MoveCharacterBeforeInFolder(string characterId, string targetCharId)
         {
+            if (IsReadOnly) return;
             var targetFolder = _folders.FirstOrDefault(f => f.CharacterIds.Contains(targetCharId));
             if (targetFolder is null) return;
             foreach (var f in _folders) f.CharacterIds.Remove(characterId);
@@ -1798,16 +1961,32 @@ namespace Writersword.Modules.Characters.ViewModels
         public ObservableCollection<CharacterListItemViewModel> VisibleCharacters
             => IsExpanded ? Characters : _emptyCharacters;
 
+        // Режим сравнения версий: изменения свойств папки игнорируются.
+        // Провайдер задаётся создателем VM (CharactersViewModel).
+        public Func<bool>? IsReadOnlyProvider { get; set; }
+
+        private bool IsReadOnly => IsReadOnlyProvider?.Invoke() == true;
+
         public string Name
         {
             get => _name;
-            set { this.RaiseAndSetIfChanged(ref _name, value); _folder.Name = value; }
+            set
+            {
+                if (IsReadOnly) return;
+                this.RaiseAndSetIfChanged(ref _name, value);
+                _folder.Name = value;
+            }
         }
 
         public string Comment
         {
             get => _comment;
-            set { this.RaiseAndSetIfChanged(ref _comment, value); _folder.Comment = value; }
+            set
+            {
+                if (IsReadOnly) return;
+                this.RaiseAndSetIfChanged(ref _comment, value);
+                _folder.Comment = value;
+            }
         }
 
         public string Color
@@ -1815,6 +1994,7 @@ namespace Writersword.Modules.Characters.ViewModels
             get => _color;
             set
             {
+                if (IsReadOnly) return;
                 this.RaiseAndSetIfChanged(ref _color, value);
                 _folder.Color = value;
             }
@@ -1894,16 +2074,22 @@ namespace Writersword.Modules.Characters.ViewModels
             ToggleExpandCommand = ReactiveCommand.Create(() => { IsExpanded = !IsExpanded; });
             SelectOrRenameCommand = ReactiveCommand.Create(() =>
             {
-                if (IsSelected) IsRenaming = true;
+                if (IsSelected) { if (!IsReadOnly) IsRenaming = true; }
                 else OnSelectRequested?.Invoke(FolderId);
             });
-            StartRenameCommand = ReactiveCommand.Create(() => { IsRenaming = true; });
+            StartRenameCommand = ReactiveCommand.Create(() =>
+            {
+                if (!IsReadOnly) IsRenaming = true;
+            });
             ConfirmRenameCommand = ReactiveCommand.Create(() =>
             {
                 if (string.IsNullOrWhiteSpace(Name)) Name = CharactersStrings.Folder_FallbackName;
                 IsRenaming = false;
             });
-            StartEditCommentCommand = ReactiveCommand.Create(() => { IsEditingComment = true; });
+            StartEditCommentCommand = ReactiveCommand.Create(() =>
+            {
+                if (!IsReadOnly) IsEditingComment = true;
+            });
             ConfirmCommentCommand = ReactiveCommand.Create(() =>
             {
                 IsEditingComment = false;

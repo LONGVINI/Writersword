@@ -109,6 +109,14 @@ namespace Writersword.Modules.TextEditor.Views
                     Avalonia.Threading.DispatcherPriority.Background);
             };
 
+            // Выделение/снятие картинки → контекстная вкладка «Формат».
+            canvas.ImageSelectionChanged = selected =>
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    vm.NotifyImageSelectionChanged(selected),
+                    Avalonia.Threading.DispatcherPriority.Background);
+            };
+
             // Страница каретки → вертикальная линейка.
             // Вертикальная линейка использует FocusedPageIndex чтобы отображать
             // шкалу только для страницы где стоит каретка, как в Word.

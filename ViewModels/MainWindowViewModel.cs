@@ -152,6 +152,7 @@ namespace Writersword.ViewModels
             RegisterHotKeys();
             InitializeDockFactory();
             InitializeMenuItems();
+            StartInactiveTabUnloadTimer();
 
             _logger.LogDebug("MainWindowViewModel initialized");
         }
@@ -165,6 +166,83 @@ namespace Writersword.ViewModels
         // продолжается только если эта активация всё ещё последняя.
         private long _tabActivationVersion;
 
+        // Презентер снапшотов вкладок (реализует главное окно). Мгновенное
+        // переключение в стиле браузера: при уходе с вкладки захватывается
+        // последний кадр её док-области, при возврате кадр показывается сразу,
+        // пока реальный контент прогружается — в том числе для вкладок,
+        // выгруженных из памяти по таймауту.
+        public ITabSnapshotPresenter? TabSnapshotPresenter { get; set; }
+
+        // ── Выгрузка неактивных вкладок ───────────────────────────────────
+        // Модули паркуются живыми ради мгновенного возврата на вкладку, но
+        // бессрочная парковка раздувает память: вьюмодели целых романов, кеши
+        // шейпинга Skia, сотни персонажей — по набору на каждую открытую вкладку.
+        // Вкладка, неактивная дольше таймаута, выгружается целиком (Deactivate):
+        // её состояние уже сохранено в кеш в момент ухода с вкладки, поэтому
+        // выгрузка ничего не теряет, а возврат идёт обычным путём загрузки
+        // с живым UI. Недавние переключения остаются мгновенными.
+        private static readonly TimeSpan InactiveTabUnloadTimeout = TimeSpan.FromSeconds(30);
+        private readonly Dictionary<DocumentTabViewModel, DateTime> _tabSuspendTimes = new();
+        private Avalonia.Threading.DispatcherTimer? _inactiveTabUnloadTimer;
+
+        private void StartInactiveTabUnloadTimer()
+        {
+            _inactiveTabUnloadTimer = new Avalonia.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(15)
+            };
+            _inactiveTabUnloadTimer.Tick += (_, _) => UnloadStaleInactiveTabs();
+            _inactiveTabUnloadTimer.Start();
+
+            _logger.LogDebug("Inactive tab unload timer started: timeout={Timeout}", InactiveTabUnloadTimeout);
+        }
+
+        private void UnloadStaleInactiveTabs()
+        {
+            try
+            {
+                var activeTab = _tabCollection.ActiveTab;
+
+                // Чистим записи закрытых вкладок (включая их снапшоты — кадр ~8 МБ).
+                foreach (var closedTab in _tabSuspendTimes.Keys.Where(t => !_tabCollection.Tabs.Contains(t)).ToList())
+                {
+                    _tabSuspendTimes.Remove(closedTab);
+                    TabSnapshotPresenter?.ForgetTabSnapshot(closedTab);
+                }
+
+                foreach (var kvp in _tabSuspendTimes.ToList())
+                {
+                    var tab = kvp.Key;
+
+                    if (ReferenceEquals(tab, activeTab)) continue;
+                    if (DateTime.UtcNow - kvp.Value < InactiveTabUnloadTimeout) continue;
+
+                    if (tab.Workspace == null)
+                    {
+                        _tabSuspendTimes.Remove(tab);
+                        continue;
+                    }
+
+                    // Compare-режим: решение о восстановленной версии ещё не принято,
+                    // выгрузка могла бы затронуть кеш — такую вкладку не трогаем.
+                    if (tab.Context.IsInCompareMode) continue;
+
+                    _logger.LogInformation("Unloading inactive tab to free memory: {Title}", tab.Title);
+                    tab.Workspace.Deactivate();
+                    _tabSuspendTimes.Remove(tab);
+
+                    // Явная сборка после выгрузки: вьюмодели и нативные объекты Skia
+                    // (SKTextLayout, шрифты) освобождаются через финализаторы, и без
+                    // полного цикла сборки память возвращается ОС с большой задержкой.
+                    GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: false);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Inactive tab unload failed");
+            }
+        }
+
         /// <summary>
         /// Обработчик активации вкладки
         /// Сохраняет и деактивирует предыдущую, инициализирует и активирует новую
@@ -174,10 +252,19 @@ namespace Writersword.ViewModels
         {
             long activationVersion = ++_tabActivationVersion;
 
+            // Вкладка снова активна — из кандидатов на выгрузку по таймауту убираем.
+            _tabSuspendTimes.Remove(tab);
+
             try
             {
                 _logger.LogDebug("Tab activated: {Title}, previous: {PreviousTitle}",
                     tab.Title, previousTab?.Title ?? "none");
+
+                // Снапшот-оверлей вкладок отключён: захват кадра при быстрых
+                // переключениях ловил полупостроенные layout-ы (вырожденные пропорции
+                // дока), и «сломанный экранчик» показывался поверх реального контента.
+                // Плейсхолдеры модулей появляются мгновенно и честно — этого достаточно.
+                // Инфраструктура (ITabSnapshotPresenter) сохранена на будущее.
 
                 // Сохранение workspace.json предыдущей вкладки НЕ ожидается: SaveWorkspaceAsync
                 // собирает конфигурацию и перезаписывает ZIP-архив проекта, и await этой
@@ -256,6 +343,9 @@ namespace Writersword.ViewModels
                 {
                     _logger.LogDebug("Suspending previous tab: {Title}", previousTab.Title);
                     previousTab.Workspace.Suspend();
+                    // Отметка для выгрузки по таймауту: вкладка, не активированная
+                    // повторно в течение InactiveTabUnloadTimeout, будет выгружена.
+                    _tabSuspendTimes[previousTab] = DateTime.UtcNow;
                     _logger.LogDebug("Previous tab suspended");
                 }
 
@@ -270,7 +360,16 @@ namespace Writersword.ViewModels
 
                 tab.EnsureWorkspaceActivated();
 
-                DockLayout = tab.Workspace.GetCurrentLayout();
+                var newTabLayout = tab.Workspace.GetCurrentLayout();
+
+                // Нормализация пропорций ДО показа: присвоение DockLayout сбрасывает
+                // пропорции панелей в NaN, и первый кадр рисовал панели вырожденных
+                // размеров (мигание «модулей на четверть экрана»), пока отложенная
+                // нормализация не срабатывала на следующем проходе диспетчера.
+                if (newTabLayout != null)
+                    _dockFactory.NormalizeAfterRerender(newTabLayout);
+
+                DockLayout = newTabLayout;
                 _logger.LogDebug("DockLayout assigned for tab: {Title}", tab.Title);
 
                 // При первом присвоении DockLayout Dock создаёт ContentPresenter-ы,
@@ -341,6 +440,12 @@ namespace Writersword.ViewModels
             if (forceRefresh || DockLayout != newLayout)
             {
                 DockLayout = null;
+
+                // Нормализация пропорций до показа — против мигания панелей
+                // вырожденных размеров на первом кадре (см. OnTabActivatedAsync).
+                if (newLayout != null)
+                    _dockFactory.NormalizeAfterRerender(newLayout);
+
                 DockLayout = newLayout;
                 _logger.LogDebug("DockLayout updated (forceRefresh={Force})", forceRefresh);
 

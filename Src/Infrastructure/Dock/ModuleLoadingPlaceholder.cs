@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Threading;
+using Writersword.Resources.Localization;
 
 namespace Writersword.Infrastructure.Dock
 {
@@ -18,10 +19,21 @@ namespace Writersword.Infrastructure.Dock
     /// вообще — сколько бы модулей ни было в воркмоде, гидрируются только
     /// видимые; остальные стартуют в момент первого показа их панели.
     /// </para>
+    /// <para>
+    /// Полоса прогресса анимируется таймером с редкими тиками, а не
+    /// IsIndeterminate: встроенная бесконечная анимация заставляла композитор
+    /// рендерить кадры непрерывно, и низкоприоритетные задания диспетчера
+    /// голодали, пока плейсхолдер был на экране.
+    /// Текст зависит от состояния ворот гидрации: пока вкладку перетаскивают
+    /// (ворота удержаны) — «отпустите, чтобы открыть», после — «модуль загружается».
+    /// </para>
     /// </summary>
     public sealed class ModuleLoadingPlaceholder : Border
     {
         private bool _loadRequested;
+        private readonly ProgressBar _bar;
+        private readonly TextBlock _label;
+        private DispatcherTimer? _animationTimer;
 
         /// <summary>
         /// Колбэк запуска загрузки модуля. Вызывается один раз, отложенным
@@ -38,40 +50,38 @@ namespace Writersword.Infrastructure.Dock
 
         public ModuleLoadingPlaceholder()
         {
-            // Без IsIndeterminate-анимации: бесконечная анимация прогресс-бара
-            // заставляет композитор рендерить кадры непрерывно, пока плейсхолдер
-            // на экране — диспетчер никогда не простаивает, и задания с низким
-            // приоритетом (Background) голодают бессрочно. Несколько плейсхолдеров
-            // одновременно дополнительно жгли CPU на пустую анимацию.
+            _bar = new ProgressBar
+            {
+                IsIndeterminate = false,
+                Minimum = 0,
+                Maximum = 100,
+                Value = 0,
+                Width = 160,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
+            _label = new TextBlock
+            {
+                Text = Strings.Module_Loading,
+                Opacity = 0.7,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
             Child = new StackPanel
             {
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 Spacing = 12,
-                Children =
-                {
-                    new ProgressBar
-                    {
-                        IsIndeterminate = false,
-                        Minimum = 0,
-                        Maximum = 100,
-                        Value = 50,
-                        Width = 160,
-                        HorizontalAlignment = HorizontalAlignment.Center
-                    },
-                    new TextBlock
-                    {
-                        Text = "Модуль загружается…",
-                        Opacity = 0.7,
-                        HorizontalAlignment = HorizontalAlignment.Center
-                    }
-                }
+                Children = { _bar, _label }
             };
         }
 
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnAttachedToVisualTree(e);
+
+            UpdateVisualState();
+            StartAnimation();
 
             if (_loadRequested || LoadRequested is null)
                 return;
@@ -81,8 +91,58 @@ namespace Writersword.Infrastructure.Dock
             // Пост, а не прямой вызов: кадр с плейсхолдером сначала уходит на экран,
             // и только затем стартует загрузка. Приоритет Loaded — после текущего
             // layout-прохода, но без риска бессрочного голодания Background-очереди.
+            // Запуск идёт через ворота гидрации: пока вкладку перетаскивают,
+            // загрузка откладывается и стартует после отпускания кнопки мыши.
             var callback = LoadRequested;
-            Dispatcher.UIThread.Post(() => callback(), DispatcherPriority.Loaded);
+            Dispatcher.UIThread.Post(
+                () => ModuleHydrationGate.EnqueueOrRun(callback),
+                DispatcherPriority.Loaded);
+        }
+
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnDetachedFromVisualTree(e);
+            StopAnimation();
+        }
+
+        private void StartAnimation()
+        {
+            if (_animationTimer == null)
+            {
+                // Редкие тики (10 в секунду) дают видимое движение полосы,
+                // но оставляют диспетчеру простой между кадрами — в отличие
+                // от IsIndeterminate, который рендерит непрерывно.
+                _animationTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(100)
+                };
+                _animationTimer.Tick += (_, _) =>
+                {
+                    _bar.Value = _bar.Value >= 100 ? 0 : _bar.Value + 5;
+                    UpdateVisualState();
+                };
+            }
+            _animationTimer.Start();
+        }
+
+        private void StopAnimation()
+        {
+            _animationTimer?.Stop();
+        }
+
+        /// <summary>
+        /// Обновляет текст по состоянию ворот гидрации: во время перетаскивания
+        /// вкладки загрузка намеренно не идёт — плейсхолдер сообщает об ожидании
+        /// отпускания, а не о загрузке.
+        /// </summary>
+        private void UpdateVisualState()
+        {
+            var text = ModuleHydrationGate.IsHeld
+                ? Strings.TabBar_ReleaseToOpen
+                : Strings.Module_Loading;
+
+            if (!string.Equals(_label.Text, text, StringComparison.Ordinal))
+                _label.Text = text;
         }
     }
 }

@@ -16,6 +16,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
     {
         private int _selectedTabIndex;
         private bool _isTableTabVisible;
+        private bool _isImageTabVisible;
 
         public int SelectedTabIndex
         {
@@ -33,6 +34,16 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             set => this.RaiseAndSetIfChanged(ref _isTableTabVisible, value);
         }
 
+        /// <summary>
+        /// Управляет видимостью контекстной вкладки «Формат» (работа с картинкой).
+        /// true — на канвасе выделено изображение.
+        /// </summary>
+        public bool IsImageTabVisible
+        {
+            get => _isImageTabVisible;
+            set => this.RaiseAndSetIfChanged(ref _isImageTabVisible, value);
+        }
+
         public RibbonHomeTabViewModel Home { get; }
         public RibbonInsertTabViewModel Insert { get; }
         public RibbonLayoutTabViewModel Layout { get; }
@@ -41,6 +52,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         /// <summary>Контекстная вкладка для работы с таблицей.</summary>
         public RibbonTableTabViewModel Table { get; }
 
+        /// <summary>Контекстная вкладка для работы с картинкой.</summary>
+        public RibbonImageTabViewModel Image { get; }
+
         public RibbonViewModel(ITextEditorCommandTarget target)
         {
             Home = new RibbonHomeTabViewModel(target);
@@ -48,6 +62,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             Layout = new RibbonLayoutTabViewModel(target);
             References = new RibbonReferencesTabViewModel(target);
             Table = new RibbonTableTabViewModel(target);
+            Image = new RibbonImageTabViewModel(target);
         }
     }
 }

@@ -99,12 +99,12 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
         public void PerformUndo()
         {
-            if (DataContext is CharactersViewModel vm && vm.CanUndo) vm.Undo();
+            if (DataContext is CharactersViewModel vm && !vm.IsReadOnly && vm.CanUndo) vm.Undo();
         }
 
         public void PerformRedo()
         {
-            if (DataContext is CharactersViewModel vm && vm.CanRedo) vm.Redo();
+            if (DataContext is CharactersViewModel vm && !vm.IsReadOnly && vm.CanRedo) vm.Redo();
         }
 
         // Открывает окно настроек карточки по центру модуля (CardSettingsOverlay
@@ -446,7 +446,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
         private void OnGlobalKeyDown(object? sender, KeyEventArgs e)
         {
-            if (DataContext is CharactersViewModel vm)
+            if (DataContext is CharactersViewModel vm && !vm.IsReadOnly)
             {
                 if (e.Key == Key.Z && e.KeyModifiers == KeyModifiers.Control)
                 { if (vm.CanUndo) { vm.Undo(); e.Handled = true; return; } }
@@ -483,6 +483,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
             var charVm = FindCharacterItemVm(source);
             if (charVm is not null
+                && !vm.IsReadOnly
                 && !charVm.IsBeingNamed
                 && !charVm.IsRenaming
                 && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)

@@ -89,6 +89,12 @@ namespace Writersword.Modules.TextEditor.Contracts
         void InsertTOC();
         void InsertComment(string text);
 
+        // ── Работа с выделенным изображением ──────────────────────────────
+        void SetImageWrapMode(WrapMode mode);
+        void SetImageLockAspect(bool locked);
+        void DeleteSelectedImage();
+        (WrapMode Wrap, bool LockAspect, Writersword.Modules.TextEditor.Models.Styles.TextAlignment Align)? GetSelectedImageInfo();
+
         // ── Макет страницы ────────────────────────────────────────────────
         void SetPageSize(PaperSize size);
         void SetPageOrientation(PageOrientation orientation);

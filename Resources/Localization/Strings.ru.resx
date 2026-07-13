@@ -396,6 +396,12 @@
   <data name="Notification_ProjectOpened" xml:space="preserve">
     <value>Проект открыт</value>
   </data>
+  <data name="TabBar_ReleaseToOpen" xml:space="preserve">
+    <value>Отпустите, чтобы открыть вкладку…</value>
+  </data>
+  <data name="Module_Loading" xml:space="preserve">
+    <value>Модуль загружается…</value>
+  </data>
   <data name="Notification_ProjectClosed" xml:space="preserve">
     <value>Проект закрыт</value>
   </data>

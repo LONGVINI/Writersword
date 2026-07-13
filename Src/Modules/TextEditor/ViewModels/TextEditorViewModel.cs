@@ -267,6 +267,16 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Ribbon.IsTableTabVisible = false;
         }
 
+        /// <summary>
+        /// Показывает/скрывает контекстную вкладку «Формат» (работа с картинкой)
+        /// при выделении/снятии выделения изображения на канвасе.
+        /// </summary>
+        public void NotifyImageSelectionChanged(bool selected)
+        {
+            Ribbon.IsImageTabVisible = selected;
+            if (selected) Ribbon.Image.SyncFromTarget();
+        }
+
         private void OnRulerIndentMarkerChanged(RulerIndentMarkerType markerType, double valueMm)
         {
             // В режиме таблицы маркер позиционируется относительно левого края ячейки.
@@ -539,6 +549,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertHyperlink(string url, string? text) => DocumentViewModel?.InsertHyperlink(url, text);
         public void InsertTOC() => DocumentViewModel?.InsertTOC();
         public void InsertComment(string text) => DocumentViewModel?.InsertComment(text);
+
+        // ── Изображение ───────────────────────────────────────────────────
+        public void SetImageWrapMode(WrapMode mode) => DocumentViewModel?.SetImageWrapMode(mode);
+        public void SetImageLockAspect(bool locked) => DocumentViewModel?.SetImageLockAspect(locked);
+        public void DeleteSelectedImage() => DocumentViewModel?.DeleteSelectedImage();
+        public (WrapMode Wrap, bool LockAspect, Writersword.Modules.TextEditor.Models.Styles.TextAlignment Align)? GetSelectedImageInfo()
+            => DocumentViewModel?.GetSelectedImageInfo();
 
         // ── Таблица ───────────────────────────────────────────────────────
 

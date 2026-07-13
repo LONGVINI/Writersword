@@ -149,6 +149,30 @@ namespace Writersword.Modules.TextEditor.Document
         private float _imgDragStartYPt;
         private double _imgDragStartOffX;
         private double _imgDragStartOffY;
+
+        // Изменение размера выделенной картинки за угловой маркер.
+        // Индекс угла: 0 — верх-лево, 1 — верх-право, 2 — низ-право, 3 — низ-лево.
+        private bool _imageResizing;
+        private bool _imageResizeMoved;
+        private int _imageResizeCorner = -1;
+        private float _imgResizeStartXPt;
+        private float _imgResizeStartYPt;
+        private double _imgResizeStartW;
+        private double _imgResizeStartH;
+        private double _imgResizeStartOffX;
+        private double _imgResizeStartOffY;
+
+        // Полупрозрачная заливка угловых маркеров размера.
+        private readonly SKPaint _paintImageHandleFill = new()
+        {
+            Style = SKPaintStyle.Fill,
+            Color = new SKColor(0xFF, 0xFF, 0xFF),
+            IsAntialias = true
+        };
+
+        // Половина стороны квадратного маркера и радиус попадания по нему, в пунктах.
+        private const float ImageHandleHalfPt = 3.5f;
+        private const float ImageHandleHitPt = 6f;
         private double _canvasWidth;
         private double _canvasHeight;
         private float _canvasHeightPt;
@@ -317,6 +341,13 @@ namespace Writersword.Modules.TextEditor.Document
         // Очередь для освобождения битмапов старого размера.
         private readonly System.Collections.Concurrent.ConcurrentQueue<SKBitmap> _bitmapDisposeQueue = new();
 
+        // Очередь для освобождения списанных снимков (_displayImage).
+        // SKImage освобождается ТОЛЬКО на render-потоке (в начале следующего рендера)
+        // либо при повторном прикреплении канваса: освобождение с UI-потока по таймеру
+        // диспетчера гонялось с уже поставленной в очередь композитора отрисовкой —
+        // DrawImage читал освобождённый нативный объект и падал с access violation.
+        private readonly System.Collections.Concurrent.ConcurrentQueue<SKImage> _imageDisposeQueue = new();
+
         private bool _caretOnlyRedraw = false;
         // Контент изменился и требует полного рендера. Пока флаг поднят, быстрый путь
         // (_caretOnlyRedraw — мигание каретки, скролл по кэш-снимку) не имеет права
@@ -477,6 +508,9 @@ namespace Writersword.Modules.TextEditor.Document
         public Action<IReadOnlyList<double>, IReadOnlyList<double>, double, int>? CaretEnteredTable { get; set; }
         public Action? CaretLeftTable { get; set; }
 
+        /// <summary>Выделена (true) или снята с выделения (false) картинка — для контекстной вкладки.</summary>
+        public Action<bool>? ImageSelectionChanged { get; set; }
+
         /// <summary>
         /// Вызывается когда каретка перемещается на другую страницу.
         /// Вертикальная линейка отображает шкалу только для этой страницы.
@@ -567,11 +601,15 @@ namespace Writersword.Modules.TextEditor.Document
         {
             _isTransitioning = false;
 
-            // Дренируем битмапы накопившиеся пока view была detached.
+            // Дренируем битмапы и снимки, накопившиеся пока view была detached.
             // RenderWithSKCanvas тоже дренирует, но он вызывается только когда
             // контрол видим. При смене воркмода TextEditor может долго не рендериться.
+            // К моменту повторного прикрепления старые отрисовки композитора давно
+            // завершены — освобождать здесь безопасно.
             while (_bitmapDisposeQueue.TryDequeue(out var stale))
                 stale?.Dispose();
+            while (_imageDisposeQueue.TryDequeue(out var staleImage))
+                staleImage?.Dispose();
 
             base.OnAttachedToVisualTree(e);
 
@@ -653,16 +691,18 @@ namespace Writersword.Modules.TextEditor.Document
             // через диспетчер и без остановки продолжали бы шейпить отцепленную вьюху.
             // При повторном прикреплении measure перезапустит прогрев с того же места —
             // уже зашейпленные абзацы лежат в кеше и повторно не обрабатываются.
-            _layoutWarmupActive = false;
+            SetWarmupActive(false);
 
-            // Не диспозим bitmap напрямую — render-тред (compositor) может держать
-            // локальную ссылку cached на тот же объект и рисовать его прямо сейчас.
-            // Добавляем в очередь и зануляем: bitmap живёт пока render-тред не завершит
-            // текущий DrawBitmap.
-            // Дренируем очередь через Background-Post, а не при следующем reattach:
-            // при смене вкладки создаётся НОВЫЙ канвас, старый никогда не reattach-ится,
-            // поэтому его очередь без этого фикса держит нативную SkiaSharp-память вечно.
-            SKImage? staleImage;
+            // Не диспозим bitmap и снимок напрямую — render-тред (compositor) может
+            // держать локальную ссылку на тот же объект и рисовать его прямо сейчас:
+            // уже поставленная в очередь композитора отрисовка выполняется ПОСЛЕ
+            // detach, и освобождение с UI-потока (даже отложенным постом) гонялось
+            // с DrawImage на render-потоке — приложение падало с access violation
+            // внутри SkiaSharp. Оба объекта уходят в очереди и освобождаются только
+            // там, где гонка исключена: в начале следующего рендера (render-поток,
+            // рендеры сериализованы) либо при повторном прикреплении канваса
+            // (к этому моменту старые отрисовки давно завершены). Если канвас больше
+            // никогда не рендерится — нативную память вернёт финализатор SkiaSharp.
             lock (_bitmapLock)
             {
                 if (_renderBitmap is not null)
@@ -670,17 +710,12 @@ namespace Writersword.Modules.TextEditor.Document
                     _bitmapDisposeQueue.Enqueue(_renderBitmap);
                     _renderBitmap = null;
                 }
-                staleImage = _displayImage;
-                _displayImage = null;
+                if (_displayImage is not null)
+                {
+                    _imageDisposeQueue.Enqueue(_displayImage);
+                    _displayImage = null;
+                }
             }
-
-            var queueSnapshot = _bitmapDisposeQueue;
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-            {
-                while (queueSnapshot.TryDequeue(out var stale))
-                    stale?.Dispose();
-                staleImage?.Dispose();
-            }, Avalonia.Threading.DispatcherPriority.Background);
 
             // SKPaint не диспозим здесь: DockFactory переиспользует DocumentCanvas
             // (detach → reattach при переключении вкладок). Если диспозить паинты
@@ -883,6 +918,12 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.CommitTextEditsDelegate = CommitTextEditsGranular;
             DocVm.CommitParagraphPropertyGranularDelegate = CommitParagraphPropertyGranular;
             DocVm.GetCaretWordRangeDelegate = GetCaretWordRange;
+            DocVm.TrySetImageAlignmentDelegate = TrySetSelectedImageAlignment;
+            DocVm.GetSelectedImageAlignmentDelegate = GetSelectedImageAlignment;
+            DocVm.SetImageWrapModeDelegate = SetSelectedImageWrapMode;
+            DocVm.SetImageLockAspectDelegate = SetSelectedImageLockAspect;
+            DocVm.DeleteSelectedImageDelegate = DeleteSelectedImageFromCanvas;
+            DocVm.GetSelectedImageInfoDelegate = GetSelectedImageInfo;
 
             foreach (var pvm in DocVm.Paragraphs)
             {
@@ -890,6 +931,94 @@ namespace Writersword.Modules.TextEditor.Document
                 WirePvm(pvm);
             }
         }
+
+        /// <summary>
+        /// Применяет горизонтальное выравнивание к выделенной блок-картинке (Inline).
+        /// Возвращает true, если картинка выделена и выравнивание изменено или уже совпадает —
+        /// в этом случае команда выравнивания не должна трогать абзац.
+        /// </summary>
+        private bool TrySetSelectedImageAlignment(
+            Writersword.Modules.TextEditor.Models.Styles.TextAlignment alignment)
+        {
+            if (_selectedImage is null || _selectedImage.WrapMode != WrapMode.Inline)
+                return false;
+
+            if (_selectedImage.Alignment != alignment)
+            {
+                BeginEdit("Выравнивание изображения");
+                _selectedImage.Alignment = alignment;
+                CommitEdit();
+                RebuildLayouts();
+                InvalidateFull();
+            }
+
+            // Обновляем риббон: кнопки должны отражать выравнивание картинки и не
+            // «залипать» при повторных кликах (ToggleButton с OneWay-биндингом).
+            DocVm?.FireCursorContextChanged();
+            return true;
+        }
+
+        /// <summary>Выравнивание выделенной блок-картинки для отображения в риббоне (или null).</summary>
+        private Writersword.Modules.TextEditor.Models.Styles.TextAlignment? GetSelectedImageAlignment()
+            => _selectedImage is not null && _selectedImage.WrapMode == WrapMode.Inline
+                ? _selectedImage.Alignment
+                : (Writersword.Modules.TextEditor.Models.Styles.TextAlignment?)null;
+
+        // Меняет режим обтекания выделенной картинки (команда контекстной вкладки).
+        private void SetSelectedImageWrapMode(WrapMode mode)
+        {
+            if (_selectedImage is null || _selectedImage.WrapMode == mode) return;
+
+            BeginEdit("Обтекание изображения");
+            // Переход из блока (Inline) в плавающий режим: фиксируем текущее положение
+            // как смещение якоря, чтобы картинка не прыгнула в угол страницы.
+            if (_selectedImage.WrapMode == WrapMode.Inline && mode != WrapMode.Inline)
+            {
+                for (int i = 0; i < _images.Count; i++)
+                {
+                    var entry = _images[i];
+                    if (!ReferenceEquals(entry.Block, _selectedImage)) continue;
+                    if (entry.PageIndex >= 0 && entry.PageIndex < _pages.Count)
+                    {
+                        var pg = _pages[entry.PageIndex];
+                        _selectedImage.OffsetXPt = entry.XPt - pg.PadLeftPt - pg.MarginLeftPt;
+                        _selectedImage.OffsetYPt = entry.Ypt - pg.Ypt - pg.PadTopPt;
+                    }
+                    break;
+                }
+            }
+            _selectedImage.WrapMode = mode;
+            CommitEdit();
+            RebuildLayouts();
+            InvalidateFull();
+        }
+
+        // Включает/выключает блокировку пропорций выделенной картинки.
+        private void SetSelectedImageLockAspect(bool locked)
+        {
+            if (_selectedImage is null || _selectedImage.LockAspectRatio == locked) return;
+            BeginEdit("Пропорции изображения");
+            _selectedImage.LockAspectRatio = locked;
+            CommitEdit();
+            InvalidateFull();
+        }
+
+        // Удаляет выделенную картинку (команда контекстной вкладки).
+        private void DeleteSelectedImageFromCanvas()
+        {
+            if (_selectedImage is null) return;
+            var img = _selectedImage;
+            _selectedImage = null;
+            DocVm?.RemoveImage(img);
+            ImageSelectionChanged?.Invoke(false);
+            InvalidateFull();
+        }
+
+        // Текущие параметры выделенной картинки для синхронизации вкладки (или null).
+        private (WrapMode Wrap, bool LockAspect, Writersword.Modules.TextEditor.Models.Styles.TextAlignment Align)? GetSelectedImageInfo()
+            => _selectedImage is null
+                ? null
+                : (_selectedImage.WrapMode, _selectedImage.LockAspectRatio, _selectedImage.Alignment);
 
         // Структурное изменение (вставка/удаление картинки и т.п.): пересобираем раскладку
         // БЕЗ очистки кэша абзацев — текст абзацев не менялся, переформировывать их не нужно,
@@ -1294,6 +1423,28 @@ namespace Writersword.Modules.TextEditor.Document
         private const int WarmupColdThreshold = 200;
         private const int WarmupPassBudgetMs = 30;
 
+        // Глобальный счётчик активных прогревов. Читается главным окном:
+        // снапшот-оверлей вкладки (мгновенное переключение как в Chrome)
+        // держится на экране, пока хоть один канвас прогревает раскладку —
+        // иначе оверлей скрылся бы поверх ещё пустого канваса.
+        private static int _activeWarmupCount;
+        public static int ActiveWarmupCount => System.Threading.Volatile.Read(ref _activeWarmupCount);
+
+        /// <summary>
+        /// Единственная точка изменения флага прогрева — поддерживает глобальный
+        /// счётчик сбалансированным при любых путях завершения (финиш, detach,
+        /// потеря документа).
+        /// </summary>
+        private void SetWarmupActive(bool active)
+        {
+            if (_layoutWarmupActive == active) return;
+            _layoutWarmupActive = active;
+            if (active)
+                System.Threading.Interlocked.Increment(ref _activeWarmupCount);
+            else
+                System.Threading.Interlocked.Decrement(ref _activeWarmupCount);
+        }
+
         /// <summary>
         /// Актуальна ли кеш-запись раскладки абзаца для текущей ширины текста.
         /// Условие идентично проверке в GetOrBuildLayout: несовпадение текста или
@@ -1337,7 +1488,7 @@ namespace Writersword.Modules.TextEditor.Document
         private void StartLayoutWarmup()
         {
             if (_layoutWarmupActive) return;
-            _layoutWarmupActive = true;
+            SetWarmupActive(true);
             _logger.Debug("Layout warmup started: {Count} paragraphs, cache={CacheCount}",
                 DocVm?.Paragraphs.Count ?? 0, _layoutCache.Count);
             Dispatcher.UIThread.Post(PumpLayoutWarmup, DispatcherPriority.Loaded);
@@ -1356,7 +1507,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (DocVm is null)
             {
-                _layoutWarmupActive = false;
+                SetWarmupActive(false);
                 return;
             }
 
@@ -1392,7 +1543,7 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
-            _layoutWarmupActive = false;
+            SetWarmupActive(false);
             _logger.Debug("Layout warmup finished: cache={CacheCount} — scheduling rebuild", _layoutCache.Count);
 
             // Пересчёт через measure: раскладка соберётся из тёплого кеша.
@@ -1426,6 +1577,17 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (_styleResolver is null)
                 _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
+
+            // Ворота холодного пересчёта для ПРЯМЫХ вызовов (смена зума, структуры,
+            // подписок во время загрузки документа): при холодном кеше полный проход
+            // зашейпил бы тысячи абзацев синхронно на UI-потоке (~секунда), в обход
+            // прогрева. Вместо этого запускается/продолжается порционный прогрев —
+            // по завершении он сам запланирует пересчёт через InvalidateMeasure.
+            if (ShouldWarmupBeforeRebuild())
+            {
+                StartLayoutWarmup();
+                return;
+            }
 
             // Диагностика провисаний UI-потока: полный пересчёт раскладки выполняется
             // синхронно (MeasureOverride/ScheduleRebuild), и на больших документах при

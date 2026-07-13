@@ -59,6 +59,9 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// <summary>Режим обтекания текстом.</summary>
         public WrapMode WrapMode { get; set; } = WrapMode.Inline;
 
+        /// <summary>Горизонтальное выравнивание блок-картинки (Inline) в текстовой колонке.</summary>
+        public TextAlignment Alignment { get; set; } = TextAlignment.Left;
+
         /// <summary>Якорь привязки при WrapMode != Inline.</summary>
         public FloatAnchor Anchor { get; set; } = FloatAnchor.Paragraph;
 

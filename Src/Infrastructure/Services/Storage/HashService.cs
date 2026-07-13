@@ -118,6 +118,16 @@ namespace Writersword.Infrastructure.Services.Storage
             {
                 var sorted = new JObject(
                     obj.Properties()
+                       // Свойства со значением null отбрасываются. Проект сохраняется
+                       // через JsonHelper с NullValueHandling.Ignore — на диске null-полей
+                       // нет вовсе. Живой объект (POCO) при JToken.FromObject такие поля
+                       // включает как "Field": null. Без этого отсева хеш живых данных
+                       // никогда не совпадал с хешем сохранённых (первое расхождение —
+                       // Characters[].AvatarPath: null), и модуль вечно считался изменённым:
+                       // вкладки открывались в Compare, кеш переписывался на каждом
+                       // переключении. Отсев делает "поле = null" и "поля нет" эквивалентными,
+                       // как и трактует их формат сохранения.
+                       .Where(p => p.Value.Type != JTokenType.Null)
                        .OrderBy(p => p.Name, StringComparer.Ordinal)
                        .Select(p => new JProperty(p.Name, JToken.Parse(SortedTokenToString(p.Value))))
                 );

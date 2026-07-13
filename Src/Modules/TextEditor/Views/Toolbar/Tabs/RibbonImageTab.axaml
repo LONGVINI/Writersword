@@ -1,0 +1,138 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
+             xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonImageTab"
+             x:DataType="vm:RibbonImageTabViewModel">
+
+    <UserControl.Styles>
+        <!-- Кнопка -->
+        <Style Selector="Button.RibbonBtn">
+            <Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+            <Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+            <Setter Property="BorderThickness"            Value="1"/>
+            <Setter Property="CornerRadius"               Value="3"/>
+            <Setter Property="Padding"                    Value="8 4"/>
+            <Setter Property="MinHeight"                  Value="26"/>
+            <Setter Property="VerticalAlignment"          Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment"   Value="Center"/>
+            <Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="Cursor"                     Value="Hand"/>
+        </Style>
+        <Style Selector="Button.RibbonBtn /template/ ContentPresenter">
+            <Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="3"/>
+        </Style>
+        <Style Selector="Button.RibbonBtn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+        </Style>
+        <Style Selector="Button.RibbonBtn:pressed /template/ ContentPresenter">
+            <Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+        </Style>
+
+        <!-- Тоггл -->
+        <Style Selector="ToggleButton.RibbonToggle">
+            <Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+            <Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+            <Setter Property="BorderThickness"            Value="1"/>
+            <Setter Property="CornerRadius"               Value="3"/>
+            <Setter Property="Padding"                    Value="8 4"/>
+            <Setter Property="MinHeight"                  Value="26"/>
+            <Setter Property="VerticalAlignment"          Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment"   Value="Center"/>
+            <Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="Cursor"                     Value="Hand"/>
+        </Style>
+        <Style Selector="ToggleButton.RibbonToggle /template/ ContentPresenter">
+            <Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="3"/>
+        </Style>
+        <Style Selector="ToggleButton.RibbonToggle:pointerover /template/ ContentPresenter">
+            <Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+        </Style>
+        <Style Selector="ToggleButton.RibbonToggle:pressed /template/ ContentPresenter">
+            <Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+        </Style>
+        <Style Selector="ToggleButton.RibbonToggle:checked /template/ ContentPresenter">
+            <Setter Property="Background"             Value="{DynamicResource AccentSubtleBrush}"/>
+            <Setter Property="BorderBrush"            Value="{DynamicResource AccentDefaultBrush}"/>
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+        </Style>
+        <Style Selector="ToggleButton.RibbonToggle:checked:pointerover /template/ ContentPresenter">
+            <Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+        </Style>
+
+        <Style Selector="TextBlock.GroupLabel">
+            <Setter Property="FontSize" Value="9"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0 2 0 0"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Border Padding="8 4" Background="Transparent">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+
+            <!-- Выравнивание -->
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="3">
+                    <ToggleButton Classes="RibbonToggle" Content="Слева"
+                                  Command="{Binding AlignLeftCommand}"
+                                  IsChecked="{Binding CurrentAlignment, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Left, Mode=OneWay}"/>
+                    <ToggleButton Classes="RibbonToggle" Content="По центру"
+                                  Command="{Binding AlignCenterCommand}"
+                                  IsChecked="{Binding CurrentAlignment, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Center, Mode=OneWay}"/>
+                    <ToggleButton Classes="RibbonToggle" Content="Справа"
+                                  Command="{Binding AlignRightCommand}"
+                                  IsChecked="{Binding CurrentAlignment, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Right, Mode=OneWay}"/>
+                </StackPanel>
+                <TextBlock Classes="GroupLabel" Text="Выравнивание"/>
+            </StackPanel>
+
+            <Separator Width="1" Background="{DynamicResource BorderSubtleBrush}" Margin="2 2"/>
+
+            <!-- Обтекание -->
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="3">
+                    <ToggleButton Classes="RibbonToggle" Content="В тексте"
+                                  Command="{Binding WrapInlineCommand}"
+                                  IsChecked="{Binding CurrentWrap, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Inline, Mode=OneWay}"/>
+                    <ToggleButton Classes="RibbonToggle" Content="Обтекание"
+                                  Command="{Binding WrapSquareCommand}"
+                                  IsChecked="{Binding CurrentWrap, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Square, Mode=OneWay}"/>
+                    <ToggleButton Classes="RibbonToggle" Content="За текстом"
+                                  Command="{Binding WrapBehindCommand}"
+                                  IsChecked="{Binding CurrentWrap, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Behind, Mode=OneWay}"/>
+                </StackPanel>
+                <TextBlock Classes="GroupLabel" Text="Обтекание текстом"/>
+            </StackPanel>
+
+            <Separator Width="1" Background="{DynamicResource BorderSubtleBrush}" Margin="2 2"/>
+
+            <!-- Пропорции + удаление -->
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="3">
+                    <ToggleButton Classes="RibbonToggle" Content="Пропорции"
+                                  Command="{Binding ToggleAspectCommand}"
+                                  IsChecked="{Binding IsAspectLocked, Mode=OneWay}"/>
+                    <Button Classes="RibbonBtn" Content="Удалить"
+                            Command="{Binding DeleteImageCommand}"/>
+                </StackPanel>
+                <TextBlock Classes="GroupLabel" Text="Размер · картинка"/>
+            </StackPanel>
+
+        </StackPanel>
+    </Border>
+</UserControl>

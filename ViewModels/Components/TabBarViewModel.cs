@@ -89,8 +89,10 @@ namespace Writersword.ViewModels.Components
         /// Активировать вкладку
         /// Сохраняет workspace.json старой вкладки НЕМЕДЛЕННО перед переключением
         /// Сохраняет кеш старой вкладки
+        /// Public: вызывается также из TabDragDropBehavior при отпускании
+        /// перетащенной вкладки — тот же путь активации, что и у обычного клика.
         /// </summary>
-        private async void ActivateTab(DocumentTabViewModel tab)
+        public async void ActivateTab(DocumentTabViewModel tab)
         {
             try
             {
@@ -98,9 +100,27 @@ namespace Writersword.ViewModels.Components
 
                 var oldTab = ActiveTab;
 
+                // Список активных модулей старой вкладки снимается ДО переключения:
+                // после смены ActiveTab GetActiveModules вернёт модули новой вкладки.
+                System.Collections.Generic.List<Writersword.Core.Interfaces.Modules.IModule>? oldTabModules = null;
                 if (oldTab != null && oldTab != tab)
                 {
-                    _logger.LogDebug("Deactivating old tab: {OldTabTitle}", oldTab.Title);
+                    var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
+                    oldTabModules = mainViewModel.GetActiveModules();
+                }
+
+                // Переключение выполняется СРАЗУ — сохранения старой вкладки его
+                // не задерживают. Раньше await-ы workspace.json и кеша стояли ДО
+                // смены ActiveTab, и переключение (в том числе на старте
+                // перетаскивания вкладки) ощутимо запаздывало.
+                ActiveTab = tab;
+
+                // Сохранения старой вкладки догоняют после переключения: её модули
+                // припаркованы живыми, сбор данных с них потокобезопасен (тот же
+                // путь, что у периодического автосейва).
+                if (oldTab != null && oldTab != tab)
+                {
+                    _logger.LogDebug("Saving previous tab in background: {OldTabTitle}", oldTab.Title);
 
                     if (!string.IsNullOrEmpty(oldTab.FilePath))
                     {
@@ -110,18 +130,16 @@ namespace Writersword.ViewModels.Components
                         if (autoSave != null)
                         {
                             await autoSave.SaveNowAsync();
-                            _logger.LogDebug("workspace.json saved immediately for: {OldTabTitle}", oldTab.Title);
+                            _logger.LogDebug("workspace.json saved for: {OldTabTitle}", oldTab.Title);
                         }
                     }
 
-                    var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
-
-                    await oldTab.SaveToCacheAsync(() => mainViewModel.GetActiveModules());
+                    var capturedModules = oldTabModules
+                        ?? new System.Collections.Generic.List<Writersword.Core.Interfaces.Modules.IModule>();
+                    await oldTab.SaveToCacheAsync(() => capturedModules);
 
                     _logger.LogDebug("Old tab saved to cache");
                 }
-
-                ActiveTab = tab;
             }
             catch (Exception ex)
             {

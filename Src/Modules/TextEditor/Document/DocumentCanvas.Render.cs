@@ -80,33 +80,36 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (_caretOnlyRedraw && !_contentDirty)
             {
-                SKImage? cached;
-                int cachedW, cachedH;
-                float cachedScrollY;
+                // Проверка валидности и DrawImage выполняются ПОД ОДНИМ локом:
+                // раньше ссылка копировалась под локом, а рисование шло вне его,
+                // и параллельное освобождение снимка (detach канваса с UI-потока)
+                // попадало в середину DrawImage — access violation в SkiaSharp.
+                // Лок приватный и удерживается только на время блита закэшированной
+                // GPU-текстуры — конкуренция минимальна.
+                bool drewFromCache = false;
                 lock (_bitmapLock)
                 {
-                    cached = _displayImage;
-                    cachedW = _bitmapW;
-                    cachedH = _bitmapH;
-                    cachedScrollY = _lastFullRenderScrollY;
+                    // Кеш валиден если scroll находится внутри overscan-диапазона снимка.
+                    // _lastFullRenderScrollY хранит bitmapTopY — верхний край последнего
+                    // рендера. Если пользователь проскроллил так что viewport ещё внутри
+                    // снимка — переиспользуем его без перерисовки. DrawImage иммутабельного
+                    // снимка не копирует пиксели: GPU держит текстуру в кэше по uniqueID.
+                    bool scrollInRange = _displayImage is not null
+                        && _bitmapW == pixelW
+                        && scrollY >= _lastFullRenderScrollY - 0.5f
+                        && scrollY + viewportPx <= _lastFullRenderScrollY + _bitmapH + 0.5f;
+
+                    if (scrollInRange)
+                    {
+                        // Снимок рисуем по его реальному bitmapTopY (не scrollY).
+                        canvas.DrawImage(_displayImage!, 0, _lastFullRenderScrollY);
+                        drewFromCache = true;
+                    }
                 }
 
-                // Кеш валиден если scroll находится внутри overscan-диапазона снимка.
-                // cachedScrollY хранит bitmapTopY — верхний край последнего рендера.
-                // Если пользователь проскроллил так что viewport ещё внутри снимка —
-                // переиспользуем его без перерисовки. DrawImage иммутабельного снимка
-                // не копирует пиксели: GPU держит текстуру в кэше по uniqueID.
-                bool scrollInRange = cached is not null
-                    && cachedW == pixelW
-                    && scrollY >= cachedScrollY - 0.5f
-                    && scrollY + viewportPx <= cachedScrollY + cachedH + 0.5f;
-
-                if (scrollInRange)
+                if (drewFromCache)
                 {
                     _caretOnlyRedraw = false;
-
-                    // Снимок рисуем по его реальному bitmapTopY (не scrollY).
-                    canvas.DrawImage(cached!, 0, cachedScrollY);
 
                     if (_caretVisible && !_zooming)
                     {
@@ -124,6 +127,11 @@ namespace Writersword.Modules.TextEditor.Document
 
             while (_bitmapDisposeQueue.TryDequeue(out var stale))
                 stale?.Dispose();
+
+            // Списанные снимки освобождаются здесь же — на render-потоке рендеры
+            // сериализованы, и снимок из очереди гарантированно никем не рисуется.
+            while (_imageDisposeQueue.TryDequeue(out var staleImage))
+                staleImage?.Dispose();
 
             // Получаем или создаём render-bitmap нужного размера.
             // Если размер не изменился — переиспользуем существующий (0 аллокаций).
@@ -557,6 +565,14 @@ namespace Writersword.Modules.TextEditor.Document
                     canvas.DrawRect(
                         new SKRect(ie.XPt, ie.Ypt, ie.XPt + ie.WidthPt, ie.Ypt + ie.HeightPt),
                         _paintImageSelection);
+
+                    // Угловые маркеры изменения размера.
+                    float l = ie.XPt, t = ie.Ypt;
+                    float r = ie.XPt + ie.WidthPt, b = ie.Ypt + ie.HeightPt;
+                    DrawImageHandle(canvas, l, t);
+                    DrawImageHandle(canvas, r, t);
+                    DrawImageHandle(canvas, r, b);
+                    DrawImageHandle(canvas, l, b);
                 }
             }
 
@@ -566,6 +582,16 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Полностью попавшие в поток ячейки — заливаем целиком.
             RenderCellFlowFull(canvas, tables);
+        }
+
+        // Рисует один квадратный угловой маркер изменения размера (белая заливка, оранжевая рамка).
+        private void DrawImageHandle(SKCanvas canvas, float cxPt, float cyPt)
+        {
+            var rect = new SKRect(
+                cxPt - ImageHandleHalfPt, cyPt - ImageHandleHalfPt,
+                cxPt + ImageHandleHalfPt, cyPt + ImageHandleHalfPt);
+            canvas.DrawRect(rect, _paintImageHandleFill);
+            canvas.DrawRect(rect, _paintImageSelection);
         }
 
         // Загружает и кеширует декодированное изображение по имени файла внутри проекта.

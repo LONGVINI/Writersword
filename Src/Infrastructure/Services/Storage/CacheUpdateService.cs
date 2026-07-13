@@ -221,14 +221,15 @@ namespace Writersword.Infrastructure.Services.Storage
                             else
                             {
                                 // Модуль вернул объект (не строку): из файла данные приходят
-                                // JObject-ом, из живого модуля — .NET-объектом. Equals для такой
-                                // пары всегда false — кеш писался при каждом проходе даже без
-                                // изменений, и при каждом запуске появлялся диалог восстановления.
-                                // Сравниваем содержимое как JSON.
-                                var currentJson = Newtonsoft.Json.Linq.JToken.FromObject(kvp.Value);
-                                var savedJson = savedData as Newtonsoft.Json.Linq.JToken
-                                    ?? Newtonsoft.Json.Linq.JToken.FromObject(savedData);
-                                if (!Newtonsoft.Json.Linq.JToken.DeepEquals(currentJson, savedJson))
+                                // строкой JSON или JObject-ом, из живого модуля — .NET-объектом.
+                                // Сравнение выполняется канонически через IHashService: объект,
+                                // JObject и JSON-строка с одинаковым содержимым дают один хеш.
+                                // Прежний вариант (JToken.FromObject над строкой) давал JValue
+                                // вместо распарсенного объекта, DeepEquals всегда возвращал false,
+                                // кеш писался при каждом проходе без изменений, и вкладка при
+                                // каждом открытии попадала в режим восстановления.
+                                var hashService = App.Services.GetRequiredService<Writersword.Core.Interfaces.Services.IHashService>();
+                                if (hashService.ComputeHash(kvp.Value) != hashService.ComputeHash(savedData))
                                 {
                                     dataChanged = true;
                                     _logger.LogDebug("Cache diff in module: {Module}", kvp.Key);

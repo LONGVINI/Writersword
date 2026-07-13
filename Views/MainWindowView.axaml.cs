@@ -27,7 +27,7 @@ using Writersword.Views.Components.MenuBar;
 
 namespace Writersword.Views
 {
-    public partial class MainWindowView : Window
+    public partial class MainWindowView : Window, ITabSnapshotPresenter
     {
         private readonly ILogger<MainWindowView> _logger;
         private bool _isClosing = false;
@@ -41,6 +41,21 @@ namespace Writersword.Views
         // Невидимый focusable элемент — приёмник фокуса при кликах на нефокусируемые области.
         // Нужен потому что Window.Focusable == false в Avalonia 11 и Focus() на окне не работает.
         private Panel? _focusSink;
+
+        // ── Снапшоты вкладок (мгновенное переключение в стиле браузера) ──
+        // При уходе с вкладки захватывается последний отрисованный кадр её
+        // док-области; при возврате кадр мгновенно показывается поверх контента,
+        // пока реальные модули прогружаются (включая случай выгруженной из памяти
+        // вкладки), и скрывается по готовности. Один кадр ~8 МБ на вкладку —
+        // на порядки дешевле живых модулей в памяти.
+        private readonly System.Collections.Generic.Dictionary<object, Avalonia.Media.Imaging.RenderTargetBitmap> _tabSnapshots = new();
+        private Image? _tabSnapshotOverlay;
+        private DispatcherTimer? _snapshotHideTimer;
+        private DateTime _snapshotShownAt;
+        private static readonly TimeSpan SnapshotMinShowTime = TimeSpan.FromMilliseconds(150);
+        // Потолок жизни оверлея небольшой: залипший поверх контента кадр хуже,
+        // чем кратко видимый плейсхолдер под ним.
+        private static readonly TimeSpan SnapshotMaxShowTime = TimeSpan.FromSeconds(3);
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall)]
         private delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
@@ -138,6 +153,265 @@ namespace Writersword.Views
         private const int WindowButtonsWidth = 138;
         private const int ResizeBorderSize = 8;
 
+        // ── ITabSnapshotPresenter ─────────────────────────────────────────
+
+        /// <summary>
+        /// Панель главной области (Grid.Row=4): содержит DockControl первым ребёнком.
+        /// </summary>
+        private Panel? GetDockHostPanel()
+            => this.FindControl<Panel>("NotificationContainer")?.Parent as Panel;
+
+        // Кадр захватывается в половинном разрешении: RenderTargetBitmap синхронно
+        // перерисовывает всё визуальное дерево дока на UI-потоке, и в полном
+        // разрешении на большом документе это давало ощутимое провисание в момент
+        // переключения. Для мимолётного кадра-заглушки половинного разрешения
+        // достаточно, а стоимость рендера и память падают в четыре раза.
+        private const double SnapshotResolutionFactor = 0.5;
+
+        public void CaptureTabSnapshot(object tab)
+        {
+            try
+            {
+                var host = GetDockHostPanel();
+                var dockControl = host?.Children.Count > 0 ? host.Children[0] as Control : null;
+                if (dockControl == null || dockControl.Bounds.Width < 1 || dockControl.Bounds.Height < 1)
+                    return;
+
+                // Кадр не захватывается, пока контент вкладки не готов (виден
+                // плейсхолдер загрузки, идёт прогрев раскладки или ещё показан
+                // чужой снапшот-оверлей): при быстрых переключениях захват ловил
+                // полупостроенный layout, и эта испорченная «фотография» потом
+                // показывалась поверх реального контента при возврате на вкладку.
+                // Прежний (корректный) кадр вкладки при пропуске сохраняется.
+                if (!IsTabContentReady() || _tabSnapshotOverlay?.IsVisible == true)
+                {
+                    _logger.LogDebug("Tab snapshot capture skipped: content not ready");
+                    return;
+                }
+
+                var captureStopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+                double scale = RenderScaling * SnapshotResolutionFactor;
+                var pixelSize = new PixelSize(
+                    Math.Max(1, (int)(dockControl.Bounds.Width * scale)),
+                    Math.Max(1, (int)(dockControl.Bounds.Height * scale)));
+
+                var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(
+                    pixelSize, new Vector(96 * scale, 96 * scale));
+                bitmap.Render(dockControl);
+
+                if (_tabSnapshots.TryGetValue(tab, out var old))
+                    old.Dispose();
+                _tabSnapshots[tab] = bitmap;
+
+                captureStopwatch.Stop();
+                _logger.LogDebug("Tab snapshot captured: {Size} in {ElapsedMs}ms",
+                    pixelSize, captureStopwatch.ElapsedMilliseconds);
+                if (captureStopwatch.ElapsedMilliseconds > 50)
+                {
+                    _logger.LogWarning("Tab snapshot capture took {ElapsedMs}ms on UI thread",
+                        captureStopwatch.ElapsedMilliseconds);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Tab snapshot capture failed");
+            }
+        }
+
+        public void ShowTabSnapshot(object tab)
+        {
+            try
+            {
+                if (!_tabSnapshots.TryGetValue(tab, out var bitmap))
+                {
+                    // Для этой вкладки кадра нет (первое открытие) — убираем оверлей,
+                    // оставшийся от предыдущего показа, иначе он показывал бы чужой кадр.
+                    HideTabSnapshotOverlay();
+                    return;
+                }
+
+                var host = GetDockHostPanel();
+                if (host == null) return;
+
+                // Кадр другой геометрии (окно или панель изменили размер, либо захват
+                // случился в вырожденный момент) не показываем и выбрасываем:
+                // Stretch=Fill растянул бы его в «сломанный экранчик» поверх контента.
+                var dockControl = host.Children.Count > 0 ? host.Children[0] as Control : null;
+                if (dockControl != null && dockControl.Bounds.Width >= 1)
+                {
+                    int expectedW = Math.Max(1,
+                        (int)(dockControl.Bounds.Width * RenderScaling * SnapshotResolutionFactor));
+                    int expectedH = Math.Max(1,
+                        (int)(dockControl.Bounds.Height * RenderScaling * SnapshotResolutionFactor));
+
+                    bool geometryMatches =
+                        Math.Abs(bitmap.PixelSize.Width - expectedW) <= Math.Max(4, expectedW / 20)
+                        && Math.Abs(bitmap.PixelSize.Height - expectedH) <= Math.Max(4, expectedH / 20);
+
+                    if (!geometryMatches)
+                    {
+                        _logger.LogDebug(
+                            "Tab snapshot discarded (geometry mismatch): {Actual} vs expected {ExpectedW}x{ExpectedH}",
+                            bitmap.PixelSize, expectedW, expectedH);
+                        ForgetTabSnapshot(tab);
+                        HideTabSnapshotOverlay();
+                        return;
+                    }
+                }
+
+                EnsureSnapshotOverlay(host);
+
+                _tabSnapshotOverlay!.Source = bitmap;
+                _tabSnapshotOverlay.IsVisible = true;
+                _snapshotShownAt = DateTime.UtcNow;
+                StartSnapshotHidePolling();
+
+                _logger.LogDebug("Tab snapshot shown");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Tab snapshot show failed");
+                HideTabSnapshotOverlay();
+            }
+        }
+
+        public void ForgetTabSnapshot(object tab)
+        {
+            if (!_tabSnapshots.TryGetValue(tab, out var bitmap))
+                return;
+
+            if (_tabSnapshotOverlay != null && ReferenceEquals(_tabSnapshotOverlay.Source, bitmap))
+            {
+                _tabSnapshotOverlay.IsVisible = false;
+                _tabSnapshotOverlay.Source = null;
+            }
+
+            _tabSnapshots.Remove(tab);
+            bitmap.Dispose();
+        }
+
+        private void EnsureSnapshotOverlay(Panel host)
+        {
+            if (_tabSnapshotOverlay != null) return;
+
+            // ZIndex 900: поверх DockControl, но ниже NotificationContainer (1000).
+            // IsHitTestVisible=false — клики проходят сквозь кадр к реальному контенту.
+            _tabSnapshotOverlay = new Image
+            {
+                Stretch = Avalonia.Media.Stretch.Fill,
+                IsHitTestVisible = false,
+                ZIndex = 900,
+                IsVisible = false
+            };
+            host.Children.Add(_tabSnapshotOverlay);
+        }
+
+        private void StartSnapshotHidePolling()
+        {
+            if (_snapshotHideTimer == null)
+            {
+                _snapshotHideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+                _snapshotHideTimer.Tick += (_, _) =>
+                {
+                    var elapsed = DateTime.UtcNow - _snapshotShownAt;
+                    if (elapsed < SnapshotMinShowTime) return;
+
+                    if (elapsed >= SnapshotMaxShowTime || IsTabContentReady())
+                        HideTabSnapshotOverlay();
+                };
+            }
+            _snapshotHideTimer.Start();
+        }
+
+        /// <summary>
+        /// Готов ли реальный контент под оверлеем: нет видимых плейсхолдеров
+        /// загрузки модулей и ни один текстовый канвас не прогревает раскладку.
+        /// </summary>
+        private bool IsTabContentReady()
+        {
+            if (Writersword.Modules.TextEditor.Document.DocumentCanvas.ActiveWarmupCount > 0)
+                return false;
+
+            var host = GetDockHostPanel();
+            if (host == null) return true;
+
+            return !host.GetVisualDescendants()
+                .OfType<Writersword.Infrastructure.Dock.ModuleLoadingPlaceholder>()
+                .Any(p => p.IsEffectivelyVisible);
+        }
+
+        private void HideTabSnapshotOverlay()
+        {
+            _snapshotHideTimer?.Stop();
+            if (_tabSnapshotOverlay != null)
+                _tabSnapshotOverlay.IsVisible = false;
+        }
+
+        // ── Оверлей «отпустите, чтобы открыть вкладку» ────────────────────
+        // Показывается на время перетаскивания вкладки: контент не грузится
+        // вообще, пока кнопка мыши не отпущена, — а пользователь видит
+        // анимацию ожидания вместо застывшего контента предыдущей вкладки.
+        // Анимированный ProgressBar здесь допустим: оверлей живёт только
+        // на время жеста перетаскивания.
+        private Border? _tabDragPendingOverlay;
+
+        public void ShowTabDragPending()
+        {
+            var host = GetDockHostPanel();
+            if (host == null) return;
+
+            if (_tabDragPendingOverlay == null)
+            {
+                // ZIndex 950: поверх снапшота вкладки (900), ниже уведомлений (1000).
+                _tabDragPendingOverlay = new Border
+                {
+                    Background = Avalonia.Media.Brushes.Transparent,
+                    IsHitTestVisible = false,
+                    ZIndex = 950,
+                    IsVisible = false,
+                    Child = new StackPanel
+                    {
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                        Spacing = 12,
+                        Children =
+                        {
+                            new ProgressBar
+                            {
+                                IsIndeterminate = true,
+                                Width = 160,
+                                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
+                            },
+                            new TextBlock
+                            {
+                                Text = Strings.TabBar_ReleaseToOpen,
+                                Opacity = 0.7,
+                                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
+                            }
+                        }
+                    }
+                };
+                host.Children.Add(_tabDragPendingOverlay);
+            }
+
+            // Текст обновляется на случай смены языка между показами.
+            if (_tabDragPendingOverlay.Child is StackPanel panel
+                && panel.Children.Count > 1
+                && panel.Children[1] is TextBlock label)
+            {
+                label.Text = Strings.TabBar_ReleaseToOpen;
+            }
+
+            _tabDragPendingOverlay.IsVisible = true;
+        }
+
+        public void HideTabDragPending()
+        {
+            if (_tabDragPendingOverlay != null)
+                _tabDragPendingOverlay.IsVisible = false;
+        }
+
         public MainWindowView()
         {
             _logger = App.Services.GetService<ILogger<MainWindowView>>()!;
@@ -149,6 +423,11 @@ namespace Writersword.Views
             this.Opened += (s, e) =>
             {
                 _logger.LogDebug("MainWindowView opened - DataContext: {DataContextType}", DataContext?.GetType().Name);
+
+                // Регистрируем окно как презентер снапшотов вкладок:
+                // MainWindowViewModel вызывает захват/показ кадров при переключениях.
+                if (DataContext is MainWindowViewModel snapshotVm)
+                    snapshotVm.TabSnapshotPresenter = this;
 
                 // Диагностика производительности рендера — выключена. Для включения
                 // заменить None на нужный набор флагов, например:

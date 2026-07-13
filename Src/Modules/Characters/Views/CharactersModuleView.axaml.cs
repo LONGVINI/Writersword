@@ -62,6 +62,16 @@ namespace Writersword.Modules.Characters.Views
             CommitAllPendingEdits();
             RemoveHandler(TextBox.LostFocusEvent, OnTextBoxLostFocus);
             UnsubscribeFromVm();
+
+            // При переключении воркмода/доке вьюха отсоединяется, но VM и её
+            // коллекция Folders остаются заполненными. При повторном attach
+            // ItemsRepeater синхронно реализует и раскладывает все карточки одним
+            // проходом — фриз на ~секунду ещё до того, как OnLoaded запустит
+            // прогрессивный рефреш. Очищаем список здесь, чтобы повторный вход
+            // начинался с пустого репитера и карточки наполнялись плавно.
+            if (DataContext is CharactersViewModel vm)
+                vm.PrepareForReattach();
+
             _log.Debug("CharactersModuleView detached");
         }
 
@@ -93,6 +103,13 @@ namespace Writersword.Modules.Characters.Views
             if (DataContext is CharactersViewModel vm2)
             {
                 SwitchTab(vm2.MainTabIndex);
+
+                // Прогрессивная прогрузка карточек при каждом подключении вьюхи
+                // (workmode switch, dock move): без неё повторный вход строит все
+                // реализованные карточки одним проходом и замораживает UI на
+                // секунду. Вызов упоминается в TODO DockFactory — при переходе
+                // на Dock с кешированием контента вкладок его нужно убрать.
+                _ = vm2.RequestProgressiveRefreshAsync();
             }
             else
                 SwitchTab(0);

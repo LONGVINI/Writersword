@@ -144,6 +144,25 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Action? TableMergeCellsDelegate { get; set; }
         public Action? TableSplitCellDelegate { get; set; }
         public Action<Writersword.Modules.TextEditor.Models.Styles.TextAlignment>? TableSetCellHAlignDelegate { get; set; }
+
+        /// <summary>
+        /// Пытается применить выравнивание к выделенной блок-картинке.
+        /// Возвращает true, если картинка выделена и выравнивание применено —
+        /// тогда абзац не трогается.
+        /// </summary>
+        public Func<Writersword.Modules.TextEditor.Models.Styles.TextAlignment, bool>? TrySetImageAlignmentDelegate { get; set; }
+
+        /// <summary>
+        /// Возвращает выравнивание выделенной блок-картинки, либо null если картинка не выделена.
+        /// Позволяет риббону показывать выравнивание картинки, а не активного абзаца.
+        /// </summary>
+        public Func<Writersword.Modules.TextEditor.Models.Styles.TextAlignment?>? GetSelectedImageAlignmentDelegate { get; set; }
+
+        // Делегаты команд контекстной вкладки «Формат» (работают с выделенной картинкой).
+        public Action<WrapMode>? SetImageWrapModeDelegate { get; set; }
+        public Action<bool>? SetImageLockAspectDelegate { get; set; }
+        public Action? DeleteSelectedImageDelegate { get; set; }
+        public Func<(WrapMode Wrap, bool LockAspect, Writersword.Modules.TextEditor.Models.Styles.TextAlignment Align)?>? GetSelectedImageInfoDelegate { get; set; }
         public Action<int>? TableSetCellVAlignDelegate { get; set; }
         public Action<string?>? TableSetCellBackgroundDelegate { get; set; }
         public Action<string, BorderStyle, double, string?>? TableSetCellBorderDelegate { get; set; }
@@ -370,7 +389,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 ctx.TextColor = "#1A1A1A";
             }
 
-            ctx.Alignment = block.Properties.Alignment ?? TextAlignment.Left;
+            // Если выделена блок-картинка — риббон показывает её выравнивание, а не абзаца.
+            var imageAlign = GetSelectedImageAlignmentDelegate?.Invoke();
+            ctx.Alignment = imageAlign ?? block.Properties.Alignment ?? TextAlignment.Left;
             ctx.StyleName = block.Properties.StyleName ?? "Normal";
             ctx.LeftIndentPt = block.Properties.LeftIndent ?? 0;
             ctx.FirstLineIndentPt = block.Properties.FirstLineIndent ?? 0;
@@ -772,7 +793,19 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         // ── ITextEditorCommandTarget: абзац ───────────────────────────────
 
-        public void SetAlignment(TextAlignment a) => ApplyParaProperty(p => p.Alignment = a);
+        public void SetAlignment(TextAlignment a)
+        {
+            // Если выделена блок-картинка — выравниваем её в колонке, а не абзац.
+            if (TrySetImageAlignmentDelegate?.Invoke(a) == true) return;
+            ApplyParaProperty(p => p.Alignment = a);
+        }
+
+        // ── Команды выделенной картинки (контекстная вкладка «Формат») ─────
+        public void SetImageWrapMode(WrapMode mode) => SetImageWrapModeDelegate?.Invoke(mode);
+        public void SetImageLockAspect(bool locked) => SetImageLockAspectDelegate?.Invoke(locked);
+        public void DeleteSelectedImage() => DeleteSelectedImageDelegate?.Invoke();
+        public (WrapMode Wrap, bool LockAspect, Writersword.Modules.TextEditor.Models.Styles.TextAlignment Align)? GetSelectedImageInfo()
+            => GetSelectedImageInfoDelegate?.Invoke();
 
         public void IncreaseIndent()
             => ApplyParaProperty(p => p.LeftIndent = (p.LeftIndent ?? 0) + 18);

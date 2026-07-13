@@ -301,6 +301,7 @@ namespace Writersword.Modules.TextEditor.Services
                 HeightPt = source.HeightPt,
                 LockAspectRatio = source.LockAspectRatio,
                 WrapMode = source.WrapMode,
+                Alignment = source.Alignment,
                 Anchor = source.Anchor,
                 OffsetXPt = source.OffsetXPt,
                 OffsetYPt = source.OffsetYPt,

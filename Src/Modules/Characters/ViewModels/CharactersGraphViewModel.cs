@@ -116,17 +116,44 @@ namespace Writersword.Modules.Characters.ViewModels
             Refresh();
         }
 
+        // Отмена незавершённого прогрессивного построения графа: новый Refresh
+        // (или закрытие модуля) прерывает предыдущий проход между батчами.
+        private System.Threading.CancellationTokenSource? _refreshCts;
+
         public void Refresh()
         {
+            _refreshCts?.Cancel();
+            _refreshCts?.Dispose();
+            _refreshCts = new System.Threading.CancellationTokenSource();
+
             Nodes.Clear();
             Edges.Clear();
 
             var characters = _characterService.GetAll().ToList();
+            var relationships = _relationshipService.GetAll().ToList();
+
+            // Прогрессивное построение: узлы и рёбра добавляются батчами с
+            // Background-приоритетом между ними — тот же паттерн, что у
+            // RefreshFolderViewModelsProgressiveAsync. Создание сотен узлов
+            // одним проходом (вместе с генерацией контейнеров у ItemsControl)
+            // блокировало UI-поток на секунды при загрузке модуля.
+            _ = RefreshProgressiveAsync(characters, relationships, _refreshCts.Token);
+        }
+
+        private async System.Threading.Tasks.Task RefreshProgressiveAsync(
+            System.Collections.Generic.List<Models.Character> characters,
+            System.Collections.Generic.List<Models.CharacterRelationship> relationships,
+            System.Threading.CancellationToken ct)
+        {
+            const int BatchSize = 40;
+
             var angleStep = characters.Count > 0 ? (2 * System.Math.PI / characters.Count) : 0;
             var radius = System.Math.Max(150.0, characters.Count * 30.0);
 
             for (int i = 0; i < characters.Count; i++)
             {
+                if (ct.IsCancellationRequested) return;
+
                 var c = characters[i];
                 var angle = i * angleStep;
                 var node = new GraphNodeViewModel(c.Id, c.Name, c.Color, c.FallbackIcon, c.ImportanceLevel, c.IsCollective)
@@ -135,10 +162,21 @@ namespace Writersword.Modules.Characters.ViewModels
                     Y = radius + System.Math.Sin(angle) * radius - 24
                 };
                 Nodes.Add(node);
+
+                if ((i + 1) % BatchSize == 0)
+                {
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+                        () => { },
+                        Avalonia.Threading.DispatcherPriority.Background);
+                }
             }
 
-            foreach (var rel in _relationshipService.GetAll())
+            // Рёбра добавляются после всех узлов — они ссылаются на узлы по Id.
+            for (int i = 0; i < relationships.Count; i++)
             {
+                if (ct.IsCancellationRequested) return;
+
+                var rel = relationships[i];
                 var source = Nodes.FirstOrDefault(n => n.CharacterId == rel.SourceCharacterId);
                 var target = Nodes.FirstOrDefault(n => n.CharacterId == rel.TargetCharacterId);
                 if (source == null || target == null) continue;
@@ -153,6 +191,13 @@ namespace Writersword.Modules.Characters.ViewModels
 
                 var thickness = 1.0 + rel.Strength * 3.0;
                 Edges.Add(new GraphEdgeViewModel(source, target, rel.RelationshipType, emotionColor, thickness, rel.IsBidirectional));
+
+                if ((i + 1) % BatchSize == 0)
+                {
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(
+                        () => { },
+                        Avalonia.Threading.DispatcherPriority.Background);
+                }
             }
 
             _logger.Debug("Graph refreshed: {Nodes} nodes, {Edges} edges", Nodes.Count, Edges.Count);

@@ -790,7 +790,20 @@ namespace Writersword.Modules.TextEditor.Document
                                 newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
                             }
 
-                            newImages.Add(new ImageEntry(imageBlock, contentYPt, textXPt, imgWpt, imgHpt, pageIdx));
+                            // Горизонтальное выравнивание блок-картинки в текстовой колонке.
+                            float imgXPt = textXPt;
+                            float slackPt = textWidthPt - imgWpt;
+                            if (slackPt > 0f)
+                            {
+                                imgXPt = imageBlock.Alignment switch
+                                {
+                                    Models.Styles.TextAlignment.Center => textXPt + slackPt / 2f,
+                                    Models.Styles.TextAlignment.Right => textXPt + slackPt,
+                                    _ => textXPt
+                                };
+                            }
+
+                            newImages.Add(new ImageEntry(imageBlock, contentYPt, imgXPt, imgWpt, imgHpt, pageIdx));
                             contentYPt += imgHpt;
                         }
                         else
