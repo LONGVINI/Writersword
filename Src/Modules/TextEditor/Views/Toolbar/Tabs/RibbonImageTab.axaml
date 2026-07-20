@@ -3,136 +3,497 @@
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
              xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
              xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:controls="using:Writersword.Styles.UserControls"
              x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonImageTab"
              x:DataType="vm:RibbonImageTabViewModel">
 
-    <UserControl.Styles>
-        <!-- Кнопка -->
-        <Style Selector="Button.RibbonBtn">
-            <Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
-            <Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
-            <Setter Property="BorderThickness"            Value="1"/>
-            <Setter Property="CornerRadius"               Value="3"/>
-            <Setter Property="Padding"                    Value="8 4"/>
-            <Setter Property="MinHeight"                  Value="26"/>
-            <Setter Property="VerticalAlignment"          Value="Center"/>
-            <Setter Property="HorizontalContentAlignment" Value="Center"/>
-            <Setter Property="VerticalContentAlignment"   Value="Center"/>
-            <Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
-            <Setter Property="Cursor"                     Value="Hand"/>
-        </Style>
-        <Style Selector="Button.RibbonBtn /template/ ContentPresenter">
-            <Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
-            <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius"    Value="3"/>
-        </Style>
-        <Style Selector="Button.RibbonBtn:pointerover /template/ ContentPresenter">
-            <Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
-        </Style>
-        <Style Selector="Button.RibbonBtn:pressed /template/ ContentPresenter">
-            <Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
-        </Style>
+	<UserControl.Styles>
+		<Style Selector="Button.RibbonBtn">
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4"/>
+			<Setter Property="MinWidth"                   Value="26"/>
+			<Setter Property="MinHeight"                  Value="26"/>
+			<Setter Property="VerticalAlignment"          Value="Center"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.RibbonBtn:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
 
-        <!-- Тоггл -->
-        <Style Selector="ToggleButton.RibbonToggle">
-            <Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
-            <Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
-            <Setter Property="BorderThickness"            Value="1"/>
-            <Setter Property="CornerRadius"               Value="3"/>
-            <Setter Property="Padding"                    Value="8 4"/>
-            <Setter Property="MinHeight"                  Value="26"/>
-            <Setter Property="VerticalAlignment"          Value="Center"/>
-            <Setter Property="HorizontalContentAlignment" Value="Center"/>
-            <Setter Property="VerticalContentAlignment"   Value="Center"/>
-            <Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
-            <Setter Property="Cursor"                     Value="Hand"/>
-        </Style>
-        <Style Selector="ToggleButton.RibbonToggle /template/ ContentPresenter">
-            <Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
-            <Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius"    Value="3"/>
-        </Style>
-        <Style Selector="ToggleButton.RibbonToggle:pointerover /template/ ContentPresenter">
-            <Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
-        </Style>
-        <Style Selector="ToggleButton.RibbonToggle:pressed /template/ ContentPresenter">
-            <Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
-        </Style>
-        <Style Selector="ToggleButton.RibbonToggle:checked /template/ ContentPresenter">
-            <Setter Property="Background"             Value="{DynamicResource AccentSubtleBrush}"/>
-            <Setter Property="BorderBrush"            Value="{DynamicResource AccentDefaultBrush}"/>
-            <Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
-        </Style>
-        <Style Selector="ToggleButton.RibbonToggle:checked:pointerover /template/ ContentPresenter">
-            <Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
-        </Style>
+		<Style Selector="ToggleButton.RibbonToggleLarge">
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="4 2"/>
+			<Setter Property="MinWidth"                   Value="44"/>
+			<Setter Property="MinHeight"                  Value="54"/>
+			<Setter Property="VerticalAlignment"          Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggleLarge /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggleLarge:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggleLarge:pressed /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggleLarge:checked /template/ ContentPresenter">
+			<Setter Property="Background"             Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush"            Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggleLarge:checked:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.RibbonToggleLarge:checked PathIcon">
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
 
-        <Style Selector="TextBlock.GroupLabel">
-            <Setter Property="FontSize" Value="9"/>
-            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-            <Setter Property="HorizontalAlignment" Value="Center"/>
-            <Setter Property="Margin" Value="0 2 0 0"/>
-        </Style>
-    </UserControl.Styles>
+		<!-- Сегмент выбора единиц (мм / px) -->
+		<Style Selector="ToggleButton.SegSmall">
+			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness"            Value="1"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="5 0"/>
+			<Setter Property="MinWidth"                   Value="28"/>
+			<Setter Property="MinHeight"                  Value="20"/>
+			<Setter Property="FontSize"                   Value="10"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="ToggleButton.SegSmall /template/ ContentPresenter">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+		</Style>
+		<Style Selector="ToggleButton.SegSmall:checked /template/ ContentPresenter">
+			<Setter Property="Background"             Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush"            Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
 
-    <Border Padding="8 4" Background="Transparent">
-        <StackPanel Orientation="Horizontal" Spacing="10">
+		<Style Selector="Border.RibbonGroup">
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="4"/>
+			<Setter Property="Margin"          Value="2 2 0 2"/>
+			<Setter Property="Padding"         Value="4 2"/>
+		</Style>
+		<Style Selector="TextBlock.RibbonGroupLabel">
+			<Setter Property="FontSize"            Value="10"/>
+			<Setter Property="Foreground"          Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="HorizontalAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Grid.RibbonGroupLabelGrid">
+			<Setter Property="Margin" Value="0 2 0 0"/>
+		</Style>
 
-            <!-- Выравнивание -->
-            <StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="3">
-                    <ToggleButton Classes="RibbonToggle" Content="Слева"
-                                  Command="{Binding AlignLeftCommand}"
-                                  IsChecked="{Binding CurrentAlignment, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Left, Mode=OneWay}"/>
-                    <ToggleButton Classes="RibbonToggle" Content="По центру"
-                                  Command="{Binding AlignCenterCommand}"
-                                  IsChecked="{Binding CurrentAlignment, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Center, Mode=OneWay}"/>
-                    <ToggleButton Classes="RibbonToggle" Content="Справа"
-                                  Command="{Binding AlignRightCommand}"
-                                  IsChecked="{Binding CurrentAlignment, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Right, Mode=OneWay}"/>
-                </StackPanel>
-                <TextBlock Classes="GroupLabel" Text="Выравнивание"/>
-            </StackPanel>
+		<!-- PathIcon наследует цвет через Foreground -->
+		<Style Selector="PathIcon">
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
 
-            <Separator Width="1" Background="{DynamicResource BorderSubtleBrush}" Margin="2 2"/>
+		<!-- Числовое поле риббона: вертикальные мини-стрелки справа -->
+		<Style Selector="NumericUpDown.RibbonNum">
+			<Setter Property="MinHeight"       Value="24"/>
+			<Setter Property="FontSize"        Value="12"/>
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="3"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="NumericUpDown.RibbonNum /template/ TextBox">
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="CornerRadius"    Value="0"/>
+			<Setter Property="MinHeight"       Value="22"/>
+			<Setter Property="Padding"         Value="4 1"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="NumericUpDown.RibbonNum /template/ TextBox /template/ Border#PART_BorderElement">
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Background"      Value="Transparent"/>
+		</Style>
+		<Style Selector="NumericUpDown.RibbonNum ButtonSpinner">
+			<Setter Property="Template">
+				<ControlTemplate>
+					<Border Background="{TemplateBinding Background}"
+					        BorderBrush="{TemplateBinding BorderBrush}"
+					        BorderThickness="{TemplateBinding BorderThickness}"
+					        CornerRadius="{TemplateBinding CornerRadius}">
+						<Grid ColumnDefinitions="* Auto">
+							<ContentPresenter Name="PART_ContentPresenter"
+							                  Grid.Column="0"
+							                  Content="{TemplateBinding Content}"
+							                  ContentTemplate="{TemplateBinding ContentTemplate}"
+							                  Padding="{TemplateBinding Padding}"/>
+							<StackPanel Grid.Column="1" Orientation="Vertical" Width="15"
+							            VerticalAlignment="Center">
+								<RepeatButton Name="PART_IncreaseButton"
+								              Height="12" Padding="0"
+								              Background="Transparent" BorderThickness="0"
+								              HorizontalContentAlignment="Center"
+								              VerticalContentAlignment="Center"
+								              Cursor="Hand" Focusable="False">
+									<PathIcon Data="M7 14l5-5 5 5z" Width="9" Height="9"
+									          Foreground="{DynamicResource TextSecondaryBrush}"/>
+								</RepeatButton>
+								<RepeatButton Name="PART_DecreaseButton"
+								              Height="12" Padding="0"
+								              Background="Transparent" BorderThickness="0"
+								              HorizontalContentAlignment="Center"
+								              VerticalContentAlignment="Center"
+								              Cursor="Hand" Focusable="False">
+									<PathIcon Data="M7 10l5 5 5-5z" Width="9" Height="9"
+									          Foreground="{DynamicResource TextSecondaryBrush}"/>
+								</RepeatButton>
+							</StackPanel>
+						</Grid>
+					</Border>
+				</ControlTemplate>
+			</Setter>
+		</Style>
 
-            <!-- Обтекание -->
-            <StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="3">
-                    <ToggleButton Classes="RibbonToggle" Content="В тексте"
-                                  Command="{Binding WrapInlineCommand}"
-                                  IsChecked="{Binding CurrentWrap, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Inline, Mode=OneWay}"/>
-                    <ToggleButton Classes="RibbonToggle" Content="Обтекание"
-                                  Command="{Binding WrapSquareCommand}"
-                                  IsChecked="{Binding CurrentWrap, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Square, Mode=OneWay}"/>
-                    <ToggleButton Classes="RibbonToggle" Content="За текстом"
-                                  Command="{Binding WrapBehindCommand}"
-                                  IsChecked="{Binding CurrentWrap, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Behind, Mode=OneWay}"/>
-                </StackPanel>
-                <TextBlock Classes="GroupLabel" Text="Обтекание текстом"/>
-            </StackPanel>
+		<!-- Ползунок в стиле палитровых градиентных ползунков -->
+		<Style Selector="Slider.knob">
+			<Setter Property="MinHeight" Value="18"/>
+			<Setter Property="Height" Value="18"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Template">
+				<ControlTemplate>
+					<Grid VerticalAlignment="Center">
+						<Border Height="5" CornerRadius="3" VerticalAlignment="Center"
+						        Background="{DynamicResource BgHoverBrush}"
+						        BorderBrush="{DynamicResource BorderSubtleBrush}"
+						        BorderThickness="1"/>
+						<Track Name="PART_Track" Orientation="Horizontal"
+						       Minimum="{TemplateBinding Minimum}"
+						       Maximum="{TemplateBinding Maximum}"
+						       Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+							<Track.DecreaseButton>
+								<RepeatButton Name="PART_DecreaseButton" Focusable="False"
+								              Background="Transparent" BorderThickness="0">
+									<RepeatButton.Template>
+										<ControlTemplate><Border Background="Transparent"/></ControlTemplate>
+									</RepeatButton.Template>
+								</RepeatButton>
+							</Track.DecreaseButton>
+							<Track.IncreaseButton>
+								<RepeatButton Name="PART_IncreaseButton" Focusable="False"
+								              Background="Transparent" BorderThickness="0">
+									<RepeatButton.Template>
+										<ControlTemplate><Border Background="Transparent"/></ControlTemplate>
+									</RepeatButton.Template>
+								</RepeatButton>
+							</Track.IncreaseButton>
+							<Thumb Width="12" Height="12" Padding="0">
+								<Thumb.Template>
+									<ControlTemplate>
+										<Border Background="{DynamicResource AccentDefaultBrush}"
+										        CornerRadius="6"
+										        BorderBrush="{DynamicResource BgSurfaceBrush}"
+										        BorderThickness="2"/>
+									</ControlTemplate>
+								</Thumb.Template>
+							</Thumb>
+						</Track>
+					</Grid>
+				</ControlTemplate>
+			</Setter>
+		</Style>
+	</UserControl.Styles>
 
-            <Separator Width="1" Background="{DynamicResource BorderSubtleBrush}" Margin="2 2"/>
+	<controls:RibbonScrollContainer x:Name="ScrollContainer">
+		<controls:RibbonScrollContainer.RibbonContent>
+			<StackPanel Orientation="Horizontal">
 
-            <!-- Пропорции + удаление -->
-            <StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="3">
-                    <ToggleButton Classes="RibbonToggle" Content="Пропорции"
-                                  Command="{Binding ToggleAspectCommand}"
-                                  IsChecked="{Binding IsAspectLocked, Mode=OneWay}"/>
-                    <Button Classes="RibbonBtn" Content="Удалить"
-                            Command="{Binding DeleteImageCommand}"/>
-                </StackPanel>
-                <TextBlock Classes="GroupLabel" Text="Размер · картинка"/>
-            </StackPanel>
+				<!-- ── Группа: Обтекание (взаимоисключающие переключатели) ── -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Обтекание текстом"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="2">
 
-        </StackPanel>
-    </Border>
+							<ToggleButton Classes="RibbonToggleLarge"
+							              Command="{Binding WrapInlineCommand}"
+							              IsChecked="{Binding CurrentWrap, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Inline, Mode=OneWay}"
+							              behaviours:TooltipBehavior.Tip="Картинка стоит в тексте как блок и сдвигает строки"
+							              behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="18" Height="18"
+									          Data="M3 3h18v2H3V3zm0 16h18v2H3v-2zM7 8h10v8H7V8z"/>
+									<TextBlock FontSize="9" Text="В тексте" HorizontalAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+
+							<ToggleButton Classes="RibbonToggleLarge"
+							              Command="{Binding WrapSquareCommand}"
+							              IsChecked="{Binding CurrentWrap, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Square, Mode=OneWay}"
+							              behaviours:TooltipBehavior.Tip="Текст обтекает картинку по прямоугольнику"
+							              behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="18" Height="18"
+									          Data="M3 3h18v2H3V3zm0 4h8v2H3V7zm0 4h8v2H3v-2zm0 4h8v2H3v-2zm0 4h18v2H3v-2zM13 7h8v8h-8V7z"/>
+									<TextBlock FontSize="9" Text="Обтекание" HorizontalAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+
+							<ToggleButton Classes="RibbonToggleLarge"
+							              Command="{Binding WrapBehindCommand}"
+							              IsChecked="{Binding CurrentWrap, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=Behind, Mode=OneWay}"
+							              behaviours:TooltipBehavior.Tip="Картинка лежит за текстом, выделение такой картинки — Ctrl+клик"
+							              behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="18" Height="18"
+									          Data="M5 4h14v14H5V4zM3 8h18v2H3zm0 4h18v2H3z"/>
+									<TextBlock FontSize="9" Text="За текстом" HorizontalAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ── Группа: Поворот ──────────────────────────────────────── -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Поворот"/>
+						</Grid>
+						<StackPanel Spacing="3" VerticalAlignment="Center">
+
+							<StackPanel Orientation="Horizontal" Spacing="2">
+								<Button Classes="RibbonBtn"
+								        Command="{Binding RotateLeft90Command}"
+								        behaviours:TooltipBehavior.Tip="Повернуть на 90 градусов против часовой стрелки"
+								        behaviours:TooltipBehavior.ShowDelay="700">
+									<PathIcon Width="14" Height="14"
+									          Data="M7.11 8.53L5.7 7.11C4.8 8.27 4.24 9.61 4.07 11h2.02c.14-.87.49-1.72 1.02-2.47zM6.09 13H4.07c.17 1.39.72 2.73 1.62 3.89l1.41-1.42c-.52-.75-.87-1.59-1.01-2.47zm1.01 5.32c1.16.9 2.51 1.44 3.9 1.61V17.9c-.87-.15-1.71-.49-2.46-1.03L7.1 18.32zM13 4.07V1L8.45 5.55 13 10V6.09c2.84.48 5 2.94 5 5.91s-2.16 5.43-5 5.91v2.02c3.95-.49 7-3.85 7-7.93s-3.05-7.44-7-7.93z"/>
+								</Button>
+
+								<NumericUpDown Classes="RibbonNum" Width="86"
+								               Value="{Binding RotationDegrees, Mode=TwoWay}"
+								               Minimum="-360" Maximum="720"
+								               Increment="1"
+								               FormatString="0.#"
+								               ClipValueToMinMax="True"
+								               behaviours:TooltipBehavior.Tip="Точный угол поворота картинки в градусах"
+								               behaviours:TooltipBehavior.ShowDelay="700"/>
+
+								<Button Classes="RibbonBtn"
+								        Command="{Binding RotateRight90Command}"
+								        behaviours:TooltipBehavior.Tip="Повернуть на 90 градусов по часовой стрелке"
+								        behaviours:TooltipBehavior.ShowDelay="700">
+									<PathIcon Width="14" Height="14"
+									          Data="M15.55 5.55L11 1v3.07C7.06 4.56 4 7.92 4 12s3.05 7.44 7 7.93v-2.02c-2.84-.48-5-2.94-5-5.91s2.16-5.43 5-5.91V10l4.55-4.45zM19.93 11c-.17-1.39-.72-2.73-1.62-3.89l-1.42 1.42c.54.75.88 1.6 1.02 2.47h2.02zM13 17.9v2.02c1.39-.17 2.74-.71 3.9-1.61l-1.44-1.44c-.75.54-1.59.89-2.46 1.03zm3.89-2.42l1.42 1.41c.9-1.16 1.45-2.5 1.62-3.89h-2.02c-.14.87-.48 1.72-1.02 2.48z"/>
+								</Button>
+							</StackPanel>
+
+							<Slider Classes="knob" Width="140"
+							        Minimum="0" Maximum="359.9"
+							        Value="{Binding RotationAngle, Mode=TwoWay}"
+							        behaviours:TooltipBehavior.Tip="Плавный поворот картинки"
+							        behaviours:TooltipBehavior.ShowDelay="700"/>
+
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ── Группа: Размер и обрезка ────────────────────────────── -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Размер"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+
+							<StackPanel Spacing="3">
+								<StackPanel Orientation="Horizontal" Spacing="3">
+									<PathIcon Width="13" Height="13" VerticalAlignment="Center"
+									          Foreground="{DynamicResource TextSecondaryBrush}"
+									          Data="M3 12l4-4v3h10V8l4 4-4 4v-3H7v3l-4-4z"/>
+									<NumericUpDown Classes="RibbonNum" Width="92"
+									               Value="{Binding ImageWidth, Mode=TwoWay}"
+									               Minimum="0.1" Maximum="99999.99"
+									               Increment="1"
+									               FormatString="0.##"
+									               ClipValueToMinMax="True"
+									               behaviours:TooltipBehavior.Tip="Ширина картинки в выбранных единицах"
+									               behaviours:TooltipBehavior.ShowDelay="700"/>
+								</StackPanel>
+								<StackPanel Orientation="Horizontal" Spacing="3">
+									<PathIcon Width="13" Height="13" VerticalAlignment="Center"
+									          Foreground="{DynamicResource TextSecondaryBrush}"
+									          Data="M12 3l4 4h-3v10h3l-4 4-4-4h3V7H8l4-4z"/>
+									<NumericUpDown Classes="RibbonNum" Width="92"
+									               Value="{Binding ImageHeight, Mode=TwoWay}"
+									               Minimum="0.1" Maximum="99999.99"
+									               Increment="1"
+									               FormatString="0.##"
+									               ClipValueToMinMax="True"
+									               behaviours:TooltipBehavior.Tip="Высота картинки в выбранных единицах"
+									               behaviours:TooltipBehavior.ShowDelay="700"/>
+								</StackPanel>
+							</StackPanel>
+
+							<StackPanel Spacing="3" VerticalAlignment="Center">
+								<ToggleButton Classes="SegSmall" Content="мм"
+								              Command="{Binding UnitMmCommand}"
+								              IsChecked="{Binding UnitIsMm, Mode=OneWay}"
+								              behaviours:TooltipBehavior.Tip="Размеры в миллиметрах"
+								              behaviours:TooltipBehavior.ShowDelay="700"/>
+								<ToggleButton Classes="SegSmall" Content="px"
+								              Command="{Binding UnitPxCommand}"
+								              IsChecked="{Binding UnitIsPx, Mode=OneWay}"
+								              behaviours:TooltipBehavior.Tip="Размеры в пикселях (96 DPI)"
+								              behaviours:TooltipBehavior.ShowDelay="700"/>
+							</StackPanel>
+
+							<ToggleButton Classes="RibbonToggleLarge"
+							              Command="{Binding ToggleAspectCommand}"
+							              IsChecked="{Binding IsAspectLocked, Mode=OneWay}"
+							              behaviours:TooltipBehavior.Tip="Сохранять пропорции при изменении размера"
+							              behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="18" Height="18"
+									          Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+									<TextBlock FontSize="9" Text="Пропорции" HorizontalAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+
+							<ToggleButton Classes="RibbonToggleLarge"
+							              Command="{Binding ToggleCropModeCommand}"
+							              IsChecked="{Binding IsCropMode, Mode=OneWay}"
+							              behaviours:TooltipBehavior.Tip="Режим обрезки: маркеры срезают края картинки вместо изменения размера"
+							              behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="18" Height="18"
+									          Data="M17 15h2V7c0-1.1-.9-2-2-2H9v2h8v8zM7 17V1H5v4H1v2h4v10c0 1.1.9 2 2 2h10v4h2v-4h4v-2H7z"/>
+									<TextBlock FontSize="9" Text="Обрезка" HorizontalAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ── Группа: Отражение ───────────────────────────────────── -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Отражение"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="2">
+
+							<Button Classes="RibbonBtn" MinHeight="54" MinWidth="40"
+							        Command="{Binding FlipHorizontalCommand}"
+							        behaviours:TooltipBehavior.Tip="Отразить картинку по горизонтали"
+							        behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="18" Height="18"
+									          Data="M15 21h2v-2h-2v2zm4-12h2V7h-2v2zM3 5v14c0 1.1.9 2 2 2h4v-2H5V5h4V3H5c-1.1 0-2 .9-2 2zm16-2v2h2c0-1.1-.9-2-2-2zM11 23h2V1h-2v22zm8-6h2v-2h-2v2zM15 5h2V3h-2v2zm4 8h2v-2h-2v2zm0 8c1.1 0 2-.9 2-2h-2v2z"/>
+									<TextBlock FontSize="9" Text="По гориз." HorizontalAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
+							<Button Classes="RibbonBtn" MinHeight="54" MinWidth="40"
+							        Command="{Binding FlipVerticalCommand}"
+							        behaviours:TooltipBehavior.Tip="Отразить картинку по вертикали"
+							        behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="18" Height="18"
+									          Data="M3 15v2h2v-2H3zm12 4v2h2v-2h-2zM5 3H3c0 1.1.9 2 2 2V3zm14 8h2V9h-2v2zM5 21v-2H3c0 1.1.9 2 2 2zM3 11h2V9H3v2zm18 2H1v-2h22v2zm-2 8c1.1 0 2-.9 2-2h-2v2zM19 5c1.1 0 2 .9 2 2h-2V5zm0 0V3c1.1 0 2 .9 2 2h-2zM7 5h2V3H7v2zm0 16h2v-2H7v2zm4-16h2V3h-2v2zm0 16h2v-2h-2v2zm8-6h2v-2h-2v2zm0-8h2V5h-2v2z"/>
+									<TextBlock FontSize="9" Text="По верт." HorizontalAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ── Группа: Оформление ───────────────────────────────────── -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Оформление"/>
+						</Grid>
+						<StackPanel Spacing="3" VerticalAlignment="Center">
+
+							<StackPanel Orientation="Horizontal" Spacing="4">
+								<controls:ColorPickerButton Width="20" Height="20" VerticalAlignment="Center"
+								                            HexColor="{Binding BorderHexColor, Mode=TwoWay}"
+								                            behaviours:TooltipBehavior.Tip="Цвет рамки картинки"
+								                            behaviours:TooltipBehavior.ShowDelay="700"/>
+								<TextBlock FontSize="10" VerticalAlignment="Center"
+								           Foreground="{DynamicResource TextSecondaryBrush}"
+								           Text="Рамка"/>
+								<NumericUpDown Classes="RibbonNum" Width="72"
+								               Value="{Binding BorderThickness, Mode=TwoWay}"
+								               Minimum="0" Maximum="50"
+								               Increment="0.5"
+								               FormatString="0.#"
+								               ClipValueToMinMax="True"
+								               behaviours:TooltipBehavior.Tip="Толщина рамки в пунктах, 0 — без рамки"
+								               behaviours:TooltipBehavior.ShowDelay="700"/>
+							</StackPanel>
+
+							<StackPanel Orientation="Horizontal" Spacing="4">
+								<Slider Classes="knob" Width="90"
+								        Minimum="0" Maximum="100"
+								        Value="{Binding OpacityValue, Mode=TwoWay}"
+								        behaviours:TooltipBehavior.Tip="Прозрачность картинки"
+								        behaviours:TooltipBehavior.ShowDelay="700"/>
+								<NumericUpDown Classes="RibbonNum" Width="64"
+								               Value="{Binding OpacityPercent, Mode=TwoWay}"
+								               Minimum="0" Maximum="100"
+								               Increment="5"
+								               FormatString="0"
+								               ClipValueToMinMax="True"
+								               behaviours:TooltipBehavior.Tip="Непрозрачность картинки в процентах"
+								               behaviours:TooltipBehavior.ShowDelay="700"/>
+							</StackPanel>
+
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+			</StackPanel>
+		</controls:RibbonScrollContainer.RibbonContent>
+	</controls:RibbonScrollContainer>
 </UserControl>

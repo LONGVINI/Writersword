@@ -71,19 +71,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
         private double _autoScrollVel;
         private Point _lastDragPos;
 
-        // ── Временная диагностика раскладки списка ─────────────────────────
-        // Раз в секунду пишет в общий лог одну сводку: сколько проходов
-        // раскладки прошло по вью, сколько раз и как долго каждый репитер
-        // папки мерился и раскладывался (PerfItemsRepeater), сколько раз у
-        // него менялся EffectiveViewport и сколько реализовано элементов.
-        // Строка пишется только при ненулевой активности. Убрать вместе с
-        // вызовами Start/StopPerfDiagnostics после завершения расследования.
         private static readonly Serilog.ILogger _perfLog =
             Serilog.Log.ForContext<CharactersListView>();
-        private DispatcherTimer? _perfTimer;
-        private int _perfSelfLayoutCount;
-        private readonly HashSet<ItemsRepeater> _perfHookedRepeaters = new();
-        private readonly Dictionary<ItemsRepeater, int> _perfRepeaterViewportCounts = new();
 
         public CharactersListView()
         {
@@ -240,8 +229,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
                             vmSub.UpdateContainerWidth(b.Width - 40);
                     });
             }
-
-            StartPerfDiagnostics();
         }
 
         protected override void OnDataContextChanged(EventArgs e)
@@ -260,96 +247,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
             _containerBoundsSubscription = null;
             _cardsPerRowSubscription?.Dispose();
             _cardsPerRowSubscription = null;
-            StopPerfDiagnostics();
-        }
-
-        private void StartPerfDiagnostics()
-        {
-            LayoutUpdated -= OnPerfSelfLayoutUpdated;
-            LayoutUpdated += OnPerfSelfLayoutUpdated;
-            if (_perfTimer is null)
-            {
-                _perfTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-                _perfTimer.Tick += OnPerfTimerTick;
-            }
-            _perfSelfLayoutCount = 0;
-            _perfTimer.Start();
-        }
-
-        private void StopPerfDiagnostics()
-        {
-            _perfTimer?.Stop();
-            LayoutUpdated -= OnPerfSelfLayoutUpdated;
-            foreach (var repeater in _perfHookedRepeaters)
-                repeater.EffectiveViewportChanged -= OnPerfRepeaterViewportChanged;
-            _perfHookedRepeaters.Clear();
-            _perfRepeaterViewportCounts.Clear();
-        }
-
-        private void OnPerfSelfLayoutUpdated(object? sender, EventArgs e)
-            => _perfSelfLayoutCount++;
-
-        private void OnPerfRepeaterViewportChanged(object? sender, EffectiveViewportChangedEventArgs e)
-        {
-            if (sender is ItemsRepeater repeater)
-                _perfRepeaterViewportCounts[repeater] =
-                    _perfRepeaterViewportCounts.GetValueOrDefault(repeater) + 1;
-        }
-
-        private void OnPerfTimerTick(object? sender, EventArgs e)
-        {
-            // Подцепляем появившиеся репитеры (папки создаются прогрессивно).
-            foreach (var repeater in this.GetVisualDescendants().OfType<ItemsRepeater>())
-            {
-                if (_perfHookedRepeaters.Add(repeater))
-                    repeater.EffectiveViewportChanged += OnPerfRepeaterViewportChanged;
-            }
-
-            bool hasRepeaterActivity = false;
-            foreach (var repeater in _perfHookedRepeaters)
-            {
-                if (repeater is Controls.PerfItemsRepeater perf
-                    && (perf.MeasureCount > 0 || perf.ArrangeCount > 0))
-                { hasRepeaterActivity = true; break; }
-            }
-            if (!hasRepeaterActivity)
-                foreach (var count in _perfRepeaterViewportCounts.Values)
-                    if (count > 0) { hasRepeaterActivity = true; break; }
-
-            if (_perfSelfLayoutCount == 0 && !hasRepeaterActivity)
-                return;
-
-            var sb = new System.Text.StringBuilder();
-            sb.Append("passes=").Append(_perfSelfLayoutCount);
-            foreach (var repeater in _perfHookedRepeaters)
-            {
-                int viewportCount = _perfRepeaterViewportCounts.GetValueOrDefault(repeater);
-                var perf = repeater as Controls.PerfItemsRepeater;
-                int measureCount = perf?.MeasureCount ?? 0;
-                int arrangeCount = perf?.ArrangeCount ?? 0;
-                if (measureCount == 0 && arrangeCount == 0 && viewportCount == 0)
-                    continue;
-
-                var folderName =
-                    (repeater.DataContext as CharacterFolderViewModel)?.Name ?? "?";
-                int realized = 0;
-                foreach (var _ in repeater.GetVisualChildren()) realized++;
-
-                sb.Append("; '").Append(folderName)
-                  .Append("': measure=").Append(measureCount)
-                  .Append(" (").Append(Math.Round(perf?.MeasureMs ?? 0)).Append(" ms)")
-                  .Append(", arrange=").Append(arrangeCount)
-                  .Append(" (").Append(Math.Round(perf?.ArrangeMs ?? 0)).Append(" ms)")
-                  .Append(", viewport=").Append(viewportCount)
-                  .Append(", realized=").Append(realized);
-
-                perf?.ResetPerfCounters();
-            }
-
-            _perfLog.Debug("[CharactersPerf] {Summary}", sb.ToString());
-
-            _perfSelfLayoutCount = 0;
-            _perfRepeaterViewportCounts.Clear();
         }
 
         private void UpdateGridLayouts(int cols)
@@ -1092,6 +989,15 @@ namespace Writersword.Modules.Characters.Views.Tabs
             item.RequestPickerOpen = async () =>
             {
                 if (_avatarService == null) return null;
+
+                // Выбор аватара — оверлей по центру модуля (как редактор цвета),
+                // а не отдельное системное окно.
+                var host = this.FindAncestorOfType<CharactersModuleView>();
+                var overlay = host?.FindControl<CharacterAvatarPickerOverlay>("AvatarPickerOverlayControl");
+                if (overlay != null)
+                    return await overlay.ShowAsync(_avatarService, item.Id);
+
+                // Запасной путь, если вью показана вне модуля: прежнее окно.
                 var window = TopLevel.GetTopLevel(this) as Window;
                 if (window == null) return null;
                 return await CharacterAvatarPickerWindow.ShowAsync(

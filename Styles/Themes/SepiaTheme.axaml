@@ -14,6 +14,10 @@
 	<SolidColorBrush x:Key="BgSurfaceBrush">#2A2420</SolidColorBrush>
 	<SolidColorBrush x:Key="BgPanelBrush">#3C3430</SolidColorBrush>
 	<SolidColorBrush x:Key="BgHoverBrush">#4A4240</SolidColorBrush>
+	<!-- Фон плоских блоков-баннеров в списках. -->
+	<SolidColorBrush x:Key="BgListBlockBrush">#443B36</SolidColorBrush>
+	<!-- Ползунок скроллбара в списках. -->
+	<SolidColorBrush x:Key="ScrollThumbBrush">#D8C8A0</SolidColorBrush>
 
 	<!-- Текст -->
 	<SolidColorBrush x:Key="TextPrimaryBrush">#F4ECD8</SolidColorBrush>

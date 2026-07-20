@@ -47,6 +47,20 @@ namespace Writersword.Modules.TextEditor.Commands
 
             // Создаём новый параграф с хвостом и заранее известным Id.
             var newPara = new ParagraphBlock { Id = NewParagraphId };
+
+            // Новый абзац наследует форматирование исходного, чтобы Enter продолжал
+            // тот же стиль/выравнивание/отступы, а в списке — создавал следующий элемент.
+            newPara.Properties = original.Properties.Clone();
+
+            if (original.ListProperties is not null)
+            {
+                var lp = original.ListProperties.Clone();
+                // Следующий элемент всегда продолжает нумерацию (перезапуск наследовать нельзя,
+                // иначе каждый новый элемент начинал бы список заново).
+                lp.ContinueNumbering = true;
+                newPara.ListProperties = lp;
+            }
+
             if (tailRuns.Length > 0)
                 DocumentModelHelper.RestoreRuns(newPara, 0, tailRuns);
 

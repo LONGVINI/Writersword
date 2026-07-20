@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels"
              xmlns:views="using:Writersword.Modules.Characters.Views"
+             xmlns:avatars="using:Writersword.Modules.Characters.Views.Avatars"
              xmlns:onb="using:Writersword.Modules.Characters.Views.Onboarding"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              xmlns:ui="using:Writersword.Styles.UserControls"
@@ -28,6 +29,9 @@
 		     модуля, со скримом, как редактор цвета -->
 		<views:CardSettingsOverlay x:Name="CardSettingsOverlayControl" ZIndex="150"/>
 
+		<!-- Выбор аватара — по центру модуля, со скримом, как редактор цвета -->
+		<avatars:CharacterAvatarPickerOverlay x:Name="AvatarPickerOverlayControl" ZIndex="170"/>
+
 		<Grid RowDefinitions="Auto,*">
 
 			<!-- Вкладки -->
@@ -50,9 +54,23 @@
 						<Setter Property="BorderBrush" Value="Transparent"/>
 						<Setter Property="CornerRadius" Value="0"/>
 						<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+						<!-- Дефолтный Fluent-ControlTheme вешает на Background/BorderBrush
+						     неявные BrushTransition. При наведении они анимируются покадрово,
+						     а анимация кисти в композиторе инвалидирует широкую область —
+						     перерисовывалось всё окно, а не кнопка. Пустой набор переходов
+						     отключает их: смена цвета мгновенная, инвалидация ограничена
+						     самой кнопкой. -->
+						<Setter Property="Transitions">
+							<Transitions/>
+						</Setter>
 					</Style>
 					<Style Selector="Button.tab:pointerover">
 						<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+					</Style>
+					<!-- Гасим серый hover-фон темы у ContentPresenter: под курсором
+					     меняется только цвет текста, лишней заливки и её инвалидации нет. -->
+					<Style Selector="Button.tab:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+						<Setter Property="Background" Value="Transparent"/>
 					</Style>
 					<Style Selector="Button.tab.tab-active">
 						<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
@@ -93,8 +111,9 @@
 				</StackPanel>
 			</Border>
 
-			<!-- Содержимое вкладки -->
-			<ContentControl Grid.Row="1" x:Name="TabContent"/>
+			<!-- Содержимое вкладок: живут одновременно, переключается видимость
+			     (см. SwitchTab) — тяжёлые «Персонажи» не рвутся при переходе. -->
+			<Panel Grid.Row="1" x:Name="TabContent"/>
 		</Grid>
 
 		<!-- Тост снизу — появляется при удалении, скрывается по Ctrl+Z или по кнопке -->

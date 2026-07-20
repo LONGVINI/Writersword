@@ -42,9 +42,9 @@ namespace Writersword.Modules.TextEditor
         private readonly DeltaHashService _hashService;
         private readonly ChunkManager _chunkManager;
         // Стек для операций форматирования (BeginEdit/CommitEdit) — каждый снапшот
-        // хранит полный JSON документа. Ограничен 20 записями до полного перехода
+        // хранит полный JSON документа. Ограничен 200 записями до полного перехода
         // на операционную систему команд.
-        private readonly UndoRedoStack _undoStack = new(20);
+        private readonly UndoRedoStack _undoStack = new(200);
 
         // Лёгкий стек для операций набора текста.
         // Каждая запись хранит только позицию и текст — не полный JSON документа.
@@ -202,11 +202,21 @@ namespace Writersword.Modules.TextEditor
 
         private void ApplyReadOnlyFromContext()
         {
-            var docVm = _viewModel?.DocumentViewModel;
-            if (docVm is null) return;
+            if (_viewModel is null) return;
             bool readOnly = Context?.IsInCompareMode == true;
-            if (docVm.IsReadOnly != readOnly)
+
+            var docVm = _viewModel.DocumentViewModel;
+            if (docVm is not null && docVm.IsReadOnly != readOnly)
                 docVm.IsReadOnly = readOnly;
+
+            // Линейки: запрет drag маркеров отступов, колонок и полей страницы.
+            if (_viewModel.Ruler.IsReadOnly != readOnly)
+                _viewModel.Ruler.IsReadOnly = readOnly;
+
+            // Риббон: содержимое вкладок не принимает клики и ввод, слегка
+            // приглушается, но продолжает отражать состояние под кареткой.
+            if (_viewModel.Ribbon.IsEditingEnabled != !readOnly)
+                _viewModel.Ribbon.IsEditingEnabled = !readOnly;
         }
 
         public override Control? CreateView()
@@ -560,6 +570,11 @@ namespace Writersword.Modules.TextEditor
 
                 _viewModel.LoadDocument(p.Document, _localSettings);
 
+                // LoadDocument создаёт новый DocumentViewModel — флаг read-only
+                // режима сравнения на нём не выставлен. Применяем его заново,
+                // иначе после Switch Version в compare mode документ редактируется.
+                ApplyReadOnlyFromContext();
+
                 // Инициализируем _lastDeltaPayload рассчитанной в фазе 1 дельтой.
                 _lastDeltaPayload = p.InitialDelta;
 
@@ -585,6 +600,7 @@ namespace Writersword.Modules.TextEditor
             }
 
             _viewModel.LoadNewDocument(_localSettings);
+            ApplyReadOnlyFromContext();
         }
 
         public override object? GetSessionData()
@@ -722,7 +738,14 @@ namespace Writersword.Modules.TextEditor
                 _ => null
             };
             if (raw is not null)
+            {
                 _cachedSessionData = raw;
+
+                // View уже существует (например, Switch Version в режиме сравнения) —
+                // применяем позицию каретки и скролла сразу, CreateView не будет вызван.
+                if (_lastCreatedView is not null)
+                    RestoreCaretFromCache();
+            }
         }
 
         // ── IHotKeyProvider ───────────────────────────────────────────────

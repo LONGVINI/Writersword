@@ -100,6 +100,9 @@ namespace Writersword.Infrastructure.Services.Storage
 
             lock (_sync)
             {
+                // Глобальный шлюз файла: запись не пересекается с хешированием
+                // и чтением проекта из других сервисов.
+                using var fileGate = ProjectFileLock.Acquire(_zipFilePath);
                 try
                 {
                     // В DEBUG режиме открываем архив перед записью
@@ -162,6 +165,9 @@ namespace Writersword.Infrastructure.Services.Storage
 
             lock (_sync)
             {
+                // Глобальный шлюз файла: чтение не пересекается с параллельной
+                // записью или заменой файла (SaveToZipAsync → File.Move).
+                using var fileGate = ProjectFileLock.Acquire(_zipFilePath);
                 try
                 {
                     // В DEBUG режиме открываем архив перед чтением
@@ -220,6 +226,7 @@ namespace Writersword.Infrastructure.Services.Storage
 
             lock (_sync)
             {
+                using var fileGate = ProjectFileLock.Acquire(_zipFilePath);
                 try
                 {
                     // В DEBUG режиме открываем архив
@@ -257,6 +264,7 @@ namespace Writersword.Infrastructure.Services.Storage
 
             lock (_sync)
             {
+                using var fileGate = ProjectFileLock.Acquire(_zipFilePath);
                 try
                 {
                     // В DEBUG режиме открываем архив
@@ -305,6 +313,7 @@ namespace Writersword.Infrastructure.Services.Storage
 
             lock (_sync)
             {
+                using var fileGate = ProjectFileLock.Acquire(_zipFilePath);
                 try
                 {
                     // В DEBUG режиме открываем архив
@@ -346,6 +355,9 @@ namespace Writersword.Infrastructure.Services.Storage
 
                 if (_archive != null)
                 {
+                    // В режиме Update закрытие архива переписывает весь ZIP —
+                    // выполняем под глобальным шлюзом файла.
+                    using var fileGate = ProjectFileLock.Acquire(_zipFilePath);
                     _archive.Dispose();
                     _archive = null;
                     _logger.LogDebug("Closed ZIP: {FilePath}", _zipFilePath);

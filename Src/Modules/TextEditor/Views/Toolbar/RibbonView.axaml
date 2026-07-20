@@ -60,19 +60,19 @@
 					<Setter Property="IsVisible" Value="False"/>
 				</Style>
 
-				<!-- Контекстная вкладка «Таблица» — заголовок зелёного цвета -->
+				<!-- Контекстная вкладка «Таблица» — акцентный заголовок, как у «Формат» -->
 				<Style Selector="TabItem.TableContextTab > TextBlock">
-					<Setter Property="Foreground" Value="#2E7D32"/>
+					<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
 					<Setter Property="FontWeight" Value="Medium"/>
 				</Style>
 				<Style Selector="TabItem.TableContextTab:selected">
-					<Setter Property="BorderBrush" Value="#2E7D32"/>
+					<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 				</Style>
 				<Style Selector="TabItem.TableContextTab:selected > TextBlock">
-					<Setter Property="Foreground" Value="#2E7D32"/>
+					<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
 				</Style>
 				<Style Selector="TabItem.TableContextTab:pointerover">
-					<Setter Property="Background" Value="#2E7D32"/>
+					<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
 				</Style>
 
 				<!-- Контекстная вкладка «Формат» (картинка) — заголовок оранжевый -->
@@ -97,7 +97,10 @@
 				<TabItem.Header>
 					<TextBlock Text="{x:Static loc:TextEditorStrings.Ribbon_Home}"/>
 				</TabItem.Header>
-				<tabs:RibbonHomeTab DataContext="{Binding Home}"/>
+				<Panel IsHitTestVisible="{Binding IsEditingEnabled}"
+				       Opacity="{Binding ContentOpacity}">
+					<tabs:RibbonHomeTab DataContext="{Binding Home}"/>
+				</Panel>
 			</TabItem>
 
 			<!-- ── Вставка ──────────────────────────────────────────────── -->
@@ -105,7 +108,10 @@
 				<TabItem.Header>
 					<TextBlock Text="{x:Static loc:TextEditorStrings.Ribbon_Insert}"/>
 				</TabItem.Header>
-				<tabs:RibbonInsertTab DataContext="{Binding Insert}"/>
+				<Panel IsHitTestVisible="{Binding IsEditingEnabled}"
+				       Opacity="{Binding ContentOpacity}">
+					<tabs:RibbonInsertTab DataContext="{Binding Insert}"/>
+				</Panel>
 			</TabItem>
 
 			<!-- ── Макет ────────────────────────────────────────────────── -->
@@ -113,7 +119,10 @@
 				<TabItem.Header>
 					<TextBlock Text="{x:Static loc:TextEditorStrings.Ribbon_Layout}"/>
 				</TabItem.Header>
-				<tabs:RibbonLayoutTab DataContext="{Binding Layout}"/>
+				<Panel IsHitTestVisible="{Binding IsEditingEnabled}"
+				       Opacity="{Binding ContentOpacity}">
+					<tabs:RibbonLayoutTab DataContext="{Binding Layout}"/>
+				</Panel>
 			</TabItem>
 
 			<!-- ── Ссылки ───────────────────────────────────────────────── -->
@@ -121,7 +130,10 @@
 				<TabItem.Header>
 					<TextBlock Text="{x:Static loc:TextEditorStrings.Ribbon_References}"/>
 				</TabItem.Header>
-				<tabs:RibbonReferencesTab DataContext="{Binding References}"/>
+				<Panel IsHitTestVisible="{Binding IsEditingEnabled}"
+				       Opacity="{Binding ContentOpacity}">
+					<tabs:RibbonReferencesTab DataContext="{Binding References}"/>
+				</Panel>
 			</TabItem>
 
 			<!-- ── Работа с таблицей (КОНТЕКСТНАЯ) ─────────────────────── -->
@@ -132,7 +144,10 @@
 				<TabItem.Header>
 					<TextBlock Text="Работа с таблицами"/>
 				</TabItem.Header>
-				<tabs:RibbonTableTab DataContext="{Binding Table}"/>
+				<Panel IsHitTestVisible="{Binding IsEditingEnabled}"
+				       Opacity="{Binding ContentOpacity}">
+					<tabs:RibbonTableTab DataContext="{Binding Table}"/>
+				</Panel>
 			</TabItem>
 
 			<!-- ── Формат (КОНТЕКСТНАЯ, картинка) ───────────────────────── -->
@@ -143,7 +158,10 @@
 				<TabItem.Header>
 					<TextBlock Text="Формат"/>
 				</TabItem.Header>
-				<tabs:RibbonImageTab DataContext="{Binding Image}"/>
+				<Panel IsHitTestVisible="{Binding IsEditingEnabled}"
+				       Opacity="{Binding ContentOpacity}">
+					<tabs:RibbonImageTab DataContext="{Binding Image}"/>
+				</Panel>
 			</TabItem>
 
 		</TabControl>

@@ -1,6 +1,9 @@
 using ReactiveUI;
 using Serilog;
+using System;
+using System.Collections.Specialized;
 using System.Reactive;
+using System.Reactive.Linq;
 using Writersword.Modules.Characters.Interfaces;
 using Writersword.Modules.Characters.Models;
 using Writersword.Modules.Characters.ViewModels.Tabs;
@@ -37,6 +40,7 @@ namespace Writersword.Modules.Characters.ViewModels
         public ReactiveCommand<Unit, Unit> SaveCommand { get; }
 
         private readonly ICharacterService _characterService;
+        private readonly IDisposable _autoSaveSubscription;
 
         public CharacterCardViewModel(
             ICharacterService characterService,
@@ -57,7 +61,32 @@ namespace Writersword.Modules.Characters.ViewModels
             HistoryTab = new CharacterHistoryTabViewModel(character);
 
             SaveCommand = ReactiveCommand.Create(Save);
+
+            // Автосохранение карточки: кнопки Save в шапке больше нет, правки
+            // вкладки Basics применяются к персонажу сами — с задержкой после
+            // последнего изменения, чтобы не дёргать сервис на каждый символ.
+            // Коллекции (алиасы, теги, статусы) не поднимают Changed у
+            // ReactiveObject, поэтому подписываются отдельно и сливаются
+            // в общий поток.
+            var propertyChanges = BasicsTab.Changed.Select(_ => Unit.Default);
+            var collectionChanges = Observable.Merge(
+                FromCollection(BasicsTab.Aliases),
+                FromCollection(BasicsTab.Tags),
+                FromCollection(BasicsTab.ActiveStatuses));
+
+            // Throttle отрабатывает на таймере пула потоков — сохранение
+            // переносится на UI-поток через диспетчер Avalonia.
+            _autoSaveSubscription = propertyChanges
+                .Merge(collectionChanges)
+                .Throttle(TimeSpan.FromMilliseconds(600))
+                .Subscribe(_ => Avalonia.Threading.Dispatcher.UIThread.Post(Save));
         }
+
+        private static IObservable<Unit> FromCollection(INotifyCollectionChanged collection)
+            => Observable.FromEventPattern<NotifyCollectionChangedEventHandler, NotifyCollectionChangedEventArgs>(
+                    h => collection.CollectionChanged += h,
+                    h => collection.CollectionChanged -= h)
+                .Select(_ => Unit.Default);
 
         private void Save()
         {

@@ -89,7 +89,8 @@ namespace Writersword.Modules.TextEditor.Document
             int LineFrom,
             int LineTo,
             float AbsXPt = 0,          // абсолютный X левого края текстовой зоны
-            CellInfo? Cell = null);    // null = обычный параграф
+            CellInfo? Cell = null,     // null = обычный параграф
+            Rendering.ListMarkerInfo? Marker = null);  // маркер списка (null = не элемент списка)
 
         private record PageRect(
             float Ypt,
@@ -150,8 +151,9 @@ namespace Writersword.Modules.TextEditor.Document
         private double _imgDragStartOffX;
         private double _imgDragStartOffY;
 
-        // Изменение размера выделенной картинки за угловой маркер.
-        // Индекс угла: 0 — верх-лево, 1 — верх-право, 2 — низ-право, 3 — низ-лево.
+        // Изменение размера выделенной картинки за маркер.
+        // Индексы: 0 — верх-лево, 1 — верх-право, 2 — низ-право, 3 — низ-лево,
+        // 4 — верх-центр, 5 — право-центр, 6 — низ-центр, 7 — лево-центр, 8 — поворот.
         private bool _imageResizing;
         private bool _imageResizeMoved;
         private int _imageResizeCorner = -1;
@@ -161,6 +163,15 @@ namespace Writersword.Modules.TextEditor.Document
         private double _imgResizeStartH;
         private double _imgResizeStartOffX;
         private double _imgResizeStartOffY;
+        private double _imgResizeStartRotDeg;
+
+        // Поворот выделенной картинки за круглый маркер над верхней гранью.
+        private bool _imageRotating;
+        private bool _imageRotateMoved;
+        private double _imgRotStartDeg;
+        private float _imgRotPointerStartDeg;
+        private float _imgRotCenterXPt;
+        private float _imgRotCenterYPt;
 
         // Полупрозрачная заливка угловых маркеров размера.
         private readonly SKPaint _paintImageHandleFill = new()
@@ -170,9 +181,93 @@ namespace Writersword.Modules.TextEditor.Document
             IsAntialias = true
         };
 
+        // Сглаживание края и билинейная фильтрация при отрисовке картинок:
+        // без него повёрнутая картинка рисуется с рваным ступенчатым краем.
+        private readonly SKPaint _paintImageDraw = new()
+        {
+            IsAntialias = true,
+            FilterQuality = SKFilterQuality.High
+        };
+
+        // Режим предпросмотра переполнения страницы: во время драга (поворот/ресайз)
+        // страница инлайн-картинки заморожена как на момент нажатия. Если картинка
+        // перестаёт влезать — остаётся на месте, выходит за нижний край листа и
+        // рисуется серой полупрозрачной. Если была на следующей странице и снова
+        // влезает — остаётся на следующей. Реальный перенос в обе стороны
+        // выполняется финальным пересбором после отпускания кнопки мыши.
+        private bool _imageOverflowPreviewMode;
+        private ImageBlock? _imageOverflowPreviewBlock;
+
+        // Была ли выделенная картинка на момент старта драга перенесена
+        // на следующую страницу из-за нехватки места.
+        private bool _imagePreviewStartTransferred;
+
+        // Инлайн-картинки, перенесённые последним пересбором на следующую страницу
+        // из-за нехватки места. Читается при старте драга для заморозки страницы.
+        private HashSet<ImageBlock> _inlineTransferredImages = new();
+
+        // Рамка картинки: цвет и толщина выставляются перед отрисовкой каждой картинки.
+        private readonly SKPaint _paintImageBorderDraw = new()
+        {
+            Style = SKPaintStyle.Stroke,
+            IsAntialias = true
+        };
+
+        // Обесцвеченная полупрозрачная отрисовка картинки в предпросмотре переполнения.
+        private readonly SKPaint _paintImageDrawOverflow = new()
+        {
+            IsAntialias = true,
+            FilterQuality = SKFilterQuality.High,
+            ColorFilter = SKColorFilter.CreateColorMatrix(new float[]
+            {
+                0.21f, 0.72f, 0.07f, 0f,    0f,
+                0.21f, 0.72f, 0.07f, 0f,    0f,
+                0.21f, 0.72f, 0.07f, 0f,    0f,
+                0f,    0f,    0f,    0.55f, 0f
+            })
+        };
+
         // Половина стороны квадратного маркера и радиус попадания по нему, в пунктах.
         private const float ImageHandleHalfPt = 3.5f;
         private const float ImageHandleHitPt = 6f;
+
+        // Режим обрезки выделенной картинки: маркеры двигают границы кадрирования,
+        // а не размер. Сбрасывается при снятии выделения.
+        private bool _imageCropMode;
+
+        // Акцентная заливка маркеров в режиме обрезки.
+        private readonly SKPaint _paintImageHandleCropFill = new()
+        {
+            Style = SKPaintStyle.Fill,
+            Color = new SKColor(0xE0, 0x7B, 0x39),
+            IsAntialias = true
+        };
+
+        // Обрезка драгом маркера: стартовые доли кадрирования.
+        private bool _imageCropDragging;
+        private double _imgCropStartL;
+        private double _imgCropStartT;
+        private double _imgCropStartR;
+        private double _imgCropStartB;
+
+        // Расстояние маркера поворота от верхней грани и его радиус, в пунктах.
+        private const float ImageRotateHandleOffsetPt = 20f;
+        private const float ImageRotateHandleRadiusPt = 6f;
+
+        // Круговая стрелка внутри маркера поворота.
+        private readonly SKPaint _paintRotateArrowStroke = new()
+        {
+            Style = SKPaintStyle.Stroke,
+            Color = new SKColor(0xE0, 0x7B, 0x39),
+            StrokeWidth = 1.1f,
+            IsAntialias = true
+        };
+        private readonly SKPaint _paintRotateArrowFill = new()
+        {
+            Style = SKPaintStyle.Fill,
+            Color = new SKColor(0xE0, 0x7B, 0x39),
+            IsAntialias = true
+        };
         private double _canvasWidth;
         private double _canvasHeight;
         private float _canvasHeightPt;
@@ -815,6 +910,32 @@ namespace Writersword.Modules.TextEditor.Document
             _parentScrollViewer = null;
         }
 
+        /// <summary>Число страниц текущей раскладки.</summary>
+        public int PageCount
+        {
+            get { lock (_renderLock) { return Math.Max(1, _pages.Count); } }
+        }
+
+        /// <summary>
+        /// Номер страницы (1-based) у верха вьюпорта при заданном вертикальном смещении прокрутки (px).
+        /// Используется всплывающей подсказкой при перетаскивании ползунка.
+        /// </summary>
+        public int GetPageAtOffset(double offsetYPx)
+        {
+            List<PageRect> pages;
+            lock (_renderLock) { pages = _pages; }
+            if (pages.Count == 0) return 1;
+            double zoom = Zoom;
+            float viewTopPt = (float)(offsetYPx / zoom * PxToPt);
+            int page = 1;
+            for (int i = 0; i < pages.Count; i++)
+            {
+                if (pages[i].Ypt <= viewTopPt + 1f) page = i + 1;
+                else break;
+            }
+            return page;
+        }
+
         private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
         {
             if (sender is not ScrollViewer sv) return;
@@ -924,6 +1045,17 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.SetImageLockAspectDelegate = SetSelectedImageLockAspect;
             DocVm.DeleteSelectedImageDelegate = DeleteSelectedImageFromCanvas;
             DocVm.GetSelectedImageInfoDelegate = GetSelectedImageInfo;
+            DocVm.SetImageRotationDelegate = SetSelectedImageRotation;
+            DocVm.GetSelectedImageRotationDelegate = GetSelectedImageRotation;
+            DocVm.SetImageWidthDelegate = SetSelectedImageWidth;
+            DocVm.SetImageHeightDelegate = SetSelectedImageHeight;
+            DocVm.SetImageOpacityDelegate = SetSelectedImageOpacity;
+            DocVm.SetImageBorderDelegate = SetSelectedImageBorder;
+            DocVm.GetSelectedImageStyleDelegate = GetSelectedImageStyle;
+            DocVm.ToggleImageFlipHorizontalDelegate = ToggleSelectedImageFlipHorizontal;
+            DocVm.ToggleImageFlipVerticalDelegate = ToggleSelectedImageFlipVertical;
+            DocVm.SetImageCropModeDelegate = SetSelectedImageCropMode;
+            DocVm.GetImageCropModeDelegate = GetSelectedImageCropMode;
 
             foreach (var pvm in DocVm.Paragraphs)
             {
@@ -940,8 +1072,14 @@ namespace Writersword.Modules.TextEditor.Document
         private bool TrySetSelectedImageAlignment(
             Writersword.Modules.TextEditor.Models.Styles.TextAlignment alignment)
         {
-            if (_selectedImage is null || _selectedImage.WrapMode != WrapMode.Inline)
+            if (_selectedImage is null)
                 return false;
+
+            // Плавающая картинка позиционируется смещением якоря, выравнивание к ней
+            // неприменимо. Команду всё равно поглощаем: иначе она проваливалась в
+            // ApplyParaProperty и меняла выравнивание абзаца при выделенной картинке.
+            if (_selectedImage.WrapMode != WrapMode.Inline)
+                return true;
 
             if (_selectedImage.Alignment != alignment)
             {
@@ -1019,6 +1157,128 @@ namespace Writersword.Modules.TextEditor.Document
             => _selectedImage is null
                 ? null
                 : (_selectedImage.WrapMode, _selectedImage.LockAspectRatio, _selectedImage.Alignment);
+
+        // Задаёт ширину выделенной картинки в пунктах. При включённых пропорциях
+        // высота масштабируется тем же коэффициентом.
+        private void SetSelectedImageWidth(double widthPt)
+        {
+            if (_selectedImage is null) return;
+            double w = Math.Max(widthPt, 4.0);
+            if (Math.Abs(_selectedImage.WidthPt - w) < 0.01) return;
+            BeginEdit("Размер изображения");
+            if (_selectedImage.LockAspectRatio && _selectedImage.WidthPt > 0.0)
+                _selectedImage.HeightPt = Math.Max(4.0, _selectedImage.HeightPt * (w / _selectedImage.WidthPt));
+            _selectedImage.WidthPt = w;
+            CommitEdit();
+            RebuildLayouts();
+            InvalidateMeasure();
+            InvalidateFull();
+            ImageSelectionChanged?.Invoke(true);
+        }
+
+        // Задаёт высоту выделенной картинки в пунктах. При включённых пропорциях
+        // ширина масштабируется тем же коэффициентом.
+        private void SetSelectedImageHeight(double heightPt)
+        {
+            if (_selectedImage is null) return;
+            double h = Math.Max(heightPt, 4.0);
+            if (Math.Abs(_selectedImage.HeightPt - h) < 0.01) return;
+            BeginEdit("Размер изображения");
+            if (_selectedImage.LockAspectRatio && _selectedImage.HeightPt > 0.0)
+                _selectedImage.WidthPt = Math.Max(4.0, _selectedImage.WidthPt * (h / _selectedImage.HeightPt));
+            _selectedImage.HeightPt = h;
+            CommitEdit();
+            RebuildLayouts();
+            InvalidateMeasure();
+            InvalidateFull();
+            ImageSelectionChanged?.Invoke(true);
+        }
+
+        // Задаёт непрозрачность выделенной картинки (0..1).
+        private void SetSelectedImageOpacity(double opacity)
+        {
+            if (_selectedImage is null) return;
+            double o = Math.Clamp(opacity, 0.0, 1.0);
+            if (Math.Abs(_selectedImage.Opacity - o) < 0.001) return;
+            BeginEdit("Прозрачность изображения");
+            _selectedImage.Opacity = o;
+            CommitEdit();
+            InvalidateFull();
+        }
+
+        // Задаёт рамку выделенной картинки: цвет в hex и толщину в пунктах.
+        // null или полностью прозрачный цвет — рамка убирается.
+        private void SetSelectedImageBorder(string? colorHex, double thicknessPt)
+        {
+            if (_selectedImage is null) return;
+            string? color = string.IsNullOrEmpty(colorHex) || colorHex == "#00000000" ? null : colorHex;
+            double thick = Math.Clamp(thicknessPt, 0.0, 50.0);
+            _logger.Debug("[IMG] border request color={C} thick={T}", color ?? "none", thick);
+            if (_selectedImage.BorderColor == color
+                && Math.Abs(_selectedImage.BorderThicknessPt - thick) < 0.01) return;
+            BeginEdit("Рамка изображения");
+            _selectedImage.BorderColor = color;
+            _selectedImage.BorderThicknessPt = thick;
+            CommitEdit();
+            InvalidateFull();
+        }
+
+        // Переключает зеркальное отражение выделенной картинки по горизонтали.
+        private void ToggleSelectedImageFlipHorizontal()
+        {
+            if (_selectedImage is null) return;
+            BeginEdit("Отражение изображения");
+            _selectedImage.FlipHorizontal = !_selectedImage.FlipHorizontal;
+            CommitEdit();
+            InvalidateFull();
+        }
+
+        // Переключает зеркальное отражение выделенной картинки по вертикали.
+        private void ToggleSelectedImageFlipVertical()
+        {
+            if (_selectedImage is null) return;
+            BeginEdit("Отражение изображения");
+            _selectedImage.FlipVertical = !_selectedImage.FlipVertical;
+            CommitEdit();
+            InvalidateFull();
+        }
+
+        // Включает/выключает режим обрезки выделенной картинки.
+        private void SetSelectedImageCropMode(bool on)
+        {
+            bool next = on && _selectedImage is not null;
+            if (_imageCropMode == next) return;
+            _imageCropMode = next;
+            InvalidateFull();
+        }
+
+        // Текущее состояние режима обрезки для синхронизации вкладки.
+        private bool GetSelectedImageCropMode() => _imageCropMode;
+
+        // Геометрия и оформление выделенной картинки для полей вкладки (или null).
+        private (double WidthPt, double HeightPt, double Opacity, string? BorderColor, double BorderThicknessPt)? GetSelectedImageStyle()
+            => _selectedImage is null
+                ? null
+                : (_selectedImage.WidthPt, _selectedImage.HeightPt, _selectedImage.Opacity,
+                   _selectedImage.BorderColor, _selectedImage.BorderThicknessPt);
+
+        // Задаёт угол поворота выделенной картинки (команда контекстной вкладки).
+        private void SetSelectedImageRotation(double degrees)
+        {
+            if (_selectedImage is null) return;
+            double normalized = ((degrees % 360.0) + 360.0) % 360.0;
+            if (Math.Abs(_selectedImage.RotationDeg - normalized) < 0.01) return;
+            BeginEdit("Поворот изображения");
+            _selectedImage.RotationDeg = normalized;
+            CommitEdit();
+            RebuildLayouts();
+            InvalidateMeasure();
+            InvalidateFull();
+        }
+
+        // Текущий угол поворота выделенной картинки для вкладки (или null).
+        private double? GetSelectedImageRotation()
+            => _selectedImage?.RotationDeg;
 
         // Структурное изменение (вставка/удаление картинки и т.п.): пересобираем раскладку
         // БЕЗ очистки кэша абзацев — текст абзацев не менялся, переформировывать их не нужно,
@@ -1489,6 +1749,9 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (_layoutWarmupActive) return;
             SetWarmupActive(true);
+            // Один раз перед прогревом выставляем тексты маркеров списков (и чиним битые позиции),
+            // чтобы раскладка учла ширину цифры уже в кэше. Раньше это делалось каждый проход.
+            ApplyListMarkerTexts();
             _logger.Debug("Layout warmup started: {Count} paragraphs, cache={CacheCount}",
                 DocVm?.Paragraphs.Count ?? 0, _layoutCache.Count);
             Dispatcher.UIThread.Post(PumpLayoutWarmup, DispatcherPriority.Loaded);
@@ -1501,6 +1764,34 @@ namespace Writersword.Modules.TextEditor.Document
         /// целиком из кеша. Приоритет Loaded — выше Background, проход не голодает
         /// при непрерывных layout-инвалидациях.
         /// </summary>
+        // Вычисляет тексты маркеров списков (нумерацию) и кладёт их в модель, чтобы раскладка
+        // могла измерить ширину цифры. Вызывается перед прогревом кэша, а также при полном
+        // пересборе тексты выставляются в RebuildPageMode/FlowMode.
+        private void ApplyListMarkerTexts()
+        {
+            if (DocVm is null) return;
+            double textWidthPt = GetCurrentTextWidthPt();
+            foreach (var section in DocVm.Document.Sections)
+            {
+                var map = Rendering.ListNumberingEngine.Compute(section.Blocks);
+                foreach (var block in section.Blocks)
+                    if (block is ParagraphBlock p && p.ListProperties is not null)
+                    {
+                        p.ListProperties.ComputedMarkerText =
+                            map.TryGetValue(p, out var mi) ? mi.Text : null;
+                        MigrateCorruptListMarker(p, textWidthPt);
+                    }
+            }
+        }
+
+        // Сбрасывает явно повреждённую позицию номера (левый край цифры у/за правым краем
+        // текстовой зоны — след старых багов), чтобы номер вернулся к нормальному выступу слева.
+        private static void MigrateCorruptListMarker(ParagraphBlock p, double textWidthPt)
+        {
+            if (p.ListProperties?.MarkerIndentPt is double mi && mi > textWidthPt - 20.0)
+                p.ListProperties.MarkerIndentPt = null;
+        }
+
         private void PumpLayoutWarmup()
         {
             if (!_layoutWarmupActive) return;
@@ -1672,6 +1963,62 @@ namespace Writersword.Modules.TextEditor.Document
             _layoutCache[pvm] = (text, widthPt, layout);
             return layout;
         }
+
+        // Отступ текста от габарита обтекаемого объекта, в пунктах.
+        private const float WrapZoneMarginPt = 6f;
+
+        /// <summary>
+        /// Зоны обтекания для параграфа с верхом paraTopPt: габариты плавающих
+        /// картинок в режимах Square/Tight (AABB с учётом поворота, с полями),
+        /// переведённые в координаты текстовой области параграфа.
+        /// null — обтекаемых объектов рядом нет.
+        /// </summary>
+        private List<SKWrapZone>? ComputeWrapZones(
+            List<ImageEntry> images, float paraTopPt, float textXPt, float textWidthPt)
+        {
+            List<SKWrapZone>? zones = null;
+
+            foreach (var ie in images)
+            {
+                var wm = ie.Block.WrapMode;
+                if (wm != WrapMode.Square && wm != WrapMode.Tight) continue;
+
+                double rad = ie.Block.RotationDeg * Math.PI / 180.0;
+                float absCos = (float)Math.Abs(Math.Cos(rad));
+                float absSin = (float)Math.Abs(Math.Sin(rad));
+                float boxW = ie.WidthPt * absCos + ie.HeightPt * absSin;
+                float boxH = ie.WidthPt * absSin + ie.HeightPt * absCos;
+                float cx = ie.XPt + ie.WidthPt / 2f;
+                float cy = ie.Ypt + ie.HeightPt / 2f;
+
+                float top = cy - boxH / 2f - WrapZoneMarginPt;
+                float bottom = cy + boxH / 2f + WrapZoneMarginPt;
+                float left = cx - boxW / 2f - WrapZoneMarginPt - textXPt;
+                float right = cx + boxW / 2f + WrapZoneMarginPt - textXPt;
+
+                // Зона целиком выше параграфа или слишком далеко ниже — не влияет.
+                if (bottom <= paraTopPt) continue;
+                if (top >= paraTopPt + 3000f) continue;
+                // Зона вне текстовой колонки по горизонтали — не влияет.
+                if (right <= 0f || left >= textWidthPt) continue;
+
+                left = Math.Max(left, 0f);
+                right = Math.Min(right, textWidthPt);
+
+                zones ??= new List<SKWrapZone>();
+                zones.Add(new SKWrapZone(top - paraTopPt, bottom - paraTopPt, left, right));
+            }
+
+            return zones;
+        }
+
+        /// <summary>
+        /// Раскладка параграфа с зонами обтекания. Кеш не используется: зоны зависят
+        /// от позиций плавающих объектов, а ключ кеша (текст, ширина) их не учитывает.
+        /// </summary>
+        private SKTextLayout BuildWrappedLayout(
+            ParagraphViewModel pvm, float widthPt, IReadOnlyList<SKWrapZone> zones)
+            => _renderer.BuildLayout(pvm.Model, widthPt, _styleResolver!, isCell: false, wrapZones: zones);
 
         // ── ICustomDrawOperation ──────────────────────────────────────────
         private sealed class CanvasSKDrawOperation : ICustomDrawOperation

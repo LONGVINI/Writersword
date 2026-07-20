@@ -56,6 +56,37 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// <summary>Блокировка пропорций при изменении размера.</summary>
         public bool LockAspectRatio { get; set; } = true;
 
+        /// <summary>Угол поворота изображения в градусах по часовой стрелке, вокруг центра.</summary>
+        public double RotationDeg { get; set; }
+
+        /// <summary>Непрозрачность изображения: 1 — полностью видимо, 0 — невидимо.</summary>
+        public double Opacity { get; set; } = 1.0;
+
+        /// <summary>Цвет рамки изображения в hex (#RRGGBB). null или прозрачный — рамки нет.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? BorderColor { get; set; }
+
+        /// <summary>Толщина рамки изображения в пунктах.</summary>
+        public double BorderThicknessPt { get; set; }
+
+        /// <summary>Зеркальное отражение по горизонтали.</summary>
+        public bool FlipHorizontal { get; set; }
+
+        /// <summary>Зеркальное отражение по вертикали.</summary>
+        public bool FlipVertical { get; set; }
+
+        /// <summary>Обрезка слева, доля исходной ширины (0..1).</summary>
+        public double CropLeftFrac { get; set; }
+
+        /// <summary>Обрезка сверху, доля исходной высоты (0..1).</summary>
+        public double CropTopFrac { get; set; }
+
+        /// <summary>Обрезка справа, доля исходной ширины (0..1).</summary>
+        public double CropRightFrac { get; set; }
+
+        /// <summary>Обрезка снизу, доля исходной высоты (0..1).</summary>
+        public double CropBottomFrac { get; set; }
+
         /// <summary>Режим обтекания текстом.</summary>
         public WrapMode WrapMode { get; set; } = WrapMode.Inline;
 

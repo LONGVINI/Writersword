@@ -163,6 +163,17 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Action<bool>? SetImageLockAspectDelegate { get; set; }
         public Action? DeleteSelectedImageDelegate { get; set; }
         public Func<(WrapMode Wrap, bool LockAspect, Writersword.Modules.TextEditor.Models.Styles.TextAlignment Align)?>? GetSelectedImageInfoDelegate { get; set; }
+        public Action<double>? SetImageRotationDelegate { get; set; }
+        public Func<double?>? GetSelectedImageRotationDelegate { get; set; }
+        public Action<double>? SetImageWidthDelegate { get; set; }
+        public Action<double>? SetImageHeightDelegate { get; set; }
+        public Action<double>? SetImageOpacityDelegate { get; set; }
+        public Action<string?, double>? SetImageBorderDelegate { get; set; }
+        public Func<(double WidthPt, double HeightPt, double Opacity, string? BorderColor, double BorderThicknessPt)?>? GetSelectedImageStyleDelegate { get; set; }
+        public Action? ToggleImageFlipHorizontalDelegate { get; set; }
+        public Action? ToggleImageFlipVerticalDelegate { get; set; }
+        public Action<bool>? SetImageCropModeDelegate { get; set; }
+        public Func<bool>? GetImageCropModeDelegate { get; set; }
         public Action<int>? TableSetCellVAlignDelegate { get; set; }
         public Action<string?>? TableSetCellBackgroundDelegate { get; set; }
         public Action<string, BorderStyle, double, string?>? TableSetCellBorderDelegate { get; set; }
@@ -192,6 +203,22 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// кэша абзацев — это быстро, в отличие от ParagraphFormatChanged.
         /// </summary>
         public event Action? StructureChanged;
+
+        /// <summary>
+        /// Документ восстановлен после Undo/Redo (снапшот заменил состояние). Владелец (риббон,
+        /// линейка) пересинхронизирует то, что не отслеживается кэшем раскладки — например поля
+        /// страницы на линейке.
+        /// </summary>
+        public event Action? DocumentRestored;
+
+        /// <summary>Вызывается канвасом после Undo/Redo снапшота — уведомляет подписчиков.</summary>
+        public void RaiseDocumentRestored() => DocumentRestored?.Invoke();
+
+        /// <summary>Начинает снапшот-правку страницы (напр. drag полей на линейке) для Undo.</summary>
+        public void BeginPageEdit(string description) => BeginEditDelegate?.Invoke(description);
+
+        /// <summary>Коммитит снапшот-правку страницы в стек отмены.</summary>
+        public void CommitPageEdit() => CommitEditDelegate?.Invoke();
 
         // Абзацы, затронутые последним char-форматированием. Канвас забирает этот список
         // в обработчике ParagraphFormatChanged, чтобы инвалидировать кэш раскладки ТОЛЬКО
@@ -393,8 +420,28 @@ namespace Writersword.Modules.TextEditor.ViewModels
             var imageAlign = GetSelectedImageAlignmentDelegate?.Invoke();
             ctx.Alignment = imageAlign ?? block.Properties.Alignment ?? TextAlignment.Left;
             ctx.StyleName = block.Properties.StyleName ?? "Normal";
-            ctx.LeftIndentPt = block.Properties.LeftIndent ?? 0;
-            ctx.FirstLineIndentPt = block.Properties.FirstLineIndent ?? 0;
+            bool isListCtx = block.ListProperties is not null
+                && block.ListProperties.MarkerType != ListMarkerType.None;
+
+            // Для элемента списка без явного левого отступа текст рисуется по отступу уровня —
+            // сообщаем именно его, иначе левый маркер линейки «врёт» (стоит у поля, а текст правее).
+            if (isListCtx && block.Properties.LeftIndent is null)
+                ctx.LeftIndentPt = block.ListProperties!.EffectiveTextIndentPt();
+            else
+                ctx.LeftIndentPt = block.Properties.LeftIndent ?? 0;
+
+            if (isListCtx)
+            {
+                // В списке «абзацная стрелка» (верхний маркер) = начало ТЕКСТА первой строки
+                // (номер + ширина + зазор). Значение считает раскладка и кладёт в
+                // ComputedFirstLineOffsetPt. Строки 2+ — левый маркер (ctx.LeftIndentPt), от них
+                // абзацная не зависит.
+                ctx.FirstLineIndentPt = block.ListProperties!.ComputedFirstLineOffsetPt;
+            }
+            else
+            {
+                ctx.FirstLineIndentPt = block.Properties.FirstLineIndent ?? 0;
+            }
             ctx.RightIndentPt = block.Properties.RightIndent ?? 0;
             ctx.HasSpaceBefore = ResolveEffectiveSpaceBefore(block) > 0;
             ctx.HasSpaceAfter = ResolveEffectiveSpaceAfter(block) > 0;
@@ -464,6 +511,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // новый разрыв. Это совпадает с поведением Word.
             newBlock.Properties.PageBreakBefore = false;
 
+            // Элемент списка: новый абзац продолжает тот же список (тот же ListId), нумерация
+            // считается движком автоматически. Перезапуск нумерации не наследуем.
+            if (after.Model.ListProperties is not null)
+            {
+                var lp = after.Model.ListProperties.Clone();
+                lp.ContinueNumbering = true;
+                newBlock.ListProperties = lp;
+            }
+
             int modelIndex = section.Blocks.IndexOf(after.Model);
             if (modelIndex < 0) section.Blocks.Add(newBlock);
             else section.Blocks.Insert(modelIndex + 1, newBlock);
@@ -493,6 +549,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void MergeParagraphWithPrevious(ParagraphViewModel target, string textToMerge)
         {
+            if (IsReadOnly) return;
             int vmIndex = Paragraphs.IndexOf(target);
             if (vmIndex <= 0) return;
 
@@ -726,6 +783,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ApplyFontToBlocks(
             IReadOnlyList<(ParagraphBlock block, int start, int end)> targets, string font)
         {
+            if (IsReadOnly) return;
             if (targets is null || targets.Count == 0) return;
 
             BeginEditDelegate?.Invoke("Format text");
@@ -801,11 +859,23 @@ namespace Writersword.Modules.TextEditor.ViewModels
         }
 
         // ── Команды выделенной картинки (контекстная вкладка «Формат») ─────
-        public void SetImageWrapMode(WrapMode mode) => SetImageWrapModeDelegate?.Invoke(mode);
-        public void SetImageLockAspect(bool locked) => SetImageLockAspectDelegate?.Invoke(locked);
-        public void DeleteSelectedImage() => DeleteSelectedImageDelegate?.Invoke();
+        public void SetImageWrapMode(WrapMode mode) { if (IsReadOnly) return; SetImageWrapModeDelegate?.Invoke(mode); }
+        public void SetImageLockAspect(bool locked) { if (IsReadOnly) return; SetImageLockAspectDelegate?.Invoke(locked); }
+        public void DeleteSelectedImage() { if (IsReadOnly) return; DeleteSelectedImageDelegate?.Invoke(); }
         public (WrapMode Wrap, bool LockAspect, Writersword.Modules.TextEditor.Models.Styles.TextAlignment Align)? GetSelectedImageInfo()
             => GetSelectedImageInfoDelegate?.Invoke();
+        public void SetImageRotation(double degrees) { if (IsReadOnly) return; SetImageRotationDelegate?.Invoke(degrees); }
+        public double? GetSelectedImageRotation() => GetSelectedImageRotationDelegate?.Invoke();
+        public void SetImageWidth(double widthPt) { if (IsReadOnly) return; SetImageWidthDelegate?.Invoke(widthPt); }
+        public void SetImageHeight(double heightPt) { if (IsReadOnly) return; SetImageHeightDelegate?.Invoke(heightPt); }
+        public void SetImageOpacity(double opacity) { if (IsReadOnly) return; SetImageOpacityDelegate?.Invoke(opacity); }
+        public void SetImageBorder(string? colorHex, double thicknessPt) { if (IsReadOnly) return; SetImageBorderDelegate?.Invoke(colorHex, thicknessPt); }
+        public (double WidthPt, double HeightPt, double Opacity, string? BorderColor, double BorderThicknessPt)? GetSelectedImageStyle()
+            => GetSelectedImageStyleDelegate?.Invoke();
+        public void ToggleImageFlipHorizontal() { if (IsReadOnly) return; ToggleImageFlipHorizontalDelegate?.Invoke(); }
+        public void ToggleImageFlipVertical() { if (IsReadOnly) return; ToggleImageFlipVerticalDelegate?.Invoke(); }
+        public void SetImageCropMode(bool on) { if (IsReadOnly) return; SetImageCropModeDelegate?.Invoke(on); }
+        public bool GetImageCropMode() => GetImageCropModeDelegate?.Invoke() ?? false;
 
         public void IncreaseIndent()
             => ApplyParaProperty(p => p.LeftIndent = (p.LeftIndent ?? 0) + 18);
@@ -858,42 +928,279 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         // ── ITextEditorCommandTarget: списки ──────────────────────────────
 
+        // Применяет мутацию свойств списка к выделенным (или активному) абзацам.
+        // Нумерация зависит от соседних абзацев, поэтому _lastFormatAffected НЕ выставляется:
+        // канвас делает полный пересбор раскладки (сброс кэша) и пересчитывает маркеры.
+        private void ApplyListMutation(Action<ParagraphBlock> mutate)
+        {
+            if (IsReadOnly) return;
+
+            if (TableActiveCellParagraph is not null)
+            {
+                if (!_suppressFormatSnapshot) BeginEditDelegate?.Invoke("Format list");
+                mutate(TableActiveCellParagraph);
+                if (!_suppressFormatSnapshot) CommitEditDelegate?.Invoke();
+                FireCursorContextChanged();
+                ParagraphFormatChanged?.Invoke();
+                return;
+            }
+
+            var targets = SelectionParagraphs.Count > 0
+                ? SelectionParagraphs.ToList()
+                : (_activeParagraph is not null
+                    ? new System.Collections.Generic.List<ParagraphViewModel> { _activeParagraph }
+                    : null);
+            if (targets is null || targets.Count == 0) return;
+
+            if (!_suppressFormatSnapshot) BeginEditDelegate?.Invoke("Format list");
+            foreach (var pvm in targets) mutate(pvm.Model);
+            if (!_suppressFormatSnapshot) CommitEditDelegate?.Invoke();
+
+            FireCursorContextChanged();
+            ParagraphFormatChanged?.Invoke();
+        }
+
+        // Отступы списка при создании. Левый отступ — база строк 2+. Позицию номера (метки)
+        // задаём АБСОЛЮТНО (от поля), чтобы номер жил независимо от левого края строк 2+:
+        // двигаешь строки 2+ — номер стоит, двигаешь номер — строки 2+ стоят.
+        private static void EnsureListLeftIndent(ParagraphBlock b, int level)
+        {
+            if (b.Properties.LeftIndent is null)
+                b.Properties.LeftIndent = (level + 1) * ListProperties.DefaultLevelStepPt;
+
+            if (b.ListProperties is not null && b.ListProperties.MarkerIndentPt is null)
+            {
+                double textLeft = b.Properties.LeftIndent ?? (level + 1) * ListProperties.DefaultLevelStepPt;
+                b.ListProperties.MarkerIndentPt = Math.Max(0.0, textLeft - ListProperties.DefaultHangingPt);
+            }
+        }
+
+        // Снимает список с абзаца. Авто-отступ уровня убираем, чтобы абзац вернулся в исходный вид.
+        private static void RemoveListFormatting(ParagraphBlock b)
+        {
+            var lp = b.ListProperties;
+            if (lp is not null && b.Properties.LeftIndent.HasValue)
+            {
+                double autoIndent = (lp.Level + 1) * ListProperties.DefaultLevelStepPt;
+                if (Math.Abs(b.Properties.LeftIndent.Value - autoIndent) < 0.5)
+                    b.Properties.LeftIndent = null;
+            }
+            b.ListProperties = null;
+        }
+
         public void ToggleBulletList()
         {
-            if (_activeParagraph is null) return;
-            var block = _activeParagraph.Model;
-            block.ListProperties = block.ListProperties?.MarkerType == ListMarkerType.Bullet
-                ? null
-                : new ListProperties { ListId = Guid.NewGuid(), Level = 0, MarkerType = ListMarkerType.Bullet };
-            FireCursorContextChanged();
+            bool on = _activeParagraph?.Model.ListProperties?.MarkerType == ListMarkerType.Bullet;
+            if (on) { ApplyListMutation(RemoveListFormatting); return; }
+            var id = Guid.NewGuid();
+            ApplyListMutation(b =>
+            {
+                int level = b.ListProperties?.Level ?? 0;
+                b.ListProperties = new ListProperties
+                { ListId = id, Level = level, MarkerType = ListMarkerType.Bullet };
+                EnsureListLeftIndent(b, level);
+            });
         }
 
         public void ToggleNumberedList()
         {
-            if (_activeParagraph is null) return;
-            var block = _activeParagraph.Model;
-            block.ListProperties = block.ListProperties?.MarkerType == ListMarkerType.Decimal
-                ? null
-                : new ListProperties { ListId = Guid.NewGuid(), Level = 0, MarkerType = ListMarkerType.Decimal };
-            FireCursorContextChanged();
+            bool on = _activeParagraph?.Model.ListProperties?.MarkerType == ListMarkerType.Decimal;
+            if (on) { ApplyListMutation(RemoveListFormatting); return; }
+            var id = Guid.NewGuid();
+            ApplyListMutation(b =>
+            {
+                int level = b.ListProperties?.Level ?? 0;
+                b.ListProperties = new ListProperties
+                { ListId = id, Level = level, MarkerType = ListMarkerType.Decimal };
+                EnsureListLeftIndent(b, level);
+            });
         }
 
         public void ToggleMultilevelList()
         {
-            if (_activeParagraph is null) return;
-            var block = _activeParagraph.Model;
-            if (block.ListProperties is null)
-                block.ListProperties = new ListProperties
-                { ListId = Guid.NewGuid(), Level = 0, MarkerType = ListMarkerType.Decimal };
-            else
-                block.ListProperties.Level = (block.ListProperties.Level + 1) % 9;
-            FireCursorContextChanged();
+            ApplyListMutation(b =>
+            {
+                if (b.ListProperties is null)
+                    b.ListProperties = new ListProperties
+                    { ListId = Guid.NewGuid(), Level = 0, MarkerType = ListMarkerType.Decimal };
+                else
+                    b.ListProperties.Level = (b.ListProperties.Level + 1) % 9;
+                EnsureListLeftIndent(b, b.ListProperties.Level);
+            });
         }
+
+        public void ApplyListType(ListMarkerType markerType)
+        {
+            if (markerType == ListMarkerType.None)
+            {
+                ApplyListMutation(RemoveListFormatting);
+                return;
+            }
+            var id = Guid.NewGuid();
+            ApplyListMutation(b =>
+            {
+                int level = b.ListProperties?.Level ?? 0;
+                b.ListProperties = new ListProperties
+                { ListId = id, Level = level, MarkerType = markerType };
+                EnsureListLeftIndent(b, level);
+            });
+        }
+
+        public void ApplyCustomBulletList(string marker)
+        {
+            var id = Guid.NewGuid();
+            ApplyListMutation(b =>
+            {
+                int level = b.ListProperties?.Level ?? 0;
+                b.ListProperties = new ListProperties
+                {
+                    ListId = id,
+                    Level = level,
+                    MarkerType = ListMarkerType.Custom,
+                    CustomMarker = string.IsNullOrEmpty(marker) ? "•" : marker
+                };
+                EnsureListLeftIndent(b, level);
+            });
+        }
+
+        public ListProperties? GetActiveListProperties()
+        {
+            var p = _activeParagraph?.Model;
+            if (p?.ListProperties is null) return null;
+            var clone = p.ListProperties.Clone();
+            // Позиция текста для диалога = фактический левый отступ абзаца.
+            clone.TextIndentPt = p.Properties.LeftIndent ?? clone.EffectiveTextIndentPt();
+            return clone;
+        }
+
+        public void ApplyListSettings(ListProperties settings)
+        {
+            if (settings is null) { ApplyListMutation(b => b.ListProperties = null); return; }
+            var id = settings.ListId != Guid.Empty ? settings.ListId : Guid.NewGuid();
+            ApplyListMutation(b =>
+            {
+                int level = b.ListProperties?.Level ?? settings.Level;
+                var lp = settings.Clone();
+                lp.ListId = id;
+                lp.Level = level;
+                b.ListProperties = lp;
+
+                // Позиция текста из диалога → левый отступ абзаца (единый источник правды).
+                if (settings.TextIndentPt.HasValue)
+                    b.Properties.LeftIndent = Math.Max(0.0, settings.TextIndentPt.Value);
+                else
+                    EnsureListLeftIndent(b, level);
+            });
+        }
+
+        // Тянем метку — двигается ТОЛЬКО метка, текст/абзац не трогаем. Метка ходит независимо:
+        // влево — до края страницы, вправо — свободно (ограничение по правому краю даёт линейка).
+        // От наезда цифры на текст удерживает зазор при отрисовке (по реальной ширине символа).
+        public void SetListMarkerIndentPt(double pt)
+            => ApplyListMutation(b =>
+            {
+                if (b.ListProperties is null) return;
+                var ps = _document.PageSettings;
+                double marginLeftPt = (ps.MarginLeftMm + ps.MarginGutterMm) * 72.0 / 25.4;
+                double textWidthPt =
+                    (ps.GetPhysicalWidthMm() - ps.MarginLeftMm - ps.MarginGutterMm - ps.MarginRightMm) * 72.0 / 25.4;
+                // Правый предел метки оставляет место под саму цифру, зазор и минимум текста —
+                // иначе у правого края номер налезал бы на текст, а строка уходила за страницу.
+                const double MinTextPt = 36.0;
+                double reserve = b.ListProperties.ComputedMarkerWidthPt + b.ListProperties.MarkerTextMinGapPt + MinTextPt;
+                double upperPt = Math.Max(-marginLeftPt, textWidthPt - reserve);
+                b.ListProperties.MarkerIndentPt = Math.Clamp(pt, -marginLeftPt, upperPt);
+            });
+
+        public void SetListTextIndentPt(double pt)
+            => ApplyListMutation(b =>
+            {
+                if (b.ListProperties is null) return;
+                b.Properties.LeftIndent = Math.Max(0.0, pt);
+            });
+
+        // Перетаскивание абзацной стрелки в списке: задаёт зазор между цифрой и текстом.
+        // gapPt — расстояние от правого края цифры до начала текста первой строки.
+        public void SetListMarkerGapPt(double gapPt)
+            => ApplyListMutation(b =>
+            {
+                if (b.ListProperties is null) return;
+                b.ListProperties.MarkerTextMinGapPt = Math.Max(0.0, gapPt);
+            });
+
+        // Схема по умолчанию для многоуровневого списка: чередование десятичной, буквенной и
+        // римской нумерации по уровням (как часто делают в структурных списках).
+        public static System.Collections.Generic.List<ListMarkerType> DefaultMultilevelScheme() => new()
+        {
+            ListMarkerType.Decimal, ListMarkerType.LowerAlpha, ListMarkerType.LowerRoman,
+            ListMarkerType.Decimal, ListMarkerType.LowerAlpha, ListMarkerType.LowerRoman,
+            ListMarkerType.Decimal, ListMarkerType.LowerAlpha, ListMarkerType.LowerRoman
+        };
+
+        public void ApplyMultilevelList()
+            => ApplyMultilevelScheme(DefaultMultilevelScheme());
+
+        public void ApplyMultilevelScheme(System.Collections.Generic.List<ListMarkerType> scheme)
+        {
+            if (scheme is null || scheme.Count == 0) return;
+            var id = Guid.NewGuid();
+            ApplyListMutation(b =>
+            {
+                int level = b.ListProperties?.Level ?? 0;
+                b.ListProperties = new ListProperties
+                {
+                    ListId = id,
+                    Level = level,
+                    MarkerType = scheme[0],
+                    LevelMarkers = new System.Collections.Generic.List<ListMarkerType>(scheme)
+                };
+                // Отступ по уровню + абсолютная позиция номера (независима от строк 2+).
+                b.Properties.LeftIndent = (level + 1) * ListProperties.DefaultLevelStepPt;
+                b.ListProperties.MarkerIndentPt = Math.Max(0.0,
+                    (level + 1) * ListProperties.DefaultLevelStepPt - ListProperties.DefaultHangingPt);
+            });
+        }
+
+        /// <summary>Снимок схемы уровней активного многоуровневого списка (null — нет).</summary>
+        public System.Collections.Generic.List<ListMarkerType>? GetActiveListLevelMarkers()
+        {
+            var lm = _activeParagraph?.Model.ListProperties?.LevelMarkers;
+            return lm is null ? null : new System.Collections.Generic.List<ListMarkerType>(lm);
+        }
+
+        /// <summary>Понизить уровень элемента списка (глубже). Отступ и маркер следуют за уровнем.</summary>
+        public void DemoteListItem()
+            => ApplyListMutation(b =>
+            {
+                if (b.ListProperties is null) return;
+                int level = Math.Min(8, b.ListProperties.Level + 1);
+                b.ListProperties.Level = level;
+                b.Properties.LeftIndent = (level + 1) * ListProperties.DefaultLevelStepPt;
+                b.ListProperties.MarkerIndentPt = Math.Max(0.0,
+                    (level + 1) * ListProperties.DefaultLevelStepPt - ListProperties.DefaultHangingPt);
+            });
+
+        /// <summary>Повысить уровень элемента списка (выше). Отступ и маркер следуют за уровнем.</summary>
+        public void PromoteListItem()
+            => ApplyListMutation(b =>
+            {
+                if (b.ListProperties is null) return;
+                int level = Math.Max(0, b.ListProperties.Level - 1);
+                b.ListProperties.Level = level;
+                b.Properties.LeftIndent = (level + 1) * ListProperties.DefaultLevelStepPt;
+                b.ListProperties.MarkerIndentPt = Math.Max(0.0,
+                    (level + 1) * ListProperties.DefaultLevelStepPt - ListProperties.DefaultHangingPt);
+            });
+
+        /// <summary>true — активный абзац является элементом списка (для обработки Tab).</summary>
+        public bool IsActiveParagraphList()
+            => _activeParagraph?.Model.ListProperties is not null;
 
         // ── ITextEditorCommandTarget: буфер обмена ────────────────────────
 
         public void Cut()
         {
+            if (IsReadOnly) return;
             if (CutDelegate != null) CutDelegate.Invoke();
             else _activeParagraph?.RequestFocus();
         }
@@ -908,6 +1215,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void Paste()
         {
+            if (IsReadOnly) return;
             if (PasteDelegate != null) PasteDelegate.Invoke();
             else _activeParagraph?.RequestFocus();
         }
@@ -966,6 +1274,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// </summary>
         public void InsertImageBytes(byte[] data, string ext)
         {
+            if (IsReadOnly) return;
             if (data is null || data.Length == 0) return;
 
             // Файлы картинок хранятся внутри проекта (ZIP), доступ — через контекст активной вкладки.
@@ -1019,6 +1328,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         }
         public void RemoveImage(ImageBlock image)
         {
+            if (IsReadOnly) return;
             if (image is null) return;
             foreach (var section in _document.Sections)
             {
@@ -1039,6 +1349,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertFloatingTextBox() { }
         public void InsertPageBreak()
         {
+            if (IsReadOnly) return;
             InsertBlock(new BreakBlock { BreakType = BreakType.Page });
             NormalizeBreakAnchors();
 
@@ -1066,29 +1377,32 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void InsertComment(string text) => AddAnnotation(InlineAnnotationType.Comment, content: text);
 
         // ── Таблица ───────────────────────────────────────────────────────
-        public void TableAddRow(bool above) => TableAddRowDelegate?.Invoke(above);
-        public void TableAddColumn(bool left) => TableAddColDelegate?.Invoke(left);
-        public void TableDeleteRow() => TableDeleteRowDelegate?.Invoke();
-        public void TableDeleteColumn() => TableDeleteColDelegate?.Invoke();
-        public void TableDelete() => TableDeleteDelegate?.Invoke();
+        // Все структурные операции игнорируются в режиме сравнения (read-only):
+        // кнопки риббона остаются кликабельными, но данные документа не меняются.
+        public void TableAddRow(bool above) { if (IsReadOnly) return; TableAddRowDelegate?.Invoke(above); }
+        public void TableAddColumn(bool left) { if (IsReadOnly) return; TableAddColDelegate?.Invoke(left); }
+        public void TableDeleteRow() { if (IsReadOnly) return; TableDeleteRowDelegate?.Invoke(); }
+        public void TableDeleteColumn() { if (IsReadOnly) return; TableDeleteColDelegate?.Invoke(); }
+        public void TableDelete() { if (IsReadOnly) return; TableDeleteDelegate?.Invoke(); }
 
-        public void TableMergeCells() => TableMergeCellsDelegate?.Invoke();
-        public void TableSplitCell() => TableSplitCellDelegate?.Invoke();
+        public void TableMergeCells() { if (IsReadOnly) return; TableMergeCellsDelegate?.Invoke(); }
+        public void TableSplitCell() { if (IsReadOnly) return; TableSplitCellDelegate?.Invoke(); }
         public void TableSetCellHAlign(Writersword.Modules.TextEditor.Models.Styles.TextAlignment align)
-            => TableSetCellHAlignDelegate?.Invoke(align);
-        public void TableSetCellVAlign(int vAlign) => TableSetCellVAlignDelegate?.Invoke(vAlign);
-        public void TableSetCellBackground(string? color) => TableSetCellBackgroundDelegate?.Invoke(color);
+        { if (IsReadOnly) return; TableSetCellHAlignDelegate?.Invoke(align); }
+        public void TableSetCellVAlign(int vAlign) { if (IsReadOnly) return; TableSetCellVAlignDelegate?.Invoke(vAlign); }
+        public void TableSetCellBackground(string? color) { if (IsReadOnly) return; TableSetCellBackgroundDelegate?.Invoke(color); }
         public void TableSetCellBorder(string side, BorderStyle style, double thicknessPt, string? color)
-            => TableSetCellBorderDelegate?.Invoke(side, style, thicknessPt, color);
-        public void TableSetColumnWidth(double widthMm) => TableSetColumnWidthDelegate?.Invoke(widthMm);
-        public void TableSetRowHeight(double heightPt) => TableSetRowHeightDelegate?.Invoke(heightPt);
-        public void TableAutoFit() => TableAutoFitDelegate?.Invoke();
-        public void TableDistributeColumns() => TableDistributeColsDelegate?.Invoke();
-        public void TableDistributeRows() => TableDistributeRowsDelegate?.Invoke();
-        public void TableSort(int columnIndex, bool ascending) => TableSortDelegate?.Invoke(columnIndex, ascending);
+        { if (IsReadOnly) return; TableSetCellBorderDelegate?.Invoke(side, style, thicknessPt, color); }
+        public void TableSetColumnWidth(double widthMm) { if (IsReadOnly) return; TableSetColumnWidthDelegate?.Invoke(widthMm); }
+        public void TableSetRowHeight(double heightPt) { if (IsReadOnly) return; TableSetRowHeightDelegate?.Invoke(heightPt); }
+        public void TableAutoFit() { if (IsReadOnly) return; TableAutoFitDelegate?.Invoke(); }
+        public void TableDistributeColumns() { if (IsReadOnly) return; TableDistributeColsDelegate?.Invoke(); }
+        public void TableDistributeRows() { if (IsReadOnly) return; TableDistributeRowsDelegate?.Invoke(); }
+        public void TableSort(int columnIndex, bool ascending) { if (IsReadOnly) return; TableSortDelegate?.Invoke(columnIndex, ascending); }
 
         public void TableToggleRepeatHeader()
         {
+            if (IsReadOnly) return;
             var table = ActiveTable;
             if (table is null) return;
             table.RepeatHeader = !table.RepeatHeader;
@@ -1099,6 +1413,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableToggleSplitMode()
         {
+            if (IsReadOnly) return;
             var table = ActiveTable;
             if (table is null) return;
             table.SplitMode = table.SplitMode == Models.Document.TableSplitMode.ByRow
@@ -1111,12 +1426,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableSetBreakLabel(string? text)
         {
+            if (IsReadOnly) return;
             var table = ActiveTable; if (table is null) return;
             table.BreakLabel = string.IsNullOrWhiteSpace(text) ? null : text;
             FireParagraphFormatChanged();
         }
         public void TableSetContinuationLabel(string? text)
         {
+            if (IsReadOnly) return;
             var table = ActiveTable; if (table is null) return;
             table.ContinuationLabel = string.IsNullOrWhiteSpace(text) ? null : text;
             FireParagraphFormatChanged();
@@ -1131,6 +1448,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableAddRowBelow(TableBlock table, int afterRow)
         {
+            if (IsReadOnly) return;
             int insertRow = afterRow + 1;
             foreach (var cell in table.Cells)
                 if (cell.Row >= insertRow) cell.Row++;
@@ -1141,6 +1459,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableAddRowAbove(TableBlock table, int beforeRow)
         {
+            if (IsReadOnly) return;
             foreach (var cell in table.Cells)
                 if (cell.Row >= beforeRow) cell.Row++;
             for (int c = 0; c < table.ColumnCount; c++)
@@ -1150,6 +1469,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableDeleteRow(TableBlock table, int row)
         {
+            if (IsReadOnly) return;
             if (table.RowCount <= 1)
             {
                 _document.Sections[0].Blocks.Remove(table);
@@ -1164,6 +1484,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableAddColumnRight(TableBlock table, int afterCol)
         {
+            if (IsReadOnly) return;
             int insertCol = afterCol + 1;
             foreach (var cell in table.Cells)
                 if (cell.Column >= insertCol) cell.Column++;
@@ -1176,6 +1497,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableAddColumnLeft(TableBlock table, int beforeCol)
         {
+            if (IsReadOnly) return;
             foreach (var cell in table.Cells)
                 if (cell.Column >= beforeCol) cell.Column++;
             for (int r = 0; r < table.RowCount; r++)
@@ -1187,6 +1509,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableDeleteColumn(TableBlock table, int col)
         {
+            if (IsReadOnly) return;
             if (table.ColumnCount <= 1)
             {
                 _document.Sections[0].Blocks.Remove(table);
@@ -1204,6 +1527,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void TableMergeCells(TableBlock table,
             int startRow, int startCol, int endRow, int endCol)
         {
+            if (IsReadOnly) return;
             var mainCell = table.GetCell(startRow, startCol);
             if (mainCell is null) return;
 
@@ -1228,6 +1552,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableSplitCell(TableBlock table, int row, int col)
         {
+            if (IsReadOnly) return;
             var mainCell = table.GetCell(row, col);
             if (mainCell is null || (mainCell.RowSpan == 1 && mainCell.ColSpan == 1)) return;
 
@@ -1246,6 +1571,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableSetColumnWidth(TableBlock table, int colIndex, double widthMm)
         {
+            if (IsReadOnly) return;
             if (colIndex < 0 || colIndex >= table.Columns.Count) return;
             table.Columns[colIndex].WidthType = TableColumnWidthType.Fixed;
             table.Columns[colIndex].WidthValue = Math.Max(5.0, widthMm);
@@ -1264,18 +1590,21 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void SetPageSize(PaperSize size)
         {
+            if (IsReadOnly) return;
             _document.PageSettings.ApplyPaperSize(size);
             this.RaisePropertyChanged(nameof(PageSettings));
         }
 
         public void SetPageOrientation(PageOrientation o)
         {
+            if (IsReadOnly) return;
             _document.PageSettings.Orientation = o;
             this.RaisePropertyChanged(nameof(PageSettings));
         }
 
         public void SetPageMargins(double top, double bottom, double left, double right)
         {
+            if (IsReadOnly) return;
             _document.PageSettings.MarginTopMm = top;
             _document.PageSettings.MarginBottomMm = bottom;
             _document.PageSettings.MarginLeftMm = left;
@@ -1283,7 +1612,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
             this.RaisePropertyChanged(nameof(PageSettings));
         }
 
-        public void SetColumns(int count) => _document.ColumnSettings.ColumnCount = count;
+        public void SetColumns(int count)
+        {
+            if (IsReadOnly) return;
+            _document.ColumnSettings.ColumnCount = count;
+        }
 
         // ── ITextEditorCommandTarget: вид ─────────────────────────────────
 
@@ -1729,6 +2062,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// </summary>
         public void DeleteBreakWithAnchor(ParagraphViewModel anchor)
         {
+            if (IsReadOnly) return;
             var blocks = _document.Sections[0].Blocks;
             int anchorIdx = blocks.IndexOf(anchor.Model);
             if (anchorIdx <= 0 || blocks[anchorIdx - 1] is not BreakBlock) return;
@@ -1753,6 +2087,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             string? content = null,
             string? url = null)
         {
+            if (IsReadOnly) return;
             _document.Annotations.Add(new InlineAnnotation
             {
                 Type = type,
@@ -1812,6 +2147,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void DeleteSelectedParagraphs()
         {
+            if (IsReadOnly) return;
             var toDelete = Paragraphs.Where(p => p.IsSelected).ToList();
             if (toDelete.Count == 0) return;
 
@@ -1872,6 +2208,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableCellSetBackground(TableCell cell, string? color)
         {
+            if (IsReadOnly) return;
             cell.BackgroundColor = color;
             ParagraphFormatChanged?.Invoke();
         }
@@ -1897,6 +2234,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void TableCellSetHAlign(TableCell cell,
             Writersword.Modules.TextEditor.Models.Styles.TextAlignment align)
         {
+            if (IsReadOnly) return;
             foreach (var para in cell.Paragraphs)
                 para.Properties.Alignment = align;
             ParagraphFormatChanged?.Invoke();
@@ -1904,12 +2242,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableCellSetVAlign(TableCell cell, int vAlign)
         {
+            if (IsReadOnly) return;
             cell.VerticalAlignment = (VerticalAlignment)vAlign;
             ParagraphFormatChanged?.Invoke();
         }
 
         public void TableAutoFitColumns(TableBlock table)
         {
+            if (IsReadOnly) return;
             for (int i = 0; i < table.Columns.Count; i++)
             {
                 table.Columns[i].WidthType = TableColumnWidthType.Auto;
@@ -1920,6 +2260,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableDistributeColumnsEvenly(TableBlock table)
         {
+            if (IsReadOnly) return;
             int cols = table.ColumnCount;
             if (cols == 0) return;
             double each = 100.0 / cols;
@@ -1933,6 +2274,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableSortByColumn(TableBlock table, int col, bool ascending)
         {
+            if (IsReadOnly) return;
             if (col < 0 || col >= table.ColumnCount) return;
 
             var rows = new List<(int RowIdx, string SortKey, List<TableCell> Cells)>();
@@ -1959,6 +2301,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void PasteTextAtCursor(string text)
         {
+            if (IsReadOnly) return;
             if (_activeParagraph is null) return;
 
             string[] lines = text.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');

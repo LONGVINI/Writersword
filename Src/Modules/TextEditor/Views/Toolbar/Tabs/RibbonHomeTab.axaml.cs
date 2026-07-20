@@ -450,5 +450,45 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             if (result is not null)
                 doc.ApplyParagraphSettings(result);
         }
+
+        // Открывает оверлей «Определить новый список» и применяет результат к выделению.
+        private async void OnDefineListClick(object? sender, RoutedEventArgs e)
+        {
+            var host = this.FindAncestorOfType<TextEditorView>();
+            if (host is null) return;
+
+            var canvas = host.FindControl<DocumentCanvas>("PageCanvas")
+                         ?? host.GetVisualDescendants().OfType<DocumentCanvas>().FirstOrDefault();
+            if (canvas?.DataContext is not DocumentViewModel doc) return;
+
+            var overlay = host.FindControl<ListSettingsOverlay>("ListOverlay")
+                          ?? host.GetVisualDescendants().OfType<ListSettingsOverlay>().FirstOrDefault();
+            if (overlay is null) return;
+
+            var current = doc.GetActiveListProperties();
+            var result = await overlay.ShowAsync(current);
+            if (result is not null)
+                doc.ApplyListSettings(result);
+        }
+
+        // Открывает оверлей «Уровни списка» и применяет выбранную схему многоуровневого списка.
+        private async void OnMultilevelSettingsClick(object? sender, RoutedEventArgs e)
+        {
+            var host = this.FindAncestorOfType<TextEditorView>();
+            if (host is null) return;
+
+            var canvas = host.FindControl<DocumentCanvas>("PageCanvas")
+                         ?? host.GetVisualDescendants().OfType<DocumentCanvas>().FirstOrDefault();
+            if (canvas?.DataContext is not DocumentViewModel doc) return;
+
+            var overlay = host.FindControl<ListLevelsOverlay>("ListLevelsOverlay")
+                          ?? host.GetVisualDescendants().OfType<ListLevelsOverlay>().FirstOrDefault();
+            if (overlay is null) return;
+
+            var current = doc.GetActiveListLevelMarkers();
+            var scheme = await overlay.ShowAsync(current);
+            if (scheme is not null)
+                doc.ApplyMultilevelScheme(scheme);
+        }
     }
 }

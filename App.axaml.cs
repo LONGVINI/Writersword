@@ -62,6 +62,8 @@ namespace Writersword
         /// </summary>
         public override void Initialize()
         {
+            // Горячая перезагрузка XAML (HotAvalonia) в Debug-сборках включается
+            // автоматически для стартового проекта — ручной вызов не нужен.
             AvaloniaXamlLoader.Load(this);
         }
 

@@ -484,7 +484,51 @@ namespace Writersword.Modules.TextEditor.Document
                 if (wm == WrapMode.InFront || wm == WrapMode.Square || wm == WrapMode.Tight) continue;
                 var skImg = GetImageBitmap(ie.Block.ImageFileName);
                 if (skImg is null) continue;
-                canvas.DrawImage(skImg, new SKRect(ie.XPt, ie.Ypt, ie.XPt + ie.WidthPt, ie.Ypt + ie.HeightPt));
+                float rotDeg = (float)ie.Block.RotationDeg;
+                float imgCx = ie.XPt + ie.WidthPt / 2f;
+                float imgCy = ie.Ypt + ie.HeightPt / 2f;
+                bool hasXform = rotDeg != 0f || ie.Block.FlipHorizontal || ie.Block.FlipVertical;
+                if (hasXform)
+                {
+                    canvas.Save();
+                    if (rotDeg != 0f) canvas.RotateDegrees(rotDeg, imgCx, imgCy);
+                    if (ie.Block.FlipHorizontal || ie.Block.FlipVertical)
+                        canvas.Scale(
+                            ie.Block.FlipHorizontal ? -1f : 1f,
+                            ie.Block.FlipVertical ? -1f : 1f,
+                            imgCx, imgCy);
+                }
+                var imgPaint = _imageOverflowPreviewMode
+                    && ReferenceEquals(ie.Block, _imageOverflowPreviewBlock)
+                    ? _paintImageDrawOverflow
+                    : _paintImageDraw;
+                // Непрозрачность картинки: альфа paint-а модулирует пиксели при отрисовке.
+                byte imgAlpha = (byte)Math.Clamp(ie.Block.Opacity * 255.0, 0.0, 255.0);
+                _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, imgAlpha);
+                var imgRect = new SKRect(ie.XPt, ie.Ypt, ie.XPt + ie.WidthPt, ie.Ypt + ie.HeightPt);
+                // Кадрирование: рисуется только видимая часть исходного изображения.
+                float srcW = skImg.Width;
+                float srcH = skImg.Height;
+                var srcRect = new SKRect(
+                    srcW * (float)Math.Clamp(ie.Block.CropLeftFrac, 0.0, 0.95),
+                    srcH * (float)Math.Clamp(ie.Block.CropTopFrac, 0.0, 0.95),
+                    srcW * (float)(1.0 - Math.Clamp(ie.Block.CropRightFrac, 0.0, 0.95)),
+                    srcH * (float)(1.0 - Math.Clamp(ie.Block.CropBottomFrac, 0.0, 0.95)));
+                if (srcRect.Right <= srcRect.Left + 1f) srcRect.Right = srcRect.Left + 1f;
+                if (srcRect.Bottom <= srcRect.Top + 1f) srcRect.Bottom = srcRect.Top + 1f;
+                canvas.DrawImage(skImg, srcRect, imgRect, imgPaint);
+                _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
+                // Рамка картинки — в той же системе координат (поворот + отражение).
+                if (ie.Block.BorderThicknessPt > 0.0
+                    && !string.IsNullOrEmpty(ie.Block.BorderColor)
+                    && SKColor.TryParse(ie.Block.BorderColor, out var borderColor)
+                    && borderColor.Alpha > 0)
+                {
+                    _paintImageBorderDraw.Color = borderColor.WithAlpha((byte)(borderColor.Alpha * imgAlpha / 255));
+                    _paintImageBorderDraw.StrokeWidth = (float)ie.Block.BorderThicknessPt;
+                    canvas.DrawRect(imgRect, _paintImageBorderDraw);
+                }
+                if (hasXform) canvas.Restore();
             }
 
             // Рисуем рамки таблиц (без содержимого) — клипуем по правому краю страницы
@@ -552,7 +596,51 @@ namespace Writersword.Modules.TextEditor.Document
                 if (wm != WrapMode.InFront && wm != WrapMode.Square && wm != WrapMode.Tight) continue;
                 var skImg = GetImageBitmap(ie.Block.ImageFileName);
                 if (skImg is null) continue;
-                canvas.DrawImage(skImg, new SKRect(ie.XPt, ie.Ypt, ie.XPt + ie.WidthPt, ie.Ypt + ie.HeightPt));
+                float rotDeg = (float)ie.Block.RotationDeg;
+                float imgCx = ie.XPt + ie.WidthPt / 2f;
+                float imgCy = ie.Ypt + ie.HeightPt / 2f;
+                bool hasXform = rotDeg != 0f || ie.Block.FlipHorizontal || ie.Block.FlipVertical;
+                if (hasXform)
+                {
+                    canvas.Save();
+                    if (rotDeg != 0f) canvas.RotateDegrees(rotDeg, imgCx, imgCy);
+                    if (ie.Block.FlipHorizontal || ie.Block.FlipVertical)
+                        canvas.Scale(
+                            ie.Block.FlipHorizontal ? -1f : 1f,
+                            ie.Block.FlipVertical ? -1f : 1f,
+                            imgCx, imgCy);
+                }
+                var imgPaint = _imageOverflowPreviewMode
+                    && ReferenceEquals(ie.Block, _imageOverflowPreviewBlock)
+                    ? _paintImageDrawOverflow
+                    : _paintImageDraw;
+                // Непрозрачность картинки: альфа paint-а модулирует пиксели при отрисовке.
+                byte imgAlpha = (byte)Math.Clamp(ie.Block.Opacity * 255.0, 0.0, 255.0);
+                _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, imgAlpha);
+                var imgRect = new SKRect(ie.XPt, ie.Ypt, ie.XPt + ie.WidthPt, ie.Ypt + ie.HeightPt);
+                // Кадрирование: рисуется только видимая часть исходного изображения.
+                float srcW = skImg.Width;
+                float srcH = skImg.Height;
+                var srcRect = new SKRect(
+                    srcW * (float)Math.Clamp(ie.Block.CropLeftFrac, 0.0, 0.95),
+                    srcH * (float)Math.Clamp(ie.Block.CropTopFrac, 0.0, 0.95),
+                    srcW * (float)(1.0 - Math.Clamp(ie.Block.CropRightFrac, 0.0, 0.95)),
+                    srcH * (float)(1.0 - Math.Clamp(ie.Block.CropBottomFrac, 0.0, 0.95)));
+                if (srcRect.Right <= srcRect.Left + 1f) srcRect.Right = srcRect.Left + 1f;
+                if (srcRect.Bottom <= srcRect.Top + 1f) srcRect.Bottom = srcRect.Top + 1f;
+                canvas.DrawImage(skImg, srcRect, imgRect, imgPaint);
+                _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
+                // Рамка картинки — в той же системе координат (поворот + отражение).
+                if (ie.Block.BorderThicknessPt > 0.0
+                    && !string.IsNullOrEmpty(ie.Block.BorderColor)
+                    && SKColor.TryParse(ie.Block.BorderColor, out var borderColor)
+                    && borderColor.Alpha > 0)
+                {
+                    _paintImageBorderDraw.Color = borderColor.WithAlpha((byte)(borderColor.Alpha * imgAlpha / 255));
+                    _paintImageBorderDraw.StrokeWidth = (float)ie.Block.BorderThicknessPt;
+                    canvas.DrawRect(imgRect, _paintImageBorderDraw);
+                }
+                if (hasXform) canvas.Restore();
             }
 
             // Рамка выделенной картинки — поверх всего.
@@ -562,17 +650,35 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     if (!ReferenceEquals(ie.Block, _selectedImage)) continue;
                     if (ie.PageIndex < firstPage || ie.PageIndex > lastPage) continue;
-                    canvas.DrawRect(
-                        new SKRect(ie.XPt, ie.Ypt, ie.XPt + ie.WidthPt, ie.Ypt + ie.HeightPt),
-                        _paintImageSelection);
 
-                    // Угловые маркеры изменения размера.
                     float l = ie.XPt, t = ie.Ypt;
                     float r = ie.XPt + ie.WidthPt, b = ie.Ypt + ie.HeightPt;
+                    float cx = (l + r) / 2f, cy = (t + b) / 2f;
+                    float rotDeg = (float)ie.Block.RotationDeg;
+
+                    canvas.Save();
+                    if (rotDeg != 0f) canvas.RotateDegrees(rotDeg, cx, cy);
+
+                    canvas.DrawRect(new SKRect(l, t, r, b), _paintImageSelection);
+
+                    // Угловые маркеры изменения размера.
                     DrawImageHandle(canvas, l, t);
                     DrawImageHandle(canvas, r, t);
                     DrawImageHandle(canvas, r, b);
                     DrawImageHandle(canvas, l, b);
+
+                    // Боковые маркеры изменения размера.
+                    DrawImageHandle(canvas, cx, t);
+                    DrawImageHandle(canvas, r, cy);
+                    DrawImageHandle(canvas, cx, b);
+                    DrawImageHandle(canvas, l, cy);
+
+                    // Маркер поворота: значок круговой стрелки над верхней гранью,
+                    // соединённый линией с рамкой.
+                    canvas.DrawLine(cx, t, cx, t - ImageRotateHandleOffsetPt + ImageRotateHandleRadiusPt, _paintImageSelection);
+                    DrawRotateHandle(canvas, cx, t - ImageRotateHandleOffsetPt);
+
+                    canvas.Restore();
                 }
             }
 
@@ -584,14 +690,45 @@ namespace Writersword.Modules.TextEditor.Document
             RenderCellFlowFull(canvas, tables);
         }
 
-        // Рисует один квадратный угловой маркер изменения размера (белая заливка, оранжевая рамка).
+        // Рисует один квадратный маркер изменения размера (белая заливка, оранжевая рамка).
+        // В режиме обрезки маркеры заливаются акцентным цветом — видно смену режима.
         private void DrawImageHandle(SKCanvas canvas, float cxPt, float cyPt)
         {
             var rect = new SKRect(
                 cxPt - ImageHandleHalfPt, cyPt - ImageHandleHalfPt,
                 cxPt + ImageHandleHalfPt, cyPt + ImageHandleHalfPt);
-            canvas.DrawRect(rect, _paintImageHandleFill);
+            canvas.DrawRect(rect, _imageCropMode ? _paintImageHandleCropFill : _paintImageHandleFill);
             canvas.DrawRect(rect, _paintImageSelection);
+        }
+
+        // Рисует маркер поворота: белый круг с оранжевой рамкой и значком
+        // круговой стрелки внутри (дуга 270 градусов с наконечником).
+        private void DrawRotateHandle(SKCanvas canvas, float cxPt, float cyPt)
+        {
+            canvas.DrawCircle(cxPt, cyPt, ImageRotateHandleRadiusPt, _paintImageHandleFill);
+            canvas.DrawCircle(cxPt, cyPt, ImageRotateHandleRadiusPt, _paintImageSelection);
+
+            // Дуга: старт сверху (-90), по часовой на 270 градусов, конец слева.
+            float r = ImageRotateHandleRadiusPt * 0.55f;
+            var arcRect = new SKRect(cxPt - r, cyPt - r, cxPt + r, cyPt + r);
+            using (var arc = new SKPath())
+            {
+                arc.AddArc(arcRect, -90f, 270f);
+                canvas.DrawPath(arc, _paintRotateArrowStroke);
+            }
+
+            // Наконечник на конце дуги (точка слева от центра, движение вверх).
+            float ax = cxPt - r;
+            float ay = cyPt;
+            float ah = ImageRotateHandleRadiusPt * 0.45f;
+            using (var head = new SKPath())
+            {
+                head.MoveTo(ax, ay - ah);
+                head.LineTo(ax - ah * 0.75f, ay + ah * 0.35f);
+                head.LineTo(ax + ah * 0.75f, ay + ah * 0.35f);
+                head.Close();
+                canvas.DrawPath(head, _paintRotateArrowFill);
+            }
         }
 
         // Загружает и кеширует декодированное изображение по имени файла внутри проекта.
@@ -721,11 +858,33 @@ namespace Writersword.Modules.TextEditor.Document
 
             var renderLayout = GetRenderLayout(pl, (float)(_canvasWidth * PxToPt));
 
+            // Маркер списка: выступ = фактический левый край текста − позиция маркера (в pt).
+            // Левый край берём из раскладки (renderLayout.LeftIndentPt), т.е. с учётом отступа,
+            // выставленного линейкой/диалогом — тогда маркер держит выступ при любом отступе текста.
+            string? markerText = null;
+            float markerHanging = 0f;
+            float markerMinGap = 0f;
+            if (pl.Marker is Rendering.ListMarkerInfo mi
+                && pl.Vm.Model?.ListProperties is { } lp
+                && lp.MarkerType != ListMarkerType.None)
+            {
+                markerText = mi.Text;
+                float textLeftPt = renderLayout.LeftIndentPt;
+                float markerAbsPt = lp.MarkerIndentPt.HasValue
+                    ? (float)lp.MarkerIndentPt.Value
+                    : Math.Max(0f, textLeftPt - (float)ListProperties.DefaultHangingPt);
+                markerHanging = textLeftPt - markerAbsPt;
+                markerMinGap = (float)lp.MarkerTextMinGapPt;
+            }
+
             SKTextRenderer.RenderParagraphLines(
                 canvas, renderLayout,
                 absX + renderLayout.LeftIndentPt,
                 absY,
-                pl.LineFrom, pl.LineTo);
+                pl.LineFrom, pl.LineTo,
+                markerText: markerText,
+                markerHangingPt: markerHanging,
+                markerMinGapPt: markerMinGap);
 
             // Выделение рисуем ПОВЕРХ содержимого (после заливки текста и глифов), иначе
             // непрозрачная заливка HighlightColor перекрывает полупрозрачную подсветку

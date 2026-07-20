@@ -456,6 +456,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         public ICommand BulletListCommand { get; }
         public ICommand NumberedListCommand { get; }
+        public ICommand MultilevelListCommand { get; }
+        public ICommand SelectMultilevelSchemeCommand { get; }
+        public ICommand SelectListTypeCommand { get; }
+        public ICommand SelectCustomBulletCommand { get; }
         public ICommand IncreaseIndentCommand { get; }
         public ICommand DecreaseIndentCommand { get; }
         public ICommand AlignLeftCommand { get; }
@@ -605,6 +609,54 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             BulletListCommand = ReactiveCommand.Create(() => _target.ToggleBulletList());
             NumberedListCommand = ReactiveCommand.Create(() => _target.ToggleNumberedList());
+            MultilevelListCommand = ReactiveCommand.Create(() => _target.ApplyMultilevelList());
+
+            // Пресеты многоуровневого списка: параметр — ключ схемы.
+            SelectMultilevelSchemeCommand = ReactiveCommand.Create<string>(key =>
+            {
+                System.Collections.Generic.List<Models.Document.ListMarkerType> scheme = key switch
+                {
+                    "numeric" => new()
+                    {
+                        Models.Document.ListMarkerType.Decimal, Models.Document.ListMarkerType.Decimal,
+                        Models.Document.ListMarkerType.Decimal, Models.Document.ListMarkerType.Decimal,
+                        Models.Document.ListMarkerType.Decimal, Models.Document.ListMarkerType.Decimal,
+                        Models.Document.ListMarkerType.Decimal, Models.Document.ListMarkerType.Decimal,
+                        Models.Document.ListMarkerType.Decimal
+                    },
+                    "bullets" => new()
+                    {
+                        Models.Document.ListMarkerType.Bullet, Models.Document.ListMarkerType.Circle,
+                        Models.Document.ListMarkerType.Square, Models.Document.ListMarkerType.Bullet,
+                        Models.Document.ListMarkerType.Circle, Models.Document.ListMarkerType.Square,
+                        Models.Document.ListMarkerType.Bullet, Models.Document.ListMarkerType.Circle,
+                        Models.Document.ListMarkerType.Square
+                    },
+                    _ => new()
+                    {
+                        Models.Document.ListMarkerType.Decimal, Models.Document.ListMarkerType.LowerAlpha,
+                        Models.Document.ListMarkerType.LowerRoman, Models.Document.ListMarkerType.Decimal,
+                        Models.Document.ListMarkerType.LowerAlpha, Models.Document.ListMarkerType.LowerRoman,
+                        Models.Document.ListMarkerType.Decimal, Models.Document.ListMarkerType.LowerAlpha,
+                        Models.Document.ListMarkerType.LowerRoman
+                    }
+                };
+                _target.ApplyMultilevelScheme(scheme);
+            });
+
+            // Галерея типов списка: параметр — имя значения ListMarkerType (Bullet, Decimal, LowerAlpha…).
+            SelectListTypeCommand = ReactiveCommand.Create<string>(param =>
+            {
+                if (Enum.TryParse<Models.Document.ListMarkerType>(param, out var type))
+                    _target.ApplyListType(type);
+            });
+
+            // Быстрый выбор пользовательского символа маркера из галереи.
+            SelectCustomBulletCommand = ReactiveCommand.Create<string>(marker =>
+            {
+                if (!string.IsNullOrEmpty(marker))
+                    _target.ApplyCustomBulletList(marker);
+            });
             IncreaseIndentCommand = ReactiveCommand.Create(() => _target.IncreaseIndent());
             DecreaseIndentCommand = ReactiveCommand.Create(() => _target.DecreaseIndent());
 

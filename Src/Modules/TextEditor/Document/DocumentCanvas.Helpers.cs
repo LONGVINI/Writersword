@@ -190,6 +190,8 @@ namespace Writersword.Modules.TextEditor.Document
         // ── Clipboard ────────────────────────────────────────────────────
         private async Task CopyAsync()
         {
+            // Копирование разрешено и в режиме сравнения (read-only) —
+            // оно не меняет данные документа.
             _internalClipboardJson = null;
             _clipboardCache = null;
 

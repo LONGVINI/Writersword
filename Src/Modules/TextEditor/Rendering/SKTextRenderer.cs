@@ -71,11 +71,14 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// <param name="availableWidthPt">Ширина текстовой области в pt.</param>
         /// <param name="styles">Резолвер стилей документа.</param>
         /// <param name="isCell">true — параграф внутри ячейки таблицы.</param>
+        /// <param name="wrapZones">Зоны исключения обтекания текстом (координаты
+        /// относительно верха первой строки и левого края текстовой области).</param>
         public SKTextLayout BuildLayout(
             ParagraphBlock para,
             float availableWidthPt,
             StyleResolver styles,
-            bool isCell = false)
+            bool isCell = false,
+            IReadOnlyList<SKWrapZone>? wrapZones = null)
         {
             string? styleName = para.Properties.StyleName;
 
@@ -84,6 +87,49 @@ namespace Writersword.Modules.TextEditor.Rendering
             float rightIndentPt = (float)(para.Properties.RightIndent
                                         ?? styles.ResolveRightIndent(styleName));
             float firstLineIndentPt = (float)(para.Properties.FirstLineIndent ?? 0.0);
+
+            // Элемент списка. Без собственного левого отступа берём отступ по уровню.
+            // Затем меряем ширину цифры/символа маркера и отодвигаем текст ПЕРВОЙ строки так,
+            // чтобы между правым краем цифры и текстом всегда был зазор (MarkerTextMinGapPt).
+            // Стрелка метки стоит по левому краю цифры (позиция markerAbs); двигая её вправо,
+            // пользователь сдвигает и текст первой строки. Строки 2+ идут по левому отступу.
+            var listProps = para.ListProperties;
+            if (listProps is not null && listProps.MarkerType != ListMarkerType.None)
+            {
+                if (para.Properties.LeftIndent is null)
+                    leftIndentPt = (float)listProps.EffectiveTextIndentPt();
+
+                double markerAbs = listProps.MarkerIndentPt
+                    ?? Math.Max(0.0, leftIndentPt - ListProperties.DefaultHangingPt);
+
+                string markerText = listProps.ComputedMarkerText ?? string.Empty;
+                if (markerText.Length > 0)
+                {
+                    var mtf = GetOrCreateTypeface(styles.ResolveFontFamily(styleName), false, false);
+                    var mfont = GetOrCreateFont(mtf, styles.ResolveFontSize(styleName));
+                    float markerW = mfont.MeasureText(markerText);
+                    // Текст ПЕРВОЙ строки идёт сразу после номера: номер + ширина + зазор.
+                    // Позиция абсолютна (от поля) и от левого края строк 2+ НЕ зависит —
+                    // значение может быть отрицательным (первая строка левее строк 2+).
+                    double offset = markerAbs + markerW + listProps.MarkerTextMinGapPt - leftIndentPt;
+
+                    // Не пускаем текст первой строки за правый край текстовой зоны: оставляем
+                    // минимум места под текст, иначе строка уезжала бы за пределы страницы.
+                    const double MinFirstLineWidthPt = 36.0;
+                    double maxOffset = availableWidthPt - leftIndentPt - rightIndentPt - MinFirstLineWidthPt;
+                    if (offset > maxOffset) offset = maxOffset;
+                    firstLineIndentPt = (float)offset;
+
+                    listProps.ComputedMarkerWidthPt = markerW;
+                    listProps.ComputedFirstLineOffsetPt = offset;
+                }
+                else
+                {
+                    firstLineIndentPt = 0f;
+                    listProps.ComputedMarkerWidthPt = 0;
+                    listProps.ComputedFirstLineOffsetPt = 0;
+                }
+            }
 
             // Внутри ячейки дефолтный SpaceBefore/SpaceAfter = 0.
             // Интервал применяется только если явно задан в свойствах параграфа.
@@ -119,7 +165,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             };
 
             var tokens = CollectTokens(para, styleName, styles);
-            WrapTokensToLines(tokens, layout, textWidthPt, lineSpacing);
+            WrapTokensToLines(tokens, layout, textWidthPt, lineSpacing, wrapZones);
             layout.TextLength = GetPlainTextLength(para);
 
             return layout;
@@ -1068,7 +1114,8 @@ namespace Writersword.Modules.TextEditor.Rendering
             List<(string Char, SKRunSegment Format, int GlobalIndex)> tokens,
             SKTextLayout layout,
             float textAreaWidthPt,
-            float lineSpacing)
+            float lineSpacing,
+            IReadOnlyList<SKWrapZone>? wrapZones = null)
         {
             // Сохраняем ширину текстовой области — используется в ComputeAlignmentOffset.
             // textAreaWidthPt = availableWidthPt - leftIndentPt - rightIndentPt,
@@ -1083,11 +1130,78 @@ namespace Writersword.Modules.TextEditor.Rendering
                 return;
             }
 
-            float lineWidth = textAreaWidthPt - layout.FirstLineIndentPt;
+            bool hasZones = wrapZones is { Count: > 0 };
+
+            // Минимальная ширина полосы рядом с обтекаемым объектом:
+            // уже — строка вытесняется целиком под объект.
+            const float MinBandWidthPt = 36f;
+            // Пробная высота строки для проверки пересечения с зоной:
+            // реальная высота известна только после FinalizeLine.
+            const float ProbeLineHPt = 10f;
+
+            // Полоса строки на вертикали yTop (координата верха строки относительно
+            // верха первой строки параграфа): левый край и ширина внутри текстовой
+            // области плюс вытеснение вниз, если рядом с зонами не осталось места.
+            (float Left, float Width, float ExtraTop) ComputeBand(float yTop)
+            {
+                if (!hasZones) return (0f, textAreaWidthPt, 0f);
+
+                float extraTop = 0f;
+                for (int guard = 0; guard < 16; guard++)
+                {
+                    float y = yTop + extraTop;
+                    float left = 0f;
+                    float right = textAreaWidthPt;
+                    float pushBottom = float.MinValue;
+
+                    foreach (var z in wrapZones!)
+                    {
+                        if (z.BottomPt <= y + 0.5f || z.TopPt >= y + ProbeLineHPt) continue;
+
+                        // Текст уходит на ту сторону зоны, где больше места (как Square в Word).
+                        float spaceLeft = z.LeftPt - left;
+                        float spaceRight = right - z.RightPt;
+                        if (spaceLeft >= spaceRight) right = Math.Min(right, z.LeftPt);
+                        else left = Math.Max(left, z.RightPt);
+                        pushBottom = Math.Max(pushBottom, z.BottomPt);
+                    }
+
+                    float width = right - left;
+                    if (width >= MinBandWidthPt || pushBottom == float.MinValue)
+                        return (left, Math.Max(width, 1f), extraTop);
+
+                    // Полоса слишком узкая — вытесняем строку под нижний край зоны
+                    // и проверяем заново: ниже может лежать следующая зона.
+                    extraTop = pushBottom - yTop + 0.5f;
+                }
+                return (0f, textAreaWidthPt, extraTop);
+            }
+
+            void ApplyBand(SKLineLayout line, (float Left, float Width, float ExtraTop) band)
+            {
+                if (!hasZones) return;
+                line.WrapLeftPt = band.Left;
+                line.WrapAreaWidthPt = band.Width;
+                line.WrapExtraTopPt = band.ExtraTop;
+            }
+
+            var band = ComputeBand(0f);
+            float lineWidth = Math.Max(band.Width - layout.FirstLineIndentPt, 1f);
             float currentW = 0f;
             var currentLine = new SKLineLayout { FirstCharIndex = tokens[0].GlobalIndex };
+            ApplyBand(currentLine, band);
             var wordBuffer = new List<(string Char, SKRunSegment Format, int GlobalIndex)>();
             float wordWidth = 0f;
+
+            void StartNewLine(int firstCharIndex)
+            {
+                FinalizeLine(currentLine, layout, lineSpacing);
+                band = ComputeBand(layout.TotalHeightPt);
+                lineWidth = Math.Max(band.Width, 1f);
+                currentW = 0f;
+                currentLine = new SKLineLayout { FirstCharIndex = firstCharIndex };
+                ApplyBand(currentLine, band);
+            }
 
             void FlushWord()
             {
@@ -1097,13 +1211,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 {
                     if (currentW + wordWidth > lineWidth && currentLine.Segments.Count > 0)
                     {
-                        FinalizeLine(currentLine, layout, lineSpacing);
-                        lineWidth = textAreaWidthPt;
-                        currentW = 0f;
-                        currentLine = new SKLineLayout
-                        {
-                            FirstCharIndex = wordBuffer[0].GlobalIndex
-                        };
+                        StartNewLine(wordBuffer[0].GlobalIndex);
                     }
                     AppendWordToLine(currentLine, wordBuffer, ref currentW);
                     wordBuffer.Clear();
@@ -1113,13 +1221,7 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 if (currentLine.Segments.Count > 0)
                 {
-                    FinalizeLine(currentLine, layout, lineSpacing);
-                    lineWidth = textAreaWidthPt;
-                    currentW = 0f;
-                    currentLine = new SKLineLayout
-                    {
-                        FirstCharIndex = wordBuffer[0].GlobalIndex
-                    };
+                    StartNewLine(wordBuffer[0].GlobalIndex);
                 }
 
                 foreach (var (ch, format, globalIdx) in wordBuffer)
@@ -1127,10 +1229,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                     float charWidth = MeasureChar(ch, format);
                     if (currentW + charWidth > lineWidth && currentLine.Segments.Count > 0)
                     {
-                        FinalizeLine(currentLine, layout, lineSpacing);
-                        lineWidth = textAreaWidthPt;
-                        currentW = 0f;
-                        currentLine = new SKLineLayout { FirstCharIndex = globalIdx };
+                        StartNewLine(globalIdx);
                     }
                     AppendCharToLine(currentLine, ch, format, globalIdx, ref currentW, charWidth);
                 }
@@ -1260,6 +1359,9 @@ namespace Writersword.Modules.TextEditor.Rendering
             float lineHeight = lineHeightBase * lineSpacing;
             float baseline = (lineHeight - lineHeightBase) / 2f + maxAscent;
 
+            // Вытеснение строки под обтекаемый объект: зазор входит в высоту параграфа.
+            layout.TotalHeightPt += line.WrapExtraTopPt;
+
             line.Y = layout.TotalHeightPt;
             line.Height = lineHeight;
             line.Baseline = baseline;
@@ -1306,10 +1408,12 @@ namespace Writersword.Modules.TextEditor.Rendering
         {
             if (lineIndex < 0 || lineIndex >= layout.Lines.Count) return 0f;
             var line = layout.Lines[lineIndex];
-            float area = layout.TextAreaWidthPt;
+            // Полоса обтекания сужает область строки и сдвигает её левый край:
+            // выравнивание работает внутри полосы, а не всей текстовой области.
+            float area = line.WrapAreaWidthPt > 0f ? line.WrapAreaWidthPt : layout.TextAreaWidthPt;
             float firstExtra = lineIndex == 0 ? layout.FirstLineIndentPt : 0f;
 
-            return layout.Alignment switch
+            return line.WrapLeftPt + layout.Alignment switch
             {
                 RenderAlignment.Center => firstExtra + (area - firstExtra - line.TextWidth) / 2f,
                 RenderAlignment.Right => area - line.TextWidth,
@@ -1355,7 +1459,9 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             float firstExtra = lineIndex == 0 ? layout.FirstLineIndentPt : 0f;
             float effectiveWidth = line.TextWidth - trailingWidth;
-            float free = (layout.TextAreaWidthPt - firstExtra) - effectiveWidth;
+            // При обтекании строка растягивается до края своей полосы, а не всей области.
+            float areaW = line.WrapAreaWidthPt > 0f ? line.WrapAreaWidthPt : layout.TextAreaWidthPt;
+            float free = (areaW - firstExtra) - effectiveWidth;
             return free > 0f ? free / spaces : 0f;
         }
 
@@ -1756,14 +1862,29 @@ namespace Writersword.Modules.TextEditor.Rendering
         public static void RenderParagraphLines(
             SKCanvas canvas, SKTextLayout layout,
             float paraX, float paraY,
-            int lineFrom, int lineTo)
+            int lineFrom, int lineTo,
+            string? markerText = null,
+            float markerHangingPt = 0f,
+            SKColor markerColor = default,
+            float markerMinGapPt = 0f)
         {
-            if (layout.Lines.Count == 0) return;
+            if (layout.Lines.Count == 0)
+            {
+                // Пустой элемент списка (например только что созданный) всё равно показывает маркер.
+                if (!string.IsNullOrEmpty(markerText))
+                    DrawListMarker(canvas, layout, paraX, paraY, 0f, markerText!, markerHangingPt, markerColor, markerMinGapPt);
+                return;
+            }
 
             int clampedFrom = Math.Max(0, lineFrom);
             int clampedTo = Math.Min(lineTo, layout.Lines.Count);
             float yBase = clampedFrom < layout.Lines.Count
                                     ? layout.Lines[clampedFrom].Y : 0f;
+
+            // Маркер списка рисуется один раз — на первой строке абзаца (слайс с lineFrom == 0).
+            // На страницах-продолжениях (clampedFrom > 0) маркер не повторяется — как в Word.
+            if (!string.IsNullOrEmpty(markerText) && clampedFrom == 0)
+                DrawListMarker(canvas, layout, paraX, paraY, yBase, markerText!, markerHangingPt, markerColor, markerMinGapPt);
 
             // Прямоугольник всего абзаца — для градиента текста в режиме «весь блок».
             // line.Y == 0 отображается в paraY - yBase, от него и считаем верх блока.
@@ -1896,6 +2017,66 @@ namespace Writersword.Modules.TextEditor.Rendering
                         justifyShift += segSpaces * extraPerSpace;
                 }
             }
+        }
+
+        /// <summary>
+        /// Рисует маркер списка слева от текста первой строки абзаца.
+        /// paraX — левый край текста (margin + отступ текста списка).
+        /// markerHangingPt — выступ маркера: маркер рисуется на markerHangingPt левее текста.
+        /// Гарнитура и кегль маркера берутся из первого сегмента строки (совпадают с текстом),
+        /// для пустого элемента — фолбэк-шрифт.
+        /// </summary>
+        private static void DrawListMarker(
+            SKCanvas canvas, SKTextLayout layout,
+            float paraX, float paraY, float yBase,
+            string markerText, float markerHangingPt, SKColor markerColor,
+            float markerMinGapPt)
+        {
+            if (layout.Lines.Count == 0) return;
+            var line = layout.Lines[0];
+
+            string family = StyleResolver.FallbackFontFamily;
+            float sizePt = StyleResolver.FallbackFontSizePt;
+            if (line.Segments.Count > 0)
+            {
+                family = line.Segments[0].FontFamily;
+                sizePt = line.Segments[0].FontSizePt;
+            }
+
+            var typeface = GetOrCreateTypeface(family, false, false);
+            var font = GetOrCreateFont(typeface, sizePt);
+
+            // Некоторые символы маркеров (например ➤) могут отсутствовать в основном шрифте —
+            // подставляем системный фолбэк, иначе вместо маркера рисуется .notdef-квадрат.
+            int mcp = markerText.Length > 0 ? markerText[0] : 0;
+            if (mcp >= 0x0080 && typeface.GetGlyph(mcp) == 0)
+            {
+                if (!_fallbackFamilyCache.TryGetValue(mcp, out var fb))
+                {
+                    using var fm = SKFontManager.Default.MatchCharacter(mcp);
+                    fb = fm?.FamilyName;
+                    _fallbackFamilyCache[mcp] = fb;
+                }
+                if (!string.IsNullOrEmpty(fb))
+                {
+                    typeface = GetOrCreateTypeface(fb!, false, false);
+                    font = GetOrCreateFont(typeface, sizePt);
+                }
+            }
+
+            float lineY = paraY + (line.Y - yBase);
+            float baseY = lineY + line.Baseline;
+            // Цифра/символ маркера рисуется строго по своему левому краю (там же, где стрелка на
+            // линейке). Зазор до текста обеспечивает отступ первой строки, вычисленный в раскладке
+            // по ширине цифры, — поэтому здесь маркер не сдвигаем.
+            float markerX = paraX - markerHangingPt;
+
+            using var paint = new SKPaint
+            {
+                Color = markerColor == default ? SKColors.Black : markerColor,
+                IsAntialias = true
+            };
+            canvas.DrawText(markerText, markerX, baseY, font, paint);
         }
     }
 }

@@ -14,6 +14,11 @@
 	<SolidColorBrush x:Key="BgSurfaceBrush">#EBEBEB</SolidColorBrush>
 	<SolidColorBrush x:Key="BgPanelBrush">#E0E0E0</SolidColorBrush>
 	<SolidColorBrush x:Key="BgHoverBrush">#D4D4D4</SolidColorBrush>
+	<!-- Фон плоских блоков-баннеров в списках (строки персонажей, заголовки папок).
+	     Нейтральная подложка, поверх которой кладётся полупрозрачный цвет/градиент элемента. -->
+	<SolidColorBrush x:Key="BgListBlockBrush">#E8E8E8</SolidColorBrush>
+	<!-- Ползунок скроллбара в списках. -->
+	<SolidColorBrush x:Key="ScrollThumbBrush">#88888C</SolidColorBrush>
 
 	<!-- Текст -->
 	<SolidColorBrush x:Key="TextPrimaryBrush">#1A1A1A</SolidColorBrush>

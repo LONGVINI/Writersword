@@ -3,74 +3,438 @@
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels"
              xmlns:views="using:Writersword.Modules.Characters.Views"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
+             xmlns:conv="using:Writersword.Modules.Characters.Converters"
+             xmlns:icv="using:Writersword.Infrastructure.Converters"
              x:Class="Writersword.Modules.Characters.Views.Tabs.CharacterEditView"
              x:DataType="vm:CharactersViewModel">
 
-    <Grid ColumnDefinitions="240,*">
+    <UserControl.Styles>
+        <!-- Плоские кнопки без неявных переходов темы (иначе BrushTransition гонит
+             широкую перерисовку), лёгкий фон под курсором. -->
+        <Style Selector="Button.edit-row">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <!-- Рамка фокуса рисуется вокруг всей кнопки, за пределами баннера —
+                 отключается, чтобы выделение не выходило за блок. -->
+            <Setter Property="FocusAdorner" Value="{x:Null}"/>
+            <Setter Property="Transitions">
+                <Transitions/>
+            </Setter>
+        </Style>
+        <!-- Наведение подсвечивает сам баннер (Border внутри контента кнопки),
+             а не весь ContentPresenter — у баннеров есть отступы и скругления.
+             Собственная ховер-заливка кнопки из темы Fluent глушится, иначе
+             подсветка выходит за пределы баннера. -->
+        <Style Selector="Button.edit-row:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.edit-row:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.edit-row:pointerover Border#RowBanner">
+            <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+        </Style>
+        <Style Selector="Button.fold-header">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="FocusAdorner" Value="{x:Null}"/>
+            <Setter Property="Transitions">
+                <Transitions/>
+            </Setter>
+        </Style>
+        <Style Selector="Button.fold-header:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.fold-header:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.fold-header:pointerover Border#FolderBanner">
+            <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+        </Style>
 
-        <Border Grid.Column="0"
-                BorderBrush="{DynamicResource BorderDefaultBrush}"
-                BorderThickness="0,0,1,0">
+        <!-- Скроллбар бокового списка: всегда видимый, приглушённый, из цветов темы.
+             Трек — в цвет панели (сливается с фоном списка), ползунок — цвет рамок
+             (BorderDefaultBrush), под курсором — приглушённый текстовый (TextMutedBrush). -->
+        <Style Selector="ScrollViewer.sidebar-scroll /template/ ScrollBar">
+            <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+        </Style>
+        <!-- TrackRect — внутренний прямоугольник трека в Fluent-шаблоне ScrollBar:
+             у него собственная заливка из ресурсов темы, Background самого ScrollBar
+             её не перекрывает — поэтому заливается отдельно. -->
+        <Style Selector="ScrollViewer.sidebar-scroll /template/ ScrollBar /template/ Rectangle#TrackRect">
+            <Setter Property="Fill" Value="{DynamicResource BgHoverBrush}"/>
+            <Setter Property="Stroke" Value="Transparent"/>
+        </Style>
+        <!-- Глобальный стиль (Styles/Controls.axaml) подменяет шаблон ползунка
+             и зашивает в его Border тёмный BorderDefaultBrush — Background самого
+             Thumb там не участвует. Поэтому здесь перекрашивается именно Border
+             внутри шаблона ползунка. -->
+        <Style Selector="ScrollViewer.sidebar-scroll /template/ ScrollBar /template/ Thumb /template/ Border">
+            <Setter Property="Background" Value="{DynamicResource ScrollThumbBrush}"/>
+        </Style>
+        <Style Selector="ScrollViewer.sidebar-scroll /template/ ScrollBar /template/ Thumb:pointerover /template/ Border">
+            <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}"/>
+        </Style>
+        <Style Selector="ScrollViewer.sidebar-scroll /template/ ScrollBar /template/ Thumb:pressed /template/ Border">
+            <Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+        </Style>
+
+        <!-- Кнопки управления боковым списком (компактный режим, скрытие). -->
+        <Style Selector="Button.side-tool">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="5"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.side-tool:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+        </Style>
+        <Style Selector="Button.side-tool Path">
+            <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="StrokeThickness" Value="1.5"/>
+        </Style>
+        <Style Selector="Button.side-tool:pointerover Path">
+            <Setter Property="Stroke" Value="{DynamicResource TextPrimaryBrush}"/>
+        </Style>
+        <Style Selector="Button.side-tool Ellipse">
+            <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="StrokeThickness" Value="1.5"/>
+        </Style>
+        <Style Selector="Button.side-tool:pointerover Ellipse">
+            <Setter Property="Stroke" Value="{DynamicResource TextPrimaryBrush}"/>
+        </Style>
+        <Style Selector="Button.side-tool Rectangle">
+            <Setter Property="Fill" Value="{DynamicResource TextSecondaryBrush}"/>
+        </Style>
+        <Style Selector="Button.side-tool:pointerover Rectangle">
+            <Setter Property="Fill" Value="{DynamicResource TextPrimaryBrush}"/>
+        </Style>
+    </UserControl.Styles>
+
+    <!-- Шаблоны строк плоского списка: заголовок папки и персонаж выбираются
+         репитером по типу элемента EditorRows. -->
+    <UserControl.DataTemplates>
+
+        <!-- Заголовок папки (read-only): плоский блок-баннер, клик сворачивает/
+             разворачивает. Ни переименования, ни удаления, ни редактирования
+             комментария. -->
+        <DataTemplate DataType="vm:CharacterFolderViewModel">
+            <Button Classes="fold-header"
+                    Command="{Binding ToggleExpandCommand}">
+                <!-- Задник нейтральный (BgListBlockBrush) без цветного выделения:
+                     цвет папки показывает только точка внутри. -->
+                <Border x:Name="FolderBanner"
+                        Margin="6,4,6,2"
+                        CornerRadius="0"
+                        ClipToBounds="True"
+                        Background="{DynamicResource BgListBlockBrush}">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" MinHeight="34"
+                          ToolTip.Tip="{Binding Name}">
+                            <!-- Конвертер цвета: поддерживает и одноцвет, и градиенты. -->
+                            <Border Grid.Column="0"
+                                    Width="10" Height="10" CornerRadius="5"
+                                    Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+                                    Margin="10,0,8,0"
+                                    VerticalAlignment="Center"/>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center"
+                                        IsVisible="{ReflectionBinding $parent[UserControl].DataContext.IsSidebarFull}">
+                                <TextBlock Text="{Binding Name}"
+                                           FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="{Binding Comment}"
+                                           FontSize="10" FontStyle="Italic"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           IsVisible="{Binding Comment, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" Text="{Binding Count}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" MinWidth="20"
+                                       TextAlignment="Center" Margin="4,0"
+                                       IsVisible="{ReflectionBinding $parent[UserControl].DataContext.IsSidebarFull}"/>
+                            <TextBlock Grid.Column="3"
+                                       Text="{Binding IsExpanded, Converter={x:Static conv:BoolToCollapseArrowConverter.Instance}}"
+                                       FontSize="10"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" Margin="4,0,10,0"
+                                       IsVisible="{ReflectionBinding $parent[UserControl].DataContext.IsSidebarFull}"/>
+                    </Grid>
+                </Border>
+            </Button>
+        </DataTemplate>
+
+        <!-- Строка персонажа: плоский блок с нейтральным фоном BgListBlockBrush
+             и тонкой окантовкой цветом/градиентом персонажа. Внутри — аватар-кружок,
+             имя и описание. Фиксированная высота ряда сохраняет точную высоту списка. -->
+        <DataTemplate DataType="vm:CharacterListItemViewModel">
+            <Button Classes="edit-row"
+                    Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
+                    CommandParameter="{Binding Id}">
+                <Border x:Name="RowBanner"
+                        Margin="6,2"
+                        CornerRadius="0"
+                        ClipToBounds="True"
+                        Background="{DynamicResource BgListBlockBrush}"
+                        BorderThickness="1"
+                        BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+                        ToolTip.Tip="{Binding Name}">
+                    <Grid ColumnDefinitions="4,46,*" Height="48">
+                        <!-- Полоска цветом/градиентом персонажа по левому краю блока. -->
+                        <Border Grid.Column="0"
+                                Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
+                        <Panel Grid.Column="1"
+                               Width="36" Height="36" Margin="6,0,2,0"
+                               VerticalAlignment="Center">
+                                <Border Width="28" Height="28" CornerRadius="14"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                                        Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
+                                <TextBlock Text="{Binding FallbackIcon}"
+                                           FontSize="13"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="White"
+                                           IsVisible="{Binding AvatarBitmap, Converter={x:Static ObjectConverters.IsNull}}"/>
+                                <Border Width="28" Height="28" CornerRadius="14" ClipToBounds="True"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                                        IsVisible="{Binding AvatarBitmap, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                    <Image Source="{Binding AvatarBitmap}" Stretch="UniformToFill"/>
+                                </Border>
+                                <!-- Кольцо цветом персонажа вокруг аватарки с зазором —
+                                     как на карточках основного списка: кольцо крупнее
+                                     круга аватарки, иначе сливается с её заливкой
+                                     (свойство AvatarRing). -->
+                                <Border Width="36" Height="36" CornerRadius="999"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                                        BorderThickness="1"
+                                        BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+                                        IsHitTestVisible="False"
+                                        IsVisible="{Binding AvatarRing}"/>
+                            </Panel>
+                            <!-- Подписи, ленточка группы и точка папки живут только
+                                 в полном режиме списка: в компактном (одни аватарки)
+                                 их прячет общая Panel-обёртка. -->
+                            <Panel Grid.Column="2"
+                                   IsVisible="{ReflectionBinding $parent[UserControl].DataContext.IsSidebarFull}">
+                                <StackPanel Margin="6,6,20,6"
+                                            VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="{Binding Name}"
+                                               FontSize="12" FontWeight="Medium"
+                                               MaxLines="1"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="{Binding ShortDescription}"
+                                               FontSize="10"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               TextTrimming="CharacterEllipsis"
+                                               IsVisible="{Binding ShortDescription, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                </StackPanel>
+
+                                <!-- Признак группы: закладка-ленточка цветом персонажа,
+                                     свисающая с верхней кромки баннера — как на карточках
+                                     основного списка. Показывается для всех групповых. -->
+                                <Path IsVisible="{Binding IsCollective}"
+                                      IsHitTestVisible="False"
+                                      HorizontalAlignment="Right"
+                                      VerticalAlignment="Top"
+                                      Margin="0,0,8,0"
+                                      Data="M0,0 H10 V15 L5,10.5 L0,15 Z"
+                                      Fill="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
+
+                                <!-- Точка цвета папки в результатах поиска: показывает,
+                                     из какой папки взят персонаж. Вне поиска свойство
+                                     не заполняется и точка скрыта. -->
+                                <Border Width="10" Height="10" CornerRadius="5"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,8,0"
+                                        IsHitTestVisible="False"
+                                        IsVisible="{Binding ShowSearchFolderDot}"
+                                        Background="{Binding SearchFolderColor, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
+                            </Panel>
+                    </Grid>
+                </Border>
+            </Button>
+        </DataTemplate>
+
+    </UserControl.DataTemplates>
+
+    <Grid x:Name="EditorRootGrid">
+        <!-- Боковой список редактора растягивается сплиттером, как панель модуля:
+             колонка 0 — список (с пределами ширины), колонка 1 — GridSplitter,
+             колонка 2 — карточка персонажа. Ширина колонки применяется из
+             сессии модуля и сохраняется после перетаскивания (code-behind). -->
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="240" MinWidth="170" MaxWidth="520"/>
+            <ColumnDefinition Width="1"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" IsVisible="{Binding IsSidebarShown}">
             <Grid RowDefinitions="Auto,*"
                   Background="{DynamicResource BgPanelBrush}">
+
                 <Border Grid.Row="0" Padding="8,8"
                         BorderBrush="{DynamicResource BorderDefaultBrush}"
                         BorderThickness="0,0,0,1">
-                    <TextBox Text="{ReflectionBinding SearchQuery}"
-                             PlaceholderText="{x:Static loc:CharactersStrings.Search_Placeholder}"
-                             FontSize="12"
-                             Background="{DynamicResource BgSurfaceBrush}"
-                             Foreground="{DynamicResource TextPrimaryBrush}"
-                             BorderBrush="{DynamicResource BorderDefaultBrush}"
-                             BorderThickness="1" CornerRadius="6" Padding="7,5"/>
+                    <Grid ColumnDefinitions="*,Auto,Auto">
+                        <TextBox Grid.Column="0"
+                                 Text="{ReflectionBinding SearchQuery}"
+                                 PlaceholderText="{x:Static loc:CharactersStrings.Search_Placeholder}"
+                                 FontSize="12"
+                                 Background="{DynamicResource BgSurfaceBrush}"
+                                 Foreground="{DynamicResource TextPrimaryBrush}"
+                                 BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                 BorderThickness="1" CornerRadius="6" Padding="7,5"
+                                 Margin="0,0,6,0"
+                                 IsVisible="{Binding IsSidebarFull}"/>
+
+                        <!-- Переключение полный/компактный список -->
+                        <Button Grid.Column="1" Classes="side-tool"
+                                Click="OnCompactToggleClick"
+                                ToolTip.Tip="{x:Static loc:CharactersStrings.EditorSidebar_ToggleCompact}">
+                            <Panel Width="14" Height="14">
+                                <!-- В полном режиме: значок «только аватарки» -->
+                                <Ellipse Width="12" Height="12"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                                         IsVisible="{Binding IsSidebarFull}"/>
+                                <!-- В компактном: значок списка с подписями -->
+                                <StackPanel Spacing="3" VerticalAlignment="Center"
+                                            IsVisible="{Binding IsSidebarCompact}">
+                                    <Rectangle Width="12" Height="2"/>
+                                    <Rectangle Width="12" Height="2"/>
+                                    <Rectangle Width="12" Height="2"/>
+                                </StackPanel>
+                            </Panel>
+                        </Button>
+
+                        <!-- Скрыть список полностью -->
+                        <Button Grid.Column="2" Classes="side-tool"
+                                Click="OnHideSidebarClick"
+                                ToolTip.Tip="{x:Static loc:CharactersStrings.EditorSidebar_Hide}">
+                            <Path Width="14" Height="14"
+                                  Data="M9,2 L4,7 L9,12"
+                                  Fill="Transparent"
+                                  StrokeLineCap="Round"
+                                  StrokeJoin="Round"/>
+                        </Button>
+                    </Grid>
                 </Border>
-                <ScrollViewer Grid.Row="1">
-                    <ItemsControl ItemsSource="{Binding FilteredCharacters}">
+
+                <!-- Без поиска: плоский список — папки (в той же последовательности,
+                     что в основном списке) и персонажи под ними.
+                     Список НЕ виртуализирован намеренно: ItemsRepeater со StackLayout
+                     оценивает высоту нереализованных строк, при разновысоких строках
+                     (заголовок папки ~34px, персонаж 48px) оценка постоянно
+                     пересчитывалась — ползунок скролла «плавал» в размере, скролл
+                     дёргался и прыгал на десятки строк. Строки лёгкие (текст +
+                     аватар 24px), а наполняются прогрессивными батчами из вьюмодели,
+                     поэтому нагрузки от полного списка нет, а скролл — точный
+                     пиксельный, без рывков. -->
+                <!-- Скроллбар всегда видим (AllowAutoHide=False) и занимает собственную
+                     полосу справа — на контент строк не налезает, паддинг не нужен. -->
+                <ScrollViewer Grid.Row="1" Classes="sidebar-scroll"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Visible"
+                              AllowAutoHide="False"
+                              IsVisible="{Binding SearchQuery, Converter={x:Static StringConverters.IsNullOrEmpty}}">
+                    <ItemsControl ItemsSource="{Binding EditorRows}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Vertical" Spacing="0"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Button Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
-                                        CommandParameter="{Binding Id}"
-                                        Background="Transparent" BorderThickness="0"
-                                        HorizontalAlignment="Stretch"
-                                        HorizontalContentAlignment="Stretch"
-                                        Padding="0">
-                                    <Grid ColumnDefinitions="4,34,*" MinHeight="52">
-                                        <Border Grid.Column="0" Background="{Binding Color}"/>
-                                        <Border Grid.Column="1"
-                                                Width="24" Height="24" CornerRadius="12"
-                                                Background="{Binding Color}" Margin="5,0">
-                                            <TextBlock Text="{Binding FallbackIcon}"
-                                                       FontSize="12"
-                                                       HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center"
-                                                       Foreground="White"/>
-                                        </Border>
-                                        <StackPanel Grid.Column="2"
-                                                    Margin="0,8,8,8"
-                                                    VerticalAlignment="Center" Spacing="2">
-                                            <TextBlock Text="{Binding Name}"
-                                                       FontSize="12" FontWeight="Medium"
-                                                       MaxLines="2"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       TextWrapping="Wrap"
-                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                            <TextBlock Text="{Binding ShortDescription}"
-                                                       FontSize="10"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       IsVisible="{Binding ShortDescription,
-                                                           Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                                        </StackPanel>
-                                    </Grid>
-                                </Button>
+                                <ContentControl Content="{Binding}"/>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </ScrollViewer>
+
+                <!-- При активном поиске: плоские результаты (FilteredCharacters).
+                     Тоже без виртуализации — по тем же причинам, что и выше. -->
+                <ScrollViewer Grid.Row="1" Classes="sidebar-scroll"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Visible"
+                              AllowAutoHide="False"
+                              IsVisible="{Binding SearchQuery, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                    <ItemsControl ItemsSource="{Binding FilteredCharacters}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Vertical" Spacing="0"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <ContentControl Content="{Binding}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
             </Grid>
         </Border>
 
-        <Panel Grid.Column="1">
+        <!-- Узкая полоса на месте скрытого списка: только кнопка разворота.
+             Разворачивает в тот режим, из которого список скрыли. -->
+        <Border Grid.Column="0"
+                IsVisible="{Binding IsSidebarHidden}"
+                Background="{DynamicResource BgPanelBrush}">
+            <Button Classes="side-tool"
+                    Click="OnRestoreSidebarClick"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Top"
+                    Margin="0,8,0,0"
+                    ToolTip.Tip="{x:Static loc:CharactersStrings.EditorSidebar_Show}">
+                <Path Width="14" Height="14"
+                      Data="M5,2 L10,7 L5,12"
+                      Fill="Transparent"
+                      StrokeLineCap="Round"
+                      StrokeJoin="Round"/>
+            </Button>
+        </Border>
+
+        <!-- Сплиттер ширины бокового списка. Колонка занимает 1px — это и есть
+             видимая линия-граница между списком и карточкой (правый бордер списка
+             убран, линию рисует сам сплиттер). Отрицательные поля расширяют зону
+             захвата до 5px по обе стороны линии, не добавляя видимой толщины.
+             Тянуть можно только в полном режиме — в компактном и скрытом колонка
+             фиксированная. -->
+        <GridSplitter x:Name="SidebarSplitter"
+                      Grid.Column="1"
+                      Margin="-2,0"
+                      ZIndex="1"
+                      Background="Transparent"
+                      IsEnabled="{Binding IsSidebarFull}"
+                      ResizeDirection="Columns"
+                      HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch">
+            <GridSplitter.Template>
+                <ControlTemplate>
+                    <Border Background="Transparent">
+                        <Rectangle Width="1"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Stretch"
+                                   Fill="{DynamicResource BorderDefaultBrush}"/>
+                    </Border>
+                </ControlTemplate>
+            </GridSplitter.Template>
+        </GridSplitter>
+
+        <Panel Grid.Column="2">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8"
                         IsVisible="{Binding !IsCardOpen}">
                 <TextBlock Text="{x:Static loc:CharactersStrings.Placeholder_SelectCharacter}"
@@ -78,35 +442,15 @@
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            HorizontalAlignment="Center"/>
             </StackPanel>
-            <Grid RowDefinitions="Auto,*"
-                  IsVisible="{Binding IsCardOpen, FallbackValue=False}">
-                <Border Grid.Row="0" Padding="12,8"
-                        BorderBrush="{DynamicResource BorderDefaultBrush}"
-                        BorderThickness="0,0,0,1"
-                        Background="{DynamicResource BgPanelBrush}">
-                    <Grid ColumnDefinitions="Auto,*,Auto">
-                        <Border Grid.Column="0"
-                                Width="12" Height="12" CornerRadius="6"
-                                Background="{Binding SelectedCharacterCard.Color, FallbackValue='#607D8B'}"
-                                VerticalAlignment="Center" Margin="0,0,8,0"/>
-                        <TextBlock Grid.Column="1"
-                                   Text="{Binding SelectedCharacterCard.DisplayName, FallbackValue=''}"
-                                   FontSize="14" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"
-                                   VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis"/>
-                        <Button Grid.Column="2"
-                                Content="{x:Static loc:CharactersStrings.Button_Save}"
-                                Command="{Binding SelectedCharacterCard.SaveCommand}"
-                                FontSize="11" Padding="10,4"
-                                Background="{DynamicResource AccentDefaultBrush}"
-                                Foreground="White" CornerRadius="6"/>
-                    </Grid>
-                </Border>
-                <views:CharacterCardView Grid.Row="1"
-                                         DataContext="{Binding SelectedCharacterCard}"
+            <!-- Шапка с именем и кнопкой Save убрана: имя персонажа редактируется
+                 под аватаром во вкладке Basics, а карточка сохраняется сама
+                 (автосохранение в CharacterCardViewModel). Panel-обёртка нужна,
+                 чтобы IsCardOpen биндился к вьюмодели модуля, а не к карточке,
+                 чей DataContext назначается вложенной вьюхе. -->
+            <Panel IsVisible="{Binding IsCardOpen, FallbackValue=False}">
+                <views:CharacterCardView DataContext="{Binding SelectedCharacterCard}"
                                          Background="{DynamicResource BgSurfaceBrush}"/>
-            </Grid>
+            </Panel>
         </Panel>
     </Grid>
 </UserControl>

@@ -7,6 +7,7 @@ namespace Writersword.Modules.TextEditor.Models.Document
 {
     /// <summary>
     /// Тип маркера списка.
+    /// Значения 1–9 — маркированные (bullet), 10+ — нумерованные (счётные системы).
     /// </summary>
     public enum ListMarkerType
     {
@@ -15,11 +16,15 @@ namespace Writersword.Modules.TextEditor.Models.Document
         Dash = 2,
         Arrow = 3,
         Custom = 4,
+        Square = 5,
+        Circle = 6,
         Decimal = 10,
-        LowerAlpha = 11,
-        UpperAlpha = 12,
-        LowerRoman = 13,
-        UpperRoman = 14
+        DecimalLeadingZero = 11,
+        LowerAlpha = 12,
+        UpperAlpha = 13,
+        LowerRoman = 14,
+        UpperRoman = 15,
+        CustomSequence = 16
     }
 
     /// <summary>
@@ -27,6 +32,15 @@ namespace Writersword.Modules.TextEditor.Models.Document
     /// </summary>
     public sealed class ListProperties
     {
+        /// <summary>Шаг отступа одного уровня по умолчанию (pt). ~0.63 см — как в Word.</summary>
+        public const double DefaultLevelStepPt = 18.0;
+
+        /// <summary>Выступ маркера по умолчанию (pt): расстояние от края текста до маркера.</summary>
+        public const double DefaultHangingPt = 18.0;
+
+        /// <summary>Минимальный зазор маркер→текст по умолчанию (pt).</summary>
+        public const double DefaultMarkerTextGapPt = 6.0;
+
         /// <summary>Id списка (несколько параграфов с одним ListId образуют один список).</summary>
         public Guid ListId { get; set; }
 
@@ -41,12 +55,115 @@ namespace Writersword.Modules.TextEditor.Models.Document
         public string? CustomMarker { get; set; }
 
         /// <summary>
+        /// Символ(ы) после номера для счётных типов: ".", ")", "" и т.п.
+        /// null — тип задаёт разделитель по умолчанию (точка).
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? NumberSuffix { get; set; }
+
+        /// <summary>Символ(ы) перед номером для счётных типов (например "(").</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? NumberPrefix { get; set; }
+
+        /// <summary>Начальный номер нумерации (по умолчанию 1).</summary>
+        public int StartAt { get; set; } = 1;
+
+        /// <summary>
+        /// Минимальный зазор между маркером и текстом (pt). При автоматическом сдвиге маркера
+        /// он не может подойти к тексту ближе этого значения.
+        /// </summary>
+        public double MarkerTextMinGapPt { get; set; } = DefaultMarkerTextGapPt;
+
+        /// <summary>
+        /// Пользовательская последовательность символов-«номеров» для MarkerType.CustomSequence.
+        /// Элемент N берёт символ с индексом (N-1). Пустой список — как обычный bullet.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<string>? CustomSequence { get; set; }
+
+        /// <summary>
+        /// Для CustomSequence: после последнего символа начинать сначала (true) или
+        /// остановиться на последнем (false).
+        /// </summary>
+        public bool SequenceWrap { get; set; } = true;
+
+        /// <summary>
+        /// Тип маркера для каждого уровня многоуровневого списка (индекс = уровень).
+        /// null — список одноуровневый, используется <see cref="MarkerType"/> для всех уровней.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<ListMarkerType>? LevelMarkers { get; set; }
+
+        /// <summary>
+        /// Готовый текст маркера («1.», «•»), вычисленный движком нумерации перед раскладкой.
+        /// Транзиентное поле (не сериализуется): раскладка меряет ширину, чтобы отодвинуть текст
+        /// первой строки на зазор после цифры. Заполняется в проходе раскладки.
+        /// </summary>
+        [JsonIgnore]
+        public string? ComputedMarkerText { get; set; }
+
+        /// <summary>Измеренная ширина маркера в pt (заполняет раскладка). Транзиентное поле.</summary>
+        [JsonIgnore]
+        public double ComputedMarkerWidthPt { get; set; }
+
+        /// <summary>
+        /// Смещение текста ПЕРВОЙ строки относительно левого отступа (pt), вычисленное раскладкой
+        /// как (позиция маркера + ширина + зазор − левый отступ). Транзиентное: линейка ставит по
+        /// нему «абзацную стрелку». Не сериализуется.
+        /// </summary>
+        [JsonIgnore]
+        public double ComputedFirstLineOffsetPt { get; set; }
+
+        /// <summary>
+        /// Явная позиция маркера от левого поля (pt). null — вычисляется по уровню.
+        /// Двигается дополнительной стрелкой «край списка» на линейке (hanging).
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public double? MarkerIndentPt { get; set; }
+
+        /// <summary>
+        /// Явная позиция текста элемента списка от левого поля (pt). null — по уровню.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public double? TextIndentPt { get; set; }
+
+        /// <summary>
         /// Продолжить нумерацию от предыдущего списка с тем же ListId.
         /// Если false — нумерация начинается заново.
         /// </summary>
         public bool ContinueNumbering { get; set; } = true;
 
-        public ListProperties Clone() => (ListProperties)MemberwiseClone();
+        /// <summary>true — счётный (нумерованный) тип маркера; false — маркированный.</summary>
+        [JsonIgnore]
+        public bool IsNumbered => (int)MarkerType >= 10;
+
+        /// <summary>Позиция текста элемента списка от левого поля (pt) с учётом уровня.</summary>
+        public double EffectiveTextIndentPt()
+            => TextIndentPt ?? (Level + 1) * DefaultLevelStepPt;
+
+        /// <summary>Позиция маркера от левого поля (pt) с учётом уровня.</summary>
+        public double EffectiveMarkerIndentPt()
+            => MarkerIndentPt ?? Math.Max(0.0, EffectiveTextIndentPt() - DefaultHangingPt);
+
+        /// <summary>Тип маркера текущего уровня: из <see cref="LevelMarkers"/>, иначе <see cref="MarkerType"/>.</summary>
+        public ListMarkerType EffectiveMarkerTypeForLevel()
+        {
+            if (LevelMarkers is not null && Level >= 0 && Level < LevelMarkers.Count)
+                return LevelMarkers[Level];
+            return MarkerType;
+        }
+
+        public ListProperties Clone()
+        {
+            var c = (ListProperties)MemberwiseClone();
+            // MemberwiseClone копирует ссылки на списки — делаем отдельные копии,
+            // иначе клоны делили бы один и тот же список символов/уровней.
+            if (CustomSequence is not null)
+                c.CustomSequence = new List<string>(CustomSequence);
+            if (LevelMarkers is not null)
+                c.LevelMarkers = new List<ListMarkerType>(LevelMarkers);
+            return c;
+        }
     }
 
     /// <summary>

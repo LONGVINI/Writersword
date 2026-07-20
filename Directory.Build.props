@@ -3,4 +3,13 @@
 		<BaseIntermediateOutputPath>obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
 		<DefaultItemExcludes>$(DefaultItemExcludes);obj\**\*</DefaultItemExcludes>
 	</PropertyGroup>
+	<ItemGroup Condition="'$(MSBuildProjectName)' != 'Writersword.Core' and '$(MSBuildProjectName)' != 'Tests'">
+		<!-- Горячая перезагрузка XAML в Debug-сборках. При мультипроектной
+		     структуре HotAvalonia должен присутствовать в каждом проекте
+		     с Avalonia-контролами. Это dev-only зависимость — в Release-сборки
+		     не попадает. Writersword.Core и Tests исключены: они подключают
+		     Avalonia без XAML-компилятора (ExcludeAssets="build"), и цель
+		     CompileAvaloniaXaml, нужная HotAvalonia, там отсутствует. -->
+		<PackageReference Include="HotAvalonia" Version="3.1.4" PrivateAssets="All" Publish="True" />
+	</ItemGroup>
 </Project>

@@ -23,6 +23,16 @@
 		                              Grid.Row="0" Grid.RowSpan="3"
 		                              ZIndex="210"/>
 
+		<!-- Оверлей «Определить новый список» — поверх всего модуля -->
+		<dlg:ListSettingsOverlay x:Name="ListOverlay"
+		                         Grid.Row="0" Grid.RowSpan="3"
+		                         ZIndex="211"/>
+
+		<!-- Оверлей «Уровни списка» — поверх всего модуля -->
+		<dlg:ListLevelsOverlay x:Name="ListLevelsOverlay"
+		                       Grid.Row="0" Grid.RowSpan="3"
+		                       ZIndex="212"/>
+
 		<!-- Строка 0: Ribbon -->
 		<toolbar:RibbonView Grid.Row="0"
                             DataContext="{Binding Ribbon}"/>
@@ -116,14 +126,57 @@
                           Grid.Row="1" Grid.Column="1"
                           HorizontalScrollBarVisibility="Auto"
                           VerticalScrollBarVisibility="Auto"
+                          AllowAutoHide="False"
                           Background="{Binding DocumentViewModel.CanvasSettings.CanvasBackgroundColor,
                               Converter={x:Static converters:HexColorConverter.Instance}}">
+
+				<ScrollViewer.Styles>
+					<!-- Ползунок виден всегда, а не только при наведении -->
+					<Style Selector="ScrollBar /template/ Thumb">
+						<Setter Property="Background" Value="#8C8C8C"/>
+					</Style>
+					<Style Selector="ScrollBar:pointerover /template/ Thumb">
+						<Setter Property="Background" Value="#5A5A5A"/>
+					</Style>
+					<Style Selector="ScrollBar:vertical">
+						<Setter Property="MinWidth" Value="12"/>
+					</Style>
+				</ScrollViewer.Styles>
 
 				<doc:DocumentCanvas x:Name="PageCanvas"
                                     HorizontalAlignment="Stretch"
                                     DataContext="{Binding DocumentViewModel}"/>
 
 			</ScrollViewer>
+
+			<!-- Всплывающая подсказка номера страницы при перетаскивании ползунка -->
+			<StackPanel x:Name="PageDragTooltip"
+			            Grid.Row="1" Grid.Column="1"
+			            Orientation="Horizontal"
+			            IsVisible="False"
+			            ZIndex="150"
+			            HorizontalAlignment="Right"
+			            VerticalAlignment="Top"
+			            Margin="0,0,16,0"
+			            IsHitTestVisible="False">
+				<Border Background="#E6303030"
+				        BorderBrush="#66FFFFFF"
+				        BorderThickness="1"
+				        CornerRadius="4"
+				        Padding="10,5"
+				        VerticalAlignment="Center">
+					<TextBlock x:Name="PageDragTooltipText"
+					           Foreground="White"
+					           FontSize="12"
+					           FontWeight="SemiBold"
+					           Text="Страница 1 / 1"/>
+				</Border>
+				<!-- Указатель вправо, к ползунку -->
+				<Path Data="M0,0 L7,7 L0,14 Z"
+				      Fill="#E6303030"
+				      VerticalAlignment="Center"
+				      Margin="-1,0,0,0"/>
+			</StackPanel>
 
 		</Grid>
 

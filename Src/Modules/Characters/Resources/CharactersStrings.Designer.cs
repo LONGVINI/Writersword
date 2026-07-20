@@ -1094,6 +1094,33 @@ namespace Writersword.Src.Modules.Characters.Resources {
                 return ResourceManager.GetString("Search_Placeholder", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Avatars only / full list.
+        /// </summary>
+        public static string EditorSidebar_ToggleCompact {
+            get {
+                return ResourceManager.GetString("EditorSidebar_ToggleCompact", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Hide list.
+        /// </summary>
+        public static string EditorSidebar_Hide {
+            get {
+                return ResourceManager.GetString("EditorSidebar_Hide", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Show list.
+        /// </summary>
+        public static string EditorSidebar_Show {
+            get {
+                return ResourceManager.GetString("EditorSidebar_Show", resourceCulture);
+            }
+        }
         
         /// <summary>
         ///   Ищет локализованную строку, похожую на Basics.

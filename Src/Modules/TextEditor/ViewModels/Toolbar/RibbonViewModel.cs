@@ -17,6 +17,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private int _selectedTabIndex;
         private bool _isTableTabVisible;
         private bool _isImageTabVisible;
+        private bool _isEditingEnabled = true;
 
         public int SelectedTabIndex
         {
@@ -43,6 +44,27 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             get => _isImageTabVisible;
             set => this.RaiseAndSetIfChanged(ref _isImageTabVisible, value);
         }
+
+        /// <summary>
+        /// false — режим сравнения версий: содержимое вкладок риббона не принимает
+        /// клики и ввод (IsHitTestVisible), но выглядит почти обычно и продолжает
+        /// отражать состояние под кареткой. Переключение вкладок остаётся доступным.
+        /// </summary>
+        public bool IsEditingEnabled
+        {
+            get => _isEditingEnabled;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _isEditingEnabled, value);
+                this.RaisePropertyChanged(nameof(ContentOpacity));
+            }
+        }
+
+        /// <summary>
+        /// Прозрачность содержимого вкладок: в режиме сравнения слегка приглушено,
+        /// чтобы было видно, что кнопки не активны, но всё оставалось читаемым.
+        /// </summary>
+        public double ContentOpacity => _isEditingEnabled ? 1.0 : 0.72;
 
         public RibbonHomeTabViewModel Home { get; }
         public RibbonInsertTabViewModel Insert { get; }

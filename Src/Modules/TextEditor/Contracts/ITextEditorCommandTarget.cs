@@ -67,6 +67,23 @@ namespace Writersword.Modules.TextEditor.Contracts
         void ToggleNumberedList();
         void ToggleMultilevelList();
 
+        /// <summary>Применяет к выделенным абзацам список с заданным типом маркера (единый список).</summary>
+        void ApplyListType(ListMarkerType markerType);
+        /// <summary>Применяет маркированный список с произвольным символом маркера.</summary>
+        void ApplyCustomBulletList(string marker);
+        /// <summary>Снимок свойств списка активного абзаца (null — не элемент списка).</summary>
+        ListProperties? GetActiveListProperties();
+        /// <summary>Применяет параметры списка (символ/система/отступы/нумерация) к выделению.</summary>
+        void ApplyListSettings(ListProperties settings);
+        /// <summary>Двигает позицию маркера (выступ) активного списка от левого поля, pt.</summary>
+        void SetListMarkerIndentPt(double pt);
+        /// <summary>Двигает позицию текста активного списка от левого поля, pt.</summary>
+        void SetListTextIndentPt(double pt);
+        /// <summary>Применяет многоуровневый список со схемой по умолчанию.</summary>
+        void ApplyMultilevelList();
+        /// <summary>Применяет многоуровневый список с заданной схемой типов маркеров по уровням.</summary>
+        void ApplyMultilevelScheme(System.Collections.Generic.List<ListMarkerType> scheme);
+
         // ── Буфер обмена ─────────────────────────────────────────────────
         void Cut();
         void Copy();
@@ -94,6 +111,17 @@ namespace Writersword.Modules.TextEditor.Contracts
         void SetImageLockAspect(bool locked);
         void DeleteSelectedImage();
         (WrapMode Wrap, bool LockAspect, Writersword.Modules.TextEditor.Models.Styles.TextAlignment Align)? GetSelectedImageInfo();
+        void SetImageRotation(double degrees);
+        double? GetSelectedImageRotation();
+        void SetImageWidth(double widthPt);
+        void SetImageHeight(double heightPt);
+        void SetImageOpacity(double opacity);
+        void SetImageBorder(string? colorHex, double thicknessPt);
+        (double WidthPt, double HeightPt, double Opacity, string? BorderColor, double BorderThicknessPt)? GetSelectedImageStyle();
+        void ToggleImageFlipHorizontal();
+        void ToggleImageFlipVertical();
+        void SetImageCropMode(bool on);
+        bool GetImageCropMode();
 
         // ── Макет страницы ────────────────────────────────────────────────
         void SetPageSize(PaperSize size);

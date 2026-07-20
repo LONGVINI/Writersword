@@ -264,6 +264,15 @@
   <data name="Search_Placeholder" xml:space="preserve">
     <value>Поиск персонажей...</value>
   </data>
+  <data name="EditorSidebar_ToggleCompact" xml:space="preserve">
+    <value>Только аватарки / полный список</value>
+  </data>
+  <data name="EditorSidebar_Hide" xml:space="preserve">
+    <value>Скрыть список</value>
+  </data>
+  <data name="EditorSidebar_Show" xml:space="preserve">
+    <value>Показать список</value>
+  </data>
   <data name="Placeholder_SelectCharacter" xml:space="preserve">
     <value>Выберите персонажа для просмотра</value>
   </data>

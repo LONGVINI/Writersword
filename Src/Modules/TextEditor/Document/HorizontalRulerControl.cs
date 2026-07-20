@@ -35,6 +35,7 @@ namespace Writersword.Modules.TextEditor.Document
         private static readonly SKColor ColorLabelNegative = new(0x99, 0x44, 0x44);
         private static readonly SKColor ColorBorder = new(0xCC, 0xCC, 0xCC);
         private static readonly SKColor ColorMarkerIndent = new(0x33, 0x66, 0xCC);
+        private static readonly SKColor ColorMarkerList = new(0x8A, 0x3F, 0xD0); // фиолетовый — маркер края списка
         private static readonly SKColor ColorMarkerColumn = new(0x22, 0x99, 0x55);
         private static readonly SKColor ColorMarkerLeftEdge = new(0x22, 0x99, 0x55); // такой же зелёный — перетаскивает всю таблицу
         private static readonly SKColor ColorMarkerDragging = new(0xFF, 0x66, 0x00);
@@ -272,6 +273,40 @@ namespace Writersword.Modules.TextEditor.Document
                     canvas.DrawLine((float)xPx, 0, (float)xPx, h, guidePaint);
                 }
             }
+
+            // Дополнительная стрелка «край списка» (hanging): показывается только для абзацев-списков.
+            // Рисуется верхним треугольником фиолетового цвета на позиции маркера от левого поля.
+            if (_vm.ShowListMarker)
+            {
+                var listMarker = GetIndentMarker(RulerIndentMarkerType.ListMarker);
+                if (listMarker is not null)
+                {
+                    bool isDragging = _vm.DraggingIndentMarker == RulerIndentMarkerType.ListMarker;
+                    var color = isDragging ? ColorMarkerDragging : ColorMarkerList;
+                    using var fillPaint = new SKPaint { Color = color, IsAntialias = true };
+                    using var strokePaint = new SKPaint
+                    {
+                        Color = SKColors.White,
+                        StrokeWidth = 1f,
+                        IsStroke = true,
+                        IsAntialias = true
+                    };
+                    double xPx = textAreaStartPx + listMarker.Position * unitSizePx;
+                    DrawTriangleUp(canvas, (float)xPx, 0, ms, fillPaint, strokePaint);
+
+                    if (isDragging)
+                    {
+                        using var guidePaint = new SKPaint
+                        {
+                            Color = ColorGuideLine,
+                            StrokeWidth = 1f,
+                            IsStroke = true,
+                            PathEffect = SKPathEffect.CreateDash(new[] { 4f, 4f }, 0)
+                        };
+                        canvas.DrawLine((float)xPx, 0, (float)xPx, h, guidePaint);
+                    }
+                }
+            }
         }
 
         private RulerIndentMarker? GetIndentMarker(RulerIndentMarkerType type)
@@ -359,6 +394,10 @@ namespace Writersword.Modules.TextEditor.Document
             base.OnPointerPressed(e);
             if (_vm is null) return;
 
+            // Режим сравнения: линейка только отображает — никакие drag
+            // (отступы, колонки, поля страницы) не начинаются.
+            if (_vm.IsReadOnly) return;
+
             var pos = e.GetPosition(this);
             double zoom = _vm.Zoom;
             double unitSizePx = UnitSizePx(zoom);
@@ -422,6 +461,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (Math.Abs(pos.X - textAreaStartPx) <= MarginHitPx)
             {
                 _isDraggingMargin = true; _draggingLeftMargin = true;
+                _vm.BeginMarginDrag();
                 e.Pointer.Capture(this);
                 Cursor = new Cursor(StandardCursorType.SizeWestEast);
                 e.Handled = true;
@@ -429,6 +469,7 @@ namespace Writersword.Modules.TextEditor.Document
             else if (Math.Abs(pos.X - textAreaEndPx) <= MarginHitPx)
             {
                 _isDraggingMargin = true; _draggingLeftMargin = false;
+                _vm.BeginMarginDrag();
                 e.Pointer.Capture(this);
                 Cursor = new Cursor(StandardCursorType.SizeWestEast);
                 e.Handled = true;
@@ -581,19 +622,23 @@ namespace Writersword.Modules.TextEditor.Document
             double xLeft = textAreaStartPx + GetMarkerPosition(RulerIndentMarkerType.LeftIndent) * unitSizePx;
             double xFirst = textAreaStartPx + GetMarkerPosition(RulerIndentMarkerType.FirstLineIndent) * unitSizePx;
             double xRight = textAreaEndPx - GetMarkerPosition(RulerIndentMarkerType.RightIndent) * unitSizePx;
+            double xList = textAreaStartPx + GetMarkerPosition(RulerIndentMarkerType.ListMarker) * unitSizePx;
 
             bool hitLeft = Math.Abs(xPx - xLeft) <= r;
             bool hitFirst = Math.Abs(xPx - xFirst) <= r;
             bool hitRight = Math.Abs(xPx - xRight) <= r;
+            bool hitList = _vm.ShowListMarker && Math.Abs(xPx - xList) <= r;
 
             // Каждый треугольник кликабелен ТОЛЬКО в своей Y-зоне:
-            //   FirstLineIndent → верхние MarkerSizePx пикселей (DrawTriangleUp вверху)
+            //   FirstLineIndent / ListMarker → верхние MarkerSizePx пикселей (DrawTriangleUp вверху)
             //   LeftIndent      → нижние MarkerSizePx пикселей  (DrawTriangleDown внизу)
             //   RightIndent     → нижние MarkerSizePx пикселей
             // Между треугольниками (средняя зона) — ни один из них не перехватывает клик.
             bool inTopZone = yPx <= MarkerSizePx;
             bool inBottomZone = yPx >= h - MarkerSizePx;
 
+            // Маркер списка имеет приоритет над отступом первой строки в верхней зоне.
+            if (inTopZone && hitList) return RulerIndentMarkerType.ListMarker;
             if (inTopZone && hitFirst) return RulerIndentMarkerType.FirstLineIndent;
             if (inBottomZone)
             {
@@ -633,6 +678,13 @@ namespace Writersword.Modules.TextEditor.Document
             double unitSizePx)
         {
             if (_vm is null) return;
+
+            // Режим сравнения: перетаскивание запрещено — курсор ресайза не показываем.
+            if (_vm.IsReadOnly)
+            {
+                Cursor = new Cursor(StandardCursorType.Arrow);
+                return;
+            }
 
 
             if (_vm.Mode == RulerMode.Paragraph)

@@ -8,6 +8,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Threading.Tasks;
 using Writersword.Core.Models.Project;
+using Writersword.Infrastructure.Services.Storage;
 using Writersword.Shared.Helpers;
 
 namespace Writersword.Infrastructure.Services.Project
@@ -49,6 +50,10 @@ namespace Writersword.Infrastructure.Services.Project
         public async Task<bool> SaveToZipAsync(ProjectFile project, string filePath)
         {
             await _saveGate.WaitAsync();
+            // Глобальный шлюз файла проекта: чтение старого архива (шаг 1) и
+            // атомарная замена File.Move (шаг 4) не пересекаются с записью
+            // конфигов через ZipFileStorageService и фоновым хешированием.
+            using var fileGate = await ProjectFileLock.AcquireAsync(filePath);
             try
             {
                 _logger.LogDebug("Saving to ZIP: {FilePath}", filePath);
@@ -74,8 +79,11 @@ namespace Writersword.Infrastructure.Services.Project
                     {
                         try
                         {
+                            // FileShare.ReadWrite: не конфликтуем с удерживаемым в
+                            // RELEASE-режиме дескриптором ZipFileStorageService.
+                            // От параллельных записей защищает глобальный шлюз выше.
                             using var oldStream = new FileStream(
-                                filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                                filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                             using var oldArchive = new ZipArchive(oldStream, ZipArchiveMode.Read);
 
                             foreach (var entry in oldArchive.Entries)
@@ -218,7 +226,11 @@ namespace Writersword.Infrastructure.Services.Project
                     return null;
                 }
 
-                using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                // Глобальный шлюз файла: чтение проекта не пересекается с записью
+                // конфигов и заменой файла при сохранении. FileShare.ReadWrite —
+                // чтобы не конфликтовать с удерживаемым дескриптором хранилища.
+                using var fileGate = await ProjectFileLock.AcquireAsync(filePath);
+                using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                 using (var archive = new ZipArchive(fileStream, ZipArchiveMode.Read))
                 {
                     var projectEntry = archive.GetEntry("project.json");

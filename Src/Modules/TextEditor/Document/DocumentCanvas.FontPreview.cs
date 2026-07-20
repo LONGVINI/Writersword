@@ -55,6 +55,11 @@ namespace Writersword.Modules.TextEditor.Document
         private void BeginFontPreviewSession()
         {
             ClearPreviewState();
+
+            // Режим сравнения (read-only): превью не запускается — сессия остаётся
+            // пустой, и выбор шрифта в дропдауне ни на что не влияет.
+            if (IsEditingBlocked) return;
+
             BuildPreviewTargets(_previewTargets);
             _fontPreviewActive = _previewTargets.Count > 0;
             _previewFont = null;
@@ -157,6 +162,10 @@ namespace Writersword.Modules.TextEditor.Document
         {
             _logger.Information("[FONT] End: commit={C} previewFont={F} targets={T}",
                 commit, _previewFont, _previewTargets.Count);
+            // Режим сравнения (read-only): коммит запрещён — ветка отмены ниже
+            // восстановит исходные раскладки, модель не изменится.
+            if (commit && IsEditingBlocked) commit = false;
+
             if (commit)
             {
                 var font = _previewFont;
@@ -198,6 +207,10 @@ namespace Writersword.Modules.TextEditor.Document
             string font,
             List<(ParagraphBlock block, ParagraphViewModel? vm, int start, int end)> targets)
         {
+            // Гранулярные команды мутируют модель напрямую (мимо гейтов DocumentViewModel) —
+            // в режиме сравнения выходим до любых изменений.
+            if (IsEditingBlocked) return;
+
             // Гранулярная команда работает по обычным абзацам документа. Если в целях есть
             // ячейки таблицы (vm == null) или нет лёгкого стека — откатываемся на боевой
             // SetFontFamily (полный снапшот), чтобы не оставить ячейки без изменения.

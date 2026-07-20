@@ -464,6 +464,10 @@ namespace Writersword.Modules.TextEditor.Document
             // удаляется из DocVm.Paragraphs но сильная ссылка в _layoutCache не даёт GC его собрать.
             PurgeDeadLayoutCacheEntries();
 
+            // Маркер предпросмотра переполнения выставляется заново на каждом пересборе:
+            // если картинка больше не переполняет страницу (или драг завершён) — сбрасывается.
+            _imageOverflowPreviewBlock = null;
+
             float pageWidthPt = GetPageWidthPt();
             float pageHeightPt = GetPageHeightPt();
             var (ml, mt, mr, mb) = GetPagePaddingPt();
@@ -482,6 +486,7 @@ namespace Writersword.Modules.TextEditor.Document
             var newPages = new List<PageRect>();
             var newTables = new List<TableEntry>();
             var newImages = new List<ImageEntry>();
+            var newInlineTransferred = new HashSet<ImageBlock>();
 
             newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
 
@@ -491,6 +496,9 @@ namespace Writersword.Modules.TextEditor.Document
             PageOffsetXChanged?.Invoke(pageOffsetXPx);
 
             var blocks = DocVm!.Document.Sections[0].Blocks;
+
+            // Нумерация списков за один проход по блокам в порядке следования.
+            var markerMap = Rendering.ListNumberingEngine.Compute(blocks);
 
             // O(1) поиск ParagraphViewModel по ParagraphBlock.
             // Без этого словаря был O(n²): для каждого из N блоков — O(n) перебор Paragraphs.
@@ -778,24 +786,53 @@ namespace Writersword.Modules.TextEditor.Document
                         if (imageBlock.WrapMode == WrapMode.Inline)
                         {
                             // Блок: занимает собственную строку, сдвигает текст ниже.
+                            // Повёрнутая картинка занимает в потоке свой AABB — габарит
+                            // повёрнутого прямоугольника, поэтому текст ниже сдвигается
+                            // на реальную высоту с учётом угла.
+                            double rotRad = imageBlock.RotationDeg * Math.PI / 180.0;
+                            float absCos = (float)Math.Abs(Math.Cos(rotRad));
+                            float absSin = (float)Math.Abs(Math.Sin(rotRad));
+                            float boxWpt = imgWpt * absCos + imgHpt * absSin;
+                            float boxHpt = imgWpt * absSin + imgHpt * absCos;
+
                             // Перенос на новую страницу, если не влезает в остаток.
                             float available = pageBottomPt - contentYPt;
                             bool atPageTop = contentYPt <= pageYPt + mt + 0.5f;
-                            if (imgHpt > available && !atPageTop)
+                            bool overflowsPage = boxHpt > available && !atPageTop;
+                            bool previewSelected = _imageOverflowPreviewMode
+                                && ReferenceEquals(imageBlock, _selectedImage);
+
+                            // Во время драга страница картинки заморожена как на момент
+                            // нажатия: она не уходит на следующую страницу и не
+                            // возвращается на предыдущую, пока кнопка не отпущена.
+                            bool doTransfer = previewSelected
+                                ? _imagePreviewStartTransferred && !atPageTop
+                                : overflowsPage;
+
+                            if (previewSelected && overflowsPage && !doTransfer)
+                            {
+                                // Предпросмотр: не влезает, но остаётся на месте,
+                                // выходит за нижний край листа и рисуется серой
+                                // (см. _paintImageDrawOverflow).
+                                _imageOverflowPreviewBlock = imageBlock;
+                            }
+
+                            if (doTransfer)
                             {
                                 pageYPt = pageYPt + pageHeightPt + PageGapPt;
                                 pageBottomPt = pageYPt + pageHeightPt - mb;
                                 contentYPt = pageYPt + mt;
                                 pageIdx++;
                                 newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                                newInlineTransferred.Add(imageBlock);
                             }
 
-                            // Горизонтальное выравнивание блок-картинки в текстовой колонке.
-                            float imgXPt = textXPt;
-                            float slackPt = textWidthPt - imgWpt;
+                            // Горизонтальное выравнивание бокса картинки в текстовой колонке.
+                            float boxXPt = textXPt;
+                            float slackPt = textWidthPt - boxWpt;
                             if (slackPt > 0f)
                             {
-                                imgXPt = imageBlock.Alignment switch
+                                boxXPt = imageBlock.Alignment switch
                                 {
                                     Models.Styles.TextAlignment.Center => textXPt + slackPt / 2f,
                                     Models.Styles.TextAlignment.Right => textXPt + slackPt,
@@ -803,8 +840,14 @@ namespace Writersword.Modules.TextEditor.Document
                                 };
                             }
 
-                            newImages.Add(new ImageEntry(imageBlock, contentYPt, imgXPt, imgWpt, imgHpt, pageIdx));
-                            contentYPt += imgHpt;
+                            // ImageEntry хранит неповёрнутый прямоугольник, центрированный
+                            // в AABB: рендер поворачивает вокруг центра этого прямоугольника,
+                            // поэтому картинка остаётся внутри выделенного ей бокса.
+                            float imgXPt = boxXPt + (boxWpt - imgWpt) / 2f;
+                            float imgYPt = contentYPt + (boxHpt - imgHpt) / 2f;
+
+                            newImages.Add(new ImageEntry(imageBlock, imgYPt, imgXPt, imgWpt, imgHpt, pageIdx));
+                            contentYPt += boxHpt;
                         }
                         else
                         {
@@ -822,7 +865,34 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (!pvmByBlock.TryGetValue(paraBlock, out var pvm)) continue;
 
-                var layout = GetOrBuildLayout(pvm, textWidthPt);
+                Rendering.ListMarkerInfo? paraMarker =
+                    markerMap.TryGetValue(paraBlock, out var _mi) ? _mi : null;
+                // Кладём текст маркера в модель ДО построения раскладки — BuildLayout меряет его
+                // ширину и отодвигает текст первой строки на зазор после цифры.
+                if (paraBlock.ListProperties is not null)
+                {
+                    paraBlock.ListProperties.ComputedMarkerText = paraMarker?.Text;
+                    MigrateCorruptListMarker(paraBlock, textWidthPt);
+                }
+
+                // Обтекание текстом: если рядом с вертикалью параграфа лежит плавающая
+                // картинка в режиме Square/Tight — строим раскладку с зонами исключения,
+                // строки обходят габарит картинки. Такой лейаут не кешируется.
+                var wrapZones = ComputeWrapZones(newImages, contentYPt, textXPt, textWidthPt);
+                var layout = wrapZones is null
+                    ? GetOrBuildLayout(pvm, textWidthPt)
+                    : BuildWrappedLayout(pvm, textWidthPt, wrapZones);
+
+                // Зоны считались от contentYPt, а строки начинаются после SpaceBefore —
+                // при ненулевом интервале пересобираем с точным верхом первой строки.
+                if (wrapZones is not null && layout.SpaceBeforePt > 0.01f)
+                {
+                    var shiftedZones = ComputeWrapZones(
+                        newImages, contentYPt + layout.SpaceBeforePt, textXPt, textWidthPt);
+                    layout = shiftedZones is null
+                        ? GetOrBuildLayout(pvm, textWidthPt)
+                        : BuildWrappedLayout(pvm, textWidthPt, shiftedZones);
+                }
 
                 // Якорь перед таблицей: пустой параграф, следующий блок — таблица.
                 bool isBeforeTableAnchor = string.IsNullOrEmpty(pvm.PlainText)
@@ -861,7 +931,7 @@ namespace Writersword.Modules.TextEditor.Document
                         pvm, layout,
                         pageYPt + contentYPt, FallbackLinePt,
                         pageIdx, 0, 0,
-                        AbsXPt: textXPt));
+                        AbsXPt: textXPt, Marker: paraMarker));
                     contentYPt += FallbackLinePt;
                     continue;
                 }
@@ -875,6 +945,13 @@ namespace Writersword.Modules.TextEditor.Document
                     var line = layout.Lines[li];
                     bool isLast = li == layout.Lines.Count - 1;
 
+                    // Зазор вытеснения строки под обтекаемый объект входит в высоту
+                    // параграфа — без него следующий блок наезжал бы на текст.
+                    // Если гэп у первой строки слайса — сдвигаем и якорь слайса:
+                    // рендер вычитает yBase = Lines[LineFrom].Y, в котором гэп уже учтён.
+                    contentYPt += line.WrapExtraTopPt;
+                    if (li == lineFrom) lineGroupYPt = contentYPt;
+
                     if (contentYPt + line.Height > pageBottomPt
                         && contentYPt > pageYPt + mt)
                     {
@@ -884,7 +961,7 @@ namespace Writersword.Modules.TextEditor.Document
                                 pvm, layout, lineGroupYPt,
                                 contentYPt - lineGroupYPt,
                                 pageIdx, lineFrom, li,
-                                AbsXPt: absXPt));
+                                AbsXPt: absXPt, Marker: paraMarker));
                         }
 
                         pageYPt = pageYPt + pageHeightPt + PageGapPt;
@@ -907,7 +984,7 @@ namespace Writersword.Modules.TextEditor.Document
                     pvm, layout, lineGroupYPt,
                     contentYPt - lineGroupYPt,
                     pageIdx, lineFrom, layout.Lines.Count,
-                    AbsXPt: absXPt));
+                    AbsXPt: absXPt, Marker: paraMarker));
             }
 
             float newCanvasH = pageYPt + pageHeightPt + PageGapPt;
@@ -918,6 +995,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _pages = newPages;
                 _tables = newTables;
                 _images = newImages;
+                _inlineTransferredImages = newInlineTransferred;
                 _canvasHeightPt = newCanvasH;
                 _canvasHeight = newCanvasH * PtToPx;
             }
@@ -937,6 +1015,9 @@ namespace Writersword.Modules.TextEditor.Document
             float lastTableBotPt = padHPt;
 
             var blocks = DocVm!.Document.Sections[0].Blocks;
+
+            // Нумерация списков за один проход по блокам в порядке следования.
+            var markerMap = Rendering.ListNumberingEngine.Compute(blocks);
 
             var pvmByBlock = new Dictionary<ParagraphBlock, ParagraphViewModel>(DocVm.Paragraphs.Count);
             foreach (var p in DocVm.Paragraphs)
@@ -964,6 +1045,14 @@ namespace Writersword.Modules.TextEditor.Document
                 if (block is not ParagraphBlock paraBlock) continue;
 
                 if (!pvmByBlock.TryGetValue(paraBlock, out var pvm)) continue;
+
+                Rendering.ListMarkerInfo? paraMarker =
+                    markerMap.TryGetValue(paraBlock, out var _mi) ? _mi : null;
+                if (paraBlock.ListProperties is not null)
+                {
+                    paraBlock.ListProperties.ComputedMarkerText = paraMarker?.Text;
+                    MigrateCorruptListMarker(paraBlock, textWidthPt);
+                }
 
                 var layout = GetOrBuildLayout(pvm, textWidthPt);
 
@@ -995,7 +1084,7 @@ namespace Writersword.Modules.TextEditor.Document
                         pvm, layout,
                         yPt, emptyH,
                         0, 0, 0,
-                        AbsXPt: padWPt));
+                        AbsXPt: padWPt, Marker: paraMarker));
                     yPt += emptyH;
                     continue;
                 }
@@ -1005,7 +1094,7 @@ namespace Writersword.Modules.TextEditor.Document
                     pvm, layout,
                     yPt + layout.SpaceBeforePt, hPt,
                     0, 0, layout.Lines.Count,
-                    AbsXPt: padWPt));
+                    AbsXPt: padWPt, Marker: paraMarker));
                 yPt += layout.BlockHeightPt;
             }
 

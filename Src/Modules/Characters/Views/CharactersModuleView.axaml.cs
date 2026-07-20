@@ -34,7 +34,8 @@ namespace Writersword.Modules.Characters.Views
         private CharactersGraphView? _graphView;
         private CharactersTemplatesView? _templatesView;
 
-        private ContentControl? _tabContent;
+        private Panel? _tabContent;
+        private bool _cardsProgressiveDone;
 
         public CharactersModuleView()
         {
@@ -89,7 +90,7 @@ namespace Writersword.Modules.Characters.Views
 
         private void OnLoaded(object? sender, RoutedEventArgs e)
         {
-            _tabContent = this.FindControl<ContentControl>("TabContent");
+            _tabContent = this.FindControl<Panel>("TabContent");
 
             // кнопка закрытия тоста
             var dismissBtn = this.FindControl<Button>("ToastDismissButton");
@@ -104,12 +105,13 @@ namespace Writersword.Modules.Characters.Views
             {
                 SwitchTab(vm2.MainTabIndex);
 
-                // Прогрессивная прогрузка карточек при каждом подключении вьюхи
-                // (workmode switch, dock move): без неё повторный вход строит все
-                // реализованные карточки одним проходом и замораживает UI на
-                // секунду. Вызов упоминается в TODO DockFactory — при переходе
-                // на Dock с кешированием контента вкладок его нужно убрать.
-                _ = vm2.RequestProgressiveRefreshAsync();
+                // Прогрессивная прогрузка при подключении вьюхи (workmode switch,
+                // dock move): без неё повторный вход строит все реализованные
+                // карточки одним проходом и замораживает UI. Для вкладки «Персонажи»
+                // (index 0) её уже запустил SwitchTab, поэтому здесь — только для
+                // остальных вкладок, чтобы не гонять двойную загрузку.
+                if (vm2.MainTabIndex != 0)
+                    _ = vm2.RequestProgressiveRefreshAsync();
             }
             else
                 SwitchTab(0);
@@ -241,7 +243,31 @@ namespace Writersword.Modules.Characters.Views
                 _ => null
             };
 
-            _tabContent.Content = content;
+            if (content is null) return;
+
+            // Вкладки не пересоздаются при переключении, а живут одновременно и
+            // переключаются видимостью. Тяжёлая «Персонажи» (тысячи карточек) при
+            // уходе НЕ уничтожается — иначе разбор всех карточек = долгий фриз ровно
+            // в момент клика на другую вкладку (то самое «зависает при нажатии на
+            // Editor»). При возврате она уже построена — переход мгновенный. Скрытая
+            // вкладка не мерится и не рисуется, процессорной цены нет.
+            if (!_tabContent.Children.Contains(content))
+                _tabContent.Children.Add(content);
+
+            foreach (var child in _tabContent.Children)
+                child.IsVisible = ReferenceEquals(child, content);
+
+            // Первый показ «Персонажей»: данные уже могут быть загружены, и тогда
+            // карточки построились бы все разом и подвисли. Поэтому один раз строим
+            // прогрессивно (чистим Folders и наливаем по одной). Вью карточек только
+            // что создана — карточек ещё нет, поэтому чистка дешёвая. Дальше вкладка
+            // живёт построенной, повторные заходы мгновенные, без пересборки.
+            if (index == 0 && vm != null && !_cardsProgressiveDone)
+            {
+                _cardsProgressiveDone = true;
+                vm.PrepareForReattach();
+                _ = vm.RequestProgressiveRefreshAsync();
+            }
         }
 
         private void CommitAllPendingEdits()

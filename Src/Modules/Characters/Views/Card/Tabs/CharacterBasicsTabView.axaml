@@ -12,6 +12,39 @@
 		<conv:IsCustomImportanceConverter x:Key="IsCustomImportanceConverter"/>
 	</UserControl.Resources>
 
+	<UserControl.Styles>
+		<!-- Ховер-заливка кнопки аватара из темы Fluent — квадратная по умолчанию;
+             скругляется в круг под форму самого аватара. -->
+		<Style Selector="Button.avatar-round /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="CornerRadius" Value="999"/>
+		</Style>
+
+		<!-- Имя персонажа под аватаром: выглядит как заголовок, но это TextBox —
+             клик по имени сразу даёт его редактировать. Рамка и фон появляются
+             только под курсором и в фокусе. -->
+		<Style Selector="TextBox.name-title">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="FontSize" Value="18"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="TextAlignment" Value="Center"/>
+			<Setter Property="HorizontalAlignment" Value="Center"/>
+			<Setter Property="MinWidth" Value="160"/>
+			<Setter Property="Padding" Value="10,4"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="TextBox.name-title:pointerover /template/ Border#PART_BorderElement">
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		</Style>
+		<Style Selector="TextBox.name-title:focus /template/ Border#PART_BorderElement">
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
 	<ScrollViewer Padding="12">
 		<StackPanel Spacing="12">
 
@@ -19,51 +52,57 @@
 			<StackPanel Spacing="8" HorizontalAlignment="Center">
 
 				<!-- Круглый аватар — Button чтобы открывать пикер по клику -->
-				<Button Command="{Binding OpenPickerCommand}"
+				<Button Classes="avatar-round"
+                        Command="{Binding OpenPickerCommand}"
                         Background="Transparent"
                         BorderThickness="0"
                         Padding="0"
                         HorizontalAlignment="Center"
                         ToolTip.Tip="{x:Static loc:CharactersStrings.Avatar_PickTooltip}">
-					<Border Width="96"
-                            Height="96"
-                            CornerRadius="48"
-                            ClipToBounds="True"
-                            Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
-						<Panel>
-							<!-- Фото если выбрано -->
-							<Image Source="{Binding AvatarBitmap}"
-                                   Stretch="UniformToFill"
-                                   IsVisible="{Binding AvatarBitmap,
-                                       Converter={x:Static ObjectConverters.IsNotNull}}"/>
-
-							<!-- Фолбэк-иконка -->
-							<TextBlock Text="{Binding FallbackIcon}"
-                                       FontSize="40"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       Foreground="White"
+					<Panel Width="112" Height="112">
+						<Border Width="96"
+                                Height="96"
+                                CornerRadius="48"
+                                ClipToBounds="True"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
+							<Panel>
+								<!-- Фото если выбрано -->
+								<Image Source="{Binding AvatarBitmap}"
+                                       Stretch="UniformToFill"
                                        IsVisible="{Binding AvatarBitmap,
-                                           Converter={x:Static ObjectConverters.IsNull}}"/>
-						</Panel>
-					</Border>
+                                           Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+								<!-- Фолбэк-иконка -->
+								<TextBlock Text="{Binding FallbackIcon}"
+                                           FontSize="40"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="White"
+                                           IsVisible="{Binding AvatarBitmap,
+                                               Converter={x:Static ObjectConverters.IsNull}}"/>
+							</Panel>
+						</Border>
+
+						<!-- Кольцо цветом персонажа вокруг аватара с зазором —
+                             как на карточках основного списка (свойство AvatarRing). -->
+						<Border Width="112" Height="112"
+                                CornerRadius="999"
+                                BorderThickness="3"
+                                BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+                                IsHitTestVisible="False"
+                                IsVisible="{Binding AvatarRing}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
+					</Panel>
 				</Button>
 
-				<!-- Кнопки под аватаром -->
-				<StackPanel Orientation="Horizontal"
-                            Spacing="6"
-                            HorizontalAlignment="Center">
-					<Button Content="{x:Static loc:CharactersStrings.Button_UploadAvatar}"
-                            Command="{Binding OpenPickerCommand}"
-                            FontSize="11"
-                            Padding="8,4"/>
-					<Button Content="{x:Static loc:CharactersStrings.Button_DeleteAvatar}"
-                            Command="{Binding DeleteAvatarCommand}"
-                            FontSize="11"
-                            Padding="8,4"
-                            IsVisible="{Binding AvatarPath,
-                                Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-				</StackPanel>
+				<!-- Имя персонажа — крупно под аватаром, редактируется по клику.
+                     Кнопки Upload/Delete убраны: пикер открывается кликом по
+                     аватару, удаление — кнопкой внутри пикера. -->
+				<TextBox Classes="name-title"
+                         Text="{Binding Name, Mode=TwoWay}"/>
 			</StackPanel>
 
 			<!-- Имя -->

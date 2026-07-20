@@ -1,4 +1,7 @@
-﻿using Avalonia.Controls;
+﻿using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using ReactiveUI;
 using Serilog;
@@ -15,12 +18,20 @@ namespace Writersword.Modules.TextEditor.Views
         private readonly UndoRedoStack _undoStack;
         private IDisposable? _monitorSubscription;
 
+        // Всплывающая подсказка номера страницы при перетаскивании ползунка.
+        private bool _draggingScrollbar;
+        private DocumentCanvas? _tooltipCanvas;
+        private ScrollViewer? _tooltipScrollViewer;
+        private StackPanel? _pageTooltip;
+        private TextBlock? _pageTooltipText;
+
         public TextEditorView(UndoRedoStack undoStack)
         {
             _undoStack = undoStack;
             InitializeComponent();
             WireCanvas();
             WireScroll();
+            WirePageTooltip();
         }
 
         public TextEditorView() : this(new UndoRedoStack()) { }
@@ -57,6 +68,78 @@ namespace Writersword.Modules.TextEditor.Views
                     vm.Ruler.ViewportHeight = scrollViewer.Viewport.Height;
                 };
             };
+        }
+
+        private void WirePageTooltip()
+        {
+            _tooltipScrollViewer = this.FindControl<ScrollViewer>("DocumentScrollViewer");
+            _tooltipCanvas = this.FindControl<DocumentCanvas>("PageCanvas");
+            _pageTooltip = this.FindControl<StackPanel>("PageDragTooltip");
+            _pageTooltipText = this.FindControl<TextBlock>("PageDragTooltipText");
+
+            if (_tooltipScrollViewer is null) return;
+
+            // Ждём применения шаблона, чтобы добраться до вертикального ползунка.
+            _tooltipScrollViewer.TemplateApplied += (_, args) =>
+            {
+                var vbar = args.NameScope.Find<ScrollBar>("PART_VerticalScrollBar");
+                if (vbar is null) return;
+
+                // Tunnel — срабатывает даже когда указатель захвачен ползунком.
+                vbar.AddHandler(PointerPressedEvent, OnScrollbarPressed, RoutingStrategies.Tunnel);
+                vbar.AddHandler(PointerReleasedEvent, OnScrollbarReleased, RoutingStrategies.Tunnel);
+                vbar.AddHandler(PointerCaptureLostEvent, OnScrollbarCaptureLost, RoutingStrategies.Tunnel);
+            };
+
+            // Обновление подсказки во время прокрутки, пока ползунок зажат.
+            _tooltipScrollViewer.ScrollChanged += (_, _) =>
+            {
+                if (_draggingScrollbar) UpdatePageTooltip();
+            };
+        }
+
+        private void OnScrollbarPressed(object? sender, PointerPressedEventArgs e)
+        {
+            _draggingScrollbar = true;
+            if (_pageTooltip is not null) _pageTooltip.IsVisible = true;
+            UpdatePageTooltip();
+        }
+
+        private void OnScrollbarReleased(object? sender, PointerReleasedEventArgs e) => HidePageTooltip();
+
+        private void OnScrollbarCaptureLost(object? sender, PointerCaptureLostEventArgs e) => HidePageTooltip();
+
+        private void HidePageTooltip()
+        {
+            _draggingScrollbar = false;
+            if (_pageTooltip is not null) _pageTooltip.IsVisible = false;
+        }
+
+        private void UpdatePageTooltip()
+        {
+            if (_tooltipCanvas is null || _tooltipScrollViewer is null
+                || _pageTooltip is null || _pageTooltipText is null) return;
+
+            int page = _tooltipCanvas.GetPageAtOffset(_tooltipScrollViewer.Offset.Y);
+            int total = _tooltipCanvas.PageCount;
+            if (page > total) page = total;
+            _pageTooltipText.Text = $"Страница {page} / {total}";
+
+            // Позиция подсказки — по центру ползунка. Считаем геометрию ползунка
+            // из extent/viewport/offset, а не по доле прокрутки.
+            double extent = _tooltipScrollViewer.Extent.Height;
+            double viewport = _tooltipScrollViewer.Viewport.Height;
+            double offset = _tooltipScrollViewer.Offset.Y;
+            if (extent <= 0.0 || viewport <= 0.0) return;
+
+            double thumbHeight = viewport / extent * viewport;
+            double thumbCenter = offset / extent * viewport + thumbHeight / 2.0;
+
+            double top = thumbCenter - _pageTooltip.Bounds.Height / 2.0;
+            double maxTop = viewport - _pageTooltip.Bounds.Height;
+            if (top < 0.0) top = 0.0;
+            else if (top > maxTop) top = maxTop < 0.0 ? 0.0 : maxTop;
+            _pageTooltip.Margin = new Thickness(0, top, 16, 0);
         }
 
         protected override void OnLoaded(RoutedEventArgs e)

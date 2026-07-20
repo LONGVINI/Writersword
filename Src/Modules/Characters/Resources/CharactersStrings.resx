@@ -313,6 +313,18 @@
     <value>Search characters...</value>
     <comment>Search box placeholder</comment>
   </data>
+  <data name="EditorSidebar_ToggleCompact" xml:space="preserve">
+    <value>Avatars only / full list</value>
+    <comment>Editor sidebar compact mode toggle tooltip</comment>
+  </data>
+  <data name="EditorSidebar_Hide" xml:space="preserve">
+    <value>Hide list</value>
+    <comment>Editor sidebar hide button tooltip</comment>
+  </data>
+  <data name="EditorSidebar_Show" xml:space="preserve">
+    <value>Show list</value>
+    <comment>Editor sidebar restore button tooltip</comment>
+  </data>
   <data name="Placeholder_SelectCharacter" xml:space="preserve">
     <value>Select a character to view details</value>
     <comment>Empty right panel</comment>

@@ -249,6 +249,9 @@ namespace Writersword.Infrastructure.Services.Storage
                 ProjectFile? project = null;
                 try
                 {
+                    // Глобальный шлюз файла проекта: чтение не пересекается с записью
+                    // конфигов и заменой файла при сохранении из других потоков.
+                    using var fileGate = ProjectFileLock.Acquire(projectPath);
                     using (var stream = new System.IO.FileStream(
                         projectPath, System.IO.FileMode.Open,
                         System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite))

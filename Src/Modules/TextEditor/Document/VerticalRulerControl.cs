@@ -240,6 +240,9 @@ namespace Writersword.Modules.TextEditor.Document
             base.OnPointerPressed(e);
             if (_vm is null) return;
 
+            // Режим сравнения: линейка только отображает — drag полей не начинается.
+            if (_vm.IsReadOnly) return;
+
             var pos = e.GetPosition(this);
             var (pTopY, pBotY, tTopY, tBotY) = ComputePageGeometry();
 
@@ -247,6 +250,7 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 _isDraggingMargin = true; _draggingTopMargin = true;
                 _dragPageTopY = pTopY; _dragPageBotY = pBotY;
+                _vm.BeginMarginDrag();
                 e.Pointer.Capture(this);
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
                 e.Handled = true;
@@ -255,6 +259,7 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 _isDraggingMargin = true; _draggingTopMargin = false;
                 _dragPageTopY = pTopY; _dragPageBotY = pBotY;
+                _vm.BeginMarginDrag();
                 e.Pointer.Capture(this);
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
                 e.Handled = true;
@@ -293,7 +298,8 @@ namespace Writersword.Modules.TextEditor.Document
                 return;
             }
 
-            if (Math.Abs(pos.Y - tTopY) <= MarginHitPx || Math.Abs(pos.Y - tBotY) <= MarginHitPx)
+            if (!_vm.IsReadOnly
+                && (Math.Abs(pos.Y - tTopY) <= MarginHitPx || Math.Abs(pos.Y - tBotY) <= MarginHitPx))
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeNorthSouth);
             else
                 Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Arrow);

@@ -94,6 +94,20 @@
         <Style Selector="Button.avatar-btn:pointerover Border.avatar-ring">
             <Setter Property="Opacity" Value="1"/>
         </Style>
+        <!-- Кнопки-иконки в шапке папки (комментарий, удаление, сворачивание):
+             ровный скруглённый ховер-фон вокруг иконки, единый вид. -->
+        <Style Selector="Button.folder-hdr-btn">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.folder-hdr-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#1FFFFFFF"/>
+        </Style>
+        <Style Selector="Button.folder-hdr-btn:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33FFFFFF"/>
+        </Style>
     </UserControl.Styles>
 
     <Grid RowDefinitions="Auto,*,Auto">
@@ -262,9 +276,9 @@
                                                     </Panel>
 
                                                     <Grid Margin="8,0,8,0">
-                                                        <Button Command="{Binding StartEditCommentCommand}"
-                                                                Background="Transparent" BorderThickness="0"
-                                                                Padding="4,0" VerticalAlignment="Center"
+                                                        <Button Classes="folder-hdr-btn"
+                                                                Command="{Binding StartEditCommentCommand}"
+                                                                Padding="4"
                                                                 HorizontalAlignment="Right"
                                                                 ToolTip.Tip="{x:Static loc:CharactersStrings.Folder_CommentTooltip}"
                                                                 IsVisible="{Binding Comment, Converter={x:Static StringConverters.IsNullOrEmpty}}">
@@ -305,18 +319,11 @@
                                                       ColumnDefinitions="Auto,Auto,Auto"
                                                       VerticalAlignment="Center">
                                                     <Button Grid.Column="0"
+                                                            Classes="folder-hdr-btn"
                                                             Command="{Binding RequestDeleteCommand}"
-                                                            Background="Transparent" BorderThickness="0"
-                                                            Padding="8,0" Height="36"
-                                                            VerticalAlignment="Stretch"
-                                                            VerticalContentAlignment="Center"
+                                                            Padding="8"
                                                             IsVisible="{Binding !IsUngrouped}"
                                                             ToolTip.Tip="{x:Static loc:CharactersStrings.Folder_DeleteTooltip}">
-                                                        <Button.Styles>
-                                                            <Style Selector="Button:pointerover /template/ ContentPresenter">
-                                                                <Setter Property="Background" Value="Transparent"/>
-                                                            </Style>
-                                                        </Button.Styles>
                                                         <PathIcon Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
                                                                   Width="13" Height="13"
                                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
@@ -330,10 +337,9 @@
                                                                MinWidth="20"
                                                                TextAlignment="Center"/>
                                                     <Button Grid.Column="2"
+                                                            Classes="folder-hdr-btn"
                                                             Command="{Binding ToggleExpandCommand}"
-                                                            Background="Transparent" BorderThickness="0"
-                                                            Padding="8,0" Margin="0,0,4,0"
-                                                            VerticalAlignment="Stretch">
+                                                            Padding="6,4" Margin="0,0,4,0">
                                                         <TextBlock Text="{Binding IsExpanded, Converter={x:Static conv:BoolToCollapseArrowConverter.Instance}}"
                                                                    FontSize="10"
                                                                    Foreground="{DynamicResource TextSecondaryBrush}"

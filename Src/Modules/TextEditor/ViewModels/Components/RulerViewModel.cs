@@ -21,7 +21,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
     {
         LeftIndent = 0,
         FirstLineIndent = 1,
-        RightIndent = 2
+        RightIndent = 2,
+        ListMarker = 3
     }
 
     public sealed class RulerColumnMarker
@@ -43,6 +44,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         private double _zoom = 1.0;
         private bool _isVisible = true;
         private bool _isSnapEnabled = true;
+        private bool _isReadOnly;
         private int _focusedPageIndex = 0;
 
         private double _pageWidthMm = 210;
@@ -56,6 +58,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         private double _leftIndentMm = 0;
         private double _firstLineIndentMm = 0;
         private double _rightIndentMm = 0;
+        private double _listMarkerMm = 0;
+        private bool _showListMarker = false;
 
         private double _scrollOffsetY = 0;
         private double _viewportHeight = 600;
@@ -81,6 +85,16 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         {
             get => _isSnapEnabled;
             set => this.RaiseAndSetIfChanged(ref _isSnapEnabled, value);
+        }
+
+        /// <summary>
+        /// Режим сравнения версий: линейка работает только на отображение.
+        /// Контролы линеек не начинают drag маркеров отступов, колонок и полей.
+        /// </summary>
+        public bool IsReadOnly
+        {
+            get => _isReadOnly;
+            set => this.RaiseAndSetIfChanged(ref _isReadOnly, value);
         }
 
         public double SnapStep => 0.25;
@@ -167,6 +181,20 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             set { this.RaiseAndSetIfChanged(ref _rightIndentMm, value); UpdateIndentMarkers(); }
         }
 
+        /// <summary>Позиция маркера списка (выступ) от левого поля, мм. Двигает стрелку «край списка».</summary>
+        public double ListMarkerMm
+        {
+            get => _listMarkerMm;
+            set { this.RaiseAndSetIfChanged(ref _listMarkerMm, value); UpdateIndentMarkers(); }
+        }
+
+        /// <summary>Показывать ли стрелку «край списка» (только когда активный абзац — элемент списка).</summary>
+        public bool ShowListMarker
+        {
+            get => _showListMarker;
+            set => this.RaiseAndSetIfChanged(ref _showListMarker, value);
+        }
+
         public double ScrollOffsetY
         {
             get => _scrollOffsetY;
@@ -183,7 +211,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         {
             new RulerIndentMarker { Type = RulerIndentMarkerType.LeftIndent,      Position = 0 },
             new RulerIndentMarker { Type = RulerIndentMarkerType.FirstLineIndent, Position = 0 },
-            new RulerIndentMarker { Type = RulerIndentMarkerType.RightIndent,     Position = 0 }
+            new RulerIndentMarker { Type = RulerIndentMarkerType.RightIndent,     Position = 0 },
+            new RulerIndentMarker { Type = RulerIndentMarkerType.ListMarker,      Position = 0 }
         };
 
         public List<RulerColumnMarker> ColumnMarkers { get; } = new();
@@ -210,6 +239,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         /// <summary>Перетаскивание маркера отступа завершено (кнопка мыши отпущена).</summary>
         public event Action? IndentDragEnded;
         public Func<double>? GetMinParagraphIndentMm { get; set; }
+
+        /// <summary>Начато перетаскивание поля страницы — владелец делает снапшот для Undo.</summary>
+        public event Action? MarginDragStarted;
+        public void BeginMarginDrag() => MarginDragStarted?.Invoke();
 
         public event Action<double, double>? MarginChanged;
         public void NotifyMarginChanged() => MarginChanged?.Invoke(MarginLeftMm, MarginRightMm);
@@ -485,11 +518,26 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             return result;
         }
 
+        /// <summary>
+        /// Двигает ТОЛЬКО маркер абзацной стрелки (первой строки) на абсолютную позицию (мм от
+        /// начала текстовой зоны), не трогая остальные маркеры. Нужно во время drag метки списка,
+        /// чтобы абзацная стрелка ехала за меткой, а сама метка не сбрасывалась.
+        /// </summary>
+        public void SetFirstLineMarkerAbsolute(double mm)
+        {
+            _firstLineIndentMm = mm;
+            var m = GetIndentMarker(RulerIndentMarkerType.FirstLineIndent);
+            if (m is not null) m.Position = MmToUnits(mm);
+            this.RaisePropertyChanged(nameof(IndentMarkers));
+        }
+
         private void UpdateIndentMarkers()
         {
             GetIndentMarker(RulerIndentMarkerType.LeftIndent)!.Position = MmToUnits(_leftIndentMm);
             GetIndentMarker(RulerIndentMarkerType.FirstLineIndent)!.Position = MmToUnits(_firstLineIndentMm);
             GetIndentMarker(RulerIndentMarkerType.RightIndent)!.Position = MmToUnits(_rightIndentMm);
+            var listMarker = GetIndentMarker(RulerIndentMarkerType.ListMarker);
+            if (listMarker is not null) listMarker.Position = MmToUnits(_listMarkerMm);
             this.RaisePropertyChanged(nameof(IndentMarkers));
         }
 

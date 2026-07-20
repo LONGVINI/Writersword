@@ -42,6 +42,12 @@ namespace Writersword.Infrastructure.Services.Project
         private readonly Dictionary<string, ZipFileStorageService> _openStorages = new();
         private readonly Dictionary<string, IWorkspaceAutoSaveService> _autoSaveServices = new();
 
+        // Сессионные данные модулей (каретка, скролл, зум) для каждой стороны
+        // режима сравнения: ключ — "<путь проекта>|cache" или "<путь проекта>|saved".
+        // Позволяет при Switch Version возвращаться к позиции, где пользователь
+        // остановился в каждой из версий. Очищается при выходе из compare mode.
+        private readonly Dictionary<string, Dictionary<string, object?>> _compareSessionCache = new();
+
         public ProjectWorkflow(
                IProjectService projectService,
                IZipCacheService cacheService,
@@ -103,8 +109,12 @@ namespace Writersword.Infrastructure.Services.Project
                             // Быстрый путь: сравниваем хеши файла (~50 мс) вместо загрузки данных.
                             var currentHash = await Task.Run(() =>
                             {
+                                // Глобальный шлюз файла: хеширование не пересекается с записью
+                                // конфигов/кеша в этот же ZIP из других потоков.
+                                using var fileGate = ProjectFileLock.Acquire(filePath);
                                 using var sha = System.Security.Cryptography.SHA256.Create();
-                                using var fs = File.OpenRead(filePath);
+                                using var fs = new FileStream(
+                                    filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                                 return Convert.ToHexString(sha.ComputeHash(fs));
                             });
                             hashMatched = currentHash == cacheMeta.ProjectFileHash;
@@ -418,24 +428,39 @@ namespace Writersword.Infrastructure.Services.Project
         {
             try
             {
-                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
-                var activeModules = mainViewModel.GetActiveModules();
+                // Модули берутся у ЦЕЛЕВОЙ вкладки, а не у активной вкладки окна:
+                // пользователь мог переключить вкладку, пока открыт диалог
+                // подтверждения, и перезагрузка применялась к модулям ЧУЖОЙ вкладки —
+                // в проекте целевой вкладки нет данных для чужих модулей, и
+                // SetCustomData(null) обнулял их живое состояние (пропадали все
+                // персонажи другого проекта до перезапуска приложения).
+                var activeModules = tab.Workspace?.GetActiveModules()
+                    ?? tab.ModuleContext.GetAllModules();
                 var project = tab.GetProject();
 
                 _logger.LogDebug("Reloading {Count} modules from project data", activeModules.Count);
 
                 foreach (var module in activeModules)
                 {
-                    if (project.ModulesData.TryGetValue(module.moduleType, out var data))
+                    project.ModulesData.TryGetValue(module.moduleType, out var data);
+
+                    // Двухфазный путь для модулей с фоновой подготовкой данных:
+                    // тяжёлая десериализация уходит с UI-потока, применение остаётся
+                    // на нём. Это заметно ускоряет Switch Version в режиме сравнения.
+                    if (module is IPreparedDataModule preparedModule)
                     {
-                        module.SetCustomData(data);
-                        _logger.LogDebug("Reloaded module: {moduleType}", module.moduleType);
+                        object? prepared = await Task.Run(() => preparedModule.PrepareCustomData(data));
+                        preparedModule.ApplyPreparedCustomData(prepared);
                     }
                     else
                     {
-                        module.SetCustomData(null);
-                        _logger.LogDebug("Cleared module (no data): {moduleType}", module.moduleType);
+                        module.SetCustomData(data);
                     }
+
+                    if (data is not null)
+                        _logger.LogDebug("Reloaded module: {moduleType}", module.moduleType);
+                    else
+                        _logger.LogDebug("Cleared module (no data): {moduleType}", module.moduleType);
                 }
 
                 // Применяем локальные настройки из ZIP после перезагрузки
@@ -496,22 +521,30 @@ namespace Writersword.Infrastructure.Services.Project
                     {
                         capturedTab.Context.CloseZipStorage();
 
+                        ProjectFile? discardProject = null;
                         try
                         {
-                            var project = await _projectService.LoadAsync(capturedPath);
-                            if (project != null)
-                            {
-                                capturedTab.UpdateProject(project);
-                                await ReloadModulesFromProject(capturedTab);
-                            }
+                            discardProject = await _projectService.LoadAsync(capturedPath);
+                            if (discardProject != null)
+                                capturedTab.UpdateProject(discardProject);
                         }
                         finally
                         {
                             capturedTab.Context.ReopenZipStorage();
                         }
+
+                        // Перезагрузка модулей ПОСЛЕ переоткрытия хранилища: внутри
+                        // применяются локальные настройки из ZIP, а раньше хранилище
+                        // в этот момент было закрыто ("FileStorage is null").
+                        if (discardProject != null)
+                            await ReloadModulesFromProject(capturedTab);
                     }
 
                     _cacheService.DeleteCache(capturedPath);
+
+                    // Выход из compare mode — сохранённые позиции версий больше не нужны.
+                    _compareSessionCache.Remove(capturedPath + "|cache");
+                    _compareSessionCache.Remove(capturedPath + "|saved");
 
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     {
@@ -548,6 +581,13 @@ namespace Writersword.Infrastructure.Services.Project
 
                 if (success)
                 {
+                    // Выход из compare mode — сохранённые позиции версий больше не нужны.
+                    if (capturedTab.FilePath is not null)
+                    {
+                        _compareSessionCache.Remove(capturedTab.FilePath + "|cache");
+                        _compareSessionCache.Remove(capturedTab.FilePath + "|saved");
+                    }
+
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     {
                         capturedTab.Context.IsInCompareMode = false;
@@ -585,6 +625,22 @@ namespace Writersword.Infrastructure.Services.Project
                 var isViewingCache = capturedTab.RecoveryBanner.IsViewingCache;
                 ProjectFile? project;
 
+                // Запоминаем позицию (каретка, скролл, зум) текущей версии,
+                // чтобы вернуться к ней при обратном переключении.
+                var sessionModules = capturedTab.Workspace?.GetActiveModules()
+                    ?? capturedTab.ModuleContext.GetAllModules();
+                string currentSessionKey = capturedPath + "|" + (isViewingCache ? "cache" : "saved");
+                string targetSessionKey = capturedPath + "|" + (isViewingCache ? "saved" : "cache");
+
+                var currentSessions = new Dictionary<string, object?>();
+                foreach (var m in sessionModules)
+                {
+                    try { currentSessions[m.moduleType] = m.GetSessionData(); }
+                    catch (Exception sex)
+                    { _logger.LogWarning(sex, "Failed to capture session for {ModuleType}", m.moduleType); }
+                }
+                _compareSessionCache[currentSessionKey] = currentSessions;
+
                 capturedTab.Context.CloseZipStorage();
 
                 try
@@ -601,18 +657,43 @@ namespace Writersword.Infrastructure.Services.Project
                     }
 
                     if (project != null)
-                    {
                         capturedTab.UpdateProject(project);
-                        await ReloadModulesFromProject(capturedTab);
-                        capturedTab.RecoveryBanner.IsViewingCache = !isViewingCache;
-
-                        _logger.LogDebug("Switched version, now viewing: {Version}",
-                            capturedTab.RecoveryBanner.IsViewingCache ? "cache" : "saved");
-                    }
                 }
                 finally
                 {
                     capturedTab.Context.ReopenZipStorage();
+                }
+
+                // Перезагрузка модулей ПОСЛЕ переоткрытия хранилища: внутри применяются
+                // локальные настройки из ZIP, а раньше хранилище в этот момент было
+                // закрыто ("FileStorage is null").
+                if (project != null)
+                {
+                    await ReloadModulesFromProject(capturedTab);
+
+                    // Перезагрузка пересоздаёт вьюмодели модулей — состояние read-only
+                    // режима сравнения теряется. Применяем контекст заново ко всем
+                    // активным модулям, как это делается при входе в compare mode.
+                    capturedTab.Workspace?.RefreshModulesFromContext();
+
+                    // Восстанавливаем позицию, где пользователь остановился
+                    // в целевой версии при прошлом её просмотре.
+                    if (_compareSessionCache.TryGetValue(targetSessionKey, out var targetSessions))
+                    {
+                        foreach (var m in sessionModules)
+                        {
+                            if (!targetSessions.TryGetValue(m.moduleType, out var session)
+                                || session is null) continue;
+                            try { m.SetSessionData(session); }
+                            catch (Exception sex)
+                            { _logger.LogWarning(sex, "Failed to restore session for {ModuleType}", m.moduleType); }
+                        }
+                    }
+
+                    capturedTab.RecoveryBanner.IsViewingCache = !isViewingCache;
+
+                    _logger.LogDebug("Switched version, now viewing: {Version}",
+                        capturedTab.RecoveryBanner.IsViewingCache ? "cache" : "saved");
                 }
             }
             catch (Exception ex)

@@ -89,10 +89,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             // Подписки на события линейки.
             Ruler.IndentMarkerChanged += OnRulerIndentMarkerChanged;
-            Ruler.IndentDragStarted += () => DocumentViewModel?.BeginParagraphFormatBatch();
-            Ruler.IndentDragEnded += () => DocumentViewModel?.EndParagraphFormatBatch();
+            Ruler.IndentDragStarted += OnIndentDragStarted;
+            Ruler.IndentDragEnded += OnIndentDragEnded;
             Ruler.AllColumnWidthsChanged += OnRulerAllColumnWidthsChanged;
             Ruler.AllColumnWidthsChanging += OnRulerAllColumnWidthsChanging;
+            Ruler.MarginDragStarted += OnRulerMarginDragStarted;
             Ruler.MarginChanged += OnRulerMarginChanged;
             Ruler.MarginCommitted += OnRulerMarginCommitted;
 
@@ -128,10 +129,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
             _logger.Debug("LoadDocument: MonitorSizeInches={V}", MonitorSizeInches);
 
             if (_documentViewModel is not null)
+            {
                 _documentViewModel.CursorContextChanged -= OnCursorContextChanged;
+                _documentViewModel.DocumentRestored -= OnDocumentRestored;
+            }
 
             var docVm = new DocumentViewModel(document, _chunkManager, _autoReplace, _spellCheck);
             docVm.CursorContextChanged += OnCursorContextChanged;
+            docVm.DocumentRestored += OnDocumentRestored;
 
             // Зум может меняться не только ползунком, но и из канваса (Ctrl + колесо). Подписываемся
             // на DocVm.Zoom и подтягиваем ползунок и линейку. Петли нет: если значение уже совпадает,
@@ -214,10 +219,35 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     ctx.LeftIndentPt,
                     ctx.LeftIndentPt + ctx.FirstLineIndentPt,
                     ctx.RightIndentPt);
+
+                // Фиолетовая стрелка «метка» = позиция номера (левый край цифры). Видна только для
+                // абзацев-списков вне таблицы, обновляется при каждом переносе курсора.
+                const double PtToMm = 25.4 / 72.0;
+                var lp = DocumentViewModel?.GetActiveListProperties();
+                if (lp is not null && lp.MarkerType != Models.Document.ListMarkerType.None
+                    && Ruler.Mode == RulerMode.Paragraph)
+                {
+                    double markerAbsPt = lp.MarkerIndentPt
+                        ?? Math.Max(0.0, ctx.LeftIndentPt - Models.Document.ListProperties.DefaultHangingPt);
+                    Ruler.ShowListMarker = true;
+                    Ruler.ListMarkerMm = markerAbsPt * PtToMm;
+                }
+                else
+                {
+                    Ruler.ShowListMarker = false;
+                }
             }
         }
 
         // ── Линейка ───────────────────────────────────────────────────────
+
+        // После Undo/Redo снапшота документ мог получить другие поля страницы — линейка их не
+        // отслеживает, поэтому пересинхронизируем её с восстановленными настройками.
+        private void OnDocumentRestored()
+        {
+            if (DocumentViewModel is null) return;
+            SyncRulerToDocument(DocumentViewModel.Document);
+        }
 
         private void SyncRulerToDocument(DocumentModel document)
         {
@@ -267,15 +297,49 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Ribbon.IsTableTabVisible = false;
         }
 
+        // Индекс контекстной вкладки «Формат» (картинка) в TabControl риббона:
+        // Home=0, Insert=1, Layout=2, References=3, Table=4, Image=5.
+        private const int ImageTabIndex = 5;
+
+        // Вкладка, активная до автопереключения на «Формат» — восстанавливается
+        // при снятии выделения картинки.
+        private int _tabIndexBeforeImage = -1;
+
         /// <summary>
         /// Показывает/скрывает контекстную вкладку «Формат» (работа с картинкой)
         /// при выделении/снятии выделения изображения на канвасе.
+        /// При выделении вкладка активируется автоматически, при снятии —
+        /// возвращается вкладка, которая была активна до этого.
         /// </summary>
         public void NotifyImageSelectionChanged(bool selected)
         {
-            Ribbon.IsImageTabVisible = selected;
-            if (selected) Ribbon.Image.SyncFromTarget();
+            if (selected)
+            {
+                if (!Ribbon.IsImageTabVisible)
+                {
+                    _tabIndexBeforeImage = Ribbon.SelectedTabIndex;
+                    Ribbon.IsImageTabVisible = true;
+                    Ribbon.SelectedTabIndex = ImageTabIndex;
+                }
+                Ribbon.Image.SyncFromTarget();
+            }
+            else
+            {
+                bool wasOnImageTab = Ribbon.SelectedTabIndex == ImageTabIndex;
+                Ribbon.IsImageTabVisible = false;
+                if (wasOnImageTab)
+                {
+                    Ribbon.SelectedTabIndex =
+                        _tabIndexBeforeImage >= 0 && _tabIndexBeforeImage != ImageTabIndex
+                            ? _tabIndexBeforeImage
+                            : 0;
+                }
+                _tabIndexBeforeImage = -1;
+            }
         }
+
+        private void OnIndentDragStarted() => DocumentViewModel?.BeginParagraphFormatBatch();
+        private void OnIndentDragEnded() => DocumentViewModel?.EndParagraphFormatBatch();
 
         private void OnRulerIndentMarkerChanged(RulerIndentMarkerType markerType, double valueMm)
         {
@@ -304,21 +368,66 @@ namespace Writersword.Modules.TextEditor.ViewModels
                         double newAbsFirstMm = Math.Max(absFirstMm, pageLeftMm);
                         double newFirstRelMm = newAbsFirstMm - newLeftMm;
                         DocumentViewModel?.SetLeftIndentPt(newLeftMm * 72.0 / 25.4);
-                        DocumentViewModel?.SetFirstLineIndentPt(newFirstRelMm * 72.0 / 25.4);
+
+                        // В списке нижняя стрелка (строки 2+) НЕ должна влиять на абзацную и метку:
+                        // возвращаем абзацную стрелку на позицию «метка + ширина + зазор».
+                        var lpL = DocumentViewModel?.GetActiveListProperties();
+                        if (lpL is not null && lpL.MarkerType != Models.Document.ListMarkerType.None)
+                        {
+                            double markerAbsMm = (lpL.MarkerIndentPt ?? 0.0) * 25.4 / 72.0;
+                            double advanceMm = (lpL.ComputedMarkerWidthPt + lpL.MarkerTextMinGapPt) * 25.4 / 72.0;
+                            Ruler.SetFirstLineMarkerAbsolute(markerAbsMm + advanceMm);
+                        }
+                        else
+                        {
+                            DocumentViewModel?.SetFirstLineIndentPt(newFirstRelMm * 72.0 / 25.4);
+                        }
                         break;
                     }
                 case RulerIndentMarkerType.FirstLineIndent:
                     {
-                        double leftMm = Ruler.UnitsToMm(
-                            Ruler.GetIndentMarkerPosition(RulerIndentMarkerType.LeftIndent));
-                        DocumentViewModel?.SetFirstLineIndentPt((valuePt - leftMm * 72.0 / 25.4));
+                        // В списке абзацная стрелка = начало текста (метка + ширина + зазор).
+                        // Перетаскивание меняет ЗАЗОР между цифрой и текстом, а не отступ абзаца.
+                        var lpFirst = DocumentViewModel?.GetActiveListProperties();
+                        if (lpFirst is not null && lpFirst.MarkerType != Models.Document.ListMarkerType.None)
+                        {
+                            double markerAbsPt = lpFirst.MarkerIndentPt ?? 0.0;
+                            double newGapPt = valuePt - markerAbsPt - lpFirst.ComputedMarkerWidthPt;
+                            DocumentViewModel?.SetListMarkerGapPt(newGapPt);
+                        }
+                        else
+                        {
+                            double leftMm = Ruler.UnitsToMm(
+                                Ruler.GetIndentMarkerPosition(RulerIndentMarkerType.LeftIndent));
+                            DocumentViewModel?.SetFirstLineIndentPt((valuePt - leftMm * 72.0 / 25.4));
+                        }
                         break;
                     }
                 case RulerIndentMarkerType.RightIndent:
                     DocumentViewModel?.SetRightIndentPt(valuePt);
                     break;
+                case RulerIndentMarkerType.ListMarker:
+                    {
+                        // Фиолетовая метка задаёт позицию номера (левый край цифры).
+                        DocumentViewModel?.SetListMarkerIndentPt(valuePt);
+                        // Абзацная стрелка едет ВМЕСТЕ с меткой по ФАКТИЧЕСКОЙ (ограниченной) позиции
+                        // метки: начало текста = метка + ширина цифры + зазор. Поэтому она тоже не
+                        // уходит за край страницы, а блокируется вместе с меткой.
+                        var lpMk = DocumentViewModel?.GetActiveListProperties();
+                        if (lpMk is not null)
+                        {
+                            double markerAbsMm = (lpMk.MarkerIndentPt ?? 0.0) * 25.4 / 72.0;
+                            double advanceMm = (lpMk.ComputedMarkerWidthPt + lpMk.MarkerTextMinGapPt) * 25.4 / 72.0;
+                            Ruler.SetFirstLineMarkerAbsolute(markerAbsMm + advanceMm);
+                        }
+                        break;
+                    }
             }
         }
+
+        // Начало перетаскивания поля — делаем снапшот документа, чтобы Ctrl+Z вернул поля.
+        private void OnRulerMarginDragStarted()
+            => DocumentViewModel?.BeginPageEdit("Изменение полей страницы");
 
         private void OnRulerMarginChanged(double marginLeftMm, double marginRightMm)
         {
@@ -432,6 +541,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 Ruler.MarginTopMm, Ruler.MarginBottomMm,
                 marginLeftMm, marginRightMm);
             SyncRulerToDocument(DocumentViewModel.Document);
+            // Закрываем снапшот, начатый в OnRulerMarginDragStarted — теперь Ctrl+Z вернёт поля.
+            DocumentViewModel.CommitPageEdit();
         }
 
 
@@ -529,6 +640,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ToggleBulletList() => DocumentViewModel?.ToggleBulletList();
         public void ToggleNumberedList() => DocumentViewModel?.ToggleNumberedList();
         public void ToggleMultilevelList() => DocumentViewModel?.ToggleMultilevelList();
+        public void ApplyListType(Writersword.Modules.TextEditor.Models.Document.ListMarkerType markerType)
+            => DocumentViewModel?.ApplyListType(markerType);
+        public void ApplyCustomBulletList(string marker) => DocumentViewModel?.ApplyCustomBulletList(marker);
+        public Writersword.Modules.TextEditor.Models.Document.ListProperties? GetActiveListProperties()
+            => DocumentViewModel?.GetActiveListProperties();
+        public void ApplyListSettings(Writersword.Modules.TextEditor.Models.Document.ListProperties settings)
+            => DocumentViewModel?.ApplyListSettings(settings);
+        public void SetListMarkerIndentPt(double pt) => DocumentViewModel?.SetListMarkerIndentPt(pt);
+        public void SetListTextIndentPt(double pt) => DocumentViewModel?.SetListTextIndentPt(pt);
+        public void ApplyMultilevelList() => DocumentViewModel?.ApplyMultilevelList();
+        public void ApplyMultilevelScheme(System.Collections.Generic.List<Writersword.Modules.TextEditor.Models.Document.ListMarkerType> scheme)
+            => DocumentViewModel?.ApplyMultilevelScheme(scheme);
 
         public void Cut() => DocumentViewModel?.Cut();
         public void Copy() => DocumentViewModel?.Copy();
@@ -556,6 +679,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void DeleteSelectedImage() => DocumentViewModel?.DeleteSelectedImage();
         public (WrapMode Wrap, bool LockAspect, Writersword.Modules.TextEditor.Models.Styles.TextAlignment Align)? GetSelectedImageInfo()
             => DocumentViewModel?.GetSelectedImageInfo();
+        public void SetImageRotation(double degrees) => DocumentViewModel?.SetImageRotation(degrees);
+        public double? GetSelectedImageRotation() => DocumentViewModel?.GetSelectedImageRotation();
+        public void SetImageWidth(double widthPt) => DocumentViewModel?.SetImageWidth(widthPt);
+        public void SetImageHeight(double heightPt) => DocumentViewModel?.SetImageHeight(heightPt);
+        public void SetImageOpacity(double opacity) => DocumentViewModel?.SetImageOpacity(opacity);
+        public void SetImageBorder(string? colorHex, double thicknessPt) => DocumentViewModel?.SetImageBorder(colorHex, thicknessPt);
+        public (double WidthPt, double HeightPt, double Opacity, string? BorderColor, double BorderThicknessPt)? GetSelectedImageStyle()
+            => DocumentViewModel?.GetSelectedImageStyle();
+        public void ToggleImageFlipHorizontal() => DocumentViewModel?.ToggleImageFlipHorizontal();
+        public void ToggleImageFlipVertical() => DocumentViewModel?.ToggleImageFlipVertical();
+        public void SetImageCropMode(bool on) => DocumentViewModel?.SetImageCropMode(on);
+        public bool GetImageCropMode() => DocumentViewModel?.GetImageCropMode() ?? false;
 
         // ── Таблица ───────────────────────────────────────────────────────
 
@@ -732,6 +867,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             _disposed = true;
 
             Ruler.IndentMarkerChanged -= OnRulerIndentMarkerChanged;
+            Ruler.MarginDragStarted -= OnRulerMarginDragStarted;
             Ruler.AllColumnWidthsChanged -= OnRulerAllColumnWidthsChanged;
             Ruler.AllColumnWidthsChanging -= OnRulerAllColumnWidthsChanging;
             Ruler.MarginChanged -= OnRulerMarginChanged;
@@ -740,7 +876,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Ruler.TableLeftEdgeChanged -= OnRulerTableLeftEdgeChanged;
 
             if (_documentViewModel is not null)
+            {
                 _documentViewModel.CursorContextChanged -= OnCursorContextChanged;
+                _documentViewModel.DocumentRestored -= OnDocumentRestored;
+            }
 
             _autoSaveSubscription?.Dispose();
             _paragraphsSubscription?.Dispose();

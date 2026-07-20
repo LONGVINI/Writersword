@@ -62,6 +62,9 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             private set { _avatarBitmap?.Dispose(); this.RaiseAndSetIfChanged(ref _avatarBitmap, value); }
         }
 
+        private bool _avatarRing;
+        public bool AvatarRing { get => _avatarRing; set => this.RaiseAndSetIfChanged(ref _avatarRing, value); }
+
         private CharacterImportanceLevel _importanceLevel = CharacterImportanceLevel.Secondary;
         public CharacterImportanceLevel ImportanceLevel { get => _importanceLevel; set => this.RaiseAndSetIfChanged(ref _importanceLevel, value); }
 
@@ -146,6 +149,7 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             _customImportanceLabel = c.CustomImportanceLabel;
             _narrativeStartPoint = c.NarrativeStartPoint; _narrativeEndPoint = c.NarrativeEndPoint;
             _isCollective = c.IsCollective; _populationNote = c.PopulationNote;
+            _avatarRing = c.AvatarRing;
 
             Aliases.Clear(); foreach (var a in c.Aliases) Aliases.Add(a);
             Tags.Clear(); foreach (var t in c.Tags) Tags.Add(t);

@@ -704,20 +704,61 @@
                         </Grid>
                         <StackPanel Spacing="4" VerticalAlignment="Top">
                             <StackPanel Orientation="Horizontal" Spacing="2">
-                                <ToggleButton IsChecked="{Binding IsBulletList}" Command="{Binding BulletListCommand}"
-                                              Classes="RibbonToggle"
-                                              behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.List_Bullet}"
-                                              behaviours:TooltipBehavior.HotKey="Ctrl+Shift+L"
-                                              behaviours:TooltipBehavior.ShowDelay="700">
-                                    <PathIcon Data="M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-6c-.83 0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-6h14v-2H7v2zm0-8v2h14V5H7z" Width="14" Height="14"/>
-                                </ToggleButton>
-                                <ToggleButton IsChecked="{Binding IsNumberedList}" Command="{Binding NumberedListCommand}"
-                                              Classes="RibbonToggle"
-                                              behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.List_Numbered}"
-                                              behaviours:TooltipBehavior.HotKey="Ctrl+Shift+O"
-                                              behaviours:TooltipBehavior.ShowDelay="700">
-                                    <PathIcon Data="M2 17h2v.5H3v1h1v.5H2v1h3v-4H2v1zm1-9h1V4H2v1h1v3zm-1 3h1.8L2 13.1v.9h3v-1H3.2L5 10.9V10H2v1zm5-6v2h14V5H7zm0 14h14v-2H7v2zm0-6h14v-2H7v2z" Width="14" Height="14"/>
-                                </ToggleButton>
+                                <SplitButton Classes="RibbonSplit" Command="{Binding BulletListCommand}"
+                                             behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.List_Bullet}"
+                                             behaviours:TooltipBehavior.HotKey="Ctrl+Shift+L"
+                                             behaviours:TooltipBehavior.ShowDelay="700">
+                                    <SplitButton.Content>
+                                        <PathIcon Data="M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-6c-.83 0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-6h14v-2H7v2zm0-8v2h14V5H7z" Width="14" Height="14"/>
+                                    </SplitButton.Content>
+                                    <SplitButton.Flyout>
+                                        <MenuFlyout>
+                                            <MenuItem Header="•  Маркер"  Command="{Binding SelectListTypeCommand}" CommandParameter="Bullet"/>
+                                            <MenuItem Header="–  Тире"    Command="{Binding SelectListTypeCommand}" CommandParameter="Dash"/>
+                                            <MenuItem Header="▪  Квадрат" Command="{Binding SelectListTypeCommand}" CommandParameter="Square"/>
+                                            <MenuItem Header="◦  Круг"    Command="{Binding SelectListTypeCommand}" CommandParameter="Circle"/>
+                                            <MenuItem Header="➤  Стрелка" Command="{Binding SelectListTypeCommand}" CommandParameter="Arrow"/>
+                                            <Separator/>
+                                            <MenuItem Header="Определить новый список…" Click="OnDefineListClick"/>
+                                        </MenuFlyout>
+                                    </SplitButton.Flyout>
+                                </SplitButton>
+                                <SplitButton Classes="RibbonSplit" Command="{Binding NumberedListCommand}"
+                                             behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.List_Numbered}"
+                                             behaviours:TooltipBehavior.HotKey="Ctrl+Shift+O"
+                                             behaviours:TooltipBehavior.ShowDelay="700">
+                                    <SplitButton.Content>
+                                        <PathIcon Data="M2 17h2v.5H3v1h1v.5H2v1h3v-4H2v1zm1-9h1V4H2v1h1v3zm-1 3h1.8L2 13.1v.9h3v-1H3.2L5 10.9V10H2v1zm5-6v2h14V5H7zm0 14h14v-2H7v2zm0-6h14v-2H7v2z" Width="14" Height="14"/>
+                                    </SplitButton.Content>
+                                    <SplitButton.Flyout>
+                                        <MenuFlyout>
+                                            <MenuItem Header="1.  2.  3."   Command="{Binding SelectListTypeCommand}" CommandParameter="Decimal"/>
+                                            <MenuItem Header="01. 02. 03."  Command="{Binding SelectListTypeCommand}" CommandParameter="DecimalLeadingZero"/>
+                                            <MenuItem Header="a.  b.  c."   Command="{Binding SelectListTypeCommand}" CommandParameter="LowerAlpha"/>
+                                            <MenuItem Header="A.  B.  C."   Command="{Binding SelectListTypeCommand}" CommandParameter="UpperAlpha"/>
+                                            <MenuItem Header="i.  ii. iii." Command="{Binding SelectListTypeCommand}" CommandParameter="LowerRoman"/>
+                                            <MenuItem Header="I.  II. III." Command="{Binding SelectListTypeCommand}" CommandParameter="UpperRoman"/>
+                                            <Separator/>
+                                            <MenuItem Header="Определить новый список…" Click="OnDefineListClick"/>
+                                        </MenuFlyout>
+                                    </SplitButton.Flyout>
+                                </SplitButton>
+                                <SplitButton Classes="RibbonSplit" Command="{Binding MultilevelListCommand}"
+                                             behaviours:TooltipBehavior.Tip="Многоуровневый список"
+                                             behaviours:TooltipBehavior.ShowDelay="700">
+                                    <SplitButton.Content>
+                                        <PathIcon Data="M3 5h2v2H3V5zm4 0h14v2H7V5zM5 11H3v2h2v-2zm2 0h14v2H7v-2zm-2 6H3v2h2v-2zm2 0h14v2H7v-2z" Width="14" Height="14"/>
+                                    </SplitButton.Content>
+                                    <SplitButton.Flyout>
+                                        <MenuFlyout>
+                                            <MenuItem Header="1. → a. → i.  (смешанный)" Command="{Binding SelectMultilevelSchemeCommand}" CommandParameter="mixed"/>
+                                            <MenuItem Header="1. → 1. → 1.  (числа)"     Command="{Binding SelectMultilevelSchemeCommand}" CommandParameter="numeric"/>
+                                            <MenuItem Header="•  → ◦  → ▪  (маркеры)"    Command="{Binding SelectMultilevelSchemeCommand}" CommandParameter="bullets"/>
+                                            <Separator/>
+                                            <MenuItem Header="Настроить уровни…" Click="OnMultilevelSettingsClick"/>
+                                        </MenuFlyout>
+                                    </SplitButton.Flyout>
+                                </SplitButton>
                                 <Separator Classes="RibbonDivider"/>
                                 <Button Command="{Binding DecreaseIndentCommand}" Classes="RibbonBtn"
                                         behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Para_Outdent}"

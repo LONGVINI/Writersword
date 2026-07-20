@@ -426,8 +426,14 @@ namespace Writersword.Infrastructure.Services.Storage
                     {
                         try
                         {
+                            // Глобальный шлюз файла проекта: хеширование не пересекается
+                            // с записью через ZipFileStorageService и сохранением проекта.
+                            // FileShare.ReadWrite — чтобы не блокировать удерживаемый
+                            // в RELEASE-режиме дескриптор хранилища.
+                            using var fileGate = ProjectFileLock.Acquire(projectPath);
                             using var sha = SHA256.Create();
-                            using var fs = File.OpenRead(projectPath);
+                            using var fs = new FileStream(
+                                projectPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                             var hashBytes = sha.ComputeHash(fs);
                             metadata.ProjectFileHash = Convert.ToHexString(hashBytes);
                             break;
@@ -506,6 +512,10 @@ namespace Writersword.Infrastructure.Services.Storage
 
         public Dictionary<string, object?>? ReadProjectDataWithoutLock(string projectPath)
         {
+            // "WithoutLock" относится к внутреннему _fileLock КЕША — файл ПРОЕКТА
+            // всё равно читаем под глобальным шлюзом, чтобы не поймать архив
+            // посреди перезаписи (ZipFileStorageService / SaveToZipAsync).
+            using var fileGate = ProjectFileLock.Acquire(projectPath);
             try
             {
                 using (var stream = new FileStream(projectPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))

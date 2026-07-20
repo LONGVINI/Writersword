@@ -133,5 +133,44 @@ namespace Writersword.Core.Models.Rendering
         /// Количество символов в строке включая пробелы между словами.
         /// </summary>
         public int CharCount => LastCharIndex - FirstCharIndex + 1;
+
+        /// <summary>
+        /// Левый сдвиг полосы строки внутри текстовой области при обтекании объекта, pt.
+        /// 0 — строка начинается от левого края области.
+        /// </summary>
+        public float WrapLeftPt { get; set; }
+
+        /// <summary>
+        /// Ширина доступной полосы строки при обтекании, pt.
+        /// 0 — обтекания нет, строка располагается во всей текстовой области.
+        /// </summary>
+        public float WrapAreaWidthPt { get; set; }
+
+        /// <summary>
+        /// Дополнительный вертикальный сдвиг перед строкой, pt: строка вытеснена
+        /// под обтекаемый объект, потому что рядом с ним не осталось места.
+        /// </summary>
+        public float WrapExtraTopPt { get; set; }
+    }
+
+    /// <summary>
+    /// Зона исключения при обтекании текстом — габарит плавающего объекта с полями.
+    /// Координаты в pt: Y — относительно верха первой строки параграфа,
+    /// X — относительно левого края текстовой области параграфа.
+    /// </summary>
+    public readonly struct SKWrapZone
+    {
+        public SKWrapZone(float topPt, float bottomPt, float leftPt, float rightPt)
+        {
+            TopPt = topPt;
+            BottomPt = bottomPt;
+            LeftPt = leftPt;
+            RightPt = rightPt;
+        }
+
+        public float TopPt { get; }
+        public float BottomPt { get; }
+        public float LeftPt { get; }
+        public float RightPt { get; }
     }
 }

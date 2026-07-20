@@ -48,6 +48,22 @@ namespace Writersword.Modules.Characters.ViewModels
         public string? AvatarPath => _avatarPath;
         public bool IsCollective { get; }
 
+        // Цвет папки, из которой взят персонаж, — для точки-индикатора справа
+        // на баннере в результатах поиска Редактора. Заполняется при построении
+        // FilteredCharacters; null (персонаж без папки) — точка не показывается.
+        private string? _searchFolderColor;
+        public string? SearchFolderColor
+        {
+            get => _searchFolderColor;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _searchFolderColor, value);
+                this.RaisePropertyChanged(nameof(ShowSearchFolderDot));
+            }
+        }
+
+        public bool ShowSearchFolderDot => !string.IsNullOrEmpty(_searchFolderColor);
+
         // Доп. функция: цветное кольцо вокруг аватара (цветом персонажа).
         private bool _avatarRing;
         public bool AvatarRing
@@ -225,19 +241,82 @@ namespace Writersword.Modules.Characters.ViewModels
         public Action<bool>? OnApplyRingToAll { get; set; }            // (ringEnabled — ко всем персонажам)
 
         // êîìàíäû  âûïîëíÿþòñÿ èç AXAML íàïðÿìóþ ÷åðåç {Binding}
-        public ReactiveCommand<Unit, Unit> ConfirmNameCommand { get; }
-        public ReactiveCommand<Unit, Unit> CancelNameCommand { get; }
-        public ReactiveCommand<Unit, Unit> StartRenameCommand { get; }
-        public ReactiveCommand<Unit, Unit> ConfirmRenameCommand { get; }
-        public ReactiveCommand<Unit, Unit> CancelRenameCommand { get; }
-        public ReactiveCommand<Unit, Unit> RequestDeleteCommand { get; }
-        public ReactiveCommand<bool, Unit> ApplyRingToAllCommand { get; }
+        // Команды создаются ЛЕНИВО, при первом обращении из шаблона карточки.
+        // Конструктор VM обязан быть дешёвым: раньше он создавал 9 ReactiveCommand
+        // на каждого персонажа (Rx-машинерия), из-за чего создание сотен VM при
+        // загрузке списка стоило секунды и дёргало прокрутку Редактора. Вкладка
+        // «Редактор» эти команды не биндит, поэтому её строки теперь создаются
+        // мгновенно, а карточки платят за команды только при реальной отрисовке.
+        private ReactiveCommand<Unit, Unit>? _confirmNameCommand;
+        public ReactiveCommand<Unit, Unit> ConfirmNameCommand => _confirmNameCommand ??= ReactiveCommand.Create(() =>
+        {
+            var resolved = string.IsNullOrWhiteSpace(InlineName)
+                ? CharactersStrings.Character_DefaultName
+                : InlineName.Trim();
+            Name = resolved;
+            IsBeingNamed = false;
+            OnConfirmName?.Invoke(Id, resolved);
+        });
+
+        private ReactiveCommand<Unit, Unit>? _cancelNameCommand;
+        public ReactiveCommand<Unit, Unit> CancelNameCommand => _cancelNameCommand ??= ReactiveCommand.Create(() =>
+        {
+            IsBeingNamed = false;
+            OnCancelNewCharacter?.Invoke(Id);
+        });
+
+        private ReactiveCommand<Unit, Unit>? _startRenameCommand;
+        public ReactiveCommand<Unit, Unit> StartRenameCommand => _startRenameCommand ??= ReactiveCommand.Create(() =>
+        {
+            PendingRename = Name;
+            IsRenaming = true;
+        });
+
+        private ReactiveCommand<Unit, Unit>? _confirmRenameCommand;
+        public ReactiveCommand<Unit, Unit> ConfirmRenameCommand => _confirmRenameCommand ??= ReactiveCommand.Create(() =>
+        {
+            var resolved = string.IsNullOrWhiteSpace(PendingRename) ? Name : PendingRename.Trim();
+            Name = resolved;
+            IsRenaming = false;
+            OnConfirmName?.Invoke(Id, resolved);
+        });
+
+        private ReactiveCommand<Unit, Unit>? _cancelRenameCommand;
+        public ReactiveCommand<Unit, Unit> CancelRenameCommand => _cancelRenameCommand ??= ReactiveCommand.Create(() =>
+        {
+            IsRenaming = false;
+        });
+
+        private ReactiveCommand<Unit, Unit>? _requestDeleteCommand;
+        public ReactiveCommand<Unit, Unit> RequestDeleteCommand => _requestDeleteCommand ??= ReactiveCommand.Create(() =>
+        {
+            OnDeleteRequested?.Invoke(Id);
+        });
+
+        private ReactiveCommand<bool, Unit>? _applyRingToAllCommand;
+        public ReactiveCommand<bool, Unit> ApplyRingToAllCommand => _applyRingToAllCommand ??= ReactiveCommand.Create<bool>(v =>
+        {
+            OnApplyRingToAll?.Invoke(v);
+        });
 
         // Аватар — открытие пикера из списка персонажей.
         // RequestPickerOpen задаётся из code-behind CharactersListView.
         public Func<Task<string?>>? RequestPickerOpen { get; set; }
-        public ReactiveCommand<Unit, Unit> OpenAvatarPickerCommand { get; }
-        public ReactiveCommand<Unit, Unit> RemoveAvatarCommand { get; }
+
+        private ReactiveCommand<Unit, Unit>? _openAvatarPickerCommand;
+        public ReactiveCommand<Unit, Unit> OpenAvatarPickerCommand => _openAvatarPickerCommand ??= ReactiveCommand.CreateFromTask(async () =>
+        {
+            if (RequestPickerOpen == null) return;
+            var result = await RequestPickerOpen();
+            if (result != null) SetAvatarRef(result);
+        });
+
+        private ReactiveCommand<Unit, Unit>? _removeAvatarCommand;
+        public ReactiveCommand<Unit, Unit> RemoveAvatarCommand => _removeAvatarCommand ??= ReactiveCommand.Create(() =>
+        {
+            _avatarService?.DeleteAvatar(_avatarPath);
+            SetAvatarRef(null);
+        });
 
         public CharacterListItemViewModel(
             Models.Character character,
@@ -260,66 +339,8 @@ namespace Writersword.Modules.Characters.ViewModels
             _avatarPath = character.AvatarPath;
             _avatarService = avatarService;
 
-            OpenAvatarPickerCommand = ReactiveCommand.CreateFromTask(async () =>
-            {
-                if (RequestPickerOpen == null) return;
-                var result = await RequestPickerOpen();
-                if (result != null) SetAvatarRef(result);
-            });
-
-            RemoveAvatarCommand = ReactiveCommand.Create(() =>
-            {
-                _avatarService?.DeleteAvatar(_avatarPath);
-                SetAvatarRef(null);
-            });
-
             _isBeingNamed = isNewlyCreated;
             _inlineName = isNewlyCreated ? string.Empty : character.Name;
-
-            ConfirmNameCommand = ReactiveCommand.Create(() =>
-            {
-                var resolved = string.IsNullOrWhiteSpace(InlineName)
-                    ? CharactersStrings.Character_DefaultName
-                    : InlineName.Trim();
-                Name = resolved;
-                IsBeingNamed = false;
-                OnConfirmName?.Invoke(Id, resolved);
-            });
-
-            CancelNameCommand = ReactiveCommand.Create(() =>
-            {
-                IsBeingNamed = false;
-                OnCancelNewCharacter?.Invoke(Id);
-            });
-
-            StartRenameCommand = ReactiveCommand.Create(() =>
-            {
-                PendingRename = Name;
-                IsRenaming = true;
-            });
-
-            ConfirmRenameCommand = ReactiveCommand.Create(() =>
-            {
-                var resolved = string.IsNullOrWhiteSpace(PendingRename) ? Name : PendingRename.Trim();
-                Name = resolved;
-                IsRenaming = false;
-                OnConfirmName?.Invoke(Id, resolved);
-            });
-
-            CancelRenameCommand = ReactiveCommand.Create(() =>
-            {
-                IsRenaming = false;
-            });
-
-            RequestDeleteCommand = ReactiveCommand.Create(() =>
-            {
-                OnDeleteRequested?.Invoke(Id);
-            });
-
-            ApplyRingToAllCommand = ReactiveCommand.Create<bool>(v =>
-            {
-                OnApplyRingToAll?.Invoke(v);
-            });
         }
         private void SetAvatarRef(string? avatarRef)
         {

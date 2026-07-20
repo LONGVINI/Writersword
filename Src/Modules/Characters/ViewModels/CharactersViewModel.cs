@@ -143,6 +143,138 @@ namespace Writersword.Modules.Characters.ViewModels
         public ObservableCollection<string> AvailableTags { get; } = new();
         public ObservableCollection<string> ActiveTagFilters { get; } = new();
 
+        // ── Плоский список для вкладки «Редактор» ──────────────────────────
+        // Заголовки папок и персонажи лежат в одной коллекции вперемешку, чтобы
+        // один виртуализированный ItemsRepeater реализовывал только видимые строки.
+        // Вложенные списки (папка → персонажи) виртуализировать нельзя: внутренний
+        // список получает бесконечную высоту и реализует все строки сразу — вкладка
+        // фризила при каждом открытии, пока не построит весь список. Здесь строки
+        // добавляются инкрементально, ровно как идёт прогрессивная загрузка
+        // персонажей, поэтому список наполняется плавно и открытие мгновенное.
+        public ObservableCollection<object> EditorRows { get; } = new();
+
+        private readonly Dictionary<CharacterFolderViewModel, IDisposable> _editorFolderSubs = new();
+        private bool _editorRowsHooked;
+
+        private void HookEditorRows()
+        {
+            if (_editorRowsHooked) return;
+            _editorRowsHooked = true;
+
+            Folders.CollectionChanged += OnFoldersChangedForEditor;
+            RebuildEditorRows();
+        }
+
+        private void OnFoldersChangedForEditor(object? sender,
+            System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            // Штатный сценарий загрузки — добавление папки в конец списка —
+            // обрабатываем точечно. Любые структурные изменения (Clear при
+            // пересборке, удаление, переупорядочивание) редки → полный пересбор.
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add
+                && e.NewItems != null)
+            {
+                foreach (CharacterFolderViewModel folder in e.NewItems)
+                {
+                    EditorRows.Add(folder);
+                    SubscribeFolderForEditor(folder);
+                    if (folder.IsExpanded)
+                        foreach (var ch in folder.Characters)
+                            EditorRows.Add(ch);
+                }
+                return;
+            }
+
+            RebuildEditorRows();
+        }
+
+        private void SubscribeFolderForEditor(CharacterFolderViewModel folder)
+        {
+            if (_editorFolderSubs.ContainsKey(folder)) return;
+
+            void OnFolderProp(object? s, System.ComponentModel.PropertyChangedEventArgs e)
+            {
+                if (e.PropertyName == nameof(CharacterFolderViewModel.IsExpanded))
+                    RebuildFolderBlock(folder);
+            }
+            void OnChars(object? s, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+                => OnFolderCharactersChanged(folder, e);
+
+            folder.PropertyChanged += OnFolderProp;
+            folder.Characters.CollectionChanged += OnChars;
+
+            _editorFolderSubs[folder] = System.Reactive.Disposables.Disposable.Create(() =>
+            {
+                folder.PropertyChanged -= OnFolderProp;
+                folder.Characters.CollectionChanged -= OnChars;
+            });
+        }
+
+        private void OnFolderCharactersChanged(CharacterFolderViewModel folder,
+            System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            if (!folder.IsExpanded) return;
+
+            // Прогрессивная загрузка добавляет персонажей в конец папки по одному —
+            // вставляем ровно на своё место, без пересбора всего списка.
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add
+                && e.NewItems != null && e.NewStartingIndex >= 0)
+            {
+                int header = EditorRows.IndexOf(folder);
+                if (header < 0) { RebuildEditorRows(); return; }
+
+                int insertAt = header + 1 + e.NewStartingIndex;
+                foreach (var item in e.NewItems)
+                {
+                    if (insertAt > EditorRows.Count) insertAt = EditorRows.Count;
+                    EditorRows.Insert(insertAt, item!);
+                    insertAt++;
+                }
+                return;
+            }
+
+            // Reset/Remove/Replace/Move — точечно пересобираем блок этой папки.
+            RebuildFolderBlock(folder);
+        }
+
+        // Убирает строки-персонажи данной папки из EditorRows и (если раскрыта)
+        // вставляет актуальные заново. Заголовок папки остаётся на месте.
+        private void RebuildFolderBlock(CharacterFolderViewModel folder)
+        {
+            int header = EditorRows.IndexOf(folder);
+            if (header < 0) { RebuildEditorRows(); return; }
+
+            int i = header + 1;
+            while (i < EditorRows.Count && EditorRows[i] is not CharacterFolderViewModel)
+                EditorRows.RemoveAt(i);
+
+            if (folder.IsExpanded)
+            {
+                int insertAt = header + 1;
+                foreach (var ch in folder.Characters)
+                {
+                    EditorRows.Insert(insertAt, ch);
+                    insertAt++;
+                }
+            }
+        }
+
+        private void RebuildEditorRows()
+        {
+            foreach (var sub in _editorFolderSubs.Values) sub.Dispose();
+            _editorFolderSubs.Clear();
+
+            EditorRows.Clear();
+            foreach (var folder in Folders)
+            {
+                SubscribeFolderForEditor(folder);
+                EditorRows.Add(folder);
+                if (folder.IsExpanded)
+                    foreach (var ch in folder.Characters)
+                        EditorRows.Add(ch);
+            }
+        }
+
         private string _searchQuery = string.Empty;
         public string SearchQuery
         {
@@ -516,6 +648,10 @@ namespace Writersword.Modules.Characters.ViewModels
                 .Subscribe(ex => _logger.Error(ex, "GoToRelationships failed")).DisposeWith(_disposables);
             GoToTemplatesCommand.ThrownExceptions
                 .Subscribe(ex => _logger.Error(ex, "GoToTemplates failed")).DisposeWith(_disposables);
+
+            // Плоский список для вкладки «Редактор» строится и поддерживается
+            // инкрементально по мере наполнения Folders/персонажей.
+            HookEditorRows();
 
             FilterPrimaryCommand = ReactiveCommand.Create(() =>
             {
@@ -906,7 +1042,11 @@ namespace Writersword.Modules.Characters.ViewModels
             if (FilteredCharacters.Any(c => c.Id == character.Id)) return;
 
             var relCount = _relationshipService.GetAllForCharacter(character.Id).Count;
-            FilteredCharacters.Add(new CharacterListItemViewModel(character, relCount, false, _avatarService));
+            var item = new CharacterListItemViewModel(character, relCount, false, _avatarService);
+            var owningFolder = _folders.FirstOrDefault(f => f.CharacterIds.Contains(character.Id));
+            if (owningFolder != null)
+                item.SearchFolderColor = owningFolder.Color;
+            FilteredCharacters.Add(item);
         }
 
         /// <summary>
@@ -1045,6 +1185,13 @@ namespace Writersword.Modules.Characters.ViewModels
 
             FilteredCharacters.Clear();
 
+            // Карта персонаж -> цвет папки: точка-индикатор на баннере результата
+            // поиска показывает, из какой папки взят персонаж.
+            var folderColorById = new Dictionary<string, string>();
+            foreach (var folder in _folders)
+                foreach (var cid in folder.CharacterIds)
+                    folderColorById[cid] = folder.Color;
+
             for (int i = 0; i < all.Count; i += BatchSize)
             {
                 if (ct.IsCancellationRequested) return;
@@ -1054,7 +1201,10 @@ namespace Writersword.Modules.Characters.ViewModels
                 {
                     var c = all[j];
                     var relCount = _relationshipService.GetAllForCharacter(c.Id).Count;
-                    FilteredCharacters.Add(new CharacterListItemViewModel(c, relCount, false, _avatarService));
+                    var item = new CharacterListItemViewModel(c, relCount, false, _avatarService);
+                    if (folderColorById.TryGetValue(c.Id, out var folderColor))
+                        item.SearchFolderColor = folderColor;
+                    FilteredCharacters.Add(item);
                 }
 
                 // Отдаём диспетчер между батчами: ввод и рендер не блокируются.
@@ -1088,8 +1238,51 @@ namespace Writersword.Modules.Characters.ViewModels
             ActiveTemplateIds = ActiveTemplateIds.ToList(),
             GraphOffsetX = GraphViewModel.OffsetX,
             GraphOffsetY = GraphViewModel.OffsetY,
-            GraphScale = GraphViewModel.Scale
+            GraphScale = GraphViewModel.Scale,
+            EditorSidebarWidth = EditorSidebarWidth,
+            EditorSidebarMode = EditorSidebarMode
         };
+
+        // Ширина бокового списка вкладки Character Editor. Сохраняется в сессии
+        // модуля; вью применяет её к колонке при загрузке и записывает обратно
+        // после перетаскивания сплиттера.
+        private double _editorSidebarWidth = 240;
+        public double EditorSidebarWidth
+        {
+            get => _editorSidebarWidth;
+            set => this.RaiseAndSetIfChanged(ref _editorSidebarWidth, value);
+        }
+
+        // Режим бокового списка Редактора: 0 — полный (аватар + подписи),
+        // 1 — компактный (только аватарки), 2 — скрыт (узкая полоса с кнопкой
+        // разворота). Сохраняется в сессии модуля; ширину колонки под режим
+        // выставляет code-behind вьюхи.
+        private int _editorSidebarMode;
+        public int EditorSidebarMode
+        {
+            get => _editorSidebarMode;
+            set
+            {
+                if (value < 0 || value > 2) value = 0;
+                if (value == 2 && _editorSidebarMode != 2)
+                    _sidebarModeBeforeHide = _editorSidebarMode;
+                this.RaiseAndSetIfChanged(ref _editorSidebarMode, value);
+                this.RaisePropertyChanged(nameof(IsSidebarFull));
+                this.RaisePropertyChanged(nameof(IsSidebarCompact));
+                this.RaisePropertyChanged(nameof(IsSidebarHidden));
+                this.RaisePropertyChanged(nameof(IsSidebarShown));
+            }
+        }
+
+        private int _sidebarModeBeforeHide;
+
+        public bool IsSidebarFull => _editorSidebarMode == 0;
+        public bool IsSidebarCompact => _editorSidebarMode == 1;
+        public bool IsSidebarHidden => _editorSidebarMode == 2;
+        public bool IsSidebarShown => _editorSidebarMode != 2;
+
+        /// <summary>Разворачивает скрытый список в режим, из которого его скрыли.</summary>
+        public void RestoreSidebar() => EditorSidebarMode = _sidebarModeBeforeHide;
 
         public void RestoreSessionState(CharactersModuleSession session)
         {
@@ -1098,6 +1291,10 @@ namespace Writersword.Modules.Characters.ViewModels
                 if (mode == CharactersViewMode.Grid) mode = CharactersViewMode.GridMedium;
                 ViewMode = mode;
             }
+            if (session.EditorSidebarWidth >= 170 && session.EditorSidebarWidth <= 520)
+                EditorSidebarWidth = session.EditorSidebarWidth;
+            if (session.EditorSidebarMode >= 0 && session.EditorSidebarMode <= 2)
+                EditorSidebarMode = session.EditorSidebarMode;
             MainTabIndex = session.MainTabIndex;
             SearchQuery = session.LastSearchQuery ?? string.Empty;
             ActiveTagFilters.Clear();
@@ -1437,11 +1634,15 @@ namespace Writersword.Modules.Characters.ViewModels
             string? inlineBeingNamedId = null,
             string? newlyCreatedFolderId = null)
         {
-            // Поштучно: создание карточки стоит ~20 мс, и батч из 25 штук
-            // замораживал UI на ~500 мс на каждую пачку. Замер показал, что
-            // общая скорость загрузки от размера батча не меняется (узкое
-            // место — создание карточек), поэтому выбран самый плавный режим.
-            const int batchSize = 1;
+            // Размер пачки зависит от активной вкладки. На вкладке «Персонажи»
+            // (index 0) добавление персонажа тут же реализует его карточку (список
+            // карточек не виртуализирован) — это дорого, поэтому грузим по одному,
+            // чтобы карточки появлялись плавно, не подвешивая UI. На остальных
+            // вкладках (Редактор и т.д.) карточки не строятся вообще, а создание
+            // самой VM теперь дёшево (команды ленивые), поэтому грузим крупными
+            // пачками — данные наполняются быстро, и скролл в Редакторе не дёргается
+            // от бесконечного дорастания списка.
+            int batchSize = MainTabIndex == 0 ? 1 : 100;
 
             var allChars = await Task.Run(() => _characterService.GetAll().ToList(), ct);
             var assignedIds = _folders.SelectMany(f => f.CharacterIds).ToHashSet();

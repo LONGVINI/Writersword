@@ -39,5 +39,11 @@ namespace Writersword.Modules.Characters.Models
         public double GraphOffsetX { get; set; } = 0;
         public double GraphOffsetY { get; set; } = 0;
         public double GraphScale { get; set; } = 1.0;
+
+        /// <summary>Ширина бокового списка во вкладке Character Editor (px).</summary>
+        public double EditorSidebarWidth { get; set; } = 240;
+
+        /// <summary>Режим бокового списка Редактора: 0 — полный, 1 — только аватарки, 2 — скрыт.</summary>
+        public int EditorSidebarMode { get; set; } = 0;
     }
 }
