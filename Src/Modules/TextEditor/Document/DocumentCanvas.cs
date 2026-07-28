@@ -185,9 +185,13 @@ namespace Writersword.Modules.TextEditor.Document
         // без него повёрнутая картинка рисуется с рваным ступенчатым краем.
         private readonly SKPaint _paintImageDraw = new()
         {
-            IsAntialias = true,
-            FilterQuality = SKFilterQuality.High
+            IsAntialias = true
         };
+
+        // Качество ресемплинга картинок: заменяет устаревший SKPaint.FilterQuality.High.
+        // Кубический фильтр Митчелла даёт мягкий край на повёрнутых/масштабированных картинках.
+        // Передаётся в canvas.DrawImage вместо свойства paint-а.
+        private static readonly SKSamplingOptions _imageSampling = new(SKCubicResampler.Mitchell);
 
         // Режим предпросмотра переполнения страницы: во время драга (поворот/ресайз)
         // страница инлайн-картинки заморожена как на момент нажатия. Если картинка
@@ -217,7 +221,6 @@ namespace Writersword.Modules.TextEditor.Document
         private readonly SKPaint _paintImageDrawOverflow = new()
         {
             IsAntialias = true,
-            FilterQuality = SKFilterQuality.High,
             ColorFilter = SKColorFilter.CreateColorMatrix(new float[]
             {
                 0.21f, 0.72f, 0.07f, 0f,    0f,
@@ -230,6 +233,119 @@ namespace Writersword.Modules.TextEditor.Document
         // Половина стороны квадратного маркера и радиус попадания по нему, в пунктах.
         private const float ImageHandleHalfPt = 3.5f;
         private const float ImageHandleHitPt = 6f;
+
+        // ── Страницы рядом (view-трансформ) ──────────────────────────────
+        // Число страниц в ряду. Раскладка остаётся «логической» (страницы столбиком),
+        // рядом-стоящесть — только отображение: рендер переносит контент каждой
+        // страницы на её визуальную позицию, ввод выполняет обратное преобразование.
+        // При 1 все дельты нулевые — поведение идентично прежнему.
+        private int _pagesPerRow = 1;
+
+        /// <summary>
+        /// Дельта визуальной позиции страницы относительно логической (в пунктах).
+        /// Колонки раскладываются слева направо, ряды сверху вниз, блок рядов
+        /// центрируется по живой ширине канваса.
+        /// </summary>
+        private (float DxPt, float DyPt) PageVisualDelta(int pageIdx, List<PageRect> pages)
+        {
+            if (_pagesPerRow <= 1 || pages.Count == 0) return (0f, 0f);
+            if (pageIdx < 0 || pageIdx >= pages.Count) return (0f, 0f);
+
+            int cols = _pagesPerRow;
+            int row = pageIdx / cols;
+            int col = pageIdx % cols;
+            var pg = pages[pageIdx];
+
+            float canvasWPt = (float)(_canvasWidth * PxToPt);
+            float gapX = PageGapPt * 2f;
+            float totalW = cols * pg.WidthPt + (cols - 1) * gapX;
+            float marginX = Math.Max((canvasWPt - totalW) / 2f, 0f);
+
+            float visX = marginX + col * (pg.WidthPt + gapX);
+            float visY = PageGapPt + row * (pg.HeightPt + PageGapPt);
+
+            return (visX - pg.PadLeftPt, visY - pg.Ypt);
+        }
+
+        // Страница, на которой начался текущий жест указателя. Во время жеста
+        // (драг/ресайз/поворот картинки, драг таблицы) маппинг визуальных координат
+        // в логические выполняется через ЭТУ страницу: иначе заход указателя на
+        // соседнюю страницу перескакивал бы маппинг, логическая точка прыгала бы
+        // на высоту страницы и смещения объектов получали мусорные значения.
+        private int _gesturePage = -1;
+
+        /// <summary>Индекс страницы, чей визуальный прямоугольник ближе всего к точке.</summary>
+        private int NearestVisualPage(float xPt, float yPt, List<PageRect> pages)
+        {
+            int best = 0;
+            float bestDist = float.MaxValue;
+            for (int i = 0; i < pages.Count; i++)
+            {
+                var (dx, dy) = PageVisualDelta(i, pages);
+                float l = pages[i].PadLeftPt + dx;
+                float t = pages[i].Ypt + dy;
+                float r = l + pages[i].WidthPt;
+                float b = t + pages[i].HeightPt;
+                float ddx = xPt < l ? l - xPt : xPt > r ? xPt - r : 0f;
+                float ddy = yPt < t ? t - yPt : yPt > b ? yPt - b : 0f;
+                float d = ddx * ddx + ddy * ddy;
+                if (d < bestDist)
+                {
+                    bestDist = d;
+                    best = i;
+                    if (d <= 0f) break;
+                }
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// Переводит точку указателя (в пунктах, визуальные координаты канваса)
+        /// в логические координаты раскладки: находит страницу, чей визуальный
+        /// прямоугольник ближе всего к точке, и снимает её дельту.
+        /// </summary>
+        private (float XPt, float YPt) VisualToLogicalPt(float xPt, float yPt)
+        {
+            if (_pagesPerRow <= 1) return (xPt, yPt);
+
+            List<PageRect> pages;
+            lock (_renderLock) { pages = _pages; }
+            if (pages.Count == 0) return (xPt, yPt);
+
+            int best = NearestVisualPage(xPt, yPt, pages);
+            var (bdx, bdy) = PageVisualDelta(best, pages);
+            return (xPt - bdx, yPt - bdy);
+        }
+
+        /// <summary>
+        /// Тот же перевод, но через фиксированную страницу жеста — маппинг не
+        /// перескакивает на соседнюю страницу, пока кнопка мыши не отпущена.
+        /// </summary>
+        private (float XPt, float YPt) VisualToLogicalPt(float xPt, float yPt, int fixedPageIdx)
+        {
+            if (_pagesPerRow <= 1) return (xPt, yPt);
+            if (fixedPageIdx < 0) return VisualToLogicalPt(xPt, yPt);
+
+            List<PageRect> pages;
+            lock (_renderLock) { pages = _pages; }
+            if (pages.Count == 0 || fixedPageIdx >= pages.Count)
+                return VisualToLogicalPt(xPt, yPt);
+
+            var (dx, dy) = PageVisualDelta(fixedPageIdx, pages);
+            return (xPt - dx, yPt - dy);
+        }
+
+        /// <summary>
+        /// Живой сдвиг центрирования листа для одностраничного режима (компенсация
+        /// между запечённым _layoutPageXPt и текущей шириной канваса). В режиме
+        /// страниц рядом центрирование выполняет PageVisualDelta — сдвиг нулевой.
+        /// </summary>
+        private float GetPageShiftXPt()
+        {
+            if (_pagesPerRow > 1) return 0f;
+            float canvasWPt = (float)(_canvasWidth * PxToPt);
+            return Math.Max((canvasWPt - GetPageWidthPt()) / 2f, 0f) - _layoutPageXPt;
+        }
 
         // Режим обрезки выделенной картинки: маркеры двигают границы кадрирования,
         // а не размер. Сбрасывается при снятии выделения.
@@ -466,6 +582,22 @@ namespace Writersword.Modules.TextEditor.Document
         // Внутренний буфер: JSON-массив ClipboardBlock (параграфы + таблицы в порядке документа).
         // Заполняется при Copy, используется при Paste для точного воспроизведения структуры.
         private string? _internalClipboardJson;
+
+        // Внутренний буфер для скопированной картинки. СТАТИЧЕСКИЙ — общий для всех
+        // вкладок/проектов в процессе, поэтому копия переживает переключение проекта.
+        // Хранит полную копию блока (свойства: размер, кроп, поворот, рамка) И байты
+        // файла картинки: при вставке байты пишутся в ZIP ЦЕЛЕВОГО проекта новым файлом,
+        // поэтому картинка не ломается при вставке в другой проект.
+        private static ImageBlock? _clipboardImage;
+        private static byte[]? _clipboardImageBytes;
+
+        // Форматы картинки в системном буфере (Avalonia 12: DataFormat/DataTransfer).
+        // "PNG" — читают современные приложения (браузеры, новый Office); CF_DIB
+        // ("DeviceIndependentBitmap") — классический формат Windows, читают Word, Paint.
+        private static readonly Avalonia.Input.DataFormat<byte[]> ClipboardImagePngFormat =
+            Avalonia.Input.DataFormat.CreateBytesPlatformFormat("PNG");
+        private static readonly Avalonia.Input.DataFormat<byte[]> ClipboardImageDibFormat =
+            Avalonia.Input.DataFormat.CreateBytesPlatformFormat("DeviceIndependentBitmap");
 
         private enum ClipboardBlockKind { Paragraph, Table }
         private sealed class ClipboardBlock
@@ -734,9 +866,9 @@ namespace Writersword.Modules.TextEditor.Document
             SubscribeToScrollViewer();
             _ = PrefetchClipboardAsync();
             InvalidateFull();
-            Avalonia.Threading.Dispatcher.UIThread.Post(
+            Dispatcher.UIThread.Post(
                 InvalidateMeasure,
-                Avalonia.Threading.DispatcherPriority.Loaded);
+                DispatcherPriority.Loaded);
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -1056,6 +1188,9 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.ToggleImageFlipVerticalDelegate = ToggleSelectedImageFlipVertical;
             DocVm.SetImageCropModeDelegate = SetSelectedImageCropMode;
             DocVm.GetImageCropModeDelegate = GetSelectedImageCropMode;
+            DocVm.SetImageWrapPaddingDelegate = SetSelectedImageWrapPadding;
+            DocVm.GetSelectedImageWrapPaddingDelegate = GetSelectedImageWrapPadding;
+            _pagesPerRow = DocVm.PagesPerRow;
 
             foreach (var pvm in DocVm.Paragraphs)
             {
@@ -1083,9 +1218,9 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (_selectedImage.Alignment != alignment)
             {
-                BeginEdit("Выравнивание изображения");
+                BeginImageEdit("Выравнивание изображения");
                 _selectedImage.Alignment = alignment;
-                CommitEdit();
+                CommitImageEdit();
                 RebuildLayouts();
                 InvalidateFull();
             }
@@ -1107,7 +1242,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (_selectedImage is null || _selectedImage.WrapMode == mode) return;
 
-            BeginEdit("Обтекание изображения");
+            BeginImageEdit("Обтекание изображения");
             // Переход из блока (Inline) в плавающий режим: фиксируем текущее положение
             // как смещение якоря, чтобы картинка не прыгнула в угол страницы.
             if (_selectedImage.WrapMode == WrapMode.Inline && mode != WrapMode.Inline)
@@ -1126,7 +1261,7 @@ namespace Writersword.Modules.TextEditor.Document
                 }
             }
             _selectedImage.WrapMode = mode;
-            CommitEdit();
+            CommitImageEdit();
             RebuildLayouts();
             InvalidateFull();
         }
@@ -1135,9 +1270,9 @@ namespace Writersword.Modules.TextEditor.Document
         private void SetSelectedImageLockAspect(bool locked)
         {
             if (_selectedImage is null || _selectedImage.LockAspectRatio == locked) return;
-            BeginEdit("Пропорции изображения");
+            BeginImageEdit("Пропорции изображения");
             _selectedImage.LockAspectRatio = locked;
-            CommitEdit();
+            CommitImageEdit();
             InvalidateFull();
         }
 
@@ -1165,11 +1300,11 @@ namespace Writersword.Modules.TextEditor.Document
             if (_selectedImage is null) return;
             double w = Math.Max(widthPt, 4.0);
             if (Math.Abs(_selectedImage.WidthPt - w) < 0.01) return;
-            BeginEdit("Размер изображения");
+            BeginImageEdit("Размер изображения");
             if (_selectedImage.LockAspectRatio && _selectedImage.WidthPt > 0.0)
                 _selectedImage.HeightPt = Math.Max(4.0, _selectedImage.HeightPt * (w / _selectedImage.WidthPt));
             _selectedImage.WidthPt = w;
-            CommitEdit();
+            CommitImageEdit();
             RebuildLayouts();
             InvalidateMeasure();
             InvalidateFull();
@@ -1183,11 +1318,11 @@ namespace Writersword.Modules.TextEditor.Document
             if (_selectedImage is null) return;
             double h = Math.Max(heightPt, 4.0);
             if (Math.Abs(_selectedImage.HeightPt - h) < 0.01) return;
-            BeginEdit("Размер изображения");
+            BeginImageEdit("Размер изображения");
             if (_selectedImage.LockAspectRatio && _selectedImage.HeightPt > 0.0)
                 _selectedImage.WidthPt = Math.Max(4.0, _selectedImage.WidthPt * (h / _selectedImage.HeightPt));
             _selectedImage.HeightPt = h;
-            CommitEdit();
+            CommitImageEdit();
             RebuildLayouts();
             InvalidateMeasure();
             InvalidateFull();
@@ -1200,9 +1335,9 @@ namespace Writersword.Modules.TextEditor.Document
             if (_selectedImage is null) return;
             double o = Math.Clamp(opacity, 0.0, 1.0);
             if (Math.Abs(_selectedImage.Opacity - o) < 0.001) return;
-            BeginEdit("Прозрачность изображения");
+            BeginImageEdit("Прозрачность изображения");
             _selectedImage.Opacity = o;
-            CommitEdit();
+            CommitImageEdit();
             InvalidateFull();
         }
 
@@ -1216,10 +1351,10 @@ namespace Writersword.Modules.TextEditor.Document
             _logger.Debug("[IMG] border request color={C} thick={T}", color ?? "none", thick);
             if (_selectedImage.BorderColor == color
                 && Math.Abs(_selectedImage.BorderThicknessPt - thick) < 0.01) return;
-            BeginEdit("Рамка изображения");
+            BeginImageEdit("Рамка изображения");
             _selectedImage.BorderColor = color;
             _selectedImage.BorderThicknessPt = thick;
-            CommitEdit();
+            CommitImageEdit();
             InvalidateFull();
         }
 
@@ -1227,9 +1362,9 @@ namespace Writersword.Modules.TextEditor.Document
         private void ToggleSelectedImageFlipHorizontal()
         {
             if (_selectedImage is null) return;
-            BeginEdit("Отражение изображения");
+            BeginImageEdit("Отражение изображения");
             _selectedImage.FlipHorizontal = !_selectedImage.FlipHorizontal;
-            CommitEdit();
+            CommitImageEdit();
             InvalidateFull();
         }
 
@@ -1237,9 +1372,9 @@ namespace Writersword.Modules.TextEditor.Document
         private void ToggleSelectedImageFlipVertical()
         {
             if (_selectedImage is null) return;
-            BeginEdit("Отражение изображения");
+            BeginImageEdit("Отражение изображения");
             _selectedImage.FlipVertical = !_selectedImage.FlipVertical;
-            CommitEdit();
+            CommitImageEdit();
             InvalidateFull();
         }
 
@@ -1268,9 +1403,9 @@ namespace Writersword.Modules.TextEditor.Document
             if (_selectedImage is null) return;
             double normalized = ((degrees % 360.0) + 360.0) % 360.0;
             if (Math.Abs(_selectedImage.RotationDeg - normalized) < 0.01) return;
-            BeginEdit("Поворот изображения");
+            BeginImageEdit("Поворот изображения");
             _selectedImage.RotationDeg = normalized;
-            CommitEdit();
+            CommitImageEdit();
             RebuildLayouts();
             InvalidateMeasure();
             InvalidateFull();
@@ -1279,6 +1414,36 @@ namespace Writersword.Modules.TextEditor.Document
         // Текущий угол поворота выделенной картинки для вкладки (или null).
         private double? GetSelectedImageRotation()
             => _selectedImage?.RotationDeg;
+
+        // Задаёт отступы обтекания выделенной картинки (по 4 сторонам, в пунктах).
+        private void SetSelectedImageWrapPadding(double topPt, double bottomPt, double leftPt, double rightPt)
+        {
+            if (_selectedImage is null) return;
+            topPt = Math.Max(0.0, topPt);
+            bottomPt = Math.Max(0.0, bottomPt);
+            leftPt = Math.Max(0.0, leftPt);
+            rightPt = Math.Max(0.0, rightPt);
+            if (Math.Abs(_selectedImage.WrapPadTopPt - topPt) < 0.01
+                && Math.Abs(_selectedImage.WrapPadBottomPt - bottomPt) < 0.01
+                && Math.Abs(_selectedImage.WrapPadLeftPt - leftPt) < 0.01
+                && Math.Abs(_selectedImage.WrapPadRightPt - rightPt) < 0.01)
+                return;
+            BeginImageEdit("Отступы обтекания");
+            _selectedImage.WrapPadTopPt = topPt;
+            _selectedImage.WrapPadBottomPt = bottomPt;
+            _selectedImage.WrapPadLeftPt = leftPt;
+            _selectedImage.WrapPadRightPt = rightPt;
+            CommitImageEdit();
+            RebuildLayouts();
+            InvalidateFull();
+        }
+
+        // Текущие отступы обтекания выделенной картинки (top, bottom, left, right) в пунктах, или null.
+        private (double TopPt, double BottomPt, double LeftPt, double RightPt)? GetSelectedImageWrapPadding()
+            => _selectedImage is null
+                ? null
+                : (_selectedImage.WrapPadTopPt, _selectedImage.WrapPadBottomPt,
+                   _selectedImage.WrapPadLeftPt, _selectedImage.WrapPadRightPt);
 
         // Структурное изменение (вставка/удаление картинки и т.п.): пересобираем раскладку
         // БЕЗ очистки кэша абзацев — текст абзацев не менялся, переформировывать их не нужно,
@@ -1378,6 +1543,17 @@ namespace Writersword.Modules.TextEditor.Document
                 RebuildLayouts();
 
                 _lastZoom = Zoom;
+                InvalidateMeasure();
+                InvalidateFull();
+                return;
+            }
+
+            // Смена числа страниц в ряду: раскладка не меняется, но высота канваса
+            // и визуальные позиции страниц другие — пересбор дёшев (кеш абзацев тёплый).
+            if (e.PropertyName == nameof(DocumentViewModel.PagesPerRow) && DocVm is not null)
+            {
+                _pagesPerRow = DocVm.PagesPerRow;
+                RebuildLayouts();
                 InvalidateMeasure();
                 InvalidateFull();
             }
@@ -1605,8 +1781,13 @@ namespace Writersword.Modules.TextEditor.Document
             double visualW = availW;
 
             if (DocVm?.ViewMode == EditorViewMode.Page)
+            {
+                // В режиме страниц рядом ширина канваса вмещает все колонки с зазорами.
+                double pagesWPt = GetPageWidthPt() * _pagesPerRow
+                    + PageGapPt * 2.0 * (_pagesPerRow - 1);
                 visualW = Math.Max(availW,
-                    GetPageWidthPt() * PtToPx * zoom + PageGapPt * PtToPx * 4);
+                    pagesWPt * PtToPx * zoom + PageGapPt * PtToPx * 4);
+            }
 
             return new Size(visualW, visualH);
         }
@@ -1991,10 +2172,12 @@ namespace Writersword.Modules.TextEditor.Document
                 float cx = ie.XPt + ie.WidthPt / 2f;
                 float cy = ie.Ypt + ie.HeightPt / 2f;
 
-                float top = cy - boxH / 2f - WrapZoneMarginPt;
-                float bottom = cy + boxH / 2f + WrapZoneMarginPt;
-                float left = cx - boxW / 2f - WrapZoneMarginPt - textXPt;
-                float right = cx + boxW / 2f + WrapZoneMarginPt - textXPt;
+                // Отступы обтекания задаются на самой картинке (по сторонам). Дефолт
+                // равен прежнему WrapZoneMarginPt, поэтому старые документы не меняются.
+                float top = cy - boxH / 2f - (float)ie.Block.WrapPadTopPt;
+                float bottom = cy + boxH / 2f + (float)ie.Block.WrapPadBottomPt;
+                float left = cx - boxW / 2f - (float)ie.Block.WrapPadLeftPt - textXPt;
+                float right = cx + boxW / 2f + (float)ie.Block.WrapPadRightPt - textXPt;
 
                 // Зона целиком выше параграфа или слишком далеко ниже — не влияет.
                 if (bottom <= paraTopPt) continue;
@@ -2016,9 +2199,31 @@ namespace Writersword.Modules.TextEditor.Document
         /// Раскладка параграфа с зонами обтекания. Кеш не используется: зоны зависят
         /// от позиций плавающих объектов, а ключ кеша (текст, ширина) их не учитывает.
         /// </summary>
+        // Состояние гистерезиса обтекания: был ли абзац вытеснен под объект в прошлой
+        // пересборке. Ключ — блок абзаца, живёт ровно столько же, сколько документ.
+        private readonly Dictionary<ParagraphBlock, bool> _wrapPushState = new();
+
         private SKTextLayout BuildWrappedLayout(
-            ParagraphViewModel pvm, float widthPt, IReadOnlyList<SKWrapZone> zones)
-            => _renderer.BuildLayout(pvm.Model, widthPt, _styleResolver!, isCell: false, wrapZones: zones);
+            ParagraphViewModel pvm, float widthPt, IReadOnlyList<SKWrapZone> zones,
+            Rendering.SKTextRenderer.WrapPageContext? pages = null)
+        {
+            var block = pvm.Model;
+            bool preferPushDown = block is not null
+                && _wrapPushState.TryGetValue(block, out var prev) && prev;
+
+            var layout = _renderer.BuildLayout(
+                block, widthPt, _styleResolver!, isCell: false,
+                wrapZones: zones, wrapPreferPushDown: preferPushDown,
+                wrapPages: pages);
+
+            if (block is not null) _wrapPushState[block] = layout.WrapPushedDown;
+
+            return layout;
+        }
+
+        // Зазор между низом картинки и строкой, переброшенной под неё по фактической
+        // позиции. Небольшой, чтобы текст не прилипал к краю объекта.
+        private const float WrapThrowGapPt = 2f;
 
         // ── ICustomDrawOperation ──────────────────────────────────────────
         private sealed class CanvasSKDrawOperation : ICustomDrawOperation

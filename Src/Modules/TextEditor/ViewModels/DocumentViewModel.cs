@@ -174,6 +174,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Action? ToggleImageFlipVerticalDelegate { get; set; }
         public Action<bool>? SetImageCropModeDelegate { get; set; }
         public Func<bool>? GetImageCropModeDelegate { get; set; }
+        public Action<double, double, double, double>? SetImageWrapPaddingDelegate { get; set; }
+        public Func<(double TopPt, double BottomPt, double LeftPt, double RightPt)?>? GetSelectedImageWrapPaddingDelegate { get; set; }
         public Action<int>? TableSetCellVAlignDelegate { get; set; }
         public Action<string?>? TableSetCellBackgroundDelegate { get; set; }
         public Action<string, BorderStyle, double, string?>? TableSetCellBorderDelegate { get; set; }
@@ -210,6 +212,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// страницы на линейке.
         /// </summary>
         public event Action? DocumentRestored;
+
+        /// <summary>
+        /// Содержимое документа изменено правкой, которая не меняет текст абзацев:
+        /// свойства картинки (обтекание, размер, поворот, обрезка), поля страницы,
+        /// форматирование. Владелец выставляет флаг «документ изменён» — иначе такие
+        /// правки не попадают в сохранение, потому что флаг поднимался только по
+        /// изменению PlainText параграфа.
+        /// </summary>
+        public event Action? ContentModified;
+
+        /// <summary>Вызывается канвасом после фиксации правки — уведомляет подписчиков.</summary>
+        public void RaiseContentModified() => ContentModified?.Invoke();
 
         /// <summary>Вызывается канвасом после Undo/Redo снапшота — уведомляет подписчиков.</summary>
         public void RaiseDocumentRestored() => DocumentRestored?.Invoke();
@@ -282,6 +296,19 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             get => _viewMode;
             set => this.RaiseAndSetIfChanged(ref _viewMode, value);
+        }
+
+        private int _pagesPerRow = 1;
+
+        /// <summary>
+        /// Число страниц в ряду в режиме страниц: 1 — столбик (как раньше),
+        /// 2 — страницы рядом. Влияет только на отображение — раскладка
+        /// документа (пагинация) остаётся неизменной.
+        /// </summary>
+        public int PagesPerRow
+        {
+            get => _pagesPerRow;
+            set => this.RaiseAndSetIfChanged(ref _pagesPerRow, Math.Clamp(value, 1, 2));
         }
 
         public double Zoom
@@ -876,6 +903,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ToggleImageFlipVertical() { if (IsReadOnly) return; ToggleImageFlipVerticalDelegate?.Invoke(); }
         public void SetImageCropMode(bool on) { if (IsReadOnly) return; SetImageCropModeDelegate?.Invoke(on); }
         public bool GetImageCropMode() => GetImageCropModeDelegate?.Invoke() ?? false;
+        public void SetImageWrapPadding(double topPt, double bottomPt, double leftPt, double rightPt)
+        { if (IsReadOnly) return; SetImageWrapPaddingDelegate?.Invoke(topPt, bottomPt, leftPt, rightPt); }
+        public (double TopPt, double BottomPt, double LeftPt, double RightPt)? GetSelectedImageWrapPadding()
+            => GetSelectedImageWrapPaddingDelegate?.Invoke();
 
         public void IncreaseIndent()
             => ApplyParaProperty(p => p.LeftIndent = (p.LeftIndent ?? 0) + 18);
@@ -1326,6 +1357,128 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             StructureChanged?.Invoke();
         }
+        /// <summary>
+        /// Вставляет точную копию картинки (все свойства: размер, кроп, поворот, рамка).
+        /// Файл переиспользуется — он уже лежит в проекте. Плавающая копия слегка смещается,
+        /// чтобы не легла точно на оригинал. Операция попадает в Undo.
+        /// </summary>
+        public ImageBlock? InsertImageClone(ImageBlock src, ImageBlock? anchorAfter = null)
+        {
+            if (IsReadOnly || src is null) return null;
+
+            bool floating = src.WrapMode != WrapMode.Inline;
+            var image = new ImageBlock
+            {
+                ImageFileName = src.ImageFileName,
+                WidthPt = src.WidthPt,
+                HeightPt = src.HeightPt,
+                LockAspectRatio = src.LockAspectRatio,
+                RotationDeg = src.RotationDeg,
+                Opacity = src.Opacity,
+                BorderColor = src.BorderColor,
+                BorderThicknessPt = src.BorderThicknessPt,
+                FlipHorizontal = src.FlipHorizontal,
+                FlipVertical = src.FlipVertical,
+                CropLeftFrac = src.CropLeftFrac,
+                CropTopFrac = src.CropTopFrac,
+                CropRightFrac = src.CropRightFrac,
+                CropBottomFrac = src.CropBottomFrac,
+                WrapMode = src.WrapMode,
+                Alignment = src.Alignment,
+                Anchor = src.Anchor,
+                WrapPadTopPt = src.WrapPadTopPt,
+                WrapPadBottomPt = src.WrapPadBottomPt,
+                WrapPadLeftPt = src.WrapPadLeftPt,
+                WrapPadRightPt = src.WrapPadRightPt,
+                // Плавающую копию смещаем, чтобы её было видно рядом с оригиналом.
+                OffsetXPt = floating ? src.OffsetXPt + 12.0 : src.OffsetXPt,
+                OffsetYPt = floating ? src.OffsetYPt + 12.0 : src.OffsetYPt,
+                ZOrder = src.ZOrder,
+                AltText = src.AltText
+            };
+
+            BeginEditDelegate?.Invoke("Вставка изображения");
+            var section = _document.Sections[0];
+            // Копию ставим сразу ПОСЛЕ исходной картинки (anchorAfter) — тогда плавающая
+            // копия окажется на той же странице рядом. Иначе — после активного абзаца,
+            // иначе — в конец.
+            int idx = anchorAfter is not null ? section.Blocks.IndexOf(anchorAfter) : -1;
+            if (idx < 0)
+                idx = _activeParagraph is not null ? section.Blocks.IndexOf(_activeParagraph.Model) : -1;
+            if (idx >= 0)
+                section.Blocks.Insert(idx + 1, image);
+            else
+                section.Blocks.Add(image);
+            CommitEditDelegate?.Invoke();
+
+            StructureChanged?.Invoke();
+            return image;
+        }
+
+        /// <summary>
+        /// Вставляет картинку из байтов, перенося свойства из шаблона. Байты пишутся
+        /// НОВЫМ файлом в ZIP ТЕКУЩЕГО проекта — поэтому работает и при копировании
+        /// между проектами (файл переносится в целевой проект). Возвращает блок.
+        /// </summary>
+        public ImageBlock? InsertImageWithProps(byte[] data, ImageBlock template,
+            double floatOffsetXPt, double floatOffsetYPt)
+        {
+            if (IsReadOnly || data is null || data.Length == 0 || template is null) return null;
+
+            var ctx = CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context;
+            if (ctx is null) return null;
+
+            string fileName = $"img_{System.Guid.NewGuid():N}.png";
+            ctx.WriteFile($"TextEditor/Images/{fileName}", data);
+
+            bool floating = template.WrapMode != WrapMode.Inline;
+            var image = new ImageBlock
+            {
+                ImageFileName = fileName,
+                WidthPt = template.WidthPt,
+                HeightPt = template.HeightPt,
+                LockAspectRatio = template.LockAspectRatio,
+                RotationDeg = template.RotationDeg,
+                Opacity = template.Opacity,
+                BorderColor = template.BorderColor,
+                BorderThicknessPt = template.BorderThicknessPt,
+                FlipHorizontal = template.FlipHorizontal,
+                FlipVertical = template.FlipVertical,
+                CropLeftFrac = template.CropLeftFrac,
+                CropTopFrac = template.CropTopFrac,
+                CropRightFrac = template.CropRightFrac,
+                CropBottomFrac = template.CropBottomFrac,
+                WrapMode = template.WrapMode,
+                Alignment = template.Alignment,
+                Anchor = template.Anchor,
+                WrapPadTopPt = template.WrapPadTopPt,
+                WrapPadBottomPt = template.WrapPadBottomPt,
+                WrapPadLeftPt = template.WrapPadLeftPt,
+                WrapPadRightPt = template.WrapPadRightPt,
+                // Плавающую картинку ставим у курсора (переданное смещение от текстовой
+                // области страницы каретки). Inline течёт в потоке — смещения не нужны.
+                OffsetXPt = floating ? floatOffsetXPt : 0.0,
+                OffsetYPt = floating ? floatOffsetYPt : 0.0,
+                ZOrder = template.ZOrder,
+                AltText = template.AltText
+            };
+
+            BeginEditDelegate?.Invoke("Вставка изображения");
+            var section = _document.Sections[0];
+            // Вставляем в поток у каретки (после активного абзаца). Нет каретки —
+            // в начало документа, чтобы вставка была видна, а не улетела в конец.
+            int idx = _activeParagraph is not null ? section.Blocks.IndexOf(_activeParagraph.Model) : -1;
+            if (idx < 0 && section.Blocks.Count > 0) idx = 0;
+            if (idx >= 0)
+                section.Blocks.Insert(idx + 1, image);
+            else
+                section.Blocks.Add(image);
+            CommitEditDelegate?.Invoke();
+
+            StructureChanged?.Invoke();
+            return image;
+        }
+
         public void RemoveImage(ImageBlock image)
         {
             if (IsReadOnly) return;

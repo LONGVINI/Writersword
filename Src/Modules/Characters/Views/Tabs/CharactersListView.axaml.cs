@@ -96,6 +96,28 @@ namespace Writersword.Modules.Characters.Views.Tabs
             if (DataContext is CharactersViewModel vm && !vm.IsReadOnly && vm.CanRedo) vm.Redo();
         }
 
+        // Сравнение показанных персонажей. Берём то, что сейчас в списке:
+        // фильтры, поиск и папки уже сделали выбор, а второй механизм
+        // выделения означал бы делать ту же работу дважды.
+        private void OnCompareClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+
+            if (DataContext is not CharactersViewModel vm) return;
+
+            var host = this.FindAncestorOfType<CharactersModuleView>();
+            var overlay = host?.FindControl<CharacterComparisonOverlay>("ComparisonOverlayControl");
+            if (overlay == null) return;
+
+            var characters = vm.FilteredCharacters
+                .Select(item => vm.GetCharacter(item.Id))
+                .Where(c => c != null)
+                .Select(c => c!)
+                .ToList();
+
+            overlay.ShowFor(characters);
+        }
+
         // Открывает окно настроек карточки по центру модуля (CardSettingsOverlay
         // хостится в CharactersModuleView поверх содержимого, со скримом).
         private void OnCardSettingsClick(object? sender, RoutedEventArgs e)

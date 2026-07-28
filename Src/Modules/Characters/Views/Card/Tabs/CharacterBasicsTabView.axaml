@@ -3,8 +3,12 @@
              xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              xmlns:enums="using:Writersword.Modules.Characters.Models.Enums"
+             xmlns:models="using:Writersword.Modules.Characters.Models"
              xmlns:conv="using:Writersword.Modules.Characters.Converters"
              xmlns:icv="using:Writersword.Infrastructure.Converters"
+             xmlns:sys="using:System"
+             xmlns:colorControls="using:Writersword.Styles.UserControls"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              x:Class="Writersword.Modules.Characters.Views.Card.Tabs.CharacterBasicsTabView"
              x:DataType="tabs:CharacterBasicsTabViewModel">
 
@@ -19,9 +23,10 @@
 			<Setter Property="CornerRadius" Value="999"/>
 		</Style>
 
-		<!-- Имя персонажа под аватаром: выглядит как заголовок, но это TextBox —
-             клик по имени сразу даёт его редактировать. Рамка и фон появляются
-             только под курсором и в фокусе. -->
+		<!-- Имя персонажа в шапке: выглядит как заголовок, но это TextBox —
+             клик по имени сразу даёт его редактировать. Шапка закреплена и
+             прокруткой не уезжает, поэтому имя выровнено по левому краю
+             рядом с аватаром, а не по центру колонки. -->
 		<Style Selector="TextBox.name-title">
 			<Setter Property="Background" Value="Transparent"/>
 			<Setter Property="BorderBrush" Value="Transparent"/>
@@ -29,10 +34,7 @@
 			<Setter Property="CornerRadius" Value="6"/>
 			<Setter Property="FontSize" Value="18"/>
 			<Setter Property="FontWeight" Value="SemiBold"/>
-			<Setter Property="TextAlignment" Value="Center"/>
-			<Setter Property="HorizontalAlignment" Value="Center"/>
-			<Setter Property="MinWidth" Value="160"/>
-			<Setter Property="Padding" Value="10,4"/>
+			<Setter Property="Padding" Value="8,3"/>
 			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
 		</Style>
 		<Style Selector="TextBox.name-title:pointerover /template/ Border#PART_BorderElement">
@@ -43,271 +45,1305 @@
 			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
+
+		<!-- Подпись поверх поля имени: показывает то же самое, но с обрезкой
+		     многоточием — само поле обрезать не умеет. Отступы и шрифт
+		     повторяют поле точь-в-точь, иначе текст дёргается в тот миг,
+		     когда подпись сменяется полем. Внешний отступ в единицу —
+		     на толщину рамки поля.
+
+		     Она же задаёт ширину поля: подпись меряется ровно по тексту,
+		     а поле к измеренной ширине добавляет запас, и рамка тянулась
+		     заметно дальше последней буквы.
+
+		     Поэтому подпись не скрывается, а гаснет: скрытая, она перестала
+		     бы меряться, и поле схлопнулось бы до наименьшей ширины, стоило
+		     навести на него курсор. -->
+		<Style Selector="Panel.name-slot">
+			<Setter Property="HorizontalAlignment" Value="Left"/>
+		</Style>
+		<Style Selector="Panel.name-slot:pointerover TextBlock.name-title-trim">
+			<Setter Property="Opacity" Value="0"/>
+		</Style>
+		<Style Selector="Panel.name-slot:focus-within TextBlock.name-title-trim">
+			<Setter Property="Opacity" Value="0"/>
+		</Style>
+		<Style Selector="Panel.name-slot:pointerover TextBlock.name-subtitle-trim">
+			<Setter Property="Opacity" Value="0"/>
+		</Style>
+		<Style Selector="Panel.name-slot:focus-within TextBlock.name-subtitle-trim">
+			<Setter Property="Opacity" Value="0"/>
+		</Style>
+		<Style Selector="TextBlock.name-title-trim">
+			<Setter Property="FontSize" Value="18"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<!-- Отступ на единицу больше, чем у поля: у поля к отступу
+			     добавляется рамка, и без этой единицы текст стоял бы на
+			     пиксель левее, а измеренной ширины не хватало бы ровно
+			     на рамку. -->
+			<Setter Property="Padding" Value="9,3"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<!-- Прижата влево, иначе занимает всю ширину поля, а поле берёт
+			     ширину у неё — и значение залипает на самом длинном тексте,
+			     что когда-либо был набран. -->
+			<Setter Property="HorizontalAlignment" Value="Left"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+
+		<Style Selector="TextBlock.name-subtitle-trim">
+			<Setter Property="FontSize" Value="12"/>
+			<!-- Отступ на единицу больше, чем у поля: у поля к отступу
+			     добавляется рамка, и без этой единицы текст стоял бы на
+			     пиксель левее, а измеренной ширины не хватало бы ровно
+			     на рамку. -->
+			<Setter Property="Padding" Value="9,3"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<!-- Прижата влево, иначе занимает всю ширину поля, а поле берёт
+			     ширину у неё — и значение залипает на самом длинном тексте,
+			     что когда-либо был набран. -->
+			<Setter Property="HorizontalAlignment" Value="Left"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+
+		<!-- Короткое описание под именем: одна строка, тем же приёмом — поле,
+             прикидывающееся подписью, пока его не тронули. -->
+		<Style Selector="TextBox.name-subtitle">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="Padding" Value="8,3"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="TextBox.name-subtitle:pointerover /template/ Border#PART_BorderElement">
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		</Style>
+		<Style Selector="TextBox.name-subtitle:focus /template/ Border#PART_BorderElement">
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Компонент карточки — единица стека. Ядро («Общее») снять нельзя,
+		     подключаемые наборы появятся здесь же следующими блоками. Каждый
+		     занимает всю ширину колонки: содержимое внутри раскладывается
+		     сеткой, а не сжимается по самому длинному полю. -->
+		<Style Selector="Border.block">
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="10"/>
+			<Setter Property="Padding" Value="18,16"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+		</Style>
+		<!-- Заголовок компонента: акцентный маркер слева и разделитель под
+		     текстом задают ритм, по которому глаз отделяет компоненты. -->
+		<Style Selector="Border.block-header">
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="0,0,0,1"/>
+			<Setter Property="Padding" Value="0,0,0,8"/>
+			<Setter Property="Margin" Value="0,0,0,12"/>
+		</Style>
+		<Style Selector="TextBlock.block-title">
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+		<!-- Подзаголовок раздела внутри компонента: метки и теги живут
+		     в «Общем», но своими разделами, а не сплошной лентой полей. -->
+		<Style Selector="TextBlock.subhead">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="TextBlock.field-label">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="TextBox.field">
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="Padding" Value="8,6"/>
+		</Style>
+
+		<!-- Знак подсказки у заголовка раздела. Значок тот же, что в палитрах
+		     цвета, — это уже принятый в программе знак «здесь есть пояснение»,
+		     и заводить рядом второй означало бы учить пользователя двум разным
+		     обозначениям одного и того же.
+		     Объяснение живёт рядом с тем, что объясняет, а не в отдельной
+		     справке, и показывает его общий TooltipBehavior — с заголовком,
+		     описанием и местом под гифку. -->
+		<Style Selector="Border.hint">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Padding" Value="2"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Cursor" Value="Help"/>
+			<!-- К знаку подводят намеренно, поэтому ждать секунду с лишним,
+			     как у обычных кнопок, здесь незачем. -->
+			<Setter Property="behaviours:TooltipBehavior.ShowDelay" Value="300"/>
+		</Style>
+		<Style Selector="Border.hint PathIcon">
+			<Setter Property="Width" Value="14"/>
+			<Setter Property="Height" Value="14"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="Border.hint:pointerover PathIcon">
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+
+		<!-- Полоса прокрутки как у списка карточек, но без подложки: дорожка
+		     ничего не сообщает, а полосу вдоль всей галереи видно и так.
+		     Fluent держит её цвет в двух местах — у самого ScrollBar и
+		     у прямоугольника трека внутри шаблона. -->
+		<Style Selector="ScrollViewer.tiles-scroll /template/ ScrollBar">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="ScrollViewer.tiles-scroll /template/ ScrollBar /template/ Rectangle#TrackRect">
+			<Setter Property="Fill" Value="Transparent"/>
+			<Setter Property="Stroke" Value="Transparent"/>
+		</Style>
+		<Style Selector="ScrollViewer.tiles-scroll /template/ ScrollBar /template/ Thumb /template/ Border">
+			<Setter Property="Background" Value="{DynamicResource ScrollThumbBrush}"/>
+		</Style>
+		<Style Selector="ScrollViewer.tiles-scroll /template/ ScrollBar /template/ Thumb:pointerover /template/ Border">
+			<Setter Property="Background" Value="{DynamicResource AccentHoverBrush}"/>
+		</Style>
+		<Style Selector="ScrollViewer.tiles-scroll /template/ ScrollBar /template/ Thumb:pressed /template/ Border">
+			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Плитка на месте вставки бледнеет: пока картинку несут, в сетке
+		     стоит её тусклая копия, а сама картинка летит под курсором.
+		     Соседи при этом расступаются по-настоящему — их перемещение
+		     доигрывает переход у сдвига, заведённого в шаблоне плитки. -->
+		<Style Selector="Panel.tile">
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Panel.tile.placeholder">
+			<Setter Property="Opacity" Value="0.35"/>
+			<Setter Property="ZIndex" Value="10"/>
+		</Style>
+
+		<!-- Крестик на плитке галереи виден только под курсором: в покое
+		     галерея — это картинки, а не картинки с кнопками поверх.
+		     Прячется прозрачностью, а не IsVisible: скрытый элемент нельзя
+		     анимировать, он просто исчезает. -->
+		<Style Selector="Button.tile-remove">
+			<Setter Property="Opacity" Value="0"/>
+			<Setter Property="IsHitTestVisible" Value="False"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Panel.tile:pointerover Button.tile-remove">
+			<Setter Property="Opacity" Value="1"/>
+			<Setter Property="IsHitTestVisible" Value="True"/>
+		</Style>
+
+		<!-- Действия чипа проявляются под курсором: в покое чип — это значок
+		     и название, без частокола микрокнопок. -->
+		<Style Selector="Border.chip StackPanel.chip-actions">
+			<Setter Property="IsVisible" Value="False"/>
+		</Style>
+		<Style Selector="Border.chip:pointerover StackPanel.chip-actions">
+			<Setter Property="IsVisible" Value="True"/>
+		</Style>
+		<Style Selector="Button.chip-action">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="2,0"/>
+			<Setter Property="Width" Value="16"/>
+			<Setter Property="Height" Value="16"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
 	</UserControl.Styles>
 
-	<ScrollViewer Padding="12">
-		<StackPanel Spacing="12">
+	<!-- Карточка = закреплённая шапка и прокручиваемый стек компонентов.
+	     Шапка не уезжает: при десятке подключённых наборов иначе теряется,
+	     чей это персонаж. -->
+	<Grid RowDefinitions="Auto,*">
 
-			<!-- Аватар -->
-			<StackPanel Spacing="8" HorizontalAlignment="Center">
+		<!-- ── Шапка ──────────────────────────────────────────────────── -->
+		<Border Grid.Row="0"
+		        Background="{DynamicResource BgSurfaceBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="0,0,0,1"
+		        Padding="20,14">
+			<!-- Средняя колонка отдана полям вместе со свободным местом:
+			     поля прижаты влево и занимают столько, сколько им нужно,
+			     остаток колонки — тот самый запас, который ужимается по мере
+			     роста имени. Потолок роста — граница колонки, то есть кнопки
+			     справа: дальше растянуться некуда, и текст обрезается. -->
+			<Grid ColumnDefinitions="Auto,*,Auto">
 
-				<!-- Круглый аватар — Button чтобы открывать пикер по клику -->
-				<Button Classes="avatar-round"
-                        Command="{Binding OpenPickerCommand}"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        Padding="0"
-                        HorizontalAlignment="Center"
-                        ToolTip.Tip="{x:Static loc:CharactersStrings.Avatar_PickTooltip}">
-					<Panel Width="112" Height="112">
-						<Border Width="96"
-                                Height="96"
-                                CornerRadius="48"
-                                ClipToBounds="True"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
+				<!-- Аватар. Закреплённый элемент обязан быть компактным,
+				     поэтому кружок 72 вместо прежних 96: крупный портрет —
+				     задача галереи, а не шапки формы. -->
+				<Button Grid.Column="0"
+				        Classes="avatar-round"
+				        Command="{Binding OpenPickerCommand}"
+				        Background="Transparent"
+				        BorderThickness="0"
+				        Padding="0"
+				        VerticalAlignment="Center"
+				        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Avatar_PickTooltip}">
+					<Panel Width="84" Height="84">
+						<Border Width="72"
+						        Height="72"
+						        CornerRadius="36"
+						        ClipToBounds="True"
+						        HorizontalAlignment="Center"
+						        VerticalAlignment="Center"
+						        Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
 							<Panel>
-								<!-- Фото если выбрано -->
 								<Image Source="{Binding AvatarBitmap}"
-                                       Stretch="UniformToFill"
-                                       IsVisible="{Binding AvatarBitmap,
-                                           Converter={x:Static ObjectConverters.IsNotNull}}"/>
+								       Stretch="UniformToFill"
+								       IsVisible="{Binding AvatarBitmap,
+								           Converter={x:Static ObjectConverters.IsNotNull}}"/>
 
-								<!-- Фолбэк-иконка -->
-								<TextBlock Text="{Binding FallbackIcon}"
-                                           FontSize="40"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"
-                                           Foreground="White"
-                                           IsVisible="{Binding AvatarBitmap,
-                                               Converter={x:Static ObjectConverters.IsNull}}"/>
+								<TextBlock Text="{Binding AvatarGlyph}"
+								           FontSize="30"
+								           HorizontalAlignment="Center"
+								           VerticalAlignment="Center"
+								           Foreground="White"
+								           IsVisible="{Binding AvatarBitmap,
+								               Converter={x:Static ObjectConverters.IsNull}}"/>
 							</Panel>
 						</Border>
 
-						<!-- Кольцо цветом персонажа вокруг аватара с зазором —
-                             как на карточках основного списка (свойство AvatarRing). -->
-						<Border Width="112" Height="112"
-                                CornerRadius="999"
-                                BorderThickness="3"
-                                BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
-                                IsHitTestVisible="False"
-                                IsVisible="{Binding AvatarRing}"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"/>
+						<!-- Кольцо цветом персонажа вокруг аватара с зазором -->
+						<Border Width="84" Height="84"
+						        CornerRadius="999"
+						        BorderThickness="3"
+						        BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+						        IsHitTestVisible="False"
+						        IsVisible="{Binding AvatarRing}"
+						        HorizontalAlignment="Center"
+						        VerticalAlignment="Center"/>
+
+						<!-- Бейдж метки поверх аватара: смысл несёт объект-значок,
+                             поэтому «мёртв» виден прямо в шапке карточки. -->
+						<Border Width="24" Height="24"
+						        CornerRadius="12"
+						        HorizontalAlignment="Right"
+						        VerticalAlignment="Bottom"
+						        BorderThickness="2"
+						        BorderBrush="{DynamicResource BgSurfaceBrush}"
+						        IsHitTestVisible="False"
+						        IsVisible="{Binding HasCardBadge}"
+						        Background="{Binding CardBadge.Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
+							<!-- Своя картинка вместо встроенного значка, если автор
+							     её задал: герб дома, эмблема клуба. -->
+							<Panel>
+								<Path Data="{Binding CardBadge.Icon, Converter={x:Static conv:LabelIconToGeometryConverter.Instance}}"
+								      Fill="White"
+								      Stretch="Uniform"
+								      Margin="4"
+								      IsVisible="{Binding !CardBadge.HasCustomIcon}"/>
+								<Border CornerRadius="12" ClipToBounds="True"
+								        IsVisible="{Binding CardBadge.HasCustomIcon}">
+									<Image Source="{Binding CardBadge.IconImage, Converter={x:Static conv:LabelIconToImageConverter.Instance}}"
+									       Stretch="UniformToFill"/>
+								</Border>
+							</Panel>
+						</Border>
 					</Panel>
 				</Button>
 
-				<!-- Имя персонажа — крупно под аватаром, редактируется по клику.
-                     Кнопки Upload/Delete убраны: пикер открывается кликом по
-                     аватару, удаление — кнопкой внутри пикера. -->
-				<TextBox Classes="name-title"
-                         Text="{Binding Name, Mode=TwoWay}"/>
-			</StackPanel>
+				<!-- Имя и короткое описание. Описание остаётся отдельным от
+				     заметки: оно идёт в списки и превью, заметка — рабочий
+				     текст внутри карточки.
 
-			<!-- Имя -->
-			<StackPanel Spacing="4">
-				<TextBlock Text="{x:Static loc:CharactersStrings.Field_Name}"
-                           FontSize="11"
-                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-				<TextBox Text="{Binding Name, Mode=TwoWay}"
-                         FontSize="13"
-                         FontWeight="Medium"
-                         Background="{DynamicResource BgPanelBrush}"
-                         Foreground="{DynamicResource TextPrimaryBrush}"
-                         BorderBrush="{DynamicResource BorderDefaultBrush}"
-                         BorderThickness="1"
-                         CornerRadius="4"
-                         Padding="8,6"/>
-			</StackPanel>
+				     Поля растут по тексту от нижней границы до потолка, а не
+				     тянутся во всю шапку: строка ввода во весь экран под имя
+				     из десяти букв выглядит пустой тратой места.
 
-			<!-- Краткое описание -->
-			<StackPanel Spacing="4">
-				<TextBlock Text="{x:Static loc:CharactersStrings.Field_ShortDescription}"
-                           FontSize="11"
-                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-				<TextBox Text="{Binding ShortDescription, Mode=TwoWay}"
-                         FontSize="12"
-                         Background="{DynamicResource BgPanelBrush}"
-                         Foreground="{DynamicResource TextPrimaryBrush}"
-                         BorderBrush="{DynamicResource BorderDefaultBrush}"
-                         BorderThickness="1"
-                         CornerRadius="4"
-                         Padding="8,6"/>
-			</StackPanel>
+				     Длинное имя обрезается многоточием. Само поле обрезать
+				     не умеет, поэтому в покое поверх него лежит подпись с
+				     обрезкой, а под курсором и в правке видно поле целиком —
+				     иначе текст нельзя было бы дочитать и поправить. -->
+				<StackPanel Grid.Column="1"
+				            Spacing="2"
+				            VerticalAlignment="Center"
+				            HorizontalAlignment="Left"
+				            Margin="10,0,10,0">
 
-			<!-- Цвет персонажа -->
-			<StackPanel Spacing="4">
-				<TextBlock Text="{x:Static loc:CharactersStrings.Field_Color}"
-                           FontSize="11"
-                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-				<TextBox Text="{Binding Color, Mode=TwoWay}"
-                         FontSize="12"
-                         Background="{DynamicResource BgPanelBrush}"
-                         Foreground="{DynamicResource TextPrimaryBrush}"
-                         BorderBrush="{DynamicResource BorderDefaultBrush}"
-                         BorderThickness="1"
-                         CornerRadius="4"
-                         Padding="8,6"
-                         PlaceholderText="#607D8B"/>
-			</StackPanel>
+					<Panel Classes="name-slot" Background="Transparent">
+						<TextBox x:Name="NameBox"
+						         Classes="name-title"
+						         MinWidth="240"
+						         Width="{Binding #NameTrim.Bounds.Width}"
+						         Text="{Binding Name, Mode=TwoWay}"
+						         KeyDown="OnNameTitleKeyDown"/>
+						<TextBlock x:Name="NameTrim"
+						           Classes="name-title-trim"
+						           Text="{Binding Name}"
+						           TextTrimming="CharacterEllipsis"
+						           IsHitTestVisible="False"
+						           Background="{DynamicResource BgSurfaceBrush}"/>
+					</Panel>
 
-			<!-- Иконка-символ -->
-			<StackPanel Spacing="4">
-				<TextBlock Text="{x:Static loc:CharactersStrings.Field_FallbackIcon}"
-                           FontSize="11"
-                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-				<TextBox Text="{Binding FallbackIcon, Mode=TwoWay}"
-                         FontSize="12"
-                         Background="{DynamicResource BgPanelBrush}"
-                         Foreground="{DynamicResource TextPrimaryBrush}"
-                         BorderBrush="{DynamicResource BorderDefaultBrush}"
-                         BorderThickness="1"
-                         CornerRadius="4"
-                         Padding="8,6"
-                         MaxLength="4"
-                         PlaceholderText="?"/>
-			</StackPanel>
+					<Panel Classes="name-slot" Background="Transparent">
+						<TextBox x:Name="ShortDescriptionBox"
+						         Classes="name-subtitle"
+						         MinWidth="240"
+						         Width="{Binding #ShortDescriptionTrim.Bounds.Width}"
+						         Text="{Binding ShortDescription, Mode=TwoWay}"
+						         PlaceholderText="{x:Static loc:CharactersStrings.Field_ShortDescription}"/>
+						<TextBlock x:Name="ShortDescriptionTrim"
+						           Classes="name-subtitle-trim"
+						           Text="{Binding ShortDescription}"
+						           TextTrimming="CharacterEllipsis"
+						           IsHitTestVisible="False"
+						           Background="{DynamicResource BgSurfaceBrush}"/>
+					</Panel>
+				</StackPanel>
 
-			<!-- Уровень важности -->
-			<StackPanel Spacing="4">
-				<TextBlock Text="{x:Static loc:CharactersStrings.Field_ImportanceLevel}"
-                           FontSize="11"
-                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-				<ComboBox SelectedItem="{Binding ImportanceLevel}"
-                          FontSize="12"
-                          HorizontalAlignment="Stretch"
-                          Background="{DynamicResource BgPanelBrush}"
-                          Foreground="{DynamicResource TextPrimaryBrush}">
-					<enums:CharacterImportanceLevel>Primary</enums:CharacterImportanceLevel>
-					<enums:CharacterImportanceLevel>Secondary</enums:CharacterImportanceLevel>
-					<enums:CharacterImportanceLevel>Tertiary</enums:CharacterImportanceLevel>
-					<enums:CharacterImportanceLevel>Custom</enums:CharacterImportanceLevel>
-				</ComboBox>
-			</StackPanel>
+				<!-- Кнопки цвета и настроек карточки -->
+				<StackPanel Grid.Column="2"
+				            Spacing="6"
+				            VerticalAlignment="Center">
 
-			<!-- Кастомная метка важности -->
-			<StackPanel Spacing="4"
-                        IsVisible="{Binding ImportanceLevel,
-                            Converter={StaticResource IsCustomImportanceConverter}}">
-				<TextBlock Text="{x:Static loc:CharactersStrings.Field_CustomImportanceLabel}"
-                           FontSize="11"
-                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-				<TextBox Text="{Binding CustomImportanceLabel, Mode=TwoWay}"
-                         FontSize="12"
-                         Background="{DynamicResource BgPanelBrush}"
-                         Foreground="{DynamicResource TextPrimaryBrush}"
-                         BorderBrush="{DynamicResource BorderDefaultBrush}"
-                         BorderThickness="1"
-                         CornerRadius="4"
-                         Padding="8,6"/>
-			</StackPanel>
+					<colorControls:ColorPickerButton Width="22" Height="22"
+					    ShowCardPreview="True"
+					    HexColor="{Binding Color, Mode=TwoWay}"
+					    PreviewImage="{Binding AvatarBitmap}"
+					    PreviewName="{Binding Name}"
+					    PreviewFallback="{Binding AvatarGlyph}"
+					    RingEnabled="{Binding AvatarRing, Mode=TwoWay}"
+					    PreviewIsGroup="{Binding IsCollective}"
+					    BookmarkEnabled="{Binding GroupBookmark, Mode=TwoWay}"
+					    ApplyRingToAllCommand="{Binding ApplyRingToAllCommand}"/>
 
-			<!-- Нарративные точки -->
-			<StackPanel Spacing="4">
-				<TextBlock Text="{x:Static loc:CharactersStrings.Field_NarrativeStartPoint}"
-                           FontSize="11"
-                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-				<TextBox Text="{Binding NarrativeStartPoint, Mode=TwoWay}"
-                         FontSize="12"
-                         Background="{DynamicResource BgPanelBrush}"
-                         Foreground="{DynamicResource TextPrimaryBrush}"
-                         BorderBrush="{DynamicResource BorderDefaultBrush}"
-                         BorderThickness="1"
-                         CornerRadius="4"
-                         Padding="8,6"
-                         PlaceholderText="{x:Static loc:CharactersStrings.Placeholder_NarrativePoint}"/>
-			</StackPanel>
+					<Button Width="22" Height="22"
+					    Padding="0" CornerRadius="999"
+					    Background="#88000000" BorderThickness="0"
+					    HorizontalContentAlignment="Center"
+					    VerticalContentAlignment="Center"
+					    Click="OnCardSettingsClick"
+					    behaviours:TooltipBehavior.Tip="Настройки карточки"
+					    behaviours:TooltipBehavior.Description="Кольцо вокруг аватара, закладка группы, толщина рамки и вид аватара на карточке списка.">
+						<PathIcon Data="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"
+						      Width="12" Height="12"
+						      Foreground="White"/>
+					</Button>
+				</StackPanel>
+			</Grid>
+		</Border>
 
-			<StackPanel Spacing="4">
-				<TextBlock Text="{x:Static loc:CharactersStrings.Field_NarrativeEndPoint}"
-                           FontSize="11"
-                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-				<TextBox Text="{Binding NarrativeEndPoint, Mode=TwoWay}"
-                         FontSize="12"
-                         Background="{DynamicResource BgPanelBrush}"
-                         Foreground="{DynamicResource TextPrimaryBrush}"
-                         BorderBrush="{DynamicResource BorderDefaultBrush}"
-                         BorderThickness="1"
-                         CornerRadius="4"
-                         Padding="8,6"
-                         PlaceholderText="{x:Static loc:CharactersStrings.Placeholder_NarrativePoint}"/>
-			</StackPanel>
+		<!-- ── Стек компонентов ───────────────────────────────────────── -->
+		<!-- Запас снизу больше верхнего: последний блок не должен упираться
+		     в край окна — иначе конец списка читается как обрыв. -->
+		<!-- Отступы живут на содержимом, а не на самой прокрутке: Padding
+		     у ScrollViewer уменьшает область измерения, но не попадает
+		     в Extent — нижняя часть контента ровно на высоту отступов
+		     обрезается и прокруткой не достаётся. -->
+		<ScrollViewer Grid.Row="1" x:Name="BodyScroll">
 
-			<!-- Теги -->
-			<StackPanel Spacing="4">
-				<TextBlock Text="{x:Static loc:CharactersStrings.Field_Tags}"
-                           FontSize="11"
-                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-				<ItemsControl ItemsSource="{Binding Tags}">
-					<ItemsControl.ItemsPanel>
-						<ItemsPanelTemplate>
-							<WrapPanel Orientation="Horizontal"/>
-						</ItemsPanelTemplate>
-					</ItemsControl.ItemsPanel>
-					<ItemsControl.ItemTemplate>
-						<DataTemplate>
-							<Border Background="{DynamicResource AccentSubtleBrush}"
-									CornerRadius="10"
-									Padding="8,3"
-									Margin="0,0,4,4">
-								<StackPanel Orientation="Horizontal" Spacing="4">
-									<TextBlock Text="{Binding}"
-											   FontSize="11"
-											   Foreground="{DynamicResource TextPrimaryBrush}"/>
-									<Button Content="x"
-											Command="{Binding $parent[UserControl].((tabs:CharacterBasicsTabViewModel)DataContext).RemoveTagCommand}"
-											CommandParameter="{Binding}"
-											Background="Transparent"
-											BorderThickness="0"
-											Padding="0"
-											FontSize="10"/>
-								</StackPanel>
-							</Border>
-						</DataTemplate>
-					</ItemsControl.ItemTemplate>
-				</ItemsControl>
-			</StackPanel>
+			<!-- Тело карточки: слева стопка компонентов, справа галерея.
+			     Галерея — картинки, на которые смотрят, пока пишут; держать
+			     их сбоку удобнее, чем прокручивать к ним каждый раз.
+			     Прокручивается всё вместе: это одна область, а не две. -->
+			<!-- Ширина правой колонки посчитана под две плитки: 96 + 96,
+			     зазоры, отступы блока и полоса прокрутки. Круглое число вроде
+			     300 оставляло справа пустую полосу. -->
+			<Grid ColumnDefinitions="*,16,264" Margin="20,16">
 
-			<!-- Статусы -->
-			<StackPanel Spacing="4">
-				<TextBlock Text="{x:Static loc:CharactersStrings.Field_Statuses}"
-                           FontSize="11"
-                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-				<ItemsControl ItemsSource="{Binding ActiveStatuses}">
-					<ItemsControl.ItemTemplate>
-						<DataTemplate>
-							<Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
-								<Border Grid.Column="0"
-                                        Width="16"
-                                        Height="16"
-                                        CornerRadius="8"
-                                        Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
-                                        Margin="0,0,6,0"/>
-								<TextBlock Grid.Column="1"
-                                           Text="{Binding Name}"
-                                           FontSize="12"
-                                           VerticalAlignment="Center"
-                                           Foreground="{DynamicResource TextPrimaryBrush}"/>
-								<Button Grid.Column="2"
-                                        Content="x"
-                                        Command="{Binding $parent[UserControl].((tabs:CharacterBasicsTabViewModel)DataContext).RemoveStatusCommand}"
-                                        CommandParameter="{Binding Id}"
-                                        Background="Transparent"
-                                        BorderThickness="0"
-                                        Padding="4,0"
-                                        FontSize="10"/>
+			<StackPanel Grid.Column="0" Spacing="12"
+			            HorizontalAlignment="Stretch">
+
+				<!-- ── Компонент: кто это (снять нельзя) ──────────────── -->
+				<Border Classes="block">
+					<StackPanel Spacing="14">
+
+						<Border Classes="block-header">
+							<StackPanel Orientation="Horizontal" Spacing="8">
+								<Border Width="3" Height="14" CornerRadius="2"
+								        Background="{DynamicResource AccentDefaultBrush}"/>
+								<TextBlock Classes="block-title"
+								           Text="{x:Static loc:CharactersStrings.Block_Who}"/>
+							</StackPanel>
+						</Border>
+
+						<!-- Заметка — основное содержимое карточки. Поле растёт
+						     под текст: карточка главного героя и карточка
+						     стражника с двумя репликами занимают разное место. -->
+						<StackPanel Spacing="4">
+							<StackPanel Orientation="Horizontal" Spacing="6">
+								<TextBlock Classes="field-label"
+								           Text="{x:Static loc:CharactersStrings.Field_Note}"/>
+								<Border Classes="hint"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Field_Note}"
+								        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Hint_Note}">
+									<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
+								</Border>
+							</StackPanel>
+							<!-- Текст пишется сверху вниз: по умолчанию содержимое
+							     прижимается к середине, и первая строка оказывается
+							     в центре пустого прямоугольника. -->
+							<TextBox Classes="field"
+							         Text="{Binding Note, Mode=TwoWay}"
+							         PlaceholderText="{x:Static loc:CharactersStrings.Placeholder_Note}"
+							         AcceptsReturn="True"
+							         TextWrapping="Wrap"
+							         VerticalContentAlignment="Top"
+							         MinHeight="120"/>
+						</StackPanel>
+
+						<!-- Важность: место персонажа в проекте. Рядом с ней
+						     ниже стоят метки и теги — всё, чем карточка
+						     классифицируется, собрано в одном компоненте. -->
+						<Grid ColumnDefinitions="260,16,*">
+							<StackPanel Grid.Column="0" Spacing="4">
+								<TextBlock Classes="field-label"
+								           Text="{x:Static loc:CharactersStrings.Field_ImportanceLevel}"/>
+								<ComboBox SelectedItem="{Binding ImportanceLevel}"
+								          FontSize="12"
+								          HorizontalAlignment="Stretch"
+								          Background="{DynamicResource BgSurfaceBrush}"
+								          Foreground="{DynamicResource TextPrimaryBrush}">
+									<enums:CharacterImportanceLevel>Primary</enums:CharacterImportanceLevel>
+									<enums:CharacterImportanceLevel>Secondary</enums:CharacterImportanceLevel>
+									<enums:CharacterImportanceLevel>Tertiary</enums:CharacterImportanceLevel>
+									<enums:CharacterImportanceLevel>Custom</enums:CharacterImportanceLevel>
+								</ComboBox>
+							</StackPanel>
+
+							<StackPanel Grid.Column="2" Spacing="4"
+							            IsVisible="{Binding ImportanceLevel,
+							                Converter={StaticResource IsCustomImportanceConverter}}">
+								<TextBlock Classes="field-label"
+								           Text="{x:Static loc:CharactersStrings.Field_CustomImportanceLabel}"/>
+								<TextBox Classes="field"
+								         Text="{Binding CustomImportanceLabel, Mode=TwoWay}"/>
+							</StackPanel>
+						</Grid>
+
+						<!-- ── Группа или человек ─────────────────────── -->
+						<!-- Флаг был в модели с самого начала, но задать его
+						     из карточки было негде: превью цвета зависело
+						     от значения, которое нельзя выставить. -->
+						<StackPanel Spacing="6">
+							<StackPanel Orientation="Horizontal" Spacing="6">
+								<CheckBox IsChecked="{Binding IsCollective, Mode=TwoWay}"
+								          Content="{x:Static loc:CharactersStrings.Block_Group}"
+								          FontSize="11"
+								          Foreground="{DynamicResource TextSecondaryBrush}"/>
+								<Border Classes="hint"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Block_Group}"
+								        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Group_Hint}">
+									<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
+								</Border>
+							</StackPanel>
+
+							<StackPanel Spacing="4" IsVisible="{Binding IsCollective}">
+								<TextBlock Classes="field-label"
+								           Text="{x:Static loc:CharactersStrings.Group_Population}"/>
+								<TextBox Classes="field"
+								         Text="{Binding PopulationNote, Mode=TwoWay}"
+								         PlaceholderText="{x:Static loc:CharactersStrings.Group_PopulationPlaceholder}"/>
+							</StackPanel>
+						</StackPanel>
+
+					</StackPanel>
+				</Border>
+
+				<!-- ── Компонент: имена и обращения ───────────────────── -->
+				<!-- Имена и то, как персонажа зовут другие, — одна тема:
+				     держать их врозь значит заставлять искать по всей карточке.
+				     Отображаемое имя правится в шапке, здесь остальное. -->
+				<Border Classes="block">
+					<StackPanel Spacing="14">
+
+						<Border Classes="block-header">
+							<StackPanel Orientation="Horizontal" Spacing="8">
+								<Border Width="3" Height="14" CornerRadius="2"
+								        Background="{DynamicResource AccentDefaultBrush}"/>
+								<TextBlock Classes="block-title"
+								           Text="{x:Static loc:CharactersStrings.Block_Names}"/>
+							</StackPanel>
+						</Border>
+
+						<!-- ── Другие имена ───────────────────────────── -->
+						<!-- Отображаемое имя правится в шапке, здесь живут
+						     остальные: прежние, будущие, прозвища. Поиск идёт
+						     по всем сразу, поэтому персонаж, ставший Дианой,
+						     находится и по имени Вадим. -->
+						<!-- ── Обращение по умолчанию ─────────────────── -->
+						<!-- Обращение принадлежит отношениям, а не персонажу,
+						     поэтому личные варианты живут в связях. Здесь общий
+						     случай — последняя ступень каскада перед именем. -->
+						<StackPanel Spacing="4">
+							<StackPanel Orientation="Horizontal" Spacing="6">
+								<TextBlock Classes="field-label"
+								           Text="{x:Static loc:CharactersStrings.Field_DefaultAddress}"/>
+								<Border Classes="hint"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Field_DefaultAddress}"
+								        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Hint_DefaultAddress}">
+									<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
+								</Border>
+							</StackPanel>
+							<TextBox Classes="field"
+							         Text="{Binding DefaultAddress, Mode=TwoWay}"
+							         PlaceholderText="{x:Static loc:CharactersStrings.Placeholder_DefaultAddress}"/>
+						</StackPanel>
+
+						<StackPanel Spacing="8">
+							<StackPanel Orientation="Horizontal" Spacing="6">
+								<TextBlock Classes="subhead"
+								           Text="{x:Static loc:CharactersStrings.Field_AlternateNames}"/>
+								<Border Classes="hint"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Field_AlternateNames}"
+								        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Hint_AlternateNames}">
+									<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
+								</Border>
+							</StackPanel>
+
+							<ItemsControl ItemsSource="{Binding AlternateNames}">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate>
+										<WrapPanel Orientation="Horizontal"/>
+									</ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<DataTemplate x:DataType="models:CharacterNameEntry">
+										<!-- Щелчок по чипу возвращает имя в поле ввода
+										     вместе с пометкой: правка идёт тем же
+										     потоком, что и добавление, отдельного
+										     редактора под одно поле не заводим. -->
+										<Button Background="Transparent"
+										        BorderThickness="0"
+										        Padding="0"
+										        Margin="0,0,6,6"
+										        Click="OnNameChipClick">
+										<Border Classes="chip"
+										        Background="{DynamicResource BgSurfaceBrush}"
+										        BorderBrush="{DynamicResource BorderDefaultBrush}"
+										        BorderThickness="1"
+										        CornerRadius="12"
+										        Padding="10,4">
+											<StackPanel Orientation="Horizontal" Spacing="6">
+												<TextBlock Text="{Binding Value}"
+												           FontSize="11"
+												           VerticalAlignment="Center"
+												           Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+												<!-- Пометка происхождения имени показывается,
+												     только если автор её задал. -->
+												<TextBlock Text="{Binding Note}"
+												           FontSize="11"
+												           VerticalAlignment="Center"
+												           Foreground="{DynamicResource TextSecondaryBrush}"
+												           IsVisible="{Binding Note,
+												               Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+												<StackPanel Classes="chip-actions"
+												            Orientation="Horizontal"
+												            Spacing="0"
+												            VerticalAlignment="Center">
+													<Button Classes="chip-action"
+													        Click="OnNameMakePrimaryClick"
+													        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Name_MakePrimary}">
+														<Path Data="M4,12l1.41,1.41L11,7.83V20h2V7.83l5.58,5.59L20,12l-8-8L4,12z"
+														      Fill="{DynamicResource TextSecondaryBrush}"
+														      Stretch="Uniform"
+														      Width="8" Height="8"/>
+													</Button>
+													<Button Classes="chip-action" Click="OnNameRemoveClick">
+														<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+														      Fill="{DynamicResource TextSecondaryBrush}"
+														      Stretch="Uniform"
+														      Width="8" Height="8"/>
+													</Button>
+												</StackPanel>
+											</StackPanel>
+										</Border>
+										</Button>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+
+							<TextBox Classes="field"
+							         x:Name="NewNameBox" PlaceholderText="{x:Static loc:CharactersStrings.Name_AddPlaceholder}"
+							         KeyDown="OnNewNameKeyDown"/>
+						</StackPanel>
+
+						<!-- ── Обращения по группам ───────────────────── -->
+						<!-- Группой служит папка: заводить отдельный справочник
+						     групп незачем, «друзья Алины» это и есть папка,
+						     а два списка одних и тех же людей обречены
+						     разойтись. -->
+						<StackPanel Spacing="8" IsVisible="{Binding CanAddGroupAddress}">
+							<StackPanel Orientation="Horizontal" Spacing="6">
+								<TextBlock Classes="subhead"
+								           Text="{x:Static loc:CharactersStrings.Field_GroupAddresses}"/>
+								<Border Classes="hint"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Field_GroupAddresses}"
+								        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Hint_GroupAddresses}">
+									<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
+								</Border>
+							</StackPanel>
+
+							<ItemsControl ItemsSource="{Binding GroupAddresses}"
+							              IsVisible="{Binding HasGroupAddresses}">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate>
+										<WrapPanel Orientation="Horizontal"/>
+									</ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<DataTemplate x:DataType="models:CharacterGroupAddress">
+										<Border Classes="chip"
+										        Background="{DynamicResource BgSurfaceBrush}"
+										        BorderBrush="{DynamicResource BorderDefaultBrush}"
+										        BorderThickness="1"
+										        CornerRadius="12"
+										        Padding="10,4"
+										        Margin="0,0,6,6">
+											<StackPanel Orientation="Horizontal" Spacing="6">
+												<TextBlock Text="{Binding Value}"
+												           FontSize="11"
+												           VerticalAlignment="Center"
+												           Foreground="{DynamicResource TextPrimaryBrush}"/>
+												<TextBlock Text="{Binding Occasion}"
+												           FontSize="11"
+												           VerticalAlignment="Center"
+												           Opacity="0.75"
+												           Foreground="{DynamicResource TextSecondaryBrush}"
+												           IsVisible="{Binding Occasion,
+												               Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+												<Button Click="OnGroupAddressRemoveClick"
+												        Background="Transparent"
+												        BorderThickness="0"
+												        Padding="0"
+												        Width="14" Height="14"
+												        HorizontalContentAlignment="Center"
+												        VerticalContentAlignment="Center">
+													<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+													      Fill="{DynamicResource TextSecondaryBrush}"
+													      Stretch="Uniform"
+													      Width="8" Height="8"/>
+												</Button>
+											</StackPanel>
+										</Border>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+
+							<Grid ColumnDefinitions="160,*">
+								<ComboBox x:Name="GroupAddressFolderBox"
+								          Grid.Column="0"
+								          ItemsSource="{Binding AddressFolders}"
+								          SelectedIndex="0"
+								          Margin="0,0,6,0"
+								          FontSize="12"
+								          HorizontalAlignment="Stretch"
+								          Background="{DynamicResource BgSurfaceBrush}"
+								          Foreground="{DynamicResource TextPrimaryBrush}">
+									<ComboBox.ItemTemplate>
+										<DataTemplate x:DataType="models:CharacterFolder">
+											<TextBlock Text="{Binding Name}" FontSize="12"/>
+										</DataTemplate>
+									</ComboBox.ItemTemplate>
+								</ComboBox>
+
+								<TextBox x:Name="GroupAddressBox"
+								         Grid.Column="1"
+								         Classes="field"
+								         PlaceholderText="{x:Static loc:CharactersStrings.GroupAddress_Placeholder}"
+								         KeyDown="OnGroupAddressKeyDown"/>
 							</Grid>
-						</DataTemplate>
-					</ItemsControl.ItemTemplate>
-				</ItemsControl>
-				<Button Content="{x:Static loc:CharactersStrings.Button_AddStatus}"
-                        Command="{Binding AddStatusCommand}"
-                        FontSize="11"
-                        Padding="8,4"
-                        Margin="0,4,0,0"/>
+						</StackPanel>
+
+					</StackPanel>
+				</Border>
+
+				<!-- ── Компонент: классификация ───────────────────────── -->
+				<!-- Метки и теги делают одно — раскладывают персонажа по полкам,
+				     только метка видна на карточке, а тег живёт в фильтрах. -->
+				<Border Classes="block">
+					<StackPanel Spacing="14">
+
+						<Border Classes="block-header">
+							<StackPanel Orientation="Horizontal" Spacing="8">
+								<Border Width="3" Height="14" CornerRadius="2"
+								        Background="{DynamicResource AccentDefaultBrush}"/>
+								<TextBlock Classes="block-title"
+								           Text="{x:Static loc:CharactersStrings.Block_Classification}"/>
+							</StackPanel>
+						</Border>
+
+						<!-- ── Метки ──────────────────────────────────── -->
+						<StackPanel Spacing="8">
+							<Grid ColumnDefinitions="Auto,*,Auto">
+								<StackPanel Grid.Column="0"
+								            Orientation="Horizontal" Spacing="6">
+									<TextBlock Classes="subhead"
+									           Text="{x:Static loc:CharactersStrings.Field_Labels}"/>
+									<Border Classes="hint"
+									        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Field_Labels}"
+									        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Hint_Labels}">
+										<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
+									</Border>
+								</StackPanel>
+
+								<!-- Быстрая отметка «мёртв»: встроенная метка. Кнопка
+								     исчезает, как только метка появилась — состояние
+								     дальше показывает её чип, а не два разных органа. -->
+								<Button Grid.Column="2"
+								    Click="OnMarkDeadClick"
+								    IsVisible="{Binding !IsDead}"
+								    Background="Transparent"
+								    BorderBrush="{DynamicResource BorderDefaultBrush}"
+								    BorderThickness="1"
+								    CornerRadius="12"
+								    Padding="10,3"
+								    FontSize="11"
+								    Foreground="{DynamicResource TextSecondaryBrush}">
+									<StackPanel Orientation="Horizontal" Spacing="6">
+										<Border Width="14" Height="14" CornerRadius="7" Background="#B71C1C">
+											<Path Data="M12,2C7.03,2 3,6.03 3,11c0,2.85 1.34,5.38 3.42,7.02V21c0,0.55 0.45,1 1,1h1.5v-2h2v2h2v-2h2v2H16c0.55,0 1,-0.45 1,-1v-2.98C19.66,16.38 21,13.85 21,11C21,6.03 16.97,2 12,2zM8.5,13C7.67,13 7,12.33 7,11.5C7,10.67 7.67,10 8.5,10s1.5,0.67 1.5,1.5C10,12.33 9.33,13 8.5,13zM15.5,13c-0.83,0 -1.5,-0.67 -1.5,-1.5c0,-0.83 0.67,-1.5 1.5,-1.5s1.5,0.67 1.5,1.5C17,12.33 16.33,13 15.5,13z"
+											      Fill="White" Stretch="Uniform" Margin="2"/>
+										</Border>
+										<TextBlock Text="{x:Static loc:CharactersStrings.Label_Dead}" VerticalAlignment="Center"/>
+									</StackPanel>
+								</Button>
+							</Grid>
+
+							<ItemsControl ItemsSource="{Binding Labels}">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate>
+										<WrapPanel Orientation="Horizontal"/>
+									</ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<DataTemplate x:DataType="models:CharacterLabel">
+										<!-- Чип метки заодно перетаскивается: порядок
+										     задавался только стрелками, а на десятке
+										     меток это утомительно. Щелчок по-прежнему
+										     открывает редактор — перетаскивание
+										     начинается только после сдвига мыши
+										     на несколько пикселей. -->
+										<Button Background="Transparent"
+										        BorderThickness="0"
+										        Padding="0"
+										        Margin="0,0,6,6"
+										        Click="OnLabelChipClick"
+										        DragDrop.AllowDrop="True"
+										        PointerPressed="OnLabelChipPointerPressed"
+										        PointerMoved="OnLabelChipPointerMoved"
+										        PointerReleased="OnLabelChipPointerReleased"
+										        DragDrop.DragOver="OnLabelChipDragOver"
+										        DragDrop.Drop="OnLabelChipDrop">
+											<Border Classes="chip"
+											        Background="{DynamicResource BgSurfaceBrush}"
+											        BorderBrush="{DynamicResource BorderDefaultBrush}"
+											        BorderThickness="1"
+											        CornerRadius="12"
+											        Padding="6,4"
+											        behaviours:TooltipBehavior.Tip="{Binding Name}"
+											        behaviours:TooltipBehavior.Description="{Binding Description}">
+												<StackPanel Orientation="Horizontal" Spacing="6">
+													<Border Width="16" Height="16"
+													        CornerRadius="8"
+													        ClipToBounds="True"
+													        VerticalAlignment="Center"
+													        Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
+														<Panel>
+															<Path Data="{Binding Icon, Converter={x:Static conv:LabelIconToGeometryConverter.Instance}}"
+															      Fill="White"
+															      Stretch="Uniform"
+															      Margin="3"
+															      IsVisible="{Binding !HasCustomIcon}"/>
+															<Image Source="{Binding IconImage, Converter={x:Static conv:LabelIconToImageConverter.Instance}}"
+															       Stretch="UniformToFill"
+															       IsVisible="{Binding HasCustomIcon}"/>
+														</Panel>
+													</Border>
+													<TextBlock Text="{Binding Name}"
+													           FontSize="11"
+													           VerticalAlignment="Center"
+													           Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+													<StackPanel Classes="chip-actions"
+													            Orientation="Horizontal"
+													            Spacing="0"
+													            VerticalAlignment="Center">
+														<Button Classes="chip-action" Click="OnLabelMoveLeftClick">
+															<Path Data="M15.41,7.41 L14,6 8,12 14,18 15.41,16.59 10.83,12z"
+															      Fill="{DynamicResource TextSecondaryBrush}"
+															      Stretch="Uniform"
+															      Width="8" Height="8"/>
+														</Button>
+														<Button Classes="chip-action" Click="OnLabelMoveRightClick">
+															<Path Data="M10,6 L8.59,7.41 13.17,12 8.59,16.59 10,18 16,12z"
+															      Fill="{DynamicResource TextSecondaryBrush}"
+															      Stretch="Uniform"
+															      Width="8" Height="8"/>
+														</Button>
+														<Button Classes="chip-action" Click="OnLabelRemoveClick">
+															<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+															      Fill="{DynamicResource TextSecondaryBrush}"
+															      Stretch="Uniform"
+															      Width="8" Height="8"/>
+														</Button>
+													</StackPanel>
+												</StackPanel>
+											</Border>
+										</Button>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+
+							<Grid ColumnDefinitions="*,Auto">
+								<!-- Ввод метки подсказывает уже заведённые в проекте:
+								     совпадение по имени подхватывает саму метку
+								     со значком и цветом, а не заводит похожую. -->
+								<AutoCompleteBox Grid.Column="0"
+								                 ItemsSource="{Binding KnownLabelNames}"
+								                 FilterMode="ContainsOrdinal"
+								                 MinimumPrefixLength="1"
+								                 MaxDropDownHeight="180"
+								                 PlaceholderText="{x:Static loc:CharactersStrings.Label_AddPlaceholder}"
+								                 Margin="0,0,6,0"
+								                 KeyDown="OnNewLabelKeyDown"
+								                 FontSize="12"
+								                 Background="{DynamicResource BgSurfaceBrush}"
+								                 Foreground="{DynamicResource TextPrimaryBrush}"
+								                 BorderBrush="{DynamicResource BorderDefaultBrush}"
+								                 BorderThickness="1"
+								                 CornerRadius="4"
+								                 Padding="8,6"/>
+								<Button Grid.Column="1"
+								        Content="{x:Static loc:CharactersStrings.Button_AddLabel}"
+								        Click="OnAddLabelClick"
+								        FontSize="11"
+								        Padding="10,6"
+								        CornerRadius="4"/>
+							</Grid>
+						</StackPanel>
+
+						<!-- ── Теги ───────────────────────────────────── -->
+						<StackPanel Spacing="8">
+							<StackPanel Orientation="Horizontal" Spacing="6">
+								<TextBlock Classes="subhead"
+								           Text="{x:Static loc:CharactersStrings.Field_Tags}"/>
+								<Border Classes="hint"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Field_Tags}"
+								        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Hint_Tags}">
+									<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
+								</Border>
+							</StackPanel>
+
+							<ItemsControl ItemsSource="{Binding Tags}">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate>
+										<WrapPanel Orientation="Horizontal"/>
+									</ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<!-- Тип элемента указан явно: без него компилируемые
+									     привязки взяли бы вьюмодель вместо строки тега. -->
+									<DataTemplate x:DataType="sys:String">
+										<Border Classes="chip"
+										        Background="{DynamicResource AccentSubtleBrush}"
+										        CornerRadius="12"
+										        Padding="10,4"
+										        Margin="0,0,6,6">
+											<StackPanel Orientation="Horizontal" Spacing="6">
+												<TextBlock Text="{Binding}"
+												           FontSize="11"
+												           VerticalAlignment="Center"
+												           Foreground="{DynamicResource TextPrimaryBrush}"/>
+												<StackPanel Classes="chip-actions"
+												            Orientation="Horizontal"
+												            VerticalAlignment="Center">
+													<Button Classes="chip-action" Click="OnTagRemoveClick">
+														<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+														      Fill="{DynamicResource TextSecondaryBrush}"
+														      Stretch="Uniform"
+														      Width="8" Height="8"/>
+													</Button>
+												</StackPanel>
+											</StackPanel>
+										</Border>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+
+							<!-- Ввод тега с подсказкой уже заведённых в проекте:
+							     список фильтруется по мере набора, выбор из него
+							     кладёт готовое значение в поле, Enter добавляет.
+							     Это дешёвая защита от трёх написаний одного тега,
+							     после которых фильтр списка перестаёт работать. -->
+							<AutoCompleteBox ItemsSource="{Binding KnownTags}"
+							                 FilterMode="ContainsOrdinal"
+							                 MinimumPrefixLength="1"
+							                 MaxDropDownHeight="180"
+							                 PlaceholderText="{x:Static loc:CharactersStrings.Tag_AddPlaceholder}"
+							                 KeyDown="OnNewTagKeyDown"
+							                 FontSize="12"
+							                 Background="{DynamicResource BgSurfaceBrush}"
+							                 Foreground="{DynamicResource TextPrimaryBrush}"
+							                 BorderBrush="{DynamicResource BorderDefaultBrush}"
+							                 BorderThickness="1"
+							                 CornerRadius="4"
+							                 Padding="8,6"/>
+						</StackPanel>
+
+					</StackPanel>
+				</Border>
+
 			</StackPanel>
 
-		</StackPanel>
-	</ScrollViewer>
+			<!-- Правая колонка: картинки и подключаемые наборы. Слева суть
+			     персонажа, справа то, чем карточку дополняют. Галерея сбоку
+			     затем, чтобы образ был перед глазами, пока правишь остальное,
+			     а не в конце длинной прокрутки. -->
+			<StackPanel Grid.Column="2" Spacing="12">
+
+				<!-- ── Компонент: галерея ─────────────────────────────── -->
+				<!-- Не пикер аватаров: тот про выбор одного значка. Здесь
+				     образы, на которые смотрят, когда пишут сцену. -->
+				<Border Classes="block">
+					<StackPanel Spacing="10">
+
+						<Border Classes="block-header">
+							<StackPanel Orientation="Horizontal" Spacing="8">
+								<Border Width="3" Height="14" CornerRadius="2"
+								        Background="{DynamicResource AccentDefaultBrush}"/>
+								<TextBlock Classes="block-title"
+								           Text="{x:Static loc:CharactersStrings.Block_Gallery}"/>
+								<Border Classes="hint"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Block_Gallery}"
+								        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Gallery_Hint}">
+									<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
+								</Border>
+							</StackPanel>
+						</Border>
+
+						<TextBlock Text="{x:Static loc:CharactersStrings.Gallery_Empty}"
+						           FontSize="11"
+						           TextWrapping="Wrap"
+						           Foreground="{DynamicResource TextSecondaryBrush}"
+						           IsVisible="{Binding !HasGallery}"/>
+
+						<!-- Прокрутка начинается после трёх рядов: галерея не должна
+						     оттеснять остальное вниз, когда картинок много.
+						     Плитка добавления идёт последней в той же сетке,
+						     поэтому список виден всегда. -->
+						<!-- Высота под четыре ряда: восемь картинок помещаются
+						     без прокрутки, дальше она появляется сама.
+						     Справа оставлен запас под полосу — в теме она рисуется
+						     поверх содержимого и без запаса налезала бы на плитки. -->
+						<!-- AllowAutoHide=False заставляет полосу занимать своё место,
+						     а не рисоваться поверх плиток. Появляется она только
+						     когда картинок больше восьми, поэтому в остальное время
+						     галерея занимает всю ширину без дыры справа. -->
+						<ScrollViewer Classes="tiles-scroll"
+						              x:Name="GalleryScroll"
+						              MaxHeight="464"
+						              VerticalScrollBarVisibility="Auto"
+						              HorizontalScrollBarVisibility="Disabled"
+						              AllowAutoHide="False"
+						              PointerWheelChanged="OnGalleryWheel">
+						<!-- Зазор задаётся отступом плиток во все стороны, а внешние
+						     края съедаются отрицательным отступом сетки: иначе
+						     справа и снизу зазор есть, а слева и сверху нет.
+						     Справа отодвинуто на 2: вместе с отступом плитки это
+						     даёт просвет до полосы, но не создаёт заметной
+						     разницы с левым краем, где плитка стоит вплотную. -->
+						<ItemsControl ItemsSource="{Binding Gallery}"
+						              Margin="-4,-4,2,-4">
+							<ItemsControl.ItemsPanel>
+								<ItemsPanelTemplate>
+									<!-- Две равные колонки вместо потока: плитки
+									     делят ширину поровну и заполняют блок
+									     целиком, без хвоста справа. -->
+									<UniformGrid Columns="2"/>
+								</ItemsPanelTemplate>
+							</ItemsControl.ItemsPanel>
+							<ItemsControl.ItemTemplate>
+								<DataTemplate x:DataType="tabs:CharacterGalleryItemViewModel">
+									<!-- Аватар меняется через правую кнопку, а не щелчком
+									     по картинке: водя мышью по галерее, сменить его
+									     случайно слишком легко. Само действие отменяемое
+									     общим Ctrl+Z модуля. -->
+									<!-- Аватар ставится через правую кнопку, а не щелчком:
+									     водя мышью по галерее, сменить его случайно
+									     слишком легко. Крестик оставлен на виду —
+									     удаление не должно прятаться в меню.
+									     Background обязателен: без заливки панель
+									     не участвует в проверке попадания, и меню
+									     по правой кнопке не открывается. -->
+									<!-- У шаблона один корень: обе плитки — картинка
+									     и «добавить» — лежат в общей обёртке
+									     и показываются по признаку элемента. -->
+									<Panel>
+
+									<!-- Плитка добавления стоит в той же сетке последней:
+									     отдельная кнопка под галереей читалась бы как
+									     другой орган, а не как следующее место. -->
+									<!-- Картинки можно и бросить сюда: из проводника,
+									     браузера, откуда угодно, что отдаёт файл. -->
+									<!-- Высота равна собственной ширине: ячейка сетки
+									     тянется по колонке, и без этого плитка выходит
+									     прямоугольной. -->
+									<Button Height="{Binding $self.Bounds.Width}"
+									        Margin="4"
+									        Padding="0"
+									        Click="OnGalleryAddClick"
+									        IsVisible="{Binding IsAddTile}"
+									        DragDrop.AllowDrop="True"
+									        DragDrop.DragOver="OnGalleryDragOver"
+									        DragDrop.Drop="OnGalleryDrop"
+									        HorizontalAlignment="Stretch"
+									        Background="{DynamicResource BgSurfaceBrush}"
+									        BorderBrush="{DynamicResource BorderDefaultBrush}"
+									        BorderThickness="1"
+									        CornerRadius="8"
+									        HorizontalContentAlignment="Center"
+									        VerticalContentAlignment="Center"
+									        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Gallery_Add}">
+										<StackPanel Spacing="4" HorizontalAlignment="Center">
+											<PathIcon Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"
+											          Width="20" Height="20"
+											          HorizontalAlignment="Center"
+											          Foreground="{DynamicResource TextSecondaryBrush}"/>
+											<TextBlock Text="{x:Static loc:CharactersStrings.Gallery_Add}"
+											           FontSize="10"
+											           TextAlignment="Center"
+											           Foreground="{DynamicResource TextSecondaryBrush}"/>
+										</StackPanel>
+									</Button>
+
+									<!-- Размер плитки задан явно: без него обёртка
+									     меряется по содержимому, и ряды разъезжаются
+									     на пару пикселей каждый. -->
+									<!-- Плитка тащится за собой, как карточка персонажа
+									     в списке: порог сдвига тот же, поэтому обычный
+									     щелчок и меню по правой кнопке работают. -->
+									<Panel Classes="tile"
+									       Classes.placeholder="{Binding IsPlaceholder}"
+									       Height="{Binding $self.Bounds.Width}"
+									       Margin="4"
+									       IsVisible="{Binding !IsAddTile}"
+									       Background="Transparent"
+									       DragDrop.AllowDrop="True"
+									       DragDrop.DragOver="OnGalleryDragOver"
+									       DragDrop.Drop="OnGalleryDrop">
+
+										<!-- Сдвиг с переходом: соседи расступаются перед местом
+										     вставки не рывком, а доездом. Вью ставит сюда
+										     разницу между старым и новым положением плитки
+										     и тут же ведёт её к нулю. -->
+										<Panel.RenderTransform>
+											<TranslateTransform>
+												<TranslateTransform.Transitions>
+													<Transitions>
+														<DoubleTransition Property="X"
+														                  Duration="0:0:0.28"
+														                  Easing="CubicEaseOut"/>
+														<DoubleTransition Property="Y"
+														                  Duration="0:0:0.28"
+														                  Easing="CubicEaseOut"/>
+													</Transitions>
+												</TranslateTransform.Transitions>
+											</TranslateTransform>
+										</Panel.RenderTransform>
+
+										<Panel.ContextMenu>
+											<ContextMenu>
+												<MenuItem Header="{x:Static loc:CharactersStrings.Gallery_UseAsAvatar}"
+												          Click="OnGalleryUseAsAvatarClick"/>
+												<Separator/>
+												<MenuItem Header="{x:Static loc:CharactersStrings.Gallery_Remove}"
+												          Click="OnGalleryRemoveClick"/>
+											</ContextMenu>
+										</Panel.ContextMenu>
+
+										<Border CornerRadius="8"
+										        ClipToBounds="True"
+										        BorderBrush="{DynamicResource BorderDefaultBrush}"
+										        BorderThickness="1">
+											<Image Source="{Binding Preview}"
+											       Stretch="UniformToFill"/>
+										</Border>
+
+										<Button Classes="tile-remove"
+										        Click="OnGalleryRemoveClick"
+										        HorizontalAlignment="Right"
+										        VerticalAlignment="Top"
+										        Margin="4"
+										        Width="18" Height="18"
+										        Padding="0"
+										        CornerRadius="999"
+										        Background="#AA000000"
+										        BorderThickness="0"
+										        HorizontalContentAlignment="Center"
+										        VerticalContentAlignment="Center"
+										        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Gallery_Remove}">
+											<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+											      Fill="White"
+											      Stretch="Uniform"
+											      Width="8" Height="8"/>
+										</Button>
+									</Panel>
+
+								</Panel>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
+
+						</ScrollViewer>
+					</StackPanel>
+				</Border>
+
+				<!-- ── Компонент: наборы полей ────────────────────────── -->
+				<!-- Состав карточки — свойство ядра, поэтому наборы подключаются
+				     здесь, а не на вкладке параметров: там живут значения полей.
+				     Карточка складывается из наборов, как объект из компонентов.
+
+				     Блока нет, пока в проекте нет ни одного набора: пустой
+				     раздел про механику, которой человек не пользуется, только
+				     отнимает внимание. -->
+				<Border Classes="block"
+				        IsVisible="{Binding HasAnySets}">
+					<StackPanel Spacing="10">
+
+						<Border Classes="block-header">
+							<StackPanel Orientation="Horizontal" Spacing="8">
+								<Border Width="3" Height="14" CornerRadius="2"
+								        Background="{DynamicResource AccentDefaultBrush}"/>
+								<TextBlock Classes="block-title"
+								           Text="{x:Static loc:CharactersStrings.Block_DataSets}"/>
+								<Border Classes="hint"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Block_DataSets}"
+								        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Hint_Sets}">
+									<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
+								</Border>
+							</StackPanel>
+						</Border>
+
+						<!-- Пустое состояние объясняет, зачем это вообще нужно,
+						     и снимает ощущение невыполненного задания: карточке
+						     без единого набора ничего не не хватает. -->
+						<TextBlock Text="{x:Static loc:CharactersStrings.Sets_EmptyHint}"
+						           FontSize="11"
+						           TextWrapping="Wrap"
+						           Foreground="{DynamicResource TextSecondaryBrush}"
+						           IsVisible="{Binding !HasAttachedAnketas}"/>
+
+						<ItemsControl ItemsSource="{Binding AttachedAnketas}"
+						              IsVisible="{Binding HasAttachedAnketas}">
+							<ItemsControl.ItemsPanel>
+								<ItemsPanelTemplate>
+									<WrapPanel Orientation="Horizontal"/>
+								</ItemsPanelTemplate>
+							</ItemsControl.ItemsPanel>
+							<ItemsControl.ItemTemplate>
+								<DataTemplate x:DataType="models:CharacterAnketa">
+									<Border Background="{DynamicResource AccentSubtleBrush}"
+									        CornerRadius="12"
+									        Padding="10,4"
+									        Margin="0,0,6,6"
+									        behaviours:TooltipBehavior.Tip="{Binding Name}"
+									        behaviours:TooltipBehavior.Description="{Binding Description}">
+										<StackPanel Orientation="Horizontal" Spacing="6">
+											<TextBlock Text="{Binding Name}"
+											           FontSize="11"
+											           VerticalAlignment="Center"
+											           Foreground="{DynamicResource TextPrimaryBrush}"/>
+											<Button Click="OnDetachAnketaClick"
+											        Background="Transparent"
+											        BorderThickness="0"
+											        Padding="0"
+											        Width="14" Height="14"
+											        HorizontalContentAlignment="Center"
+											        VerticalContentAlignment="Center"
+											        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Anketa_DetachTip}"
+											        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Anketa_DetachHint}">
+												<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+												      Fill="{DynamicResource TextSecondaryBrush}"
+												      Stretch="Uniform"
+												      Width="8" Height="8"/>
+											</Button>
+										</StackPanel>
+									</Border>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
+
+						<!-- Выбор набора и есть кнопка «добавить»: отдельная
+						     кнопка открывала бы список вторым щелчком. -->
+						<ComboBox x:Name="AttachAnketaSelector"
+						          ItemsSource="{Binding AvailableAnketas}"
+						          IsVisible="{Binding CanAttachAnketa}"
+						          PlaceholderText="{x:Static loc:CharactersStrings.Button_AddSet}"
+						          SelectionChanged="OnAttachAnketaSelected"
+						          HorizontalAlignment="Stretch"
+						          FontSize="12"
+						          Background="{DynamicResource BgSurfaceBrush}"
+						          Foreground="{DynamicResource TextPrimaryBrush}">
+							<ComboBox.ItemTemplate>
+								<DataTemplate x:DataType="models:CharacterAnketa">
+									<!-- Видно, что даст подключение: название,
+									     для чего набор и сколько полей приедет.
+									     Иначе выбор вслепую. -->
+									<StackPanel Spacing="1"
+									            behaviours:TooltipBehavior.Tip="{Binding Name}"
+									            behaviours:TooltipBehavior.Description="{Binding Description}">
+										<TextBlock Text="{Binding Name}" FontSize="12"/>
+										<TextBlock FontSize="10"
+										           Foreground="{DynamicResource TextSecondaryBrush}">
+											<Run Text="{x:Static loc:CharactersStrings.Sets_FieldCount}"/>
+											<Run Text="{Binding Fields.Count}"/>
+										</TextBlock>
+									</StackPanel>
+								</DataTemplate>
+							</ComboBox.ItemTemplate>
+						</ComboBox>
+					</StackPanel>
+				</Border>
+
+			</StackPanel>
+
+			</Grid>
+		</ScrollViewer>
+
+		<!-- Призрак перетаскиваемой картинки — как у карточек в списке
+		     персонажей: системное перетаскивание перехватывает указатель
+		     и своего превью не рисует, поэтому плитка переносится вручную,
+		     а под курсором летит эта копия. -->
+		<!-- Холст растянут на обе строки: координаты призрака считаются
+		     от всей карточки, и в одной строке он уезжал вниз на высоту шапки. -->
+		<Canvas Grid.Row="0" Grid.RowSpan="2"
+		        x:Name="GalleryGhostCanvas"
+		        IsVisible="False"
+		        IsHitTestVisible="False">
+			<Border x:Name="GalleryGhost"
+			        Width="96" Height="96"
+			        CornerRadius="8"
+			        ClipToBounds="True"
+			        Opacity="0.85"
+			        BorderBrush="{DynamicResource AccentDefaultBrush}"
+			        BorderThickness="2">
+				<Image x:Name="GalleryGhostImage" Stretch="UniformToFill"/>
+			</Border>
+		</Canvas>
+	</Grid>
 </UserControl>

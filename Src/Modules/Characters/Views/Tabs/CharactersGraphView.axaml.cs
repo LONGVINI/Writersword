@@ -319,7 +319,9 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 {
                     foreach (var node in _viewModel.Nodes)
                     {
-                        var alpha = node.IsDimmed ? 80 : 255;
+                        // Мёртвые узлы приглушаются; крестик рисуется ниже как
+                        // объект-носитель смысла (приглушение — только усилитель).
+                        var alpha = node.IsDimmed ? 80 : node.IsDead ? 140 : 255;
                         var nodeColor = ResolveColor(node.Color, (byte)alpha);
                         var size = (float)node.Size;
                         var cx = (float)(node.X + size / 2.0);
@@ -350,6 +352,46 @@ namespace Writersword.Modules.Characters.Views.Tabs
                         using var nameFont = new SKFont(_defaultTypeface, nameSize);
                         using var namePaint = new SKPaint { Color = SKColors.White.WithAlpha((byte)alpha), IsAntialias = true };
                         canvas.DrawText(node.Name, cx, cy + radius + nameSize + 2f, SKTextAlign.Center, nameFont, namePaint);
+
+                        // Метка «Мёртв»: бейдж в правом верхнем секторе узла.
+                        // Значок — череп из общего реестра иконок меток, а не
+                        // крестик: крестиком в интерфейсе обозначается удаление,
+                        // и бейдж читался как кнопка «убрать персонажа».
+                        if (node.IsDead)
+                        {
+                            var badgeR = System.Math.Max(5f, radius * 0.28f);
+                            var bx = cx + radius * 0.72f;
+                            var by = cy - radius * 0.72f;
+                            using var badgeBg = new SKPaint { Color = new SKColor(0x20, 0x20, 0x20, 0xCC), IsAntialias = true };
+                            canvas.DrawCircle(bx, by, badgeR, badgeBg);
+
+                            var skullData = Writersword.Modules.Characters.Models.CharacterLabelIcons
+                                .GetPathData(Writersword.Modules.Characters.Models.CharacterLabelIcons.Skull);
+                            using var skullPath = SKPath.ParseSvgPathData(skullData);
+                            using var skullPaint = new SKPaint
+                            {
+                                Color = new SKColor(0xFF, 0x52, 0x52),
+                                IsStroke = false,
+                                IsAntialias = true
+                            };
+
+                            if (skullPath != null)
+                            {
+                                // Геометрия иконок задана в системе координат 24x24;
+                                // вписываем её в квадрат внутри кружка бейджа.
+                                var side = badgeR * 1.45f;
+                                var scale = side / 24f;
+                                skullPath.Transform(SKMatrix.CreateScaleTranslation(
+                                    scale, scale, bx - side / 2f, by - side / 2f));
+                                canvas.DrawPath(skullPath, skullPaint);
+                            }
+                            else
+                            {
+                                // Запасной путь, если геометрия не разобралась:
+                                // сплошная точка вместо значка, но не крестик.
+                                canvas.DrawCircle(bx, by, badgeR * 0.45f, skullPaint);
+                            }
+                        }
                     }
                 }
             }

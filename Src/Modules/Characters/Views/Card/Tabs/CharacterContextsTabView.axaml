@@ -17,8 +17,7 @@
                 <ItemsControl ItemsSource="{Binding Contexts}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="models:CharacterContext">
-                            <Button Command="{Binding $parent[ItemsControl].((tabs:CharacterContextsTabViewModel)DataContext).SelectContextCommand}"
-                                    CommandParameter="{Binding}"
+                            <Button Click="OnContextSelectClick"
                                     Background="Transparent"
                                     BorderThickness="0"
                                     HorizontalAlignment="Stretch"
@@ -37,8 +36,7 @@
                                                TextTrimming="CharacterEllipsis"/>
                                     <Button Grid.Column="2"
                                             Content="x"
-                                            Command="{Binding $parent[ItemsControl].((tabs:CharacterContextsTabViewModel)DataContext).RemoveContextCommand}"
-                                            CommandParameter="{Binding Id}"
+                                            Click="OnContextRemoveClick"
                                             Background="Transparent"
                                             BorderThickness="0"
                                             Padding="6,4"
@@ -116,7 +114,7 @@
                              BorderThickness="1"
                              CornerRadius="4"
                              Padding="8,6"
-                             PlaceholderText ="#607D8B"/>
+                             PlaceholderText="#607D8B"/>
                 </StackPanel>
 
                 <!-- Заметки контекста -->

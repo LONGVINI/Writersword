@@ -463,18 +463,60 @@ namespace Writersword.Modules.TextEditor.Document
             // сдвигается, поэтому правый край не оголяется.
             float curPageXPt = Math.Max((canvasWPt - GetPageWidthPt()) / 2f, 0f);
             float pageXShiftPt = curPageXPt - _layoutPageXPt;
-            if (MathF.Abs(pageXShiftPt) > 0.01f)
+            if (_pagesPerRow <= 1 && MathF.Abs(pageXShiftPt) > 0.01f)
                 canvas.Translate(pageXShiftPt, 0);
 
             var (firstPage, lastPage) = GetVisiblePageRange(pages);
 
+            if (_pagesPerRow <= 1)
+            {
+                for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
+                {
+                    var page = pages[pi];
+                    canvas.DrawRect(page.PadLeftPt + 3, page.Ypt + 3, page.WidthPt, page.HeightPt, _paintPageShadow);
+                    canvas.DrawRect(page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt, _paintPageWhite);
+                }
+
+                RenderPageContent(canvas, layouts, pages, tables, images, firstPage, lastPage, drawCaret);
+                return;
+            }
+
+            // Страницы рядом: контент каждой страницы переносится на её визуальную
+            // позицию (клип по листу с запасом + трансляция). Логические координаты
+            // раскладки не меняются — весь режим живёт только в отображении.
             for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
             {
                 var page = pages[pi];
-                canvas.DrawRect(page.PadLeftPt + 3, page.Ypt + 3, page.WidthPt, page.HeightPt, _paintPageShadow);
-                canvas.DrawRect(page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt, _paintPageWhite);
-            }
+                var (dxp, dyp) = PageVisualDelta(pi, pages);
+                float visX = page.PadLeftPt + dxp;
+                float visY = page.Ypt + dyp;
 
+                canvas.DrawRect(visX + 3, visY + 3, page.WidthPt, page.HeightPt, _paintPageShadow);
+                canvas.DrawRect(visX, visY, page.WidthPt, page.HeightPt, _paintPageWhite);
+
+                canvas.Save();
+                canvas.ClipRect(new SKRect(
+                    visX - PageGapPt, visY - PageGapPt,
+                    visX + page.WidthPt + PageGapPt, visY + page.HeightPt + PageGapPt));
+                canvas.Translate(dxp, dyp);
+                RenderPageContent(canvas, layouts, pages, tables, images, pi, pi, drawCaret);
+                canvas.Restore();
+            }
+        }
+
+        // Контентный проход страниц [firstPage..lastPage] в логических координатах:
+        // картинки за текстом, рамки таблиц, параграфы, картинки поверх текста,
+        // рамка выделенной картинки, табличные выделения и потоковые заливки ячеек.
+        private void RenderPageContent(
+            SKCanvas canvas,
+            List<ParaLayout> layouts,
+            List<PageRect> pages,
+            List<TableEntry> tables,
+            List<ImageEntry> images,
+            int firstPage,
+            int lastPage,
+            bool drawCaret)
+        {
             // Изображения-блоки (рисуются поверх белого листа, в координатах в пунктах).
             // Картинки за текстом (Behind) и блок-картинки (Inline) — рисуются до текста.
             foreach (var ie in images)
@@ -484,6 +526,20 @@ namespace Writersword.Modules.TextEditor.Document
                 if (wm == WrapMode.InFront || wm == WrapMode.Square || wm == WrapMode.Tight) continue;
                 var skImg = GetImageBitmap(ie.Block.ImageFileName);
                 if (skImg is null) continue;
+                // Клип по прямоугольнику своей страницы: часть картинки за пределами
+                // листа (в межстраничном зазоре или за краем) обрезается. Предпросмотр
+                // переполнения не клипуем — серая часть под листом должна быть видна.
+                bool imgClip = ie.PageIndex < pages.Count
+                    && !(_imageOverflowPreviewMode
+                         && ReferenceEquals(ie.Block, _imageOverflowPreviewBlock));
+                if (imgClip)
+                {
+                    var pgc = pages[ie.PageIndex];
+                    canvas.Save();
+                    canvas.ClipRect(new SKRect(
+                        pgc.PadLeftPt, pgc.Ypt,
+                        pgc.PadLeftPt + pgc.WidthPt, pgc.Ypt + pgc.HeightPt));
+                }
                 float rotDeg = (float)ie.Block.RotationDeg;
                 float imgCx = ie.XPt + ie.WidthPt / 2f;
                 float imgCy = ie.Ypt + ie.HeightPt / 2f;
@@ -516,7 +572,7 @@ namespace Writersword.Modules.TextEditor.Document
                     srcH * (float)(1.0 - Math.Clamp(ie.Block.CropBottomFrac, 0.0, 0.95)));
                 if (srcRect.Right <= srcRect.Left + 1f) srcRect.Right = srcRect.Left + 1f;
                 if (srcRect.Bottom <= srcRect.Top + 1f) srcRect.Bottom = srcRect.Top + 1f;
-                canvas.DrawImage(skImg, srcRect, imgRect, imgPaint);
+                canvas.DrawImage(skImg, srcRect, imgRect, _imageSampling, imgPaint);
                 _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
                 // Рамка картинки — в той же системе координат (поворот + отражение).
                 if (ie.Block.BorderThicknessPt > 0.0
@@ -529,6 +585,7 @@ namespace Writersword.Modules.TextEditor.Document
                     canvas.DrawRect(imgRect, _paintImageBorderDraw);
                 }
                 if (hasXform) canvas.Restore();
+                if (imgClip) canvas.Restore();
             }
 
             // Рисуем рамки таблиц (без содержимого) — клипуем по правому краю страницы
@@ -596,6 +653,20 @@ namespace Writersword.Modules.TextEditor.Document
                 if (wm != WrapMode.InFront && wm != WrapMode.Square && wm != WrapMode.Tight) continue;
                 var skImg = GetImageBitmap(ie.Block.ImageFileName);
                 if (skImg is null) continue;
+                // Клип по прямоугольнику своей страницы: часть картинки за пределами
+                // листа (в межстраничном зазоре или за краем) обрезается. Предпросмотр
+                // переполнения не клипуем — серая часть под листом должна быть видна.
+                bool imgClip = ie.PageIndex < pages.Count
+                    && !(_imageOverflowPreviewMode
+                         && ReferenceEquals(ie.Block, _imageOverflowPreviewBlock));
+                if (imgClip)
+                {
+                    var pgc = pages[ie.PageIndex];
+                    canvas.Save();
+                    canvas.ClipRect(new SKRect(
+                        pgc.PadLeftPt, pgc.Ypt,
+                        pgc.PadLeftPt + pgc.WidthPt, pgc.Ypt + pgc.HeightPt));
+                }
                 float rotDeg = (float)ie.Block.RotationDeg;
                 float imgCx = ie.XPt + ie.WidthPt / 2f;
                 float imgCy = ie.Ypt + ie.HeightPt / 2f;
@@ -628,7 +699,7 @@ namespace Writersword.Modules.TextEditor.Document
                     srcH * (float)(1.0 - Math.Clamp(ie.Block.CropBottomFrac, 0.0, 0.95)));
                 if (srcRect.Right <= srcRect.Left + 1f) srcRect.Right = srcRect.Left + 1f;
                 if (srcRect.Bottom <= srcRect.Top + 1f) srcRect.Bottom = srcRect.Top + 1f;
-                canvas.DrawImage(skImg, srcRect, imgRect, imgPaint);
+                canvas.DrawImage(skImg, srcRect, imgRect, _imageSampling, imgPaint);
                 _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
                 // Рамка картинки — в той же системе координат (поворот + отражение).
                 if (ie.Block.BorderThicknessPt > 0.0
@@ -641,6 +712,7 @@ namespace Writersword.Modules.TextEditor.Document
                     canvas.DrawRect(imgRect, _paintImageBorderDraw);
                 }
                 if (hasXform) canvas.Restore();
+                if (imgClip) canvas.Restore();
             }
 
             // Рамка выделенной картинки — поверх всего.
@@ -911,6 +983,15 @@ namespace Writersword.Modules.TextEditor.Document
             var caretLayout = GetRenderLayout(pl, (float)(_canvasWidth * PxToPt));
             float xPt = pl.AbsXPt;
 
+            // Страницы рядом: каретка рисуется в визуальной позиции своей страницы.
+            var (caretDx, caretDy) = PageVisualDelta(pl.PageIndex, pages);
+            bool caretShifted = caretDx != 0f || caretDy != 0f;
+            if (caretShifted)
+            {
+                canvas.Save();
+                canvas.Translate(caretDx, caretDy);
+            }
+
             // В page-режиме применяем page-level клип (как RenderPageMode делает для параграфов),
             // иначе каретка на последней строке может выходить за нижнюю рамку таблицы/страницы.
             bool hasPageClip = pages.Count > 0 && pl.PageIndex < pages.Count;
@@ -932,6 +1013,7 @@ namespace Writersword.Modules.TextEditor.Document
             DrawCaret(canvas, pl, xPt, pl.Ypt, caretLayout);
 
             if (isCell || hasPageClip) canvas.Restore();
+            if (caretShifted) canvas.Restore();
         }
 
         private (int first, int last) GetVisiblePageRange(List<PageRect> pages)
@@ -943,6 +1025,19 @@ namespace Writersword.Modules.TextEditor.Document
             float bufferPt = (pages.Count > 0 ? pages[0].HeightPt : 842f) + PageGapPt;
             viewTopPt -= bufferPt;
             viewBotPt += bufferPt;
+
+            // Страницы рядом: видимость определяется визуальными рядами.
+            if (_pagesPerRow > 1)
+            {
+                int cols = _pagesPerRow;
+                float rowH = pages[0].HeightPt + PageGapPt;
+                int lastRowIdx = (pages.Count - 1) / cols;
+                int firstRow = Math.Clamp((int)((viewTopPt - PageGapPt) / rowH), 0, lastRowIdx);
+                int lastRow = Math.Clamp((int)((viewBotPt - PageGapPt) / rowH), firstRow, lastRowIdx);
+                int firstV = firstRow * cols;
+                int lastV = Math.Min(pages.Count - 1, lastRow * cols + cols - 1);
+                return (firstV, lastV);
+            }
 
             int first = 0, last = pages.Count - 1;
             for (int i = 0; i < pages.Count; i++)

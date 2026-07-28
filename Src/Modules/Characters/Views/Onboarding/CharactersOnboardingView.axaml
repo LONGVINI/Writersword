@@ -4,64 +4,98 @@
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              x:Class="Writersword.Modules.Characters.Views.Onboarding.CharactersOnboardingView"
              x:DataType="vm:CharactersOnboardingViewModel">
-    <Border Background="{DynamicResource BgPanelBrush}"
-            CornerRadius="12"
-            Padding="28"
-            BoxShadow="0 8 32 0 #AA000000">
-        <StackPanel Spacing="20">
-            <StackPanel Spacing="4">
-                <TextBlock Text="{x:Static loc:CharactersStrings.Onboarding_Title}"
-                           FontSize="18" FontWeight="Bold"
-                           Foreground="{DynamicResource TextPrimaryBrush}"/>
-                <TextBlock Text="{x:Static loc:CharactersStrings.Onboarding_Subtitle}"
-                           FontSize="12"
-                           Foreground="{DynamicResource TextSecondaryBrush}"
-                           TextWrapping="Wrap"/>
-            </StackPanel>
-            <ItemsControl ItemsSource="{Binding Questions}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="vm:OnboardingQuestionViewModel">
-                        <StackPanel Spacing="8" Margin="0,0,0,12">
-                            <TextBlock Text="{Binding Label}"
-                                       FontSize="13" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
-                            <ItemsControl ItemsSource="{Binding Options}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel Orientation="Horizontal"/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate DataType="vm:OnboardingOptionViewModel">
-                                        <CheckBox IsChecked="{Binding IsSelected}"
-                                                  Content="{Binding Label}"
-                                                  FontSize="12"
-                                                  Margin="0,0,12,6"
-                                                  Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <Grid ColumnDefinitions="*,Auto,Auto">
-                <Button Grid.Column="1"
-                        Content="{x:Static loc:CharactersStrings.Onboarding_Skip}"
-                        Command="{Binding SkipCommand}"
-                        FontSize="12" Padding="12,6"
-                        Background="Transparent"
-                        Foreground="{DynamicResource TextSecondaryBrush}"
-                        BorderThickness="1"
-                        BorderBrush="{DynamicResource BorderDefaultBrush}"
-                        CornerRadius="4" Margin="0,0,8,0"/>
-                <Button Grid.Column="2"
-                        Content="{x:Static loc:CharactersStrings.Onboarding_ApplyTemplates}"
-                        Command="{Binding CompleteCommand}"
-                        FontSize="12" Padding="12,6"
-                        Background="{DynamicResource AccentDefaultBrush}"
-                        Foreground="White" CornerRadius="4"/>
-            </Grid>
-        </StackPanel>
-    </Border>
+
+	<!-- Разговор при первом открытии: один вопрос на экране, следующий зависит
+	     от ответа. Анкета из всех вопросов сразу отпугивает и требует решать
+	     всё разом; здесь достаточно ответить на то, что понял, а остальное
+	     программа не спросит.
+
+	     Слов «параметр», «шкала», «анкета» тут нет намеренно: их нечем
+	     расшифровать тому, кто открыл программу впервые. -->
+
+	<UserControl.Styles>
+		<!-- Вариант ответа — широкая кнопка: по ней легко попасть, и видно,
+		     что выбор делается одним нажатием, без «Далее». -->
+		<Style Selector="Button.answer">
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Left"/>
+			<Setter Property="FontSize" Value="13"/>
+			<Setter Property="Padding" Value="14,10"/>
+			<Setter Property="CornerRadius" Value="8"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Margin" Value="0,0,0,6"/>
+		</Style>
+		<Style Selector="Button.answer:pointerover">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Border Background="{DynamicResource BgPanelBrush}"
+	        CornerRadius="12"
+	        Padding="28"
+	        MinWidth="420"
+	        BoxShadow="0 8 32 0 #AA000000">
+		<StackPanel Spacing="18">
+
+			<StackPanel Spacing="4">
+				<TextBlock Text="{x:Static loc:CharactersStrings.Onboarding_Title}"
+				           FontSize="18" FontWeight="Bold"
+				           Foreground="{DynamicResource TextPrimaryBrush}"/>
+				<TextBlock Text="{x:Static loc:CharactersStrings.Onboarding_Subtitle}"
+				           FontSize="12"
+				           Foreground="{DynamicResource TextSecondaryBrush}"
+				           TextWrapping="Wrap"/>
+			</StackPanel>
+
+			<StackPanel Spacing="10" DataContext="{Binding Current}">
+				<StackPanel Spacing="4">
+					<TextBlock Text="{Binding Question}"
+					           FontSize="15" FontWeight="SemiBold"
+					           TextWrapping="Wrap"
+					           Foreground="{DynamicResource TextPrimaryBrush}"/>
+					<TextBlock Text="{Binding Hint}"
+					           FontSize="11"
+					           TextWrapping="Wrap"
+					           Foreground="{DynamicResource TextSecondaryBrush}"/>
+				</StackPanel>
+
+				<ItemsControl ItemsSource="{Binding Options}">
+					<ItemsControl.ItemTemplate>
+						<DataTemplate DataType="vm:OnboardingOptionViewModel">
+							<Button Classes="answer"
+							        Content="{Binding Label}"
+							        Command="{Binding $parent[UserControl].DataContext.ChooseCommand}"
+							        CommandParameter="{Binding}"/>
+						</DataTemplate>
+					</ItemsControl.ItemTemplate>
+				</ItemsControl>
+			</StackPanel>
+
+			<Grid ColumnDefinitions="Auto,*,Auto">
+				<!-- Шаг назад: разговор без возврата — ловушка, ошибся
+				     на первом вопросе и деваться некуда. -->
+				<Button Grid.Column="0"
+				        Content="{x:Static loc:CharactersStrings.Onboarding_Back}"
+				        Command="{Binding BackCommand}"
+				        IsVisible="{Binding CanGoBack}"
+				        FontSize="12" Padding="12,6"
+				        Background="Transparent"
+				        Foreground="{DynamicResource TextSecondaryBrush}"
+				        BorderThickness="0"/>
+
+				<Button Grid.Column="2"
+				        Content="{x:Static loc:CharactersStrings.Onboarding_Skip}"
+				        Command="{Binding SkipCommand}"
+				        FontSize="12" Padding="12,6"
+				        Background="Transparent"
+				        Foreground="{DynamicResource TextSecondaryBrush}"
+				        BorderThickness="1"
+				        BorderBrush="{DynamicResource BorderDefaultBrush}"
+				        CornerRadius="4"/>
+			</Grid>
+		</StackPanel>
+	</Border>
 </UserControl>

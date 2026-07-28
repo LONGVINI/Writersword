@@ -17,8 +17,7 @@
                 <ItemsControl ItemsSource="{Binding Notes}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="models:CharacterNote">
-                            <Button Command="{Binding $parent[ItemsControl].((tabs:CharacterNotesTabViewModel)DataContext).SelectNoteCommand}"
-                                    CommandParameter="{Binding}"
+                            <Button Click="OnNoteSelectClick"
                                     Background="Transparent"
                                     BorderThickness="0"
                                     HorizontalAlignment="Stretch"
@@ -37,8 +36,7 @@
                                                TextTrimming="CharacterEllipsis"/>
                                     <Button Grid.Column="2"
                                             Content="x"
-                                            Command="{Binding $parent[ItemsControl].((tabs:CharacterNotesTabViewModel)DataContext).RemoveNoteCommand}"
-                                            CommandParameter="{Binding Id}"
+                                            Click="OnNoteRemoveClick"
                                             Background="Transparent"
                                             BorderThickness="0"
                                             Padding="6,4"

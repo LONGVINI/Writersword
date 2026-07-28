@@ -176,6 +176,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 StatusBar.ViewMode = mode;
             };
 
+            StatusBar.PagesPerRowChanged = pagesPerRow =>
+            {
+                if (DocumentViewModel is not null)
+                    DocumentViewModel.PagesPerRow = pagesPerRow;
+            };
+
             StatusBar.ZoomChanged = zoom =>
             {
                 DocumentViewModel?.SetZoom(zoom);
@@ -691,6 +697,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void ToggleImageFlipVertical() => DocumentViewModel?.ToggleImageFlipVertical();
         public void SetImageCropMode(bool on) => DocumentViewModel?.SetImageCropMode(on);
         public bool GetImageCropMode() => DocumentViewModel?.GetImageCropMode() ?? false;
+        public void SetImageWrapPadding(double topPt, double bottomPt, double leftPt, double rightPt)
+            => DocumentViewModel?.SetImageWrapPadding(topPt, bottomPt, leftPt, rightPt);
+        public (double TopPt, double BottomPt, double LeftPt, double RightPt)? GetSelectedImageWrapPadding()
+            => DocumentViewModel?.GetSelectedImageWrapPadding();
 
         // ── Таблица ───────────────────────────────────────────────────────
 
@@ -943,9 +953,24 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             docVm.Paragraphs.CollectionChanged += OnCollectionChanged;
 
+            // Правки, не меняющие текст абзацев (обтекание и прочие свойства картинки,
+            // поля страницы, форматирование), приходят отдельным событием: по PlainText
+            // они не отслеживаются и без этого не попадали в сохранение.
+            void OnContentModified()
+            {
+                // Только флаг. RefreshStatusBar здесь не вызывается: он склеивает текст
+                // всего документа в StringBuilder, а свойства картинки на счётчики слов
+                // не влияют — на большом документе это была бы полная пересборка текста
+                // на каждый коммит правки картинки.
+                IsModified = true;
+            }
+
+            docVm.ContentModified += OnContentModified;
+
             return System.Reactive.Disposables.Disposable.Create(() =>
             {
                 debounce.Stop();
+                docVm.ContentModified -= OnContentModified;
                 docVm.Paragraphs.CollectionChanged -= OnCollectionChanged;
                 foreach (var pvm in docVm.Paragraphs)
                     pvm.PropertyChanged -= OnParagraphChanged;

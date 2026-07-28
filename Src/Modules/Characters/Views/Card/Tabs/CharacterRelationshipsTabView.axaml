@@ -1,171 +1,477 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
+             xmlns:models="using:Writersword.Modules.Characters.Models"
              xmlns:enums="using:Writersword.Modules.Characters.Models.Enums"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              xmlns:conv="using:Writersword.Modules.Characters.Converters"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:icv="using:Writersword.Infrastructure.Converters"
+             xmlns:sys="using:System"
              x:Class="Writersword.Modules.Characters.Views.Card.Tabs.CharacterRelationshipsTabView"
              x:DataType="tabs:CharacterRelationshipsTabViewModel">
 
-    <UserControl.Resources>
-        <conv:IntIsZeroConverter x:Key="IntIsZeroConverter"/>
-        <conv:IntIsNotZeroConverter x:Key="IntIsNotZeroConverter"/>
-    </UserControl.Resources>
+	<UserControl.Styles>
+		<!-- Фильтры полотна -->
+		<Style Selector="Button.filter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="11"/>
+			<Setter Property="Padding" Value="10,3"/>
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Margin" Value="0,0,6,0"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="Button.filter.active">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
 
-    <Grid RowDefinitions="Auto,*,Auto">
+		<!-- Кнопка эмоции в редакторе связи -->
+		<Style Selector="Button.emotion">
+			<Setter Property="BorderThickness" Value="2"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="CornerRadius" Value="14"/>
+			<Setter Property="Width" Value="28"/>
+			<Setter Property="Height" Value="28"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Margin" Value="0,0,6,0"/>
+		</Style>
+		<Style Selector="Button.emotion.active">
+			<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
 
-        <!-- Заголовок -->
-        <Border Grid.Row="0"
-                Padding="12,8"
+		<Style Selector="Button.strength-dot">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Width" Value="20"/>
+			<Setter Property="Height" Value="20"/>
+			<Setter Property="Padding" Value="0"/>
+		</Style>
+	</UserControl.Styles>
+
+	<!-- Своего списка персонажей здесь нет: он уже есть слева в редакторе,
+	     оттуда персонаж и перетаскивается на полотно. Два одинаковых списка
+	     на одном экране — лишняя работа глазу и лишний способ ошибиться. -->
+	<Grid ColumnDefinitions="*,270">
+
+		<!-- Полотно эго-графа -->
+		<Grid Grid.Column="0" RowDefinitions="Auto,*">
+
+			<!-- Фильтры: контекст и эмоция — способ посмотреть под углом,
+			     а не поля формы -->
+			<Border Grid.Row="0"
+                    Padding="12,8"
+                    BorderBrush="{DynamicResource BorderDefaultBrush}"
+                    BorderThickness="0,0,0,1">
+				<StackPanel Orientation="Horizontal">
+					<Button Classes="filter"
+                            Classes.active="{Binding IsFilterAll}"
+                            Content="{x:Static loc:CharactersStrings.Relationship_FilterAll}"
+                            Click="OnFilterAllClick"/>
+					<!-- Цветные фильтры — по эмоции связи. Повторное нажатие
+					     снимает фильтр. -->
+					<Button Classes="filter"
+                            Classes.active="{Binding IsFilterPositive}"
+                            Click="OnFilterPositiveClick"
+                            behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Relationship_FilterPositive}"
+                            behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Relationship_FilterHint}">
+						<Ellipse Width="10" Height="10" Fill="#4CAF50"/>
+					</Button>
+					<Button Classes="filter"
+                            Classes.active="{Binding IsFilterNegative}"
+                            Click="OnFilterNegativeClick"
+                            behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Relationship_FilterNegative}"
+                            behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Relationship_FilterHint}">
+						<Ellipse Width="10" Height="10" Fill="#F44336"/>
+					</Button>
+				</StackPanel>
+			</Border>
+
+			<ScrollViewer Grid.Row="1"
+                          Name="CanvasScroller"
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto">
+
+				<Panel Name="CanvasHost"
+                       Width="{Binding CanvasWidth}"
+                       Height="{Binding CanvasHeight}"
+                       Background="Transparent">
+
+					<!-- Подсказка на пустом полотне -->
+					<TextBlock Text="{x:Static loc:CharactersStrings.Relationship_DropHint}"
+                               IsVisible="{Binding HasNoRelationships}"
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               MaxWidth="260"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Bottom"
+                               Margin="0,0,0,40"/>
+
+					<!-- Рёбра: цвет — эмоция, толщина — сила, подпись — тип -->
+					<ItemsControl ItemsSource="{Binding Relationships}">
+						<ItemsControl.ItemsPanel>
+							<ItemsPanelTemplate>
+								<Canvas/>
+							</ItemsPanelTemplate>
+						</ItemsControl.ItemsPanel>
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="tabs:CharacterRelationshipItemViewModel">
+								<Line StartPoint="{Binding EdgeStart}"
+                                      EndPoint="{Binding EdgeEnd}"
+                                      IsVisible="{Binding IsVisible}"
+                                      Stroke="{Binding EdgeColor, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+                                      StrokeThickness="{Binding EdgeThickness}"/>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+
+					<!-- Подписи рёбер -->
+					<ItemsControl ItemsSource="{Binding Relationships}">
+						<ItemsControl.ItemsPanel>
+							<ItemsPanelTemplate>
+								<Canvas/>
+							</ItemsPanelTemplate>
+						</ItemsControl.ItemsPanel>
+						<ItemsControl.Styles>
+							<Style Selector="ContentPresenter" x:DataType="tabs:CharacterRelationshipItemViewModel">
+								<Setter Property="Canvas.Left" Value="{Binding LabelX}"/>
+								<Setter Property="Canvas.Top" Value="{Binding LabelY}"/>
+							</Style>
+						</ItemsControl.Styles>
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="tabs:CharacterRelationshipItemViewModel">
+								<Border IsVisible="{Binding IsVisible}"
+                                        Background="{DynamicResource BgSurfaceBrush}"
+                                        CornerRadius="8"
+                                        Padding="6,1"
+                                        Width="120"
+                                        HorizontalAlignment="Center">
+									<TextBlock Text="{Binding EdgeCaption}"
+                                               FontSize="10"
+                                               TextAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+								</Border>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+
+					<!-- Узлы связанных персонажей -->
+					<ItemsControl ItemsSource="{Binding Relationships}">
+						<ItemsControl.ItemsPanel>
+							<ItemsPanelTemplate>
+								<Canvas/>
+							</ItemsPanelTemplate>
+						</ItemsControl.ItemsPanel>
+						<ItemsControl.Styles>
+							<Style Selector="ContentPresenter" x:DataType="tabs:CharacterRelationshipItemViewModel">
+								<Setter Property="Canvas.Left" Value="{Binding X}"/>
+								<Setter Property="Canvas.Top" Value="{Binding Y}"/>
+							</Style>
+						</ItemsControl.Styles>
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="tabs:CharacterRelationshipItemViewModel">
+								<StackPanel IsVisible="{Binding IsVisible}"
+                                            Spacing="2"
+                                            Width="46"
+                                            PointerPressed="OnNodePressed">
+									<Border Width="46" Height="46"
+                                            CornerRadius="23"
+                                            BorderThickness="2"
+                                            Cursor="Hand"
+                                            Background="{Binding TargetColor, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
+										<Border.BorderBrush>
+											<SolidColorBrush Color="Transparent"/>
+										</Border.BorderBrush>
+										<TextBlock Text="{Binding TargetIcon}"
+                                                   FontSize="18"
+                                                   Foreground="White"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"/>
+									</Border>
+									<TextBlock Text="{Binding TargetName}"
+                                               FontSize="10"
+                                               TextAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+								</StackPanel>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+
+					<!-- Центральный узел: сам персонаж -->
+					<Canvas>
+						<StackPanel Canvas.Left="{Binding CenterX}"
+                                    Canvas.Top="{Binding CenterY}"
+                                    Spacing="2"
+                                    Width="62">
+							<Border Width="62" Height="62"
+                                    CornerRadius="31"
+                                    BorderThickness="3"
+                                    BorderBrush="{DynamicResource AccentDefaultBrush}"
+                                    Background="{Binding CenterColor, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
+								<TextBlock Text="{Binding CenterIcon}"
+                                           FontSize="24"
+                                           Foreground="White"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+							</Border>
+							<TextBlock Text="{Binding CenterName}"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"
+                                       TextAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+						</StackPanel>
+					</Canvas>
+
+				</Panel>
+			</ScrollViewer>
+		</Grid>
+
+		<!-- Редактор выбранной связи -->
+		<Border Grid.Column="1"
+                Background="{DynamicResource BgPanelBrush}"
                 BorderBrush="{DynamicResource BorderDefaultBrush}"
-                BorderThickness="0,0,0,1">
-            <TextBlock Text="{x:Static loc:CharactersStrings.Tab_Relationships}"
-                       FontSize="12"
-                       FontWeight="Medium"
-                       Foreground="{DynamicResource TextPrimaryBrush}"/>
-        </Border>
+                BorderThickness="1,0,0,0">
 
-        <!-- Список связей -->
-        <ScrollViewer Grid.Row="1">
-            <StackPanel Spacing="1" Margin="0,4">
+			<Panel>
+				<TextBlock Text="{x:Static loc:CharactersStrings.Relationship_SelectHint}"
+                           IsVisible="{Binding !HasSelection}"
+                           FontSize="11"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           Margin="20"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
 
-                <TextBlock Text="{x:Static loc:CharactersStrings.Placeholder_NoRelationships}"
-                           FontSize="12"
-                           Foreground="{DynamicResource TextSecondaryBrush}"
-                           HorizontalAlignment="Center"
-                           Margin="0,24,0,0"
-                           IsVisible="{Binding Relationships.Count, Converter={StaticResource IntIsZeroConverter}}"/>
+				<ScrollViewer IsVisible="{Binding HasSelection}" Padding="12">
+					<StackPanel Spacing="12" DataContext="{Binding Selected}"
+                                x:DataType="tabs:CharacterRelationshipItemViewModel">
 
-                <ItemsControl ItemsSource="{Binding Relationships}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="tabs:CharacterRelationshipItemViewModel">
-                            <Border Background="{DynamicResource BgPanelBrush}"
-                                    CornerRadius="4"
-                                    Margin="8,2"
-                                    Padding="10,8">
-                                <Grid RowDefinitions="Auto,Auto,Auto,Auto">
+						<!-- Кто -->
+						<Grid ColumnDefinitions="Auto,*,Auto">
+							<Border Grid.Column="0"
+                                    Width="26" Height="26"
+                                    CornerRadius="13"
+                                    Background="{Binding TargetColor, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
+								<TextBlock Text="{Binding TargetIcon}"
+                                           FontSize="12"
+                                           Foreground="White"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+							</Border>
+							<TextBlock Grid.Column="1"
+                                       Text="{Binding TargetName}"
+                                       FontSize="13"
+                                       FontWeight="Medium"
+                                       Margin="8,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+							<Button Grid.Column="2"
+                                    Click="OnRemoveSelectedClick"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Width="22" Height="22"
+                                    Padding="0">
+								<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                                      Fill="#F44336"
+                                      Stretch="Uniform"
+                                      Width="10" Height="10"/>
+							</Button>
+						</Grid>
 
-                                    <!-- Строка 0: цель + кнопка удаления -->
-                                    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6">
-                                        <Border Grid.Column="0"
-                                                Width="20"
-                                                Height="20"
+						<!-- Тип связи -->
+						<StackPanel Spacing="4">
+							<TextBlock Text="{x:Static loc:CharactersStrings.Field_RelationshipType}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<TextBox Text="{Binding RelationshipType}"
+                                     FontSize="12"
+                                     Background="{DynamicResource BgSurfaceBrush}"
+                                     Foreground="{DynamicResource TextPrimaryBrush}"
+                                     BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                     BorderThickness="1"
+                                     CornerRadius="4"
+                                     Padding="8,6"/>
+						</StackPanel>
+
+						<!-- Эмоция цветом: она же красит ребро на полотне -->
+						<StackPanel Spacing="4">
+							<TextBlock Text="{x:Static loc:CharactersStrings.Field_RelationshipEmotion}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<StackPanel Orientation="Horizontal">
+								<Button Classes="emotion" Classes.active="{Binding IsNeutral}"
+                                        Background="#78909C" Click="OnEmotionNeutralClick"/>
+								<Button Classes="emotion" Classes.active="{Binding IsPositive}"
+                                        Background="#4CAF50" Click="OnEmotionPositiveClick"/>
+								<Button Classes="emotion" Classes.active="{Binding IsNegative}"
+                                        Background="#F44336" Click="OnEmotionNegativeClick"/>
+								<Button Classes="emotion" Classes.active="{Binding IsAmbivalent}"
+                                        Background="#FF9800" Click="OnEmotionAmbivalentClick"/>
+							</StackPanel>
+						</StackPanel>
+
+						<!-- Сила кругляшками: она же толщина ребра -->
+						<StackPanel Spacing="4">
+							<TextBlock Text="{x:Static loc:CharactersStrings.Field_RelationshipStrength}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<StackPanel Orientation="Horizontal" Spacing="2">
+								<Button Classes="strength-dot" Tag="1" Click="OnStrengthClick">
+									<Panel>
+										<Ellipse Width="14" Height="14" Fill="Transparent"
+                                                 Stroke="{DynamicResource BorderDefaultBrush}" StrokeThickness="1.5"/>
+										<Ellipse Width="14" Height="14" IsVisible="{Binding HasStrength1}"
+                                                 Fill="{DynamicResource AccentDefaultBrush}"/>
+									</Panel>
+								</Button>
+								<Button Classes="strength-dot" Tag="2" Click="OnStrengthClick">
+									<Panel>
+										<Ellipse Width="14" Height="14" Fill="Transparent"
+                                                 Stroke="{DynamicResource BorderDefaultBrush}" StrokeThickness="1.5"/>
+										<Ellipse Width="14" Height="14" IsVisible="{Binding HasStrength2}"
+                                                 Fill="{DynamicResource AccentDefaultBrush}"/>
+									</Panel>
+								</Button>
+								<Button Classes="strength-dot" Tag="3" Click="OnStrengthClick">
+									<Panel>
+										<Ellipse Width="14" Height="14" Fill="Transparent"
+                                                 Stroke="{DynamicResource BorderDefaultBrush}" StrokeThickness="1.5"/>
+										<Ellipse Width="14" Height="14" IsVisible="{Binding HasStrength3}"
+                                                 Fill="{DynamicResource AccentDefaultBrush}"/>
+									</Panel>
+								</Button>
+								<Button Classes="strength-dot" Tag="4" Click="OnStrengthClick">
+									<Panel>
+										<Ellipse Width="14" Height="14" Fill="Transparent"
+                                                 Stroke="{DynamicResource BorderDefaultBrush}" StrokeThickness="1.5"/>
+										<Ellipse Width="14" Height="14" IsVisible="{Binding HasStrength4}"
+                                                 Fill="{DynamicResource AccentDefaultBrush}"/>
+									</Panel>
+								</Button>
+								<Button Classes="strength-dot" Tag="5" Click="OnStrengthClick">
+									<Panel>
+										<Ellipse Width="14" Height="14" Fill="Transparent"
+                                                 Stroke="{DynamicResource BorderDefaultBrush}" StrokeThickness="1.5"/>
+										<Ellipse Width="14" Height="14" IsVisible="{Binding HasStrength5}"
+                                                 Fill="{DynamicResource AccentDefaultBrush}"/>
+									</Panel>
+								</Button>
+							</StackPanel>
+						</StackPanel>
+
+						<!-- Контекст -->
+						<StackPanel Spacing="4">
+							<TextBlock Text="{x:Static loc:CharactersStrings.Field_RelationshipContext}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<ComboBox SelectedItem="{Binding Context}"
+                                      FontSize="12"
+                                      HorizontalAlignment="Stretch"
+                                      Background="{DynamicResource BgSurfaceBrush}">
+								<enums:CharacterRelationshipContext>Public</enums:CharacterRelationshipContext>
+								<enums:CharacterRelationshipContext>Secret</enums:CharacterRelationshipContext>
+								<enums:CharacterRelationshipContext>Past</enums:CharacterRelationshipContext>
+								<enums:CharacterRelationshipContext>Potential</enums:CharacterRelationshipContext>
+								<enums:CharacterRelationshipContext>Unilateral</enums:CharacterRelationshipContext>
+							</ComboBox>
+						</StackPanel>
+
+						<!-- Взаимность -->
+						<CheckBox IsChecked="{Binding IsBidirectional}"
+                                  Content="{x:Static loc:CharactersStrings.Relationship_BidirectionalTooltip}"
+                                  FontSize="11"
+                                  Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+						<!-- Как называет: данные жили в модели без интерфейса -->
+						<StackPanel Spacing="4">
+							<TextBlock Text="{x:Static loc:CharactersStrings.Relationship_CallsAs}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Relationship_CallsAs}"
+                                       behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Relationship_CallsAsHint}"/>
+							<ItemsControl ItemsSource="{Binding SourceCallsTargetAs}">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate>
+										<WrapPanel Orientation="Horizontal"/>
+									</ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<!-- Обращение и повод: «Алинусик» нежно, «Хрюшка»
+									     в шутку. Один человек зовёт другого
+									     по-разному — это регистры отношений,
+									     а не противоречие в данных. -->
+									<DataTemplate x:DataType="models:CharacterAddressForm">
+										<Border Background="{DynamicResource AccentSubtleBrush}"
                                                 CornerRadius="10"
-                                                Background="{Binding TargetColor}"
-                                                Margin="0,0,6,0">
-                                            <TextBlock Text="{Binding TargetIcon}"
-                                                       FontSize="10"
-                                                       HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center"
-                                                       Foreground="White"/>
-                                        </Border>
-                                        <TextBlock Grid.Column="1"
-                                                   Text="{Binding TargetName}"
-                                                   FontSize="12"
-                                                   FontWeight="Medium"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                        <Button Grid.Column="2"
-                                                Content="x"
-                                                Command="{Binding $parent[ItemsControl].((tabs:CharacterRelationshipsTabViewModel)DataContext).RemoveRelationshipCommand}"
-                                                CommandParameter="{Binding RelationshipId}"
-                                                Background="Transparent"
-                                                BorderThickness="0"
-                                                Padding="4,2"
-                                                FontSize="10"
-                                                Foreground="#F44336"/>
-                                    </Grid>
+                                                Padding="8,3"
+                                                Margin="0,0,4,4">
+											<StackPanel Orientation="Horizontal" Spacing="6">
+												<TextBlock Text="{Binding Value}"
+                                                           FontSize="11"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"/>
+												<TextBlock Text="{Binding Occasion}"
+                                                           FontSize="11"
+                                                           VerticalAlignment="Center"
+                                                           Opacity="0.75"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           IsVisible="{Binding Occasion,
+                                                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+												<Button Click="OnCallsAsRemoveClick"
+                                                        Background="Transparent"
+                                                        BorderThickness="0"
+                                                        Width="14" Height="14"
+                                                        Padding="0">
+													<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                                                          Fill="{DynamicResource TextSecondaryBrush}"
+                                                          Stretch="Uniform"
+                                                          Width="7" Height="7"/>
+												</Button>
+											</StackPanel>
+										</Border>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+							<TextBox PlaceholderText="{x:Static loc:CharactersStrings.Relationship_CallsAsPlaceholder}"
+                                     FontSize="12"
+                                     Background="{DynamicResource BgSurfaceBrush}"
+                                     Foreground="{DynamicResource TextPrimaryBrush}"
+                                     BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                     BorderThickness="1"
+                                     CornerRadius="4"
+                                     Padding="8,6"
+                                     KeyDown="OnCallsAsKeyDown"/>
+						</StackPanel>
 
-                                    <!-- Строка 1: тип связи + двунаправленность -->
-                                    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,0,0,4">
-                                        <TextBox Grid.Column="0"
-                                                 Text="{Binding RelationshipType}"
-                                                 FontSize="12"
-                                                 Background="{DynamicResource BgSurfaceBrush}"
-                                                 Foreground="{DynamicResource TextPrimaryBrush}"
-                                                 BorderBrush="{DynamicResource BorderDefaultBrush}"
-                                                 BorderThickness="1"
-                                                 CornerRadius="4"
-                                                 Padding="6,4"
-                                                 PlaceholderText="{x:Static loc:CharactersStrings.Field_RelationshipType}"/>
-                                        <CheckBox Grid.Column="1"
-                                                  IsChecked="{Binding IsBidirectional}"
-                                                  Content="?"
-                                                  ToolTip.Tip="{x:Static loc:CharactersStrings.Relationship_BidirectionalTooltip}"
-                                                  Margin="6,0,0,0"
-                                                  FontSize="14"/>
-                                    </Grid>
+						<!-- Заметка -->
+						<StackPanel Spacing="4">
+							<TextBlock Text="{x:Static loc:CharactersStrings.Field_RelationshipNote}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<TextBox Text="{Binding Note}"
+                                     FontSize="12"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     MinHeight="60"
+                                     Background="{DynamicResource BgSurfaceBrush}"
+                                     Foreground="{DynamicResource TextPrimaryBrush}"
+                                     BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                     BorderThickness="1"
+                                     CornerRadius="4"
+                                     Padding="8,6"/>
+						</StackPanel>
 
-                                    <!-- Строка 2: контекст + эмоция + сила -->
-                                    <Grid Grid.Row="2" ColumnDefinitions="*,*,Auto" Margin="0,0,0,4">
-                                        <ComboBox Grid.Column="0"
-                                                  SelectedItem="{Binding Context}"
-                                                  FontSize="11"
-                                                  HorizontalAlignment="Stretch"
-                                                  Margin="0,0,4,0"
-                                                  ToolTip.Tip="{x:Static loc:CharactersStrings.Field_RelationshipContext}">
-                                            <enums:CharacterRelationshipContext>Public</enums:CharacterRelationshipContext>
-                                            <enums:CharacterRelationshipContext>Secret</enums:CharacterRelationshipContext>
-                                            <enums:CharacterRelationshipContext>Past</enums:CharacterRelationshipContext>
-                                            <enums:CharacterRelationshipContext>Potential</enums:CharacterRelationshipContext>
-                                            <enums:CharacterRelationshipContext>Unilateral</enums:CharacterRelationshipContext>
-                                        </ComboBox>
-                                        <ComboBox Grid.Column="1"
-                                                  SelectedItem="{Binding Emotion}"
-                                                  FontSize="11"
-                                                  HorizontalAlignment="Stretch"
-                                                  Margin="0,0,4,0"
-                                                  ToolTip.Tip="{x:Static loc:CharactersStrings.Field_RelationshipEmotion}">
-                                            <enums:CharacterRelationshipEmotion>Neutral</enums:CharacterRelationshipEmotion>
-                                            <enums:CharacterRelationshipEmotion>Positive</enums:CharacterRelationshipEmotion>
-                                            <enums:CharacterRelationshipEmotion>Negative</enums:CharacterRelationshipEmotion>
-                                            <enums:CharacterRelationshipEmotion>Ambivalent</enums:CharacterRelationshipEmotion>
-                                        </ComboBox>
-                                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
-                                            <TextBlock Text="{x:Static loc:CharactersStrings.Field_RelationshipStrength}" FontSize="9" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
-                                            <Slider Minimum="0"
-                                                    Maximum="1"
-                                                    Value="{Binding Strength}"
-                                                    Width="60"
-                                                    TickFrequency="0.1"/>
-                                        </StackPanel>
-                                    </Grid>
+					</StackPanel>
+				</ScrollViewer>
+			</Panel>
+		</Border>
 
-                                    <!-- Строка 3: заметка -->
-                                    <TextBox Grid.Row="3"
-                                             Text="{Binding Note}"
-                                             FontSize="11"
-                                             AcceptsReturn="True"
-                                             TextWrapping="Wrap"
-                                             MinHeight="32"
-                                             Background="{DynamicResource BgSurfaceBrush}"
-                                             Foreground="{DynamicResource TextPrimaryBrush}"
-                                             BorderBrush="{DynamicResource BorderDefaultBrush}"
-                                             BorderThickness="1"
-                                             CornerRadius="4"
-                                             Padding="6,4"
-                                             PlaceholderText="{x:Static loc:CharactersStrings.Field_RelationshipNote}"/>
-
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
-        </ScrollViewer>
-
-        <!-- Кнопка добавления -->
-        <Button Grid.Row="2"
-                Content="{x:Static loc:CharactersStrings.Button_AddRelationship}"
-                Command="{Binding AddRelationshipCommand}"
-                HorizontalAlignment="Stretch"
-                Margin="8"
-                Padding="8,6"
-                FontSize="12"
-                Background="{DynamicResource AccentDefaultBrush}"
-                Foreground="White"
-                CornerRadius="4"
-                IsEnabled="{Binding AvailableCharacters.Count, Converter={StaticResource IntIsNotZeroConverter}}"/>
-
-    </Grid>
+	</Grid>
 </UserControl>

@@ -41,9 +41,14 @@ namespace Writersword.Modules.Characters.Services
         {
             if (string.IsNullOrWhiteSpace(query)) return GetAll();
             var q = query.ToLowerInvariant();
+            // Поиск идёт по всем именам карточки, а не только по отображаемому:
+            // персонаж, ставший по ходу истории Дианой, должен находиться и по
+            // прежнему имени, и по прозвищу.
             return _characters
-                .Where(c => c.Name.ToLowerInvariant().Contains(q) ||
+                .Where(c => CharacterNames.AllValues(c)
+                                .Any(n => n.ToLowerInvariant().Contains(q)) ||
                             c.ShortDescription.ToLowerInvariant().Contains(q) ||
+                            (c.Note ?? string.Empty).ToLowerInvariant().Contains(q) ||
                             c.Tags.Any(t => t.ToLowerInvariant().Contains(q)))
                 .ToList().AsReadOnly();
         }
@@ -56,6 +61,20 @@ namespace Writersword.Modules.Characters.Services
         }
 
         public Character? GetById(string id) => _characters.FirstOrDefault(c => c.Id == id);
+
+        /// <summary>
+        /// По одной метке на имя. Встроенные («Мёртв») идут первыми, остальные
+        /// по алфавиту — порядок нужен только для подсказок при вводе.
+        /// </summary>
+        public IReadOnlyList<CharacterLabel> GetAllLabels() =>
+            _characters
+                .SelectMany(c => c.Labels)
+                .Where(l => !string.IsNullOrWhiteSpace(l.Name))
+                .GroupBy(l => l.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(g => g.First())
+                .OrderByDescending(l => l.IsBuiltIn)
+                .ThenBy(l => l.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToList().AsReadOnly();
 
         public IReadOnlyList<string> GetAllTags() =>
             _characters.SelectMany(c => c.Tags).Distinct().OrderBy(t => t).ToList().AsReadOnly();
@@ -75,6 +94,13 @@ namespace Writersword.Modules.Characters.Services
             c.Parameters = randomize
                 ? _anketaService.MergeParametersRandomized(list)
                 : _anketaService.MergeParameters(list);
+
+            // Наборы числятся подключёнными, а не растворяются в полях: иначе
+            // персонаж, созданный по активным шаблонам, не знал бы, из чего
+            // собран — в карточке не было бы чипов, а правки набора до него
+            // не доезжали бы.
+            c.AttachedAnketaIds = list.Select(a => a.Id).Distinct().ToList();
+
             _characters.Add(c);
             _logger.Debug("Character created from anketas: {Id}, params={Count}, rand={R}", c.Id, c.Parameters.Count, randomize);
             return c;
@@ -84,7 +110,11 @@ namespace Writersword.Modules.Characters.Services
         {
             var c = new Character { Id = Guid.NewGuid().ToString(), Name = name, IsCollective = true };
             var list = anketas?.ToList() ?? new List<CharacterAnketa>();
-            if (list.Any()) c.Parameters = _anketaService.MergeParameters(list);
+            if (list.Any())
+            {
+                c.Parameters = _anketaService.MergeParameters(list);
+                c.AttachedAnketaIds = list.Select(a => a.Id).Distinct().ToList();
+            }
             _characters.Add(c);
             _logger.Debug("Collective character created: {Id}", c.Id);
             return c;
@@ -126,13 +156,31 @@ namespace Writersword.Modules.Characters.Services
                 Id = Guid.NewGuid().ToString(),
                 Name = $"{original.Name} (копия)",
                 ShortDescription = original.ShortDescription,
+                Note = original.Note,
                 Color = original.Color,
                 FallbackIcon = original.FallbackIcon,
                 ImportanceLevel = original.ImportanceLevel,
                 Tags = new List<string>(original.Tags),
+                Labels = original.Labels.Select(l => new CharacterLabel
+                {
+                    Id = l.IsBuiltIn ? l.Id : Guid.NewGuid().ToString(),
+                    Name = l.Name,
+                    Icon = l.Icon,
+                    Color = l.Color,
+                    Effect = l.Effect,
+                    IconImage = l.IconImage,
+                    ShowOnCard = l.ShowOnCard,
+                    Order = l.Order,
+                    Description = l.Description
+                }).ToList(),
                 Parameters = original.Parameters.Select(p => new CharacterParameter
                 {
+                    // Значение у копии своё, поле — то же самое: иначе копия
+                    // выпала бы из сравнения с оригиналом.
                     Id = Guid.NewGuid().ToString(),
+                    FieldId = p.FieldId,
+                    IsComparable = p.IsComparable,
+                    ValueNote = p.ValueNote,
                     Name = p.Name,
                     Type = p.Type,
                     GroupName = p.GroupName,
@@ -150,11 +198,32 @@ namespace Writersword.Modules.Characters.Services
                     BoolValue = p.BoolValue,
                     TrueLabel = p.TrueLabel,
                     FalseLabel = p.FalseLabel,
+                    IsNotApplicable = p.IsNotApplicable,
                     Order = p.Order
                 }).ToList(),
                 IsCollective = original.IsCollective,
                 PopulationNote = original.PopulationNote
             };
+
+            // Имена копии: первым идёт её собственное имя с пометкой «копия»,
+            // следом — остальные имена оригинала со своими новыми Id. Если
+            // перенести список как есть, нормализация вернула бы отображаемым
+            // имя оригинала и пометка «копия» исчезла бы.
+            copy.Names = new List<CharacterNameEntry>
+            {
+                new CharacterNameEntry { Value = copy.Name }
+            };
+            copy.Names.AddRange(original.Names.Skip(1).Select(n => new CharacterNameEntry
+            {
+                Value = n.Value,
+                Note = n.Note
+            }));
+            copy.Aliases = copy.Names.Skip(1).Select(n => n.Value).ToList();
+
+            // Состав копии тот же: иначе дубликат выглядел бы собранным
+            // вручную, отключить набор было бы нечем, а правки набора
+            // до него не доезжали бы.
+            copy.AttachedAnketaIds = new List<string>(original.AttachedAnketaIds);
 
             _characters.Add(copy);
             _logger.Debug("Character duplicated: {OrigId} -> {NewId}", id, copy.Id);
@@ -175,13 +244,91 @@ namespace Writersword.Modules.Characters.Services
                 ? _anketaService.BuildParametersRandomized(anketa)
                 : _anketaService.BuildParameters(anketa);
 
-            var existingNames = character.Parameters.Select(p => p.Name).ToHashSet();
+            // Совпадение ищем по идентификатору поля, а не по имени: одно и то
+            // же поле в двух анкетах не должно задваиваться из-за разной
+            // формулировки.
+            var existingFieldIds = character.Parameters
+                .Select(p => CharacterFieldId.Resolve(p))
+                .ToHashSet();
+
             foreach (var p in newParams)
             {
-                if (!existingNames.Contains(p.Name))
+                if (existingFieldIds.Add(CharacterFieldId.Resolve(p)))
                     character.Parameters.Add(p);
             }
+
+            // Набор числится подключённым к карточке: по этому списку карточка
+            // знает, из чего составлена, и его же показывает в интерфейсе.
+            if (!character.AttachedAnketaIds.Contains(anketa.Id))
+                character.AttachedAnketaIds.Add(anketa.Id);
+
             character.UpdatedAt = DateTime.UtcNow;
+        }
+
+        public int SyncAnketa(CharacterAnketa anketa)
+        {
+            if (IsReadOnly)
+            {
+                _logger.Debug("SyncAnketa ignored (compare mode): {Id}", anketa?.Id);
+                return 0;
+            }
+            if (anketa == null) return 0;
+
+            int changed = 0;
+
+            foreach (var character in _characters)
+            {
+                if (!character.AttachedAnketaIds.Contains(anketa.Id)) continue;
+
+                var existingFieldIds = character.Parameters
+                    .Select(p => CharacterFieldId.Resolve(p))
+                    .ToHashSet();
+
+                bool touched = false;
+
+                // Параметры строятся заново для каждой карточки: один список
+                // на всех означал бы общие объекты значений, и правка у одного
+                // персонажа меняла бы значение у всех.
+                foreach (var parameter in _anketaService.BuildParameters(anketa))
+                {
+                    // Уже заполненные значения не трогаем: правка набора
+                    // добавляет поля, а не переписывает работу автора.
+                    // Удалённое из набора поле у персонажа тоже остаётся —
+                    // убрать его можно поштучно и осознанно.
+                    if (!existingFieldIds.Add(CharacterFieldId.Resolve(parameter))) continue;
+
+                    character.Parameters.Add(parameter);
+                    touched = true;
+                }
+
+                if (touched)
+                {
+                    character.UpdatedAt = DateTime.UtcNow;
+                    changed++;
+                }
+            }
+
+            if (changed > 0)
+                _logger.Debug("Anketa '{Name}' synced into {Count} characters", anketa.Name, changed);
+
+            return changed;
+        }
+
+        public void DetachAnketa(string characterId, string anketaId)
+        {
+            if (IsReadOnly)
+            {
+                _logger.Debug("DetachAnketa ignored (compare mode): {Id}", characterId);
+                return;
+            }
+            var character = GetById(characterId);
+            if (character == null) return;
+
+            // Значения не трогаем намеренно: отключение набора — это про
+            // состав карточки, а не про удаление написанного. Ненужные поля
+            // убираются поштучно, чтобы случайный клик не стёр работу.
+            if (character.AttachedAnketaIds.Remove(anketaId))
+                character.UpdatedAt = DateTime.UtcNow;
         }
 
         public void RandomizeParameters(string characterId)
@@ -226,7 +373,26 @@ namespace Writersword.Modules.Characters.Services
         public void LoadModuleData(CharactersModuleData data)
         {
             _characters.Clear();
-            if (data.Characters != null) _characters.AddRange(data.Characters);
+            if (data.Characters != null)
+            {
+                // Старые сохранения не знают списка имён — собираем его из
+                // отображаемого имени и псевдонимов, чтобы поиск и карточка
+                // работали одинаково для проектов любого возраста.
+                foreach (var c in data.Characters)
+                {
+                    CharacterNames.Normalize(c);
+                    c.AttachedAnketaIds ??= new List<string>();
+
+                    // Значения, созданные до появления идентификатора поля,
+                    // получают его из имени: иначе сравнивать карточки между
+                    // собой будет нечем, а имя у значения и определения одно.
+                    foreach (var p in c.Parameters)
+                        if (string.IsNullOrWhiteSpace(p.FieldId))
+                            p.FieldId = CharacterFieldId.FromName(p.Name);
+                }
+
+                _characters.AddRange(data.Characters);
+            }
             _logger.Debug("Module data loaded: {Count} characters", _characters.Count);
         }
 

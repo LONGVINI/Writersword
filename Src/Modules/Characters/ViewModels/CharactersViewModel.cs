@@ -621,7 +621,9 @@ namespace Writersword.Modules.Characters.ViewModels
             _trash = trash;
             _avatarService = avatarService;
 
-            TemplatesViewModel = new CharactersTemplatesViewModel(anketaService, ActiveTemplateIds);
+            // Сервис персонажей нужен вкладке шаблонов, чтобы правка набора
+            // разъезжалась по карточкам, к которым он подключён.
+            TemplatesViewModel = new CharactersTemplatesViewModel(anketaService, ActiveTemplateIds, characterService);
             TemplatesViewModel.OnboardingRestartRequested += () => ShowOnboarding = true;
 
             GraphViewModel = new CharactersGraphViewModel(characterService, relationshipService,
@@ -716,6 +718,12 @@ namespace Writersword.Modules.Characters.ViewModels
             RefreshAll();
             EnsureDefaultFolders();
         }
+
+        /// <summary>
+        /// Персонаж по идентификатору — для окон, которым нужны сами данные,
+        /// а не строки списка (сравнение карточек).
+        /// </summary>
+        public Character? GetCharacter(string id) => _characterService.GetById(id);
 
         public void InitializeFirstLaunch()
         {
@@ -829,9 +837,90 @@ namespace Writersword.Modules.Characters.ViewModels
             var character = _characterService.GetById(characterId);
             if (character is null) return;
             SelectedCharacterCard = new CharacterCardViewModel(
-                _characterService, _relationshipService, _anketaService, character, _avatarService);
+                _characterService, _relationshipService, _anketaService, character, _avatarService,
+                // Папки нужны карточке для групповых обращений: «все из этой
+                // папки зовут её так».
+                GetFolders());
+
+            // Смена аватара из галереи кладётся в общий стек отмены модуля:
+            // Ctrl+Z возвращает прежний, как и для остальных действий.
+            SelectedCharacterCard.BasicsTab.PushUndoableAvatarChange = (oldRef, newRef) =>
+            {
+                var id = character.Id;
+
+                PushCommand(new Actions.SetAvatarCommand(id, oldRef, newRef, (cid, value) =>
+                {
+                    var card = SelectedCharacterCard;
+                    if (card != null && card.CharacterId == cid)
+                    {
+                        card.BasicsTab.ApplyAvatarSilently(value);
+                        return;
+                    }
+
+                    // Карточка закрыта — правим модель напрямую, чтобы отмена
+                    // работала и после ухода с персонажа.
+                    var target = _characterService.GetById(cid);
+                    if (target == null) return;
+
+                    target.AvatarPath = value;
+                    _characterService.Update(target);
+
+                    FindListItem(cid)?.ApplyAvatarRef(value);
+                }));
+            };
+            // Автосейв карточки кладёт правки в сервис, но строки бокового
+            // списка — снимки и сами об этом не узнают. По событию Saved
+            // обновляются все вью-модели этого персонажа в списках.
+            SelectedCharacterCard.Saved += OnCardSaved;
+            // «Применить кольцо ко всем» из редактора цвета в карточке — тот же
+            // обработчик, что у карточек основного списка (персист + Undo).
+            SelectedCharacterCard.BasicsTab.OnApplyRingToAll = ApplyRingToAllCharacters;
             IsCardOpen = true;
             MainTabIndex = 1;
+        }
+
+        private void OnCardSaved(string characterId)
+        {
+            var character = _characterService.GetById(characterId);
+            if (character is null) return;
+
+            foreach (var folder in Folders)
+            {
+                var item = folder.Characters.FirstOrDefault(c => c.Id == characterId);
+                if (item is not null) SyncRowFromCharacter(item, character);
+            }
+
+            var filtered = FilteredCharacters.FirstOrDefault(c => c.Id == characterId);
+            if (filtered is not null) SyncRowFromCharacter(filtered, character);
+        }
+
+        /// <summary>
+        /// Вью-модель строки списка для персонажа. Нужна окнам, которые
+        /// работают через колбэки строки (настройки карточки, открытые
+        /// из карточки персонажа в редакторе).
+        /// </summary>
+        public CharacterListItemViewModel? FindListItem(string characterId)
+        {
+            foreach (var folder in Folders)
+            {
+                var item = folder.Characters.FirstOrDefault(c => c.Id == characterId);
+                if (item is not null) return item;
+            }
+            return FilteredCharacters.FirstOrDefault(c => c.Id == characterId);
+        }
+
+        // Переносит в строку списка поля, редактируемые на вкладке Basics.
+        // Цвет присваивается только при реальном изменении: его сеттер дёргает
+        // колбэк OnColorChanged (персист + перерисовка) при каждом присваивании.
+        private static void SyncRowFromCharacter(CharacterListItemViewModel item, Character character)
+        {
+            item.Name = character.Name;
+            item.ShortDescription = character.ShortDescription;
+            item.FallbackIcon = character.FallbackIcon;
+            item.SetLabels(character.Labels);
+            if (item.Color != character.Color) item.Color = character.Color;
+            if (item.AvatarRing != character.AvatarRing) item.AvatarRing = character.AvatarRing;
+            if (item.GroupBookmark != character.GroupBookmark) item.GroupBookmark = character.GroupBookmark;
         }
 
         public void OpenCharacter(string characterId) => EditCharacter(characterId);
@@ -1204,6 +1293,7 @@ namespace Writersword.Modules.Characters.ViewModels
                     var item = new CharacterListItemViewModel(c, relCount, false, _avatarService);
                     if (folderColorById.TryGetValue(c.Id, out var folderColor))
                         item.SearchFolderColor = folderColor;
+                    item.MatchedName = ResolveMatchedName(c);
                     FilteredCharacters.Add(item);
                 }
 
@@ -1212,6 +1302,30 @@ namespace Writersword.Modules.Characters.ViewModels
                     () => { },
                     Avalonia.Threading.DispatcherPriority.Background);
             }
+        }
+
+        /// <summary>
+        /// Имя, по которому карточка попала в результат поиска, если оно не
+        /// отображаемое. Пустая строка — совпало по имени, описанию, заметке
+        /// или тегу, и пояснять нечего.
+        /// </summary>
+        private string ResolveMatchedName(Character character)
+        {
+            if (string.IsNullOrWhiteSpace(SearchQuery)) return string.Empty;
+
+            var query = SearchQuery.Trim();
+            if (character.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase))
+                return string.Empty;
+
+            foreach (var name in Models.CharacterNames.AllValues(character))
+            {
+                if (string.Equals(name, character.Name, StringComparison.CurrentCultureIgnoreCase)) continue;
+                // Скобки собираются здесь, чтобы шаблон строки списка остался
+                // простой привязкой без конвертера.
+                if (name.Contains(query, StringComparison.CurrentCultureIgnoreCase)) return $"({name})";
+            }
+
+            return string.Empty;
         }
 
         private void ClearFilters()
@@ -1860,22 +1974,7 @@ namespace Writersword.Modules.Characters.ViewModels
                 _characterService.Update(character);
             };
 
-            item.OnApplyRingToAll = (on) =>
-            {
-                var previous = new List<(string id, bool old)>();
-                foreach (var folder in Folders)
-                    foreach (var vm in folder.Characters)
-                    {
-                        var ch = _characterService.GetById(vm.Id);
-                        if (ch is null) continue;
-                        previous.Add((vm.Id, ch.AvatarRing));
-                    }
-                if (previous.Count == 0) return;
-
-                foreach (var (id, _) in previous) ApplyRingToCharacter(id, on);
-
-                PushCommand(new ApplyAvatarRingToAllCommand(previous, on, ApplyRingToCharacter));
-            };
+            item.OnApplyRingToAll = ApplyRingToAllCharacters;
 
             BindAvatarPickerCallback?.Invoke(item);
         }
@@ -1899,6 +1998,27 @@ namespace Writersword.Modules.Characters.ViewModels
             foreach (var folder in Folders)
                 foreach (var vm in folder.Characters)
                     vm.FrameThickness = v;
+        }
+
+        // Применить кольцо аватара ко всем персонажам: снимок прежних значений
+        // для отмены, персист через ApplyRingToCharacter, команда в стек Undo.
+        // Вызывается и колбэком карточек списка, и из карточки персонажа
+        // (редактор цвета через вкладку Basics).
+        private void ApplyRingToAllCharacters(bool on)
+        {
+            var previous = new List<(string id, bool old)>();
+            foreach (var folder in Folders)
+                foreach (var vm in folder.Characters)
+                {
+                    var ch = _characterService.GetById(vm.Id);
+                    if (ch is null) continue;
+                    previous.Add((vm.Id, ch.AvatarRing));
+                }
+            if (previous.Count == 0) return;
+
+            foreach (var (id, _) in previous) ApplyRingToCharacter(id, on);
+
+            PushCommand(new ApplyAvatarRingToAllCommand(previous, on, ApplyRingToCharacter));
         }
 
         // Применяет состояние кольца к одному персонажу: модель + персист + VM во всех папках.
@@ -2120,7 +2240,7 @@ namespace Writersword.Modules.Characters.ViewModels
         }
     }
 
-    public class CharacterFolderViewModel : ReactiveObject
+    public class CharacterFolderViewModel : ReactiveObject, Controls.IRowHeight
     {
         private static readonly ILogger _logger = Log.ForContext<CharacterFolderViewModel>();
         private bool _isExpanded = true;
@@ -2187,8 +2307,22 @@ namespace Writersword.Modules.Characters.ViewModels
                 if (IsReadOnly) return;
                 this.RaiseAndSetIfChanged(ref _comment, value);
                 _folder.Comment = value;
+                this.RaisePropertyChanged(nameof(RowHeight));
             }
         }
+
+        /// <summary>
+        /// Высота строки-заголовка в боковом списке редактора. Отдаётся
+        /// раскладке до создания контрола и одновременно задаёт высоту
+        /// в шаблоне — источник истины один, поэтому расчёт скролла и
+        /// нарисованная строка не могут разойтись.
+        ///
+        /// С комментарием строка выше: под ним вторая подпись. В величину
+        /// входят и внешние отступы баннера — раскладка считает шаг списка,
+        /// а не размер содержимого.
+        /// </summary>
+        public double RowHeight =>
+            string.IsNullOrWhiteSpace(_comment) ? 40 : 52;
 
         public string Color
         {

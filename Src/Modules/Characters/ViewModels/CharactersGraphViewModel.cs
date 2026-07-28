@@ -18,6 +18,8 @@ namespace Writersword.Modules.Characters.ViewModels
         public double Size { get; }
         public CharacterImportanceLevel ImportanceLevel { get; }
         public bool IsCollective { get; }
+        // Встроенная метка «Мёртв»: узел рисуется приглушённым с крестиком.
+        public bool IsDead { get; }
 
         public double X { get => _x; set => this.RaiseAndSetIfChanged(ref _x, value); }
         public double Y { get => _y; set => this.RaiseAndSetIfChanged(ref _y, value); }
@@ -33,7 +35,7 @@ namespace Writersword.Modules.Characters.ViewModels
         public void RaisePropertyChanged(string name) => this.RaisePropertyChanged(name);
 
         public GraphNodeViewModel(string id, string name, string color, string icon,
-            CharacterImportanceLevel importance, bool isCollective)
+            CharacterImportanceLevel importance, bool isCollective, bool isDead = false)
         {
             CharacterId = id;
             Name = name;
@@ -41,6 +43,7 @@ namespace Writersword.Modules.Characters.ViewModels
             FallbackIcon = icon;
             ImportanceLevel = importance;
             IsCollective = isCollective;
+            IsDead = isDead;
             Size = importance == CharacterImportanceLevel.Primary ? 56.0
                 : importance == CharacterImportanceLevel.Secondary ? 44.0
                 : 34.0;
@@ -156,7 +159,9 @@ namespace Writersword.Modules.Characters.ViewModels
 
                 var c = characters[i];
                 var angle = i * angleStep;
-                var node = new GraphNodeViewModel(c.Id, c.Name, c.Color, c.FallbackIcon, c.ImportanceLevel, c.IsCollective)
+                var node = new GraphNodeViewModel(c.Id, c.Name, c.Color,
+                    Models.CharacterGlyph.Resolve(c.FallbackIcon, c.Name), c.ImportanceLevel, c.IsCollective,
+                    c.Labels.Any(l => l.Id == Models.CharacterBuiltinLabels.DeadId))
                 {
                     X = radius + System.Math.Cos(angle) * radius - 24,
                     Y = radius + System.Math.Sin(angle) * radius - 24

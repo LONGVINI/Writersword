@@ -90,6 +90,22 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// <summary>Режим обтекания текстом.</summary>
         public WrapMode WrapMode { get; set; } = WrapMode.Inline;
 
+        /// <summary>Отступ по умолчанию от обтекающей картинки, пт (~0.21 см). Совпадает
+        /// с прежним единым зазором зоны — старые документы выглядят так же.</summary>
+        public const double WrapPadDefaultPt = 6.0;
+
+        /// <summary>Отступ текста от картинки сверху при обтекании, пт.</summary>
+        public double WrapPadTopPt { get; set; } = WrapPadDefaultPt;
+
+        /// <summary>Отступ текста от картинки снизу при обтекании, пт.</summary>
+        public double WrapPadBottomPt { get; set; } = WrapPadDefaultPt;
+
+        /// <summary>Отступ текста от картинки слева при обтекании, пт.</summary>
+        public double WrapPadLeftPt { get; set; } = WrapPadDefaultPt;
+
+        /// <summary>Отступ текста от картинки справа при обтекании, пт.</summary>
+        public double WrapPadRightPt { get; set; } = WrapPadDefaultPt;
+
         /// <summary>Горизонтальное выравнивание блок-картинки (Inline) в текстовой колонке.</summary>
         public TextAlignment Alignment { get; set; } = TextAlignment.Left;
 

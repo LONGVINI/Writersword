@@ -6,10 +6,12 @@
              xmlns:colorControls="using:Writersword.Styles.UserControls"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              xmlns:enums="using:Writersword.Modules.Characters.Models.Enums"
+             xmlns:models="using:Writersword.Modules.Characters.Models"
              xmlns:conv="using:Writersword.Modules.Characters.Converters"
              xmlns:behaviors="using:Writersword.Infrastructure.Behaviours"
              xmlns:infra="using:Writersword.Infrastructure.Controls"
              xmlns:icv="using:Writersword.Infrastructure.Converters"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              x:Class="Writersword.Modules.Characters.Views.Tabs.CharactersListView"
              x:DataType="vm:CharactersViewModel">
 
@@ -118,7 +120,7 @@
                 BorderBrush="{DynamicResource BorderDefaultBrush}"
                 BorderThickness="0,0,0,1"
                 Padding="8,6">
-            <Grid ColumnDefinitions="*,Auto,Auto">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
 
                 <TextBox Grid.Column="0"
                          x:Name="SearchTextBox"
@@ -137,7 +139,8 @@
                         Background="{DynamicResource BgSurfaceBrush}"
                         BorderBrush="{DynamicResource BorderDefaultBrush}"
                         BorderThickness="1" CornerRadius="6"
-                        ToolTip.Tip="{x:Static loc:CharactersStrings.Folder_CreateTooltip}">
+                        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Folder_CreateButton}"
+                        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Folder_CreateTooltip}">
                     <StackPanel Orientation="Horizontal" Spacing="5">
                         <PathIcon Data="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
                                   Width="14" Height="14" Foreground="{DynamicResource TextPrimaryBrush}"/>
@@ -146,6 +149,19 @@
                                    VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
+
+                <!-- Сравнение показанных: фильтр и поиск уже сделали выбор,
+                     второй механизм выделения заводить незачем. -->
+                <Button Grid.Column="3"
+                        Content="{x:Static loc:CharactersStrings.Compare_Button}"
+                        Click="OnCompareClick"
+                        Margin="4,0,0,0" Padding="8,4"
+                        FontSize="12"
+                        Background="{DynamicResource BgSurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderDefaultBrush}"
+                        BorderThickness="1" CornerRadius="6"
+                        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Compare_Button}"
+                        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Compare_Hint}"/>
 
                 <!-- выбор режима отображения: список / размеры плиток -->
                 <ComboBox Grid.Column="2"
@@ -158,7 +174,7 @@
                           BorderBrush="{DynamicResource BorderDefaultBrush}"
                           BorderThickness="1"
                           Foreground="{DynamicResource TextPrimaryBrush}"
-                          ToolTip.Tip="{x:Static loc:CharactersStrings.ViewMode_Tooltip}">
+                          behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.ViewMode_Tooltip}">
                     <ComboBoxItem>
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <PathIcon Data="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"
@@ -399,6 +415,82 @@
 
                                                         <Panel>
 
+                                                        <!-- Эффект Dim (у «Мёртв» и любых пользовательских меток):
+                                                             затемнение карточки — усилитель; носитель смысла —
+                                                             бейдж-череп или значок метки. Слой не перехватывает
+                                                             клики. -->
+                                                        <Border ZIndex="7"
+                                                                IsVisible="{Binding HasDimEffect}"
+                                                                IsHitTestVisible="False"
+                                                                Background="#59000000"
+                                                                CornerRadius="9"/>
+                                                        <!-- Череп, а не крестик: крестиком в интерфейсе обозначается
+                                                             удаление, и бейдж читался как кнопка «убрать». -->
+                                                        <Border ZIndex="8"
+                                                                IsVisible="{Binding IsDead}"
+                                                                IsHitTestVisible="False"
+                                                                Width="18" Height="18"
+                                                                CornerRadius="9"
+                                                                Background="#CC202020"
+                                                                HorizontalAlignment="Left"
+                                                                VerticalAlignment="Top"
+                                                                Margin="8">
+                                                            <Path Data="M12,2C7.03,2 3,6.03 3,11c0,2.85 1.34,5.38 3.42,7.02V21c0,0.55 0.45,1 1,1h1.5v-2h2v2h2v-2h2v2H16c0.55,0 1,-0.45 1,-1v-2.98C19.66,16.38 21,13.85 21,11C21,6.03 16.97,2 12,2zM8.5,13C7.67,13 7,12.33 7,11.5C7,10.67 7.67,10 8.5,10s1.5,0.67 1.5,1.5C10,12.33 9.33,13 8.5,13zM15.5,13c-0.83,0 -1.5,-0.67 -1.5,-1.5c0,-0.83 0.67,-1.5 1.5,-1.5s1.5,0.67 1.5,1.5C17,12.33 16.33,13 15.5,13z"
+                                                                  Fill="#FF5252"
+                                                                  Stretch="Uniform"
+                                                                  Margin="3"/>
+                                                        </Border>
+
+                                                        <!-- Метки персонажа: значки первых меток (порядок задаёт
+                                                             пользователь) + «+N» для остальных. Полный набор виден
+                                                             в карточке; подсказка на значке — имя метки. -->
+                                                        <StackPanel ZIndex="8"
+                                                                    Orientation="Horizontal"
+                                                                    Spacing="3"
+                                                                    HorizontalAlignment="Left"
+                                                                    VerticalAlignment="Bottom"
+                                                                    Margin="8,0,0,8">
+                                                            <ItemsControl ItemsSource="{Binding CardLabels}">
+                                                                <ItemsControl.ItemsPanel>
+                                                                    <ItemsPanelTemplate>
+                                                                        <StackPanel Orientation="Horizontal" Spacing="3"/>
+                                                                    </ItemsPanelTemplate>
+                                                                </ItemsControl.ItemsPanel>
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate x:DataType="models:CharacterLabel">
+                                                                        <Border Width="16" Height="16"
+                                                                                CornerRadius="8"
+                                                                                ClipToBounds="True"
+                                                                                Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+                                                                                ToolTip.Tip="{Binding Name}">
+                                                                            <!-- Своя картинка метки, если автор её задал. -->
+                                                                            <Panel>
+                                                                                <Path Data="{Binding Icon, Converter={x:Static conv:LabelIconToGeometryConverter.Instance}}"
+                                                                                      Fill="White"
+                                                                                      Stretch="Uniform"
+                                                                                      Margin="3.5"
+                                                                                      IsVisible="{Binding !HasCustomIcon}"/>
+                                                                                <Image Source="{Binding IconImage, Converter={x:Static conv:LabelIconToImageConverter.Instance}}"
+                                                                                       Stretch="UniformToFill"
+                                                                                       IsVisible="{Binding HasCustomIcon}"/>
+                                                                            </Panel>
+                                                                        </Border>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                            <Border Height="16"
+                                                                    CornerRadius="8"
+                                                                    Background="#CC202020"
+                                                                    Padding="5,0"
+                                                                    VerticalAlignment="Center"
+                                                                    IsVisible="{Binding HasCardLabelsOverflow}">
+                                                                <TextBlock Text="{Binding CardLabelsOverflowText}"
+                                                                           FontSize="9"
+                                                                           Foreground="White"
+                                                                           VerticalAlignment="Center"/>
+                                                            </Border>
+                                                        </StackPanel>
+
                                                         <!-- Признак группы: закладка-ленточка, свисающая с верхнего края
                                                              карточки, цветом персонажа. Управляется настройкой GroupBookmark;
                                                              при наведении гаснет, чтобы не спорить с кнопками правки. -->
@@ -615,6 +707,13 @@
                                                                         HorizontalContentAlignment="{Binding $parent[UserControl].DataContext.CardNamePanelAlignment}"
                                                                         IsVisible="{Binding IsShowingNameDisplay}"
                                                                         ToolTip.Tip="{x:Static loc:CharactersStrings.Character_RenameTooltip}">
+                                                                    <!-- Подпись карточки трогать нельзя: выравнивание
+                                                                         задают HorizontalContentAlignment кнопки
+                                                                         и TextAlignment самого текста, и любая обёртка
+                                                                         между ними их отключает. Имя, по которому
+                                                                         нашлась карточка при поиске, показывает
+                                                                         боковой список редактора — там раскладка
+                                                                         простая. -->
                                                                     <TextBlock Text="{Binding Name}"
                                                                                FontSize="12" FontWeight="Medium"
                                                                                TextWrapping="NoWrap"
@@ -767,7 +866,7 @@
                         Height="40" CornerRadius="8"
                         Background="{DynamicResource AccentDefaultBrush}"
                         Foreground="White"
-                        ToolTip.Tip="{x:Static loc:CharactersStrings.Button_CreateCollective}">
+                        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Button_CreateCollective}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <PathIcon Data="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"
                                   Width="16" Height="16" Foreground="White"/>

@@ -82,6 +82,31 @@ namespace Writersword.Modules.Characters.Actions
         public void Undo() => _restore(_characterId);
     }
 
+    // Смена аватара из галереи. Отменяемая: аватар — вещь, которую меняют
+    // на пробу, и вернуть прежний должно быть так же просто, как поставить
+    // новый.
+    public class SetAvatarCommand : IUndoableCommand
+    {
+        private readonly string _characterId;
+        private readonly string? _oldAvatar;
+        private readonly string? _newAvatar;
+        private readonly Action<string, string?> _apply;
+
+        public string Description => "Смена аватара";
+
+        public SetAvatarCommand(string characterId, string? oldAvatar, string? newAvatar,
+            Action<string, string?> apply)
+        {
+            _characterId = characterId;
+            _oldAvatar = oldAvatar;
+            _newAvatar = newAvatar;
+            _apply = apply;
+        }
+
+        public void Execute() => _apply(_characterId, _newAvatar);
+        public void Undo() => _apply(_characterId, _oldAvatar);
+    }
+
     // Перемещение персонажа (drag-and-drop)
     public class MoveCharacterCommand : IUndoableCommand
     {

@@ -73,12 +73,31 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// <param name="isCell">true — параграф внутри ячейки таблицы.</param>
         /// <param name="wrapZones">Зоны исключения обтекания текстом (координаты
         /// относительно верха первой строки и левого края текстовой области).</param>
+        /// <summary>
+        /// Геометрия страниц для абзаца, который может быть разрезан разрывом.
+        /// Без неё строки после разрыва считают полосу обтекания по накопленной
+        /// высоте внутри абзаца, тогда как физически они уже на следующей странице —
+        /// и проверяются против зоны, сдвинутой на высоту переноса.
+        /// Все координаты — документные, в pt.
+        /// </summary>
+        /// <param name="ParaStartYPt">Верх первой строки абзаца.</param>
+        /// <param name="PageBottomPt">Нижняя граница текстовой области текущей страницы.</param>
+        /// <param name="NextPageTopPt">Верх текстовой области следующей страницы.</param>
+        /// <param name="PageStepPt">Шаг между одноимёнными границами соседних страниц.</param>
+        public readonly record struct WrapPageContext(
+            float ParaStartYPt,
+            float PageBottomPt,
+            float NextPageTopPt,
+            float PageStepPt);
+
         public SKTextLayout BuildLayout(
             ParagraphBlock para,
             float availableWidthPt,
             StyleResolver styles,
             bool isCell = false,
-            IReadOnlyList<SKWrapZone>? wrapZones = null)
+            IReadOnlyList<SKWrapZone>? wrapZones = null,
+            bool wrapPreferPushDown = false,
+            WrapPageContext? wrapPages = null)
         {
             string? styleName = para.Properties.StyleName;
 
@@ -165,7 +184,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             };
 
             var tokens = CollectTokens(para, styleName, styles);
-            WrapTokensToLines(tokens, layout, textWidthPt, lineSpacing, wrapZones);
+            WrapTokensToLines(tokens, layout, textWidthPt, lineSpacing, wrapZones, wrapPreferPushDown, wrapPages);
             layout.TextLength = GetPlainTextLength(para);
 
             return layout;
@@ -1115,7 +1134,9 @@ namespace Writersword.Modules.TextEditor.Rendering
             SKTextLayout layout,
             float textAreaWidthPt,
             float lineSpacing,
-            IReadOnlyList<SKWrapZone>? wrapZones = null)
+            IReadOnlyList<SKWrapZone>? wrapZones = null,
+            bool wrapPreferPushDown = false,
+            WrapPageContext? wrapPages = null)
         {
             // Сохраняем ширину текстовой области — используется в ComputeAlignmentOffset.
             // textAreaWidthPt = availableWidthPt - leftIndentPt - rightIndentPt,
@@ -1132,12 +1153,78 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             bool hasZones = wrapZones is { Count: > 0 };
 
-            // Минимальная ширина полосы рядом с обтекаемым объектом:
-            // уже — строка вытесняется целиком под объект.
-            const float MinBandWidthPt = 36f;
-            // Пробная высота строки для проверки пересечения с зоной:
-            // реальная высота известна только после FinalizeLine.
-            const float ProbeLineHPt = 10f;
+            // Полоса рядом с объектом пригодна, если в неё целиком влезает самое
+            // длинное слово абзаца. Иначе слово пришлось бы рвать посимвольно
+            // (см. FlushWord), а рваные слова недопустимы — строка уходит под объект.
+            // Порог по кеглю (кегль × N) сюда не годится: он не связан с реальным
+            // текстом и на кегле 20 давал границу ровно в рабочем диапазоне,
+            // из-за чего абзац перекидывался туда-обратно при сдвиге картинки на 7 pt.
+            const float MinBandFloorPt = 36f;
+
+            // Во сколько раз шире должна стать полоса, чтобы вытесненный вниз абзац
+            // вернулся сбоку от объекта. Гистерезис: без него абзац дребезжит на
+            // границе порога при перетаскивании картинки.
+            const float PushDownHysteresis = 1.2f;
+
+            // Зоны обтекания приходят в координатах текстовой колонки (отсчёт от левого
+            // поля страницы), а полосы строк вычисляются внутри области абзаца, начало
+            // которой сдвинуто на левый отступ. Без приведения к одной системе координат
+            // при ненулевом LeftIndent текст налезал на объект слева, а при обтекании
+            // справа сдвигался на величину отступа и уходил за правое поле страницы.
+            float zoneShiftPt = layout.LeftIndentPt;
+
+            // Пробная высота строки для проверки пересечения с зоной: реальная
+            // высота известна только после FinalizeLine, поэтому берём верхнюю оценку
+            // по фактическим метрикам самого высокого формата параграфа. Оценка через
+            // кегль * 1.35 занижала высоту у шрифтов с крупными выносными элементами:
+            // строка не считалась пересекающей зону и нижней частью налезала на картинку.
+            float probeLineHPt = 10f;
+            float minBandWidthPt = MinBandFloorPt;
+            if (hasZones)
+            {
+                float maxLineHPt = 0f;
+                SKRunSegment? probedFormat = null;
+                foreach (var (_, format, _) in tokens)
+                {
+                    // Формат — общий объект на весь run, соседние символы ссылаются на
+                    // один и тот же экземпляр: метрики считаем один раз на run.
+                    if (ReferenceEquals(format, probedFormat)) continue;
+                    probedFormat = format;
+
+                    var probeTypeface = GetOrCreateTypeface(
+                        format.FontFamily, format.IsBold, format.IsItalic);
+                    var probeFont = GetOrCreateFont(probeTypeface, format.FontSizePt);
+                    probeFont.GetFontMetrics(out var probeMetrics);
+
+                    float h = (Math.Abs(probeMetrics.Ascent) + Math.Abs(probeMetrics.Descent))
+                        * Math.Max(lineSpacing, 1f);
+                    if (h > maxLineHPt) maxLineHPt = h;
+                }
+                probeLineHPt = Math.Max(probeLineHPt, maxLineHPt);
+
+                // Самое длинное слово абзаца: непрерывный отрезок между пробелами.
+                float maxWordWidthPt = 0f;
+                float runWidthPt = 0f;
+                foreach (var (ch, format, _) in tokens)
+                {
+                    if (ch == " " || ch == "\t")
+                    {
+                        if (runWidthPt > maxWordWidthPt) maxWordWidthPt = runWidthPt;
+                        runWidthPt = 0f;
+                        continue;
+                    }
+                    runWidthPt += MeasureChar(ch, format);
+                }
+                if (runWidthPt > maxWordWidthPt) maxWordWidthPt = runWidthPt;
+
+                minBandWidthPt = Math.Max(MinBandFloorPt, maxWordWidthPt);
+                if (wrapPreferPushDown) minBandWidthPt *= PushDownHysteresis;
+
+                // Потолок в половину области: абзац с одним очень длинным словом иначе
+                // вытеснялся бы под объект всегда, и обтекание не работало бы вовсе.
+                // Такое слово всё равно придётся разорвать — но уже в полной строке.
+                minBandWidthPt = Math.Min(minBandWidthPt, textAreaWidthPt * 0.5f);
+            }
 
             // Полоса строки на вертикали yTop (координата верха строки относительно
             // верха первой строки параграфа): левый край и ширина внутри текстовой
@@ -1156,18 +1243,25 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                     foreach (var z in wrapZones!)
                     {
-                        if (z.BottomPt <= y + 0.5f || z.TopPt >= y + ProbeLineHPt) continue;
+                        if (z.BottomPt <= y + 0.5f || z.TopPt >= y + probeLineHPt) continue;
+
+                        float zLeftPt = z.LeftPt - zoneShiftPt;
+                        float zRightPt = z.RightPt - zoneShiftPt;
+
+                        // Зона целиком вне области абзаца (в поле левого или правого
+                        // отступа) полосу строки не сужает.
+                        if (zRightPt <= left || zLeftPt >= right) continue;
 
                         // Текст уходит на ту сторону зоны, где больше места (как Square в Word).
-                        float spaceLeft = z.LeftPt - left;
-                        float spaceRight = right - z.RightPt;
-                        if (spaceLeft >= spaceRight) right = Math.Min(right, z.LeftPt);
-                        else left = Math.Max(left, z.RightPt);
+                        float spaceLeft = zLeftPt - left;
+                        float spaceRight = right - zRightPt;
+                        if (spaceLeft >= spaceRight) right = Math.Min(right, zLeftPt);
+                        else left = Math.Max(left, zRightPt);
                         pushBottom = Math.Max(pushBottom, z.BottomPt);
                     }
 
                     float width = right - left;
-                    if (width >= MinBandWidthPt || pushBottom == float.MinValue)
+                    if (width >= minBandWidthPt || pushBottom == float.MinValue)
                         return (left, Math.Max(width, 1f), extraTop);
 
                     // Полоса слишком узкая — вытесняем строку под нижний край зоны
@@ -1175,6 +1269,37 @@ namespace Writersword.Modules.TextEditor.Rendering
                     extraTop = pushBottom - yTop + 0.5f;
                 }
                 return (0f, textAreaWidthPt, extraTop);
+            }
+
+            // Накопленный сдвиг строк, уехавших на следующие страницы, и число
+            // пересечённых границ. Строки идут по возрастанию localY, поэтому
+            // сдвиг только растёт и вычисляется один раз на каждом переходе.
+            float pageShiftPt = 0f;
+            int pageCrossings = 0;
+
+            // Локальный Y строки (от верха первой строки абзаца) в систему координат
+            // зон. Пока абзац целиком на своей странице сдвиг нулевой. Как только
+            // очередная строка не помещается до низа страницы, она и все следующие
+            // физически уходят на верх следующей — и сравниваться с зонами должны
+            // уже оттуда, иначе полоса проверяется на высоту переноса выше места,
+            // где строка нарисована.
+            float ZoneY(float localYPt)
+            {
+                if (wrapPages is not { } pg) return localYPt;
+
+                float shifted = localYPt + pageShiftPt;
+                for (int k = 0; k < 8; k++)
+                {
+                    float docY = pg.ParaStartYPt + shifted;
+                    float bottomPt = pg.PageBottomPt + pageCrossings * pg.PageStepPt;
+                    if (docY + probeLineHPt <= bottomPt) break;
+
+                    float nextTopPt = pg.NextPageTopPt + pageCrossings * pg.PageStepPt;
+                    pageShiftPt += nextTopPt - docY;
+                    shifted = localYPt + pageShiftPt;
+                    pageCrossings++;
+                }
+                return shifted;
             }
 
             void ApplyBand(SKLineLayout line, (float Left, float Width, float ExtraTop) band)
@@ -1185,7 +1310,25 @@ namespace Writersword.Modules.TextEditor.Rendering
                 line.WrapExtraTopPt = band.ExtraTop;
             }
 
-            var band = ComputeBand(0f);
+            var band = ComputeBand(ZoneY(0f));
+
+            // Абзацный отступ первой строки ужимается до того, что реально влезает
+            // в полосу обтекания. Полный отступ применялся как есть: в полосе слева
+            // от объекта шириной 195 pt при отступе 191 pt строке оставалось 4 pt,
+            // и первый символ принудительно ставился по отступу — под объектом.
+            //
+            // Ужимаем до половины полосы, а НЕ до (полоса − minBandWidthPt): при
+            // привязке к порогу вытеснения отступ схлопывался почти в ноль, стоило
+            // полосе оказаться чуть выше порога, и прыгал 191 → 0.7 → 191 при
+            // перетаскивании картинки. Два независимых решения не должны делить
+            // одну константу.
+            if (hasZones && layout.FirstLineIndentPt > 0f)
+            {
+                float maxIndentPt = Math.Max(band.Width * 0.5f, 0f);
+                if (layout.FirstLineIndentPt > maxIndentPt)
+                    layout.FirstLineIndentPt = maxIndentPt;
+            }
+
             float lineWidth = Math.Max(band.Width - layout.FirstLineIndentPt, 1f);
             float currentW = 0f;
             var currentLine = new SKLineLayout { FirstCharIndex = tokens[0].GlobalIndex };
@@ -1196,7 +1339,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             void StartNewLine(int firstCharIndex)
             {
                 FinalizeLine(currentLine, layout, lineSpacing);
-                band = ComputeBand(layout.TotalHeightPt);
+                band = ComputeBand(ZoneY(layout.TotalHeightPt));
                 lineWidth = Math.Max(band.Width, 1f);
                 currentW = 0f;
                 currentLine = new SKLineLayout { FirstCharIndex = firstCharIndex };
@@ -1267,6 +1410,11 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             if (layout.Lines.Count > 0)
                 layout.Lines[^1].IsLastLine = true;
+
+            // Состояние для гистерезиса следующей пересборки.
+            layout.WrapPushedDown = hasZones
+                && layout.Lines.Count > 0
+                && layout.Lines[0].WrapExtraTopPt > 0.01f;
         }
 
         private static void AppendWordToLine(

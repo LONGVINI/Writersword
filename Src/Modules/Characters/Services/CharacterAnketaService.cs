@@ -153,15 +153,19 @@ namespace Writersword.Modules.Characters.Services
         public List<CharacterParameter> MergeParameters(IEnumerable<CharacterAnketa> anketas)
         {
             var result = new List<CharacterParameter>();
-            var existingNames = new HashSet<string>();
+            // Совпадение ищем по идентификатору поля, а не по имени: «Цвет
+            // волос» из двух анкет — одно поле, и второй раз его заводить
+            // не нужно.
+            var existingFieldIds = new HashSet<string>();
 
             foreach (var anketa in anketas)
             {
                 foreach (var field in anketa.Fields.OrderBy(f => f.Order))
                 {
-                    if (existingNames.Contains(field.Name)) continue;
+                    var fieldId = CharacterFieldId.Resolve(field);
+                    if (existingFieldIds.Contains(fieldId)) continue;
                     result.Add(FieldToParameter(field, randomize: false));
-                    existingNames.Add(field.Name);
+                    existingFieldIds.Add(fieldId);
                 }
             }
 
@@ -172,15 +176,16 @@ namespace Writersword.Modules.Characters.Services
         public List<CharacterParameter> MergeParametersRandomized(IEnumerable<CharacterAnketa> anketas)
         {
             var result = new List<CharacterParameter>();
-            var existingNames = new HashSet<string>();
+            var existingFieldIds = new HashSet<string>();
 
             foreach (var anketa in anketas)
             {
                 foreach (var field in anketa.Fields.OrderBy(f => f.Order))
                 {
-                    if (existingNames.Contains(field.Name)) continue;
+                    var fieldId = CharacterFieldId.Resolve(field);
+                    if (existingFieldIds.Contains(fieldId)) continue;
                     result.Add(FieldToParameter(field, randomize: true));
-                    existingNames.Add(field.Name);
+                    existingFieldIds.Add(fieldId);
                 }
             }
 
@@ -223,6 +228,10 @@ namespace Writersword.Modules.Characters.Services
             var param = new CharacterParameter
             {
                 Id = Guid.NewGuid().ToString(),
+                // Id опознаёт значение у конкретного персонажа, FieldId —
+                // само поле, одинаково у всех. Сравнение карточек идёт по нему.
+                FieldId = CharacterFieldId.Resolve(field),
+                IsComparable = field.IsComparable,
                 Name = field.Name,
                 Type = field.Type,
                 GroupName = field.GroupName,

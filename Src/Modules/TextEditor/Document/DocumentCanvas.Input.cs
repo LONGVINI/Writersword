@@ -136,6 +136,19 @@ namespace Writersword.Modules.TextEditor.Document
             double zoom = Zoom;
             float xPt = (float)(pt.X / zoom * PxToPt);
             float yPt = (float)(pt.Y / zoom * PxToPt);
+            // Страницы рядом: запоминаем страницу жеста и переводим точку указателя
+            // в логические координаты раскладки.
+            if (_pagesPerRow > 1)
+            {
+                List<PageRect> pressPages;
+                lock (_renderLock) { pressPages = _pages; }
+                _gesturePage = pressPages.Count > 0 ? NearestVisualPage(xPt, yPt, pressPages) : -1;
+            }
+            else
+            {
+                _gesturePage = -1;
+            }
+            (xPt, yPt) = VisualToLogicalPt(xPt, yPt, _gesturePage);
 
             // ── Проверяем ручки таблицы ПЕРВЫМИ ─────────────────────────
             // В read-only (режим сравнения) ручки не работают: ширины колонок
@@ -187,8 +200,7 @@ namespace Writersword.Modules.TextEditor.Document
                 int corner = HitTestImageHandle(xPt, yPt);
                 if (corner == 8)
                 {
-                    float canvasWPtRot = (float)(_canvasWidth * PxToPt);
-                    float pageShiftRot = Math.Max((canvasWPtRot - GetPageWidthPt()) / 2f, 0f) - _layoutPageXPt;
+                    float pageShiftRot = GetPageShiftXPt();
                     for (int ii = 0; ii < _images.Count; ii++)
                     {
                         var ie = _images[ii];
@@ -203,7 +215,7 @@ namespace Writersword.Modules.TextEditor.Document
                     _imagePreviewStartTransferred = _inlineTransferredImages.Contains(_selectedImage);
                     _imgRotStartDeg = _selectedImage.RotationDeg;
                     _imgRotPointerStartDeg = (float)(Math.Atan2(yPt - _imgRotCenterYPt, xPt - _imgRotCenterXPt) * 180.0 / Math.PI);
-                    BeginEdit("Поворот изображения");
+                    BeginImageEdit("Поворот изображения");
                     Cursor = new Cursor(StandardCursorType.Hand);
                     e.Pointer.Capture(this);
                     e.Handled = true;
@@ -228,7 +240,7 @@ namespace Writersword.Modules.TextEditor.Document
                     _imgCropStartT = _selectedImage.CropTopFrac;
                     _imgCropStartR = _selectedImage.CropRightFrac;
                     _imgCropStartB = _selectedImage.CropBottomFrac;
-                    BeginEdit(_imageCropDragging
+                    BeginImageEdit(_imageCropDragging
                         ? "Обрезка изображения"
                         : "Изменение размера изображения");
                     Cursor = ImageHandleCursor(corner);
@@ -241,8 +253,7 @@ namespace Writersword.Modules.TextEditor.Document
             // ── Выделение картинки кликом ──────────────────────────────────
             // Учитываем горизонтальный сдвиг центрирования листа — он применяется при
             // отрисовке ко всему содержимому, но не запечён в координатах раскладки.
-            float canvasWPt = (float)(_canvasWidth * PxToPt);
-            float pageShiftXPt = Math.Max((canvasWPt - GetPageWidthPt()) / 2f, 0f) - _layoutPageXPt;
+            float pageShiftXPt = GetPageShiftXPt();
             for (int ii = 0; ii < _images.Count; ii++)
             {
                 var ie = _images[ii];
@@ -277,7 +288,7 @@ namespace Writersword.Modules.TextEditor.Document
                         _imgDragStartYPt = yPt;
                         _imgDragStartOffX = ie.Block.OffsetXPt;
                         _imgDragStartOffY = ie.Block.OffsetYPt;
-                        BeginEdit("Перемещение изображения");
+                        BeginImageEdit("Перемещение изображения");
                         e.Pointer.Capture(this);
                     }
 
@@ -285,6 +296,10 @@ namespace Writersword.Modules.TextEditor.Document
                     // и показать контекстную вкладку «Формат».
                     DocVm?.FireCursorContextChanged();
                     ImageSelectionChanged?.Invoke(true);
+                    // Возвращаем фокус клавиатуры на канвас: показ контекстной вкладки
+                    // ленты мог перехватить фокус, и тогда Ctrl+C / Delete по картинке
+                    // уходили в ленту, а не в редактор — копирование не срабатывало.
+                    Focus();
                     InvalidateFull();
                     e.Handled = true;
                     return;
@@ -314,6 +329,7 @@ namespace Writersword.Modules.TextEditor.Document
                 double zoom2 = Zoom;
                 float xPtPress = (float)(pt.X / zoom2 * PxToPt);
                 float yPtPress = (float)(pt.Y / zoom2 * PxToPt);
+                (xPtPress, yPtPress) = VisualToLogicalPt(xPtPress, yPtPress);
                 var geoPress = HitTestTableCellGeometric(xPtPress, yPtPress);
                 if (geoPress.HasValue)
                 {
@@ -456,6 +472,14 @@ namespace Writersword.Modules.TextEditor.Document
             var rawPt = e.GetPosition(this);
             float xPt = (float)(rawPt.X / zoom * PxToPt);
             float yPt = (float)(rawPt.Y / zoom * PxToPt);
+            // Страницы рядом: во время жеста над объектом маппинг идёт через страницу,
+            // где жест начался — заход указателя на соседнюю страницу не даёт скачка
+            // логических координат. Вне жеста — через ближайшую страницу.
+            bool objectGesture = _imageRotating || _imageResizing || _imageDragging
+                || _tableDragMode != TableDragMode.None;
+            (xPt, yPt) = objectGesture
+                ? VisualToLogicalPt(xPt, yPt, _gesturePage)
+                : VisualToLogicalPt(xPt, yPt);
 
             // ── Поворот выделенной картинки ───────────────────────────────
             if (_imageRotating && _selectedImage is not null)
@@ -538,8 +562,20 @@ namespace Writersword.Modules.TextEditor.Document
                     return;
                 }
                 _imageDragMoved = true;
-                _selectedImage.OffsetXPt = _imgDragStartOffX + (xPt - _imgDragStartXPt);
-                _selectedImage.OffsetYPt = _imgDragStartOffY + (yPt - _imgDragStartYPt);
+                // Кламп смещений. По горизонтали — в пределах страницы с запасом.
+                // По вертикали разрешаем перенос на ЛЮБУЮ страницу документа: верхняя
+                // граница — полная высота всех страниц, поэтому картинку можно утащить
+                // хоть на последний лист (в обычном и многостраничном виде — координаты
+                // уже переведены в логические через VisualToLogicalPt). Нижняя граница
+                // (-pgH) и общий потолок спасают от потери картинки «в пустоте».
+                float pgW = GetPageWidthPt();
+                float pgH = GetPageHeightPt();
+                float docDownPt = Math.Max(pgH * 2.0f,
+                    Math.Max(1, _pages.Count) * (pgH + PageGapPt));
+                _selectedImage.OffsetXPt = Math.Clamp(
+                    _imgDragStartOffX + (xPt - _imgDragStartXPt), -pgW, pgW * 2.0);
+                _selectedImage.OffsetYPt = Math.Clamp(
+                    _imgDragStartOffY + (yPt - _imgDragStartYPt), -pgH, docDownPt);
                 RebuildLayouts();
                 InvalidateFull();
                 return;
@@ -644,6 +680,8 @@ namespace Writersword.Modules.TextEditor.Document
             double zoom = Zoom;
             float xPt = (float)(rawPt.X / zoom * PxToPt);
             float yPt = (float)(rawPt.Y / zoom * PxToPt);
+            // Страницы рядом: переводим точку указателя в логические координаты раскладки.
+            (xPt, yPt) = VisualToLogicalPt(xPt, yPt);
 
             var (pi, ci) = HitTest(rawPt);
             bool nowInCell = pi >= 0 && pi < _layouts.Count && _layouts[pi].Cell != null;
@@ -884,8 +922,8 @@ namespace Writersword.Modules.TextEditor.Document
             if (_imageResizing)
             {
                 // Фиксируем изменение размера в Undo только если реально тянули маркер.
-                if (_imageResizeMoved) CommitEdit();
-                else _pendingSnapshot = null;
+                if (_imageResizeMoved) CommitImageEdit();
+                else CancelImageEdit();
                 _imageResizing = false;
                 _imageCropDragging = false;
                 _imageResizeMoved = false;
@@ -908,8 +946,8 @@ namespace Writersword.Modules.TextEditor.Document
             if (_imageRotating)
             {
                 // Фиксируем поворот в Undo только если угол реально менялся.
-                if (_imageRotateMoved) CommitEdit();
-                else _pendingSnapshot = null;
+                if (_imageRotateMoved) CommitImageEdit();
+                else CancelImageEdit();
                 _imageRotating = false;
                 _imageRotateMoved = false;
                 e.Pointer.Capture(null);
@@ -932,8 +970,8 @@ namespace Writersword.Modules.TextEditor.Document
             if (_imageDragging)
             {
                 // Фиксируем перемещение в Undo только если картинку реально двигали.
-                if (_imageDragMoved) CommitEdit();
-                else _pendingSnapshot = null;
+                if (_imageDragMoved) CommitImageEdit();
+                else CancelImageEdit();
                 _imageDragging = false;
                 _imageDragMoved = false;
             }
@@ -996,8 +1034,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (_selectedImage is null) return -1;
 
-            float canvasWPt = (float)(_canvasWidth * PxToPt);
-            float pageShiftXPt = Math.Max((canvasWPt - GetPageWidthPt()) / 2f, 0f) - _layoutPageXPt;
+            float pageShiftXPt = GetPageShiftXPt();
 
             for (int ii = 0; ii < _images.Count; ii++)
             {
@@ -1305,7 +1342,7 @@ namespace Writersword.Modules.TextEditor.Document
             // Постоянная панель настроек с галочками будет добавлена отдельным пушем.
             if (_selectedImage is not null && e.Key == Key.F && e.KeyModifiers == KeyModifiers.None)
             {
-                BeginEdit("Режим изображения");
+                BeginImageEdit("Режим изображения");
                 if (_selectedImage.WrapMode == WrapMode.Inline)
                 {
                     var entry = _images.FirstOrDefault(x => ReferenceEquals(x.Block, _selectedImage));
@@ -1322,7 +1359,7 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     _selectedImage.WrapMode = WrapMode.Inline;
                 }
-                CommitEdit();
+                CommitImageEdit();
                 RebuildLayouts();
                 InvalidateFull();
                 e.Handled = true;

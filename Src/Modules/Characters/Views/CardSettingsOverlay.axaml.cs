@@ -81,17 +81,23 @@ namespace Writersword.Modules.Characters.Views
         private CharacterListItemViewModel? _item;
         private CharactersViewModel? _owner;
         private CardSettingsDraft? _draft;
+        private Action? _applied;
 
         public CardSettingsOverlay()
         {
             InitializeComponent();
         }
 
-        /// <summary>Показать настройки для карточки персонажа.</summary>
-        public void ShowFor(CharacterListItemViewModel item, CharactersViewModel? owner)
+        /// <summary>
+        /// Показать настройки для карточки персонажа. Колбэк applied вызывается
+        /// после применения черновика по OK — вызывающая сторона может
+        /// синхронизировать своё состояние (карточка персонажа в редакторе).
+        /// </summary>
+        public void ShowFor(CharacterListItemViewModel item, CharactersViewModel? owner, Action? applied = null)
         {
             _item = item;
             _owner = owner;
+            _applied = applied;
             _draft = new CardSettingsDraft
             {
                 Color = item.Color,
@@ -130,6 +136,7 @@ namespace Writersword.Modules.Characters.Views
             _draft = null;
             _item = null;
             _owner = null;
+            _applied = null;
         }
 
         // OK: черновик применяется к карточке; взведённые «Ко всем» раскатывают
@@ -149,6 +156,8 @@ namespace Writersword.Modules.Characters.Views
                     _owner?.ApplyBookmarkToAllGroups(_draft.Bookmark);
                 if (GetToggle("ThicknessAllToggle"))
                     _owner?.ApplyFrameThicknessToAll(_draft.Thickness);
+
+                _applied?.Invoke();
             }
             CloseOverlay();
         }

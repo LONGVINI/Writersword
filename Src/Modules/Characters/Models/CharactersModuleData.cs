@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Writersword.Core.Models.Preview;
 
 namespace Writersword.Modules.Characters.Models
 {
@@ -23,6 +24,17 @@ namespace Writersword.Modules.Characters.Models
         public List<CharacterRelationship> Relationships { get; set; } = new();
         public List<CharacterAnketa> CustomAnketas { get; set; } = new();
         public List<CharacterFolder> Folders { get; set; } = new();
+
+        /// <summary>
+        /// Плоские снимки персонажей для чужих модулей. Пересобираются при
+        /// каждом сохранении из Characters, при загрузке не применяются —
+        /// это производные данные, источник истины остаётся один.
+        ///
+        /// Лежат в файле затем, чтобы карточку персонажа было чем показать,
+        /// когда модуля Characters в сборке нет: ссылка из текста остаётся
+        /// живой, меняться данные при этом не могут.
+        /// </summary>
+        public List<EntityPreview> Preview { get; set; } = new();
     }
 
     /// <summary>

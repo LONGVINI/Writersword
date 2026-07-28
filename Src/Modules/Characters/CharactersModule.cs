@@ -10,6 +10,7 @@ using System.Reactive;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services.UI;
+using Writersword.Core.Models.Preview;
 using Writersword.Core.Models.Settings;
 using Writersword.Core.Services;
 using Writersword.Modules.Characters.Interfaces;
@@ -24,7 +25,7 @@ using Writersword.Modules.Common;
 
 namespace Writersword.Modules.Characters
 {
-    public class CharactersModule : BaseModule, IHotKeyProvider, IPreparedDataModule
+    public class CharactersModule : BaseModule, IHotKeyProvider, IPreparedDataModule, IEntityPreviewProvider
     {
         private static readonly ILogger _logger = Log.ForContext<CharactersModule>();
 
@@ -51,6 +52,11 @@ namespace Writersword.Modules.Characters
             var avatarsDir = System.IO.Path.Combine(
                 GetModuleDirectory(), "Avatars");
             _avatarService.RegisterPackDirectory(avatarsDir);
+
+            // Свои картинки меток рисуются прямо из модели в шаблонах списков
+            // и карточки — конвертеру нужен доступ к хранилищу файлов проекта.
+            Converters.LabelIconToImageConverter.AvatarService = _avatarService;
+            Views.LabelEditorOverlay.AvatarService = _avatarService;
         }
 
         public override string moduleType => "Characters";
@@ -195,6 +201,48 @@ namespace Writersword.Modules.Characters
             }
         }
 
+        // ── Снимки для чужих модулей ──────────────────────────────────────
+
+        public string PreviewKind => "character";
+
+        /// <summary>
+        /// Плоский снимок каждого персонажа: столько, сколько нужно чужому
+        /// модулю, чтобы показать карточку по ссылке, и ни полем больше.
+        /// Внутренняя модель персонажа при этом остаётся свободной —
+        /// её правки не ломают тех, кто читает снимки.
+        /// </summary>
+        public IReadOnlyList<EntityPreview> GetPreviews()
+        {
+            return _characterService.GetAll()
+                .Select(c => new EntityPreview
+                {
+                    Id = c.Id,
+                    Title = c.Name,
+                    // Подзаголовок — короткое описание; если его нет, первая
+                    // строка заметки. Заметка целиком снаружи не нужна.
+                    Subtitle = !string.IsNullOrWhiteSpace(c.ShortDescription)
+                        ? c.ShortDescription
+                        : FirstLine(c.Note),
+                    Image = c.AvatarPath,
+                    Color = c.Color,
+                    // Наружу выходят только метки, помеченные к показу на
+                    // карточке: «острые уши у эльфов» остаются внутри модуля.
+                    Badges = c.Labels
+                        .Where(l => l.ShowOnCard)
+                        .OrderBy(l => l.Order)
+                        .Select(l => l.Name)
+                        .ToList()
+                })
+                .ToList();
+        }
+
+        private static string FirstLine(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+            var line = text.Split('\n')[0].Trim();
+            return line.Length <= 120 ? line : line.Substring(0, 120);
+        }
+
         // ── Сериализация ──────────────────────────────────────────────────
 
         private CharactersModuleData? _moduleData;
@@ -213,6 +261,7 @@ namespace Writersword.Modules.Characters
             data.IsFirstLaunch = false;
             if (_anketaService is CharacterAnketaService as_)
                 data.CustomAnketas = as_.GetCustom().ToList();
+            data.Preview = GetPreviews().ToList();
             // Verbose вместо Debug: вызывается фоновым аутосейвом каждые несколько
             // секунд и при штатном уровне лога только засоряет вывод.
             _logger.Verbose("GetCustomData: {CharCount} characters, {FolderCount} folders, {RelCount} relationships",
@@ -270,6 +319,10 @@ namespace Writersword.Modules.Characters
                     moduleData.Folders?.Count ?? 0,
                     moduleData.Relationships?.Count ?? 0,
                     isFirst);
+
+                // Картинки меток кэшируются по ссылке, а в другом проекте
+                // за той же ссылкой лежит другой файл.
+                Converters.LabelIconToImageConverter.ResetCache();
 
                 if (_relationshipService is RelationshipService rs)
                     rs.LoadRelationships(moduleData.Relationships ?? new List<CharacterRelationship>());

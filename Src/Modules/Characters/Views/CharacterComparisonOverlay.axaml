@@ -1,0 +1,134 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:cmp="using:Writersword.Modules.Characters.ViewModels.Comparison"
+             xmlns:icv="using:Writersword.Infrastructure.Converters"
+             xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
+             x:Class="Writersword.Modules.Characters.Views.CharacterComparisonOverlay"
+             x:DataType="cmp:CharacterComparisonViewModel"
+             IsVisible="False">
+
+	<!-- Сравнение карточек: персонажи в колонках, поля в строках.
+	     Оформление как у остальных окон модуля — скрим, центральная панель.
+
+	     Таблица собрана вложенными списками, а не сеткой с колонками:
+	     число персонажей заранее неизвестно, а ширина колонки одна и та же
+	     в шапке и в строках, поэтому они и так стоят ровно. -->
+
+	<Grid>
+		<Border Background="#F2000000" PointerPressed="OnScrimPressed"/>
+
+		<Border HorizontalAlignment="Center" VerticalAlignment="Center"
+		        Margin="24" MaxWidth="1100" MaxHeight="700"
+		        Background="{DynamicResource BgBaseBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="1"
+		        CornerRadius="16"
+		        Padding="20">
+			<Border.Effect>
+				<DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.55" Color="#000000"/>
+			</Border.Effect>
+
+			<Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
+
+				<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+					<StackPanel Grid.Column="0" Spacing="2">
+						<TextBlock Text="{x:Static loc:CharactersStrings.Compare_Title}"
+						           FontSize="16" FontWeight="SemiBold"
+						           Foreground="{DynamicResource TextPrimaryBrush}"/>
+						<TextBlock Text="{Binding Summary}"
+						           FontSize="11"
+						           Foreground="{DynamicResource TextSecondaryBrush}"/>
+					</StackPanel>
+					<Button Grid.Column="1" Content="✕" Click="OnCloseClick"
+					        Background="Transparent" BorderThickness="0"
+					        Foreground="{DynamicResource TextSecondaryBrush}"
+					        FontSize="14" Padding="6,2"/>
+				</Grid>
+
+				<TextBlock Grid.Row="1"
+				           Text="{x:Static loc:CharactersStrings.Compare_Empty}"
+				           FontSize="12"
+				           TextWrapping="Wrap"
+				           Foreground="{DynamicResource TextSecondaryBrush}"
+				           IsVisible="{Binding IsEmpty}"/>
+
+				<ScrollViewer Grid.Row="2"
+				              HorizontalScrollBarVisibility="Auto"
+				              IsVisible="{Binding HasRows}">
+					<StackPanel Spacing="0">
+
+						<!-- Шапка: имена персонажей -->
+						<Grid ColumnDefinitions="180,*" Margin="0,0,0,8">
+							<TextBlock Grid.Column="0" Text=" "/>
+							<ItemsControl Grid.Column="1" ItemsSource="{Binding Columns}">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate>
+										<StackPanel Orientation="Horizontal"/>
+									</ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<DataTemplate x:DataType="cmp:CharacterComparisonColumn">
+										<StackPanel Orientation="Horizontal" Spacing="6"
+										            Width="{Binding Width}">
+											<Border Width="10" Height="10" CornerRadius="5"
+											        VerticalAlignment="Center"
+											        Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
+											<TextBlock Text="{Binding Name}"
+											           FontSize="12" FontWeight="SemiBold"
+											           TextTrimming="CharacterEllipsis"
+											           VerticalAlignment="Center"
+											           Foreground="{DynamicResource TextPrimaryBrush}"/>
+										</StackPanel>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+						</Grid>
+
+						<ItemsControl ItemsSource="{Binding Rows}">
+							<ItemsControl.ItemTemplate>
+								<DataTemplate x:DataType="cmp:CharacterComparisonRow">
+									<Grid ColumnDefinitions="180,*"
+									      Margin="0,0,0,2">
+										<!-- Строка, где у всех одно и то же, приглушена:
+										     именно она означает, что персонажи здесь
+										     неразличимы, и это стоит увидеть сразу. -->
+										<TextBlock Grid.Column="0"
+										           Text="{Binding FieldName}"
+										           FontSize="12"
+										           VerticalAlignment="Center"
+										           TextTrimming="CharacterEllipsis"
+										           Margin="0,0,12,0"
+										           Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+										<Border Grid.Column="1"
+										        Background="{DynamicResource BgPanelBrush}"
+										        CornerRadius="6"
+										        Padding="8,6"
+										        Opacity="{Binding AllSame, Converter={x:Static cmp:SameRowOpacityConverter.Instance}}">
+											<ItemsControl ItemsSource="{Binding Cells}">
+												<ItemsControl.ItemsPanel>
+													<ItemsPanelTemplate>
+														<StackPanel Orientation="Horizontal"/>
+													</ItemsPanelTemplate>
+												</ItemsControl.ItemsPanel>
+												<ItemsControl.ItemTemplate>
+													<DataTemplate x:DataType="cmp:CharacterComparisonCell">
+														<TextBlock Text="{Binding Text}"
+														           Width="{Binding Width}"
+														           FontSize="12"
+														           TextTrimming="CharacterEllipsis"
+														           Foreground="{DynamicResource TextPrimaryBrush}"/>
+													</DataTemplate>
+												</ItemsControl.ItemTemplate>
+											</ItemsControl>
+										</Border>
+									</Grid>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
+					</StackPanel>
+				</ScrollViewer>
+			</Grid>
+		</Border>
+	</Grid>
+</UserControl>

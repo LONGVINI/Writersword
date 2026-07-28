@@ -103,10 +103,16 @@
                                    Text="{x:Static loc:CharactersStrings.Templates_CustomHeader}"
                                    FontSize="11" FontWeight="SemiBold"
                                    Foreground="{DynamicResource TextSecondaryBrush}"/>
-                        <Button Grid.Column="1"
-                                Content="{x:Static loc:CharactersStrings.Templates_CreateCustom}"
-                                Command="{Binding CreateCustomTemplateCommand}"
-                                FontSize="11" Padding="8,3"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                            <!-- Набор не обязательно составлять с нуля: чужой,
+                                 подробный, скачивается и правится под себя. -->
+                            <Button Content="{x:Static loc:CharactersStrings.Templates_Import}"
+                                    Click="OnImportTemplateClick"
+                                    FontSize="11" Padding="8,3"/>
+                            <Button Content="{x:Static loc:CharactersStrings.Templates_CreateCustom}"
+                                    Command="{Binding CreateCustomTemplateCommand}"
+                                    FontSize="11" Padding="8,3"/>
+                        </StackPanel>
                     </Grid>
                     <TextBlock Text="{x:Static loc:CharactersStrings.Templates_NoCustom}"
                                FontSize="12"
@@ -135,6 +141,20 @@
                                         <StackPanel Grid.Column="1"
                                                     Orientation="Horizontal" Spacing="6"
                                                     VerticalAlignment="Center" Margin="12,0,0,0">
+                                            <!-- Наполнение набора полями. Без этого
+                                                 созданный набор оставался пустым:
+                                                 создать, скопировать и удалить было
+                                                 чем, а добавить поле — нечем. -->
+                                            <Button Content="{x:Static loc:CharactersStrings.Templates_Edit}"
+                                                    Click="OnEditCustomTemplateClick"
+                                                    FontSize="11" Padding="8,4"/>
+                                            <!-- Набор — определение полей, оно
+                                                 самодостаточно и переносится
+                                                 одним файлом между проектами
+                                                 и людьми. -->
+                                            <Button Content="{x:Static loc:CharactersStrings.Templates_Export}"
+                                                    Click="OnExportTemplateClick"
+                                                    FontSize="11" Padding="8,4"/>
                                             <Button Content="{x:Static loc:CharactersStrings.Templates_Delete}"
                                                     Command="{ReflectionBinding $parent[UserControl].DataContext.DeleteCustomTemplateCommand}"
                                                     CommandParameter="{Binding AnketaId}"

@@ -180,6 +180,21 @@
   <data name="Button_DeleteAvatar" xml:space="preserve">
     <value>Удалить аватар</value>
   </data>
+  <data name="Field_Labels" xml:space="preserve">
+    <value>Метки</value>
+  </data>
+  <data name="Button_AddLabel" xml:space="preserve">
+    <value>Добавить метку</value>
+  </data>
+  <data name="Label_Dead" xml:space="preserve">
+    <value>Мёртв</value>
+  </data>
+  <data name="Label_AddPlaceholder" xml:space="preserve">
+    <value>Новая метка... (Enter)</value>
+  </data>
+  <data name="Tag_AddPlaceholder" xml:space="preserve">
+    <value>Добавить тег... (Enter)</value>
+  </data>
   <data name="Button_AddStatus" xml:space="preserve">
     <value>Добавить статус</value>
   </data>
@@ -607,16 +622,256 @@
     <value>Ключевое событие</value>
   </data>
   <data name="Param_AddNumeric" xml:space="preserve">
-    <value># Числовой</value>
+    <value>Шкала</value>
   </data>
   <data name="Param_AddText" xml:space="preserve">
-    <value>T Текст</value>
+    <value>Текст</value>
   </data>
   <data name="Param_AddStateList" xml:space="preserve">
-    <value>= Список</value>
+    <value>Выбор</value>
   </data>
   <data name="Param_AddBoolean" xml:space="preserve">
-    <value>? Да/Нет</value>
+    <value>Да или нет</value>
+  </data>
+  <data name="Param_HintScale" xml:space="preserve">
+    <value>Значение на шкале, рисуется кругляшками: Агрессия 3 из 5</value>
+  </data>
+  <data name="Param_HintText" xml:space="preserve">
+    <value>Свободный текст: особые приметы, манера речи</value>
+  </data>
+  <data name="Param_HintChoice" xml:space="preserve">
+    <value>Один вариант из нескольких: темперамент, звание</value>
+  </data>
+  <data name="Param_HintYesNo" xml:space="preserve">
+    <value>Простое да или нет: умеет читать, имеет титул</value>
+  </data>
+  <data name="Param_NotApplicable" xml:space="preserve">
+    <value>К этому персонажу не относится</value>
+  </data>
+  <data name="Param_NotApplicableHint" xml:space="preserve">
+    <value>Это не то же самое, что нулевое значение. Страх 0 — ничего не боится; не относится — не способен испытывать страх в принципе. Значение сохраняется и вернётся, если снять отметку.</value>
+  </data>
+  <data name="Param_MoveUpTooltip" xml:space="preserve">
+    <value>Поднять выше</value>
+  </data>
+  <data name="Block_General" xml:space="preserve">
+    <value>Общее</value>
+  </data>
+  <data name="Block_Appearance" xml:space="preserve">
+    <value>Появление в тексте</value>
+  </data>
+  <data name="Block_DataSets" xml:space="preserve">
+    <value>Наборы полей</value>
+  </data>
+  <data name="Onboarding_Back" xml:space="preserve">
+    <value>Назад</value>
+  </data>
+  <data name="Compare_Title" xml:space="preserve">
+    <value>Сравнение персонажей</value>
+  </data>
+  <data name="Compare_Summary" xml:space="preserve">
+    <value>Карточек: {0}, общих полей: {1}</value>
+  </data>
+  <data name="Compare_Empty" xml:space="preserve">
+    <value>Сравнивать нечего: у показанных персонажей нет общих полей. Общие поля появляются, когда к карточкам подключён один и тот же набор.</value>
+  </data>
+  <data name="Compare_Button" xml:space="preserve">
+    <value>Сравнить</value>
+  </data>
+  <data name="Compare_Hint" xml:space="preserve">
+    <value>Показывает рядом тех, кто сейчас в списке. Одинаковые значения по всей строке приглушены — это и есть знак, что персонажи здесь неразличимы.</value>
+  </data>
+  <data name="Field_GroupAddresses" xml:space="preserve">
+    <value>Обращения по группам</value>
+  </data>
+  <data name="Hint_GroupAddresses" xml:space="preserve">
+    <value>Правило для целой папки: все из «Друзей» зовут её Аля. Личное обращение из связи сильнее группового, групповое — сильнее общего. Повод пишется через тире.</value>
+  </data>
+  <data name="GroupAddress_Placeholder" xml:space="preserve">
+    <value>Как зовут в этой группе... (Enter)</value>
+  </data>
+  <data name="Field_DefaultAddress" xml:space="preserve">
+    <value>Как к нему обращаются</value>
+  </data>
+  <data name="Hint_DefaultAddress" xml:space="preserve">
+    <value>Так его зовут все, у кого нет своего обращения. Личные — «Алинусик» от парня, «Хрюшка» в шутку — задаются в связях: обращение принадлежит отношениям, а не персонажу.</value>
+  </data>
+  <data name="Placeholder_DefaultAddress" xml:space="preserve">
+    <value>Алина</value>
+  </data>
+  <data name="Block_Who" xml:space="preserve">
+    <value>Кто это</value>
+  </data>
+  <data name="Block_Names" xml:space="preserve">
+    <value>Имена и обращения</value>
+  </data>
+  <data name="Block_Classification" xml:space="preserve">
+    <value>Классификация</value>
+  </data>
+  <data name="Block_Gallery" xml:space="preserve">
+    <value>Галерея</value>
+  </data>
+  <data name="Gallery_Hint" xml:space="preserve">
+    <value>Эскизы, референсы, арт — всё, на что смотрят, когда пишут сцену. Это не выбор значка: щелчок по картинке делает её аватаром, крестик убирает из галереи.</value>
+  </data>
+  <data name="Gallery_Add" xml:space="preserve">
+    <value>Добавить</value>
+  </data>
+  <data name="Gallery_Empty" xml:space="preserve">
+    <value>Пусто. Сюда складывают образы персонажа, чтобы держать их перед глазами.</value>
+  </data>
+  <data name="Gallery_UseAsAvatar" xml:space="preserve">
+    <value>Установить как аватар</value>
+  </data>
+  <data name="Gallery_Remove" xml:space="preserve">
+    <value>Убрать из галереи</value>
+  </data>
+  <data name="Block_Group" xml:space="preserve">
+    <value>Это группа, а не человек</value>
+  </data>
+  <data name="Group_Hint" xml:space="preserve">
+    <value>Народ, семья, отряд, организация. Карточка та же — меняется только вид в списках: у группы своя закладка на уголке.</value>
+  </data>
+  <data name="Group_Population" xml:space="preserve">
+    <value>Сколько их</value>
+  </data>
+  <data name="Group_PopulationPlaceholder" xml:space="preserve">
+    <value>Тысяч десять, точно никто не считал</value>
+  </data>
+  <data name="Sets_EmptyHint" xml:space="preserve">
+    <value>Пока ничего не подключено — и это нормально: карточке хватает имени, заметки и меток. Набор пригодится, когда захочется описывать всех героев по одним и тем же пунктам.</value>
+  </data>
+  <data name="Sets_FieldCount" xml:space="preserve">
+    <value>полей:</value>
+  </data>
+  <data name="Block_DataSetsHint" xml:space="preserve">
+    <value>Наборы полей — внешность, характеристики, свои анкеты — подключаются на вкладке «Параметры» и появятся здесь.</value>
+  </data>
+  <data name="Templates_Export" xml:space="preserve">
+    <value>Сохранить в файл</value>
+  </data>
+  <data name="Templates_Import" xml:space="preserve">
+    <value>Открыть набор</value>
+  </data>
+  <data name="Templates_Edit" xml:space="preserve">
+    <value>Поля</value>
+  </data>
+  <data name="AnketaEditor_Title" xml:space="preserve">
+    <value>Набор полей</value>
+  </data>
+  <data name="AnketaEditor_Name" xml:space="preserve">
+    <value>Название набора</value>
+  </data>
+  <data name="AnketaEditor_Description" xml:space="preserve">
+    <value>Для чего он</value>
+  </data>
+  <data name="AnketaEditor_Empty" xml:space="preserve">
+    <value>Полей пока нет. Добавьте нужные — набор это просто пачка полей, ничего больше.</value>
+  </data>
+  <data name="AnketaEditor_FieldName" xml:space="preserve">
+    <value>Название поля</value>
+  </data>
+  <data name="AnketaEditor_FieldHint" xml:space="preserve">
+    <value>Подсказка рядом с полем</value>
+  </data>
+  <data name="AnketaEditor_ScaleLabels" xml:space="preserve">
+    <value>Слова для делений</value>
+  </data>
+  <data name="AnketaEditor_ScaleLabelsHint" xml:space="preserve">
+    <value>спокоен, сдержан, заводится, взрывается, неуправляем</value>
+  </data>
+  <data name="AnketaEditor_Choices" xml:space="preserve">
+    <value>Варианты через запятую</value>
+  </data>
+  <data name="AnketaEditor_Comparable" xml:space="preserve">
+    <value>Сравнивать между персонажами</value>
+  </data>
+  <data name="AnketaEditor_ComparableHint" xml:space="preserve">
+    <value>Данные — рост, сила, цвет глаз — попадают в таблицы сравнения. Упражнения вроде «опишите, как персонаж повёл бы себя» ценны тем, что заставили подумать, а не тем, что попали в таблицу.</value>
+  </data>
+  <data name="AnketaEditor_Save" xml:space="preserve">
+    <value>Готово</value>
+  </data>
+  <data name="AnketaEditor_Cancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="Hint_SetsMovedShort" xml:space="preserve">
+    <value>Наборы подключаются в «Общем»</value>
+  </data>
+  <data name="Hint_Sets" xml:space="preserve">
+    <value>Набор — готовая пачка полей: внешность, характеристики, своя анкета. Подключайте нужное: карточка складывается из наборов, заранее ничего не задано.</value>
+  </data>
+  <data name="Anketa_Attached" xml:space="preserve">
+    <value>Подключённые наборы</value>
+  </data>
+  <data name="Anketa_DetachTip" xml:space="preserve">
+    <value>Отключить набор</value>
+  </data>
+  <data name="Anketa_DetachHint" xml:space="preserve">
+    <value>Набор перестанет быть частью карточки. Значения останутся на месте — поля убираются по одному и осознанно.</value>
+  </data>
+  <data name="Relationship_FilterPositive" xml:space="preserve">
+    <value>Только тёплые связи</value>
+  </data>
+  <data name="Relationship_FilterNegative" xml:space="preserve">
+    <value>Только враждебные связи</value>
+  </data>
+  <data name="Relationship_FilterHint" xml:space="preserve">
+    <value>Повторное нажатие снимает фильтр. Прячутся только линии — сами связи остаются нетронутыми.</value>
+  </data>
+  <data name="Hint_Labels" xml:space="preserve">
+    <value>Видимый знак: значок, цвет, эффект на карточке. Метки показываются в списках — этим они и отличаются от тегов.</value>
+  </data>
+  <data name="Hint_Tags" xml:space="preserve">
+    <value>Невидимая классификация для фильтров списка. На карточке ничего не появится — сюда то, по чему ищете, а не то, на что смотрите.</value>
+  </data>
+  <data name="Hint_AlternateNames" xml:space="preserve">
+    <value>Прежние и будущие имена, прозвища, титулы. Поиск найдёт персонажа по любому из них, стрелка поднимает имя наверх. Можно сразу с пометкой: Диана — после перехода. Щелчок по имени вернёт его в поле для правки.</value>
+  </data>
+  <data name="Hint_Note" xml:space="preserve">
+    <value>Что угодно своими словами. Здесь ничего не обязательно и ничего не считается — карточка не анкета для заполнения.</value>
+  </data>
+  <data name="Param_ValueNotePlaceholder" xml:space="preserve">
+    <value>Примечание к значению — своими словами</value>
+  </data>
+  <data name="Field_AlternateNames" xml:space="preserve">
+    <value>Другие имена</value>
+  </data>
+  <data name="Name_AddPlaceholder" xml:space="preserve">
+    <value>Ещё имя, можно с пометкой через тире... (Enter)</value>
+  </data>
+  <data name="Name_MakePrimary" xml:space="preserve">
+    <value>Показывать это имя в списках</value>
+  </data>
+  <data name="Field_Note" xml:space="preserve">
+    <value>Заметка</value>
+  </data>
+  <data name="Placeholder_Note" xml:space="preserve">
+    <value>Что угодно о персонаже — своими словами</value>
+  </data>
+  <data name="Button_AddSet" xml:space="preserve">
+    <value>Добавить набор</value>
+  </data>
+  <data name="Relationship_DropHint" xml:space="preserve">
+    <value>Перетащите персонажа на полотно, чтобы связать</value>
+  </data>
+  <data name="Relationship_CallsAs" xml:space="preserve">
+    <value>Называет его</value>
+  </data>
+  <data name="Relationship_CallsAsHint" xml:space="preserve">
+    <value>Как этот персонаж зовёт того. Вариантов может быть несколько — повод пишется через тире: «Алинусик — нежно», «Хрюшка — в шутку». Если своего обращения нет, работает общее из карточки.</value>
+  </data>
+  <data name="Relationship_CallsAsPlaceholder" xml:space="preserve">
+    <value>Добавить имя... (Enter)</value>
+  </data>
+  <data name="Relationship_Candidates" xml:space="preserve">
+    <value>Персонажи</value>
+  </data>
+  <data name="Relationship_FilterAll" xml:space="preserve">
+    <value>Все</value>
+  </data>
+  <data name="Relationship_SelectHint" xml:space="preserve">
+    <value>Нажмите на персонажа на полотне, чтобы описать связь</value>
   </data>
   <data name="Param_DescriptionPlaceholder" xml:space="preserve">
     <value>Описание параметра (подсказка)</value>

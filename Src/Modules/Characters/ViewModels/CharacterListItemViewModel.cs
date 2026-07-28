@@ -1,6 +1,7 @@
 ﻿using Avalonia.Media.Imaging;
 using ReactiveUI;
 using System;
+using System.Linq;
 using System.Reactive;
 using System.Threading.Tasks;
 using Writersword.Modules.Characters.Interfaces;
@@ -8,8 +9,17 @@ using Writersword.Src.Modules.Characters.Resources;
 
 namespace Writersword.Modules.Characters.ViewModels
 {
-    public class CharacterListItemViewModel : ReactiveObject
+    public class CharacterListItemViewModel : ReactiveObject, Controls.IRowHeight
     {
+        /// <summary>
+        /// Высота строки в боковом списке редактора. Раскладка спрашивает её
+        /// до создания контрола, шаблон берёт её же — расчёт скролла и
+        /// нарисованная строка не расходятся по определению. В величину входят
+        /// внешние отступы баннера: раскладка считает шаг списка, а не размер
+        /// содержимого.
+        /// </summary>
+        public double RowHeight => 52;
+
         private bool _isBeingNamed;
         private string _inlineName = string.Empty;
         private bool _isRenaming;
@@ -29,10 +39,42 @@ namespace Writersword.Modules.Characters.ViewModels
         public string Name
         {
             get => _name;
-            internal set => this.RaiseAndSetIfChanged(ref _name, value);
+            internal set
+            {
+                this.RaiseAndSetIfChanged(ref _name, value);
+                // Символ-заглушка выводится из имени, когда иконка не задана —
+                // переименование обновляет и его.
+                this.RaisePropertyChanged(nameof(FallbackIcon));
+            }
         }
 
-        public string ShortDescription { get; }
+        private string _shortDescription;
+        public string ShortDescription
+        {
+            get => _shortDescription;
+            internal set => this.RaiseAndSetIfChanged(ref _shortDescription, value);
+        }
+
+        // ── Совпадение при поиске ─────────────────────────────────────────
+        // Имя, по которому карточка нашлась, если это не отображаемое имя.
+        // Без этого поиск по списку имён работает вслепую: набрал «Вадим» —
+        // в результатах «Диана», и непонятно, при чём тут она.
+        //
+        // Значение проставляется один раз при построении результата поиска,
+        // а не вычисляется в строке списка: на трёх сотнях карточек пересчёт
+        // на каждый символ запроса был бы заметен.
+        private string _matchedName = string.Empty;
+        public string MatchedName
+        {
+            get => _matchedName;
+            internal set
+            {
+                this.RaiseAndSetIfChanged(ref _matchedName, value);
+                this.RaisePropertyChanged(nameof(HasMatchedName));
+            }
+        }
+
+        public bool HasMatchedName => !string.IsNullOrWhiteSpace(_matchedName);
 
         public string Color
         {
@@ -44,7 +86,63 @@ namespace Writersword.Modules.Characters.ViewModels
             }
         }
 
-        public string FallbackIcon { get; }
+        // Наружу отдаётся готовый символ для показа: заданная иконка или
+        // первая буква имени (Models.CharacterGlyph). Сырое значение из
+        // модели хранится в поле и наружу не выходит.
+        private string _fallbackIcon;
+        public string FallbackIcon
+        {
+            get => Models.CharacterGlyph.Resolve(_fallbackIcon, _name);
+            internal set => this.RaiseAndSetIfChanged(ref _fallbackIcon, value);
+        }
+
+        // ── Метки ─────────────────────────────────────────────────────────
+        // Снимок меток персонажа для отрисовки на карточке. Обновляется
+        // синхронизацией из карточки персонажа (SetLabels).
+        private System.Collections.Generic.List<Models.CharacterLabel> _labels = new();
+
+        /// <summary>Есть встроенная метка «Мёртв» — карточка получает
+        /// крестик-бейдж (объект-носитель смысла).</summary>
+        public bool IsDead =>
+            _labels.Any(l => l.Id == Models.CharacterBuiltinLabels.DeadId);
+
+        /// <summary>Любая метка с эффектом Dim (включая «Мёртв») затемняет
+        /// карточку. Затемнение — усилитель, не носитель смысла.</summary>
+        public bool HasDimEffect =>
+            _labels.Any(l => l.Effect == Models.CharacterLabelEffect.Dim);
+
+        /// <summary>Приглушение строки бокового списка при эффекте Dim.</summary>
+        public double DeadRowOpacity => HasDimEffect ? 0.55 : 1.0;
+
+        // На карточке списка показываются первые метки (по порядку пользователя),
+        // остальные сворачиваются в «+N». Встроенная «Мёртв» исключается — у неё
+        // собственный крестик-бейдж, дубль не нужен.
+        private const int MaxCardLabels = 3;
+
+        public System.Collections.Generic.IReadOnlyList<Models.CharacterLabel> CardLabels =>
+            _labels.Where(l => l.ShowOnCard && l.Id != Models.CharacterBuiltinLabels.DeadId)
+                   .OrderBy(l => l.Order)
+                   .Take(MaxCardLabels)
+                   .ToList();
+
+        public int CardLabelsOverflow => System.Math.Max(0,
+            _labels.Count(l => l.ShowOnCard && l.Id != Models.CharacterBuiltinLabels.DeadId) - MaxCardLabels);
+
+        public bool HasCardLabelsOverflow => CardLabelsOverflow > 0;
+        public string CardLabelsOverflowText => $"+{CardLabelsOverflow}";
+
+        internal void SetLabels(System.Collections.Generic.List<Models.CharacterLabel> labels)
+        {
+            _labels = labels ?? new();
+            this.RaisePropertyChanged(nameof(IsDead));
+            this.RaisePropertyChanged(nameof(HasDimEffect));
+            this.RaisePropertyChanged(nameof(DeadRowOpacity));
+            this.RaisePropertyChanged(nameof(CardLabels));
+            this.RaisePropertyChanged(nameof(CardLabelsOverflow));
+            this.RaisePropertyChanged(nameof(HasCardLabelsOverflow));
+            this.RaisePropertyChanged(nameof(CardLabelsOverflowText));
+        }
+
         public string? AvatarPath => _avatarPath;
         public bool IsCollective { get; }
 
@@ -326,22 +424,29 @@ namespace Writersword.Modules.Characters.ViewModels
         {
             Id = character.Id;
             _name = character.Name;
-            ShortDescription = character.ShortDescription;
+            _shortDescription = character.ShortDescription;
             _color = character.Color;
             _avatarRing = character.AvatarRing;
             _groupBookmark = character.GroupBookmark;
             _frameThickness = character.FrameThickness;
             _avatarStrip = character.AvatarStrip;
-            FallbackIcon = character.FallbackIcon;
+            _fallbackIcon = character.FallbackIcon;
             IsCollective = character.IsCollective;
             RelationshipsCount = relationshipsCount;
             IsNewlyCreated = isNewlyCreated;
             _avatarPath = character.AvatarPath;
             _avatarService = avatarService;
+            _labels = character.Labels?.ToList() ?? new();
 
             _isBeingNamed = isNewlyCreated;
             _inlineName = isNewlyCreated ? string.Empty : character.Name;
         }
+        /// <summary>
+        /// Обновить аватар строки извне — например, при отмене смены аватара,
+        /// когда карточка персонажа уже закрыта.
+        /// </summary>
+        public void ApplyAvatarRef(string? avatarRef) => SetAvatarRef(avatarRef);
+
         private void SetAvatarRef(string? avatarRef)
         {
             _bitmapLoaded = false;

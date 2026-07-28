@@ -122,6 +122,8 @@ namespace Writersword.Modules.TextEditor.Contracts
         void ToggleImageFlipVertical();
         void SetImageCropMode(bool on);
         bool GetImageCropMode();
+        void SetImageWrapPadding(double topPt, double bottomPt, double leftPt, double rightPt);
+        (double TopPt, double BottomPt, double LeftPt, double RightPt)? GetSelectedImageWrapPadding();
 
         // ── Макет страницы ────────────────────────────────────────────────
         void SetPageSize(PaperSize size);

@@ -1,0 +1,232 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tpl="using:Writersword.Modules.Characters.ViewModels.Templates"
+             xmlns:enums="using:Writersword.Modules.Characters.Models.Enums"
+             xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             x:Class="Writersword.Modules.Characters.Views.AnketaEditorOverlay"
+             x:DataType="tpl:AnketaEditorDraft"
+             IsVisible="False">
+
+	<!-- Конструктор набора полей. Оформление и поведение — как у редактора
+	     метки: скрим на модуль (клик не закрывает), центральная панель.
+	     Правки живут в черновике и применяются по «Готово»; отмена закрывает
+	     без изменений.
+
+	     Здесь задаётся определение полей, а не значения: имя, тип, подсказка,
+	     подписи делений шкалы. Определение живёт отдельно от карточек — иначе
+	     шкалы разных персонажей несравнимы между собой. -->
+
+	<UserControl.Styles>
+		<Style Selector="TextBlock.fieldLabel">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="TextBox.field">
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="Padding" Value="8,6"/>
+		</Style>
+		<Style Selector="Border.fieldCard">
+			<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="8"/>
+			<Setter Property="Padding" Value="12"/>
+		</Style>
+		<Style Selector="Button.typeOpt">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Padding" Value="10,4"/>
+			<Setter Property="CornerRadius" Value="12"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Margin" Value="0,0,6,0"/>
+		</Style>
+		<Style Selector="Button.iconBtn">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="2"/>
+			<Setter Property="Width" Value="20"/>
+			<Setter Property="Height" Value="20"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid>
+		<!-- Скрим: затемняет и блокирует модуль. Клик НЕ закрывает. -->
+		<Border Background="#F2000000" PointerPressed="OnScrimPressed"/>
+
+		<Border HorizontalAlignment="Center" VerticalAlignment="Center"
+		        Margin="24" Width="560" MaxHeight="640"
+		        Background="{DynamicResource BgBaseBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="1"
+		        CornerRadius="16"
+		        Padding="20">
+			<Border.Effect>
+				<DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.55" Color="#000000"/>
+			</Border.Effect>
+
+			<Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
+
+				<Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+					<TextBlock Grid.Column="0"
+					           Text="{x:Static loc:CharactersStrings.AnketaEditor_Title}"
+					           FontSize="16" FontWeight="SemiBold"
+					           Foreground="{DynamicResource TextPrimaryBrush}"
+					           VerticalAlignment="Center"/>
+					<Button Grid.Column="1" Content="✕" Click="OnCancelClick"
+					        Background="Transparent" BorderThickness="0"
+					        Foreground="{DynamicResource TextSecondaryBrush}"
+					        FontSize="14" Padding="6,2"/>
+				</Grid>
+
+				<StackPanel Grid.Row="1" Spacing="8">
+					<StackPanel Spacing="4">
+						<TextBlock Classes="fieldLabel"
+						           Text="{x:Static loc:CharactersStrings.AnketaEditor_Name}"/>
+						<TextBox Classes="field" Text="{Binding Name, Mode=TwoWay}"/>
+					</StackPanel>
+					<StackPanel Spacing="4">
+						<TextBlock Classes="fieldLabel"
+						           Text="{x:Static loc:CharactersStrings.AnketaEditor_Description}"/>
+						<TextBox Classes="field" Text="{Binding Description, Mode=TwoWay}"/>
+					</StackPanel>
+				</StackPanel>
+
+				<ScrollViewer Grid.Row="2">
+					<StackPanel Spacing="8">
+
+						<TextBlock Text="{x:Static loc:CharactersStrings.AnketaEditor_Empty}"
+						           FontSize="11"
+						           TextWrapping="Wrap"
+						           Foreground="{DynamicResource TextSecondaryBrush}"
+						           IsVisible="{Binding !HasFields}"/>
+
+						<ItemsControl ItemsSource="{Binding Fields}">
+							<ItemsControl.ItemTemplate>
+								<DataTemplate x:DataType="tpl:AnketaFieldDraft">
+									<Border Classes="fieldCard" Margin="0,0,0,8">
+										<StackPanel Spacing="8">
+
+											<Grid ColumnDefinitions="*,Auto,Auto,Auto">
+												<!-- Подсказка по уже существующим полям проекта.
+												     Выбрал существующее — новое поле получает
+												     его идентификатор, и значения встают в один
+												     ряд с уже введёнными в карточках. Программа
+												     ничего не угадывает: связь возникает только
+												     от выбора автора. -->
+												<AutoCompleteBox Grid.Column="0"
+												                 ItemsSource="{Binding $parent[ItemsControl].DataContext.KnownFieldNames}"
+												                 FilterMode="ContainsOrdinal"
+												                 MinimumPrefixLength="1"
+												                 MaxDropDownHeight="160"
+												                 Text="{Binding Name, Mode=TwoWay}"
+												                 PlaceholderText="{x:Static loc:CharactersStrings.AnketaEditor_FieldName}"
+												                 FontSize="12"
+												                 Background="{DynamicResource BgSurfaceBrush}"
+												                 Foreground="{DynamicResource TextPrimaryBrush}"
+												                 BorderBrush="{DynamicResource BorderDefaultBrush}"
+												                 BorderThickness="1"
+												                 CornerRadius="4"
+												                 Padding="8,6"/>
+												<Button Grid.Column="1" Classes="iconBtn"
+												        Click="OnMoveFieldUpClick"
+												        Margin="6,0,0,0">
+													<Path Data="M7.41,15.41 L12,10.83 16.59,15.41 18,14 12,8 6,14z"
+													      Fill="{DynamicResource TextSecondaryBrush}"
+													      Stretch="Uniform" Width="10" Height="10"/>
+												</Button>
+												<Button Grid.Column="2" Classes="iconBtn"
+												        Click="OnMoveFieldDownClick">
+													<Path Data="M7.41,8.59 L12,13.17 16.59,8.59 18,10 12,16 6,10z"
+													      Fill="{DynamicResource TextSecondaryBrush}"
+													      Stretch="Uniform" Width="10" Height="10"/>
+												</Button>
+												<Button Grid.Column="3" Classes="iconBtn"
+												        Click="OnRemoveFieldClick">
+													<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+													      Fill="{DynamicResource TextSecondaryBrush}"
+													      Stretch="Uniform" Width="10" Height="10"/>
+												</Button>
+											</Grid>
+
+											<TextBox Classes="field"
+											         Text="{Binding Description, Mode=TwoWay}"
+											         PlaceholderText="{x:Static loc:CharactersStrings.AnketaEditor_FieldHint}"/>
+
+											<!-- Подписи делений: ради них шкала и осмысленна.
+											     «Вспыльчивость: спокоен, сдержан, заводится,
+											     взрывается, неуправляем» — автор выбирает слово,
+											     программа хранит число и умеет сравнивать. -->
+											<StackPanel Spacing="4" IsVisible="{Binding IsScale}">
+												<TextBlock Classes="fieldLabel"
+												           Text="{x:Static loc:CharactersStrings.AnketaEditor_ScaleLabels}"/>
+												<TextBox Classes="field"
+												         Text="{Binding ScaleLabels, Mode=TwoWay}"
+												         PlaceholderText="{x:Static loc:CharactersStrings.AnketaEditor_ScaleLabelsHint}"/>
+											</StackPanel>
+
+											<StackPanel Spacing="4" IsVisible="{Binding IsChoice}">
+												<TextBlock Classes="fieldLabel"
+												           Text="{x:Static loc:CharactersStrings.AnketaEditor_Choices}"/>
+												<TextBox Classes="field"
+												         Text="{Binding States, Mode=TwoWay}"/>
+											</StackPanel>
+
+											<CheckBox IsChecked="{Binding IsComparable, Mode=TwoWay}"
+											          Content="{x:Static loc:CharactersStrings.AnketaEditor_Comparable}"
+											          FontSize="11"
+											          Foreground="{DynamicResource TextSecondaryBrush}"
+											          behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.AnketaEditor_Comparable}"
+											          behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.AnketaEditor_ComparableHint}"/>
+										</StackPanel>
+									</Border>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
+
+						<!-- Добавление поля сразу нужного типа: названия
+						     человеческие, без слов из перечислений кода. -->
+						<WrapPanel Orientation="Horizontal">
+							<Button Classes="typeOpt" Click="OnAddScaleClick"
+							        Content="{x:Static loc:CharactersStrings.Param_AddNumeric}"
+							        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Param_AddNumeric}"
+							        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Param_HintScale}"/>
+							<Button Classes="typeOpt" Click="OnAddTextClick"
+							        Content="{x:Static loc:CharactersStrings.Param_AddText}"
+							        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Param_AddText}"
+							        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Param_HintText}"/>
+							<Button Classes="typeOpt" Click="OnAddChoiceClick"
+							        Content="{x:Static loc:CharactersStrings.Param_AddStateList}"
+							        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Param_AddStateList}"
+							        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Param_HintChoice}"/>
+							<Button Classes="typeOpt" Click="OnAddBooleanClick"
+							        Content="{x:Static loc:CharactersStrings.Param_AddBoolean}"
+							        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Param_AddBoolean}"
+							        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Param_HintYesNo}"/>
+						</WrapPanel>
+					</StackPanel>
+				</ScrollViewer>
+
+				<StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8"
+				            HorizontalAlignment="Right">
+					<Button Content="{x:Static loc:CharactersStrings.AnketaEditor_Cancel}"
+					        Click="OnCancelClick"
+					        FontSize="12" Padding="14,6" CornerRadius="6"/>
+					<Button Content="{x:Static loc:CharactersStrings.AnketaEditor_Save}"
+					        Click="OnSaveClick"
+					        FontSize="12" Padding="14,6" CornerRadius="6"
+					        Background="{DynamicResource AccentDefaultBrush}"
+					        Foreground="White"/>
+				</StackPanel>
+			</Grid>
+		</Border>
+	</Grid>
+</UserControl>

@@ -447,6 +447,83 @@
 					</DockPanel>
 				</Border>
 
+				<!-- ── Группа: Отступы обтекания ────────────────────────────── -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Отступы обтекания"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+
+							<!-- 4 стороны: верх/низ, лево/право -->
+							<Grid ColumnDefinitions="Auto Auto" RowDefinitions="Auto Auto">
+								<StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="2" Margin="0 0 4 2">
+									<TextBlock Text="↑" FontSize="12" VerticalAlignment="Center"
+									           Foreground="{DynamicResource TextSecondaryBrush}"/>
+									<NumericUpDown Classes="RibbonNum" Width="70"
+									               Value="{Binding WrapPadTop, Mode=TwoWay}"
+									               Minimum="0" Maximum="50" Increment="0.1"
+									               FormatString="0.##" ClipValueToMinMax="True"
+									               behaviours:TooltipBehavior.Tip="Отступ текста от картинки сверху"
+									               behaviours:TooltipBehavior.ShowDelay="700"/>
+								</StackPanel>
+								<StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="2" Margin="0 0 0 2">
+									<TextBlock Text="↓" FontSize="12" VerticalAlignment="Center"
+									           Foreground="{DynamicResource TextSecondaryBrush}"/>
+									<NumericUpDown Classes="RibbonNum" Width="70"
+									               Value="{Binding WrapPadBottom, Mode=TwoWay}"
+									               Minimum="0" Maximum="50" Increment="0.1"
+									               FormatString="0.##" ClipValueToMinMax="True"
+									               behaviours:TooltipBehavior.Tip="Отступ текста от картинки снизу"
+									               behaviours:TooltipBehavior.ShowDelay="700"/>
+								</StackPanel>
+								<StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="2" Margin="0 0 4 0">
+									<TextBlock Text="←" FontSize="12" VerticalAlignment="Center"
+									           Foreground="{DynamicResource TextSecondaryBrush}"/>
+									<NumericUpDown Classes="RibbonNum" Width="70"
+									               Value="{Binding WrapPadLeft, Mode=TwoWay}"
+									               Minimum="0" Maximum="50" Increment="0.1"
+									               FormatString="0.##" ClipValueToMinMax="True"
+									               behaviours:TooltipBehavior.Tip="Отступ текста от картинки слева"
+									               behaviours:TooltipBehavior.ShowDelay="700"/>
+								</StackPanel>
+								<StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="2">
+									<TextBlock Text="→" FontSize="12" VerticalAlignment="Center"
+									           Foreground="{DynamicResource TextSecondaryBrush}"/>
+									<NumericUpDown Classes="RibbonNum" Width="70"
+									               Value="{Binding WrapPadRight, Mode=TwoWay}"
+									               Minimum="0" Maximum="50" Increment="0.1"
+									               FormatString="0.##" ClipValueToMinMax="True"
+									               behaviours:TooltipBehavior.Tip="Отступ текста от картинки справа"
+									               behaviours:TooltipBehavior.ShowDelay="700"/>
+								</StackPanel>
+							</Grid>
+
+							<!-- Пресеты + единицы (по умолчанию см) -->
+							<StackPanel Spacing="3" VerticalAlignment="Center">
+								<ComboBox Width="66" MinHeight="24"
+								          ItemsSource="{Binding WrapPadPresets}"
+								          SelectedItem="{Binding SelectedWrapPadPreset, Mode=TwoWay}"
+								          behaviours:TooltipBehavior.Tip="Готовые значения отступа — применяются ко всем 4 сторонам"
+								          behaviours:TooltipBehavior.ShowDelay="700"/>
+								<StackPanel Orientation="Horizontal" Spacing="2">
+									<ToggleButton Classes="SegSmall" Content="см"
+									              Command="{Binding PadUnitCmCommand}"
+									              IsChecked="{Binding PadUnitIsCm, Mode=OneWay}"
+									              behaviours:TooltipBehavior.Tip="Отступы в сантиметрах"
+									              behaviours:TooltipBehavior.ShowDelay="700"/>
+									<ToggleButton Classes="SegSmall" Content="px"
+									              Command="{Binding PadUnitPxCommand}"
+									              IsChecked="{Binding PadUnitIsPx, Mode=OneWay}"
+									              behaviours:TooltipBehavior.Tip="Отступы в пикселях (96 DPI)"
+									              behaviours:TooltipBehavior.ShowDelay="700"/>
+								</StackPanel>
+							</StackPanel>
+
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
 				<!-- ── Группа: Оформление ───────────────────────────────────── -->
 				<Border Classes="RibbonGroup">
 					<DockPanel>

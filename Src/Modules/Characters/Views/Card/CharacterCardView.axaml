@@ -6,8 +6,91 @@
              x:Class="Writersword.Modules.Characters.Views.CharacterCardView"
              x:DataType="vm:CharacterCardViewModel">
 
+	<UserControl.Resources>
+		<!-- Полоска-индикатор Fluent под выбранной вкладкой гасится совсем:
+		     выделение делает пилюля-фон самой вкладки, вторая линия не нужна. -->
+		<SolidColorBrush x:Key="TabItemHeaderSelectedPipeFill" Color="Transparent"/>
+	</UserControl.Resources>
+
+	<UserControl.Styles>
+		<!-- Полоса вкладок — сегментированный переключатель на выделенной ленте:
+		     подложку ленты рисует панель раскладки (ItemsPanel ниже), у самого
+		     ItemsPresenter свойства Background нет. Вкладки — гладкие пилюли без
+		     рамок: невыбранные это спокойный текст, активная — мягкая акцентная
+		     заливка. Так строка читается как переключатель, а не как частокол
+		     обведённых кнопок. -->
+		<!-- Содержимое вкладки занимает всю доступную высоту: иначе вкладка
+		     меряется по контенту. Причиной недостижимого низа карточки было
+		     не это, а Padding у ScrollViewer (см. CharacterBasicsTabView),
+		     но растяжение здесь всё равно правильнее. -->
+		<Style Selector="TabControl.card-tabs">
+			<Setter Property="VerticalContentAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+		</Style>
+		<Style Selector="TabControl.card-tabs /template/ ContentPresenter#PART_SelectedContentHost">
+			<Setter Property="VerticalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+		</Style>
+
+		<Style Selector="TabControl.card-tabs TabItem">
+			<Setter Property="VerticalContentAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="FontWeight" Value="Medium"/>
+			<Setter Property="Padding" Value="16,7"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Margin" Value="6,6,0,6"/>
+			<Setter Property="CornerRadius" Value="8"/>
+		</Style>
+		<Style Selector="TabControl.card-tabs TabItem:pointerover">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="TabControl.card-tabs TabItem:selected">
+			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+		</Style>
+		<Style Selector="TabControl.card-tabs TabItem:selected:pointerover">
+			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<!-- Шаблон Fluent при наведении и выборе красит текст и фон через свой
+		     ContentPresenter — перекрываем, чтобы пилюля вкладки не затиралась
+		     стилями темы: фон рисует сама вкладка, презентер прозрачный. -->
+		<Style Selector="TabControl.card-tabs TabItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="TabControl.card-tabs TabItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="TabControl.card-tabs TabItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
 	<!-- Вкладки карточки — без собственного заголовка, он в CharactersView -->
-	<TabControl SelectedIndex="{Binding SelectedTabIndex}" Padding="0">
+	<TabControl Classes="card-tabs" SelectedIndex="{Binding SelectedTabIndex}" Padding="0">
+
+		<!-- Панель раскладки вкладок несёт подложку ленты: у ItemsPresenter
+		     своего Background нет, а StackPanel растягивается на всю ширину
+		     полосы и красит её целиком. -->
+		<TabControl.ItemsPanel>
+			<ItemsPanelTemplate>
+				<StackPanel Orientation="Horizontal"
+				            Background="{DynamicResource BgPanelBrush}"/>
+			</ItemsPanelTemplate>
+		</TabControl.ItemsPanel>
 
 		<TabItem Header="{x:Static loc:CharactersStrings.Tab_Basics}">
 			<tabs:CharacterBasicsTabView DataContext="{Binding BasicsTab}"/>
@@ -21,21 +104,12 @@
 			<tabs:CharacterRelationshipsTabView DataContext="{Binding RelationshipsTab}"/>
 		</TabItem>
 
-		<TabItem Header="{x:Static loc:CharactersStrings.Tab_Contexts}">
-			<tabs:CharacterContextsTabView DataContext="{Binding ContextsTab}"/>
-		</TabItem>
-
-		<TabItem Header="{x:Static loc:CharactersStrings.Tab_Notes}">
-			<tabs:CharacterNotesTabView DataContext="{Binding NotesTab}"/>
-		</TabItem>
-
-		<TabItem Header="{x:Static loc:CharactersStrings.Tab_PersonalTimeline}">
-			<tabs:CharacterPersonalTimelineTabView DataContext="{Binding PersonalTimelineTab}"/>
-		</TabItem>
-
-		<TabItem Header="{x:Static loc:CharactersStrings.Tab_History}">
-			<tabs:CharacterHistoryTabView DataContext="{Binding HistoryTab}"/>
-		</TabItem>
+		<!-- Вкладок «Контексты», «Заметки», «Таймлайн» и «История» здесь больше
+		     нет. Контекст по карте развития — свойство связи и режим фильтра
+		     графа, а не персональный список внутри карточки; отдельной сущности
+		     «заметка» карта не знает вовсе; таймлайн отложен до своего модуля.
+		     Данные остаются в модели и в сохранениях — см. раздел «Хранится в
+		     модели, ждёт функциональности» в Docs/Characters. -->
 
 	</TabControl>
 </UserControl>

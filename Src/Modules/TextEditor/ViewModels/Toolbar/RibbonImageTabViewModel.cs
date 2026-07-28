@@ -26,11 +26,26 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private string _borderHexColor = "#00000000";
         private bool _syncing;
 
+        // Отступы обтекания по сторонам (в текущих единицах отступов — см или px).
+        private decimal _padTop;
+        private decimal _padBottom;
+        private decimal _padLeft;
+        private decimal _padRight;
+        private bool _padUnitIsCm = true;   // по умолчанию сантиметры
+        private decimal? _selectedPadPreset;
+
         private double UnitToPt(decimal value)
             => _unitIsMm ? (double)value * 72.0 / 25.4 : (double)value * 0.75;
 
         private decimal PtToUnit(double pt)
             => (decimal)System.Math.Round(_unitIsMm ? pt * 25.4 / 72.0 : pt * 96.0 / 72.0, 2);
+
+        // Единицы отступов обтекания: см ↔ пункты и px ↔ пункты (px при 96 DPI).
+        private double PadUnitToPt(decimal value)
+            => _padUnitIsCm ? (double)value * 72.0 / 2.54 : (double)value * 0.75;
+
+        private decimal PtToPadUnit(double pt)
+            => (decimal)System.Math.Round(_padUnitIsCm ? pt * 2.54 / 72.0 : pt * 96.0 / 72.0, 2);
 
         /// <summary>Текущее выравнивание картинки в колонке (для подсветки кнопок).</summary>
         public TextAlignment CurrentAlignment
@@ -220,6 +235,82 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             }
         }
 
+        // ── Отступы обтекания ─────────────────────────────────────────────
+        /// <summary>Отступ обтекания сверху в текущих единицах отступов (см/px).</summary>
+        public decimal WrapPadTop
+        {
+            get => _padTop;
+            set { if (_padTop != value) { _padTop = value; if (!_syncing) ApplyWrapPadding(); } this.RaisePropertyChanged(nameof(WrapPadTop)); }
+        }
+
+        /// <summary>Отступ обтекания снизу в текущих единицах отступов (см/px).</summary>
+        public decimal WrapPadBottom
+        {
+            get => _padBottom;
+            set { if (_padBottom != value) { _padBottom = value; if (!_syncing) ApplyWrapPadding(); } this.RaisePropertyChanged(nameof(WrapPadBottom)); }
+        }
+
+        /// <summary>Отступ обтекания слева в текущих единицах отступов (см/px).</summary>
+        public decimal WrapPadLeft
+        {
+            get => _padLeft;
+            set { if (_padLeft != value) { _padLeft = value; if (!_syncing) ApplyWrapPadding(); } this.RaisePropertyChanged(nameof(WrapPadLeft)); }
+        }
+
+        /// <summary>Отступ обтекания справа в текущих единицах отступов (см/px).</summary>
+        public decimal WrapPadRight
+        {
+            get => _padRight;
+            set { if (_padRight != value) { _padRight = value; if (!_syncing) ApplyWrapPadding(); } this.RaisePropertyChanged(nameof(WrapPadRight)); }
+        }
+
+        /// <summary>Единицы отступов обтекания: true — сантиметры (по умолчанию), false — пиксели.</summary>
+        public bool PadUnitIsCm
+        {
+            get => _padUnitIsCm;
+            private set
+            {
+                if (_padUnitIsCm == value) return;
+                _padUnitIsCm = value;
+                this.RaisePropertyChanged(nameof(PadUnitIsCm));
+                this.RaisePropertyChanged(nameof(PadUnitIsPx));
+                SyncFromTarget();
+            }
+        }
+
+        public bool PadUnitIsPx => !_padUnitIsCm;
+
+        /// <summary>Быстрые значения отступа (в текущих единицах) для выпадающего списка.</summary>
+        public System.Collections.Generic.IReadOnlyList<decimal> WrapPadPresets { get; }
+            = new decimal[] { 0m, 0.1m, 0.2m, 0.3m, 0.5m, 1.0m };
+
+        /// <summary>Выбранный пресет: применяется сразу ко всем 4 сторонам одной операцией.</summary>
+        public decimal? SelectedWrapPadPreset
+        {
+            get => _selectedPadPreset;
+            set
+            {
+                _selectedPadPreset = value;
+                this.RaisePropertyChanged(nameof(SelectedWrapPadPreset));
+                if (value is decimal v && !_syncing)
+                {
+                    _syncing = true;
+                    _padTop = _padBottom = _padLeft = _padRight = v;
+                    this.RaisePropertyChanged(nameof(WrapPadTop));
+                    this.RaisePropertyChanged(nameof(WrapPadBottom));
+                    this.RaisePropertyChanged(nameof(WrapPadLeft));
+                    this.RaisePropertyChanged(nameof(WrapPadRight));
+                    _syncing = false;
+                    ApplyWrapPadding();
+                }
+            }
+        }
+
+        private void ApplyWrapPadding()
+            => _target.SetImageWrapPadding(
+                PadUnitToPt(_padTop), PadUnitToPt(_padBottom),
+                PadUnitToPt(_padLeft), PadUnitToPt(_padRight));
+
         // ── Выравнивание картинки в колонке ───────────────────────────────
         public ICommand AlignLeftCommand { get; }
         public ICommand AlignCenterCommand { get; }
@@ -237,6 +328,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         // ── Единицы размеров ──────────────────────────────────────────────
         public ICommand UnitMmCommand { get; }
         public ICommand UnitPxCommand { get; }
+
+        // ── Единицы отступов обтекания ────────────────────────────────────
+        public ICommand PadUnitCmCommand { get; }
+        public ICommand PadUnitPxCommand { get; }
 
         // ── Обрезка и отражение ───────────────────────────────────────────
         public ICommand ToggleCropModeCommand { get; }
@@ -272,6 +367,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
             UnitMmCommand = ReactiveCommand.Create(() => { UnitIsMm = true; });
             UnitPxCommand = ReactiveCommand.Create(() => { UnitIsMm = false; });
+
+            PadUnitCmCommand = ReactiveCommand.Create(() => { PadUnitIsCm = true; });
+            PadUnitPxCommand = ReactiveCommand.Create(() => { PadUnitIsCm = false; });
 
             ToggleCropModeCommand = ReactiveCommand.Create(() =>
                 { _target.SetImageCropMode(!_isCropMode); SyncFromTarget(); });
@@ -351,6 +449,19 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                         _borderHexColor = bc;
                         this.RaisePropertyChanged(nameof(BorderHexColor));
                     }
+                }
+
+                var pad = _target.GetSelectedImageWrapPadding();
+                if (pad is not null)
+                {
+                    decimal t = PtToPadUnit(pad.Value.TopPt);
+                    decimal b = PtToPadUnit(pad.Value.BottomPt);
+                    decimal l = PtToPadUnit(pad.Value.LeftPt);
+                    decimal r = PtToPadUnit(pad.Value.RightPt);
+                    if (_padTop != t) { _padTop = t; this.RaisePropertyChanged(nameof(WrapPadTop)); }
+                    if (_padBottom != b) { _padBottom = b; this.RaisePropertyChanged(nameof(WrapPadBottom)); }
+                    if (_padLeft != l) { _padLeft = l; this.RaisePropertyChanged(nameof(WrapPadLeft)); }
+                    if (_padRight != r) { _padRight = r; this.RaisePropertyChanged(nameof(WrapPadRight)); }
                 }
             }
             finally

@@ -91,6 +91,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
                     this.RaisePropertyChanged(nameof(IsDraftMode));
                     this.RaisePropertyChanged(nameof(IsWebMode));
                     this.RaisePropertyChanged(nameof(IsReadingMode));
+                    this.RaisePropertyChanged(nameof(IsSinglePageMode));
+                    this.RaisePropertyChanged(nameof(IsTwoPagesMode));
                     ViewModeChanged?.Invoke(value);
                 }
                 finally
@@ -107,6 +109,35 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
 
         public Action<EditorViewMode>? ViewModeChanged { get; set; }
 
+        // ── Страницы рядом ────────────────────────────────────────────────
+        private int _pagesPerRow = 1;
+
+        /// <summary>true — в режиме страниц показываются две страницы в ряду.</summary>
+        public bool IsTwoPagesPerRow => _pagesPerRow == 2;
+
+        /// <summary>Кнопка «одна страница»: режим страниц, листы столбиком.</summary>
+        public bool IsSinglePageMode => IsPageMode && _pagesPerRow == 1;
+
+        /// <summary>Кнопка «две страницы»: режим страниц, листы рядом.</summary>
+        public bool IsTwoPagesMode => IsPageMode && _pagesPerRow == 2;
+
+        /// <summary>Уведомляет редактор о смене числа страниц в ряду (1 или 2).</summary>
+        public Action<int>? PagesPerRowChanged { get; set; }
+
+        public ICommand SetTwoPagesModeCommand { get; }
+
+        private void SetPagesPerRow(int value)
+        {
+            if (_pagesPerRow != value)
+            {
+                _pagesPerRow = value;
+                PagesPerRowChanged?.Invoke(value);
+            }
+            this.RaisePropertyChanged(nameof(IsTwoPagesPerRow));
+            this.RaisePropertyChanged(nameof(IsSinglePageMode));
+            this.RaisePropertyChanged(nameof(IsTwoPagesMode));
+        }
+
         public ICommand SetPageModeCommand { get; }
         public ICommand SetDraftModeCommand { get; }
         public ICommand SetWebModeCommand { get; }
@@ -115,7 +146,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
 
         public StatusBarViewModel()
         {
-            SetPageModeCommand = ReactiveCommand.Create(() => { ViewMode = EditorViewMode.Page; });
+            SetPageModeCommand = ReactiveCommand.Create(() =>
+            {
+                ViewMode = EditorViewMode.Page;
+                SetPagesPerRow(1);
+            });
             FitToPhysicalSizeCommand = ReactiveCommand.Create(() =>
             {
                 Zoom = _recommendedZoom;
@@ -123,6 +158,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
             SetDraftModeCommand = ReactiveCommand.Create(() => { ViewMode = EditorViewMode.Draft; });
             SetWebModeCommand = ReactiveCommand.Create(() => { ViewMode = EditorViewMode.Web; });
             SetReadingModeCommand = ReactiveCommand.Create(() => { ViewMode = EditorViewMode.Reading; });
+            SetTwoPagesModeCommand = ReactiveCommand.Create(() =>
+            {
+                ViewMode = EditorViewMode.Page;
+                SetPagesPerRow(2);
+            });
         }
 
         // --- Обновление статистики ---

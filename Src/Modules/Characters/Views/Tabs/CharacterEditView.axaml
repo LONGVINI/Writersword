@@ -5,6 +5,8 @@
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              xmlns:conv="using:Writersword.Modules.Characters.Converters"
              xmlns:icv="using:Writersword.Infrastructure.Converters"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:controls="using:Writersword.Modules.Characters.Controls"
              x:Class="Writersword.Modules.Characters.Views.Tabs.CharacterEditView"
              x:DataType="vm:CharactersViewModel">
 
@@ -130,7 +132,11 @@
              разворачивает. Ни переименования, ни удаления, ни редактирования
              комментария. -->
         <DataTemplate DataType="vm:CharacterFolderViewModel">
+            <!-- Высота строки берётся из той же вьюмодели, что отдаёт её
+                 раскладке: иначе расчёт скролла и нарисованная строка
+                 разъедутся, и ползунок снова начнёт плавать. -->
             <Button Classes="fold-header"
+                    Height="{Binding RowHeight}"
                     Command="{Binding ToggleExpandCommand}">
                 <!-- Задник нейтральный (BgListBlockBrush) без цветного выделения:
                      цвет папки показывает только точка внутри. -->
@@ -180,9 +186,17 @@
              и тонкой окантовкой цветом/градиентом персонажа. Внутри — аватар-кружок,
              имя и описание. Фиксированная высота ряда сохраняет точную высоту списка. -->
         <DataTemplate DataType="vm:CharacterListItemViewModel">
+            <!-- Строка списка — заодно источник перетаскивания: тащится на
+                 полотно связей в открытой карточке. Обычный щелчок при этом
+                 продолжает открывать персонажа: перетаскивание начинается
+                 только после сдвига мыши на несколько пикселей. -->
             <Button Classes="edit-row"
+                    Height="{Binding RowHeight}"
                     Command="{ReflectionBinding $parent[UserControl].DataContext.EditCharacterCommand}"
-                    CommandParameter="{Binding Id}">
+                    CommandParameter="{Binding Id}"
+                    PointerPressed="OnRowPointerPressed"
+                    PointerMoved="OnRowPointerMoved"
+                    PointerReleased="OnRowPointerReleased">
                 <Border x:Name="RowBanner"
                         Margin="6,2"
                         CornerRadius="0"
@@ -190,6 +204,7 @@
                         Background="{DynamicResource BgListBlockBrush}"
                         BorderThickness="1"
                         BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+                        Opacity="{Binding DeadRowOpacity}"
                         ToolTip.Tip="{Binding Name}">
                     <Grid ColumnDefinitions="4,46,*" Height="48">
                         <!-- Полоска цветом/градиентом персонажа по левому краю блока. -->
@@ -222,6 +237,21 @@
                                         BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
                                         IsHitTestVisible="False"
                                         IsVisible="{Binding AvatarRing}"/>
+
+                                <!-- Метка «Мёртв»: бейдж-череп на аватаре. Объект —
+                                     носитель смысла, приглушение строки — усилитель.
+                                     Крестик здесь не используется: им в интерфейсе
+                                     обозначается удаление. -->
+                                <Border Width="14" Height="14" CornerRadius="7"
+                                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                                        Background="#CC202020"
+                                        IsHitTestVisible="False"
+                                        IsVisible="{Binding IsDead}">
+                                    <Path Data="M12,2C7.03,2 3,6.03 3,11c0,2.85 1.34,5.38 3.42,7.02V21c0,0.55 0.45,1 1,1h1.5v-2h2v2h2v-2h2v2H16c0.55,0 1,-0.45 1,-1v-2.98C19.66,16.38 21,13.85 21,11C21,6.03 16.97,2 12,2zM8.5,13C7.67,13 7,12.33 7,11.5C7,10.67 7.67,10 8.5,10s1.5,0.67 1.5,1.5C10,12.33 9.33,13 8.5,13zM15.5,13c-0.83,0 -1.5,-0.67 -1.5,-1.5c0,-0.83 0.67,-1.5 1.5,-1.5s1.5,0.67 1.5,1.5C17,12.33 16.33,13 15.5,13z"
+                                          Fill="#FF5252"
+                                          Stretch="Uniform"
+                                          Margin="2"/>
+                                </Border>
                             </Panel>
                             <!-- Подписи, ленточка группы и точка папки живут только
                                  в полном режиме списка: в компактном (одни аватарки)
@@ -230,11 +260,26 @@
                                    IsVisible="{ReflectionBinding $parent[UserControl].DataContext.IsSidebarFull}">
                                 <StackPanel Margin="6,6,20,6"
                                             VerticalAlignment="Center" Spacing="2">
-                                    <TextBlock Text="{Binding Name}"
-                                               FontSize="12" FontWeight="Medium"
-                                               MaxLines="1"
-                                               TextTrimming="CharacterEllipsis"
-                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Text="{Binding Name}"
+                                                   FontSize="12" FontWeight="Medium"
+                                                   MaxLines="1"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+                                        <!-- Имя, по которому карточка нашлась, если оно
+                                             не отображаемое. Боковой список редактора
+                                             показывает результаты того же поиска, что
+                                             и основной, — пояснение нужно и здесь. -->
+                                        <TextBlock Text="{Binding MatchedName}"
+                                                   IsVisible="{Binding HasMatchedName}"
+                                                   FontSize="11"
+                                                   MaxLines="1"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"
+                                                   Opacity="0.75"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    </StackPanel>
                                     <TextBlock Text="{Binding ShortDescription}"
                                                FontSize="10"
                                                Foreground="{DynamicResource TextSecondaryBrush}"
@@ -304,7 +349,7 @@
                         <!-- Переключение полный/компактный список -->
                         <Button Grid.Column="1" Classes="side-tool"
                                 Click="OnCompactToggleClick"
-                                ToolTip.Tip="{x:Static loc:CharactersStrings.EditorSidebar_ToggleCompact}">
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.EditorSidebar_ToggleCompact}">
                             <Panel Width="14" Height="14">
                                 <!-- В полном режиме: значок «только аватарки» -->
                                 <Ellipse Width="12" Height="12"
@@ -323,7 +368,7 @@
                         <!-- Скрыть список полностью -->
                         <Button Grid.Column="2" Classes="side-tool"
                                 Click="OnHideSidebarClick"
-                                ToolTip.Tip="{x:Static loc:CharactersStrings.EditorSidebar_Hide}">
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.EditorSidebar_Hide}">
                             <Path Width="14" Height="14"
                                   Data="M9,2 L4,7 L9,12"
                                   Fill="Transparent"
@@ -335,14 +380,15 @@
 
                 <!-- Без поиска: плоский список — папки (в той же последовательности,
                      что в основном списке) и персонажи под ними.
-                     Список НЕ виртуализирован намеренно: ItemsRepeater со StackLayout
-                     оценивает высоту нереализованных строк, при разновысоких строках
-                     (заголовок папки ~34px, персонаж 48px) оценка постоянно
-                     пересчитывалась — ползунок скролла «плавал» в размере, скролл
-                     дёргался и прыгал на десятки строк. Строки лёгкие (текст +
-                     аватар 24px), а наполняются прогрессивными батчами из вьюмодели,
-                     поэтому нагрузки от полного списка нет, а скролл — точный
-                     пиксельный, без рывков. -->
+                     Виртуализация с KnownHeightStackLayout: высоту строки отдаёт
+                     сама вьюмодель (IRowHeight), поэтому смещения считаются точной
+                     суммой, а не оценкой по показанным строкам. Прежний StackLayout
+                     на разновысоких строках (папка 40, персонаж 52) пересчитывал
+                     оценку при каждой прокрутке — ползунок плавал в размере, скролл
+                     дёргался и прыгал на десятки строк, из-за чего список пришлось
+                     оставить невиртуализованным целиком.
+                     Список плоский, вложенных репитеров нет — зацикленный перемер,
+                     ради которого писался PerfItemsRepeater, здесь невозможен. -->
                 <!-- Скроллбар всегда видим (AllowAutoHide=False) и занимает собственную
                      полосу справа — на контент строк не налезает, паддинг не нужен. -->
                 <ScrollViewer Grid.Row="1" Classes="sidebar-scroll"
@@ -350,39 +396,38 @@
                               VerticalScrollBarVisibility="Visible"
                               AllowAutoHide="False"
                               IsVisible="{Binding SearchQuery, Converter={x:Static StringConverters.IsNullOrEmpty}}">
-                    <ItemsControl ItemsSource="{Binding EditorRows}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel Orientation="Vertical" Spacing="0"/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
+                    <ItemsRepeater ItemsSource="{Binding EditorRows}">
+                        <ItemsRepeater.Layout>
+                            <controls:KnownHeightStackLayout DefaultRowHeight="52"/>
+                        </ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
                             <DataTemplate>
+                                <!-- Шаблон по типу строки выбирают DataTemplates
+                                     вьюхи: репитер сам неявные шаблоны не ищет. -->
                                 <ContentControl Content="{Binding}"/>
                             </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
                 </ScrollViewer>
 
                 <!-- При активном поиске: плоские результаты (FilteredCharacters).
-                     Тоже без виртуализации — по тем же причинам, что и выше. -->
+                     Строки здесь все одной высоты, виртуализация достаётся той же
+                     раскладкой без оговорок. -->
                 <ScrollViewer Grid.Row="1" Classes="sidebar-scroll"
                               HorizontalScrollBarVisibility="Disabled"
                               VerticalScrollBarVisibility="Visible"
                               AllowAutoHide="False"
                               IsVisible="{Binding SearchQuery, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                    <ItemsControl ItemsSource="{Binding FilteredCharacters}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel Orientation="Vertical" Spacing="0"/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
+                    <ItemsRepeater ItemsSource="{Binding FilteredCharacters}">
+                        <ItemsRepeater.Layout>
+                            <controls:KnownHeightStackLayout DefaultRowHeight="52"/>
+                        </ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
                             <DataTemplate>
                                 <ContentControl Content="{Binding}"/>
                             </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
                 </ScrollViewer>
 
             </Grid>
@@ -398,7 +443,7 @@
                     HorizontalAlignment="Center"
                     VerticalAlignment="Top"
                     Margin="0,8,0,0"
-                    ToolTip.Tip="{x:Static loc:CharactersStrings.EditorSidebar_Show}">
+                    behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.EditorSidebar_Show}">
                 <Path Width="14" Height="14"
                       Data="M5,2 L10,7 L5,12"
                       Fill="Transparent"

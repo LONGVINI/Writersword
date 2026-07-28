@@ -56,7 +56,16 @@ namespace Writersword.Modules.Characters.Services
         public void LoadRelationships(List<CharacterRelationship> relationships)
         {
             _relationships.Clear();
-            if (relationships != null) _relationships.AddRange(relationships);
+            if (relationships != null)
+            {
+                // Старые сохранения знают только список строк — формы обращения
+                // с поводом собираются из него, чтобы связи любого возраста
+                // работали одинаково.
+                foreach (var relationship in relationships)
+                    CharacterAddress.Normalize(relationship);
+
+                _relationships.AddRange(relationships);
+            }
             _logger.Debug("Relationships loaded: {Count}", _relationships.Count);
         }
     }

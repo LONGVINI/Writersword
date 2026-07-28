@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="using:Writersword.Modules.Characters.Views"
              xmlns:icv="using:Writersword.Infrastructure.Converters"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              x:Class="Writersword.Modules.Characters.Views.CardSettingsOverlay"
              x:DataType="views:CardSettingsDraft"
              IsVisible="False">
@@ -164,7 +165,8 @@
 					          VerticalAlignment="Center"/>
 					<ToggleButton Grid.Column="1" x:Name="RingAllToggle" Classes="applyAll"
 					              Content="Ко всем" VerticalAlignment="Center"
-					              ToolTip.Tip="Применить состояние кольца ко всем персонажам при OK"/>
+					              behaviours:TooltipBehavior.Tip="Кольцо ко всем персонажам"
+					              behaviours:TooltipBehavior.Description="Состояние кольца применится ко всем карточкам проекта после нажатия OK."/>
 				</Grid>
 
 				<!-- Закладка-ленточка (только у групп) -->
@@ -174,7 +176,8 @@
 					          VerticalAlignment="Center"/>
 					<ToggleButton Grid.Column="1" x:Name="BookmarkAllToggle" Classes="applyAll"
 					              Content="Ко всем группам" VerticalAlignment="Center"
-					              ToolTip.Tip="Применить состояние закладки ко всем группам при OK"/>
+					              behaviours:TooltipBehavior.Tip="Закладка ко всем группам"
+					              behaviours:TooltipBehavior.Description="Состояние закладки применится ко всем групповым карточкам после нажатия OK."/>
 				</Grid>
 
 				<!-- Толщина рамки -->
@@ -188,7 +191,8 @@
 						           Foreground="{DynamicResource TextSecondaryBrush}"/>
 						<ToggleButton Grid.Column="2" x:Name="ThicknessAllToggle" Classes="applyAll"
 						              Content="Ко всем" VerticalAlignment="Center"
-						              ToolTip.Tip="Применить толщину рамки ко всем карточкам при OK"/>
+						              behaviours:TooltipBehavior.Tip="Толщина рамки ко всем"
+						              behaviours:TooltipBehavior.Description="Толщина рамки применится ко всем карточкам проекта после нажатия OK."/>
 					</Grid>
 					<Slider Minimum="0" Maximum="6" TickFrequency="1" IsSnapToTickEnabled="True"
 					        Value="{Binding Thickness, Mode=TwoWay}"/>

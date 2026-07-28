@@ -45,7 +45,7 @@
                                     Padding="10,8">
                                 <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto">
 
-                                    <!-- Ключевое событие + временная метка -->
+                                    <!-- Маркер события -->
                                     <Border Grid.Column="0" Grid.Row="0"
                                             Width="8"
                                             Height="8"
@@ -80,21 +80,16 @@
                                                 Orientation="Horizontal"
                                                 Spacing="4"
                                                 VerticalAlignment="Top">
-                                        <Button Command="{Binding $parent[ItemsControl].((tabs:CharacterPersonalTimelineTabViewModel)DataContext).ToggleKeyEventCommand}"
-                                                CommandParameter="{Binding Id}"
+                                        <Button Content="*"
+                                                Click="OnToggleKeyEventClick"
                                                 Background="Transparent"
                                                 BorderThickness="0"
                                                 Padding="4,2"
                                                 FontSize="12"
                                                 ToolTip.Tip="{x:Static loc:CharactersStrings.Timeline_KeyEventTooltip}"
-                                                Foreground="{Binding IsKeyEvent, Converter={StaticResource BoolToAccentConverter}}">
-                                            <Button.Content>
-                                                <TextBlock Text="?"/>
-                                            </Button.Content>
-                                        </Button>
+                                                Foreground="{Binding IsKeyEvent, Converter={StaticResource BoolToAccentConverter}}"/>
                                         <Button Content="x"
-                                                Command="{Binding $parent[ItemsControl].((tabs:CharacterPersonalTimelineTabViewModel)DataContext).RemoveEventCommand}"
-                                                CommandParameter="{Binding Id}"
+                                                Click="OnEventRemoveClick"
                                                 Background="Transparent"
                                                 BorderThickness="0"
                                                 Padding="4,2"

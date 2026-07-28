@@ -268,6 +268,22 @@ namespace Writersword.Modules.TextEditor.Document
 
             foreach (var key in dead)
                 _layoutCache.Remove(key);
+
+            // Состояние гистерезиса обтекания живёт по тем же правилам, что и кеш:
+            // без чистки словарь удерживал бы ссылки на удалённые ParagraphBlock.
+            if (_wrapPushState.Count > 0)
+            {
+                var aliveBlocks = new HashSet<ParagraphBlock>();
+                foreach (var p in DocVm.Paragraphs)
+                    if (p.Model is not null) aliveBlocks.Add(p.Model);
+
+                var deadBlocks = new List<ParagraphBlock>();
+                foreach (var key in _wrapPushState.Keys)
+                    if (!aliveBlocks.Contains(key)) deadBlocks.Add(key);
+
+                foreach (var key in deadBlocks)
+                    _wrapPushState.Remove(key);
+            }
         }
 
         // ── Быстрое обновление одного параграфа (Phase 1) ───────────────
@@ -352,15 +368,40 @@ namespace Writersword.Modules.TextEditor.Document
 
             float widthPt = GetCurrentTextWidthPt();
 
-            // Строим layout для одного параграфа.
-            // _layoutCache для этого pvm уже был удалён в ScheduleRebuild,
-            // поэтому GetOrBuildLayout гарантированно пересчитывает.
-            var newLayout = GetOrBuildLayout(pvm, widthPt);
-
             // Обновляем _layouts без замены всего списка.
             // Читаем снимок под lock, строим новый список вне lock, меняем под lock.
             List<ParaLayout> current;
-            lock (_renderLock) { current = _layouts; }
+            List<ImageEntry> currentImages;
+            lock (_renderLock) { current = _layouts; currentImages = _images; }
+
+            // Верх и левый край абзаца берём из текущей записи раскладки: по ним
+            // считаются зоны обтекания. Без них быстрый путь строил абзац без учёта
+            // плавающих картинок — при наборе текст ложился поверх картинки и выходил
+            // за полосу обтекания, пока не срабатывал отложенный полный пересбор.
+            float paraTopPt = 0f;
+            float paraLeftPt = 0f;
+            bool hasEntry = false;
+            for (int i = 0; i < current.Count; i++)
+            {
+                if (current[i].Vm != pvm || current[i].Cell is not null) continue;
+                paraTopPt = current[i].Ypt;
+                paraLeftPt = current[i].AbsXPt;
+                hasEntry = true;
+                break;
+            }
+
+            var wrapZones = hasEntry && DocVm?.ViewMode == EditorViewMode.Page
+                ? ComputeWrapZones(currentImages, paraTopPt, paraLeftPt, widthPt)
+                : null;
+
+            // Строим layout для одного параграфа.
+            // _layoutCache для этого pvm уже был удалён в ScheduleRebuild,
+            // поэтому GetOrBuildLayout гарантированно пересчитывает.
+            // Раскладка с зонами обтекания не кешируется — зоны зависят от позиций
+            // плавающих объектов, а ключ кеша (текст, ширина) их не учитывает.
+            var newLayout = wrapZones is null
+                ? GetOrBuildLayout(pvm, widthPt)
+                : BuildWrappedLayout(pvm, widthPt, wrapZones);
 
             float yShift = 0f;
             bool seenPvm = false;
@@ -457,7 +498,85 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
+        // Источник зон обтекания для текущего прохода пагинации. null — зоны берутся
+        // из картинок, накопленных по ходу прохода (только блоки, встреченные раньше
+        // абзаца). Второй проход подставляет сюда ПОЛНЫЙ список картинок первого
+        // прохода — обтекание работает и для абзацев, стоящих в документе до блока.
+        private List<ImageEntry>? _wrapZoneImagesOverride;
+
+        // Итеративная сходимость обтекания. Проход строит зоны от предсказанного верха
+        // абзаца, но на стыке страниц предсказание промахивается: абзац рисуется этажом
+        // ниже, чем посчитаны зоны, и текст ложится на картинку либо не перебрасывается.
+        // Решение — фиксированная точка: каждый следующий проход берёт якорь абзаца из
+        // РЕАЛЬНО измеренной позиции его первой строки в предыдущем проходе. Через
+        // несколько итераций позиции перестают меняться.
+        //   In  — якоря, от которых текущий проход строит зоны (пусто = брать предсказание).
+        //   Out — позиции первых строк, замеренные текущим проходом; вход для следующего.
+        private Dictionary<ParagraphBlock, float> _wrapAnchorIn = new();
+        private Dictionary<ParagraphBlock, float> _wrapAnchorOut = new();
+
         private void RebuildPageMode()
+        {
+            // Первый проход: без якорей и без полного набора картинок (они собираются
+            // по ходу). Даёт стартовые позиции абзацев и полный список картинок.
+            _wrapZoneImagesOverride = null;
+            _wrapAnchorIn.Clear();
+            _wrapAnchorOut = new Dictionary<ParagraphBlock, float>();
+            RebuildPageModePass();
+
+            List<ImageEntry> firstPassImages;
+            lock (_renderLock) { firstPassImages = _images; }
+
+            bool hasWrapImages = false;
+            foreach (var ie in firstPassImages)
+            {
+                if (ie.Block.WrapMode is WrapMode.Square or WrapMode.Tight)
+                {
+                    hasWrapImages = true;
+                    break;
+                }
+            }
+
+            if (!hasWrapImages) return;
+
+            // Итерации до сходимости: якорь каждого абзаца берём из позиции, замеренной
+            // прошлым проходом, и повторяем, пока позиции не перестанут двигаться.
+            // Потолок итераций защищает от возможного дребезга картинки ровно на границе.
+            // ВО ВРЕМЯ ДРАГА картинки — один проход: при неполной сходимости результат
+            // прыгает между двумя состояниями по чётности итерации, и соседний контент
+            // (в т.ч. inline-картинка) дёргается. Точная сходимость нужна в покое; на
+            // отпускании кнопки идёт обычная пересборка со всеми итерациями.
+            _wrapZoneImagesOverride = firstPassImages;
+            int maxWrapIterations = (_imageDragging || _imageResizing || _imageRotating) ? 1 : 4;
+            const float ConvergedTolPt = 0.5f;
+
+            for (int iter = 0; iter < maxWrapIterations; iter++)
+            {
+                // Выход прошлого прохода становится входом текущего.
+                (_wrapAnchorIn, _wrapAnchorOut) = (_wrapAnchorOut, _wrapAnchorIn);
+                _wrapAnchorOut.Clear();
+
+                RebuildPageModePass();
+
+                // Сошлось, если каждый замер этого прохода совпал с поданным якорем.
+                bool converged = true;
+                foreach (var kv in _wrapAnchorOut)
+                {
+                    if (!_wrapAnchorIn.TryGetValue(kv.Key, out float prev)
+                        || Math.Abs(prev - kv.Value) > ConvergedTolPt)
+                    {
+                        converged = false;
+                        break;
+                    }
+                }
+
+                if (converged) break;
+            }
+
+            _wrapZoneImagesOverride = null;
+        }
+
+        private void RebuildPageModePass()
         {
             // Удаляем из кеша записи параграфов которых больше нет в документе.
             // Без этого словарь растёт вечно: при split/delete старый ParagraphViewModel
@@ -878,21 +997,62 @@ namespace Writersword.Modules.TextEditor.Document
                 // Обтекание текстом: если рядом с вертикалью параграфа лежит плавающая
                 // картинка в режиме Square/Tight — строим раскладку с зонами исключения,
                 // строки обходят габарит картинки. Такой лейаут не кешируется.
-                var wrapZones = ComputeWrapZones(newImages, contentYPt, textXPt, textWidthPt);
-                var layout = wrapZones is null
-                    ? GetOrBuildLayout(pvm, textWidthPt)
-                    : BuildWrappedLayout(pvm, textWidthPt, wrapZones);
+                var zoneSource = _wrapZoneImagesOverride ?? newImages;
 
-                // Зоны считались от contentYPt, а строки начинаются после SpaceBefore —
-                // при ненулевом интервале пересобираем с точным верхом первой строки.
-                if (wrapZones is not null && layout.SpaceBeforePt > 0.01f)
+                // Верх первой строки абзаца в координатах документа. Зоны обтекания
+                // должны считаться именно от него, а не от contentYPt:
+                //   contentYPt — позиция до разбивки на страницы и без SpaceBefore;
+                //   цикл по строкам ниже может перенести абзац на следующую страницу
+                //   (contentYPt = pageYPt + mt), и тогда зоны, посчитанные от старого
+                //   значения, описывают полосу этажом выше реального места абзаца.
+                // Разрыв предсказывается тем же условием, что и в цикле, по раскладке
+                // без зон: высота строки задаётся шрифтом и от ширины полосы не зависит.
+                var probeLayout = GetOrBuildLayout(pvm, textWidthPt);
+                float paraStartYPt = contentYPt + probeLayout.SpaceBeforePt;
+                float probeFirstLineHPt = probeLayout.Lines.Count > 0
+                    ? probeLayout.Lines[0].Height
+                    : FallbackLinePt;
+
+                // Сколько страниц абзац перешагнул ещё до первой строки: от этого
+                // зависит, какая граница страницы актуальна для его разрывов.
+                int paraPageAdvance = 0;
+
+                if (paraStartYPt + probeFirstLineHPt > pageBottomPt
+                    && paraStartYPt > pageYPt + mt)
                 {
-                    var shiftedZones = ComputeWrapZones(
-                        newImages, contentYPt + layout.SpaceBeforePt, textXPt, textWidthPt);
-                    layout = shiftedZones is null
-                        ? GetOrBuildLayout(pvm, textWidthPt)
-                        : BuildWrappedLayout(pvm, textWidthPt, shiftedZones);
+                    paraStartYPt = pageYPt + pageHeightPt + PageGapPt
+                                 + mt + PageContinuationTopPadPt;
+                    paraPageAdvance = 1;
                 }
+
+                float pageStepPt = pageHeightPt + PageGapPt;
+
+                // Итеративная сходимость: если прошлый проход замерил реальную позицию
+                // первой строки этого абзаца — строим зоны от неё, а не от предсказания.
+                // Именно предсказание промахивалось на стыке страниц.
+                if (_wrapAnchorIn.TryGetValue(paraBlock, out float anchoredTopPt))
+                {
+                    paraStartYPt = anchoredTopPt;
+                    float adv = (anchoredTopPt - (pageYPt + mt)) / pageStepPt;
+                    paraPageAdvance = adv <= 0f ? 0 : (int)MathF.Floor(adv + 0.001f);
+                }
+
+                var wrapZones = ComputeWrapZones(zoneSource, paraStartYPt, textXPt, textWidthPt);
+
+                // Геометрия страниц для абзаца: если он не поместится целиком,
+                // строки после разрыва должны сравниваться с зонами от своего
+                // настоящего места на следующей странице, а не от накопленной
+                // высоты внутри абзаца.
+                var wrapPages = new Rendering.SKTextRenderer.WrapPageContext(
+                    ParaStartYPt: paraStartYPt,
+                    PageBottomPt: pageBottomPt + paraPageAdvance * pageStepPt,
+                    NextPageTopPt: pageYPt + pageStepPt + mt + PageContinuationTopPadPt
+                                 + paraPageAdvance * pageStepPt,
+                    PageStepPt: pageStepPt);
+
+                var layout = wrapZones is null
+                    ? probeLayout
+                    : BuildWrappedLayout(pvm, textWidthPt, wrapZones, wrapPages);
 
                 // Якорь перед таблицей: пустой параграф, следующий блок — таблица.
                 bool isBeforeTableAnchor = string.IsNullOrEmpty(pvm.PlainText)
@@ -940,6 +1100,11 @@ namespace Writersword.Modules.TextEditor.Document
                 int lineFrom = 0;
                 float lineGroupYPt = contentYPt;
 
+                // Реальная позиция ПЕРВОЙ строки абзаца (без её собственного вытеснения
+                // под картинку) — вход для итеративной сходимости зон. lineGroupYPt в
+                // конце цикла относится к последнему куску разрезанного абзаца и не годится.
+                float firstLineTopPt = float.NaN;
+
                 for (int li = 0; li < layout.Lines.Count; li++)
                 {
                     var line = layout.Lines[li];
@@ -951,6 +1116,7 @@ namespace Writersword.Modules.TextEditor.Document
                     // рендер вычитает yBase = Lines[LineFrom].Y, в котором гэп уже учтён.
                     contentYPt += line.WrapExtraTopPt;
                     if (li == lineFrom) lineGroupYPt = contentYPt;
+                    if (li == 0) firstLineTopPt = contentYPt - line.WrapExtraTopPt;
 
                     if (contentYPt + line.Height > pageBottomPt
                         && contentYPt > pageYPt + mt)
@@ -976,9 +1142,69 @@ namespace Writersword.Modules.TextEditor.Document
                         lineGroupYPt = contentYPt;
                     }
 
+                    // Переброс по ФАКТИЧЕСКОЙ позиции. Если строка реально легла на
+                    // картинку (расчёт обтекания в вёрстке недожал на стыке страниц —
+                    // строку рассчитали для одной страницы, а пагинация положила на
+                    // другую, где картинка), выбрасываем её и всё продолжение абзаца под
+                    // низ картинки новым слайсом. Срабатывает только при реальном
+                    // наложении: строки, честно обтёкшие картинку сбоку, сюда не попадают.
+                    {
+                        float lnTop = contentYPt;
+                        float lnBot = contentYPt + line.Height;
+                        float lnLeft = absXPt + line.WrapLeftPt;
+                        float lnRight = lnLeft + line.TextWidth;
+                        float throwToPt = float.NaN;
+                        foreach (var ie in zoneSource)
+                        {
+                            if (ie.Block.WrapMode is not (WrapMode.Square or WrapMode.Tight)) continue;
+                            float iT = ie.Ypt, iB = ie.Ypt + ie.HeightPt;
+                            float iL = ie.XPt, iR = ie.XPt + ie.WidthPt;
+                            if (lnBot > iT + 0.5f && lnTop < iB - 0.5f
+                                && lnRight > iL + 0.5f && lnLeft < iR - 0.5f)
+                            {
+                                if (float.IsNaN(throwToPt) || iB > throwToPt) throwToPt = iB;
+                            }
+                        }
+
+                        if (!float.IsNaN(throwToPt) && throwToPt + WrapThrowGapPt > contentYPt + 0.5f)
+                        {
+                            // Закрываем текущий слайс до этой строки — как при разрыве.
+                            if (li > lineFrom)
+                            {
+                                newLayouts.Add(new ParaLayout(
+                                    pvm, layout, lineGroupYPt,
+                                    contentYPt - lineGroupYPt,
+                                    pageIdx, lineFrom, li,
+                                    AbsXPt: absXPt, Marker: paraMarker));
+                            }
+
+                            contentYPt = throwToPt + WrapThrowGapPt;
+
+                            // Переброс мог увести строку за низ страницы — тогда обычный
+                            // разрыв на следующую страницу.
+                            if (contentYPt + line.Height > pageBottomPt
+                                && contentYPt > pageYPt + mt)
+                            {
+                                pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                                pageBottomPt = pageYPt + pageHeightPt - mb;
+                                contentYPt = pageYPt + mt + PageContinuationTopPadPt;
+                                pageIdx++;
+                                newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+                            }
+
+                            lineFrom = li;
+                            lineGroupYPt = contentYPt;
+                        }
+                    }
+
                     contentYPt += line.Height;
                     if (isLast) contentYPt += layout.SpaceAfterPt;
                 }
+
+                // Замер реальной позиции первой строки — вход для следующей итерации
+                // сходимости зон. Только для обтекаемых абзацев: остальным якорь не нужен.
+                if (wrapZones is not null && !float.IsNaN(firstLineTopPt))
+                    _wrapAnchorOut[paraBlock] = firstLineTopPt;
 
                 newLayouts.Add(new ParaLayout(
                     pvm, layout, lineGroupYPt,
@@ -987,7 +1213,38 @@ namespace Writersword.Modules.TextEditor.Document
                     AbsXPt: absXPt, Marker: paraMarker));
             }
 
+            // Плавающая картинка могла быть перетащена за пределы страницы своего
+            // блока — переопределяем её страницу по центру: рисоваться и клиповаться
+            // она должна там, где реально находится, а не «под» чужим листом.
+            for (int ii = 0; ii < newImages.Count; ii++)
+            {
+                var ie = newImages[ii];
+                if (ie.Block.WrapMode == WrapMode.Inline) continue;
+
+                float cyImg = ie.Ypt + ie.HeightPt / 2f;
+                int resolvedPage = ie.PageIndex;
+                for (int p = 0; p < newPages.Count; p++)
+                {
+                    if (cyImg >= newPages[p].Ypt - PageGapPt / 2f
+                        && cyImg <= newPages[p].Ypt + newPages[p].HeightPt + PageGapPt / 2f)
+                    {
+                        resolvedPage = p;
+                        break;
+                    }
+                }
+                if (resolvedPage != ie.PageIndex)
+                    newImages[ii] = ie with { PageIndex = resolvedPage };
+            }
+
             float newCanvasH = pageYPt + pageHeightPt + PageGapPt;
+
+            // Страницы рядом: высота канваса определяется числом визуальных рядов,
+            // а не логическим столбиком страниц.
+            if (_pagesPerRow > 1 && newPages.Count > 0)
+            {
+                int rows = (newPages.Count + _pagesPerRow - 1) / _pagesPerRow;
+                newCanvasH = PageGapPt + rows * (newPages[0].HeightPt + PageGapPt);
+            }
 
             lock (_renderLock)
             {

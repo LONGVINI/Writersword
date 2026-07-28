@@ -11,6 +11,13 @@ namespace Writersword.Modules.Characters.Interfaces
         Character? GetById(string id);
         IReadOnlyList<string> GetAllTags();
 
+        /// <summary>
+        /// Метки, уже заведённые в проекте — по одной на имя. Нужны, чтобы
+        /// «Ранен» у разных персонажей был одной и той же меткой со своим
+        /// значком и цветом, а не тремя похожими.
+        /// </summary>
+        IReadOnlyList<CharacterLabel> GetAllLabels();
+
         Character Create(string name);
         Character CreateFromAnketas(string name, IEnumerable<CharacterAnketa> anketas, bool randomize = false);
         Character CreateCollective(string name, IEnumerable<CharacterAnketa>? anketas = null);
@@ -19,6 +26,23 @@ namespace Writersword.Modules.Characters.Interfaces
         Character Duplicate(string id);
 
         void ApplyAnketa(string characterId, CharacterAnketa anketa, bool randomize = false);
+
+        /// <summary>
+        /// Разнести изменения набора по карточкам, к которым он подключён:
+        /// новые поля добавляются, уже заполненные значения не трогаются.
+        /// Возвращает число изменённых карточек.
+        ///
+        /// Без этого правка своего набора не доезжала бы до персонажей:
+        /// автор добавил поле и не увидел его там, где ждал.
+        /// </summary>
+        int SyncAnketa(CharacterAnketa anketa);
+
+        /// <summary>
+        /// Отключить набор от карточки. Значения полей при этом остаются:
+        /// набор перестаёт числиться подключённым, но написанное автором
+        /// не пропадает — удалять параметры можно поштучно и осознанно.
+        /// </summary>
+        void DetachAnketa(string characterId, string anketaId);
         void RandomizeParameters(string characterId);
 
         string? GetAvatarPath(string characterId);

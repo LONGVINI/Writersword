@@ -205,6 +205,26 @@
     <value>Add status</value>
     <comment>Add status</comment>
   </data>
+  <data name="Field_Labels" xml:space="preserve">
+    <value>Labels</value>
+    <comment>Character labels section header</comment>
+  </data>
+  <data name="Button_AddLabel" xml:space="preserve">
+    <value>Add label</value>
+    <comment>Open the label editor to create a label</comment>
+  </data>
+  <data name="Label_Dead" xml:space="preserve">
+    <value>Dead</value>
+    <comment>Built-in dead label name</comment>
+  </data>
+  <data name="Label_AddPlaceholder" xml:space="preserve">
+    <value>New label... (Enter)</value>
+    <comment>Placeholder of the new label input</comment>
+  </data>
+  <data name="Tag_AddPlaceholder" xml:space="preserve">
+    <value>Add tag... (Enter)</value>
+    <comment>Placeholder of the new tag input</comment>
+  </data>
   <data name="Button_AddParameter" xml:space="preserve">
     <value>Add parameter</value>
     <comment>Add parameter</comment>
@@ -770,20 +790,303 @@
     <comment>Tooltip on the mark-as-key-event button</comment>
   </data>
   <data name="Param_AddNumeric" xml:space="preserve">
-    <value># Numeric</value>
+    <value>Scale</value>
     <comment>Button: add numeric parameter</comment>
   </data>
   <data name="Param_AddText" xml:space="preserve">
-    <value>T Text</value>
+    <value>Text</value>
     <comment>Button: add text parameter</comment>
   </data>
   <data name="Param_AddStateList" xml:space="preserve">
-    <value>= List</value>
+    <value>Choice</value>
     <comment>Button: add state-list parameter</comment>
   </data>
   <data name="Param_AddBoolean" xml:space="preserve">
-    <value>? Yes/No</value>
+    <value>Yes or no</value>
     <comment>Button: add boolean parameter</comment>
+  </data>
+  <data name="Param_HintScale" xml:space="preserve">
+    <value>A value on a scale, shown as dots: Aggression 3 of 5</value>
+    <comment>Tooltip explaining the scale parameter type</comment>
+  </data>
+  <data name="Param_HintText" xml:space="preserve">
+    <value>Free text: distinguishing marks, manner of speech</value>
+    <comment>Tooltip explaining the text parameter type</comment>
+  </data>
+  <data name="Param_HintChoice" xml:space="preserve">
+    <value>One option out of several: temperament, rank</value>
+    <comment>Tooltip explaining the choice parameter type</comment>
+  </data>
+  <data name="Param_HintYesNo" xml:space="preserve">
+    <value>A simple yes or no: can read, has a title</value>
+    <comment>Tooltip explaining the yes/no parameter type</comment>
+  </data>
+  <data name="Param_NotApplicable" xml:space="preserve">
+    <value>Does not apply to this character</value>
+    <comment>Checkbox: parameter is not applicable</comment>
+  </data>
+  <data name="Param_NotApplicableHint" xml:space="preserve">
+    <value>Not the same as a zero value. Zero fear means fearless; not applicable means the character cannot feel fear at all. The value is kept and comes back if you clear this.</value>
+    <comment>Tooltip explaining the not-applicable override</comment>
+  </data>
+  <data name="Param_MoveUpTooltip" xml:space="preserve">
+    <value>Move up</value>
+    <comment>Tooltip on the move-parameter-up button</comment>
+  </data>
+  <data name="Block_General" xml:space="preserve">
+    <value>General</value>
+    <comment>Title of the general block on the Basics tab</comment>
+  </data>
+  <data name="Block_Appearance" xml:space="preserve">
+    <value>Appearance in the text</value>
+    <comment>Title of the narrative points block</comment>
+  </data>
+  <data name="Block_DataSets" xml:space="preserve">
+    <value>Field sets</value>
+    <comment>Title of the attached field sets block</comment>
+  </data>
+  <data name="Onboarding_Back" xml:space="preserve">
+    <value>Back</value>
+  </data>
+  <data name="Compare_Title" xml:space="preserve">
+    <value>Compare characters</value>
+  </data>
+  <data name="Compare_Summary" xml:space="preserve">
+    <value>Cards: {0}, shared fields: {1}</value>
+  </data>
+  <data name="Compare_Empty" xml:space="preserve">
+    <value>Nothing to compare: the characters shown have no fields in common. Shared fields appear when the same set is attached to the cards.</value>
+  </data>
+  <data name="Compare_Button" xml:space="preserve">
+    <value>Compare</value>
+  </data>
+  <data name="Compare_Hint" xml:space="preserve">
+    <value>Shows side by side whoever is in the list right now. Rows where every value is the same are dimmed — that is the sign your characters are indistinguishable there.</value>
+  </data>
+  <data name="Field_GroupAddresses" xml:space="preserve">
+    <value>Addresses by group</value>
+  </data>
+  <data name="Hint_GroupAddresses" xml:space="preserve">
+    <value>A rule for a whole folder: everyone in “Friends” calls her Ali. A personal form from the relationship beats the group one, the group one beats the general one. The occasion goes after a dash.</value>
+  </data>
+  <data name="GroupAddress_Placeholder" xml:space="preserve">
+    <value>What this group calls them... (Enter)</value>
+  </data>
+  <data name="Field_DefaultAddress" xml:space="preserve">
+    <value>How people address them</value>
+  </data>
+  <data name="Hint_DefaultAddress" xml:space="preserve">
+    <value>This is what everyone without their own form calls them. Personal ones — a pet name from a boyfriend, a joke between friends — are set on the relationship: an address belongs to the relationship, not to the character.</value>
+  </data>
+  <data name="Placeholder_DefaultAddress" xml:space="preserve">
+    <value>Alina</value>
+  </data>
+  <data name="Block_Who" xml:space="preserve">
+    <value>Who they are</value>
+  </data>
+  <data name="Block_Names" xml:space="preserve">
+    <value>Names and forms of address</value>
+  </data>
+  <data name="Block_Classification" xml:space="preserve">
+    <value>Classification</value>
+  </data>
+  <data name="Block_Gallery" xml:space="preserve">
+    <value>Gallery</value>
+  </data>
+  <data name="Gallery_Hint" xml:space="preserve">
+    <value>Sketches, references, art — everything you look at while writing a scene. This is not the avatar picker: a click makes a picture the avatar, the cross removes it from the gallery.</value>
+  </data>
+  <data name="Gallery_Add" xml:space="preserve">
+    <value>Add</value>
+  </data>
+  <data name="Gallery_Empty" xml:space="preserve">
+    <value>Empty. This is where the character's images go, to keep them in front of you.</value>
+  </data>
+  <data name="Gallery_UseAsAvatar" xml:space="preserve">
+    <value>Set as avatar</value>
+  </data>
+  <data name="Gallery_Remove" xml:space="preserve">
+    <value>Remove from gallery</value>
+  </data>
+  <data name="Block_Group" xml:space="preserve">
+    <value>A group, not a person</value>
+  </data>
+  <data name="Group_Hint" xml:space="preserve">
+    <value>A people, a family, a squad, an organisation. Same card — only the look in lists changes: a group gets a ribbon in the corner.</value>
+  </data>
+  <data name="Group_Population" xml:space="preserve">
+    <value>How many</value>
+  </data>
+  <data name="Group_PopulationPlaceholder" xml:space="preserve">
+    <value>Ten thousand or so, nobody counted</value>
+  </data>
+  <data name="Sets_EmptyHint" xml:space="preserve">
+    <value>Nothing attached yet — and that is fine: a name, a note and labels are enough. A set helps when you want to describe every character by the same points.</value>
+    <comment>Empty state of the field sets block</comment>
+  </data>
+  <data name="Sets_FieldCount" xml:space="preserve">
+    <value>fields:</value>
+    <comment>Prefix before the number of fields in a set</comment>
+  </data>
+  <data name="Block_DataSetsHint" xml:space="preserve">
+    <value>Sets of fields — appearance, stats, custom questionnaires — are connected on the Parameters tab and will show up here.</value>
+    <comment>Placeholder hint for future anketa sets</comment>
+  </data>
+  <data name="Templates_Export" xml:space="preserve">
+    <value>Save to file</value>
+    <comment>Export a field set</comment>
+  </data>
+  <data name="Templates_Import" xml:space="preserve">
+    <value>Open a set</value>
+    <comment>Import a field set from file</comment>
+  </data>
+  <data name="Templates_Edit" xml:space="preserve">
+    <value>Fields</value>
+    <comment>Button that opens the set constructor</comment>
+  </data>
+  <data name="AnketaEditor_Title" xml:space="preserve">
+    <value>Field set</value>
+    <comment>Title of the set constructor</comment>
+  </data>
+  <data name="AnketaEditor_Name" xml:space="preserve">
+    <value>Set name</value>
+  </data>
+  <data name="AnketaEditor_Description" xml:space="preserve">
+    <value>What it is for</value>
+  </data>
+  <data name="AnketaEditor_Empty" xml:space="preserve">
+    <value>No fields yet. Add the ones you need — a set is just a pack of fields, nothing more.</value>
+  </data>
+  <data name="AnketaEditor_FieldName" xml:space="preserve">
+    <value>Field name</value>
+  </data>
+  <data name="AnketaEditor_FieldHint" xml:space="preserve">
+    <value>Hint shown next to the field</value>
+  </data>
+  <data name="AnketaEditor_ScaleLabels" xml:space="preserve">
+    <value>Words for the marks</value>
+  </data>
+  <data name="AnketaEditor_ScaleLabelsHint" xml:space="preserve">
+    <value>calm, reserved, flares up, explodes, out of control</value>
+  </data>
+  <data name="AnketaEditor_Choices" xml:space="preserve">
+    <value>Options, comma separated</value>
+  </data>
+  <data name="AnketaEditor_Comparable" xml:space="preserve">
+    <value>Compare across characters</value>
+  </data>
+  <data name="AnketaEditor_ComparableHint" xml:space="preserve">
+    <value>Data — height, strength, hair colour — goes into comparison tables. Exercises like “describe how they would act” are valuable for making you think, not for the table.</value>
+  </data>
+  <data name="AnketaEditor_Save" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="AnketaEditor_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Hint_SetsMovedShort" xml:space="preserve">
+    <value>Sets are attached in “General”</value>
+    <comment>Note in the parameters toolbar pointing where sets live now</comment>
+  </data>
+  <data name="Hint_Sets" xml:space="preserve">
+    <value>A set is a ready pack of fields — appearance, stats, a questionnaire of your own. Attach what you need; the card is made of sets, nothing is fixed in advance.</value>
+    <comment>Explains what field sets are</comment>
+  </data>
+  <data name="Anketa_Attached" xml:space="preserve">
+    <value>Attached sets</value>
+    <comment>Header of the attached field sets row</comment>
+  </data>
+  <data name="Anketa_DetachTip" xml:space="preserve">
+    <value>Detach the set</value>
+    <comment>Tooltip title of the detach action</comment>
+  </data>
+  <data name="Anketa_DetachHint" xml:space="preserve">
+    <value>The set stops being part of the card. Values stay where they are — fields are removed one by one, on purpose.</value>
+    <comment>Tooltip description of the detach action</comment>
+  </data>
+  <data name="Relationship_FilterPositive" xml:space="preserve">
+    <value>Only warm ties</value>
+    <comment>Tooltip title of the positive emotion filter</comment>
+  </data>
+  <data name="Relationship_FilterNegative" xml:space="preserve">
+    <value>Only hostile ties</value>
+    <comment>Tooltip title of the negative emotion filter</comment>
+  </data>
+  <data name="Relationship_FilterHint" xml:space="preserve">
+    <value>Press again to drop the filter. Only the lines are hidden — the ties themselves stay untouched.</value>
+    <comment>Shared description of the canvas filters</comment>
+  </data>
+  <data name="Hint_Labels" xml:space="preserve">
+    <value>A visible mark: icon, colour, an effect on the card. Labels show up in lists — that is what tells them from tags.</value>
+    <comment>Explains what labels are and how they differ from tags</comment>
+  </data>
+  <data name="Hint_Tags" xml:space="preserve">
+    <value>Invisible classification for list filters. Nothing shows on the card — put here what you sort by, not what you look at.</value>
+    <comment>Explains what tags are and how they differ from labels</comment>
+  </data>
+  <data name="Hint_AlternateNames" xml:space="preserve">
+    <value>Former and future names, nicknames, titles. Search finds the character by any of them; the arrow moves a name to the top. A note can go on the same line: Diana — after the change. Click a name to bring it back for editing.</value>
+    <comment>Explains the alternate names section</comment>
+  </data>
+  <data name="Hint_Note" xml:space="preserve">
+    <value>Anything in your own words. Nothing here is required and nothing is counted — the card is not a form to fill in.</value>
+    <comment>Explains the free-form note</comment>
+  </data>
+  <data name="Param_ValueNotePlaceholder" xml:space="preserve">
+    <value>Note to the value — a word of your own</value>
+    <comment>Placeholder of the free-form note next to a parameter value</comment>
+  </data>
+  <data name="Field_AlternateNames" xml:space="preserve">
+    <value>Other names</value>
+    <comment>Section with the character's other names</comment>
+  </data>
+  <data name="Name_AddPlaceholder" xml:space="preserve">
+    <value>Another name, a note after a dash... (Enter)</value>
+    <comment>Placeholder of the new name input</comment>
+  </data>
+  <data name="Name_MakePrimary" xml:space="preserve">
+    <value>Show this name in lists</value>
+    <comment>Tooltip of the make-primary action on a name chip</comment>
+  </data>
+  <data name="Field_Note" xml:space="preserve">
+    <value>Note</value>
+    <comment>Free-form note about the character</comment>
+  </data>
+  <data name="Placeholder_Note" xml:space="preserve">
+    <value>Anything about the character — in your own words</value>
+    <comment>Placeholder of the free-form note</comment>
+  </data>
+  <data name="Button_AddSet" xml:space="preserve">
+    <value>Add set</value>
+    <comment>Attach a field set to the card</comment>
+  </data>
+  <data name="Relationship_DropHint" xml:space="preserve">
+    <value>Drag a character onto the canvas to link them</value>
+    <comment>Hint on the empty relationship canvas</comment>
+  </data>
+  <data name="Relationship_CallsAs" xml:space="preserve">
+    <value>Calls them</value>
+    <comment>Label for SourceCallsTargetAs</comment>
+  </data>
+  <data name="Relationship_CallsAsHint" xml:space="preserve">
+    <value>What this character calls the other one. There can be several — the occasion goes after a dash: “Ali — fondly”, “Piggy — as a joke”. With no personal form, the general one from the card applies.</value>
+    <comment>Explains the address forms on a relationship</comment>
+  </data>
+  <data name="Relationship_CallsAsPlaceholder" xml:space="preserve">
+    <value>Add a name... (Enter)</value>
+    <comment>Placeholder for adding a nickname</comment>
+  </data>
+  <data name="Relationship_Candidates" xml:space="preserve">
+    <value>Characters</value>
+    <comment>Header of the drag source list</comment>
+  </data>
+  <data name="Relationship_FilterAll" xml:space="preserve">
+    <value>All</value>
+    <comment>Canvas filter: show every relationship</comment>
+  </data>
+  <data name="Relationship_SelectHint" xml:space="preserve">
+    <value>Click a character on the canvas to describe the relationship</value>
+    <comment>Hint shown when no relationship is selected</comment>
   </data>
   <data name="Param_DescriptionPlaceholder" xml:space="preserve">
     <value>Parameter description (hint)</value>

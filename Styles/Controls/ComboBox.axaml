@@ -7,7 +7,11 @@
 		<Setter Property="BorderThickness" Value="1"/>
 		<Setter Property="CornerRadius" Value="4"/>
 		<Setter Property="FontSize" Value="{DynamicResource FontSizeS}"/>
-		<Setter Property="Padding" Value="{DynamicResource PaddingXS}"/>
+		<!-- Отступ совпадает с отступом пункта в раскрытом списке: у пункта
+		     он складывается из Margin 4 и Padding 4, поэтому здесь 8.
+		     Иначе выбранное значение стоит левее, чем те же строки в списке,
+		     и текст «прыгает» при открытии. -->
+		<Setter Property="Padding" Value="8,4"/>
 		<Setter Property="MinHeight" Value="28"/>
 	</Style>
 
@@ -25,19 +29,41 @@
 		<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
 	</Style>
 
+	<!-- Подсветку пункта рисует ContentPresenter, растянутый на весь элемент.
+	     Без внешнего отступа плашка упиралась в края выпадающего списка:
+	     отступ был у текста, а не у выделения, и угол выглядел обрубленным.
+	     Margin отодвигает её от границ, CornerRadius на самом презентере
+	     скругляет — на элементе он бы не подействовал, красит не он. -->
 	<Style Selector="ComboBoxItem">
 		<Setter Property="Background" Value="Transparent"/>
 		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
 		<Setter Property="FontSize" Value="{DynamicResource FontSizeS}"/>
 		<Setter Property="Padding" Value="{DynamicResource PaddingXS}"/>
+		<Setter Property="Margin" Value="4,1"/>
+		<Setter Property="CornerRadius" Value="4"/>
 	</Style>
 
-	<Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter">
+	<!-- Подсветку рисует сам пункт, а не его ContentPresenter: презентер
+	     заполняет элемент целиком, поэтому отступ и скругление на нём
+	     не сказываются. Презентер держим прозрачным, иначе он закрасит
+	     скруглённые углы. -->
+	<Style Selector="ComboBoxItem /template/ ContentPresenter">
+		<Setter Property="Background" Value="Transparent"/>
+		<Setter Property="CornerRadius" Value="4"/>
+	</Style>
+
+	<Style Selector="ComboBoxItem:pointerover">
 		<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter">
+		<Setter Property="Background" Value="Transparent"/>
 		<Setter Property="TextElement.Foreground" Value="White"/>
 	</Style>
 
-	<Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
+	<Style Selector="ComboBoxItem:selected">
 		<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+	</Style>
+	<Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
+		<Setter Property="Background" Value="Transparent"/>
 	</Style>
 </Styles>

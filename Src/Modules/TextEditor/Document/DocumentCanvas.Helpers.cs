@@ -41,9 +41,49 @@ namespace Writersword.Modules.TextEditor.Document
             _pendingSnapshot.Commit(_caretPara, _caretChar);
             UndoStack.Push(_pendingSnapshot);
             RecordSnapshotInOrder();
+            DocVm?.RaiseContentModified();
             _logger.Debug("[UNDO] CommitEdit: pushed '{D}', stackSize={S}", _pendingSnapshot.Description, UndoStack.CanUndo);
             _pendingSnapshot = null;
         }
+
+        // ── Undo для операций с картинками ───────────────────────────────
+        // Свойства картинки меняются гранулярной командой (значения одного блока
+        // до/после), а не снапшотом всего документа: сериализация DocumentModel
+        // на больших документах занимала заметное время на каждый жест, а отмена —
+        // полную десериализацию с пересбором всех вью-моделей.
+        private ImagePropertiesCommand? _pendingImageCommand;
+
+        private void BeginImageEdit(string description)
+        {
+            if (_selectedImage is null) return;
+            _logger.Debug("[UNDO] BeginImageEdit: {D}", description);
+            _pendingImageCommand = new ImagePropertiesCommand(_selectedImage, description)
+            {
+                Changed = () =>
+                {
+                    RebuildLayouts();
+                    InvalidateMeasure();
+                    InvalidateFull();
+                    ImageSelectionChanged?.Invoke(_selectedImage is not null);
+                }
+            };
+        }
+
+        private void CommitImageEdit()
+        {
+            if (_pendingImageCommand is null) { _logger.Warning("[UNDO] CommitImageEdit: no pending command"); return; }
+            // Уведомление идёт до проверки UndoStack: документ изменён независимо
+            // от того, попала правка в стек отмены или нет.
+            DocVm?.RaiseContentModified();
+            if (UndoStack is null) { _pendingImageCommand = null; return; }
+            _pendingImageCommand.Commit();
+            UndoStack.Push(_pendingImageCommand);
+            RecordSnapshotInOrder();
+            _logger.Debug("[UNDO] CommitImageEdit: pushed '{D}'", _pendingImageCommand.Description);
+            _pendingImageCommand = null;
+        }
+
+        private void CancelImageEdit() => _pendingImageCommand = null;
 
         // ── Selection ────────────────────────────────────────────────────
         private bool HasSel() =>
@@ -194,6 +234,17 @@ namespace Writersword.Modules.TextEditor.Document
             // оно не меняет данные документа.
             _internalClipboardJson = null;
             _clipboardCache = null;
+            _clipboardImage = null;
+            _clipboardImageBytes = null;
+
+            // Картинка в приоритете: если она выделена — копируем именно её, даже при
+            // остаточном текстовом выделении. Иначе Ctrl+C по картинке уходил в пустое
+            // копирование текста и картинка в буфер не попадала.
+            if (_selectedImage is not null)
+            {
+                await CopyImageToClipboard(_selectedImage);
+                return;
+            }
 
             bool hasSel = HasSel();
             bool hasCells = _tableSelections.Count > 0;
@@ -311,6 +362,130 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         /// <summary>
+        /// Копирует выделенную картинку: полную копию блока во внутренний буфер (для точной
+        /// вставки внутри документа) и пиксели PNG в системный буфер (Avalonia 12 — через
+        /// DataTransfer), чтобы картинку можно было вставить и во внешних приложениях.
+        /// </summary>
+        private async Task CopyImageToClipboard(ImageBlock img)
+        {
+            _clipboardImage = CloneImageFull(img);
+            _clipboardImageBytes = null;
+
+            try
+            {
+                var ctx = Writersword.Core.Services.CoreServices
+                    .GetService<Writersword.Core.Interfaces.WorkFlows.ITabCollection>()?.ActiveTab?.Context;
+                byte[]? data = ctx?.ReadFile($"TextEditor/Images/{img.ImageFileName}");
+                // Байты — для вставки в другой проект (файл переносится в его ZIP).
+                _clipboardImageBytes = data;
+                var clip = TopLevel.GetTopLevel(this)?.Clipboard;
+                if (data is { Length: > 0 } && clip is not null)
+                {
+                    var dt = new Avalonia.Input.DataTransfer();
+
+                    // CF_DIB — стандартный формат картинки Windows (читают Paint, Word и
+                    // почти все). Строим 32-битный DIB (BITMAPINFOHEADER + пиксели снизу
+                    // вверх) вручную из пикселей: SkiaSharp BMP не кодирует.
+                    try
+                    {
+                        byte[]? dib = BuildDibFromImage(data);
+                        if (dib is { Length: > 0 })
+                            dt.Add(Avalonia.Input.DataTransferItem.Create(ClipboardImageDibFormat, dib));
+                    }
+                    catch { }
+
+                    // Плюс сырой PNG — для приложений, читающих формат «PNG».
+                    dt.Add(Avalonia.Input.DataTransferItem.Create(ClipboardImagePngFormat, data));
+                    await clip.SetDataAsync(dt);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>Полная копия блока картинки со всеми свойствами. Id — новый (по умолчанию).</summary>
+        private static ImageBlock CloneImageFull(ImageBlock s) => new()
+        {
+            ImageFileName = s.ImageFileName,
+            WidthPt = s.WidthPt,
+            HeightPt = s.HeightPt,
+            LockAspectRatio = s.LockAspectRatio,
+            RotationDeg = s.RotationDeg,
+            Opacity = s.Opacity,
+            BorderColor = s.BorderColor,
+            BorderThicknessPt = s.BorderThicknessPt,
+            FlipHorizontal = s.FlipHorizontal,
+            FlipVertical = s.FlipVertical,
+            CropLeftFrac = s.CropLeftFrac,
+            CropTopFrac = s.CropTopFrac,
+            CropRightFrac = s.CropRightFrac,
+            CropBottomFrac = s.CropBottomFrac,
+            WrapMode = s.WrapMode,
+            Alignment = s.Alignment,
+            Anchor = s.Anchor,
+            WrapPadTopPt = s.WrapPadTopPt,
+            WrapPadBottomPt = s.WrapPadBottomPt,
+            WrapPadLeftPt = s.WrapPadLeftPt,
+            WrapPadRightPt = s.WrapPadRightPt,
+            OffsetXPt = s.OffsetXPt,
+            OffsetYPt = s.OffsetYPt,
+            ZOrder = s.ZOrder,
+            AltText = s.AltText
+        };
+
+        /// <summary>
+        /// Строит 32-битный DIB (для формата CF_DIB) из закодированной картинки (PNG и т.п.):
+        /// BITMAPINFOHEADER (40 байт, положительная высота = строки снизу вверх) + BGRA-пиксели.
+        /// SkiaSharp BMP не кодирует, поэтому собираем вручную из декодированных пикселей.
+        /// </summary>
+        private static byte[]? BuildDibFromImage(byte[] encoded)
+        {
+            using var decoded = SkiaSharp.SKBitmap.Decode(encoded);
+            if (decoded is null || decoded.Width <= 0 || decoded.Height <= 0) return null;
+
+            // Приводим к BGRA8888 (в памяти байты идут B,G,R,A — как ждёт 32-битный DIB).
+            SkiaSharp.SKBitmap src = decoded;
+            SkiaSharp.SKBitmap? converted = null;
+            if (decoded.ColorType != SkiaSharp.SKColorType.Bgra8888)
+            {
+                converted = new SkiaSharp.SKBitmap(new SkiaSharp.SKImageInfo(
+                    decoded.Width, decoded.Height,
+                    SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Unpremul));
+                if (!decoded.CopyTo(converted, SkiaSharp.SKColorType.Bgra8888))
+                {
+                    converted.Dispose();
+                    return null;
+                }
+                src = converted;
+            }
+
+            int w = src.Width, h = src.Height;
+            int srcStride = src.RowBytes;
+            int dstStride = w * 4;                 // 32 бита выровнены по 4 байта
+            byte[] px = src.Bytes;                 // сверху вниз, BGRA
+            const int headerSize = 40;
+            var dib = new byte[headerSize + dstStride * h];
+
+            System.BitConverter.GetBytes(headerSize).CopyTo(dib, 0);      // biSize
+            System.BitConverter.GetBytes(w).CopyTo(dib, 4);              // biWidth
+            System.BitConverter.GetBytes(h).CopyTo(dib, 8);              // biHeight (>0 — снизу вверх)
+            System.BitConverter.GetBytes((short)1).CopyTo(dib, 12);     // biPlanes
+            System.BitConverter.GetBytes((short)32).CopyTo(dib, 14);    // biBitCount
+            System.BitConverter.GetBytes(0).CopyTo(dib, 16);            // biCompression = BI_RGB
+            System.BitConverter.GetBytes(dstStride * h).CopyTo(dib, 20);// biSizeImage
+
+            int copyBytes = Math.Min(srcStride, dstStride);
+            for (int row = 0; row < h; row++)
+            {
+                int srcOff = (h - 1 - row) * srcStride;   // строки снизу вверх
+                int dstOff = headerSize + row * dstStride;
+                System.Array.Copy(px, srcOff, dib, dstOff, copyBytes);
+            }
+
+            converted?.Dispose();
+            return dib;
+        }
+
+        /// <summary>
         /// Создаёт новый TableBlock содержащий только ячейки в диапазоне
         /// [minRow..maxRow] × [minCol..maxCol] с перенумерованными строками/столбцами.
         /// </summary>
@@ -394,6 +569,20 @@ namespace Writersword.Modules.TextEditor.Document
         private async Task CutAsync()
         {
             if (IsEditingBlocked) return;
+
+            // Только картинка выделена — вырезаем её: копия в буфер + удаление из документа.
+            if (_selectedImage is not null && !HasSel() && _tableSelections.Count == 0)
+            {
+                await CopyImageToClipboard(_selectedImage);
+                var toRemove = _selectedImage;
+                _selectedImage = null;
+                _imageCropMode = false;
+                DocVm?.RemoveImage(toRemove);
+                ImageSelectionChanged?.Invoke(false);
+                InvalidateFull();
+                return;
+            }
+
             BeginEdit("Cut");
             await CopyAsync();
 
@@ -537,6 +726,44 @@ namespace Writersword.Modules.TextEditor.Document
         private async Task PasteAsync()
         {
             if (IsEditingBlocked) return;
+
+            // Внутренняя копия картинки (её положил Ctrl+C по картинке) — вставляем её.
+            // Внутренний буфер сбрасывается при любом другом копировании внутри
+            // редактора (текст, ячейки), так что устаревания в обычном сценарии нет.
+            if (_clipboardImage is not null && DocVm is not null && !IsInCell(_caretPara))
+            {
+                // Плавающая картинка (Обтекание/За текстом/Поверх) вставляется РОВНО туда,
+                // где стоит курсор: считаем смещение от верха текстовой области страницы
+                // каретки. Inline-картинка встаёт в поток у каретки (смещения не нужны).
+                bool floating = _clipboardImage.WrapMode != WrapMode.Inline;
+                double offX = 20.0, offY = 20.0;
+                if (floating && _caretPara >= 0 && _caretPara < _layouts.Count)
+                {
+                    var pl = _layouts[_caretPara];
+                    if (pl.PageIndex >= 0 && pl.PageIndex < _pages.Count)
+                    {
+                        var pg = _pages[pl.PageIndex];
+                        offY = Math.Max(0.0, pl.Ypt - (pg.Ypt + pg.PadTopPt));
+                    }
+                }
+
+                // Байты картинки пишем новым файлом в ZIP ТЕКУЩЕГО проекта и переносим
+                // свойства — так вставка работает и в другом проекте. Якорь потока —
+                // абзац каретки (передаётся внутри InsertImageWithProps через _activeParagraph).
+                ImageBlock? pasted = _clipboardImageBytes is { Length: > 0 }
+                    ? DocVm.InsertImageWithProps(_clipboardImageBytes, _clipboardImage, offX, offY)
+                    : DocVm.InsertImageClone(_clipboardImage);
+                if (pasted is not null)
+                {
+                    _selectedImage = pasted;
+                    _imageCropMode = false;
+                    ImageSelectionChanged?.Invoke(true);
+                }
+                RebuildLayouts();
+                InvalidateFull();
+                return;
+            }
+
             // Картинка из буфера обмена — вставляем как изображение и выходим.
             {
                 var imgClip = TopLevel.GetTopLevel(this)?.Clipboard;
@@ -819,6 +1046,8 @@ namespace Writersword.Modules.TextEditor.Document
             double zoom = Zoom;
             float xPt = (float)(ptLogPx.X / zoom * PxToPt);
             float yPt = (float)(ptLogPx.Y / zoom * PxToPt);
+            // Страницы рядом: переводим точку указателя в логические координаты раскладки.
+            (xPt, yPt) = VisualToLogicalPt(xPt, yPt);
 
             // ── Фаза 0: приоритет clip-прямоугольника ячейки ──────────────
             // Клик в любой точке внутри clip-области ячейки (включая пустое пространство
@@ -1057,6 +1286,12 @@ namespace Writersword.Modules.TextEditor.Document
                 double zoom = Zoom;
                 var pl = _layouts[_caretPara];
 
+                // Страницы рядом: скроллим к визуальной позиции каретки (её страница
+                // может стоять во второй колонке и другом ряду).
+                List<PageRect> pagesForCaret;
+                lock (_renderLock) { pagesForCaret = _pages; }
+                var (_, caretDyPt) = PageVisualDelta(pl.PageIndex, pagesForCaret);
+
                 double caretYPx;
                 double caretHPx;
 
@@ -1064,7 +1299,7 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     // Пустой параграф — например созданный после Enter.
                     // Используем Ypt параграфа как позицию каретки.
-                    caretYPx = pl.Ypt * PtToPx * zoom;
+                    caretYPx = (pl.Ypt + caretDyPt) * PtToPx * zoom;
                     caretHPx = FallbackLinePt * PtToPx * zoom;
                 }
                 else
@@ -1076,7 +1311,7 @@ namespace Writersword.Modules.TextEditor.Document
                     float yBase = pl.LineFrom < htLayout.Lines.Count
                         ? htLayout.Lines[pl.LineFrom].Y : 0f;
 
-                    caretYPx = (pl.Ypt + (caret.Y - yBase)) * PtToPx * zoom;
+                    caretYPx = (pl.Ypt + (caret.Y - yBase) + caretDyPt) * PtToPx * zoom;
                     caretHPx = caret.Height * PtToPx * zoom;
                 }
 

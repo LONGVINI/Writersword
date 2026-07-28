@@ -29,6 +29,19 @@
 		     модуля, со скримом, как редактор цвета -->
 		<views:CardSettingsOverlay x:Name="CardSettingsOverlayControl" ZIndex="150"/>
 
+		<!-- Редактор метки персонажа (значок, цвет, эффект, показ) — по центру
+		     модуля, со скримом, как окно настроек карточки -->
+		<views:LabelEditorOverlay x:Name="LabelEditorOverlayControl" ZIndex="155"/>
+
+		<!-- Конструктор набора полей — по центру модуля, со скримом, как
+		     редактор метки. Здесь задаётся определение полей: имя, тип,
+		     подсказка, подписи делений шкалы. -->
+		<views:AnketaEditorOverlay x:Name="AnketaEditorOverlayControl" ZIndex="160"/>
+
+		<!-- Сравнение карточек: персонажи рядом, поля строками. Ради него
+		     поля и заводились — оно ловит то, чего автор сам не видит. -->
+		<views:CharacterComparisonOverlay x:Name="ComparisonOverlayControl" ZIndex="165"/>
+
 		<!-- Выбор аватара — по центру модуля, со скримом, как редактор цвета -->
 		<avatars:CharacterAvatarPickerOverlay x:Name="AvatarPickerOverlayControl" ZIndex="170"/>
 

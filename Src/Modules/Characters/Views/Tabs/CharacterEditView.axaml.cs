@@ -1,6 +1,8 @@
 using System;
 using System.ComponentModel;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Writersword.Modules.Characters.ViewModels;
 
@@ -125,6 +127,74 @@ namespace Writersword.Modules.Characters.Views.Tabs
         {
             if (DataContext is CharactersViewModel vm)
                 vm.RestoreSidebar();
+        }
+
+        // ── Перетаскивание персонажа из бокового списка ───────────────────
+        // Строка списка одновременно кнопка открытия персонажа и источник
+        // перетаскивания на полотно связей. Чтобы одно не мешало другому,
+        // перетаскивание стартует не по нажатию, а после сдвига на порог:
+        // обычный щелчок до порога не доходит и открывает карточку как раньше.
+
+        private const double DragThreshold = 6.0;
+
+        private Point? _pressOrigin;
+        private string? _pressedCharacterId;
+
+        // DoDragDropAsync принимает именно аргументы нажатия — их и храним
+        // от PointerPressed до момента, когда сдвиг превысит порог.
+        private PointerPressedEventArgs? _pressArgs;
+
+        private void OnRowPointerPressed(object? sender, PointerPressedEventArgs e)
+        {
+            ClearPress();
+
+            if (sender is not Control row) return;
+            if (row.DataContext is not CharacterListItemViewModel item) return;
+            if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+
+            _pressOrigin = e.GetPosition(this);
+            _pressedCharacterId = item.Id;
+            _pressArgs = e;
+        }
+
+        private async void OnRowPointerMoved(object? sender, PointerEventArgs e)
+        {
+            if (_pressOrigin is not { } origin) return;
+            if (_pressedCharacterId is not { } characterId) return;
+            if (_pressArgs is not { } pressArgs) return;
+            if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+
+            var current = e.GetPosition(this);
+            var dx = current.X - origin.X;
+            var dy = current.Y - origin.Y;
+            if (Math.Sqrt(dx * dx + dy * dy) < DragThreshold) return;
+
+            // Порог пройден — дальше это перетаскивание, а не щелчок.
+            ClearPress();
+
+            var dataTransfer = new DataTransfer();
+            dataTransfer.Add(DataTransferItem.Create(
+                CharacterDragFormats.CharacterId, characterId));
+
+            try
+            {
+                await DragDrop.DoDragDropAsync(pressArgs, dataTransfer, DragDropEffects.Link);
+            }
+            catch (Exception)
+            {
+                // Систему может прервать перетаскивание — связь просто
+                // не создаётся, отдельной обработки не требуется.
+            }
+        }
+
+        private void OnRowPointerReleased(object? sender, PointerReleasedEventArgs e)
+            => ClearPress();
+
+        private void ClearPress()
+        {
+            _pressOrigin = null;
+            _pressedCharacterId = null;
+            _pressArgs = null;
         }
     }
 }

@@ -239,6 +239,51 @@ namespace Writersword.Src.Modules.Characters.Resources {
                 return ResourceManager.GetString("Button_ApplyAnketa", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Labels.
+        /// </summary>
+        public static string Field_Labels {
+            get {
+                return ResourceManager.GetString("Field_Labels", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Add label.
+        /// </summary>
+        public static string Button_AddLabel {
+            get {
+                return ResourceManager.GetString("Button_AddLabel", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Dead.
+        /// </summary>
+        public static string Label_Dead {
+            get {
+                return ResourceManager.GetString("Label_Dead", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на New label... (Enter).
+        /// </summary>
+        public static string Label_AddPlaceholder {
+            get {
+                return ResourceManager.GetString("Label_AddPlaceholder", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Add tag... (Enter).
+        /// </summary>
+        public static string Tag_AddPlaceholder {
+            get {
+                return ResourceManager.GetString("Tag_AddPlaceholder", resourceCulture);
+            }
+        }
         
         /// <summary>
         ///   Ищет локализованную строку, похожую на Clear filters.
@@ -1458,6 +1503,486 @@ namespace Writersword.Src.Modules.Characters.Resources {
         public static string Param_AddNumeric {
             get {
                 return ResourceManager.GetString("Param_AddNumeric", resourceCulture);
+            }
+        }
+
+        public static string Param_HintScale {
+            get {
+                return ResourceManager.GetString("Param_HintScale", resourceCulture);
+            }
+        }
+
+        public static string Param_HintText {
+            get {
+                return ResourceManager.GetString("Param_HintText", resourceCulture);
+            }
+        }
+
+        public static string Param_HintChoice {
+            get {
+                return ResourceManager.GetString("Param_HintChoice", resourceCulture);
+            }
+        }
+
+        public static string Param_HintYesNo {
+            get {
+                return ResourceManager.GetString("Param_HintYesNo", resourceCulture);
+            }
+        }
+
+        public static string Param_NotApplicable {
+            get {
+                return ResourceManager.GetString("Param_NotApplicable", resourceCulture);
+            }
+        }
+
+        public static string Param_NotApplicableHint {
+            get {
+                return ResourceManager.GetString("Param_NotApplicableHint", resourceCulture);
+            }
+        }
+
+        public static string Param_MoveUpTooltip {
+            get {
+                return ResourceManager.GetString("Param_MoveUpTooltip", resourceCulture);
+            }
+        }
+
+        public static string Block_General {
+            get {
+                return ResourceManager.GetString("Block_General", resourceCulture);
+            }
+        }
+
+        public static string Block_Appearance {
+            get {
+                return ResourceManager.GetString("Block_Appearance", resourceCulture);
+            }
+        }
+
+        public static string Onboarding_Back {
+            get {
+                return ResourceManager.GetString("Onboarding_Back", resourceCulture);
+            }
+        }
+
+        public static string Compare_Title {
+            get {
+                return ResourceManager.GetString("Compare_Title", resourceCulture);
+            }
+        }
+
+        public static string Compare_Summary {
+            get {
+                return ResourceManager.GetString("Compare_Summary", resourceCulture);
+            }
+        }
+
+        public static string Compare_Empty {
+            get {
+                return ResourceManager.GetString("Compare_Empty", resourceCulture);
+            }
+        }
+
+        public static string Compare_Button {
+            get {
+                return ResourceManager.GetString("Compare_Button", resourceCulture);
+            }
+        }
+
+        public static string Compare_Hint {
+            get {
+                return ResourceManager.GetString("Compare_Hint", resourceCulture);
+            }
+        }
+
+        public static string Field_GroupAddresses {
+            get {
+                return ResourceManager.GetString("Field_GroupAddresses", resourceCulture);
+            }
+        }
+
+        public static string Hint_GroupAddresses {
+            get {
+                return ResourceManager.GetString("Hint_GroupAddresses", resourceCulture);
+            }
+        }
+
+        public static string GroupAddress_Placeholder {
+            get {
+                return ResourceManager.GetString("GroupAddress_Placeholder", resourceCulture);
+            }
+        }
+
+        public static string Field_DefaultAddress {
+            get {
+                return ResourceManager.GetString("Field_DefaultAddress", resourceCulture);
+            }
+        }
+
+        public static string Hint_DefaultAddress {
+            get {
+                return ResourceManager.GetString("Hint_DefaultAddress", resourceCulture);
+            }
+        }
+
+        public static string Placeholder_DefaultAddress {
+            get {
+                return ResourceManager.GetString("Placeholder_DefaultAddress", resourceCulture);
+            }
+        }
+
+        public static string Block_Who {
+            get {
+                return ResourceManager.GetString("Block_Who", resourceCulture);
+            }
+        }
+
+        public static string Block_Names {
+            get {
+                return ResourceManager.GetString("Block_Names", resourceCulture);
+            }
+        }
+
+        public static string Block_Classification {
+            get {
+                return ResourceManager.GetString("Block_Classification", resourceCulture);
+            }
+        }
+
+        public static string Block_Gallery {
+            get {
+                return ResourceManager.GetString("Block_Gallery", resourceCulture);
+            }
+        }
+
+        public static string Gallery_Hint {
+            get {
+                return ResourceManager.GetString("Gallery_Hint", resourceCulture);
+            }
+        }
+
+        public static string Gallery_Add {
+            get {
+                return ResourceManager.GetString("Gallery_Add", resourceCulture);
+            }
+        }
+
+        public static string Gallery_Empty {
+            get {
+                return ResourceManager.GetString("Gallery_Empty", resourceCulture);
+            }
+        }
+
+        public static string Gallery_Remove {
+            get {
+                return ResourceManager.GetString("Gallery_Remove", resourceCulture);
+            }
+        }
+
+        public static string Gallery_UseAsAvatar {
+            get {
+                return ResourceManager.GetString("Gallery_UseAsAvatar", resourceCulture);
+            }
+        }
+
+        public static string Block_Group {
+            get {
+                return ResourceManager.GetString("Block_Group", resourceCulture);
+            }
+        }
+
+        public static string Group_Hint {
+            get {
+                return ResourceManager.GetString("Group_Hint", resourceCulture);
+            }
+        }
+
+        public static string Group_Population {
+            get {
+                return ResourceManager.GetString("Group_Population", resourceCulture);
+            }
+        }
+
+        public static string Group_PopulationPlaceholder {
+            get {
+                return ResourceManager.GetString("Group_PopulationPlaceholder", resourceCulture);
+            }
+        }
+
+        public static string Sets_EmptyHint {
+            get {
+                return ResourceManager.GetString("Sets_EmptyHint", resourceCulture);
+            }
+        }
+
+        public static string Sets_FieldCount {
+            get {
+                return ResourceManager.GetString("Sets_FieldCount", resourceCulture);
+            }
+        }
+
+        public static string Block_DataSets {
+            get {
+                return ResourceManager.GetString("Block_DataSets", resourceCulture);
+            }
+        }
+
+        public static string Block_DataSetsHint {
+            get {
+                return ResourceManager.GetString("Block_DataSetsHint", resourceCulture);
+            }
+        }
+
+        public static string Templates_Export {
+            get {
+                return ResourceManager.GetString("Templates_Export", resourceCulture);
+            }
+        }
+
+        public static string Templates_Import {
+            get {
+                return ResourceManager.GetString("Templates_Import", resourceCulture);
+            }
+        }
+
+        public static string Templates_Edit {
+            get {
+                return ResourceManager.GetString("Templates_Edit", resourceCulture);
+            }
+        }
+
+        public static string AnketaEditor_Title {
+            get {
+                return ResourceManager.GetString("AnketaEditor_Title", resourceCulture);
+            }
+        }
+
+        public static string AnketaEditor_Name {
+            get {
+                return ResourceManager.GetString("AnketaEditor_Name", resourceCulture);
+            }
+        }
+
+        public static string AnketaEditor_Description {
+            get {
+                return ResourceManager.GetString("AnketaEditor_Description", resourceCulture);
+            }
+        }
+
+        public static string AnketaEditor_Empty {
+            get {
+                return ResourceManager.GetString("AnketaEditor_Empty", resourceCulture);
+            }
+        }
+
+        public static string AnketaEditor_FieldName {
+            get {
+                return ResourceManager.GetString("AnketaEditor_FieldName", resourceCulture);
+            }
+        }
+
+        public static string AnketaEditor_FieldHint {
+            get {
+                return ResourceManager.GetString("AnketaEditor_FieldHint", resourceCulture);
+            }
+        }
+
+        public static string AnketaEditor_ScaleLabels {
+            get {
+                return ResourceManager.GetString("AnketaEditor_ScaleLabels", resourceCulture);
+            }
+        }
+
+        public static string AnketaEditor_ScaleLabelsHint {
+            get {
+                return ResourceManager.GetString("AnketaEditor_ScaleLabelsHint", resourceCulture);
+            }
+        }
+
+        public static string AnketaEditor_Choices {
+            get {
+                return ResourceManager.GetString("AnketaEditor_Choices", resourceCulture);
+            }
+        }
+
+        public static string AnketaEditor_Comparable {
+            get {
+                return ResourceManager.GetString("AnketaEditor_Comparable", resourceCulture);
+            }
+        }
+
+        public static string AnketaEditor_ComparableHint {
+            get {
+                return ResourceManager.GetString("AnketaEditor_ComparableHint", resourceCulture);
+            }
+        }
+
+        public static string AnketaEditor_Save {
+            get {
+                return ResourceManager.GetString("AnketaEditor_Save", resourceCulture);
+            }
+        }
+
+        public static string AnketaEditor_Cancel {
+            get {
+                return ResourceManager.GetString("AnketaEditor_Cancel", resourceCulture);
+            }
+        }
+
+        public static string Hint_SetsMovedShort {
+            get {
+                return ResourceManager.GetString("Hint_SetsMovedShort", resourceCulture);
+            }
+        }
+
+        public static string Hint_Sets {
+            get {
+                return ResourceManager.GetString("Hint_Sets", resourceCulture);
+            }
+        }
+
+        public static string Anketa_Attached {
+            get {
+                return ResourceManager.GetString("Anketa_Attached", resourceCulture);
+            }
+        }
+
+        public static string Anketa_DetachTip {
+            get {
+                return ResourceManager.GetString("Anketa_DetachTip", resourceCulture);
+            }
+        }
+
+        public static string Anketa_DetachHint {
+            get {
+                return ResourceManager.GetString("Anketa_DetachHint", resourceCulture);
+            }
+        }
+
+        public static string Relationship_FilterPositive {
+            get {
+                return ResourceManager.GetString("Relationship_FilterPositive", resourceCulture);
+            }
+        }
+
+        public static string Relationship_FilterNegative {
+            get {
+                return ResourceManager.GetString("Relationship_FilterNegative", resourceCulture);
+            }
+        }
+
+        public static string Relationship_FilterHint {
+            get {
+                return ResourceManager.GetString("Relationship_FilterHint", resourceCulture);
+            }
+        }
+
+        public static string Hint_Labels {
+            get {
+                return ResourceManager.GetString("Hint_Labels", resourceCulture);
+            }
+        }
+
+        public static string Hint_Tags {
+            get {
+                return ResourceManager.GetString("Hint_Tags", resourceCulture);
+            }
+        }
+
+        public static string Hint_AlternateNames {
+            get {
+                return ResourceManager.GetString("Hint_AlternateNames", resourceCulture);
+            }
+        }
+
+        public static string Hint_Note {
+            get {
+                return ResourceManager.GetString("Hint_Note", resourceCulture);
+            }
+        }
+
+        public static string Param_ValueNotePlaceholder {
+            get {
+                return ResourceManager.GetString("Param_ValueNotePlaceholder", resourceCulture);
+            }
+        }
+
+        public static string Field_AlternateNames {
+            get {
+                return ResourceManager.GetString("Field_AlternateNames", resourceCulture);
+            }
+        }
+
+        public static string Name_AddPlaceholder {
+            get {
+                return ResourceManager.GetString("Name_AddPlaceholder", resourceCulture);
+            }
+        }
+
+        public static string Name_MakePrimary {
+            get {
+                return ResourceManager.GetString("Name_MakePrimary", resourceCulture);
+            }
+        }
+
+        public static string Field_Note {
+            get {
+                return ResourceManager.GetString("Field_Note", resourceCulture);
+            }
+        }
+
+        public static string Placeholder_Note {
+            get {
+                return ResourceManager.GetString("Placeholder_Note", resourceCulture);
+            }
+        }
+
+        public static string Button_AddSet {
+            get {
+                return ResourceManager.GetString("Button_AddSet", resourceCulture);
+            }
+        }
+
+        public static string Relationship_DropHint {
+            get {
+                return ResourceManager.GetString("Relationship_DropHint", resourceCulture);
+            }
+        }
+
+        public static string Relationship_CallsAs {
+            get {
+                return ResourceManager.GetString("Relationship_CallsAs", resourceCulture);
+            }
+        }
+
+        public static string Relationship_CallsAsHint {
+            get {
+                return ResourceManager.GetString("Relationship_CallsAsHint", resourceCulture);
+            }
+        }
+
+        public static string Relationship_CallsAsPlaceholder {
+            get {
+                return ResourceManager.GetString("Relationship_CallsAsPlaceholder", resourceCulture);
+            }
+        }
+
+        public static string Relationship_Candidates {
+            get {
+                return ResourceManager.GetString("Relationship_Candidates", resourceCulture);
+            }
+        }
+
+        public static string Relationship_FilterAll {
+            get {
+                return ResourceManager.GetString("Relationship_FilterAll", resourceCulture);
+            }
+        }
+
+        public static string Relationship_SelectHint {
+            get {
+                return ResourceManager.GetString("Relationship_SelectHint", resourceCulture);
             }
         }
 

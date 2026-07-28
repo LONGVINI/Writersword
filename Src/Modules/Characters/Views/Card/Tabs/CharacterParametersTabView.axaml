@@ -1,218 +1,319 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
-             xmlns:models="using:Writersword.Modules.Characters.Models"
-             xmlns:enums="using:Writersword.Modules.Characters.Models.Enums"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
              xmlns:conv="using:Writersword.Modules.Characters.Converters"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              x:Class="Writersword.Modules.Characters.Views.Card.Tabs.CharacterParametersTabView"
              x:DataType="tabs:CharacterParametersTabViewModel">
 
 	<UserControl.Resources>
-		<conv:IsNumericConverter x:Key="IsNumericConverter"/>
-		<conv:IsTextConverter x:Key="IsTextConverter"/>
-		<conv:IsStateListConverter x:Key="IsStateListConverter"/>
-		<conv:IsBooleanConverter x:Key="IsBooleanConverter"/>
-		<conv:IsNotStateListConverter x:Key="IsNotStateListConverter"/>
 		<conv:IntIsZeroConverter x:Key="IntIsZeroConverter"/>
-		<conv:BoolToLabelConverter x:Key="BoolToLabelConverter"/>
 	</UserControl.Resources>
 
-	<Grid RowDefinitions="Auto,*,Auto">
+	<UserControl.Styles>
+		<Style Selector="Button.param-type">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="12"/>
+			<Setter Property="Padding" Value="12,4"/>
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Margin" Value="0,0,6,0"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="Button.param-type:pointerover">
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Кругляшок шкалы. Заполненный — акцентом, пустой — только контуром. -->
+		<Style Selector="Button.scale-dot">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="2"/>
+			<Setter Property="Width" Value="22"/>
+			<Setter Property="Height" Value="22"/>
+		</Style>
+
+		<!-- Строка параметра, помеченного «неприменимо», гасится: значение
+		     сохранено, но к персонажу не относится. -->
+		<Style Selector="Border.param-card.not-applicable">
+			<Setter Property="Opacity" Value="0.45"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid RowDefinitions="Auto,*">
 
 		<!-- Панель инструментов -->
 		<Border Grid.Row="0"
-                Padding="8,6"
+                Padding="12,8"
                 BorderBrush="{DynamicResource BorderDefaultBrush}"
                 BorderThickness="0,0,0,1">
 			<Grid ColumnDefinitions="*,Auto">
-				<!-- Кнопки добавления параметров -->
-				<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
-					<Button Content="{x:Static loc:CharactersStrings.Button_AddParameter}"
+
+				<!-- Добавление параметра вручную. Названия типов человеческие:
+				     «Шкала», «Текст», «Выбор» — а не имена перечислений кода. -->
+				<StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+					<TextBlock Text="{x:Static loc:CharactersStrings.Button_AddParameter}"
+                               FontSize="11"
+                               VerticalAlignment="Center"
+                               Margin="0,0,10,0"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+					<Button Classes="param-type"
+                            Content="{x:Static loc:CharactersStrings.Param_AddNumeric}"
                             Command="{Binding AddNumericParameterCommand}"
-                            FontSize="11"
-                            Padding="8,4"
-                            ToolTip.Tip="{x:Static loc:CharactersStrings.HotKey_AddParameterNumeric}"/>
-					<Button Content="{x:Static loc:CharactersStrings.Param_AddNumeric}"
-                            Command="{Binding AddNumericParameterCommand}"
-                            FontSize="10"
-                            Padding="6,3"
-                            Background="{DynamicResource BgPanelBrush}"
-                            Foreground="{DynamicResource TextSecondaryBrush}"/>
-					<Button Content="{x:Static loc:CharactersStrings.Param_AddText}"
+                            behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Param_AddNumeric}"
+                            behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Param_HintScale}"/>
+					<Button Classes="param-type"
+                            Content="{x:Static loc:CharactersStrings.Param_AddText}"
                             Command="{Binding AddTextParameterCommand}"
-                            FontSize="10"
-                            Padding="6,3"
-                            Background="{DynamicResource BgPanelBrush}"
-                            Foreground="{DynamicResource TextSecondaryBrush}"/>
-					<Button Content="{x:Static loc:CharactersStrings.Param_AddStateList}"
+                            behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Param_AddText}"
+                            behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Param_HintText}"/>
+					<Button Classes="param-type"
+                            Content="{x:Static loc:CharactersStrings.Param_AddStateList}"
                             Command="{Binding AddStateListParameterCommand}"
-                            FontSize="10"
-                            Padding="6,3"
-                            Background="{DynamicResource BgPanelBrush}"
-                            Foreground="{DynamicResource TextSecondaryBrush}"/>
-					<Button Content="{x:Static loc:CharactersStrings.Param_AddBoolean}"
+                            behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Param_AddStateList}"
+                            behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Param_HintChoice}"/>
+					<Button Classes="param-type"
+                            Content="{x:Static loc:CharactersStrings.Param_AddBoolean}"
                             Command="{Binding AddBooleanParameterCommand}"
-                            FontSize="10"
-                            Padding="6,3"
-                            Background="{DynamicResource BgPanelBrush}"
-                            Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Param_AddBoolean}"
+                            behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Param_HintYesNo}"/>
 				</StackPanel>
 
-				<!-- Применить анкету -->
-				<ComboBox Grid.Column="1"
-                          ItemsSource="{Binding AvailableAnketas}"
-                          PlaceholderText="{x:Static loc:CharactersStrings.Anketa_SelectPrompt}"
-                          FontSize="11"
-                          MinWidth="140">
-					<ComboBox.ItemTemplate>
-						<DataTemplate DataType="models:CharacterAnketa">
-							<TextBlock Text="{Binding Name}" FontSize="11"/>
-						</DataTemplate>
-					</ComboBox.ItemTemplate>
-				</ComboBox>
+				<!-- Наборы подключаются в «Общем»: состав карточки — свойство
+				     ядра, а здесь живут значения полей. Второй вход к тому же
+				     действию убран намеренно — иначе состав разъезжается между
+				     двумя экранами. -->
+				<TextBlock Grid.Column="1"
+				           Text="{x:Static loc:CharactersStrings.Hint_SetsMovedShort}"
+				           FontSize="11"
+				           VerticalAlignment="Center"
+				           Foreground="{DynamicResource TextSecondaryBrush}"
+				           behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Block_DataSets}"
+				           behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Hint_Sets}"/>
 			</Grid>
 		</Border>
 
 		<!-- Список параметров -->
-		<ScrollViewer Grid.Row="1">
-			<StackPanel Spacing="1" Margin="0,4">
+		<ScrollViewer Grid.Row="1" Padding="16,12">
+			<StackPanel Spacing="6" MaxWidth="720" HorizontalAlignment="Center">
 
-				<!-- Заглушка если нет параметров -->
+
+
 				<TextBlock Text="{x:Static loc:CharactersStrings.Placeholder_NoParameters}"
                            FontSize="12"
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            HorizontalAlignment="Center"
-                           Margin="0,24,0,0"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           Margin="0,32,0,0"
                            IsVisible="{Binding Parameters.Count, Converter={StaticResource IntIsZeroConverter}}"/>
 
 				<ItemsControl ItemsSource="{Binding Parameters}">
 					<ItemsControl.ItemTemplate>
-						<DataTemplate DataType="models:CharacterParameter">
-							<Border Background="{DynamicResource BgPanelBrush}"
-                                    CornerRadius="4"
-                                    Margin="8,2"
-                                    Padding="10,8">
-								<Grid RowDefinitions="Auto,Auto,Auto">
+						<DataTemplate x:DataType="tabs:CharacterParameterItemViewModel">
+							<Border Classes="param-card"
+                                    Classes.not-applicable="{Binding IsNotApplicable}"
+                                    Background="{DynamicResource BgPanelBrush}"
+                                    CornerRadius="6"
+                                    Margin="0,0,0,6"
+                                    Padding="12,10">
+								<StackPanel Spacing="8">
 
-									<!-- Строка заголовка: имя + тип + кнопки -->
-									<Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto">
+									<!-- Заголовок: имя, тип, группа, кнопки -->
+									<Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+
 										<TextBox Grid.Column="0"
                                                  Text="{Binding Name}"
-                                                 FontSize="12"
+                                                 FontSize="13"
                                                  FontWeight="Medium"
                                                  Background="Transparent"
                                                  BorderThickness="0"
                                                  Padding="0"
-                                                 Foreground="{DynamicResource TextPrimaryBrush}"/>
-										<TextBlock Grid.Column="1"
+                                                 VerticalAlignment="Center"
+                                                 Foreground="{DynamicResource TextPrimaryBrush}"
+                                                 behaviours:TooltipBehavior.Tip="{Binding Name}"
+                                                 behaviours:TooltipBehavior.Description="{Binding Description}"/>
+
+										<Border Grid.Column="1"
+                                                Background="{DynamicResource BgSurfaceBrush}"
+                                                CornerRadius="8"
+                                                Padding="8,2"
+                                                Margin="8,0,0,0"
+                                                VerticalAlignment="Center">
+											<TextBlock Text="{Binding TypeLabel}"
+                                                       FontSize="10"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+										</Border>
+
+										<TextBlock Grid.Column="2"
                                                    Text="{Binding GroupName}"
+                                                   IsVisible="{Binding HasGroup}"
                                                    FontSize="10"
                                                    Foreground="{DynamicResource TextSecondaryBrush}"
                                                    VerticalAlignment="Center"
-                                                   Margin="8,0"/>
-										<Button Grid.Column="2"
-                                                Content="^"
-                                                Command="{ReflectionBinding $parent[ItemsControl].DataContext.MoveParameterUpCommand}"
-                                                CommandParameter="{Binding Id}"
-                                                Background="Transparent"
-                                                BorderThickness="0"
-                                                Padding="4,2"
-                                                FontSize="10"/>
+                                                   Margin="8,0,0,0"/>
+
 										<Button Grid.Column="3"
-                                                Content="x"
-                                                Command="{ReflectionBinding $parent[ItemsControl].DataContext.RemoveParameterCommand}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.MoveParameterUpCommand}"
                                                 CommandParameter="{Binding Id}"
                                                 Background="Transparent"
                                                 BorderThickness="0"
-                                                Padding="4,2"
-                                                FontSize="10"
-                                                Foreground="#F44336"/>
+                                                Width="22" Height="22"
+                                                Padding="0"
+                                                Margin="6,0,0,0"
+                                                behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Param_MoveUpTooltip}">
+											<Path Data="M7.41,15.41 L12,10.83 16.59,15.41 18,14 12,8 6,14z"
+                                                  Fill="{DynamicResource TextSecondaryBrush}"
+                                                  Stretch="Uniform"
+                                                  Width="12" Height="12"/>
+										</Button>
+
+										<Button Grid.Column="4"
+                                                Command="{Binding $parent[ItemsControl].DataContext.RemoveParameterCommand}"
+                                                CommandParameter="{Binding Id}"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Width="22" Height="22"
+                                                Padding="0">
+											<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                                                  Fill="#F44336"
+                                                  Stretch="Uniform"
+                                                  Width="10" Height="10"/>
+										</Button>
 									</Grid>
 
-									<!-- Описание (тултип) -->
-									<TextBox Grid.Row="1"
-                                             Text="{Binding Description}"
-                                             FontSize="10"
+									<!-- Пояснение «что это значит» -->
+									<TextBox Text="{Binding Description}"
+                                             FontSize="11"
                                              Foreground="{DynamicResource TextSecondaryBrush}"
                                              Background="Transparent"
                                              BorderThickness="0"
-                                             Padding="0,2,0,4"
-                                             PlaceholderText="{x:Static loc:CharactersStrings.Param_DescriptionPlaceholder}"
-                                             IsVisible="{Binding Type, Converter={StaticResource IsNotStateListConverter}}"/>
+                                             Padding="0"
+                                             PlaceholderText="{x:Static loc:CharactersStrings.Param_DescriptionPlaceholder}"/>
 
-									<!-- Числовой: слайдер + мин/макс -->
-									<Grid Grid.Row="2"
-                                          ColumnDefinitions="Auto,*,Auto"
-                                          IsVisible="{Binding Type, Converter={StaticResource IsNumericConverter}}">
-										<StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-											<TextBlock Text="{Binding MinValue}" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"/>
-											<TextBox 
-												Text="{Binding MinDescription}" 
-												FontSize="9" 
-												Foreground="{DynamicResource TextSecondaryBrush}" 
-												Background="Transparent" 
-												BorderThickness="0" 
-												Padding="0" 
-												MaxWidth="60"
-												PlaceholderText="{x:Static loc:CharactersStrings.Param_MinPlaceholder}"/>
-										</StackPanel>
-										<Slider Grid.Column="1"
-                                                Minimum="{Binding MinValue}"
-                                                Maximum="{Binding MaxValue}"
-                                                Value="{Binding NumericValue}"
-                                                TickFrequency="{Binding Step}"
-                                                Margin="8,0"
-                                                VerticalAlignment="Center"/>
-										<StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
-											<TextBlock Text="{Binding MaxValue}" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"/>
-											<TextBox 
-												Text="{Binding MaxDescription}" 
-												FontSize="9" 
-												Foreground="{DynamicResource TextSecondaryBrush}"
-												Background="Transparent" 
-												BorderThickness="0" 
-												Padding="0" 
-												MaxWidth="60"
-												PlaceholderText="{x:Static loc:CharactersStrings.Param_MaxPlaceholder}"/>
-										</StackPanel>
-									</Grid>
+									<!-- Шкала кругляшками -->
+									<StackPanel Spacing="4" IsVisible="{Binding ShowScaleDots}">
+										<StackPanel Orientation="Horizontal" Spacing="8">
+											<ItemsControl ItemsSource="{Binding Dots}">
+												<ItemsControl.ItemsPanel>
+													<ItemsPanelTemplate>
+														<StackPanel Orientation="Horizontal" Spacing="2"/>
+													</ItemsPanelTemplate>
+												</ItemsControl.ItemsPanel>
+												<ItemsControl.ItemTemplate>
+													<DataTemplate x:DataType="tabs:CharacterScaleDotViewModel">
+														<Button Classes="scale-dot"
+                                                                Click="OnScaleDotClick"
+                                                                behaviours:TooltipBehavior.Tip="{Binding Hint}"
+                                                                behaviours:TooltipBehavior.ShowDelay="250">
+															<Panel>
+																<Ellipse Width="16" Height="16"
+                                                                         Stroke="{DynamicResource BorderDefaultBrush}"
+                                                                         StrokeThickness="1.5"
+                                                                         Fill="Transparent"/>
+																<Ellipse Width="16" Height="16"
+                                                                         Fill="{DynamicResource AccentDefaultBrush}"
+                                                                         IsVisible="{Binding IsFilled}"/>
+															</Panel>
+														</Button>
+													</DataTemplate>
+												</ItemsControl.ItemTemplate>
+											</ItemsControl>
 
-									<!-- Текстовый -->
-									<TextBox Grid.Row="2"
-                                             Text="{Binding TextValue}"
+											<TextBlock Text="{Binding ValueCaption}"
+                                                       FontSize="12"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+										</StackPanel>
+
+										<TextBlock Text="{Binding ScaleHint}"
+                                                   IsVisible="{Binding HasScaleHint}"
+                                                   FontSize="10"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+									</StackPanel>
+
+									<!-- Длинная шкала: кругляшков было бы слишком много,
+									     остаётся линия, но с явной подписью значения. -->
+									<StackPanel Spacing="4" IsVisible="{Binding ShowScaleSlider}">
+										<Grid ColumnDefinitions="*,Auto">
+											<Slider Grid.Column="0"
+                                                    Minimum="{Binding MinValue}"
+                                                    Maximum="{Binding MaxValue}"
+                                                    Value="{Binding NumericValue}"
+                                                    TickFrequency="{Binding Step}"
+                                                    VerticalAlignment="Center"/>
+											<TextBlock Grid.Column="1"
+                                                       Text="{Binding ValueCaption}"
+                                                       FontSize="12"
+                                                       Margin="10,0,0,0"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+										</Grid>
+										<TextBlock Text="{Binding ScaleHint}"
+                                                   IsVisible="{Binding HasScaleHint}"
+                                                   FontSize="10"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+									</StackPanel>
+
+									<!-- Текст -->
+									<TextBox Text="{Binding TextValue}"
+                                             IsVisible="{Binding ShowText}"
                                              FontSize="12"
+                                             AcceptsReturn="True"
+                                             TextWrapping="Wrap"
                                              Background="{DynamicResource BgSurfaceBrush}"
                                              Foreground="{DynamicResource TextPrimaryBrush}"
                                              BorderBrush="{DynamicResource BorderDefaultBrush}"
                                              BorderThickness="1"
                                              CornerRadius="4"
-                                             Padding="6,4"
-                                             IsVisible="{Binding Type, Converter={StaticResource IsTextConverter}}"/>
+                                             Padding="8,6"/>
 
-									<!-- Список состояний -->
-									<ComboBox Grid.Row="2"
-                                              ItemsSource="{Binding States}"
+									<!-- Выбор -->
+									<ComboBox ItemsSource="{Binding States}"
                                               SelectedIndex="{Binding CurrentStateIndex}"
+                                              IsVisible="{Binding ShowChoice}"
                                               HorizontalAlignment="Stretch"
                                               FontSize="12"
-                                              Background="{DynamicResource BgSurfaceBrush}"
-                                              IsVisible="{Binding Type, Converter={StaticResource IsStateListConverter}}"/>
+                                              Background="{DynamicResource BgSurfaceBrush}"/>
 
-									<!-- Булевый -->
-									<CheckBox Grid.Row="2"
-                                              IsChecked="{Binding BoolValue}"
-                                              FontSize="12"
-                                              Foreground="{DynamicResource TextPrimaryBrush}"
-                                              IsVisible="{Binding Type, Converter={StaticResource IsBooleanConverter}}">
-										<CheckBox.Content>
-											<TextBlock Text="{Binding BoolValue, Converter={StaticResource BoolToLabelConverter}}"
-                                                       FontSize="12"
-                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
-										</CheckBox.Content>
-									</CheckBox>
+									<!-- Да или нет -->
+									<ToggleSwitch IsChecked="{Binding BoolValue}"
+                                                  IsVisible="{Binding ShowYesNo}"
+                                                  OnContent="{Binding BoolCaption}"
+                                                  OffContent="{Binding BoolCaption}"
+                                                  FontSize="12"/>
 
-								</Grid>
+									<!-- Примечание к значению — подчёркнутая строка без
+									     рамки, чтобы не спорить с самим значением за
+									     внимание. У параметра, помеченного «не относится»,
+									     примечания нет: пояснять нечего. -->
+									<TextBox Text="{Binding ValueNote}"
+									         PlaceholderText="{x:Static loc:CharactersStrings.Param_ValueNotePlaceholder}"
+									         IsVisible="{Binding !IsNotApplicable}"
+									         FontSize="11"
+									         Background="Transparent"
+									         Foreground="{DynamicResource TextSecondaryBrush}"
+									         BorderBrush="Transparent"
+									         BorderThickness="0,0,0,1"
+									         CornerRadius="0"
+									         Padding="2,4"/>
+
+									<!-- Переопределение «неприменимо»: не значение, а
+									     утверждение, что параметр к персонажу не относится. -->
+									<CheckBox IsChecked="{Binding IsNotApplicable}"
+                                              Content="{x:Static loc:CharactersStrings.Param_NotApplicable}"
+                                              behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Param_NotApplicable}"
+                                              behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Param_NotApplicableHint}"
+                                              FontSize="11"
+                                              Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+								</StackPanel>
 							</Border>
 						</DataTemplate>
 					</ItemsControl.ItemTemplate>

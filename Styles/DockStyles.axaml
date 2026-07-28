@@ -116,23 +116,57 @@
 		<Setter Property="CornerRadius" Value="4"/>
 	</Style>
 
-	<!-- Элементы в списке ComboBox -->
+	<!-- Элементы в списке ComboBox.
+	     Этот файл подключается после Styles/Controls.axaml и перекрывает его,
+	     поэтому отступ и скругление подсветки задаются и здесь: без них плашка
+	     выделения упиралась в края выпадающего списка, а угол выглядел
+	     обрубленным. Держать оформление одного контрола в двух файлах — плохо,
+	     но убирать отсюда стиль целиком рискованно: он писался под контролы
+	     Dock. -->
 	<Style Selector="ComboBoxItem">
 		<Setter Property="Background" Value="Transparent"/>
 		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
 		<Setter Property="Padding" Value="8,6"/>
+		<Setter Property="Margin" Value="4,1"/>
+		<Setter Property="CornerRadius" Value="4"/>
 	</Style>
-	<Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter">
+	<!-- Подсветку рисует сам пункт, а не его ContentPresenter: презентер
+	     заполняет элемент целиком, поэтому отступ и скругление на нём
+	     не сказываются — плашка выбранного упиралась в края списка
+	     и выглядела обрубленной. Презентер при этом делается прозрачным,
+	     иначе он закрасил бы скруглённые углы. -->
+	<Style Selector="ComboBoxItem /template/ ContentPresenter">
+		<Setter Property="Background" Value="Transparent"/>
+		<Setter Property="CornerRadius" Value="4"/>
+	</Style>
+	<Style Selector="ComboBoxItem:pointerover">
 		<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
 	</Style>
-	<Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
+	<Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter">
+		<Setter Property="Background" Value="Transparent"/>
+	</Style>
+	<Style Selector="ComboBoxItem:selected">
 		<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
+		<Setter Property="Background" Value="Transparent"/>
+	</Style>
+	<Style Selector="ComboBoxItem:selected:pointerover">
+		<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="ComboBoxItem:selected:pointerover /template/ ContentPresenter">
+		<Setter Property="Background" Value="Transparent"/>
 	</Style>
 
 	<!-- ========================================
          DOCK — сброс кнопок внутри Dock контролов
          чтобы Button.axaml не перебивал шаблоны Dock
          ======================================== -->
+	<!-- Сброс касается всех кнопок внутри дока, включая содержимое модулей:
+	     на него полагаются круглые кнопки цвета и настроек в карточках,
+	     значки на плитках и прочие плоские органы. Кнопке, которой нужен
+	     обычный вид, оформление задаётся на месте — сужать этот селектор
+	     нельзя, проверено. -->
 	<Style Selector="dock|DockControl Button">
 		<Setter Property="Background" Value="Transparent"/>
 		<Setter Property="BorderThickness" Value="0"/>

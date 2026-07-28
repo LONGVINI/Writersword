@@ -1,0 +1,195 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:Writersword.Modules.Characters.Views"
+             xmlns:conv="using:Writersword.Modules.Characters.Converters"
+             xmlns:icv="using:Writersword.Infrastructure.Converters"
+             xmlns:colorControls="using:Writersword.Styles.UserControls"
+             x:Class="Writersword.Modules.Characters.Views.LabelEditorOverlay"
+             x:DataType="views:LabelEditorDraft"
+             IsVisible="False">
+
+	<!-- Редактор метки персонажа. Оформление и поведение — как у окна настроек
+	     карточки: скрим на модуль (клик не закрывает), центральная панель со
+	     скруглением и тенью. Правки живут в черновике (DataContext =
+	     LabelEditorDraft) и применяются по OK; «Отмена»/крестик закрывают
+	     без изменений. -->
+
+	<UserControl.Styles>
+		<!-- Кнопка-иконка из встроенного набора. Выбранная — акцентная рамка. -->
+		<Style Selector="Button.iconOpt">
+			<Setter Property="Width" Value="34"/>
+			<Setter Property="Height" Value="34"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="CornerRadius" Value="8"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.iconOpt:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.iconOpt.selected">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="2"/>
+		</Style>
+		<Style Selector="Button.iconOpt Path">
+			<Setter Property="Fill" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+
+		<Style Selector="TextBlock.fieldLabel">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="TextBox.field">
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="Padding" Value="8,6"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid>
+		<!-- Скрим: затемняет и блокирует модуль. Клик НЕ закрывает. -->
+		<Border Background="#F2000000" PointerPressed="OnScrimPressed"/>
+
+		<Border HorizontalAlignment="Center" VerticalAlignment="Center"
+		        Margin="24" Width="420"
+		        Background="{DynamicResource BgBaseBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="1"
+		        CornerRadius="16"
+		        Padding="20">
+			<Border.Effect>
+				<DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.55" Color="#000000"/>
+			</Border.Effect>
+
+			<StackPanel Spacing="12">
+
+				<Grid ColumnDefinitions="*,Auto">
+					<TextBlock Grid.Column="0" Text="Метка"
+					           FontSize="16" FontWeight="SemiBold"
+					           Foreground="{DynamicResource TextPrimaryBrush}"
+					           VerticalAlignment="Center"/>
+					<Button Grid.Column="1" Content="✕" Click="OnCancelClick"
+					        Background="Transparent" BorderThickness="0"
+					        Foreground="{DynamicResource TextSecondaryBrush}"
+					        FontSize="14" Padding="6,2"/>
+				</Grid>
+
+				<!-- Превью: значок в цвете + имя, как метка будет выглядеть -->
+				<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+					<Border Width="22" Height="22" CornerRadius="11"
+					        Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
+						<Path Data="{Binding Icon, Converter={x:Static conv:LabelIconToGeometryConverter.Instance}}"
+						      Fill="White" Stretch="Uniform" Margin="5"/>
+					</Border>
+					<TextBlock Text="{Binding Name}"
+					           FontSize="13" FontWeight="Medium"
+					           VerticalAlignment="Center"
+					           Foreground="{DynamicResource TextPrimaryBrush}"/>
+				</StackPanel>
+
+				<StackPanel Spacing="4">
+					<TextBlock Classes="fieldLabel" Text="Название"/>
+					<TextBox Classes="field" Text="{Binding Name, Mode=TwoWay}"/>
+				</StackPanel>
+
+				<StackPanel Spacing="4">
+					<TextBlock Classes="fieldLabel" Text="Значок"/>
+					<ItemsControl ItemsSource="{Binding Icons}">
+						<ItemsControl.ItemsPanel>
+							<ItemsPanelTemplate>
+								<WrapPanel Orientation="Horizontal"/>
+							</ItemsPanelTemplate>
+						</ItemsControl.ItemsPanel>
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="views:LabelIconOption">
+								<Button Classes="iconOpt"
+								        Classes.selected="{Binding IsSelected}"
+								        Margin="0,0,6,6"
+								        Click="OnIconClick">
+									<Path Data="{Binding Key, Converter={x:Static conv:LabelIconToGeometryConverter.Instance}}"
+									      Stretch="Uniform"
+									      Width="16" Height="16"/>
+								</Button>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+
+					<!-- Своя картинка вместо встроенного значка: герб дома,
+					     эмблема клуба, нарисованный автором знак. Набор из
+					     шести иконок чужую выдумку не покроет. Ключ значка
+					     при этом сохраняется — убрал картинку, вернулся
+					     прежний значок. -->
+					<StackPanel Orientation="Horizontal" Spacing="8">
+						<Border Width="34" Height="34"
+						        CornerRadius="8"
+						        ClipToBounds="True"
+						        BorderBrush="{DynamicResource AccentDefaultBrush}"
+						        BorderThickness="2"
+						        IsVisible="{Binding HasCustomIcon}">
+							<Image Source="{Binding IconImage, Converter={x:Static conv:LabelIconToImageConverter.Instance}}"
+							       Stretch="UniformToFill"/>
+						</Border>
+
+						<Button Content="Своя картинка"
+						        Click="OnPickIconImageClick"
+						        FontSize="11" Padding="10,5" CornerRadius="6"
+						        VerticalAlignment="Center"/>
+
+						<Button Content="Убрать"
+						        Click="OnClearIconImageClick"
+						        IsVisible="{Binding HasCustomIcon}"
+						        FontSize="11" Padding="10,5" CornerRadius="6"
+						        Background="Transparent"
+						        VerticalAlignment="Center"
+						        Foreground="{DynamicResource TextSecondaryBrush}"/>
+					</StackPanel>
+				</StackPanel>
+
+				<StackPanel Spacing="4">
+					<TextBlock Classes="fieldLabel" Text="Цвет"/>
+					<colorControls:ColorPickerButton Width="24" Height="24"
+					        HorizontalAlignment="Left"
+					        HexColor="{Binding Color, Mode=TwoWay}"/>
+				</StackPanel>
+
+				<CheckBox IsChecked="{Binding Dim, Mode=TwoWay}"
+				          Content="Затемнять карточку (как у метки «Мёртв»)"
+				          FontSize="12"
+				          Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+				<CheckBox IsChecked="{Binding ShowOnCard, Mode=TwoWay}"
+				          Content="Показывать значок на карточке в списках"
+				          FontSize="12"
+				          Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+				<StackPanel Spacing="4">
+					<TextBlock Classes="fieldLabel" Text="Описание (подсказка при наведении)"/>
+					<TextBox Classes="field" Text="{Binding Description, Mode=TwoWay}"/>
+				</StackPanel>
+
+				<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+					<Button Content="Отмена" Click="OnCancelClick"
+					        FontSize="12" Padding="12,6" CornerRadius="6"
+					        Background="{DynamicResource BgSurfaceBrush}"
+					        Foreground="{DynamicResource TextPrimaryBrush}"
+					        BorderBrush="{DynamicResource BorderDefaultBrush}"
+					        BorderThickness="1"/>
+					<Button Content="ОК" Click="OnOkClick"
+					        FontSize="12" Padding="16,6" CornerRadius="6"
+					        Background="{DynamicResource AccentDefaultBrush}"
+					        Foreground="White"
+					        BorderThickness="0"/>
+				</StackPanel>
+
+			</StackPanel>
+		</Border>
+	</Grid>
+</UserControl>
