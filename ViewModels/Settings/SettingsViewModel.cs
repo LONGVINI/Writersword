@@ -488,6 +488,14 @@ namespace Writersword.ViewModels.Settings
                 IsModuleTab = false
             });
 
+            Tabs.Add(new SettingsTabItem
+            {
+                Title = Strings.Settings_Tab_Backups,
+                Content = new BackupSettingsView { DataContext = new BackupSettingsViewModel() },
+                IsHeader = false,
+                IsModuleTab = false
+            });
+
             var tabCollection = App.Services.GetRequiredService<ITabCollection>();
             var activeTab = tabCollection.ActiveTab as DocumentTabViewModel;
             var hasActiveProject = activeTab?.Context?.FileStorage != null;

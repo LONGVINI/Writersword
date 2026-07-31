@@ -306,6 +306,15 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
                 !item.IsAddTile &&
                 string.Equals(item.ImageRef, imageRef, StringComparison.Ordinal));
 
+        // Значок на месте пустого описания: щелчок по нему ставит курсор
+        // в само поле. Поле лежит под значком, и без этого щелчок пришёлся бы
+        // в пустоту.
+        private void OnSubtitleIconClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            this.FindControl<TextBox>("ShortDescriptionBox")?.Focus();
+        }
+
         private void OnDataContextChanged(object? sender, EventArgs e)
         {
             if (DataContext is not CharacterBasicsTabViewModel vm) return;
@@ -1032,16 +1041,18 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
             vm.RemoveGalleryImage(item.ImageRef);
         }
 
-        // Выбор набора в списке подключает его к карточке. Выбор сразу
-        // сбрасывается: список работает кнопкой «добавить», а не показывает
-        // текущее состояние — состояние показывают чипы выше.
-        private void OnAttachAnketaSelected(object? sender, SelectionChangedEventArgs e)
+        // Выбор набора в раскрывшемся списке подключает его к карточке.
+        // Список закрывается сам: подключение — законченное действие, держать
+        // меню открытым незачем.
+        private void OnAttachAnketaClick(object? sender, RoutedEventArgs e)
         {
-            if (sender is not ComboBox box) return;
-            if (box.SelectedItem is not Writersword.Modules.Characters.Models.CharacterAnketa anketa) return;
+            e.Handled = true;
+
+            if (sender is not Control c) return;
+            if (c.DataContext is not Writersword.Modules.Characters.Models.CharacterAnketa anketa) return;
             if (DataContext is not CharacterBasicsTabViewModel vm) return;
 
-            box.SelectedItem = null;
+            this.FindControl<Button>("AttachAnketaButton")?.Flyout?.Hide();
             vm.AttachAnketa(anketa.Id);
         }
 

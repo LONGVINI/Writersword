@@ -129,6 +129,16 @@ namespace Writersword.Modules.Characters.Views.Tabs
             e.Handled = true;
         }
 
+        // Ступень важности папки по кругу: нет, I, II, III. Событие гасится —
+        // иначе щелчок дойдёт до заголовка и свернёт папку.
+        private void OnFolderImportanceClick(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (sender is not Control c || c.DataContext is not CharacterFolderViewModel folder) return;
+
+            folder.CycleImportance();
+        }
+
         // Прокрутка к только что созданному персонажу или группе. Вызывается
         // вьюмоделью сразу после добавления, когда раскладка ещё не построила
         // новую карточку, поэтому сама работа откладывается до конца прохода

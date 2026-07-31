@@ -79,11 +79,13 @@ namespace Writersword.Infrastructure.Behaviours
                 "PreviewPath", typeof(TooltipBehavior));
 
         /// <summary>
-        /// Задержка перед появлением подсказки в миллисекундах. По умолчанию 1200.
+        /// Задержка перед появлением подсказки в миллисекундах.
+        /// Секунда с лишним ощущалась как «подсказка не работает»: пользователь
+        /// успевал увести мышь раньше, чем всплывало пояснение.
         /// </summary>
         public static readonly AttachedProperty<int> ShowDelayProperty =
             AvaloniaProperty.RegisterAttached<Control, int>(
-                "ShowDelay", typeof(TooltipBehavior), defaultValue: 1200);
+                "ShowDelay", typeof(TooltipBehavior), defaultValue: 400);
 
         private static readonly AttachedProperty<Popup?> PopupProperty =
             AvaloniaProperty.RegisterAttached<Control, Popup?>(
@@ -214,14 +216,33 @@ namespace Writersword.Infrastructure.Behaviours
         }
 
         /// <summary>
-        /// Скрывает подсказку при нажатии — чтобы клик не блокировался.
+        /// Нажатие показывает подсказку немедленно, не дожидаясь задержки.
+        ///
+        /// Раньше нажатие подсказку скрывало. Но по значку с пояснением
+        /// щёлкают именно затем, чтобы прочитать текст, а не ждать над ним
+        /// с неподвижной мышью. Повторное нажатие закрывает — так значок
+        /// работает переключателем.
         /// </summary>
         private static void OnPointerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (sender is not Control element) return;
-            _logger.Debug("TooltipBehavior: pointer pressed on {Element}, hiding tooltip",
+
+            var popup = GetPopup(element);
+
+            if (popup is { IsOpen: true })
+            {
+                _logger.Debug("TooltipBehavior: pointer pressed on {Element}, hiding tooltip",
+                    element.GetType().Name);
+                HideTooltip(element);
+                return;
+            }
+
+            // Таймер наведения больше не нужен: показываем сразу.
+            GetTimer(element)?.Stop();
+            ShowTooltip(element);
+
+            _logger.Debug("TooltipBehavior: pointer pressed on {Element}, showing tooltip",
                 element.GetType().Name);
-            HideTooltip(element);
         }
 
         /// <summary>

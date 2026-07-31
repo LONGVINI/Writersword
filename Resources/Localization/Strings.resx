@@ -1101,4 +1101,251 @@
     <value>Interval (seconds)</value>
     <comment>Label for interval input field, shared by auto-save and caching sections</comment>
   </data>
+  <data name="Settings_Tab_Backups" xml:space="preserve">
+    <value>Backups</value>
+    <comment>Settings navigation item for the version history tab</comment>
+  </data>
+  <data name="Settings_Backups_Scope_Global" xml:space="preserve">
+    <value>Global</value>
+  </data>
+  <data name="Settings_Backups_Scope_Project" xml:space="preserve">
+    <value>Local</value>
+  </data>
+  <data name="Settings_Backups_Scope_ProjectEmpty" xml:space="preserve">
+    <value>Empty — same as for all projects</value>
+  </data>
+  <data name="Settings_Backups_Effective" xml:space="preserve">
+    <value>effective path</value>
+  </data>
+  <data name="Settings_Backups_Section" xml:space="preserve">
+    <value>Version history</value>
+  </data>
+  <data name="Settings_Backups_Enable" xml:space="preserve">
+    <value>Keep a version history of the project</value>
+  </data>
+  <data name="Settings_Backups_When" xml:space="preserve">
+    <value>When to take a point</value>
+  </data>
+  <data name="Settings_Backups_OnManualSave" xml:space="preserve">
+    <value>On manual save</value>
+  </data>
+  <data name="Settings_Backups_OnAppClose" xml:space="preserve">
+    <value>When the application closes</value>
+  </data>
+  <data name="Settings_Backups_OnTimer" xml:space="preserve">
+    <value>While working, on a timer</value>
+  </data>
+  <data name="Settings_Backups_Group_Today" xml:space="preserve">
+    <value>Today</value>
+  </data>
+  <data name="Settings_Backups_Group_Yesterday" xml:space="preserve">
+    <value>Yesterday</value>
+  </data>
+  <data name="Settings_Backups_Current" xml:space="preserve">
+    <value>matches the current state</value>
+  </data>
+  <data name="Settings_Backups_JustNow" xml:space="preserve">
+    <value>just now</value>
+  </data>
+  <data name="Settings_Backups_MinutesAgo" xml:space="preserve">
+    <value>{0} min ago</value>
+  </data>
+  <data name="Settings_Backups_HoursAgo" xml:space="preserve">
+    <value>{0} h ago</value>
+  </data>
+  <data name="Settings_Backups_DaysAgo" xml:space="preserve">
+    <value>{0} d ago</value>
+  </data>
+  <data name="Settings_Backups_MinInterval" xml:space="preserve">
+    <value>No more often than once every</value>
+  </data>
+  <data name="Settings_Backups_Unit_Minutes" xml:space="preserve">
+    <value>minutes</value>
+  </data>
+  <data name="Settings_Backups_Unit_Hours" xml:space="preserve">
+    <value>hours</value>
+  </data>
+  <data name="Settings_Backups_Unit_Days" xml:space="preserve">
+    <value>days</value>
+  </data>
+  <data name="Settings_Backups_Unit_Weeks" xml:space="preserve">
+    <value>weeks</value>
+  </data>
+  <data name="Settings_Backups_Unit_Months" xml:space="preserve">
+    <value>months</value>
+  </data>
+  <data name="Settings_Backups_Unit_Tooltip" xml:space="preserve">
+    <value>Click to change the unit: minutes, hours, days, weeks, months and back to minutes.</value>
+  </data>
+  <data name="Settings_Backups_Unlimited" xml:space="preserve">
+    <value>No limit</value>
+  </data>
+  <data name="Settings_Backups_MinInterval_Hint" xml:space="preserve">
+    <value>Limits automatic points only. A point taken by the button, on application close or before a rollback is always created.</value>
+  </data>
+  <data name="Settings_Backups_Thinning" xml:space="preserve">
+    <value>Thin out older points</value>
+  </data>
+  <data name="Settings_Backups_Thinning_Hint" xml:space="preserve">
+    <value>All points are kept for today, one per day for the last week, one per week beyond that. Points created by the button are never removed.</value>
+  </data>
+  <data name="Settings_Backups_UserPoints" xml:space="preserve">
+    <value>Points taken by hand</value>
+  </data>
+  <data name="Settings_Backups_UserPoints_Never" xml:space="preserve">
+    <value>Never delete</value>
+  </data>
+  <data name="Settings_Backups_UserPoints_AfterAge" xml:space="preserve">
+    <value>Delete by age</value>
+  </data>
+  <data name="Settings_Backups_UserPoints_KeepLast" xml:space="preserve">
+    <value>Keep the most recent</value>
+  </data>
+  <data name="Settings_Backups_UserPoints_WithLimit" xml:space="preserve">
+    <value>Delete on overflow, last of all</value>
+  </data>
+  <data name="Settings_Backups_UserPoints_Days" xml:space="preserve">
+    <value>Keep for, days</value>
+  </data>
+  <data name="Settings_Backups_UserPoints_Count" xml:space="preserve">
+    <value>How many to keep</value>
+  </data>
+  <data name="Settings_Backups_UserPoints_Hint" xml:space="preserve">
+    <value>These points are never thinned out — the moment was marked deliberately. The rule below decides whether they live forever or eventually give way.</value>
+  </data>
+  <data name="Settings_Backups_CreatePoint" xml:space="preserve">
+    <value>Take a point now</value>
+  </data>
+  <data name="Settings_Backups_PointSkipped" xml:space="preserve">
+    <value>No point was taken: the project content has not changed since the last one.</value>
+  </data>
+  <data name="Settings_Backups_MaxSnapshots" xml:space="preserve">
+    <value>Maximum number of points</value>
+  </data>
+  <data name="Settings_Backups_Location" xml:space="preserve">
+    <value>Storage folder</value>
+  </data>
+  <data name="Settings_Backups_Location_Hint" xml:space="preserve">
+    <value>Empty means a service folder in the user profile — nothing appears next to the project. The path can also be set inside the project itself: it then travels with the file, and if that folder does not exist on another machine, the settings of whoever opened it are used.</value>
+  </data>
+  <data name="Settings_Backups_ProjectOverride" xml:space="preserve">
+    <value>Own folder for this project</value>
+  </data>
+  <data name="Settings_Backups_ProjectOverride_Hint" xml:space="preserve">
+    <value>The path is stored *inside the project itself* and travels with the file.
+If that folder does not exist on another machine there will be no error — *the settings of whoever opened it* are used instead.</value>
+  </data>
+  <data name="Settings_Backups_Browse" xml:space="preserve">
+    <value>Browse…</value>
+  </data>
+  <data name="Settings_Backups_UseDefault" xml:space="preserve">
+    <value>Default: profile folder</value>
+  </data>
+  <data name="Settings_Backups_Reset" xml:space="preserve">
+    <value>Reset</value>
+  </data>
+  <data name="Settings_Backups_Trigger_AppClose" xml:space="preserve">
+    <value>application close</value>
+  </data>
+  <data name="Settings_Backups_Trigger_UserPoint" xml:space="preserve">
+    <value>taken by hand</value>
+  </data>
+  <data name="Settings_Backups_Unsaved_Message" xml:space="preserve">
+    <value>The project has unsaved changes. The point taken before a rollback is made from the file on disk and will not preserve them — they will be lost.
+
+Save them before rolling back?
+Yes — save and roll back, No — roll back and lose them, Cancel — do nothing.</value>
+  </data>
+  <data name="Settings_Backups_Confirm_Changes" xml:space="preserve">
+    <value>What will change:</value>
+  </data>
+  <data name="Settings_Backups_Confirm_Shrink" xml:space="preserve">
+    <value>Warning: after the rollback there will be less data than there is now.</value>
+  </data>
+  <data name="Settings_Backups_Hint" xml:space="preserve">
+    <value>A restore point records the state of the project before a save. Identical content is stored once, so images and avatars are not copied again for every point.</value>
+  </data>
+  <data name="Settings_Backups_Points" xml:space="preserve">
+    <value>Restore points</value>
+  </data>
+  <data name="Settings_Backups_Empty" xml:space="preserve">
+    <value>No points yet. The first one appears with the next project save.</value>
+  </data>
+  <data name="Settings_Backups_NoProject" xml:space="preserve">
+    <value>Open a project to see its restore points.</value>
+  </data>
+  <data name="Settings_Backups_Delete" xml:space="preserve">
+    <value>Delete point</value>
+  </data>
+  <data name="Settings_Backups_Delete_Confirm" xml:space="preserve">
+    <value>The point from {0} will be deleted with no way back. Data that no other point refers to disappears along with it.
+
+Point contents:</value>
+  </data>
+  <data name="Settings_Backups_Delete_Failed" xml:space="preserve">
+    <value>Could not delete the point. See the log for details.</value>
+  </data>
+  <data name="Settings_Backups_Restore" xml:space="preserve">
+    <value>Restore</value>
+  </data>
+  <data name="Settings_Backups_Confirm_Title" xml:space="preserve">
+    <value>Restore project</value>
+  </data>
+  <data name="Settings_Backups_Confirm_Message" xml:space="preserve">
+    <value>The project will be rolled back to the point {0}. The current state is saved as a separate point first, so the rollback can be undone.</value>
+  </data>
+  <data name="Settings_Backups_Restored" xml:space="preserve">
+    <value>The project has been restored from the selected point.</value>
+  </data>
+  <data name="Settings_Backups_RestoreFailed" xml:space="preserve">
+    <value>Could not restore the point. See the log for details.</value>
+  </data>
+  <data name="Settings_Backups_StorageSize" xml:space="preserve">
+    <value>Storage size</value>
+  </data>
+  <data name="Settings_Backups_Trigger_Manual" xml:space="preserve">
+    <value>manual save</value>
+  </data>
+  <data name="Settings_Backups_Trigger_Auto" xml:space="preserve">
+    <value>auto-save</value>
+  </data>
+  <data name="Settings_Backups_Trigger_BeforeRestore" xml:space="preserve">
+    <value>before rollback</value>
+  </data>
+  <data name="Settings_Backups_OpenFolder" xml:space="preserve">
+    <value>Open storage folder</value>
+  </data>
+  <data name="Compare_Title" xml:space="preserve">
+    <value>Compare projects</value>
+  </data>
+  <data name="Compare_Viewing_Own" xml:space="preserve">
+    <value>Showing this project's version</value>
+  </data>
+  <data name="Compare_Button_Exit" xml:space="preserve">
+    <value>Exit comparison</value>
+  </data>
+  <data name="Compare_LoadFailed" xml:space="preserve">
+    <value>Could not read the selected file.</value>
+  </data>
+  <data name="Compare_AlreadyActive" xml:space="preserve">
+    <value>This tab is already comparing. Finish the current comparison before starting a new one.</value>
+  </data>
+  <data name="Compare_Viewing_Point" xml:space="preserve">
+    <value>Showing the version from the restore point</value>
+  </data>
+  <data name="Compare_Label_Point" xml:space="preserve">
+    <value>Point</value>
+  </data>
+  <data name="Settings_Backups_Compare" xml:space="preserve">
+    <value>Compare</value>
+  </data>
+  <data name="Settings_Backups_Compare_Tooltip" xml:space="preserve">
+    <value>Open the point next to the current version: switch between them right in the editor and adopt whichever you need.</value>
+  </data>
+  <data name="Compare_SaveBlocked" xml:space="preserve">
+    <value>A version comparison is in progress — saving is disabled. Pick a version with the buttons in the banner above.</value>
+  </data>
+  <data name="Compare_Adopt_Confirm" xml:space="preserve">
+    <value>Data from the other file will be written into this project over the current one. The previous state stays in the version history. Continue?</value>
+  </data>
 </root>

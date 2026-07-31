@@ -1,0 +1,521 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.ViewModels.Settings"
+             xmlns:loc="using:Writersword.Resources.Localization"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:infra="using:Writersword.Infrastructure.Controls"
+             x:Class="Writersword.Views.Settings.BackupSettingsView"
+             x:DataType="vm:BackupSettingsViewModel">
+
+    <UserControl.Styles>
+        <!-- Заголовок секции -->
+        <Style Selector="TextBlock.SectionHeader">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <!-- Подпись поля ввода -->
+        <Style Selector="TextBlock.FieldLabel">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+        <!-- Пояснение под полем -->
+        <Style Selector="TextBlock.Hint">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+
+        <!-- Переключатель области — как вкладки в палитрах: общая плашка,
+             активный сегмент выделен фоном. Шаблон переопределён целиком,
+             иначе слева от текста остаётся кружок радиокнопки. -->
+        <!-- Сегменты переключателя области. Цвет закреплён за каждым и виден
+             всегда: синий — общая настройка, янтарный — настройка проекта.
+             Выбранный отличается яркостью и рамкой, а не наличием цвета, —
+             так обе области читаются, даже когда активна другая. -->
+        <Style Selector="RadioButton.segment">
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <!-- Затухания нет: фоны секций в теме и так тёмные, и при
+                 полупрозрачности невыбранный сегмент сливался с панелью.
+                 Выбор показывают рамка и насыщенность текста. -->
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+
+        <Style Selector="RadioButton.segment.global">
+            <Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
+        </Style>
+        <Style Selector="RadioButton.segment.project">
+            <Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
+        </Style>
+
+        <!-- Невыбранный: текст приглушён, фон остаётся цветным.
+             Выбранный: полный цвет текста, рамка в тон и полужирное начертание. -->
+        <Style Selector="RadioButton.segment">
+            <Setter Property="FontWeight" Value="Normal"/>
+        </Style>
+        <Style Selector="RadioButton.segment.global">
+            <Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
+        </Style>
+
+        <Style Selector="RadioButton.segment:not(:checked)">
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+        </Style>
+        <Style Selector="RadioButton.segment:not(:checked):pointerover">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+        </Style>
+
+        <Style Selector="RadioButton.segment:checked">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="RadioButton.segment.global:checked">
+            <Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SectionGlobalFgBrush}"/>
+        </Style>
+        <Style Selector="RadioButton.segment.project:checked">
+            <Setter Property="Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SectionProjectFgBrush}"/>
+        </Style>
+
+        <Style Selector="RadioButton.segment:disabled">
+            <Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
+            <Setter Property="Cursor" Value="Arrow"/>
+        </Style>
+
+        <!-- Пометка области действия. Цвета те же, что у секций окна настроек:
+             синий — общее для всех проектов, янтарный — только для этого. -->
+        <Style Selector="Border.ScopeBadge">
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Padding" Value="6,1"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
+        </Style>
+        <Style Selector="Border.ScopeBadge TextBlock">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
+        </Style>
+        <Style Selector="Border.ScopeBadge.project">
+            <Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
+        </Style>
+        <Style Selector="Border.ScopeBadge.project TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
+        </Style>
+    </UserControl.Styles>
+
+    <StackPanel Spacing="26">
+
+        <!-- ── История версий ─────────────────────────────────────────── -->
+        <StackPanel Spacing="10">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Classes="SectionHeader"
+                           Text="{x:Static loc:Strings.Settings_Backups_Section}"/>
+                <infra:HintMark VerticalAlignment="Center"
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_Section}"
+                                behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_Hint}"/>
+            </StackPanel>
+            <Separator/>
+
+            <CheckBox IsChecked="{Binding Enabled}"
+                      Content="{x:Static loc:Strings.Settings_Backups_Enable}"/>
+        </StackPanel>
+
+        <!-- ── Папка хранения ──────────────────────────────────────────
+             Идёт сразу за главным выключателем: куда складывается история —
+             первое, что нужно знать, и последнее, что стоит искать в конце
+             страницы. -->
+        <StackPanel Spacing="10" IsEnabled="{Binding Enabled}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Classes="SectionHeader"
+                           Text="{x:Static loc:Strings.Settings_Backups_Location}"/>
+                <infra:HintMark VerticalAlignment="Center"
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_Location}"
+                                behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_Location_Hint}"/>
+            </StackPanel>
+            <Separator/>
+
+            <!-- Переключатель области: одно поле пути, но правит оно либо общую
+                 настройку, либо личную для открытого проекта. Обе видны — надо
+                 лишь переключиться, ни одна не теряется. -->
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <Border Background="{DynamicResource BgSurfaceBrush}"
+                        CornerRadius="8"
+                        Padding="3"
+                        HorizontalAlignment="Left">
+                    <StackPanel Orientation="Horizontal">
+                        <!-- Папка — настройка этого проекта, глобус — общая.
+                             Обе фигуры контурные: сплошная папка рядом
+                             с контурным глобусом смотрелась чужой. -->
+                        <RadioButton Classes="segment project"
+                                     GroupName="BackupScope"
+                                     IsChecked="{Binding IsProjectScope}"
+                                     IsEnabled="{Binding CanUseProjectScope}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <PathIcon Width="14" Height="14"
+                                          Foreground="{Binding $parent[RadioButton].Foreground}"
+                                          Data="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+                                <TextBlock Text="{x:Static loc:Strings.Settings_Backups_Scope_Project}"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+
+                        <RadioButton Classes="segment global"
+                                     GroupName="BackupScope"
+                                     IsChecked="{Binding IsGlobalScope}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <PathIcon Width="15" Height="15"
+                                          Foreground="{Binding $parent[RadioButton].Foreground}"
+                                          Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                                <TextBlock Text="{x:Static loc:Strings.Settings_Backups_Scope_Global}"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </RadioButton>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <Grid ColumnDefinitions="*,8,Auto,8,Auto">
+                <TextBox Grid.Column="0"
+                         Text="{Binding CurrentPath}"
+                         Watermark="{Binding CurrentPathWatermark}"
+                         FontSize="12"/>
+
+                <Button Grid.Column="2"
+                        Classes="ghost"
+                        Padding="12,6"
+                        FontSize="12"
+                        Cursor="Hand"
+                        Command="{Binding BrowseCommand}"
+                        Content="{x:Static loc:Strings.Settings_Backups_Browse}"/>
+
+                <Button Grid.Column="4"
+                        Classes="ghost"
+                        Padding="12,6"
+                        FontSize="12"
+                        Cursor="Hand"
+                        Command="{Binding UseDefaultCommand}"
+                        Content="{x:Static loc:Strings.Settings_Backups_Reset}"/>
+            </Grid>
+
+            <!-- Итоговый путь: что из двух настроек в конце концов победило. -->
+            <StackPanel Orientation="Horizontal"
+                        Spacing="10"
+                        IsVisible="{Binding HasProject}">
+                <Border Classes="ScopeBadge project">
+                    <TextBlock Text="{x:Static loc:Strings.Settings_Backups_Effective}"/>
+                </Border>
+                <TextBlock Classes="Hint"
+                           Text="{Binding EffectiveStoragePath}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           VerticalAlignment="Center"/>
+                <Button Classes="ghost"
+                        Padding="10,4"
+                        FontSize="11"
+                        Cursor="Hand"
+                        Command="{Binding OpenFolderCommand}"
+                        Content="{x:Static loc:Strings.Settings_Backups_OpenFolder}"/>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- ── Когда снимать точку ─────────────────────────────────────── -->
+        <StackPanel Spacing="10" IsEnabled="{Binding Enabled}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Classes="SectionHeader"
+                           Text="{x:Static loc:Strings.Settings_Backups_When}"/>
+                <infra:HintMark VerticalAlignment="Center"
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_When}"
+                                behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_MinInterval_Hint}"/>
+            </StackPanel>
+            <Separator/>
+
+            <CheckBox IsChecked="{Binding OnManualSave}"
+                      Content="{x:Static loc:Strings.Settings_Backups_OnManualSave}"/>
+
+            <CheckBox IsChecked="{Binding OnAppClose}"
+                      Content="{x:Static loc:Strings.Settings_Backups_OnAppClose}"/>
+
+            <CheckBox IsChecked="{Binding OnTimer}"
+                      Content="{x:Static loc:Strings.Settings_Backups_OnTimer}"/>
+
+            <!-- Предохранитель частоты: сохранений может быть сколько угодно,
+                 точка возникает не чаще заданного промежутка. -->
+            <StackPanel Spacing="0">
+                <TextBlock Classes="FieldLabel"
+                           Text="{x:Static loc:Strings.Settings_Backups_MinInterval}"/>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <NumericUpDown Value="{Binding IntervalValue, Mode=TwoWay}"
+                                   Minimum="1"
+                                   Maximum="999"
+                                   Increment="1"
+                                   FormatString="0"
+                                   ShowButtonSpinner="True"
+                                   ButtonSpinnerLocation="Right"
+                                   TextAlignment="Center"
+                                   Width="130"
+                                   VerticalAlignment="Center"/>
+
+                    <!-- Единица переключается щелчком по кругу: минуты, часы,
+                         дни, недели, месяцы и снова минуты. -->
+                    <Button Padding="12,6"
+                            FontSize="13"
+                            MinWidth="110"
+                            Cursor="Hand"
+                            VerticalAlignment="Center"
+                            HorizontalContentAlignment="Center"
+                            Command="{Binding CycleIntervalUnitCommand}"
+                            behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_MinInterval}"
+                            behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_Unit_Tooltip}">
+                        <TextBlock x:Name="IntervalUnitLabel"
+                                   Text="{Binding IntervalUnitText}"
+                                   HorizontalAlignment="Center">
+                            <TextBlock.Transitions>
+                                <Transitions>
+                                    <DoubleTransition Property="Opacity" Duration="0:0:0.16"/>
+                                </Transitions>
+                            </TextBlock.Transitions>
+                        </TextBlock>
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- ── Сколько хранить ─────────────────────────────────────────── -->
+        <StackPanel Spacing="10" IsEnabled="{Binding Enabled}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Classes="SectionHeader"
+                           Text="{x:Static loc:Strings.Settings_Backups_MaxSnapshots}"/>
+                <infra:HintMark VerticalAlignment="Center"
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_Thinning}"
+                                behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_Thinning_Hint}"/>
+            </StackPanel>
+            <Separator/>
+
+            <CheckBox IsChecked="{Binding Thinning}"
+                      Content="{x:Static loc:Strings.Settings_Backups_Thinning}"/>
+
+            <StackPanel Spacing="0">
+                <TextBlock Classes="FieldLabel"
+                           Text="{x:Static loc:Strings.Settings_Backups_MaxSnapshots}"/>
+                <ComboBox IsEditable="True"
+                          ItemsSource="{Binding MaxSnapshotPresets}"
+                          Text="{Binding MaxSnapshotsText}"
+                          MinWidth="160"
+                          HorizontalAlignment="Left"/>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- ── Точки, созданные вручную ────────────────────────────────── -->
+        <StackPanel Spacing="10" IsEnabled="{Binding Enabled}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Classes="SectionHeader"
+                           Text="{x:Static loc:Strings.Settings_Backups_UserPoints}"/>
+                <infra:HintMark VerticalAlignment="Center"
+                                behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_UserPoints}"
+                                behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_UserPoints_Hint}"/>
+            </StackPanel>
+            <Separator/>
+
+            <ComboBox ItemsSource="{Binding UserPointRetentionOptions}"
+                      SelectedItem="{Binding SelectedUserPointRetention}"
+                      MinWidth="260"
+                      HorizontalAlignment="Left">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:UserPointRetentionOption">
+                        <TextBlock Text="{Binding DisplayName}"
+                                   FontSize="13"
+                                   Padding="4,2"/>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+
+            <!-- Число нужно не всем правилам: «не удалять» и «по общему лимиту»
+                 обходятся без него. -->
+            <StackPanel Spacing="0" IsVisible="{Binding ShowUserPointValue}">
+                <TextBlock Classes="FieldLabel"
+                           Text="{Binding UserPointValueLabel}"/>
+                <NumericUpDown Value="{Binding UserPointValue, Mode=TwoWay}"
+                               Minimum="1"
+                               Maximum="9999"
+                               Increment="1"
+                               FormatString="0"
+                               ShowButtonSpinner="True"
+                               ButtonSpinnerLocation="Right"
+                               TextAlignment="Center"
+                               Width="130"
+                               HorizontalAlignment="Left"/>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- ── Точки восстановления ────────────────────────────────────── -->
+        <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0"
+                           Classes="SectionHeader"
+                           Text="{x:Static loc:Strings.Settings_Backups_Points}"/>
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="6"
+                            IsVisible="{Binding HasProject}">
+                    <TextBlock Classes="Hint"
+                               Text="{x:Static loc:Strings.Settings_Backups_StorageSize}"
+                               VerticalAlignment="Center"/>
+                    <TextBlock FontSize="11"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               Text="{Binding StorageSizeText}"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+            <Separator/>
+
+            <TextBlock Classes="Hint"
+                       Text="{x:Static loc:Strings.Settings_Backups_NoProject}"
+                       IsVisible="{Binding ShowNoProject}"/>
+
+            <!-- Точка по требованию: помечает момент, важный именно пользователю. -->
+            <Button Classes="ghost"
+                    Padding="12,6"
+                    FontSize="12"
+                    Cursor="Hand"
+                    HorizontalAlignment="Left"
+                    IsVisible="{Binding HasProject}"
+                    IsEnabled="{Binding IsNotBusy}"
+                    Command="{Binding CreatePointCommand}"
+                    Content="{x:Static loc:Strings.Settings_Backups_CreatePoint}"/>
+
+            <TextBlock Classes="Hint"
+                       Text="{x:Static loc:Strings.Settings_Backups_Empty}"
+                       IsVisible="{Binding ShowEmpty}"/>
+
+            <ItemsControl ItemsSource="{Binding Points}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:BackupPointItem">
+                        <StackPanel>
+                            <!-- Заголовок дня стоит только у первой точки суток. -->
+                            <TextBlock Text="{Binding GroupHeader}"
+                                       IsVisible="{Binding ShowGroupHeader}"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       Margin="2,10,0,6"/>
+
+                            <Border Background="{DynamicResource BgSurfaceBrush}"
+                                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="14,10"
+                                    Margin="0,0,0,6">
+                                <Grid ColumnDefinitions="Auto,10,*,Auto">
+                                    <!-- Метка причины: цвет заменяет собой значок. -->
+                                    <Border Grid.Column="0"
+                                            Width="4"
+                                            CornerRadius="2"
+                                            VerticalAlignment="Stretch"
+                                            Background="{Binding TriggerColor}"/>
+
+                                    <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{Binding DisplayTime}"
+                                                       FontSize="13"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="{Binding RelativeTime}"
+                                                       FontSize="11"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                                            <Border IsVisible="{Binding IsCurrent}"
+                                                    Background="{DynamicResource BgHoverBrush}"
+                                                    CornerRadius="3"
+                                                    Padding="6,1"
+                                                    VerticalAlignment="Center">
+                                                <TextBlock Text="{x:Static loc:Strings.Settings_Backups_Current}"
+                                                           FontSize="10"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                            </Border>
+                                        </StackPanel>
+
+                                        <TextBlock Text="{Binding Details}"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                                        <!-- Состав по модулям: пустой документ виден по размеру. -->
+                                        <TextBlock Text="{Binding ModulesSummary}"
+                                                   IsVisible="{Binding HasModulesSummary}"
+                                                   FontSize="11"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                        <!-- Прирост и убыль относительно предыдущей точки. -->
+                                        <TextBlock Text="{Binding DeltaSummary}"
+                                                   IsVisible="{Binding HasDelta}"
+                                                   FontSize="11"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="3"
+                                                Orientation="Horizontal"
+                                                Spacing="6"
+                                                VerticalAlignment="Center">
+                                        <Button Classes="ghost"
+                                                Padding="12,6"
+                                                FontSize="12"
+                                                Cursor="Hand"
+                                                Content="{x:Static loc:Strings.Settings_Backups_Compare}"
+                                                behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_Compare}"
+                                                behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_Compare_Tooltip}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.CompareCommand}"
+                                                CommandParameter="{Binding}"
+                                                IsEnabled="{Binding $parent[ItemsControl].DataContext.IsNotBusy}"/>
+
+                                        <Button Classes="ghost"
+                                                Padding="12,6"
+                                                FontSize="12"
+                                                Cursor="Hand"
+                                                Content="{x:Static loc:Strings.Settings_Backups_Restore}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.RestoreCommand}"
+                                                CommandParameter="{Binding}"
+                                                IsEnabled="{Binding $parent[ItemsControl].DataContext.IsNotBusy}"/>
+
+                                        <!-- Удаление отделено: действие необратимое.
+                                             Значок тот же, что у удаления в списке
+                                             персонажей, — вектор, а не символ шрифта. -->
+                                        <Button Classes="ghost"
+                                                Padding="10,6"
+                                                Cursor="Hand"
+                                                Margin="6,0,0,0"
+                                                Foreground="#A86A5B"
+                                                behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_Delete}"
+                                                Command="{Binding $parent[ItemsControl].DataContext.DeletePointCommand}"
+                                                CommandParameter="{Binding}"
+                                                IsEnabled="{Binding $parent[ItemsControl].DataContext.IsNotBusy}">
+                                            <PathIcon Width="13" Height="13"
+                                                      Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+        </StackPanel>
+
+    </StackPanel>
+</UserControl>

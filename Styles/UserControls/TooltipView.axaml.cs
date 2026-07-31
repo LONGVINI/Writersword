@@ -1,100 +1,102 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
 using System.Collections.Generic;
 
 namespace Writersword.Styles.UserControls
 {
     /// <summary>
-    /// Токен отображения горячей клавиши в подсказке.
-    /// IsKey=true  — клавиша, отображается как бейдж.
-    /// IsKey=false — разделитель хордов (стрелка).
-    /// Объявлен рядом с TooltipView так как используется только здесь.
+    /// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
+    /// IsKey=true  пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ.
+    /// IsKey=false пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅпїЅпїЅпїЅпїЅ).
+    /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ TooltipView пїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ.
     /// </summary>
     public record HotKeyToken(string Text, bool IsKey);
 
     /// <summary>
-    /// Визуальное представление кастомной подсказки.
-    /// Поддерживает заголовок, описание, горячие клавиши и картинку/гифку.
-    /// Все блоки кроме заголовка опциональны — скрываются если не заданы.
-    /// Цвета передаются напрямую из TooltipBehavior чтобы корректно работать внутри PopupRoot.
-    /// Горячие клавиши строятся программно в code-behind чтобы обойти ограничения биндинга в PopupRoot.
+    /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
+    /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ/пїЅпїЅпїЅпїЅпїЅ.
+    /// пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.
+    /// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ TooltipBehavior пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ PopupRoot.
+    /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ code-behind пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ PopupRoot.
     /// </summary>
     public partial class TooltipView : UserControl
     {
-        /// <summary>Заголовок подсказки — основной текст.</summary>
+        /// <summary>пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ.</summary>
         public static readonly StyledProperty<string?> TitleProperty =
             AvaloniaProperty.Register<TooltipView, string?>(nameof(Title));
 
         /// <summary>
-        /// Описание — дополнительный текст под заголовком.
-        /// Если не задано — блок скрывается.
+        /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
+        /// пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
         /// </summary>
         public static readonly StyledProperty<string?> DescriptionProperty =
             AvaloniaProperty.Register<TooltipView, string?>(nameof(Description));
 
         /// <summary>
-        /// Горячие клавиши в виде списка бинд-строк.
-        /// При установке программно строит блок клавиш в HotKeysContainer.
-        /// Должно устанавливаться после всех кистей.
+        /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ-пїЅпїЅпїЅпїЅпїЅ.
+        /// пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ HotKeysContainer.
+        /// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.
         /// </summary>
         public static readonly StyledProperty<List<List<HotKeyToken>>?> ParsedHotKeysProperty =
             AvaloniaProperty.Register<TooltipView, List<List<HotKeyToken>>?>(nameof(ParsedHotKeys));
 
         /// <summary>
-        /// Путь к картинке или гифке в формате avares://Assembly/Path/file.ext
-        /// Поддерживает GIF (с анимацией), PNG, WebP, JPG.
-        /// Если не задан — блок скрывается.
+        /// пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ avares://Assembly/Path/file.ext
+        /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ GIF (пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ), PNG, WebP, JPG.
+        /// пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
         /// </summary>
         public static readonly StyledProperty<string?> PreviewPathProperty =
             AvaloniaProperty.Register<TooltipView, string?>(nameof(PreviewPath));
 
         /// <summary>
-        /// Управляет позицией треугольника по вертикали.
-        /// true — треугольник снизу (подсказка над кнопкой).
-        /// false — треугольник сверху (подсказка под кнопкой).
+        /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
+        /// true пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ).
+        /// false пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ (пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ).
         /// </summary>
         public static readonly StyledProperty<bool> ArrowAtBottomProperty =
             AvaloniaProperty.Register<TooltipView, bool>(nameof(ArrowAtBottom), defaultValue: true);
 
         /// <summary>
-        /// Горизонтальное смещение стрелки относительно левого края тултипа.
-        /// Рассчитывается в TooltipBehavior чтобы стрелка указывала на центр кнопки.
+        /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
+        /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ TooltipBehavior пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.
         /// </summary>
         public static readonly StyledProperty<double> ArrowHorizontalOffsetProperty =
             AvaloniaProperty.Register<TooltipView, double>(nameof(ArrowHorizontalOffset), defaultValue: 0.0);
 
         /// <summary>
-        /// Кисть фона подсказки — передаётся из TooltipBehavior.
-        /// Резолвится из главного дерева ресурсов чтобы работать внутри PopupRoot.
+        /// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ TooltipBehavior.
+        /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ PopupRoot.
         /// </summary>
         public static readonly StyledProperty<IBrush?> TooltipBackgroundProperty =
             AvaloniaProperty.Register<TooltipView, IBrush?>(nameof(TooltipBackground));
 
-        /// <summary>Кисть границы подсказки — передаётся из TooltipBehavior.</summary>
+        /// <summary>пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ TooltipBehavior.</summary>
         public static readonly StyledProperty<IBrush?> TooltipBorderBrushProperty =
             AvaloniaProperty.Register<TooltipView, IBrush?>(nameof(TooltipBorderBrush));
 
-        /// <summary>Кисть текста подсказки — передаётся из TooltipBehavior.</summary>
+        /// <summary>пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ TooltipBehavior.</summary>
         public static readonly StyledProperty<IBrush?> TooltipForegroundProperty =
             AvaloniaProperty.Register<TooltipView, IBrush?>(nameof(TooltipForeground));
 
         /// <summary>
-        /// Кисть фона бейджа клавиши — передаётся из TooltipBehavior.
-        /// Резолвится из ресурса AppTooltipKeyBackground.
+        /// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ TooltipBehavior.
+        /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ AppTooltipKeyBackground.
         /// </summary>
         public static readonly StyledProperty<IBrush?> KeyBadgeBackgroundProperty =
             AvaloniaProperty.Register<TooltipView, IBrush?>(nameof(KeyBadgeBackground));
 
-        /// <summary>Заголовок подсказки.</summary>
+        /// <summary>пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.</summary>
         public string? Title
         {
             get => GetValue(TitleProperty);
             set => SetValue(TitleProperty, value);
         }
 
-        /// <summary>Описание подсказки. Скрывается если не задано.</summary>
+        /// <summary>пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ. пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.</summary>
         public string? Description
         {
             get => GetValue(DescriptionProperty);
@@ -102,9 +104,9 @@ namespace Writersword.Styles.UserControls
         }
 
         /// <summary>
-        /// Токены горячих клавиш.
-        /// При установке перестраивает HotKeysContainer программно.
-        /// Должно устанавливаться после всех кистей.
+        /// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.
+        /// пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ HotKeysContainer пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
+        /// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.
         /// </summary>
         public List<List<HotKeyToken>>? ParsedHotKeys
         {
@@ -116,49 +118,49 @@ namespace Writersword.Styles.UserControls
             }
         }
 
-        /// <summary>Путь к картинке/гифке. Скрывается если не задан.</summary>
+        /// <summary>пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ/пїЅпїЅпїЅпїЅпїЅ. пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅ.</summary>
         public string? PreviewPath
         {
             get => GetValue(PreviewPathProperty);
             set => SetValue(PreviewPathProperty, value);
         }
 
-        /// <summary>Позиция треугольника-стрелки по вертикали.</summary>
+        /// <summary>пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ-пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.</summary>
         public bool ArrowAtBottom
         {
             get => GetValue(ArrowAtBottomProperty);
             set => SetValue(ArrowAtBottomProperty, value);
         }
 
-        /// <summary>Горизонтальное смещение стрелки.</summary>
+        /// <summary>пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.</summary>
         public double ArrowHorizontalOffset
         {
             get => GetValue(ArrowHorizontalOffsetProperty);
             set => SetValue(ArrowHorizontalOffsetProperty, value);
         }
 
-        /// <summary>Кисть фона.</summary>
+        /// <summary>пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ.</summary>
         public IBrush? TooltipBackground
         {
             get => GetValue(TooltipBackgroundProperty);
             set => SetValue(TooltipBackgroundProperty, value);
         }
 
-        /// <summary>Кисть границы.</summary>
+        /// <summary>пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.</summary>
         public IBrush? TooltipBorderBrush
         {
             get => GetValue(TooltipBorderBrushProperty);
             set => SetValue(TooltipBorderBrushProperty, value);
         }
 
-        /// <summary>Кисть текста.</summary>
+        /// <summary>пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.</summary>
         public IBrush? TooltipForeground
         {
             get => GetValue(TooltipForegroundProperty);
             set => SetValue(TooltipForegroundProperty, value);
         }
 
-        /// <summary>Кисть фона бейджа клавиши.</summary>
+        /// <summary>пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.</summary>
         public IBrush? KeyBadgeBackground
         {
             get => GetValue(KeyBadgeBackgroundProperty);
@@ -171,11 +173,68 @@ namespace Writersword.Styles.UserControls
         }
 
         /// <summary>
-        /// Программно строит блок горячих клавиш в HotKeysContainer.
-        /// Каждый бинд — отдельная строка горизонтальных бейджей.
-        /// Между клавишами одного хорда добавляется символ +.
-        /// Между хордами в последовательности добавляется стрелка.
-        /// Обходит ограничение биндинга внутри PopupRoot.
+        /// РџРµСЂРµСЃРѕР±РёСЂР°РµС‚ РѕРїРёСЃР°РЅРёРµ РїСЂРё РёР·РјРµРЅРµРЅРёРё С‚РµРєСЃС‚Р°.
+        /// </summary>
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == DescriptionProperty)
+                RebuildDescription(change.GetNewValue<string?>());
+        }
+
+        /// <summary>
+        /// РЎРѕР±РёСЂР°РµС‚ РѕРїРёСЃР°РЅРёРµ РёР· РїСЂРѕСЃС‚РѕР№ СЂР°Р·РјРµС‚РєРё.
+        ///
+        /// РџРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ РґРІР° РїСЂРёС‘РјР°:
+        ///   *С‚РµРєСЃС‚*  вЂ” РІС‹РґРµР»РµРЅРёРµ Р°РєС†РµРЅС‚РЅС‹Рј С†РІРµС‚РѕРј Рё РїРѕР»СѓР¶РёСЂРЅС‹Рј;
+        ///   РїРµСЂРµРЅРѕСЃ СЃС‚СЂРѕРєРё вЂ” РѕР±С‹С‡РЅС‹Р№ \n РІ СЂРµСЃСѓСЂСЃРЅРѕР№ СЃС‚СЂРѕРєРµ.
+        ///
+        /// Р Р°РЅСЊС€Рµ РІС‹РґРµР»РµРЅРёРµ РїСЂРёС…РѕРґРёР»РѕСЃСЊ РїРёСЃР°С‚СЊ РІСЂСѓС‡РЅСѓСЋ РІР»РѕР¶РµРЅРЅС‹РјРё Run РїСЂСЏРјРѕ
+        /// РІ СЂР°Р·РјРµС‚РєРµ РѕРєРЅР°, РёР·-Р·Р° С‡РµРіРѕ С‚РµРєСЃС‚ РЅРµ РїРµСЂРµРІРѕРґРёР»СЃСЏ Рё РїРѕРІС‚РѕСЂСЏР»СЃСЏ
+        /// РІ РєР°Р¶РґРѕРј РјРµСЃС‚Рµ. РўРµРїРµСЂСЊ РѕС„РѕСЂРјР»РµРЅРёРµ Р¶РёРІС‘С‚ РІ СЃР°РјРѕР№ СЃС‚СЂРѕРєРµ.
+        /// </summary>
+        private void RebuildDescription(string? text)
+        {
+            var target = this.FindControl<TextBlock>("DescriptionText");
+            if (target is null) return;
+
+            target.Inlines?.Clear();
+
+            if (string.IsNullOrEmpty(text))
+                return;
+
+            // Р Р°Р·Р±РёРІР°РµРј РїРѕ Р·РІС‘Р·РґРѕС‡РєР°Рј: РЅРµС‡С‘С‚РЅС‹Рµ РєСѓСЃРєРё вЂ” РІС‹РґРµР»РµРЅРЅС‹Рµ.
+            var parts = text.Split('*');
+
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (parts[i].Length == 0) continue;
+
+                var run = new Run(parts[i]);
+
+                if (i % 2 == 1)
+                {
+                    // Р¦РІРµС‚ Р±РµСЂС‘С‚СЃСЏ РїСЂРёРІСЏР·РєРѕР№, Р° РЅРµ СЂР°Р·РѕРІС‹Рј РїРѕРёСЃРєРѕРј СЂРµСЃСѓСЂСЃР°:
+                    // РїРѕРґСЃРєР°Р·РєР° Р¶РёРІС‘С‚ РІ РїРѕРїР°РїРµ Рё РІ РјРѕРјРµРЅС‚ СЃР±РѕСЂРєРё С‚РµРєСЃС‚Р° РµС‰С‘
+                    // РЅРµ РїРѕРґРєР»СЋС‡РµРЅР° Рє РґРµСЂРµРІСѓ СЂРµСЃСѓСЂСЃРѕРІ вЂ” РїРѕРёСЃРє РІРѕР·РІСЂР°С‰Р°Р» РїСѓСЃС‚Рѕ,
+                    // Рё РІС‹РґРµР»РµРЅРёРµ РєСЂР°СЃРёР»РѕСЃСЊ Р·Р°РїР°СЃРЅС‹Рј С†РІРµС‚РѕРј.
+                    run[!TextElement.ForegroundProperty] =
+                        new DynamicResourceExtension("AccentDefaultBrush");
+
+                    run.FontWeight = FontWeight.SemiBold;
+                }
+
+                target.Inlines?.Add(run);
+            }
+        }
+
+        /// <summary>
+        /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ HotKeysContainer.
+        /// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
+        /// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ +.
+        /// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
+        /// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ PopupRoot.
         /// </summary>
         private void RebuildHotKeys(List<List<HotKeyToken>>? hotKeys)
         {

@@ -114,6 +114,29 @@ namespace Writersword.Modules.Characters.Converters
         public object? ConvertBack(object? value, Type t, object? p, CultureInfo c) => throw new NotImplementedException();
     }
 
+    /// <summary>
+    /// Непрозрачность римской цифры по ступени важности папки: первая ступень
+    /// видна в полную силу, третья приглушена. Значения подобраны так, чтобы
+    /// третья ступень совпадала с прежним приглушённым видом значка, а первая
+    /// читалась как акцент в строке папки.
+    /// </summary>
+    public class ImportanceToOpacityConverter : IValueConverter
+    {
+        public static readonly ImportanceToOpacityConverter Instance = new();
+
+        public object Convert(object? value, Type t, object? p, CultureInfo c)
+            => value is CharacterImportanceLevel level
+                ? level switch
+                {
+                    CharacterImportanceLevel.Primary => 1.0,
+                    CharacterImportanceLevel.Secondary => 0.62,
+                    _ => 0.38
+                }
+                : 0.38;
+
+        public object? ConvertBack(object? value, Type t, object? p, CultureInfo c) => throw new NotImplementedException();
+    }
+
     public class BoolToActiveBrushConverter : IValueConverter
     {
         public static readonly BoolToActiveBrushConverter Instance = new();

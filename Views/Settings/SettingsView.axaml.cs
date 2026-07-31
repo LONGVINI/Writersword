@@ -1,5 +1,8 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Writersword.ViewModels.Settings;
@@ -7,7 +10,7 @@ using Writersword.ViewModels.Settings;
 namespace Writersword.Views.Settings
 {
     /// <summary>
-    /// Окно настроек приложения
+    /// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
     /// </summary>
     public partial class SettingsView : Window
     {
@@ -17,7 +20,12 @@ namespace Writersword.Views.Settings
         {
             _logger = App.Services.GetService<ILogger<SettingsView>>()!;
             InitializeComponent();
+
             DataContextChanged += OnDataContextChanged;
+
+            // РЎРЅСЏС‚РёРµ С„РѕРєСѓСЃР° С‰РµР»С‡РєРѕРј РјРёРјРѕ РїРѕР»СЏ Рё Р·Р°РІРµСЂС€РµРЅРёРµ РІРІРѕРґР° РїРѕ Enter
+            // СЂР°Р±РѕС‚Р°СЋС‚ РґР»СЏ РІСЃРµС… РѕРєРѕРЅ С‡РµСЂРµР· FocusReleaseBehavior вЂ” РѕРЅРѕ
+            // РїРѕРґРєР»СЋС‡РµРЅРѕ СЃС‚РёР»РµРј РІ Styles/Controls.axaml.
         }
 
         private void OnDataContextChanged(object? sender, System.EventArgs e)
@@ -32,7 +40,7 @@ namespace Writersword.Views.Settings
             }
         }
 
-        /// <summary>Обработчик клика по вкладке</summary>
+        /// <summary>пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ</summary>
         private void Tab_PointerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (sender is Border border &&
@@ -43,7 +51,7 @@ namespace Writersword.Views.Settings
             }
         }
 
-        /// <summary>Обработчик клика по заголовку секции — сворачивает или разворачивает секцию</summary>
+        /// <summary>пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ</summary>
         private void SectionHeader_PointerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (sender is Border border &&

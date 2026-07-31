@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Writersword.Modules.Characters.Interfaces;
 using Writersword.Modules.Characters.Models;
 using Writersword.Modules.Characters.Models.Enums;
+using Writersword.Src.Modules.Characters.Resources;
 
 namespace Writersword.Modules.Characters.ViewModels.Tabs
 {
@@ -270,7 +271,38 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         public bool GroupBookmark { get => _groupBookmark; set => this.RaiseAndSetIfChanged(ref _groupBookmark, value); }
 
         private CharacterImportanceLevel _importanceLevel = CharacterImportanceLevel.Secondary;
-        public CharacterImportanceLevel ImportanceLevel { get => _importanceLevel; set => this.RaiseAndSetIfChanged(ref _importanceLevel, value); }
+        public CharacterImportanceLevel ImportanceLevel
+        {
+            get => _importanceLevel;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _importanceLevel, value);
+                this.RaisePropertyChanged(nameof(ImportanceLevelName));
+                this.RaisePropertyChanged(nameof(ImportanceLevelHint));
+            }
+        }
+
+        /// <summary>
+        /// Название выбранной ступени словами. Стоит рядом с цифрами: сами по
+        /// себе I, II и III ничего не говорят, а раскрывать их только подсказкой
+        /// значит требовать наводить курсор ради простого вопроса.
+        /// </summary>
+        public string ImportanceLevelName => _importanceLevel switch
+        {
+            CharacterImportanceLevel.Primary => CharactersStrings.Importance_Primary,
+            CharacterImportanceLevel.Secondary => CharactersStrings.Importance_Secondary,
+            CharacterImportanceLevel.Tertiary => CharactersStrings.Importance_Tertiary,
+            _ => CharactersStrings.Importance_Custom
+        };
+
+        /// <summary>Строка о том, что выбранная ступень значит.</summary>
+        public string ImportanceLevelHint => _importanceLevel switch
+        {
+            CharacterImportanceLevel.Primary => CharactersStrings.Importance_PrimaryHint,
+            CharacterImportanceLevel.Secondary => CharactersStrings.Importance_SecondaryHint,
+            CharacterImportanceLevel.Tertiary => CharactersStrings.Importance_TertiaryHint,
+            _ => CharactersStrings.Importance_CustomHint
+        };
 
         private string _customImportanceLabel = string.Empty;
         public string CustomImportanceLabel { get => _customImportanceLabel; set => this.RaiseAndSetIfChanged(ref _customImportanceLabel, value); }

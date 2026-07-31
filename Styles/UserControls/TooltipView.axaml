@@ -67,10 +67,11 @@
                            FontWeight="SemiBold"
                            TextWrapping="Wrap"/>
 
-				<!-- Описание -->
-				<TextBlock IsVisible="{Binding Description, ElementName=RootView,
+				<!-- Описание. Текст собирается в code-behind: поддерживаются
+				     переносы строк и выделение фрагментов звёздочками. -->
+				<TextBlock x:Name="DescriptionText"
+                           IsVisible="{Binding Description, ElementName=RootView,
                                       Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                           Text="{Binding Description, ElementName=RootView}"
                            Foreground="{Binding TooltipForeground, ElementName=RootView}"
                            FontSize="11"
                            Opacity="0.75"

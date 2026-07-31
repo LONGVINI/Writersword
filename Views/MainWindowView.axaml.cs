@@ -21,6 +21,7 @@ using Writersword.Core.Interfaces.Services.Input;
 using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Interfaces.WorkFlows;
+using Writersword.Core.Models.Backup;
 using Writersword.Resources.Localization;
 using Writersword.ViewModels;
 using Writersword.Views.Components.MenuBar;
@@ -833,18 +834,32 @@ namespace Writersword.Views
             {
                 try
                 {
-                    var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
-                    var cacheService = App.Services.GetRequiredService<IZipCacheService>();
+                    // Кеш пишется только когда есть что спасать. Безусловная запись при
+                    // каждом закрытии складывала в .wsasd то, что вернули живые модули,
+                    // включая пустой документ модуля, который своих данных не получил.
+                    // При следующем запуске такой кеш оказывается новее ZIP, проходит
+                    // сравнение как «данные идентичны» и подставляется вместо проекта.
+                    bool hasUnsaved = await projectWorkflow.HasUnsavedChanges(activeTab);
 
-                    var activeModules = vm.GetActiveModules();
-                    var (customData, sessionData) = stateCollector.CollectAllData(activeModules);
-
-                    if (customData.Count > 0)
+                    if (hasUnsaved)
                     {
-                        var project = activeTab.GetProject();
-                        await cacheService.SaveCacheAsync(activeTab.FilePath, project.Id, customData, sessionData);
-                        activeTab.MarkAsModified();
-                        _logger.LogDebug("Active tab cached: {Count} modules", customData.Count);
+                        var stateCollector = App.Services.GetRequiredService<IModuleStateCollectorService>();
+                        var cacheService = App.Services.GetRequiredService<IZipCacheService>();
+
+                        var activeModules = vm.GetActiveModules();
+                        var (customData, sessionData) = stateCollector.CollectAllData(activeModules);
+
+                        if (customData.Count > 0)
+                        {
+                            var project = activeTab.GetProject();
+                            await cacheService.SaveCacheAsync(activeTab.FilePath, project.Id, customData, sessionData);
+                            activeTab.MarkAsModified();
+                            _logger.LogDebug("Active tab cached: {Count} modules", customData.Count);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogDebug("Active tab has no unsaved changes, cache not written: {Title}", activeTab.Title);
                     }
 
                     if (activeTab.Workspace != null)
@@ -911,6 +926,39 @@ namespace Writersword.Views
                         await Task.Run(() => cacheService.DeleteCache(tab.FilePath));
                     }
                 }
+            }
+
+            // Точка восстановления при закрытии: для тех, кто держит приложение
+            // открытым сутками, это единственный надёжный ритм. Снимается с
+            // файла на диске, поэтому идёт после всех сохранений выше.
+            try
+            {
+                var backupService = App.Services.GetRequiredService<IBackupService>();
+
+                foreach (var path in openPaths)
+                {
+                    if (!string.IsNullOrEmpty(path))
+                        await backupService.CreateSnapshotAsync(path, BackupTrigger.AppClose);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Backup point on close failed");
+            }
+
+            // Финальная чистка кешей. Идёт последней — после всех записей .wsasd
+            // при закрытии. Кеш, совпадающий с ZIP, ничего не восстанавливает, но
+            // при следующем запуске становится источником данных вместо проекта:
+            // allData в SaveDocumentAsync стартует именно с него.
+            // Здесь, а не в ShutdownRequested: событие поднимает TryShutdown, а
+            // отсюда вызывается Shutdown(0), который его не поднимает.
+            try
+            {
+                await projectWorkflow.CleanupCachesAsync(openPaths!);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Cache cleanup on close failed");
             }
 
             _logger.LogInformation("OnClosing finished - shutting down");

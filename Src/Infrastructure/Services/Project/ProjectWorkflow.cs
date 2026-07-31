@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Writersword.Core.Enums;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
+using Writersword.Core.Models.Backup;
 using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Settings;
 using Writersword.Resources.Localization;
@@ -503,6 +504,267 @@ namespace Writersword.Infrastructure.Services.Project
 
         // ── Compare mode ──────────────────────────────────────────────────
 
+        /// <summary>
+        /// Сравнение открытого проекта с точкой из истории версий.
+        /// Точка разворачивается во временный файл, из него читаются данные
+        /// модулей, дальше работает общий механизм сравнения. Временный файл
+        /// удаляется при выходе из режима.
+        /// </summary>
+        public async Task<bool> CompareWithSnapshotAsync(IDocumentTab documentTab, string snapshotId)
+        {
+            var tab = (DocumentTabViewModel)documentTab;
+
+            try
+            {
+                var filePath = tab.FilePath;
+
+                if (string.IsNullOrEmpty(filePath) || string.IsNullOrEmpty(snapshotId))
+                    return false;
+
+                if (tab.Context.IsInCompareMode)
+                {
+                    await _dialogService.ShowMessageAsync(
+                        Strings.Compare_Title,
+                        Strings.Compare_AlreadyActive,
+                        MessageBoxType.Info, MessageBoxButtons.OK);
+                    return false;
+                }
+
+                var backupService = App.Services.GetRequiredService<IBackupService>();
+                var tempPath = await backupService.ExtractSnapshotToTempAsync(filePath, snapshotId);
+
+                if (string.IsNullOrEmpty(tempPath))
+                {
+                    await _dialogService.ShowMessageAsync(
+                        Strings.Compare_Title,
+                        Strings.Compare_LoadFailed,
+                        MessageBoxType.Error, MessageBoxButtons.OK);
+                    return false;
+                }
+
+                var snapshotProject = await _projectService.LoadAsync(tempPath);
+
+                if (snapshotProject == null)
+                {
+                    TryDeleteTemp(tempPath);
+
+                    await _dialogService.ShowMessageAsync(
+                        Strings.Compare_Title,
+                        Strings.Compare_LoadFailed,
+                        MessageBoxType.Error, MessageBoxButtons.OK);
+                    return false;
+                }
+
+                var pointDate = File.GetLastWriteTime(tempPath);
+
+                return await EnterCompareModeAsync(
+                    tab,
+                    filePath,
+                    new Dictionary<string, object?>(snapshotProject.ModulesData),
+                    Strings.Compare_Label_Point,
+                    pointDate,
+                    Strings.Compare_Viewing_Point,
+                    onExit: () => TryDeleteTemp(tempPath));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "CompareWithSnapshot failed for point {Id}", snapshotId);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Перечитать проект с диска в открытую вкладку. Применяется после
+        /// восстановления из истории версий: файл на диске уже другой, а живые
+        /// модули всё ещё держат прежнее состояние. Кеш при этом удаляется —
+        /// он описывает версию, которой больше нет.
+        /// </summary>
+        public async Task<bool> ReloadFromDiskAsync(IDocumentTab documentTab)
+        {
+            var tab = (DocumentTabViewModel)documentTab;
+
+            try
+            {
+                var filePath = tab.FilePath;
+
+                if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+                {
+                    _logger.LogWarning("ReloadFromDisk: no file for tab {Title}", tab.Title);
+                    return false;
+                }
+
+                _cacheService.DeleteCache(filePath);
+
+                tab.Context.CloseZipStorage();
+
+                ProjectFile? reloaded;
+                try
+                {
+                    reloaded = await _projectService.LoadAsync(filePath);
+                }
+                finally
+                {
+                    tab.Context.ReopenZipStorage();
+                }
+
+                if (reloaded == null)
+                {
+                    _logger.LogError("ReloadFromDisk: failed to load {Path}", filePath);
+                    return false;
+                }
+
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => tab.UpdateProject(reloaded));
+
+                // Перезагрузка модулей после переоткрытия хранилища: внутри
+                // применяются локальные настройки из ZIP.
+                await ReloadModulesFromProject(tab);
+
+                tab.Workspace?.RefreshModulesFromContext();
+
+                _logger.LogInformation("ReloadFromDisk: project reloaded from {Path}", filePath);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ReloadFromDisk failed");
+                return false;
+            }
+        }
+
+        /// <summary>Удалить временный файл точки, не роняя выход из режима.</summary>
+        private void TryDeleteTemp(string path)
+        {
+            try
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete temp snapshot file {Path}", path);
+            }
+        }
+
+        /// <summary>
+        /// Общий вход в режим сравнения. Вторая версия приходит готовым набором
+        /// данных модулей: источником может быть другой файл проекта или точка
+        /// из истории версий — дальнейшее поведение одинаково.
+        /// </summary>
+        private async Task<bool> EnterCompareModeAsync(
+            DocumentTabViewModel tab,
+            string filePath,
+            Dictionary<string, object?> otherData,
+            string otherLabel,
+            DateTime otherDate,
+            string otherVersionText,
+            Action? onExit = null)
+        {
+            try
+            {
+                // Собственные данные берутся из живого проекта: сравнивать нужно
+                // с тем, что сейчас на экране, включая несохранённые правки.
+                var ownData = new Dictionary<string, object?>(tab.GetProject().ModulesData);
+
+                _logger.LogDebug("Compare mode: own {OwnCount} modules, other {OtherCount} modules",
+                    ownData.Count, otherData.Count);
+
+                RecoveryBannerViewModel? banner = null;
+
+                async Task ShowVersion(bool showOther)
+                {
+                    var project = tab.GetProject();
+                    project.ModulesData = new Dictionary<string, object?>(showOther ? otherData : ownData);
+                    await ReloadModulesFromProject(tab);
+
+                    if (banner != null)
+                        banner.IsViewingCache = showOther;
+
+                    _logger.LogDebug("Compare mode: showing {Version} version",
+                        showOther ? "other" : "own");
+                }
+
+                async Task ExitCompare()
+                {
+                    await ShowVersion(false);
+
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        tab.Context.IsInCompareMode = false;
+                        tab.RecoveryBanner = null;
+                    });
+
+                    tab.Workspace?.RefreshModulesFromContext();
+                    onExit?.Invoke();
+                    _logger.LogDebug("Compare mode: comparison finished");
+                }
+
+                banner = new RecoveryBannerViewModel(
+                    onSwitchVersion: () => ShowVersion(!(banner?.IsViewingCache ?? false)),
+                    onSave: async () =>
+                    {
+                        // Принять вторую версию: она уже показана на экране,
+                        // поэтому обычное сохранение запишет именно её. Кеш
+                        // удаляется заранее — иначе allData в SaveDocumentAsync
+                        // стартует со старых данных и перекроет принятую версию.
+                        var confirm = await _dialogService.ShowMessageAsync(
+                            Strings.Compare_Title,
+                            Strings.Compare_Adopt_Confirm,
+                            MessageBoxType.Question, MessageBoxButtons.YesNo);
+
+                        if (confirm != MessageBoxResult.Yes) return;
+
+                        _cacheService.DeleteCache(filePath);
+
+                        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            tab.Context.IsInCompareMode = false;
+                            tab.RecoveryBanner = null;
+                        });
+
+                        // Режим уже снят выше, но разрешение выставляется явно:
+                        // порядок этих двух шагов не должен влиять на результат.
+                        _compareSaveAllowed.Add(filePath);
+
+                        try
+                        {
+                            await SaveDocumentAsync(tab);
+                        }
+                        finally
+                        {
+                            _compareSaveAllowed.Remove(filePath);
+                        }
+
+                        onExit?.Invoke();
+                        _logger.LogInformation("Compare mode: second version adopted into {Path}", filePath);
+                    },
+                    onDiscard: ExitCompare)
+                {
+                    LeftLabel = otherLabel,
+                    RightLabel = Path.GetFileNameWithoutExtension(filePath),
+                    LeftVersionText = otherVersionText,
+                    RightVersionText = Strings.Compare_Viewing_Own,
+                    DiscardButtonText = Strings.Compare_Button_Exit,
+                    CacheDate = otherDate,
+                    SaveDate = File.GetLastWriteTime(filePath),
+                    IsViewingCache = false
+                };
+
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    tab.Context.IsInCompareMode = true;
+                    tab.RecoveryBanner = banner;
+                });
+
+                _logger.LogInformation("Compare mode entered for {Path} against {Label}", filePath, otherLabel);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to enter compare mode");
+                onExit?.Invoke();
+                return false;
+            }
+        }
+
         private async Task DiscardCacheAsync(DocumentTabViewModel tab, string filePath)
         {
             try
@@ -577,7 +839,23 @@ namespace Writersword.Infrastructure.Services.Project
             try
             {
                 var capturedTab = tab;
-                bool success = await SaveDocumentAsync(capturedTab);
+
+                // Разрешение на сохранение из баннера: общий запрет на запись
+                // в режиме сравнения не должен ломать кнопку принятия версии.
+                bool success;
+
+                if (capturedTab.FilePath != null)
+                    _compareSaveAllowed.Add(capturedTab.FilePath);
+
+                try
+                {
+                    success = await SaveDocumentAsync(capturedTab);
+                }
+                finally
+                {
+                    if (capturedTab.FilePath != null)
+                        _compareSaveAllowed.Remove(capturedTab.FilePath);
+                }
 
                 if (success)
                 {
@@ -705,11 +983,126 @@ namespace Writersword.Infrastructure.Services.Project
 
         // ── Сохранение ────────────────────────────────────────────────────
 
-        public async Task<bool> SaveDocumentAsync(IDocumentTab documentTab, bool showNotification = true)
+        /// <summary>
+        /// Удалить осиротевший временный файл сохранения.
+        /// ZipProjectService собирает новый архив в «путь.tmp» и заменяет им
+        /// проект через File.Move. Если процесс умер между этими шагами, .tmp
+        /// остаётся лежать рядом и путает: он похож на проект, но недописан.
+        /// Удаляется только когда сам проект на месте — иначе .tmp может быть
+        /// единственным, что осталось от данных.
+        /// </summary>
+        private void CleanupOrphanedTempFile(string filePath)
+        {
+            try
+            {
+                var tempPath = filePath + ".tmp";
+
+                if (!File.Exists(tempPath) || !File.Exists(filePath))
+                    return;
+
+                var tempTime = File.GetLastWriteTime(tempPath);
+                var projectTime = File.GetLastWriteTime(filePath);
+
+                // Временный файл новее проекта означает, что запись оборвалась
+                // прямо сейчас и содержимое может быть свежее сохранённого.
+                // Такой файл оставляем и сообщаем о нём в журнал.
+                if (tempTime > projectTime)
+                {
+                    _logger.LogWarning(
+                        "Orphaned temp file is newer than the project, kept for inspection: {Path}", tempPath);
+                    return;
+                }
+
+                File.Delete(tempPath);
+                _logger.LogDebug("Orphaned temp file removed: {Path}", tempPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to clean up temp file for {Path}", filePath);
+            }
+        }
+
+        /// <summary>
+        /// Схлопывание данных модуля: новое значение в разы меньше сохранённого.
+        /// Сохранение не блокируется — пользователь мог стереть содержимое сам, —
+        /// но событие пишется в журнал как ERR. Точка восстановления к этому
+        /// моменту уже снята, поэтому вернуть прежнее состояние можно из истории.
+        /// Порог намеренно грубый: ловим катастрофу, а не обычную правку.
+        /// </summary>
+        private void WarnOnCollapsedModules(Dictionary<string, object?> newData, ProjectFile savedProject)
+        {
+            const int MinimumSavedLength = 4096;
+            const int CollapseRatio = 5;
+
+            foreach (var kvp in savedProject.ModulesData)
+            {
+                if (!newData.TryGetValue(kvp.Key, out var fresh)) continue;
+                if (kvp.Value is not string saved || fresh is not string current) continue;
+                if (saved.Length < MinimumSavedLength) continue;
+                if (current.Length >= saved.Length / CollapseRatio) continue;
+
+                _logger.LogError(
+                    "Module {M} collapsed on save: {Old} -> {New} chars. Previous state stays in the backup history.",
+                    kvp.Key, saved.Length, current.Length);
+            }
+        }
+
+        /// <summary>
+        /// Снять точку восстановления с текущего файла проекта перед его перезаписью.
+        /// Вызывается до SaveAsync, поэтому в историю попадает состояние «как было
+        /// до сохранения»: если новое сохранение окажется испорченным, предыдущее
+        /// уже лежит в хранилище.
+        /// </summary>
+        private async Task CreateBackupPointAsync(string filePath, bool isAutoSave)
+        {
+            try
+            {
+                // Автосохранение точек не создаёт: за них отвечает собственный
+                // таймер истории. Иначе частота истории зависела бы от интервала
+                // защиты от падения, а при выключенном автосохранении точек во
+                // время работы не было бы вовсе.
+                if (isAutoSave) return;
+
+                var backupService = App.Services.GetService<IBackupService>();
+                if (backupService == null) return;
+
+                await backupService.CreateSnapshotAsync(filePath, BackupTrigger.ManualSave);
+            }
+            catch (Exception ex)
+            {
+                // История версий не должна мешать сохранению: её сбой логируется,
+                // но сам проект сохраняется дальше.
+                _logger.LogError(ex, "Backup point failed for {Path}", filePath);
+            }
+        }
+
+        /// <summary>
+        /// Пути, для которых сохранение в режиме сравнения разрешено.
+        /// Кнопка «Сохранить» в баннере принимает выбранную версию и обязана
+        /// пройти обычным путём сохранения; всё остальное в этом режиме
+        /// блокируется.
+        /// </summary>
+        private readonly HashSet<string> _compareSaveAllowed = new(StringComparer.OrdinalIgnoreCase);
+
+        public async Task<bool> SaveDocumentAsync(IDocumentTab documentTab, bool showNotification = true, bool isAutoSave = false)
         {
             var tab = (DocumentTabViewModel)documentTab;
             try
             {
+                // Сохранение во время сравнения запрещено: на экране может быть
+                // чужая версия — из кеша или из точки восстановления, — и Ctrl+S
+                // записал бы её поверх проекта молча и необратимо.
+                if (tab.Context?.IsInCompareMode == true
+                    && (tab.FilePath == null || !_compareSaveAllowed.Contains(tab.FilePath)))
+                {
+                    _logger.LogWarning("Save refused: tab {Title} is in compare mode", tab.Title);
+
+                    if (showNotification)
+                        _notificationService.ShowWarning(Strings.Compare_SaveBlocked);
+
+                    return false;
+                }
+
                 var project = tab.GetProject();
                 var filePath = tab.FilePath;
 
@@ -752,6 +1145,8 @@ namespace Writersword.Infrastructure.Services.Project
 
                     if (savedProject != null)
                     {
+                        WarnOnCollapsedModules(allData, savedProject);
+
                         foreach (var kvp in savedProject.ModulesData)
                         {
                             if (!allData.ContainsKey(kvp.Key) && kvp.Value != null
@@ -766,6 +1161,8 @@ namespace Writersword.Infrastructure.Services.Project
 
                     project.ModulesData = allData;
                     project.LastModified = DateTime.Now;
+
+                    await CreateBackupPointAsync(filePath, isAutoSave);
 
                     tab.Context.CloseZipStorage();
                     bool success = await _projectService.SaveAsync(project, filePath);
@@ -806,6 +1203,8 @@ namespace Writersword.Infrastructure.Services.Project
 
                     if (savedProject != null)
                     {
+                        WarnOnCollapsedModules(allData, savedProject);
+
                         foreach (var kvp in savedProject.ModulesData)
                         {
                             if (!allData.ContainsKey(kvp.Key) && kvp.Value != null
@@ -820,6 +1219,8 @@ namespace Writersword.Infrastructure.Services.Project
 
                     project.ModulesData = allData;
                     project.LastModified = DateTime.Now;
+
+                    await CreateBackupPointAsync(filePath, isAutoSave);
 
                     tab.Context.CloseZipStorage();
                     bool success = await _projectService.SaveAsync(project, filePath);
@@ -859,6 +1260,8 @@ namespace Writersword.Infrastructure.Services.Project
 
                 _logger.LogDebug("SaveAs: {FilePath}", filePath);
 
+                var previousPath = tab.FilePath;
+
                 tab.FilePath = filePath;
                 tab.Title = Path.GetFileNameWithoutExtension(filePath);
 
@@ -871,6 +1274,27 @@ namespace Writersword.Infrastructure.Services.Project
                 {
                     tab.RecoveryBanner = null;
                     _settingsService.AddRecentProject(filePath);
+
+                    // История переезжает вместе с проектом: имя хранилища
+                    // завязано на отпечаток пути, и без переноса у нового файла
+                    // история оказалась бы пустой, а старая осталась бы висеть
+                    // за путём, которого уже нет в работе.
+                    if (!string.IsNullOrEmpty(previousPath)
+                        && !string.Equals(previousPath, filePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            var backupService = App.Services.GetService<IBackupService>();
+
+                            if (backupService != null)
+                                await backupService.MoveStoreAsync(previousPath, filePath);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to move backup store on SaveAs");
+                        }
+                    }
+
                     _logger.LogDebug("SaveAs successful");
                     ProjectSaved?.Invoke(tab);
                     return true;
@@ -1153,6 +1577,65 @@ namespace Writersword.Infrastructure.Services.Project
             {
                 _openStorages[filePath] = (ZipFileStorageService)newStorage;
                 _logger.LogDebug("Storage updated for: {FilePath}", filePath);
+            }
+        }
+
+        /// <summary>
+        /// Очистка кешей .wsasd при штатном закрытии приложения.
+        /// Сохранение здесь намеренно не выполняется: запись при закрытии — это
+        /// путь, которым пустые данные модуля попадают в ZIP. Кеш либо совпадает
+        /// с проектом и удаляется, либо расходится и остаётся для восстановления.
+        /// </summary>
+        public async Task CleanupCachesAsync(IEnumerable<string> projectPaths)
+        {
+            foreach (var filePath in projectPaths)
+            {
+                try
+                {
+                    if (string.IsNullOrEmpty(filePath))
+                        continue;
+
+                    CleanupOrphanedTempFile(filePath);
+
+                    if (!_cacheService.HasCache(filePath))
+                        continue;
+
+                    var cache = await Task.Run(() => _cacheService.LoadCache(filePath));
+
+                    if (cache == null || cache.Count == 0)
+                    {
+                        _cacheService.DeleteCache(filePath);
+                        _logger.LogDebug("Cache removed on shutdown (empty or unreadable): {Path}", filePath);
+                        continue;
+                    }
+
+                    var savedProject = await _projectService.LoadAsync(filePath);
+
+                    if (savedProject == null)
+                    {
+                        // Проект не читается — кеш остаётся единственным носителем данных.
+                        _logger.LogWarning("Cache kept on shutdown (project unreadable): {Path}", filePath);
+                        continue;
+                    }
+
+                    var savedRelevant = savedProject.ModulesData
+                        .Where(kvp => cache.ContainsKey(kvp.Key))
+                        .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+                    if (_comparisonService.AreDataEqual(cache, savedRelevant))
+                    {
+                        _cacheService.DeleteCache(filePath);
+                        _logger.LogDebug("Cache removed on shutdown (identical to ZIP): {Path}", filePath);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Cache kept on shutdown (differs from ZIP): {Path}", filePath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Cache cleanup failed for {Path}", filePath);
+                }
             }
         }
     }

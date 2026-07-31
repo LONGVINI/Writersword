@@ -197,6 +197,7 @@
 		<Compile Remove="Src\Infrastructure\Behaviours\TooltipBehavior.cs" />
 		<Compile Remove="Src\Infrastructure\Controls\ItalicCaretTextBox.cs" />
 		<Compile Remove="Src\Infrastructure\Converters\GradientBrushFactory.cs" />
+		<Compile Remove="Src\Infrastructure\Converters\EnumToBooleanConverter.cs" />
 		<Compile Remove="Styles\UserControls\AngleDial.cs" />
 		<Compile Remove="Styles\UserControls\ColorPickerButton.axaml.cs" />
 		<Compile Remove="Styles\UserControls\SharedStrings.Designer.cs" />

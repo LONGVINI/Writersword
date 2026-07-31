@@ -237,6 +237,33 @@
   <data name="Field_ImportanceLevel" xml:space="preserve">
     <value>Важность</value>
   </data>
+  <data name="Folder_ImportanceTooltip" xml:space="preserve">
+    <value>Важность этой папки</value>
+  </data>
+  <data name="Importance_Primary" xml:space="preserve">
+    <value>Первичная</value>
+  </data>
+  <data name="Importance_PrimaryHint" xml:space="preserve">
+    <value>История о нём. Таких персонажей единицы.</value>
+  </data>
+  <data name="Importance_Secondary" xml:space="preserve">
+    <value>Вторичная</value>
+  </data>
+  <data name="Importance_SecondaryHint" xml:space="preserve">
+    <value>Действует сам и меняет ход событий, но история не о нём.</value>
+  </data>
+  <data name="Importance_Tertiary" xml:space="preserve">
+    <value>Третичная</value>
+  </data>
+  <data name="Importance_TertiaryHint" xml:space="preserve">
+    <value>Появляется в сцене-другой и запоминается одной чертой.</value>
+  </data>
+  <data name="Importance_Custom" xml:space="preserve">
+    <value>Своя</value>
+  </data>
+  <data name="Importance_CustomHint" xml:space="preserve">
+    <value>Своё название, когда три ступени не подходят: рассказчик, антагонист, хор.</value>
+  </data>
   <data name="Field_CustomImportanceLabel" xml:space="preserve">
     <value>Своя метка</value>
   </data>
@@ -700,7 +727,7 @@
     <value>Алина</value>
   </data>
   <data name="Block_Who" xml:space="preserve">
-    <value>Кто это</value>
+    <value>Основное</value>
   </data>
   <data name="Block_Names" xml:space="preserve">
     <value>Имена и обращения</value>
@@ -847,7 +874,7 @@
     <value>Заметка</value>
   </data>
   <data name="Placeholder_Note" xml:space="preserve">
-    <value>Что угодно о персонаже — своими словами</value>
+    <value>Опишите персонажа</value>
   </data>
   <data name="Button_AddSet" xml:space="preserve">
     <value>Добавить набор</value>

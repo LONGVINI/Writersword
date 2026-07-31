@@ -65,6 +65,21 @@ namespace Writersword.Modules.TextEditor
         private TextEditorSettings _localSettings = new();
 
         private DeltaCachePayload? _lastDeltaPayload;
+
+        /// <summary>
+        /// Получал ли модуль данные документа из проекта.
+        /// Ставится при успешном применении подготовленных данных. Пока флаг не
+        /// поднят, модуль показывает пустой документ, созданный при инициализации,
+        /// — и такой документ не имеет права попасть в сохранение.
+        /// </summary>
+        private bool _documentLoadedFromData;
+
+        /// <summary>
+        /// Был ли в документе хоть какой-то текст за время жизни модуля.
+        /// Отличает «модуль не получил данные и показывает пустую болванку»
+        /// от «пользователь сам стёр написанное»: второе сохранять нужно.
+        /// </summary>
+        private bool _documentEverHadContent;
         /// <summary>
         /// Сырые данные загруженные из файла (нормализованные без caret).
         /// Используется для сравнения в HasUnsavedChanges — пока нет изменений
@@ -322,6 +337,25 @@ namespace Writersword.Modules.TextEditor
                 // ViewModel null означает что CreateView() не был вызван для этого модуля.
                 _logger.Warning("TakeStateSnapshot: _viewModel or DocumentViewModel is null — returning null. " +
                     "Module type: {Type}", moduleType);
+                return null;
+            }
+
+            // Модуль поднялся, но своих данных так и не получил, и пользователь
+            // в нём ничего не написал. Отдавать пустой документ в этом состоянии
+            // нельзя: он уходит в кеш и в ZIP как полноценные данные и затирает
+            // сохранённый текст. Возврат null включает защиту в ProjectWorkflow —
+            // значение модуля берётся из файла и остаётся нетронутым.
+            // Появившийся текст запоминается навсегда: иначе намеренная очистка
+            // документа не сохранялась бы. Пользователь написал абзац и стёр его —
+            // документ снова пуст, но это уже его решение, а не потеря данных,
+            // и защита ниже не должна такое отменять.
+            if (!_documentEverHadContent && DocumentHasContent(_viewModel.DocumentViewModel.Document))
+                _documentEverHadContent = true;
+
+            if (!_documentLoadedFromData && !_documentEverHadContent)
+            {
+                _logger.Error("TakeStateSnapshot: module never received its data and the document was never " +
+                    "filled — returning null so the saved version is preserved. Module type: {Type}", moduleType);
                 return null;
             }
 
@@ -595,12 +629,47 @@ namespace Writersword.Modules.TextEditor
                 if (p.BaselineJson is not null && _cachedSessionData is not null)
                     RestoreCaretFromCache();
 
+                _documentLoadedFromData = true;
+
                 _logger.Debug("Document loaded (v{V}), title={Title}", p.EnvelopeVersion, p.Document.Title);
                 return;
             }
 
             _viewModel.LoadNewDocument(_localSettings);
             ApplyReadOnlyFromContext();
+        }
+
+        /// <summary>
+        /// Есть ли в документе хоть что-то, кроме пустого абзаца: текст в любом
+        /// run, плавающий объект или блок, отличный от параграфа (таблица,
+        /// изображение, разрыв). Дешёвая проверка по модели, без сериализации.
+        /// </summary>
+        private static bool DocumentHasContent(DocumentModel? document)
+        {
+            if (document is null) return false;
+
+            foreach (var section in document.Sections)
+            {
+                if (section.FloatingObjects.Count > 0)
+                    return true;
+
+                foreach (var block in section.Blocks)
+                {
+                    if (block is not ParagraphBlock paragraph)
+                        return true;
+
+                    foreach (var chunk in paragraph.Chunks)
+                    {
+                        foreach (var run in chunk.Runs)
+                        {
+                            if (!string.IsNullOrEmpty(run.Text))
+                                return true;
+                        }
+                    }
+                }
+            }
+
+            return document.Annotations.Count > 0;
         }
 
         public override object? GetSessionData()

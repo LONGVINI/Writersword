@@ -2012,7 +2012,727 @@ namespace Writersword.Resources.Localization {
                 return ResourceManager.GetString("Settings_General_Language", resourceCulture);
             }
         }
-        
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Backups.
+        /// </summary>
+        public static string Settings_Tab_Backups {
+            get {
+                return ResourceManager.GetString("Settings_Tab_Backups", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на all projects.
+        /// </summary>
+        public static string Settings_Backups_Scope_Global {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Scope_Global", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на this project.
+        /// </summary>
+        public static string Settings_Backups_Scope_Project {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Scope_Project", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Empty — same as for all projects.
+        /// </summary>
+        public static string Settings_Backups_Scope_ProjectEmpty {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Scope_ProjectEmpty", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на effective path.
+        /// </summary>
+        public static string Settings_Backups_Effective {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Effective", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Version history.
+        /// </summary>
+        public static string Settings_Backups_Section {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Section", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Keep a version history of the project.
+        /// </summary>
+        public static string Settings_Backups_Enable {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Enable", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на When to take a point.
+        /// </summary>
+        public static string Settings_Backups_When {
+            get {
+                return ResourceManager.GetString("Settings_Backups_When", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на On manual save (Ctrl+S).
+        /// </summary>
+        public static string Settings_Backups_OnManualSave {
+            get {
+                return ResourceManager.GetString("Settings_Backups_OnManualSave", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на When the application closes.
+        /// </summary>
+        public static string Settings_Backups_OnAppClose {
+            get {
+                return ResourceManager.GetString("Settings_Backups_OnAppClose", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на While working, on a timer.
+        /// </summary>
+        public static string Settings_Backups_OnTimer {
+            get {
+                return ResourceManager.GetString("Settings_Backups_OnTimer", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Today.
+        /// </summary>
+        public static string Settings_Backups_Group_Today {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Group_Today", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Yesterday.
+        /// </summary>
+        public static string Settings_Backups_Group_Yesterday {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Group_Yesterday", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на matches the current state.
+        /// </summary>
+        public static string Settings_Backups_Current {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Current", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на just now.
+        /// </summary>
+        public static string Settings_Backups_JustNow {
+            get {
+                return ResourceManager.GetString("Settings_Backups_JustNow", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на {0} min ago.
+        /// </summary>
+        public static string Settings_Backups_MinutesAgo {
+            get {
+                return ResourceManager.GetString("Settings_Backups_MinutesAgo", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на {0} h ago.
+        /// </summary>
+        public static string Settings_Backups_HoursAgo {
+            get {
+                return ResourceManager.GetString("Settings_Backups_HoursAgo", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на {0} d ago.
+        /// </summary>
+        public static string Settings_Backups_DaysAgo {
+            get {
+                return ResourceManager.GetString("Settings_Backups_DaysAgo", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на No more often than once every.
+        /// </summary>
+        public static string Settings_Backups_MinInterval {
+            get {
+                return ResourceManager.GetString("Settings_Backups_MinInterval", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на minutes.
+        /// </summary>
+        public static string Settings_Backups_Unit_Minutes {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Unit_Minutes", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на hours.
+        /// </summary>
+        public static string Settings_Backups_Unit_Hours {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Unit_Hours", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на days.
+        /// </summary>
+        public static string Settings_Backups_Unit_Days {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Unit_Days", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на weeks.
+        /// </summary>
+        public static string Settings_Backups_Unit_Weeks {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Unit_Weeks", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на months.
+        /// </summary>
+        public static string Settings_Backups_Unit_Months {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Unit_Months", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Click to change the unit.
+        /// </summary>
+        public static string Settings_Backups_Unit_Tooltip {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Unit_Tooltip", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на No limit.
+        /// </summary>
+        public static string Settings_Backups_Unlimited {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Unlimited", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Limits automatic points only.
+        /// </summary>
+        public static string Settings_Backups_MinInterval_Hint {
+            get {
+                return ResourceManager.GetString("Settings_Backups_MinInterval_Hint", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Thin out older points.
+        /// </summary>
+        public static string Settings_Backups_Thinning {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Thinning", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на All points are kept for today.
+        /// </summary>
+        public static string Settings_Backups_Thinning_Hint {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Thinning_Hint", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Points taken by hand.
+        /// </summary>
+        public static string Settings_Backups_UserPoints {
+            get {
+                return ResourceManager.GetString("Settings_Backups_UserPoints", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Never delete.
+        /// </summary>
+        public static string Settings_Backups_UserPoints_Never {
+            get {
+                return ResourceManager.GetString("Settings_Backups_UserPoints_Never", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Delete by age.
+        /// </summary>
+        public static string Settings_Backups_UserPoints_AfterAge {
+            get {
+                return ResourceManager.GetString("Settings_Backups_UserPoints_AfterAge", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Keep the most recent.
+        /// </summary>
+        public static string Settings_Backups_UserPoints_KeepLast {
+            get {
+                return ResourceManager.GetString("Settings_Backups_UserPoints_KeepLast", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Delete on overflow, last of all.
+        /// </summary>
+        public static string Settings_Backups_UserPoints_WithLimit {
+            get {
+                return ResourceManager.GetString("Settings_Backups_UserPoints_WithLimit", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Keep for, days.
+        /// </summary>
+        public static string Settings_Backups_UserPoints_Days {
+            get {
+                return ResourceManager.GetString("Settings_Backups_UserPoints_Days", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на How many to keep.
+        /// </summary>
+        public static string Settings_Backups_UserPoints_Count {
+            get {
+                return ResourceManager.GetString("Settings_Backups_UserPoints_Count", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на These points are never thinned out.
+        /// </summary>
+        public static string Settings_Backups_UserPoints_Hint {
+            get {
+                return ResourceManager.GetString("Settings_Backups_UserPoints_Hint", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Take a point now.
+        /// </summary>
+        public static string Settings_Backups_CreatePoint {
+            get {
+                return ResourceManager.GetString("Settings_Backups_CreatePoint", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на No point was taken.
+        /// </summary>
+        public static string Settings_Backups_PointSkipped {
+            get {
+                return ResourceManager.GetString("Settings_Backups_PointSkipped", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Reset.
+        /// </summary>
+        public static string Settings_Backups_Reset {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Reset", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на application close.
+        /// </summary>
+        public static string Settings_Backups_Trigger_AppClose {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Trigger_AppClose", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на taken by hand.
+        /// </summary>
+        public static string Settings_Backups_Trigger_UserPoint {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Trigger_UserPoint", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на The project has unsaved changes.
+        /// </summary>
+        public static string Settings_Backups_Unsaved_Message {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Unsaved_Message", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на What will change:.
+        /// </summary>
+        public static string Settings_Backups_Confirm_Changes {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Confirm_Changes", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Warning: after the rollback there will be less data.
+        /// </summary>
+        public static string Settings_Backups_Confirm_Shrink {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Confirm_Shrink", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на How many points to keep.
+        /// </summary>
+        public static string Settings_Backups_MaxSnapshots {
+            get {
+                return ResourceManager.GetString("Settings_Backups_MaxSnapshots", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Storage folder.
+        /// </summary>
+        public static string Settings_Backups_Location {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Location", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Empty means next to the project.
+        /// </summary>
+        public static string Settings_Backups_Location_Hint {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Location_Hint", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Own folder for this project.
+        /// </summary>
+        public static string Settings_Backups_ProjectOverride {
+            get {
+                return ResourceManager.GetString("Settings_Backups_ProjectOverride", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на The path is stored inside the project itself.
+        /// </summary>
+        public static string Settings_Backups_ProjectOverride_Hint {
+            get {
+                return ResourceManager.GetString("Settings_Backups_ProjectOverride_Hint", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Browse….
+        /// </summary>
+        public static string Settings_Backups_Browse {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Browse", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Next to the project.
+        /// </summary>
+        public static string Settings_Backups_UseDefault {
+            get {
+                return ResourceManager.GetString("Settings_Backups_UseDefault", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на A restore point records the state of the project before a save.
+        /// </summary>
+        public static string Settings_Backups_Hint {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Hint", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Restore points.
+        /// </summary>
+        public static string Settings_Backups_Points {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Points", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на No points yet.
+        /// </summary>
+        public static string Settings_Backups_Empty {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Empty", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Open a project to see its restore points.
+        /// </summary>
+        public static string Settings_Backups_NoProject {
+            get {
+                return ResourceManager.GetString("Settings_Backups_NoProject", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Delete point.
+        /// </summary>
+        public static string Settings_Backups_Delete {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Delete", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на The point will be deleted with no way back.
+        /// </summary>
+        public static string Settings_Backups_Delete_Confirm {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Delete_Confirm", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Could not delete the point.
+        /// </summary>
+        public static string Settings_Backups_Delete_Failed {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Delete_Failed", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Restore.
+        /// </summary>
+        public static string Settings_Backups_Restore {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Restore", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Restore project.
+        /// </summary>
+        public static string Settings_Backups_Confirm_Title {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Confirm_Title", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на The project will be rolled back to the selected point.
+        /// </summary>
+        public static string Settings_Backups_Confirm_Message {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Confirm_Message", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Project restored.
+        /// </summary>
+        public static string Settings_Backups_Restored {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Restored", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Could not restore the point.
+        /// </summary>
+        public static string Settings_Backups_RestoreFailed {
+            get {
+                return ResourceManager.GetString("Settings_Backups_RestoreFailed", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Storage size.
+        /// </summary>
+        public static string Settings_Backups_StorageSize {
+            get {
+                return ResourceManager.GetString("Settings_Backups_StorageSize", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на manual save.
+        /// </summary>
+        public static string Settings_Backups_Trigger_Manual {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Trigger_Manual", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на auto-save.
+        /// </summary>
+        public static string Settings_Backups_Trigger_Auto {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Trigger_Auto", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на before rollback.
+        /// </summary>
+        public static string Settings_Backups_Trigger_BeforeRestore {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Trigger_BeforeRestore", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Open storage folder.
+        /// </summary>
+        public static string Settings_Backups_OpenFolder {
+            get {
+                return ResourceManager.GetString("Settings_Backups_OpenFolder", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Compare projects.
+        /// </summary>
+        public static string Compare_Title {
+            get {
+                return ResourceManager.GetString("Compare_Title", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Showing this project's version.
+        /// </summary>
+        public static string Compare_Viewing_Own {
+            get {
+                return ResourceManager.GetString("Compare_Viewing_Own", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Exit comparison.
+        /// </summary>
+        public static string Compare_Button_Exit {
+            get {
+                return ResourceManager.GetString("Compare_Button_Exit", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Could not read the selected file.
+        /// </summary>
+        public static string Compare_LoadFailed {
+            get {
+                return ResourceManager.GetString("Compare_LoadFailed", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на This tab is already comparing.
+        /// </summary>
+        public static string Compare_AlreadyActive {
+            get {
+                return ResourceManager.GetString("Compare_AlreadyActive", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Showing the version from the restore point.
+        /// </summary>
+        public static string Compare_Viewing_Point {
+            get {
+                return ResourceManager.GetString("Compare_Viewing_Point", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Point.
+        /// </summary>
+        public static string Compare_Label_Point {
+            get {
+                return ResourceManager.GetString("Compare_Label_Point", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Compare.
+        /// </summary>
+        public static string Settings_Backups_Compare {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Compare", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Open the point next to the current version.
+        /// </summary>
+        public static string Settings_Backups_Compare_Tooltip {
+            get {
+                return ResourceManager.GetString("Settings_Backups_Compare_Tooltip", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на A version comparison is in progress — saving is disabled.
+        /// </summary>
+        public static string Compare_SaveBlocked {
+            get {
+                return ResourceManager.GetString("Compare_SaveBlocked", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Data from the other file will be written into this project.
+        /// </summary>
+        public static string Compare_Adopt_Confirm {
+            get {
+                return ResourceManager.GetString("Compare_Adopt_Confirm", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Ищет локализованную строку, похожую на Restart now.
         /// </summary>

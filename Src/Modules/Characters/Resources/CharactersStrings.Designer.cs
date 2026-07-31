@@ -509,6 +509,87 @@ namespace Writersword.Src.Modules.Characters.Resources {
                 return ResourceManager.GetString("Field_ImportanceLevel", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Importance the folder hands out.
+        /// </summary>
+        public static string Folder_ImportanceTooltip {
+            get {
+                return ResourceManager.GetString("Folder_ImportanceTooltip", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Primary.
+        /// </summary>
+        public static string Importance_Primary {
+            get {
+                return ResourceManager.GetString("Importance_Primary", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на The story is about them.
+        /// </summary>
+        public static string Importance_PrimaryHint {
+            get {
+                return ResourceManager.GetString("Importance_PrimaryHint", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Secondary.
+        /// </summary>
+        public static string Importance_Secondary {
+            get {
+                return ResourceManager.GetString("Importance_Secondary", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Acts on their own.
+        /// </summary>
+        public static string Importance_SecondaryHint {
+            get {
+                return ResourceManager.GetString("Importance_SecondaryHint", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Tertiary.
+        /// </summary>
+        public static string Importance_Tertiary {
+            get {
+                return ResourceManager.GetString("Importance_Tertiary", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Appears in a scene or two.
+        /// </summary>
+        public static string Importance_TertiaryHint {
+            get {
+                return ResourceManager.GetString("Importance_TertiaryHint", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Custom.
+        /// </summary>
+        public static string Importance_Custom {
+            get {
+                return ResourceManager.GetString("Importance_Custom", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Ищет локализованную строку, похожую на Your own wording.
+        /// </summary>
+        public static string Importance_CustomHint {
+            get {
+                return ResourceManager.GetString("Importance_CustomHint", resourceCulture);
+            }
+        }
         
         /// <summary>
         ///   Ищет локализованную строку, похожую на Name.

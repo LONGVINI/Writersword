@@ -122,7 +122,7 @@ namespace Writersword.Infrastructure.Services.Project
 
                 _logger.LogDebug("Auto-saving tab: {TabTitle}", activeTab.Title);
 
-                bool success = await _projectWorkflow.SaveDocumentAsync(activeTab);
+                bool success = await _projectWorkflow.SaveDocumentAsync(activeTab, isAutoSave: true);
 
                 if (success)
                 {

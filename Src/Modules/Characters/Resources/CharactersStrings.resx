@@ -277,6 +277,38 @@
     <value>Importance</value>
     <comment>Importance level</comment>
   </data>
+  <data name="Folder_ImportanceTooltip" xml:space="preserve">
+    <value>Importance of this folder</value>
+    <comment>Tooltip of the folder importance button</comment>
+  </data>
+  <data name="Importance_Primary" xml:space="preserve">
+    <value>Primary</value>
+    <comment>Importance level shown as I</comment>
+  </data>
+  <data name="Importance_PrimaryHint" xml:space="preserve">
+    <value>The story is about them. A handful of such characters at most.</value>
+  </data>
+  <data name="Importance_Secondary" xml:space="preserve">
+    <value>Secondary</value>
+    <comment>Importance level shown as II</comment>
+  </data>
+  <data name="Importance_SecondaryHint" xml:space="preserve">
+    <value>Acts on their own and changes the course of events, but the story is not theirs.</value>
+  </data>
+  <data name="Importance_Tertiary" xml:space="preserve">
+    <value>Tertiary</value>
+    <comment>Importance level shown as III</comment>
+  </data>
+  <data name="Importance_TertiaryHint" xml:space="preserve">
+    <value>Appears in a scene or two and is remembered by a single trait.</value>
+  </data>
+  <data name="Importance_Custom" xml:space="preserve">
+    <value>Custom</value>
+    <comment>Importance level with a hand-written label</comment>
+  </data>
+  <data name="Importance_CustomHint" xml:space="preserve">
+    <value>Your own wording when the three levels do not fit — narrator, antagonist, chorus.</value>
+  </data>
   <data name="Field_CustomImportanceLabel" xml:space="preserve">
     <value>Custom label</value>
     <comment>Custom importance label</comment>
@@ -882,7 +914,7 @@
     <value>Alina</value>
   </data>
   <data name="Block_Who" xml:space="preserve">
-    <value>Who they are</value>
+    <value>Main info</value>
   </data>
   <data name="Block_Names" xml:space="preserve">
     <value>Names and forms of address</value>
@@ -1053,7 +1085,7 @@
     <comment>Free-form note about the character</comment>
   </data>
   <data name="Placeholder_Note" xml:space="preserve">
-    <value>Anything about the character — in your own words</value>
+    <value>Describe the character</value>
     <comment>Placeholder of the free-form note</comment>
   </data>
   <data name="Button_AddSet" xml:space="preserve">

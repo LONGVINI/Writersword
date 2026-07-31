@@ -797,6 +797,8 @@ namespace Writersword.Modules.Characters.ViewModels
             if (modelFolder is not null && !modelFolder.CharacterIds.Contains(character.Id))
                 modelFolder.CharacterIds.Add(character.Id);
 
+            ApplyFolderImportance(character, modelFolder);
+
             var folderVm = Folders.FirstOrDefault(f => f.FolderId == folderId);
             if (folderVm is not null)
             {
@@ -814,6 +816,21 @@ namespace Writersword.Modules.Characters.ViewModels
             // Подводим список к новой карточке — иначе создание из прокрученного
             // вверх положения происходит «за кадром» и выглядит как ничего.
             ScrollToCharacterCallback?.Invoke(folderId, character.Id);
+        }
+
+        /// <summary>
+        /// Выдаёт персонажу ступень важности папки, в которую он попал, —
+        /// при создании и при переносе.
+        /// </summary>
+        private void ApplyFolderImportance(Character character, CharacterFolder? folder)
+        {
+            if (folder is null) return;
+
+            var level = folder.ImportanceLevel ?? CharacterImportanceLevel.Tertiary;
+            if (character.ImportanceLevel == level) return;
+
+            character.ImportanceLevel = level;
+            _characterService.Update(character);
         }
 
         private List<CharacterAnketa> GetActiveAnketas() =>
@@ -1605,6 +1622,15 @@ namespace Writersword.Modules.Characters.ViewModels
                     {
                         var clampedModel = Math.Min(finalIndex, modelFolder.CharacterIds.Count);
                         modelFolder.CharacterIds.Insert(clampedModel, charId);
+
+                        // Переехал в другую папку — принимает её ступень.
+                        // Перестановка внутри своей же папки важности не трогает.
+                        if (finalFolderVm.FolderId != origFolderId)
+                        {
+                            var moved = _characterService.GetById(charId);
+                            if (moved is not null)
+                                ApplyFolderImportance(moved, modelFolder);
+                        }
                     }
 
                     var capturedOrigFolder = origFolderId ?? finalFolderVm.FolderId;
@@ -1640,13 +1666,18 @@ namespace Writersword.Modules.Characters.ViewModels
         {
             if (_folders.Count == 0)
             {
+                // Ступени у двух начальных папок расставлены по смыслу их
+                // названий: в «Главных» персонаж сразу первой ступени, во
+                // «Второстепенных» — второй. Выбирать это руками для каждой
+                // карточки бессмысленно, папка о том и говорит.
                 _folders.Add(new CharacterFolder
                 {
                     Id = "default_main",
                     Name = CharactersStrings.Folder_DefaultMain,
                     Comment = string.Empty,
                     Color = "#E07B39",
-                    Order = 0
+                    Order = 0,
+                    ImportanceLevel = CharacterImportanceLevel.Primary
                 });
                 _folders.Add(new CharacterFolder
                 {
@@ -1654,7 +1685,8 @@ namespace Writersword.Modules.Characters.ViewModels
                     Name = CharactersStrings.Folder_DefaultSecondary,
                     Comment = string.Empty,
                     Color = "#607D8B",
-                    Order = 1
+                    Order = 1,
+                    ImportanceLevel = CharacterImportanceLevel.Secondary
                 });
             }
             RefreshFolderViewModels();
@@ -2236,7 +2268,28 @@ namespace Writersword.Modules.Characters.ViewModels
             var seen = new HashSet<string>();
             foreach (var f in folders)
                 if (f is not null && seen.Add(f.Id))
+                {
+                    NormalizeFolderImportance(f);
                     _folders.Add(f);
+                }
+        }
+
+        /// <summary>
+        /// Проставляет ступень папке, сохранённой версией без ступеней: двум
+        /// начальным — по их роли, остальным — третью. Уже заданную ступень
+        /// не трогает, поэтому выбранное руками не возвращается к прежнему
+        /// при следующем открытии проекта.
+        /// </summary>
+        private static void NormalizeFolderImportance(CharacterFolder folder)
+        {
+            if (folder.ImportanceLevel is not null) return;
+
+            folder.ImportanceLevel = folder.Id switch
+            {
+                "default_main" => CharacterImportanceLevel.Primary,
+                "default_secondary" => CharacterImportanceLevel.Secondary,
+                _ => CharacterImportanceLevel.Tertiary
+            };
         }
     }
 
@@ -2333,6 +2386,49 @@ namespace Writersword.Modules.Characters.ViewModels
                 this.RaiseAndSetIfChanged(ref _color, value);
                 _folder.Color = value;
             }
+        }
+
+        // ── ступень важности папки ────────────────────────────────────────
+        // Папка выдаёт свою ступень тем, кто в неё попал: при создании и при
+        // переносе. Так «Главные герои» сами проставляют первую ступень, и в
+        // каждой карточке её выбирать не нужно.
+
+        /// <summary>
+        /// Ступень, которую папка выдаёт своим персонажам. Пустого значения
+        /// здесь нет: в модели оно означает только «сохранено старой версией»,
+        /// и для показа сводится к третьей ступени.
+        /// </summary>
+        public CharacterImportanceLevel ImportanceLevel
+        {
+            get => _folder.ImportanceLevel ?? CharacterImportanceLevel.Tertiary;
+            set
+            {
+                if (IsReadOnly) return;
+                if (_folder.ImportanceLevel == value) return;
+
+                _folder.ImportanceLevel = value;
+                this.RaisePropertyChanged(nameof(ImportanceLevel));
+                this.RaisePropertyChanged(nameof(ImportanceMark));
+            }
+        }
+
+        /// <summary>Римская цифра ступени для значка у названия папки.</summary>
+        public string ImportanceMark => ImportanceLevel switch
+        {
+            CharacterImportanceLevel.Primary => "I",
+            CharacterImportanceLevel.Secondary => "II",
+            _ => "III"
+        };
+
+        /// <summary>Следующая ступень по кругу: I → II → III → I.</summary>
+        public void CycleImportance()
+        {
+            ImportanceLevel = ImportanceLevel switch
+            {
+                CharacterImportanceLevel.Primary => CharacterImportanceLevel.Secondary,
+                CharacterImportanceLevel.Secondary => CharacterImportanceLevel.Tertiary,
+                _ => CharacterImportanceLevel.Primary
+            };
         }
 
         public bool IsExpanded

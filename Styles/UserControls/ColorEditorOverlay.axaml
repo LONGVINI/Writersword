@@ -2,6 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:res="using:Writersword.Styles.UserControls"
              xmlns:conv="using:Writersword.Infrastructure.Converters"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:infra="using:Writersword.Infrastructure.Controls"
              x:Class="Writersword.Styles.UserControls.ColorEditorOverlay"
              x:Name="OverlayRoot">
 
@@ -827,27 +829,13 @@
 						<CheckBox Grid.Column="0" x:Name="GradientEnableCheck" Content="Градиент" FontSize="12"
                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                   IsCheckedChanged="OnGradientEnableChanged"/>
-						<Border Grid.Column="1" Width="16" Height="16" CornerRadius="999"
-                                HorizontalAlignment="Right" VerticalAlignment="Center"
-                                Background="{DynamicResource BgSurfaceBrush}"
-                                BorderBrush="{DynamicResource BorderDefaultBrush}" BorderThickness="1">
-							<ToolTip.Tip>
-								<StackPanel Spacing="4" MaxWidth="270">
-									<TextBlock TextWrapping="Wrap"><Run Text="Клик по полосе" Foreground="{DynamicResource AccentDefaultBrush}" FontWeight="SemiBold"/><Run Text=" — добавить метку цвета"/></TextBlock>
-									<TextBlock TextWrapping="Wrap"><Run Text="Тяни метку" Foreground="{DynamicResource AccentDefaultBrush}" FontWeight="SemiBold"/><Run Text=" — переместить её по полосе"/></TextBlock>
-									<TextBlock TextWrapping="Wrap"><Run Text="Двойной клик по метке" Foreground="{DynamicResource AccentDefaultBrush}" FontWeight="SemiBold"/><Run Text=" — дублировать её"/></TextBlock>
-									<TextBlock TextWrapping="Wrap"><Run Text="ПКМ по метке" Foreground="{DynamicResource AccentDefaultBrush}" FontWeight="SemiBold"/><Run Text=" — удалить метку цвета"/></TextBlock>
-								</StackPanel>
-							</ToolTip.Tip>
-							<Panel Width="10" Height="10">
-								<Ellipse Width="1.8" Height="1.8"
-                                         Fill="{DynamicResource TextSecondaryBrush}"
-                                         HorizontalAlignment="Center" VerticalAlignment="Top"/>
-								<Rectangle Width="1.8" Height="5.6" RadiusX="0.9" RadiusY="0.9"
-                                           Fill="{DynamicResource TextSecondaryBrush}"
-                                           HorizontalAlignment="Center" VerticalAlignment="Bottom"/>
-							</Panel>
-						</Border>
+						<!-- Значок пояснения общий для всего приложения: свой кружок
+						     с буквой «i» здесь рисовался вручную и отличался от
+						     остальных размером и цветом. -->
+						<infra:HintMark Grid.Column="1"
+                                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                                        behaviours:TooltipBehavior.Tip="{x:Static res:SharedStrings.Gradient_Hint_Title}"
+                                        behaviours:TooltipBehavior.Description="{x:Static res:SharedStrings.Gradient_Hint_Body}"/>
 					</Grid>
 					<res:GradientStripEditor x:Name="GradientStrip"/>
 				</StackPanel>

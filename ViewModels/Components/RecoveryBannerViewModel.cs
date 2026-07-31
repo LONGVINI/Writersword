@@ -23,6 +23,27 @@ namespace Writersword.ViewModels
         /// <summary>Дата последнего сохранения файла</summary>
         public DateTime SaveDate { get; set; }
 
+        /// <summary>
+        /// Подпись верхней строки дат. По умолчанию «Автосохранение».
+        /// В режиме сравнения двух файлов сюда попадает имя второго файла.
+        /// </summary>
+        public string LeftLabel { get; set; } = Strings.AutoSave_Time_AutoSave;
+
+        /// <summary>
+        /// Подпись нижней строки дат. По умолчанию «Сохранено».
+        /// В режиме сравнения двух файлов — имя текущего проекта.
+        /// </summary>
+        public string RightLabel { get; set; } = Strings.AutoSave_Time_Saved;
+
+        /// <summary>Заголовок, когда выбрана верхняя версия.</summary>
+        public string LeftVersionText { get; set; } = Strings.Recovery_Banner_ViewingCache;
+
+        /// <summary>Заголовок, когда выбрана нижняя версия.</summary>
+        public string RightVersionText { get; set; } = Strings.Recovery_Banner_ViewingSaved;
+
+        /// <summary>Надпись на кнопке выхода из режима.</summary>
+        public string DiscardButtonText { get; set; } = Strings.Recovery_Button_DeleteCache;
+
         /// <summary>Просматриваем ли кеш (true) или сохранённую версию (false)</summary>
         public bool IsViewingCache
         {
@@ -43,8 +64,8 @@ namespace Writersword.ViewModels
 
         /// <summary>Текст текущей версии (локализованный)</summary>
         public string CurrentVersionText => IsViewingCache
-            ? Strings.Recovery_Banner_ViewingCache
-            : Strings.Recovery_Banner_ViewingSaved;
+            ? LeftVersionText
+            : RightVersionText;
 
         /// <summary>Цвет текста текущей версии</summary>
         public string CurrentVersionColor => IsViewingCache

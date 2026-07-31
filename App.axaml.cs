@@ -110,6 +110,8 @@ namespace Writersword
             services.AddSingleton<IPrintService, PrintService>();
             services.AddSingleton<INotificationService, NotificationService>();
             services.AddSingleton<IProjectService, ProjectService>();
+            services.AddSingleton<IBackupService, BackupService>();
+            services.AddSingleton<IBackupTimerService, BackupTimerService>();
             services.AddSingleton<ZipProjectService>();
             services.AddSingleton<ILocalizationService, LocalizationService>();
             services.AddSingleton<IThemeService, ThemeService>();
@@ -276,8 +278,36 @@ namespace Writersword
                     {
                         var autoSave = Services.GetService<IAutoSaveService>();
                         autoSave?.Disable();
+
+                        Services.GetService<IBackupTimerService>()?.Stop();
                     }
                     catch { }
+
+                    // Кеш .wsasd — страховка от падения, а не хранилище. После штатного
+                    // закрытия совпадающий с проектом кеш остаётся лежать и при следующем
+                    // запуске подставляется вместо ZIP: allData в SaveDocumentAsync
+                    // стартует именно с него. Поэтому чистим здесь.
+                    // Ожидание синхронное: ShutdownRequested не поддерживает await, а
+                    // после выхода из обработчика приложение уже закрывается. Работа
+                    // уходит в пул потоков, UI-контекст не захватывается.
+                    try
+                    {
+                        var workflow = Services.GetRequiredService<IProjectWorkflow>();
+                        var tabCollection = Services.GetRequiredService<ITabCollection>();
+
+                        var paths = tabCollection.Tabs?
+                            .Select(t => t.FilePath)
+                            .Where(p => !string.IsNullOrEmpty(p))
+                            .Select(p => p!)
+                            .Distinct()
+                            .ToList() ?? new List<string>();
+
+                        Task.Run(() => workflow.CleanupCachesAsync(paths)).GetAwaiter().GetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.ForContext<App>().Error(ex, "Cache cleanup on shutdown failed");
+                    }
 
                     // Serilog закрываем здесь а не только в Program.finally —
                     // ShutdownRequested гарантированно вызывается до выхода из main loop.
@@ -286,6 +316,23 @@ namespace Writersword
 
                 mainWindow.Opened += async (s, e) =>
                 {
+                    // Таймер истории версий живёт отдельно от автосохранения:
+                    // частоту точек задают настройки истории, а не интервал
+                    // защиты от падения.
+                    try
+                    {
+                        // Уборка временных копий от прошлых сессий: сравнение
+                        // разворачивает точку в полноценный файл проекта, и
+                        // после падения он остаётся во временной папке.
+                        Services.GetRequiredService<IBackupService>().CleanupTempFiles();
+
+                        Services.GetRequiredService<IBackupTimerService>().Start();
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.ForContext<App>().Error(ex, "Failed to start backup timer");
+                    }
+
                     var openProjects = settingsService.OpenProjectPaths;
 
                     if (openProjects.Count > 0)

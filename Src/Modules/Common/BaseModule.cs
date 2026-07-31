@@ -189,14 +189,21 @@ namespace Writersword.Modules.Common
             // ContentPresenter — обычный случай в доке; ContentControl, Decorator
             // и Panel встречаются во флоат-окнах и обёртках. Без отцепления новый
             // хост не может принять контрол («already has visual parent»).
-            var oldParent = _cachedView.GetVisualParent();
-            switch (oldParent)
-            {
-                case ContentPresenter cp: cp.Content = null; break;
-                case ContentControl cc: cc.Content = null; break;
-                case Decorator d: d.Child = null; break;
-                case Panel p: p.Children.Remove(_cachedView); break;
-            }
+            DetachFrom(_cachedView.GetVisualParent(), _cachedView);
+
+            // Логический родитель отцепляется отдельно: он не обязан совпадать
+            // с визуальным. При вытаскивании модуля в плавающее окно Dock создаёт
+            // новый DeferredContentControl, отдаёт ему ту же вью, и если старая
+            // логическая связь осталась, назначение нового родителя падает с
+            // "AttachedToLogicalTreeCore called for 'Panel' but control has no
+            // logical parent" прямо в проходе разметки.
+            DetachFrom(_cachedView.Parent, _cachedView);
+
+            // Последняя мера: связь могла остаться на хосте, который сюда не
+            // подходит ни одним типом. Явный сброс родителя оставляет вью
+            // свободной для нового дерева.
+            if (_cachedView.Parent is not null)
+                ((ISetLogicalParent)_cachedView).SetParent(null);
 
             // Восстанавливаем DataContext: пути закрытия/пересоздания в DockFactory
             // обнуляют его у старого Content, а вью у нас кэшированная — без
@@ -205,6 +212,31 @@ namespace Writersword.Modules.Common
                 _cachedView.DataContext = ViewModel;
 
             return _cachedView;
+        }
+
+        /// <summary>
+        /// Убрать вью из указанного хоста, если она действительно им держится.
+        /// Проверка на совпадение обязательна: у логического и визуального
+        /// родителя хост может быть общим, и второй вызов иначе обнулял бы
+        /// содержимое, уже отданное новому владельцу.
+        /// </summary>
+        private static void DetachFrom(object? host, Control view)
+        {
+            switch (host)
+            {
+                case ContentPresenter cp when ReferenceEquals(cp.Content, view):
+                    cp.Content = null;
+                    break;
+                case ContentControl cc when ReferenceEquals(cc.Content, view):
+                    cc.Content = null;
+                    break;
+                case Decorator d when ReferenceEquals(d.Child, view):
+                    d.Child = null;
+                    break;
+                case Panel p:
+                    p.Children.Remove(view);
+                    break;
+            }
         }
 
         /// <summary>Создать View для модуля</summary>

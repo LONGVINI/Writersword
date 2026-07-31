@@ -57,6 +57,15 @@
   <data name="ColorEditor_AddCurrent" xml:space="preserve">
     <value>Добавить текущий цвет</value>
   </data>
+  <data name="Gradient_Hint_Title" xml:space="preserve">
+    <value>Работа с полосой градиента</value>
+  </data>
+  <data name="Gradient_Hint_Body" xml:space="preserve">
+    <value>*Клик по полосе* — добавить метку цвета
+*Перетаскивание* — переместить метку
+*Двойной клик* — дублировать её
+*Правая кнопка* — удалить метку</value>
+  </data>
   <data name="ColorEditor_EyedropperHint" xml:space="preserve">
     <value>Взять цвет в любой точке экрана</value>
   </data>

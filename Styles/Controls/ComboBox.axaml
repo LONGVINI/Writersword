@@ -1,6 +1,15 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:b="using:Writersword.Infrastructure.Behaviours">
+
+	<!-- ══ Базовый вид ══════════════════════════════════════════════════ -->
 	<Style Selector="ComboBox">
+		<!-- Колесо мыши прокручивает страницу, а не листает значение:
+		     иначе прокрутка длинных настроек меняет параметры под курсором. -->
+		<Setter Property="b:NoWheelBehavior.Enabled" Value="True"/>
+		<!-- После выбора подсветка снимается: значение выбрано, держать фокус
+		     на списке незачем. -->
+		<Setter Property="b:FocusReleaseBehavior.ReleaseOnSelect" Value="True"/>
 		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
 		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
 		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
@@ -13,21 +22,118 @@
 		     и текст «прыгает» при открытии. -->
 		<Setter Property="Padding" Value="8,4"/>
 		<Setter Property="MinHeight" Value="28"/>
+		<Setter Property="Cursor" Value="Hand"/>
 	</Style>
 
-	<Style Selector="ComboBox:pointerover">
+	<!-- ══ Состояния ════════════════════════════════════════════════════
+
+	     Реакцию рисует Border#Background из шаблона, а не сам элемент.
+	     Fluent задаёт фон и рамку этого бордера собственными сеттерами
+	     внутри шаблона, и они перекрывают TemplateBinding — поэтому
+	     установка Background/BorderBrush на самом ComboBox видимого
+	     эффекта не давала, и список выглядел мёртвым.
+
+	     Подсветка берётся на весь бордер целиком, включая колонку со
+	     стрелкой: рамка обводит поле и кнопку как один элемент. -->
+
+	<Style Selector="ComboBox /template/ Border#Background">
+		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
 		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="CornerRadius" Value="4"/>
+		<!-- Содержимое не выходит за скруглённые углы: без этого текст
+		     редактируемого списка наползал на стрелку и на границу. -->
+		<Setter Property="ClipToBounds" Value="True"/>
 	</Style>
 
-	<Style Selector="ComboBox:focus">
-		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+	<Style Selector="ComboBox:pointerover /template/ Border#Background">
+		<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}"/>
+	</Style>
+
+	<Style Selector="ComboBox:pressed /template/ Border#Background">
+		<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentPressedBrush}"/>
+	</Style>
+
+	<!-- focus-within, а не focus: у редактируемого списка фокус получает
+	     внутреннее поле ввода, и на самом ComboBox состояние :focus не
+	     возникает — рамка не загоралась при наборе текста. -->
+	<!-- На фокусе меняется только рамка. Раньше здесь менялся ещё и фон, и при
+	     переходе табом элемент становился заметно темнее соседей — выглядело
+	     как выключенный, а не как выбранный. -->
+	<Style Selector="ComboBox:focus-within /template/ Border#Background">
+		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+
+	<Style Selector="ComboBox:dropdownopen /template/ Border#Background">
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+
+	<Style Selector="ComboBox:disabled /template/ Border#Background">
+		<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
 	</Style>
 
 	<Style Selector="ComboBox:disabled">
 		<Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
-		<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
-		<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
 	</Style>
+
+	<!-- Стрелка. Fluent красит её своими токенами, поэтому задаём явно —
+	     иначе на наведении она остаётся тусклой, пока рамка уже акцентная. -->
+	<Style Selector="ComboBox /template/ PathIcon#DropDownGlyph">
+		<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+	</Style>
+	<Style Selector="ComboBox:pointerover /template/ PathIcon#DropDownGlyph">
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+	</Style>
+	<Style Selector="ComboBox:disabled /template/ PathIcon#DropDownGlyph">
+		<Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
+	</Style>
+
+	<!-- ══ Поле ввода редактируемого списка ═════════════════════════════
+
+	     Внутри шаблона живёт обычный TextBox, и на него действуют общие
+	     стили TextBox: свой фон, своя рамка, своё скругление. Получалась
+	     коробка внутри коробки, с двойной границей и собственной акцентной
+	     подсветкой, не совпадающей с рамкой самого списка.
+
+	     Здесь поле обнуляется до прозрачного слоя: рамку и фон рисует
+	     только внешний бордер, а поле отвечает лишь за текст и каретку. -->
+	<Style Selector="ComboBox /template/ TextBox">
+		<Setter Property="Background" Value="Transparent"/>
+		<Setter Property="BorderThickness" Value="0"/>
+		<Setter Property="CornerRadius" Value="0"/>
+		<Setter Property="MinHeight" Value="0"/>
+		<Setter Property="Padding" Value="0"/>
+		<Setter Property="Margin" Value="0"/>
+		<Setter Property="VerticalContentAlignment" Value="Center"/>
+		<!-- Текст остаётся в своей колонке и не залезает под стрелку:
+		     одной строкой, без переноса, с обрезкой по границам. -->
+		<Setter Property="TextWrapping" Value="NoWrap"/>
+		<Setter Property="AcceptsReturn" Value="False"/>
+		<Setter Property="ClipToBounds" Value="True"/>
+	</Style>
+
+	<Style Selector="ComboBox /template/ TextBox /template/ Border#PART_BorderElement">
+		<Setter Property="Background" Value="Transparent"/>
+		<Setter Property="BorderBrush" Value="Transparent"/>
+		<Setter Property="BorderThickness" Value="0"/>
+	</Style>
+
+	<!-- Все состояния внутреннего поля тоже прозрачны: иначе при наведении
+	     и фокусе внутри акцентной рамки списка проступала вторая. -->
+	<Style Selector="ComboBox /template/ TextBox:pointerover /template/ Border#PART_BorderElement">
+		<Setter Property="Background" Value="Transparent"/>
+		<Setter Property="BorderBrush" Value="Transparent"/>
+	</Style>
+	<Style Selector="ComboBox /template/ TextBox:focus /template/ Border#PART_BorderElement">
+		<Setter Property="Background" Value="Transparent"/>
+		<Setter Property="BorderBrush" Value="Transparent"/>
+	</Style>
+
+	<!-- ══ Пункты списка ════════════════════════════════════════════════ -->
 
 	<!-- Подсветку пункта рисует ContentPresenter, растянутый на весь элемент.
 	     Без внешнего отступа плашка упиралась в края выпадающего списка:
@@ -43,27 +149,57 @@
 		<Setter Property="CornerRadius" Value="4"/>
 	</Style>
 
-	<!-- Подсветку рисует сам пункт, а не его ContentPresenter: презентер
-	     заполняет элемент целиком, поэтому отступ и скругление на нём
-	     не сказываются. Презентер держим прозрачным, иначе он закрасит
-	     скруглённые углы. -->
+	<!-- Подсветку рисует ContentPresenter: он и есть корень шаблона пункта,
+	     собственного слоя для фона у элемента нет. Раньше фон задавался
+	     самому пункту, а презентер держался прозрачным — в итоге не рисовалось
+	     ничего, и оставалась только бледная заливка от Fluent, которую почти
+	     не видно. -->
 	<Style Selector="ComboBoxItem /template/ ContentPresenter">
 		<Setter Property="Background" Value="Transparent"/>
 		<Setter Property="CornerRadius" Value="4"/>
 	</Style>
 
-	<Style Selector="ComboBoxItem:pointerover">
-		<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
-	</Style>
 	<Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter">
-		<Setter Property="Background" Value="Transparent"/>
+		<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
 		<Setter Property="TextElement.Foreground" Value="White"/>
 	</Style>
 
-	<Style Selector="ComboBoxItem:selected">
-		<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
-	</Style>
+	<!-- Выбранный пункт помечен приглушённым акцентом: он должен читаться
+	     как «здесь ты сейчас», но не спорить с подсветкой под курсором. -->
 	<Style Selector="ComboBoxItem:selected /template/ ContentPresenter">
-		<Setter Property="Background" Value="Transparent"/>
+		<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+		<Setter Property="TextElement.Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+	</Style>
+	<Style Selector="ComboBoxItem:selected:pointerover /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="TextElement.Foreground" Value="White"/>
+	</Style>
+
+	<!-- Пункт под клавиатурным фокусом.
+
+	     Fluent рисует здесь две вещи сразу: собственный тёмный фон и рамку
+	     фокуса поверх. В раскрытом списке строка от этого превращалась
+	     в чёрную полосу с белой обводкой — текст пропадал совсем.
+
+	     Рамку убираем совсем, а подсветку делаем такой же, как под мышью:
+	     список ведёт себя одинаково, чем бы по нему ни двигались. -->
+	<Style Selector="ComboBoxItem">
+		<Setter Property="FocusAdorner" Value="{x:Null}"/>
+	</Style>
+
+	<!-- Клавиатурный фокус подсвечивается так же, как курсор: список ведёт
+	     себя одинаково, чем бы по нему ни двигались. Псевдоклассы перечислены
+	     все три — Avalonia использует разные при переходе табом и стрелками. -->
+	<Style Selector="ComboBoxItem:focus /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="TextElement.Foreground" Value="White"/>
+	</Style>
+	<Style Selector="ComboBoxItem:focus-visible /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="TextElement.Foreground" Value="White"/>
+	</Style>
+	<Style Selector="ComboBoxItem:selected:focus /template/ ContentPresenter">
+		<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="TextElement.Foreground" Value="White"/>
 	</Style>
 </Styles>

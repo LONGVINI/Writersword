@@ -3,6 +3,9 @@
         xmlns:b="using:Writersword.Infrastructure.Behaviours">
 
 	<Style Selector="NumericUpDown">
+		<!-- Колесо мыши прокручивает страницу, а не крутит число: правка
+		     значения при обычной прокрутке проходит незамеченной. -->
+		<Setter Property="b:NoWheelBehavior.Enabled" Value="True"/>
 		<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
 		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
 		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>

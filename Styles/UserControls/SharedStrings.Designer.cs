@@ -87,6 +87,12 @@ namespace Writersword.Styles.UserControls
         public static string ColorEditor_EyedropperHint =>
             ResourceManager.GetString("ColorEditor_EyedropperHint", resourceCulture)!;
 
+        public static string Gradient_Hint_Title =>
+            ResourceManager.GetString("Gradient_Hint_Title", resourceCulture)!;
+
+        public static string Gradient_Hint_Body =>
+            ResourceManager.GetString("Gradient_Hint_Body", resourceCulture)!;
+
         public static string ColorEditor_TabWheel =>
             ResourceManager.GetString("ColorEditor_TabWheel", resourceCulture)!;
 

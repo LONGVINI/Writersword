@@ -16,8 +16,17 @@
 		<Setter Property="SelectionBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		<Setter Property="SelectionForegroundBrush" Value="White"/>
 	</Style>
+	<!-- Наведение подсвечивает рамку: раньше здесь стоял тот же цвет, что и
+	     в покое, и поле никак не показывало, что в него можно писать. -->
 	<Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
-		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}"/>
+		<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+	</Style>
+	<!-- Внутреннее поле редактируемого ComboBox под это правило не подпадает:
+	     фон и рамку там рисует сам список, см. Styles/Controls/ComboBox.axaml. -->
+	<Style Selector="ComboBox /template/ TextBox:pointerover /template/ Border#PART_BorderElement">
+		<Setter Property="BorderBrush" Value="Transparent"/>
+		<Setter Property="Background" Value="Transparent"/>
 	</Style>
 	<Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
 		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>

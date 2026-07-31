@@ -846,6 +846,9 @@
   <data name="Settings_General_AutoSave_Enable" xml:space="preserve">
     <value>Включить автосохранение</value>
   </data>
+  <data name="Settings_General_Interval" xml:space="preserve">
+    <value>Интервал (секунды)</value>
+  </data>
   <data name="Settings_General_Caching" xml:space="preserve">
     <value>Кеширование</value>
   </data>
@@ -854,5 +857,251 @@
   </data>
   <data name="Settings_General_Caching_Hint" xml:space="preserve">
     <value>Фоновое кеширование сохраняет состояние модулей для восстановления после сбоя. Отключение снижает потребление памяти, но отключает восстановление.</value>
+  </data>
+  <data name="Settings_Tab_Backups" xml:space="preserve">
+    <value>Резервные копии</value>
+  </data>
+  <data name="Settings_Backups_Scope_Global" xml:space="preserve">
+    <value>Глобальная</value>
+  </data>
+  <data name="Settings_Backups_Scope_Project" xml:space="preserve">
+    <value>Локальная</value>
+  </data>
+  <data name="Settings_Backups_Scope_ProjectEmpty" xml:space="preserve">
+    <value>Пусто — как для всех проектов</value>
+  </data>
+  <data name="Settings_Backups_Effective" xml:space="preserve">
+    <value>итоговый путь</value>
+  </data>
+  <data name="Settings_Backups_Section" xml:space="preserve">
+    <value>История версий</value>
+  </data>
+  <data name="Settings_Backups_Enable" xml:space="preserve">
+    <value>Сохранять историю версий проекта</value>
+  </data>
+  <data name="Settings_Backups_When" xml:space="preserve">
+    <value>Когда снимать точку</value>
+  </data>
+  <data name="Settings_Backups_OnManualSave" xml:space="preserve">
+    <value>При сохранении вручную</value>
+  </data>
+  <data name="Settings_Backups_OnAppClose" xml:space="preserve">
+    <value>При закрытии программы</value>
+  </data>
+  <data name="Settings_Backups_OnTimer" xml:space="preserve">
+    <value>Во время работы, по таймеру</value>
+  </data>
+  <data name="Settings_Backups_Group_Today" xml:space="preserve">
+    <value>Сегодня</value>
+  </data>
+  <data name="Settings_Backups_Group_Yesterday" xml:space="preserve">
+    <value>Вчера</value>
+  </data>
+  <data name="Settings_Backups_Current" xml:space="preserve">
+    <value>совпадает с текущим состоянием</value>
+  </data>
+  <data name="Settings_Backups_JustNow" xml:space="preserve">
+    <value>только что</value>
+  </data>
+  <data name="Settings_Backups_MinutesAgo" xml:space="preserve">
+    <value>{0} мин назад</value>
+  </data>
+  <data name="Settings_Backups_HoursAgo" xml:space="preserve">
+    <value>{0} ч назад</value>
+  </data>
+  <data name="Settings_Backups_DaysAgo" xml:space="preserve">
+    <value>{0} дн назад</value>
+  </data>
+  <data name="Settings_Backups_MinInterval" xml:space="preserve">
+    <value>Не чаще чем раз в</value>
+  </data>
+  <data name="Settings_Backups_Unit_Minutes" xml:space="preserve">
+    <value>минут</value>
+  </data>
+  <data name="Settings_Backups_Unit_Hours" xml:space="preserve">
+    <value>часов</value>
+  </data>
+  <data name="Settings_Backups_Unit_Days" xml:space="preserve">
+    <value>дней</value>
+  </data>
+  <data name="Settings_Backups_Unit_Weeks" xml:space="preserve">
+    <value>недель</value>
+  </data>
+  <data name="Settings_Backups_Unit_Months" xml:space="preserve">
+    <value>месяцев</value>
+  </data>
+  <data name="Settings_Backups_Unit_Tooltip" xml:space="preserve">
+    <value>Щелчок меняет единицу: минуты, часы, дни, недели, месяцы и снова минуты.</value>
+  </data>
+  <data name="Settings_Backups_Unlimited" xml:space="preserve">
+    <value>Без ограничения</value>
+  </data>
+  <data name="Settings_Backups_MinInterval_Hint" xml:space="preserve">
+    <value>Ограничивает только автоматические точки. Точка по кнопке, при закрытии программы и перед откатом создаётся всегда.</value>
+  </data>
+  <data name="Settings_Backups_Thinning" xml:space="preserve">
+    <value>Прореживать старые точки</value>
+  </data>
+  <data name="Settings_Backups_Thinning_Hint" xml:space="preserve">
+    <value>За сегодня хранятся все точки, за последнюю неделю — по одной на день, дальше — по одной на неделю. Точки, созданные кнопкой, не удаляются.</value>
+  </data>
+  <data name="Settings_Backups_UserPoints" xml:space="preserve">
+    <value>Точки, созданные вручную</value>
+  </data>
+  <data name="Settings_Backups_UserPoints_Never" xml:space="preserve">
+    <value>Не удалять</value>
+  </data>
+  <data name="Settings_Backups_UserPoints_AfterAge" xml:space="preserve">
+    <value>Удалять по возрасту</value>
+  </data>
+  <data name="Settings_Backups_UserPoints_KeepLast" xml:space="preserve">
+    <value>Хранить последние</value>
+  </data>
+  <data name="Settings_Backups_UserPoints_WithLimit" xml:space="preserve">
+    <value>Удалять при переполнении, последними</value>
+  </data>
+  <data name="Settings_Backups_UserPoints_Days" xml:space="preserve">
+    <value>Срок хранения, дней</value>
+  </data>
+  <data name="Settings_Backups_UserPoints_Count" xml:space="preserve">
+    <value>Сколько точек хранить</value>
+  </data>
+  <data name="Settings_Backups_UserPoints_Hint" xml:space="preserve">
+    <value>Такие точки не участвуют в прореживании: момент помечен осознанно. Правило ниже определяет, живут ли они вечно или всё-таки уступают место.</value>
+  </data>
+  <data name="Settings_Backups_CreatePoint" xml:space="preserve">
+    <value>Создать точку сейчас</value>
+  </data>
+  <data name="Settings_Backups_PointSkipped" xml:space="preserve">
+    <value>Точка не создана: содержимое проекта не изменилось с прошлой точки.</value>
+  </data>
+  <data name="Settings_Backups_MaxSnapshots" xml:space="preserve">
+    <value>Предельное число точек</value>
+  </data>
+  <data name="Settings_Backups_Location" xml:space="preserve">
+    <value>Папка хранения</value>
+  </data>
+  <data name="Settings_Backups_Location_Hint" xml:space="preserve">
+    <value>Пусто — служебная папка в профиле пользователя, рядом с проектом ничего не появляется. Путь можно задать и внутри самого проекта: тогда он переезжает вместе с файлом, а если такой папки на другом компьютере нет, используются настройки того, кто открыл.</value>
+  </data>
+  <data name="Settings_Backups_ProjectOverride" xml:space="preserve">
+    <value>Своя папка для этого проекта</value>
+  </data>
+  <data name="Settings_Backups_ProjectOverride_Hint" xml:space="preserve">
+    <value>Путь хранится *внутри самого проекта* и переезжает вместе с файлом.
+Если на другом компьютере такой папки нет, ошибки не будет — там возьмётся *настройка того, кто открыл* проект.</value>
+  </data>
+  <data name="Settings_Backups_Browse" xml:space="preserve">
+    <value>Обзор…</value>
+  </data>
+  <data name="Settings_Backups_UseDefault" xml:space="preserve">
+    <value>По умолчанию: папка профиля</value>
+  </data>
+  <data name="Settings_Backups_Reset" xml:space="preserve">
+    <value>Сбросить</value>
+  </data>
+  <data name="Settings_Backups_Trigger_AppClose" xml:space="preserve">
+    <value>закрытие программы</value>
+  </data>
+  <data name="Settings_Backups_Trigger_UserPoint" xml:space="preserve">
+    <value>создана вручную</value>
+  </data>
+  <data name="Settings_Backups_Unsaved_Message" xml:space="preserve">
+    <value>В проекте есть несохранённые изменения. Точка перед откатом снимается с файла на диске и такие правки не сохранит — они пропадут.
+
+Сохранить их перед откатом?
+Да — сохранить и откатиться, Нет — откатиться и потерять их, Отмена — ничего не делать.</value>
+  </data>
+  <data name="Settings_Backups_Confirm_Changes" xml:space="preserve">
+    <value>Что изменится:</value>
+  </data>
+  <data name="Settings_Backups_Confirm_Shrink" xml:space="preserve">
+    <value>Внимание: после отката данных станет меньше, чем сейчас.</value>
+  </data>
+  <data name="Settings_Backups_Hint" xml:space="preserve">
+    <value>Точка восстановления запоминает состояние проекта перед сохранением. Одинаковое содержимое хранится один раз, поэтому картинки и аватары не копируются заново при каждой точке.</value>
+  </data>
+  <data name="Settings_Backups_Points" xml:space="preserve">
+    <value>Точки восстановления</value>
+  </data>
+  <data name="Settings_Backups_Empty" xml:space="preserve">
+    <value>Точек пока нет. Первая появится при следующем сохранении проекта.</value>
+  </data>
+  <data name="Settings_Backups_NoProject" xml:space="preserve">
+    <value>Откройте проект, чтобы увидеть его точки восстановления.</value>
+  </data>
+  <data name="Settings_Backups_Delete" xml:space="preserve">
+    <value>Удалить точку</value>
+  </data>
+  <data name="Settings_Backups_Delete_Confirm" xml:space="preserve">
+    <value>Точка от {0} будет удалена без возможности вернуть. Вместе с ней исчезнут данные, на которые не ссылается ни одна другая точка.
+
+Состав точки:</value>
+  </data>
+  <data name="Settings_Backups_Delete_Failed" xml:space="preserve">
+    <value>Не удалось удалить точку. Подробности в журнале.</value>
+  </data>
+  <data name="Settings_Backups_Restore" xml:space="preserve">
+    <value>Восстановить</value>
+  </data>
+  <data name="Settings_Backups_Confirm_Title" xml:space="preserve">
+    <value>Восстановление проекта</value>
+  </data>
+  <data name="Settings_Backups_Confirm_Message" xml:space="preserve">
+    <value>Проект будет возвращён к точке {0}. Текущее состояние сначала сохранится отдельной точкой, поэтому откат можно будет отменить.</value>
+  </data>
+  <data name="Settings_Backups_Restored" xml:space="preserve">
+    <value>Проект восстановлен из выбранной точки.</value>
+  </data>
+  <data name="Settings_Backups_RestoreFailed" xml:space="preserve">
+    <value>Не удалось восстановить точку. Подробности в журнале.</value>
+  </data>
+  <data name="Settings_Backups_StorageSize" xml:space="preserve">
+    <value>Объём хранилища</value>
+  </data>
+  <data name="Settings_Backups_Trigger_Manual" xml:space="preserve">
+    <value>сохранение вручную</value>
+  </data>
+  <data name="Settings_Backups_Trigger_Auto" xml:space="preserve">
+    <value>автосохранение</value>
+  </data>
+  <data name="Settings_Backups_Trigger_BeforeRestore" xml:space="preserve">
+    <value>перед откатом</value>
+  </data>
+  <data name="Settings_Backups_OpenFolder" xml:space="preserve">
+    <value>Открыть папку хранения</value>
+  </data>
+  <data name="Compare_Title" xml:space="preserve">
+    <value>Сравнение проектов</value>
+  </data>
+  <data name="Compare_Viewing_Own" xml:space="preserve">
+    <value>Показана версия этого проекта</value>
+  </data>
+  <data name="Compare_Button_Exit" xml:space="preserve">
+    <value>Выйти из сравнения</value>
+  </data>
+  <data name="Compare_LoadFailed" xml:space="preserve">
+    <value>Не удалось прочитать выбранный файл.</value>
+  </data>
+  <data name="Compare_AlreadyActive" xml:space="preserve">
+    <value>Вкладка уже в режиме сравнения. Завершите текущее сравнение и начните новое.</value>
+  </data>
+  <data name="Compare_Viewing_Point" xml:space="preserve">
+    <value>Показана версия из точки восстановления</value>
+  </data>
+  <data name="Compare_Label_Point" xml:space="preserve">
+    <value>Точка</value>
+  </data>
+  <data name="Settings_Backups_Compare" xml:space="preserve">
+    <value>Сравнить</value>
+  </data>
+  <data name="Settings_Backups_Compare_Tooltip" xml:space="preserve">
+    <value>Открыть точку рядом с текущей версией: можно переключаться между ними прямо в редакторе и принять ту, которая нужна.</value>
+  </data>
+  <data name="Compare_SaveBlocked" xml:space="preserve">
+    <value>Идёт сравнение версий — сохранение отключено. Выберите версию кнопками в баннере сверху.</value>
+  </data>
+  <data name="Compare_Adopt_Confirm" xml:space="preserve">
+    <value>Данные из другого файла будут записаны в этот проект поверх текущих. Предыдущее состояние останется в истории версий. Продолжить?</value>
   </data>
 </root>

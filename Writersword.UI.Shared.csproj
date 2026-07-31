@@ -21,7 +21,9 @@
 		<Compile Include="Src\Infrastructure\Behaviours\FocusOnVisibleBehavior.cs" />
 		<Compile Include="Src\Infrastructure\Behaviours\TooltipBehavior.cs" />
 		<Compile Include="Src\Infrastructure\Controls\ItalicCaretTextBox.cs" />
+		<Compile Include="Src\Infrastructure\Controls\HintMark.cs" />
 		<Compile Include="Src\Infrastructure\Converters\GradientBrushFactory.cs" />
+		<Compile Include="Src\Infrastructure\Converters\EnumToBooleanConverter.cs" />
 	</ItemGroup>
 
 	<!-- UserControls — явно после Remove выше -->

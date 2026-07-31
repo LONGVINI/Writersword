@@ -72,6 +72,15 @@
     <value>Add current color</value>
     <comment>Tooltip on the plus tile that saves the current color to the palette</comment>
   </data>
+  <data name="Gradient_Hint_Title" xml:space="preserve">
+    <value>Working with the gradient strip</value>
+  </data>
+  <data name="Gradient_Hint_Body" xml:space="preserve">
+    <value>*Click the strip* — add a colour stop
+*Drag* — move a stop
+*Double-click* — duplicate it
+*Right-click* — delete the stop</value>
+  </data>
   <data name="ColorEditor_EyedropperHint" xml:space="preserve">
     <value>Pick a color anywhere on screen</value>
     <comment>Tooltip on the eyedropper button</comment>

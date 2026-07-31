@@ -1,5 +1,14 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:b="using:Writersword.Infrastructure.Behaviours">
+
+	<!-- Завершение ввода щелчком мимо поля и клавишей Enter — во всех окнах.
+	     Поведение вешается на окно и покрывает все поля внутри, включая поле
+	     ввода редактируемого списка. -->
+	<Style Selector="Window">
+		<Setter Property="b:FocusReleaseBehavior.Enabled" Value="True"/>
+	</Style>
+
 	<StyleInclude Source="avares://Writersword/Styles/Controls/Button.axaml"/>
 	<StyleInclude Source="avares://Writersword/Styles/Controls/TextBox.axaml"/>
 	<StyleInclude Source="avares://Writersword/Styles/Controls/NumericUpDown.axaml"/>

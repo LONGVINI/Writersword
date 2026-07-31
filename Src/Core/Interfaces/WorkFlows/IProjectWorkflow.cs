@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Services;
 
@@ -18,11 +19,28 @@ namespace Writersword.Core.Interfaces.WorkFlows
         Task<IDocumentTab?> OpenDocumentAsync(string? filePath = null, bool initializeWorkspace = true);
 
         /// <summary>Сохранить документ. showNotification=false — тихо, без тоста
-        /// (для фоновых сохранений вроде правки палитр).</summary>
-        Task<bool> SaveDocumentAsync(IDocumentTab tab, bool showNotification = true);
+        /// (для фоновых сохранений вроде правки палитр).
+        /// isAutoSave=true — сохранение по таймеру: точка восстановления снимается
+        /// только если в настройках истории разрешены автоматические точки.</summary>
+        Task<bool> SaveDocumentAsync(IDocumentTab tab, bool showNotification = true, bool isAutoSave = false);
 
         /// <summary>Сохранить как (выбрать новый путь)</summary>
         Task<bool> SaveAsDocumentAsync(IDocumentTab tab);
+
+        /// <summary>
+        /// Сравнить открытый проект с точкой из истории версий.
+        /// Точка разворачивается во временный файл, вкладка переходит в тот же
+        /// compare-режим: переключение версий, принятие точки или выход.
+        /// </summary>
+        Task<bool> CompareWithSnapshotAsync(IDocumentTab tab, string snapshotId);
+
+        /// <summary>
+        /// Перечитать проект с диска в уже открытую вкладку: обновляет данные
+        /// проекта и перезагружает живые модули. Нужно после восстановления из
+        /// истории версий — иначе на экране остаётся прежнее содержимое, пока
+        /// вкладку не закроют и не откроют заново.
+        /// </summary>
+        Task<bool> ReloadFromDiskAsync(IDocumentTab tab);
 
         /// <summary>Закрыть документ с проверкой изменений</summary>
         /// <param name="force">Закрыть без сохранения</param>
@@ -59,5 +77,14 @@ namespace Writersword.Core.Interfaces.WorkFlows
         Task<bool> EnsureWorkspaceInitialized(IDocumentTab tab);
         /// <summary>Обновить FileStorage для проекта</summary>
         void UpdateStorageForProject(string filePath, IProjectFileStorage newStorage);
+
+        /// <summary>
+        /// Очистка кешей .wsasd при штатном закрытии приложения.
+        /// Кеш удаляется только если его содержимое совпадает с тем, что лежит
+        /// в ZIP: такой файл ничего не восстанавливает, но при следующем запуске
+        /// становится источником данных вместо самого проекта. Расходящийся кеш
+        /// сохраняется — это несохранённая работа, её показывает Compare-режим.
+        /// </summary>
+        Task CleanupCachesAsync(IEnumerable<string> projectPaths);
     }
 }
