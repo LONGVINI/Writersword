@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Writersword.Modules.Characters.Models;
 
 namespace Writersword.Modules.Characters.Interfaces
@@ -12,11 +12,26 @@ namespace Writersword.Modules.Characters.Interfaces
         IReadOnlyList<string> GetAllTags();
 
         /// <summary>
-        /// Метки, уже заведённые в проекте — по одной на имя. Нужны, чтобы
+        /// Реестр меток проекта — по одной записи на метку. Нужен, чтобы
         /// «Ранен» у разных персонажей был одной и той же меткой со своим
         /// значком и цветом, а не тремя похожими.
         /// </summary>
         IReadOnlyList<CharacterLabel> GetAllLabels();
+
+        /// <summary>
+        /// Записать метку в реестр проекта: по идентификатору, а при его
+        /// отсутствии — по имени. Сохраняется образец, поэтому личные поля
+        /// персонажа (порядок и показ на карточке) в реестр не уходят.
+        /// </summary>
+        void SaveGlobalLabel(CharacterLabel label);
+
+        /// <summary>
+        /// Разнести вид метки по всем персонажам, у которых она стоит.
+        /// Меняются подпись, значок и цвета; порядок и признак показа на
+        /// карточке у каждого персонажа остаются своими. Возвращает число
+        /// затронутых персонажей.
+        /// </summary>
+        int ApplyLabelToAll(CharacterLabel label);
 
         Character Create(string name);
         Character CreateFromAnketas(string name, IEnumerable<CharacterAnketa> anketas, bool randomize = false);

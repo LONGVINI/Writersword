@@ -7,6 +7,7 @@ using Writersword.Core.Models.Project;
 using Writersword.Core.Models.Rendering;
 using Writersword.Modules.TextEditor.Rendering;
 using Writersword.Modules.TextEditor.Models.Document;
+using Writersword.Modules.TextEditor.Models.Inline;
 using RenderAlignment = Writersword.Core.Models.Rendering.TextAlignment;
 
 namespace Writersword.Modules.TextEditor.Rendering
@@ -89,6 +90,13 @@ namespace Writersword.Modules.TextEditor.Rendering
             float PageBottomPt,
             float NextPageTopPt,
             float PageStepPt);
+
+        /// <summary>
+        /// Габарит встроенной картинки по её Id, в pt. Устанавливается канвасом:
+        /// сам рендер документа не видит и достать размер объекта не может.
+        /// null — встроенных объектов в документе нет.
+        /// </summary>
+        public Func<Guid, (float WidthPt, float HeightPt)?>? InlineImageSize { get; set; }
 
         public SKTextLayout BuildLayout(
             ParagraphBlock para,
@@ -183,7 +191,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 Alignment = alignment
             };
 
-            var tokens = CollectTokens(para, styleName, styles);
+            var tokens = CollectTokens(para, styleName, styles, InlineImageSize);
             WrapTokensToLines(tokens, layout, textWidthPt, lineSpacing, wrapZones, wrapPreferPushDown, wrapPages);
             layout.TextLength = GetPlainTextLength(para);
 
@@ -893,6 +901,15 @@ namespace Writersword.Modules.TextEditor.Rendering
         }
 
         /// <summary>
+        /// Отрисовка объекта, встроенного в строку. Ставится канвасом перед
+        /// проходом рендера: сам текстовый рендер картинок рисовать не умеет —
+        /// у него нет ни кеша битмапов, ни доступа к документу.
+        /// Аргументы: канвас, сегмент-объект, X левого края сегмента,
+        /// Y базовой линии строки.
+        /// </summary>
+        public static Action<SKCanvas, SKRunSegment, float, float>? DrawInlineObject { get; set; }
+
+        /// <summary>
         /// Рендерит один параграф на SKCanvas.
         /// </summary>
         public static void RenderParagraph(
@@ -922,6 +939,14 @@ namespace Writersword.Modules.TextEditor.Rendering
                     segIdx++;
                     float segX = paraX + seg.X + offsetX;
                     float baseY = lineY + line.Baseline;
+
+                    // Объект в строке: рисует канвас, текстовые слои (подчёркивание,
+                    // зачёркивание, градиент букв) к нему не применяются.
+                    if (seg.IsInlineObject)
+                    {
+                        DrawInlineObject?.Invoke(canvas, seg, segX, baseY);
+                        continue;
+                    }
 
                     // Задник за текстом: плоский цвет либо градиент по прямоугольнику сегмента.
                     // Ширина обрезается по хвостовым пробелам в конце строки.
@@ -1010,7 +1035,8 @@ namespace Writersword.Modules.TextEditor.Rendering
         private static List<(string Char, SKRunSegment Format, int GlobalIndex)> CollectTokens(
             ParagraphBlock para,
             string? styleName,
-            StyleResolver styles)
+            StyleResolver styles,
+            Func<Guid, (float WidthPt, float HeightPt)?>? inlineImageSize = null)
         {
             var tokens = new List<(string, SKRunSegment, int)>();
             int globalIndex = 0;
@@ -1025,6 +1051,29 @@ namespace Writersword.Modules.TextEditor.Rendering
                 foreach (var run in chunk.Runs)
                 {
                     if (string.IsNullOrEmpty(run.Text)) continue;
+
+                    // Объект в строке: один токен со своим габаритом вместо глифа.
+                    // Размер берётся из самой картинки — она живёт в InlineObjects
+                    // раздела, а run хранит только ссылку.
+                    if (run.InlineImageId is Guid inlineId)
+                    {
+                        var size = inlineImageSize?.Invoke(inlineId);
+
+                        var objectFormat = new SKRunSegment
+                        {
+                            FontFamily = styleFontFamily,
+                            FontSizePt = styleFontSize,
+                            Color = ParseColor(run.Properties?.TextColor),
+                            GlobalCharOffset = globalIndex,
+                            InlineImageId = inlineId,
+                            ObjectWidthPt = size?.WidthPt ?? 0f,
+                            ObjectHeightPt = size?.HeightPt ?? 0f
+                        };
+
+                        tokens.Add((RunModel.ObjectPlaceholder.ToString(), objectFormat, globalIndex));
+                        globalIndex++;
+                        continue;
+                    }
 
                     var p = run.Properties;
 
@@ -1180,24 +1229,49 @@ namespace Writersword.Modules.TextEditor.Rendering
             // строка не считалась пересекающей зону и нижней частью налезала на картинку.
             float probeLineHPt = 10f;
             float minBandWidthPt = MinBandFloorPt;
+
+            // Высота строки, которую даст этот формат: у картинки в строке высоту задаёт
+            // её габарит, а не шрифт (так же считает FinalizeLine). Без этого строка
+            // с картинкой считалась высотой в кегль текста, зона обтекания рядом с ней
+            // «не пересекалась», и картинка ложилась прямо на обтекаемый объект.
+            float TokenLineHeight(SKRunSegment format)
+            {
+                var tf = GetOrCreateTypeface(format.FontFamily, format.IsBold, format.IsItalic);
+                var f = GetOrCreateFont(tf, format.FontSizePt);
+                f.GetFontMetrics(out var m);
+
+                float ascent = Math.Abs(m.Ascent);
+                float descent = Math.Abs(m.Descent);
+                if (format.IsInlineObject && format.ObjectHeightPt > ascent)
+                    ascent = format.ObjectHeightPt;
+
+                return (ascent + descent) * Math.Max(lineSpacing, 1f);
+            }
+
             if (hasZones)
             {
+                // Пробная высота обычной строки: по самому высокому ТЕКСТОВОМУ формату.
+                // Картинки сюда не входят — их высота учитывается построчно, только для
+                // тех строк, куда они реально попали. Иначе одна крупная картинка задрала
+                // бы пробу всему абзацу, и обычные строки уезжали бы от зон и со страниц.
                 float maxLineHPt = 0f;
+                float maxObjectWidthPt = 0f;
                 SKRunSegment? probedFormat = null;
                 foreach (var (_, format, _) in tokens)
                 {
+                    if (format.IsInlineObject)
+                    {
+                        if (format.ObjectWidthPt > maxObjectWidthPt)
+                            maxObjectWidthPt = format.ObjectWidthPt;
+                        continue;
+                    }
+
                     // Формат — общий объект на весь run, соседние символы ссылаются на
                     // один и тот же экземпляр: метрики считаем один раз на run.
                     if (ReferenceEquals(format, probedFormat)) continue;
                     probedFormat = format;
 
-                    var probeTypeface = GetOrCreateTypeface(
-                        format.FontFamily, format.IsBold, format.IsItalic);
-                    var probeFont = GetOrCreateFont(probeTypeface, format.FontSizePt);
-                    probeFont.GetFontMetrics(out var probeMetrics);
-
-                    float h = (Math.Abs(probeMetrics.Ascent) + Math.Abs(probeMetrics.Descent))
-                        * Math.Max(lineSpacing, 1f);
+                    float h = TokenLineHeight(format);
                     if (h > maxLineHPt) maxLineHPt = h;
                 }
                 probeLineHPt = Math.Max(probeLineHPt, maxLineHPt);
@@ -1217,65 +1291,175 @@ namespace Writersword.Modules.TextEditor.Rendering
                 }
                 if (runWidthPt > maxWordWidthPt) maxWordWidthPt = runWidthPt;
 
-                minBandWidthPt = Math.Max(MinBandFloorPt, maxWordWidthPt);
-                if (wrapPreferPushDown) minBandWidthPt *= PushDownHysteresis;
+                minBandWidthPt = BandRequirement(maxWordWidthPt, maxObjectWidthPt);
+            }
+
+            // Какой ширины должна быть полоса, чтобы в неё имело смысл ставить строку.
+            // Считается по тому, что в неё реально пойдёт: слово шире полосы пришлось бы
+            // рвать посимвольно, а этого делать нельзя.
+            float BandRequirement(float wordWidthPt, float objectWidthPt)
+            {
+                float required = Math.Max(MinBandFloorPt, wordWidthPt);
+                if (wrapPreferPushDown) required *= PushDownHysteresis;
 
                 // Потолок в половину области: абзац с одним очень длинным словом иначе
                 // вытеснялся бы под объект всегда, и обтекание не работало бы вовсе.
                 // Такое слово всё равно придётся разорвать — но уже в полной строке.
-                minBandWidthPt = Math.Min(minBandWidthPt, textAreaWidthPt * 0.5f);
+                required = Math.Min(required, textAreaWidthPt * 0.5f);
+
+                // Картинку разорвать нельзя: полоса уже её габарита не годится никогда,
+                // и потолок в половину колонки на неё не распространяется. Иначе широкая
+                // картинка «влезала» в узкую полосу и наезжала на обтекаемый объект.
+                if (objectWidthPt > required)
+                    required = Math.Min(objectWidthPt, textAreaWidthPt);
+
+                return required;
             }
+
+            // Занятые участки колонки на вертикали одной строки. Список переиспользуется
+            // между строками — полоса считается на каждую строку абзаца.
+            var occupiedSpans = new List<(float Left, float Right)>();
+
+            // Накопленный сдвиг строк, уехавших на следующие страницы, и число
+            // пересечённых границ. Строки идут по возрастанию localY, поэтому
+            // сдвиг только растёт и вычисляется один раз на каждом переходе.
+            // Объявлены до расчёта полосы: он смотрит на границу страницы, чтобы
+            // не вытеснять строку за неё.
+            float pageShiftPt = 0f;
+            int pageCrossings = 0;
 
             // Полоса строки на вертикали yTop (координата верха строки относительно
             // верха первой строки параграфа): левый край и ширина внутри текстовой
             // области плюс вытеснение вниз, если рядом с зонами не осталось места.
-            (float Left, float Width, float ExtraTop) ComputeBand(float yTop)
+            //
+            // Все объекты, пересекающие строку, сводятся в ОДНУ картину занятости:
+            // пересекающиеся и соприкасающиеся зоны сливаются в один участок, после чего
+            // выбирается самый широкий свободный промежуток. Прежний код сужал полосу
+            // зона за зоной, решая для каждой отдельно, с какой стороны её обходить, —
+            // и результат зависел от порядка объектов в списке: две наложенные картинки
+            // отправляли текст то влево, то вправо, а между ними мог «открыться»
+            // просвет, которого на листе нет.
+            float ComputeBand(
+                float yTop, float lineHPt, float requiredWidthPt,
+                List<SKWrapFragment> result)
             {
-                if (!hasZones) return (0f, textAreaWidthPt, 0f);
+                result.Clear();
+
+                if (!hasZones)
+                {
+                    result.Add(new SKWrapFragment(0f, textAreaWidthPt));
+                    return 0f;
+                }
 
                 float extraTop = 0f;
                 for (int guard = 0; guard < 16; guard++)
                 {
                     float y = yTop + extraTop;
-                    float left = 0f;
-                    float right = textAreaWidthPt;
                     float pushBottom = float.MinValue;
 
+                    // Ограничения по сторонам от объектов, пересекающих эту строку:
+                    // текст не должен появляться правее объекта с «только слева»
+                    // и левее объекта с «только справа».
+                    float allowedLeftPt = 0f;
+                    float allowedRightPt = textAreaWidthPt;
+                    bool largestOnly = false;
+
+                    occupiedSpans.Clear();
                     foreach (var z in wrapZones!)
                     {
-                        if (z.BottomPt <= y + 0.5f || z.TopPt >= y + probeLineHPt) continue;
+                        if (z.BottomPt <= y + 0.5f || z.TopPt >= y + lineHPt) continue;
 
-                        float zLeftPt = z.LeftPt - zoneShiftPt;
-                        float zRightPt = z.RightPt - zoneShiftPt;
+                        // Зоны приходят в координатах колонки, полосы считаются внутри
+                        // области абзаца — приводим к одной системе и обрезаем по колонке.
+                        float zLeftPt = Math.Max(z.LeftPt - zoneShiftPt, 0f);
+                        float zRightPt = Math.Min(z.RightPt - zoneShiftPt, textAreaWidthPt);
+                        if (zRightPt <= zLeftPt) continue;
 
-                        // Зона целиком вне области абзаца (в поле левого или правого
-                        // отступа) полосу строки не сужает.
-                        if (zRightPt <= left || zLeftPt >= right) continue;
+                        occupiedSpans.Add((zLeftPt, zRightPt));
+                        if (z.BottomPt > pushBottom) pushBottom = z.BottomPt;
 
-                        // Текст уходит на ту сторону зоны, где больше места (как Square в Word).
-                        float spaceLeft = zLeftPt - left;
-                        float spaceRight = right - zRightPt;
-                        if (spaceLeft >= spaceRight) right = Math.Min(right, zLeftPt);
-                        else left = Math.Max(left, zRightPt);
-                        pushBottom = Math.Max(pushBottom, z.BottomPt);
+                        switch (z.Side)
+                        {
+                            case SKWrapSide.LeftOnly:
+                                if (zLeftPt < allowedRightPt) allowedRightPt = zLeftPt;
+                                break;
+                            case SKWrapSide.RightOnly:
+                                if (zRightPt > allowedLeftPt) allowedLeftPt = zRightPt;
+                                break;
+                            case SKWrapSide.LargestOnly:
+                                largestOnly = true;
+                                break;
+                        }
                     }
 
-                    float width = right - left;
-                    if (width >= minBandWidthPt || pushBottom == float.MinValue)
-                        return (left, Math.Max(width, 1f), extraTop);
+                    // Ни один объект не пересекает строку — вся колонка свободна.
+                    if (occupiedSpans.Count == 0)
+                    {
+                        result.Add(new SKWrapFragment(0f, textAreaWidthPt));
+                        return extraTop;
+                    }
 
-                    // Полоса слишком узкая — вытесняем строку под нижний край зоны
-                    // и проверяем заново: ниже может лежать следующая зона.
-                    extraTop = pushBottom - yTop + 0.5f;
+                    // Перекрывающиеся объекты — одно препятствие: интервалы сливаются
+                    // курсором, поэтому промежутки между ними считаются по реальной
+                    // занятости колонки, а не по каждому объекту отдельно.
+                    occupiedSpans.Sort((a, b) => a.Left.CompareTo(b.Left));
+
+                    result.Clear();
+                    float cursor = 0f;
+                    void TryAddGap(float gapLeft, float gapRight)
+                    {
+                        float l = Math.Max(gapLeft, allowedLeftPt);
+                        float r = Math.Min(gapRight, allowedRightPt);
+                        if (r - l >= requiredWidthPt)
+                            result.Add(new SKWrapFragment(l, r - l));
+                    }
+
+                    foreach (var (spanLeft, spanRight) in occupiedSpans)
+                    {
+                        if (spanLeft > cursor) TryAddGap(cursor, spanLeft);
+                        if (spanRight > cursor) cursor = spanRight;
+                    }
+                    TryAddGap(cursor, textAreaWidthPt);
+
+                    if (result.Count > 0)
+                    {
+                        // «По большей стороне» — исторический режим: из всех промежутков
+                        // остаётся только самый широкий, строка не разрывается объектом.
+                        if (largestOnly && result.Count > 1)
+                        {
+                            var widest = result[0];
+                            foreach (var fragment in result)
+                                if (fragment.WidthPt > widest.WidthPt) widest = fragment;
+                            result.Clear();
+                            result.Add(widest);
+                        }
+                        return extraTop;
+                    }
+
+                    // Ни один промежуток не годится — строка уходит под нижний край
+                    // препятствия и проверяется заново: ниже может лежать следующее.
+                    float nextExtraTop = pushBottom - yTop + 0.5f;
+                    if (nextExtraTop <= extraTop) break;
+
+                    // Но не за границу страницы. Дальше начинается следующая страница,
+                    // объекта этой страницы там уже нет, и опускать строку не за чем:
+                    // перенос сделает пагинация. Иначе вытеснение переживало разрыв
+                    // и превращалось в пустой провал наверху следующей страницы —
+                    // текст отодвигала картинка, которой на этой странице не видно.
+                    if (wrapPages is { } pageCtx)
+                    {
+                        float pushedDocYPt = pageCtx.ParaStartYPt + yTop + nextExtraTop;
+                        float pageBottomPt = pageCtx.PageBottomPt + pageCrossings * pageCtx.PageStepPt;
+                        if (pushedDocYPt + lineHPt > pageBottomPt) break;
+                    }
+
+                    extraTop = nextExtraTop;
                 }
-                return (0f, textAreaWidthPt, extraTop);
-            }
 
-            // Накопленный сдвиг строк, уехавших на следующие страницы, и число
-            // пересечённых границ. Строки идут по возрастанию localY, поэтому
-            // сдвиг только растёт и вычисляется один раз на каждом переходе.
-            float pageShiftPt = 0f;
-            int pageCrossings = 0;
+                result.Clear();
+                result.Add(new SKWrapFragment(0f, textAreaWidthPt));
+                return extraTop;
+            }
 
             // Локальный Y строки (от верха первой строки абзаца) в систему координат
             // зон. Пока абзац целиком на своей странице сдвиг нулевой. Как только
@@ -1283,7 +1467,7 @@ namespace Writersword.Modules.TextEditor.Rendering
             // физически уходят на верх следующей — и сравниваться с зонами должны
             // уже оттуда, иначе полоса проверяется на высоту переноса выше места,
             // где строка нарисована.
-            float ZoneY(float localYPt)
+            float ZoneY(float localYPt, float lineHPt)
             {
                 if (wrapPages is not { } pg) return localYPt;
 
@@ -1292,7 +1476,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 {
                     float docY = pg.ParaStartYPt + shifted;
                     float bottomPt = pg.PageBottomPt + pageCrossings * pg.PageStepPt;
-                    if (docY + probeLineHPt <= bottomPt) break;
+                    if (docY + lineHPt <= bottomPt) break;
 
                     float nextTopPt = pg.NextPageTopPt + pageCrossings * pg.PageStepPt;
                     pageShiftPt += nextTopPt - docY;
@@ -1302,61 +1486,185 @@ namespace Writersword.Modules.TextEditor.Rendering
                 return shifted;
             }
 
-            void ApplyBand(SKLineLayout line, (float Left, float Width, float ExtraTop) band)
+            // Отрезки полосы текущей строки и её вертикальное вытеснение.
+            var bandFragments = new List<SKWrapFragment>();
+            float bandExtraTop = 0f;
+
+            // Индекс отрезка, который сейчас заполняется, и координата его конца.
+            // currentW и X сегментов отсчитываются от левого края ПЕРВОГО отрезка:
+            // прыжок через объект просто входит в X, поэтому отрисовка, каретка и
+            // хит-тест работают с разорванной строкой без изменений.
+            int fragIdx = 0;
+            float fragEndW = 0f;
+            float lineIndentPt = 0f;
+
+            // Первый символ после прыжка обязан начать новый сегмент: иначе он слился бы
+            // с предыдущим по совпадению формата, и разрыв строки объектом потерялся бы.
+            bool segmentBreakPending = false;
+
+            // Высота, по которой посчитана полоса текущей строки. Пока в строке один текст,
+            // это проба абзаца; строка, куда попадает картинка, пересчитывает полосу по
+            // своей реальной высоте.
+            float lineProbeHPt = probeLineHPt;
+
+            // Проба для слова: слово с картинкой выше текстовой строки, и полосу под него
+            // надо искать по его высоте — иначе оно встанет сбоку от объекта туда, где
+            // помещается только текст.
+            float WordProbeHeight(List<(string Char, SKRunSegment Format, int GlobalIndex)> word)
             {
-                if (!hasZones) return;
-                line.WrapLeftPt = band.Left;
-                line.WrapAreaWidthPt = band.Width;
-                line.WrapExtraTopPt = band.ExtraTop;
+                float h = probeLineHPt;
+                foreach (var (_, format, _) in word)
+                {
+                    if (!format.IsInlineObject) continue;
+                    float th = TokenLineHeight(format);
+                    if (th > h) h = th;
+                }
+                return h;
             }
 
-            var band = ComputeBand(ZoneY(0f));
-
-            // Абзацный отступ первой строки ужимается до того, что реально влезает
-            // в полосу обтекания. Полный отступ применялся как есть: в полосе слева
-            // от объекта шириной 195 pt при отступе 191 pt строке оставалось 4 pt,
-            // и первый символ принудительно ставился по отступу — под объектом.
-            //
-            // Ужимаем до половины полосы, а НЕ до (полоса − minBandWidthPt): при
-            // привязке к порогу вытеснения отступ схлопывался почти в ноль, стоило
-            // полосе оказаться чуть выше порога, и прыгал 191 → 0.7 → 191 при
-            // перетаскивании картинки. Два независимых решения не должны делить
-            // одну константу.
-            if (hasZones && layout.FirstLineIndentPt > 0f)
+            // Требование к полосе для конкретного слова: по нему и решается, встанет ли
+            // строка сбоку от объекта. Порог по САМОМУ ДЛИННОМУ слову абзаца выгонял вниз
+            // весь текст, даже когда сбоку спокойно помещались короткие слова — картинка
+            // по центру колонки просто разрывала абзац пустой полосой во всю свою высоту.
+            float WordBandRequirement(
+                List<(string Char, SKRunSegment Format, int GlobalIndex)> word, float widthPt)
             {
-                float maxIndentPt = Math.Max(band.Width * 0.5f, 0f);
-                if (layout.FirstLineIndentPt > maxIndentPt)
-                    layout.FirstLineIndentPt = maxIndentPt;
+                float objectWidthPt = 0f;
+                foreach (var (_, format, _) in word)
+                    if (format.IsInlineObject && format.ObjectWidthPt > objectWidthPt)
+                        objectWidthPt = format.ObjectWidthPt;
+
+                return BandRequirement(widthPt, objectWidthPt);
             }
 
-            float lineWidth = Math.Max(band.Width - layout.FirstLineIndentPt, 1f);
             float currentW = 0f;
             var currentLine = new SKLineLayout { FirstCharIndex = tokens[0].GlobalIndex };
-            ApplyBand(currentLine, band);
             var wordBuffer = new List<(string Char, SKRunSegment Format, int GlobalIndex)>();
             float wordWidth = 0f;
 
-            void StartNewLine(int firstCharIndex)
+            // Раскладывает посчитанные отрезки на текущую (ещё пустую) строку.
+            void ApplyBandToCurrentLine()
+            {
+                if (bandFragments.Count == 0)
+                    bandFragments.Add(new SKWrapFragment(0f, textAreaWidthPt));
+
+                var first = bandFragments[0];
+
+                if (hasZones)
+                {
+                    currentLine.WrapLeftPt = first.LeftPt;
+                    currentLine.WrapAreaWidthPt = first.WidthPt;
+                    currentLine.WrapExtraTopPt = bandExtraTop;
+                }
+
+                currentLine.WrapFragments.Clear();
+                currentLine.WrapFragments.Add(first);
+
+                // Абзацный отступ первой строки ужимается до того, что реально влезает
+                // в полосу обтекания. Полный отступ применялся как есть: в полосе слева
+                // от объекта шириной 195 pt при отступе 191 pt строке оставалось 4 pt,
+                // и первый символ принудительно ставился по отступу — под объектом.
+                //
+                // Ужимаем до половины полосы, а НЕ до (полоса − требование): при
+                // привязке к порогу вытеснения отступ схлопывался почти в ноль, стоило
+                // полосе оказаться чуть выше порога, и прыгал 191 → 0.7 → 191 при
+                // перетаскивании картинки. Два независимых решения не должны делить
+                // одну константу.
+                lineIndentPt = 0f;
+                if (layout.Lines.Count == 0)
+                {
+                    if (hasZones && layout.FirstLineIndentPt > 0f)
+                        layout.FirstLineIndentPt = Math.Min(
+                            layout.FirstLineIndentPt, Math.Max(first.WidthPt * 0.5f, 0f));
+                    lineIndentPt = layout.FirstLineIndentPt;
+                }
+
+                fragIdx = 0;
+                currentW = 0f;
+                fragEndW = Math.Max(first.WidthPt - lineIndentPt, 1f);
+                segmentBreakPending = false;
+            }
+
+            // Переход в следующий отрезок этой же строки: текст обходит объект и
+            // продолжается за ним. Прыжок входит в координату X сегментов.
+            bool AdvanceFragment()
+            {
+                if (fragIdx + 1 >= bandFragments.Count) return false;
+
+                fragIdx++;
+                var fragment = bandFragments[fragIdx];
+                currentLine.WrapFragments.Add(fragment);
+
+                currentW = fragment.LeftPt - bandFragments[0].LeftPt - lineIndentPt;
+                fragEndW = currentW + fragment.WidthPt;
+                segmentBreakPending = true;
+                return true;
+            }
+
+            bandExtraTop = ComputeBand(
+                ZoneY(0f, lineProbeHPt), lineProbeHPt, minBandWidthPt, bandFragments);
+            ApplyBandToCurrentLine();
+
+            void StartNewLine(int firstCharIndex, float probeHPt, float requiredWidthPt)
             {
                 FinalizeLine(currentLine, layout, lineSpacing);
-                band = ComputeBand(ZoneY(layout.TotalHeightPt));
-                lineWidth = Math.Max(band.Width, 1f);
-                currentW = 0f;
+                lineProbeHPt = probeHPt;
+                bandExtraTop = ComputeBand(
+                    ZoneY(layout.TotalHeightPt, probeHPt), probeHPt, requiredWidthPt, bandFragments);
                 currentLine = new SKLineLayout { FirstCharIndex = firstCharIndex };
-                ApplyBand(currentLine, band);
+                ApplyBandToCurrentLine();
             }
 
             void FlushWord()
             {
                 if (wordBuffer.Count == 0) return;
 
-                if (currentW + wordWidth <= lineWidth || currentLine.Segments.Count == 0 && wordWidth <= lineWidth)
+                float wordProbeHPt = hasZones ? WordProbeHeight(wordBuffer) : lineProbeHPt;
+                float wordRequiredPt = hasZones
+                    ? WordBandRequirement(wordBuffer, wordWidth)
+                    : minBandWidthPt;
+
+                // Строка ещё пуста — полосу под неё ищем по тому слову, которое в неё
+                // сейчас пойдёт: по его ширине и его высоте. Полоса, посчитанная по
+                // абзацу целиком, отправляла бы вниз даже короткие слова.
+                if (hasZones && currentLine.Segments.Count == 0)
                 {
-                    if (currentW + wordWidth > lineWidth && currentLine.Segments.Count > 0)
+                    lineProbeHPt = wordProbeHPt;
+                    bandExtraTop = ComputeBand(
+                        ZoneY(layout.TotalHeightPt, wordProbeHPt), wordProbeHPt,
+                        wordRequiredPt, bandFragments);
+                    ApplyBandToCurrentLine();
+                }
+                else if (hasZones && wordProbeHPt > lineProbeHPt + 0.5f)
+                {
+                    // В начатой строке картинка уже не поместится по высоте —
+                    // переносим её на свою строку с честной полосой.
+                    StartNewLine(wordBuffer[0].GlobalIndex, wordProbeHPt, wordRequiredPt);
+                }
+
+                // Слово не влезло в текущий отрезок — пробуем следующий отрезок ЭТОЙ ЖЕ
+                // строки: при двустороннем обтекании текст перескакивает через объект
+                // и продолжается за ним, и только когда отрезки кончились — переносим строку.
+                // Переходим только в тот отрезок, куда слово реально влезет: иначе строка
+                // числилась бы разорванной, ничего в новый отрезок не поставив, и теряла
+                // бы выравнивание по центру и правому краю.
+                while (currentW + wordWidth > fragEndW
+                    && currentLine.Segments.Count > 0
+                    && fragIdx + 1 < bandFragments.Count
+                    && bandFragments[fragIdx + 1].WidthPt >= wordWidth
+                    && AdvanceFragment())
+                {
+                }
+
+                if (currentW + wordWidth <= fragEndW || currentLine.Segments.Count == 0 && wordWidth <= fragEndW)
+                {
+                    if (currentW + wordWidth > fragEndW && currentLine.Segments.Count > 0)
                     {
-                        StartNewLine(wordBuffer[0].GlobalIndex);
+                        StartNewLine(wordBuffer[0].GlobalIndex, wordProbeHPt, wordRequiredPt);
                     }
-                    AppendWordToLine(currentLine, wordBuffer, ref currentW);
+                    AppendWordToLine(currentLine, wordBuffer, ref currentW,
+                        segmentBreakPending, fragIdx);
+                    segmentBreakPending = false;
                     wordBuffer.Clear();
                     wordWidth = 0f;
                     return;
@@ -1364,17 +1672,20 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 if (currentLine.Segments.Count > 0)
                 {
-                    StartNewLine(wordBuffer[0].GlobalIndex);
+                    StartNewLine(wordBuffer[0].GlobalIndex, wordProbeHPt, wordRequiredPt);
                 }
 
                 foreach (var (ch, format, globalIdx) in wordBuffer)
                 {
                     float charWidth = MeasureChar(ch, format);
-                    if (currentW + charWidth > lineWidth && currentLine.Segments.Count > 0)
+                    if (currentW + charWidth > fragEndW && currentLine.Segments.Count > 0
+                        && !AdvanceFragment())
                     {
-                        StartNewLine(globalIdx);
+                        StartNewLine(globalIdx, wordProbeHPt, wordRequiredPt);
                     }
-                    AppendCharToLine(currentLine, ch, format, globalIdx, ref currentW, charWidth);
+                    AppendCharToLine(currentLine, ch, format, globalIdx,
+                        ref currentW, charWidth, segmentBreakPending, fragIdx);
+                    segmentBreakPending = false;
                 }
 
                 wordBuffer.Clear();
@@ -1387,10 +1698,15 @@ namespace Writersword.Modules.TextEditor.Rendering
                 {
                     FlushWord();
 
+                    // Пробел на границе отрезка не переносит текст за объект: он просто
+                    // не рисуется, как хвостовой пробел в конце строки.
                     float spaceWidth = MeasureChar(ch, format);
-                    if (currentW + spaceWidth <= lineWidth || currentLine.Segments.Count == 0)
+                    if (currentW + spaceWidth <= fragEndW || currentLine.Segments.Count == 0)
+                    {
                         AppendCharToLine(currentLine, ch, format, globalIdx,
-                            ref currentW, spaceWidth);
+                            ref currentW, spaceWidth, segmentBreakPending, fragIdx);
+                        segmentBreakPending = false;
+                    }
                 }
                 else
                 {
@@ -1420,24 +1736,38 @@ namespace Writersword.Modules.TextEditor.Rendering
         private static void AppendWordToLine(
             SKLineLayout line,
             List<(string Char, SKRunSegment Format, int GlobalIndex)> word,
-            ref float currentW)
+            ref float currentW,
+            bool forceNewSegment = false,
+            int wrapFragmentIndex = 0)
         {
+            bool breakSegment = forceNewSegment;
             foreach (var (ch, format, globalIdx) in word)
             {
                 float charWidth = MeasureChar(ch, format);
-                AppendCharToLine(line, ch, format, globalIdx, ref currentW, charWidth);
+                AppendCharToLine(line, ch, format, globalIdx, ref currentW, charWidth,
+                    breakSegment, wrapFragmentIndex);
+                breakSegment = false;
             }
         }
 
+        /// <param name="forceNewSegment">
+        /// Символ обязан начать новый сегмент. Нужно после прыжка через обтекаемый объект:
+        /// иначе он слился бы с предыдущим сегментом по совпадению формата, и разрыв
+        /// строки объектом потерялся бы — текст поехал бы поверх картинки.
+        /// </param>
         private static void AppendCharToLine(
             SKLineLayout line,
             string ch,
             SKRunSegment format,
             int globalIdx,
             ref float currentW,
-            float charWidth)
+            float charWidth,
+            bool forceNewSegment = false,
+            int wrapFragmentIndex = 0)
         {
-            var lastSeg = line.Segments.Count > 0 ? line.Segments[^1] : null;
+            var lastSeg = forceNewSegment || line.Segments.Count == 0
+                ? null
+                : line.Segments[^1];
 
             // Разрываем сегмент на границе пробел/не-пробел: тогда пробелы образуют отдельные
             // сегменты и при выравнивании по ширине между словами можно раздвигать промежутки.
@@ -1446,7 +1776,14 @@ namespace Writersword.Modules.TextEditor.Rendering
             bool lastSpace = lastSeg is not null && lastSeg.Text.Length > 0
                 && (lastSeg.Text[^1] == ' ' || lastSeg.Text[^1] == '\t');
 
-            if (lastSeg is not null && IsSameFormat(lastSeg, format) && curSpace == lastSpace)
+            // Объект в строке (картинка) всегда занимает отдельный сегмент: слияние
+            // с соседним текстом растворило бы ссылку на картинку, и на её месте
+            // нарисовался бы символ-заполнитель.
+            bool objectInvolved = format.IsInlineObject
+                || (lastSeg is not null && lastSeg.IsInlineObject);
+
+            if (!objectInvolved && lastSeg is not null
+                && IsSameFormat(lastSeg, format) && curSpace == lastSpace)
             {
                 lastSeg.Text += ch;
                 lastSeg.Width += charWidth;
@@ -1468,6 +1805,13 @@ namespace Writersword.Modules.TextEditor.Rendering
                     ColorCode = format.ColorCode,
                     HighlightCode = format.HighlightCode,
                     GlobalCharOffset = globalIdx,
+                    // Ссылка на картинку и её габарит — часть сегмента: без них строка
+                    // получила бы обычный текстовый сегмент с символом-заполнителем
+                    // вместо объекта.
+                    InlineImageId = format.InlineImageId,
+                    ObjectWidthPt = format.ObjectWidthPt,
+                    ObjectHeightPt = format.ObjectHeightPt,
+                    WrapFragmentIndex = wrapFragmentIndex,
                     X = currentW,
                     Width = charWidth
                 };
@@ -1487,6 +1831,12 @@ namespace Writersword.Modules.TextEditor.Rendering
             float maxAscent = 0f;
             float maxDescent = 0f;
 
+            // Метрики одного текста, без учёта габарита картинок: по ним рисуется каретка.
+            // Иначе рядом с крупной картинкой каретка растягивалась бы на всю её высоту,
+            // хотя печатается текст своего кегля.
+            float maxTextAscent = 0f;
+            float maxTextDescent = 0f;
+
             foreach (var seg in line.Segments)
             {
                 var typeface = GetOrCreateTypeface(seg.FontFamily, seg.IsBold, seg.IsItalic);
@@ -1496,6 +1846,17 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 float ascent = Math.Abs(metrics.Ascent);
                 float descent = Math.Abs(metrics.Descent);
+
+                // Шрифтовые метрики берём и у сегмента-картинки: он несёт кегль стиля,
+                // поэтому строка из одной картинки всё равно знает высоту своего текста.
+                if (ascent > maxTextAscent) maxTextAscent = ascent;
+                if (descent > maxTextDescent) maxTextDescent = descent;
+
+                // Картинка в строке стоит на базовой линии и поднимает высоту строки
+                // под себя — как крупный глиф. Иначе строка осталась бы высотой в
+                // шрифт, а картинка налезла бы на соседние строки.
+                if (seg.IsInlineObject && seg.ObjectHeightPt > ascent)
+                    ascent = seg.ObjectHeightPt;
 
                 if (ascent > maxAscent) maxAscent = ascent;
                 if (descent > maxDescent) maxDescent = descent;
@@ -1513,6 +1874,8 @@ namespace Writersword.Modules.TextEditor.Rendering
             line.Y = layout.TotalHeightPt;
             line.Height = lineHeight;
             line.Baseline = baseline;
+            line.TextAscentPt = maxTextAscent;
+            line.TextDescentPt = maxTextDescent;
 
             layout.TotalHeightPt += lineHeight;
             layout.Lines.Add(line);
@@ -1561,6 +1924,14 @@ namespace Writersword.Modules.TextEditor.Rendering
             float area = line.WrapAreaWidthPt > 0f ? line.WrapAreaWidthPt : layout.TextAreaWidthPt;
             float firstExtra = lineIndex == 0 ? layout.FirstLineIndentPt : 0f;
 
+            // Строка разорвана объектом и идёт по нескольким отрезкам: её ширина включает
+            // прыжок через объект, поэтому центрировать и прижимать вправо ПО СТРОКЕ нельзя —
+            // текст уехал бы на картинку. Базовая точка такой строки — левый край её первого
+            // отрезка; выравнивание по ширине при этом работает: растяжка считается внутри
+            // каждого отрезка отдельно (см. JustifyExtraPerSpace).
+            if (line.HasWrapFragments)
+                return line.WrapLeftPt + firstExtra;
+
             return line.WrapLeftPt + layout.Alignment switch
             {
                 RenderAlignment.Center => firstExtra + (area - firstExtra - line.TextWidth) / 2f,
@@ -1575,7 +1946,14 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// исключаются — иначе их доля растяжки уходит впустую и последнее слово не достаёт до
         /// правого края). Для последней/одиночной строки и не-Justify — 0.
         /// </summary>
-        public static float JustifyExtraPerSpace(SKTextLayout layout, int lineIndex)
+        /// <param name="fragmentIndex">
+        /// Отрезок строки, для которого считается растяжка. Строка, разорванная обтекаемым
+        /// объектом, растягивается по каждому отрезку отдельно: свободное место у левого
+        /// края объекта и у правого — это разные величины, а общая ширина такой строки
+        /// включает прыжок через картинку и для расчёта не годится.
+        /// </param>
+        public static float JustifyExtraPerSpace(
+            SKTextLayout layout, int lineIndex, int fragmentIndex = 0)
         {
             if (layout.Alignment != RenderAlignment.Justify) return 0f;
             if (lineIndex < 0 || lineIndex >= layout.Lines.Count) return 0f;
@@ -1583,11 +1961,18 @@ namespace Writersword.Modules.TextEditor.Rendering
             if (line.IsLastLine) return 0f;
 
             var segs = line.Segments;
+            bool fragmented = line.HasWrapFragments;
+            if (fragmented && (fragmentIndex < 0 || fragmentIndex >= line.WrapFragments.Count))
+                return 0f;
 
-            // Индекс последнего сегмента, содержащего непробельный символ.
+            bool InFragment(SKRunSegment seg)
+                => !fragmented || seg.WrapFragmentIndex == fragmentIndex;
+
+            // Индекс последнего сегмента отрезка, содержащего непробельный символ.
             int lastWordSeg = -1;
             for (int si = segs.Count - 1; si >= 0; si--)
             {
+                if (!InFragment(segs[si])) continue;
                 bool hasWord = false;
                 foreach (var c in segs[si].Text)
                     if (c != ' ' && c != '\t') { hasWord = true; break; }
@@ -1596,22 +1981,77 @@ namespace Writersword.Modules.TextEditor.Rendering
             if (lastWordSeg < 0) return 0f;
 
             int spaces = 0;
+            float contentWidth = 0f;
             for (int si = 0; si <= lastWordSeg; si++)
+            {
+                if (!InFragment(segs[si])) continue;
+                contentWidth += segs[si].Width;
                 foreach (var c in segs[si].Text)
                     if (c == ' ' || c == '\t') spaces++;
+            }
             if (spaces == 0) return 0f;
 
-            float trailingWidth = 0f;
-            for (int si = lastWordSeg + 1; si < segs.Count; si++)
-                trailingWidth += segs[si].Width;
+            // Абзацный отступ съедает место только в первом отрезке первой строки.
+            float firstExtra = lineIndex == 0 && (!fragmented || fragmentIndex == 0)
+                ? layout.FirstLineIndentPt
+                : 0f;
 
-            float firstExtra = lineIndex == 0 ? layout.FirstLineIndentPt : 0f;
-            float effectiveWidth = line.TextWidth - trailingWidth;
-            // При обтекании строка растягивается до края своей полосы, а не всей области.
-            float areaW = line.WrapAreaWidthPt > 0f ? line.WrapAreaWidthPt : layout.TextAreaWidthPt;
-            float free = (areaW - firstExtra) - effectiveWidth;
-            return free > 0f ? free / spaces : 0f;
+            // При обтекании строка растягивается до края своей полосы (своего отрезка),
+            // а не всей текстовой области.
+            float areaW = fragmented
+                ? line.WrapFragments[fragmentIndex].WidthPt
+                : (line.WrapAreaWidthPt > 0f ? line.WrapAreaWidthPt : layout.TextAreaWidthPt);
+
+            float free = (areaW - firstExtra) - contentWidth;
+            if (free <= 0f) return 0f;
+
+            float perSpace = free / spaces;
+
+            // Предел растяжки. В узкой полосе рядом с картинкой в строку попадает два-три
+            // слова, и свободное место, размазанное по одному-двум пробелам, разносит их
+            // на полколонки: строка выглядит развалившейся, а не выровненной. Как только
+            // пробел приходится растягивать сверх предела, отрезок оставляем по левому
+            // краю — рваный край читается лучше дыр между словами.
+            // Предел растяжки действует только там, где полосу сузила картинка: обычный
+            // текст выравнивается как раньше. По умолчанию предела нет — строка тянется
+            // до края своей полосы, как в Word.
+            //
+            // Ограничение имеет смысл только в широкой полосе: в колонке шириной в два
+            // слова единственный пробел приходится растягивать в восемь раз и больше,
+            // так что любой разумный предел там просто отключил бы выравнивание целиком.
+            // Если дыры между словами окажутся неприемлемы — поднимать нужно не предел,
+            // а ширину полосы (отступы обтекания или размер картинки).
+            bool narrowedByWrap = fragmented || line.WrapAreaWidthPt > 0f;
+            if (!narrowedByWrap || MaxSpaceStretch <= 0f) return perSpace;
+
+            float naturalSpacePt = 0f;
+            for (int si = 0; si <= lastWordSeg; si++)
+            {
+                if (!InFragment(segs[si]) || segs[si].IsInlineObject) continue;
+                naturalSpacePt = MeasureChar(" ", segs[si]);
+                break;
+            }
+
+            if (naturalSpacePt > 0f && perSpace > naturalSpacePt * MaxSpaceStretch)
+                return 0f;
+
+            return perSpace;
         }
+
+        /// <summary>
+        /// Предел растяжки пробела при выравнивании по ширине в полосе обтекания:
+        /// сколько СВОИХ ширин пробел может добрать сверх нормальной.
+        ///
+        /// 0 — предела нет: любой отрезок тянется до края своей полосы, даже когда слова
+        /// в нём расходятся к самым краям. Так ведёт себя Word, и так же выглядит ровнее
+        /// в узких полосах обтекания: короткий кусок, оставленный по левому краю, читается
+        /// как обрубок рядом с выровненными соседями.
+        ///
+        /// Положительное значение возвращает откат на левый край для строк, которым нужно
+        /// растянуть пробел сверх предела. Обычного текста, вне полос обтекания, предел
+        /// не касается ни при каком значении.
+        /// </summary>
+        private const float MaxSpaceStretch = 0f;
 
         // Индекс последнего сегмента строки, содержащего непробельный символ. -1 — таких нет.
         private static int LastContentSegIndex(SKLineLayout line)
@@ -1655,6 +2095,10 @@ namespace Writersword.Modules.TextEditor.Rendering
 
         private static float MeasureChar(string ch, SKRunSegment format)
         {
+            // Объект в строке занимает собственный габарит, а не ширину глифа
+            // символа-заполнителя.
+            if (format.IsInlineObject) return format.ObjectWidthPt;
+
             var typeface = GetOrCreateTypeface(format.FontFamily, format.IsBold, format.IsItalic);
             var font = GetOrCreateFont(typeface, format.FontSizePt);
             return font.MeasureText(ch);
@@ -1664,6 +2108,21 @@ namespace Writersword.Modules.TextEditor.Rendering
         {
             if (string.IsNullOrEmpty(seg.Text))
                 return Array.Empty<SKGlyphMetrics>();
+
+            // Объект в строке — один «глиф» со своей шириной. Хит-тест, каретка и
+            // выделение работают с ним как с обычным символом.
+            if (seg.IsInlineObject)
+            {
+                return new[]
+                {
+                    new SKGlyphMetrics
+                    {
+                        CharIndex = seg.GlobalCharOffset,
+                        X = 0f,
+                        Width = seg.ObjectWidthPt
+                    }
+                };
+            }
 
             // GetGlyphWidths измеряет все символы за один нативный вызов Skia.
             // Было: N вызовов font.MeasureText(char.ToString()) = N string аллокаций
@@ -2053,7 +2512,10 @@ namespace Writersword.Modules.TextEditor.Rendering
                 float lineShift = LineAlignShift(layout, i);
 
                 // Растяжение по ширине: распределяем свободное место по межсловным пробелам.
-                float extraPerSpace = JustifyExtraPerSpace(layout, i);
+                // У строки, разорванной обтекаемым объектом, каждый отрезок растягивается
+                // сам по себе — своя добавка и свой накопленный сдвиг.
+                int justifyFragment = 0;
+                float extraPerSpace = JustifyExtraPerSpace(layout, i, justifyFragment);
                 bool doJustify = extraPerSpace > 0f;
                 float justifyShift = 0f;
 
@@ -2066,8 +2528,32 @@ namespace Writersword.Modules.TextEditor.Rendering
                 foreach (var seg in line.Segments)
                 {
                     segIdx++;
+
+                    // Переход в следующий отрезок разорванной строки: накопленный сдвиг
+                    // растяжки обнуляется, добавка берётся своя — иначе текст справа от
+                    // картинки уехал бы на сдвиг, набранный слева от неё.
+                    if (seg.WrapFragmentIndex != justifyFragment)
+                    {
+                        justifyFragment = seg.WrapFragmentIndex;
+                        extraPerSpace = JustifyExtraPerSpace(layout, i, justifyFragment);
+                        doJustify = extraPerSpace > 0f;
+                        justifyShift = 0f;
+                    }
+
                     float segX = paraX + seg.X + lineShift + justifyShift;
                     float baseY = lineY + line.Baseline;
+
+                    // Объект в строке (картинка): рисует канвас через обработчик, сам сегмент
+                    // текстом не рисуется. Без этой ветки на месте картинки печатался бы
+                    // её символ-заполнитель — пустой квадрат.
+                    // Текстовые слои (заливка, подчёркивание, зачёркивание, градиент букв)
+                    // к объекту не применяются.
+                    if (seg.IsInlineObject)
+                    {
+                        DrawInlineObject?.Invoke(canvas, seg, segX, baseY);
+                        continue;
+                    }
+
                     // Над/подстрочный: смещаем базовую линию сегмента (вверх для надстрочного,
                     // вниз для подстрочного). Для обычного текста BaselineShiftPt = 0.
                     float segBaseY = baseY - seg.BaselineShiftPt;

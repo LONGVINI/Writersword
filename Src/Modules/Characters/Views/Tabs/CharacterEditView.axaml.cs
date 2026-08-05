@@ -1,9 +1,12 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using Avalonia;
+using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Writersword.Modules.Characters.ViewModels;
 
 namespace Writersword.Modules.Characters.Views.Tabs
@@ -12,10 +15,42 @@ namespace Writersword.Modules.Characters.Views.Tabs
     {
         // Ширина колонки бокового списка в компактном режиме (только аватарки)
         // и в скрытом (узкая полоса с кнопкой разворота).
-        private const double CompactSidebarWidth = 76;
+        //
+        // Компактная полоса: полоса прокрутки, поля плитки и сама строка
+        // с полоской цвета и аватаркой. Ширина с запасом, чтобы плитка не
+        // сжималась в квадрат; положение кружка внутри неё задают поля
+        // площадки в разметке строки.
+        private const double CompactSidebarWidth = 84;
         private const double HiddenSidebarWidth = 26;
 
         private CharactersViewModel? _subscribedViewModel;
+
+        // ── Плавная смена ширины бокового списка ──────────────────────────
+        // ColumnDefinition — не Animatable, обычные Transitions к нему не
+        // применить, поэтому ширина ведётся по кадрам таймером. Кривая та же,
+        // что у закладки группы в карточке: резкий старт, мягкое торможение.
+        // Открытие и закрытие идут по-разному. Наружу список выбрасывается
+        // резко и мягко тормозит у края — движение к человеку. Внутрь уходит
+        // спокойнее: у той же кривой в обратную сторону слишком резкий старт,
+        // и панель будто отдёргивают.
+        private static readonly TimeSpan SidebarExpandDuration = TimeSpan.FromMilliseconds(260);
+        private static readonly SplineEasing SidebarExpandEasing = new(0.165, 0.84, 0.44, 1);
+        private static readonly TimeSpan SidebarCollapseDuration = TimeSpan.FromMilliseconds(320);
+        private static readonly SplineEasing SidebarCollapseEasing = new(0.4, 0, 0.2, 1);
+
+        private DispatcherTimer? _sidebarTimer;
+        private ColumnDefinition? _sidebarColumn;
+        private readonly Stopwatch _sidebarClock = new();
+        private double _sidebarFrom;
+        private double _sidebarTo;
+        private double _sidebarTargetMin;
+        private double _sidebarTargetMax;
+        private TimeSpan _sidebarDuration = SidebarExpandDuration;
+        private Easing _sidebarEasing = SidebarExpandEasing;
+
+        // Первая раскладка при открытии вкладки идёт без хода: список должен
+        // сразу стоять в своей ширине, а не выезжать на глазах.
+        private bool _sidebarLayoutApplied;
 
         public CharacterEditView()
         {
@@ -93,40 +128,184 @@ namespace Writersword.Modules.Characters.Views.Tabs
             switch (vm.EditorSidebarMode)
             {
                 case 1:
-                    column.MinWidth = CompactSidebarWidth;
-                    column.MaxWidth = CompactSidebarWidth;
-                    column.Width = new GridLength(CompactSidebarWidth, GridUnitType.Pixel);
+                    SetSidebarColumn(column, CompactSidebarWidth, CompactSidebarWidth, CompactSidebarWidth);
                     break;
                 case 2:
-                    column.MinWidth = HiddenSidebarWidth;
-                    column.MaxWidth = HiddenSidebarWidth;
-                    column.Width = new GridLength(HiddenSidebarWidth, GridUnitType.Pixel);
+                    SetSidebarColumn(column, HiddenSidebarWidth, HiddenSidebarWidth, HiddenSidebarWidth);
                     break;
                 default:
-                    column.MinWidth = 170;
-                    column.MaxWidth = 520;
                     if (Math.Abs(column.ActualWidth - vm.EditorSidebarWidth) > 0.5)
-                        column.Width = new GridLength(vm.EditorSidebarWidth, GridUnitType.Pixel);
+                    {
+                        SetSidebarColumn(column, vm.EditorSidebarWidth, 170, 520);
+                    }
+                    else
+                    {
+                        column.MinWidth = 170;
+                        column.MaxWidth = 520;
+                    }
                     break;
             }
+
+            _sidebarLayoutApplied = true;
+        }
+
+        /// <summary>
+        /// Ведёт колонку к заданной ширине. Пределы колонки на время хода
+        /// снимаются: с прежним MinWidth колонка упёрлась бы в него на первом
+        /// же кадре и остаток пути прошла рывком. Конечные пределы ставятся,
+        /// когда ход закончен.
+        /// </summary>
+        private void SetSidebarColumn(ColumnDefinition column, double width, double minWidth, double maxWidth)
+        {
+            StopSidebarAnimation();
+
+            var from = column.ActualWidth;
+
+            // Первая раскладка и случай, когда идти некуда, — сразу на месте.
+            if (!_sidebarLayoutApplied || from < 1 || Math.Abs(from - width) < 0.5)
+            {
+                column.MinWidth = minWidth;
+                column.MaxWidth = maxWidth;
+                column.Width = new GridLength(width, GridUnitType.Pixel);
+                return;
+            }
+
+            column.MinWidth = 0;
+            column.MaxWidth = double.PositiveInfinity;
+
+            _sidebarColumn = column;
+            _sidebarFrom = from;
+            _sidebarTo = width;
+            _sidebarTargetMin = minWidth;
+            _sidebarTargetMax = maxWidth;
+
+            var collapsing = width < from;
+            _sidebarDuration = collapsing ? SidebarCollapseDuration : SidebarExpandDuration;
+            _sidebarEasing = collapsing ? SidebarCollapseEasing : SidebarExpandEasing;
+
+            _sidebarTimer ??= new DispatcherTimer(DispatcherPriority.Render)
+            {
+                Interval = TimeSpan.FromMilliseconds(16)
+            };
+            _sidebarTimer.Tick -= OnSidebarAnimationTick;
+            _sidebarTimer.Tick += OnSidebarAnimationTick;
+
+            _sidebarClock.Restart();
+            _sidebarTimer.Start();
+        }
+
+        private void OnSidebarAnimationTick(object? sender, EventArgs e)
+        {
+            if (_sidebarColumn is not { } column)
+            {
+                StopSidebarAnimation();
+                return;
+            }
+
+            var progress = _sidebarClock.Elapsed.TotalMilliseconds
+                           / _sidebarDuration.TotalMilliseconds;
+
+            if (progress >= 1)
+            {
+                column.Width = new GridLength(_sidebarTo, GridUnitType.Pixel);
+                column.MinWidth = _sidebarTargetMin;
+                column.MaxWidth = _sidebarTargetMax;
+                StopSidebarAnimation();
+                return;
+            }
+
+            var eased = _sidebarEasing.Ease(progress);
+            var current = _sidebarFrom + (_sidebarTo - _sidebarFrom) * eased;
+            column.Width = new GridLength(current, GridUnitType.Pixel);
+        }
+
+        private void StopSidebarAnimation()
+        {
+            _sidebarTimer?.Stop();
+            _sidebarClock.Reset();
+            _sidebarColumn = null;
         }
 
         private void OnCompactToggleClick(object? sender, RoutedEventArgs e)
         {
             if (DataContext is not CharactersViewModel vm) return;
+            _sidebarExpandedForSearch = false;
             vm.EditorSidebarMode = vm.EditorSidebarMode == 1 ? 0 : 1;
         }
 
         private void OnHideSidebarClick(object? sender, RoutedEventArgs e)
         {
-            if (DataContext is CharactersViewModel vm)
-                vm.EditorSidebarMode = 2;
+            if (DataContext is not CharactersViewModel vm) return;
+            _sidebarExpandedForSearch = false;
+            vm.EditorSidebarMode = 2;
         }
 
         private void OnRestoreSidebarClick(object? sender, RoutedEventArgs e)
         {
             if (DataContext is CharactersViewModel vm)
                 vm.RestoreSidebar();
+        }
+
+        // ── Поиск из компактного режима ───────────────────────────────────
+        // В компактном списке поля поиска нет — только лупа. Она разворачивает
+        // список на время набора: искать по одним аватаркам невозможно.
+        // Свернётся он сам, когда искать перестали.
+
+        private bool _sidebarExpandedForSearch;
+
+        private void OnSidebarSearchClick(object? sender, RoutedEventArgs e)
+        {
+            if (DataContext is not CharactersViewModel vm) return;
+
+            _sidebarExpandedForSearch = true;
+            vm.EditorSidebarMode = 0;
+
+            // Фокус ставится после раскладки: до неё поле ещё скрыто
+            // и фокус на него не встаёт.
+            Dispatcher.UIThread.Post(
+                () => this.FindControl<TextBox>("SidebarSearchBox")?.Focus(),
+                DispatcherPriority.Input);
+        }
+
+        private void OnSidebarSearchKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Escape) return;
+            if (DataContext is not CharactersViewModel vm) return;
+
+            // Первый Escape очищает запрос, второй — сворачивает список:
+            // набранное не должно пропадать вместе с панелью.
+            if (!string.IsNullOrEmpty(vm.SearchQuery))
+            {
+                vm.SearchQuery = string.Empty;
+                e.Handled = true;
+                return;
+            }
+
+            CollapseSidebarAfterSearch(vm);
+            e.Handled = true;
+        }
+
+        private void OnSidebarSearchLostFocus(object? sender, RoutedEventArgs e)
+        {
+            if (DataContext is not CharactersViewModel vm) return;
+
+            // С непустым запросом список остаётся развёрнутым: найденное нужно
+            // видеть и по нему щёлкать, а щелчок как раз уводит фокус.
+            if (!string.IsNullOrEmpty(vm.SearchQuery)) return;
+
+            CollapseSidebarAfterSearch(vm);
+        }
+
+        private void CollapseSidebarAfterSearch(CharactersViewModel vm)
+        {
+            if (!_sidebarExpandedForSearch) return;
+
+            _sidebarExpandedForSearch = false;
+
+            // Режим мог смениться руками, пока поле было открыто, — тогда
+            // возвращать нечего.
+            if (vm.EditorSidebarMode == 0)
+                vm.EditorSidebarMode = 1;
         }
 
         // ── Перетаскивание персонажа из бокового списка ───────────────────

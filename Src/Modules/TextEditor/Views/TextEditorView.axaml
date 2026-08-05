@@ -127,8 +127,7 @@
                           HorizontalScrollBarVisibility="Auto"
                           VerticalScrollBarVisibility="Auto"
                           AllowAutoHide="False"
-                          Background="{Binding DocumentViewModel.CanvasSettings.CanvasBackgroundColor,
-                              Converter={x:Static converters:HexColorConverter.Instance}}">
+                          Background="#E8E8E8">
 
 				<ScrollViewer.Styles>
 					<!-- Ползунок виден всегда, а не только при наведении -->

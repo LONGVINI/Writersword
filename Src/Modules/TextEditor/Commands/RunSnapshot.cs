@@ -15,13 +15,21 @@ namespace Writersword.Modules.TextEditor.Commands
         /// <summary>Форматирование run. Null означает форматирование по умолчанию.</summary>
         public RunProperties? Properties { get; }
 
-        public RunSnapshot(string text, RunProperties? properties)
+        /// <summary>
+        /// Id встроенной картинки, если снапшот описывает объект в строке.
+        /// Без него восстановление вернуло бы на место голый символ-заполнитель.
+        /// </summary>
+        public System.Guid? InlineImageId { get; }
+
+        public RunSnapshot(string text, RunProperties? properties,
+            System.Guid? inlineImageId = null)
         {
             Text = text;
             Properties = properties?.Clone();
+            InlineImageId = inlineImageId;
         }
 
         /// <summary>Клонировать снапшот.</summary>
-        public RunSnapshot Clone() => new(Text, Properties);
+        public RunSnapshot Clone() => new(Text, Properties, InlineImageId);
     }
 }

@@ -931,19 +931,19 @@
     <value>месяцев</value>
   </data>
   <data name="Settings_Backups_Unit_Tooltip" xml:space="preserve">
-    <value>Щелчок меняет единицу: минуты, часы, дни, недели, месяцы и снова минуты.</value>
+    <value>Щелчок меняет единицу: минуты, часы, дни, недели, месяцы</value>
   </data>
   <data name="Settings_Backups_Unlimited" xml:space="preserve">
     <value>Без ограничения</value>
   </data>
   <data name="Settings_Backups_MinInterval_Hint" xml:space="preserve">
-    <value>Ограничивает только автоматические точки. Точка по кнопке, при закрытии программы и перед откатом создаётся всегда.</value>
+    <value>Ограничивает только автоматические точки. Кнопкой, при закрытии программы и перед откатом точка создаётся всегда</value>
   </data>
   <data name="Settings_Backups_Thinning" xml:space="preserve">
     <value>Прореживать старые точки</value>
   </data>
   <data name="Settings_Backups_Thinning_Hint" xml:space="preserve">
-    <value>За сегодня хранятся все точки, за последнюю неделю — по одной на день, дальше — по одной на неделю. Точки, созданные кнопкой, не удаляются.</value>
+    <value>Оставляет по одной точке в день за прошлую неделю и по одной в неделю дальше. Созданные кнопкой не удаляются</value>
   </data>
   <data name="Settings_Backups_UserPoints" xml:space="preserve">
     <value>Точки, созданные вручную</value>
@@ -967,7 +967,7 @@
     <value>Сколько точек хранить</value>
   </data>
   <data name="Settings_Backups_UserPoints_Hint" xml:space="preserve">
-    <value>Такие точки не участвуют в прореживании: момент помечен осознанно. Правило ниже определяет, живут ли они вечно или всё-таки уступают место.</value>
+    <value>В прореживании не участвуют — удаляются только по правилу ниже</value>
   </data>
   <data name="Settings_Backups_CreatePoint" xml:space="preserve">
     <value>Создать точку сейчас</value>
@@ -982,14 +982,13 @@
     <value>Папка хранения</value>
   </data>
   <data name="Settings_Backups_Location_Hint" xml:space="preserve">
-    <value>Пусто — служебная папка в профиле пользователя, рядом с проектом ничего не появляется. Путь можно задать и внутри самого проекта: тогда он переезжает вместе с файлом, а если такой папки на другом компьютере нет, используются настройки того, кто открыл.</value>
+    <value>Пустое поле означает служебную папку в профиле пользователя — рядом с проектом ничего не появляется</value>
   </data>
   <data name="Settings_Backups_ProjectOverride" xml:space="preserve">
     <value>Своя папка для этого проекта</value>
   </data>
   <data name="Settings_Backups_ProjectOverride_Hint" xml:space="preserve">
-    <value>Путь хранится *внутри самого проекта* и переезжает вместе с файлом.
-Если на другом компьютере такой папки нет, ошибки не будет — там возьмётся *настройка того, кто открыл* проект.</value>
+    <value>Локальный путь хранится *внутри проекта* и переезжает вместе с файлом. Если такой папки на другом компьютере нет, возьмётся *настройка того, кто открыл*</value>
   </data>
   <data name="Settings_Backups_Browse" xml:space="preserve">
     <value>Обзор…</value>
@@ -1019,7 +1018,7 @@
     <value>Внимание: после отката данных станет меньше, чем сейчас.</value>
   </data>
   <data name="Settings_Backups_Hint" xml:space="preserve">
-    <value>Точка восстановления запоминает состояние проекта перед сохранением. Одинаковое содержимое хранится один раз, поэтому картинки и аватары не копируются заново при каждой точке.</value>
+    <value>Одинаковое содержимое хранится один раз, поэтому картинки и аватары не копируются заново в каждую точку</value>
   </data>
   <data name="Settings_Backups_Points" xml:space="preserve">
     <value>Точки восстановления</value>
@@ -1096,7 +1095,7 @@
     <value>Сравнить</value>
   </data>
   <data name="Settings_Backups_Compare_Tooltip" xml:space="preserve">
-    <value>Открыть точку рядом с текущей версией: можно переключаться между ними прямо в редакторе и принять ту, которая нужна.</value>
+    <value>Открыть точку рядом с текущей версией: можно переключаться между ними прямо в редакторе и принять ту, которая нужна</value>
   </data>
   <data name="Compare_SaveBlocked" xml:space="preserve">
     <value>Идёт сравнение версий — сохранение отключено. Выберите версию кнопками в баннере сверху.</value>

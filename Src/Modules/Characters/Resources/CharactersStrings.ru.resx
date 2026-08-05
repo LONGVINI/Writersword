@@ -315,6 +315,9 @@
   <data name="EditorSidebar_Show" xml:space="preserve">
     <value>Показать список</value>
   </data>
+  <data name="EditorSidebar_Search" xml:space="preserve">
+    <value>Найти персонажа</value>
+  </data>
   <data name="Placeholder_SelectCharacter" xml:space="preserve">
     <value>Выберите персонажа для просмотра</value>
   </data>
@@ -757,7 +760,7 @@
     <value>Это группа, а не человек</value>
   </data>
   <data name="Group_Hint" xml:space="preserve">
-    <value>Народ, семья, отряд, организация. Карточка та же — меняется только вид в списках: у группы своя закладка на уголке.</value>
+    <value>Народ, семья, отряд, организация. Карточка получает набор полей «Народ / Группа», поле «Сколько их» и закладку на уголке в списках. Снимете галку — набор отключится, написанное в полях останется.</value>
   </data>
   <data name="Group_Population" xml:space="preserve">
     <value>Сколько их</value>

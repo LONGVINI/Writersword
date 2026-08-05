@@ -568,6 +568,20 @@ namespace Writersword.Modules.TextEditor.Document
 
                     if (run.Text.Length == 0) continue;
 
+                    // Объект в строке шрифт не меняет — копируем целиком вместе со ссылкой
+                    // на картинку, иначе в предпросмотре вместо неё оказался бы
+                    // символ-заполнитель.
+                    if (run.IsInlineObject)
+                    {
+                        newChunk.Runs.Add(new RunModel
+                        {
+                            Text = run.Text,
+                            Properties = run.Properties,
+                            InlineImageId = run.InlineImageId
+                        });
+                        continue;
+                    }
+
                     // Ран целиком вне выделения — копируем как есть (свойства по ссылке).
                     if (runEnd <= from || runStart >= to)
                     {

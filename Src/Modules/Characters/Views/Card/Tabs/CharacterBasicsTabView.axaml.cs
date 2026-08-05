@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia;
@@ -485,6 +485,17 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
             vm.ReloadKnownLabels();
         }
 
+        // Общая правка меняет метки у других персонажей прямо в модели, а
+        // строки списка держат свои копии — без этого вызова карточки
+        // остальных персонажей показывали бы прежний значок до перезагрузки
+        // проекта.
+        private void RefreshListLabels()
+        {
+            var host = this.FindAncestorOfType<CharactersModuleView>();
+            if (host?.DataContext is CharactersViewModel moduleVm)
+                moduleVm.RefreshLabelsFromModel();
+        }
+
         // Редактор метки хостится в CharactersModuleView поверх содержимого,
         // как окно настроек карточки.
         private LabelEditorOverlay? FindLabelEditor()
@@ -613,7 +624,11 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
             if (sender is not Control c || c.DataContext is not Writersword.Modules.Characters.Models.CharacterLabel label) return;
             if (DataContext is not CharacterBasicsTabViewModel vm) return;
 
-            FindLabelEditor()?.ShowFor(label, updated => vm.UpsertLabel(updated));
+            FindLabelEditor()?.ShowFor(label, (updated, applyToAll) =>
+            {
+                vm.UpsertLabel(updated, applyToAll);
+                if (applyToAll) RefreshListLabels();
+            });
             e.Handled = true;
         }
 
@@ -622,7 +637,11 @@ namespace Writersword.Modules.Characters.Views.Card.Tabs
         {
             if (DataContext is not CharacterBasicsTabViewModel vm) return;
 
-            FindLabelEditor()?.ShowFor(null, created => vm.UpsertLabel(created));
+            FindLabelEditor()?.ShowFor(null, (created, applyToAll) =>
+            {
+                vm.UpsertLabel(created, applyToAll);
+                if (applyToAll) RefreshListLabels();
+            });
             e.Handled = true;
         }
 

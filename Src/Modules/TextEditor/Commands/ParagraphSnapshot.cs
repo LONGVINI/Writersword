@@ -32,7 +32,8 @@ namespace Writersword.Modules.TextEditor.Commands
             var runs = new List<RunSnapshot>();
             foreach (var chunk in para.Chunks)
                 foreach (var run in chunk.Runs)
-                    runs.Add(new RunSnapshot(run.Text ?? string.Empty, run.Properties));
+                    runs.Add(new RunSnapshot(
+                        run.Text ?? string.Empty, run.Properties, run.InlineImageId));
 
             return new ParagraphSnapshot(runs, CloneProperties(para.Properties));
         }

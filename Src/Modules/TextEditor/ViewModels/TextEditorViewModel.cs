@@ -134,6 +134,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 _documentViewModel.DocumentRestored -= OnDocumentRestored;
             }
 
+            // Старое представление картинки «в тексте» (отдельный блок в потоке) переводим
+            // в новое (символ в строке) до создания вью-моделей: дальше по коду документ
+            // должен быть уже в одном, актуальном виде.
+            Services.InlineImageMigration.Migrate(document);
+
             var docVm = new DocumentViewModel(document, _chunkManager, _autoReplace, _spellCheck);
             docVm.CursorContextChanged += OnCursorContextChanged;
             docVm.DocumentRestored += OnDocumentRestored;
@@ -162,10 +167,17 @@ namespace Writersword.Modules.TextEditor.ViewModels
             StatusBar.Zoom = document.Zoom > 0 ? document.Zoom : Settings.DefaultZoom;
             DocumentViewModel?.SetZoom(StatusBar.Zoom);
 
+            // Режим просмотра восстанавливается из документа так же, как зум. Без этого
+            // статус-бар остаётся со своим дефолтом Page при документе в веб-режиме, и
+            // кнопка «Страницы» перестаёт работать: её сеттер выходит по совпадению
+            // значения, пока пользователь не переключится на другой режим и обратно.
+            StatusBar.SyncViewMode(document.ViewMode);
+
             SyncRulerToDocument(document);
             Ruler.Zoom = StatusBar.Zoom;
             Ruler.Units = Settings.RulerUnits;
             Ruler.IsVisible = Settings.ShowRuler;
+            Ruler.PagesPerRow = DocumentViewModel?.PagesPerRow ?? 1;
 
             StartAutoSave(Settings.AutoSaveIntervalSeconds);
             RefreshStatusBar();
@@ -180,6 +192,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 if (DocumentViewModel is not null)
                     DocumentViewModel.PagesPerRow = pagesPerRow;
+                Ruler.PagesPerRow = pagesPerRow;
             };
 
             StatusBar.ZoomChanged = zoom =>
@@ -196,9 +209,54 @@ namespace Writersword.Modules.TextEditor.ViewModels
             LoadDocument(DocumentModel.CreateNew(), settings);
         }
 
+        /// <summary>
+        /// Применяет состояние вида, восстановленное из сессионных данных: режим
+        /// отображения и число страниц в ряду. Документ, статус-бар и линейка
+        /// обновляются одним проходом, иначе индикатор и канвас разъезжаются:
+        /// сеттер режима в статус-баре выходит по совпадению значения, и кнопка
+        /// нужного режима перестаёт реагировать на нажатие.
+        /// </summary>
+        public void ApplyRestoredViewState(EditorViewMode viewMode, int pagesPerRow)
+        {
+            if (DocumentViewModel is null) return;
+
+            DocumentViewModel.SetViewMode(viewMode);
+            StatusBar.SyncViewMode(viewMode);
+
+            DocumentViewModel.PagesPerRow = pagesPerRow;
+            StatusBar.SyncPagesPerRow(pagesPerRow);
+            Ruler.PagesPerRow = pagesPerRow;
+        }
+
+        /// <summary>
+        /// Убирает картинки, потерявшие свою страницу: целиком ушедшие мимо листа и
+        /// закреплённые, вылезшие на соседнюю страницу. Вызывать ТОЛЬКО при штатном
+        /// закрытии приложения — кеш восстановления обязан пережить аварийное
+        /// завершение вместе со всеми картинками.
+        /// Возвращает число удалённых.
+        /// </summary>
+        public int PurgeLostImagesBeforeExit()
+        {
+            if (DocumentViewModel is null) return 0;
+
+            int removed = Services.OffPageImageCleanup.Purge(DocumentViewModel.Document);
+            if (removed > 0)
+            {
+                _logger.Information("Удалено картинок вне страниц при закрытии: {N}", removed);
+                DocumentViewModel.RaiseStructureChanged();
+            }
+            return removed;
+        }
+
         public string? GetSerializedDocument()
         {
             if (DocumentViewModel is null) return null;
+
+            // Картинки, чей символ удалён из текста, до этого момента жили в документе —
+            // отмена удаления возвращала бы ссылку в никуда. В сохраняемый документ они
+            // уже не нужны.
+            DocumentViewModel.PurgeOrphanInlineObjects();
+
             return _serializer.Serialize(DocumentViewModel.Document);
         }
 
@@ -681,6 +739,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         // ── Изображение ───────────────────────────────────────────────────
         public void SetImageWrapMode(WrapMode mode) => DocumentViewModel?.SetImageWrapMode(mode);
+        public void SetImageWrapSide(WrapSide side) => DocumentViewModel?.SetImageWrapSide(side);
+        public WrapSide? GetSelectedImageWrapSide() => DocumentViewModel?.GetSelectedImageWrapSide();
+        public void SetImagePinnedPage(int page) => DocumentViewModel?.SetImagePinnedPage(page);
+        public int? GetSelectedImagePinnedPage() => DocumentViewModel?.GetSelectedImagePinnedPage();
+        public int? GetSelectedImageCurrentPage() => DocumentViewModel?.GetSelectedImageCurrentPage();
         public void SetImageLockAspect(bool locked) => DocumentViewModel?.SetImageLockAspect(locked);
         public void DeleteSelectedImage() => DocumentViewModel?.DeleteSelectedImage();
         public (WrapMode Wrap, bool LockAspect, Writersword.Modules.TextEditor.Models.Styles.TextAlignment Align)? GetSelectedImageInfo()

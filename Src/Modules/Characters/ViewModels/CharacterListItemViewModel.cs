@@ -18,7 +18,7 @@ namespace Writersword.Modules.Characters.ViewModels
         /// внешние отступы баннера: раскладка считает шаг списка, а не размер
         /// содержимого.
         /// </summary>
-        public double RowHeight => 52;
+        public double RowHeight => 56;
 
         private bool _isBeingNamed;
         private string _inlineName = string.Empty;
@@ -114,22 +114,33 @@ namespace Writersword.Modules.Characters.ViewModels
         /// <summary>Приглушение строки бокового списка при эффекте Dim.</summary>
         public double DeadRowOpacity => HasDimEffect ? 0.55 : 1.0;
 
-        // На карточке списка показываются первые метки (по порядку пользователя),
-        // остальные сворачиваются в «+N». Встроенная «Мёртв» исключается — у неё
-        // собственный крестик-бейдж, дубль не нужен.
-        private const int MaxCardLabels = 3;
-
+        // На карточке показываются все метки, помеченные к показу, в порядке
+        // пользователя. Ограничения по числу больше нет: значки идут по дуге
+        // вокруг аватарки, и раскладка сама сжимает шаг, а при нехватке места
+        // сводит их с нахлёстом. Прежний предел в три метки со счётчиком
+        // «плюс сколько-то» существовал из-за строки в углу карточки, которая
+        // упиралась в её ширину.
+        //
+        // Встроенная «Мёртв» из нижней дуги исключена: она особенная и
+        // выносится на ту же окружность, но в верхний правый угол аватарки —
+        // см. DeadLabels.
         public System.Collections.Generic.IReadOnlyList<Models.CharacterLabel> CardLabels =>
             _labels.Where(l => l.ShowOnCard && l.Id != Models.CharacterBuiltinLabels.DeadId)
                    .OrderBy(l => l.Order)
-                   .Take(MaxCardLabels)
                    .ToList();
 
-        public int CardLabelsOverflow => System.Math.Max(0,
-            _labels.Count(l => l.ShowOnCard && l.Id != Models.CharacterBuiltinLabels.DeadId) - MaxCardLabels);
-
-        public bool HasCardLabelsOverflow => CardLabelsOverflow > 0;
-        public string CardLabelsOverflowText => $"+{CardLabelsOverflow}";
+        /// <summary>
+        /// Метка «Мёртв» отдельным списком — из нуля или одного элемента.
+        /// Список, а не сама метка, потому что показывает её тот же
+        /// ItemsControl с той же раскладкой по дуге, только с другой
+        /// серединой: пустой список просто ничего не рисует.
+        ///
+        /// В угол самой карточки её ставить нельзя: там уже висит
+        /// закладка-ленточка группы и туда же выезжают кнопки правки.
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyList<Models.CharacterLabel> DeadLabels =>
+            _labels.Where(l => l.ShowOnCard && l.Id == Models.CharacterBuiltinLabels.DeadId)
+                   .ToList();
 
         internal void SetLabels(System.Collections.Generic.List<Models.CharacterLabel> labels)
         {
@@ -138,13 +149,26 @@ namespace Writersword.Modules.Characters.ViewModels
             this.RaisePropertyChanged(nameof(HasDimEffect));
             this.RaisePropertyChanged(nameof(DeadRowOpacity));
             this.RaisePropertyChanged(nameof(CardLabels));
-            this.RaisePropertyChanged(nameof(CardLabelsOverflow));
-            this.RaisePropertyChanged(nameof(HasCardLabelsOverflow));
-            this.RaisePropertyChanged(nameof(CardLabelsOverflowText));
+            this.RaisePropertyChanged(nameof(DeadLabels));
         }
 
         public string? AvatarPath => _avatarPath;
-        public bool IsCollective { get; }
+
+        // Признак группы приезжает из модели персонажа, но меняется уже после
+        // того, как строка списка построена: галку переключают на вкладке
+        // «Основное» открытой карточки. Закладка-ленточка читает его через
+        // ShowGroupBookmark, поэтому смена обязана поднимать уведомление —
+        // иначе строка держит то значение, с которым её создали.
+        private bool _isCollective;
+        public bool IsCollective
+        {
+            get => _isCollective;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _isCollective, value);
+                this.RaisePropertyChanged(nameof(ShowGroupBookmark));
+            }
+        }
 
         // Цвет папки, из которой взят персонаж, — для точки-индикатора справа
         // на баннере в результатах поиска Редактора. Заполняется при построении
@@ -431,7 +455,7 @@ namespace Writersword.Modules.Characters.ViewModels
             _frameThickness = character.FrameThickness;
             _avatarStrip = character.AvatarStrip;
             _fallbackIcon = character.FallbackIcon;
-            IsCollective = character.IsCollective;
+            _isCollective = character.IsCollective;
             RelationshipsCount = relationshipsCount;
             IsNewlyCreated = isNewlyCreated;
             _avatarPath = character.AvatarPath;

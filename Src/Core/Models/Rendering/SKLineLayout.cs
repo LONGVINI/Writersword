@@ -78,6 +78,30 @@ namespace Writersword.Core.Models.Rendering
         /// Устанавливается при сборке сегмента из RunProperties (надстрочный/подстрочный текст).
         /// </summary>
         public float BaselineShiftPt { get; init; }
+
+        /// <summary>
+        /// Id встроенной картинки, если сегмент — объект в строке, а не текст.
+        /// Такой сегмент всегда состоит ровно из одного символа-заполнителя:
+        /// ширина берётся из <see cref="ObjectWidthPt"/>, а не из шрифта, и
+        /// посимвольная логика строки работает с ним как с обычным глифом.
+        /// </summary>
+        public System.Guid? InlineImageId { get; init; }
+
+        /// <summary>Ширина объекта в pt. Значима только для сегмента-объекта.</summary>
+        public float ObjectWidthPt { get; init; }
+
+        /// <summary>Высота объекта в pt. Значима только для сегмента-объекта.</summary>
+        public float ObjectHeightPt { get; init; }
+
+        /// <summary>Сегмент описывает объект в строке, а не текст.</summary>
+        public bool IsInlineObject => InlineImageId.HasValue;
+
+        /// <summary>
+        /// Номер отрезка строки, в котором лежит сегмент (см. SKLineLayout.WrapFragments).
+        /// 0 — обычная строка в одной полосе. Нужен растяжке по ширине и выделению:
+        /// они считаются по каждому отрезку отдельно.
+        /// </summary>
+        public int WrapFragmentIndex { get; init; }
     }
 
     /// <summary>
@@ -104,6 +128,16 @@ namespace Writersword.Core.Models.Rendering
         /// Используется для выравнивания текста разного размера в одной строке.
         /// </summary>
         public float Baseline { get; set; }
+
+        /// <summary>
+        /// Подъём над базовой линией по метрикам ОДНОГО ТЕКСТА строки, pt — без учёта
+        /// габарита встроенных картинок. По нему рисуется каретка: рядом с крупной
+        /// картинкой она должна оставаться высотой в кегль текста, а не во всю строку.
+        /// </summary>
+        public float TextAscentPt { get; set; }
+
+        /// <summary>Спуск под базовую линию по метрикам одного текста строки, pt.</summary>
+        public float TextDescentPt { get; set; }
 
         /// <summary>
         /// Суммарная ширина текста строки без учёта trailing whitespace.
@@ -137,14 +171,31 @@ namespace Writersword.Core.Models.Rendering
         /// <summary>
         /// Левый сдвиг полосы строки внутри текстовой области при обтекании объекта, pt.
         /// 0 — строка начинается от левого края области.
+        /// Совпадает с левым краем первого отрезка (<see cref="WrapFragments"/>).
         /// </summary>
         public float WrapLeftPt { get; set; }
 
         /// <summary>
         /// Ширина доступной полосы строки при обтекании, pt.
         /// 0 — обтекания нет, строка располагается во всей текстовой области.
+        /// Совпадает с шириной первого отрезка.
         /// </summary>
         public float WrapAreaWidthPt { get; set; }
+
+        /// <summary>
+        /// Свободные отрезки строки при обтекании с двух сторон: строка заполняет первый,
+        /// перескакивает через объект и продолжается в следующем. Координаты — от левого
+        /// края текстовой области, pt.
+        ///
+        /// Пусто или один элемент — обычная строка в одной полосе, и весь код может
+        /// работать по <see cref="WrapLeftPt"/> и <see cref="WrapAreaWidthPt"/>.
+        /// Больше одного — строка разорвана объектом, и выравнивание, растяжка по ширине
+        /// и подсветка выделения обязаны считаться по отрезкам, а не по строке целиком.
+        /// </summary>
+        public List<SKWrapFragment> WrapFragments { get; } = new();
+
+        /// <summary>Строка разорвана объектом и идёт по нескольким отрезкам.</summary>
+        public bool HasWrapFragments => WrapFragments.Count > 1;
 
         /// <summary>
         /// Дополнительный вертикальный сдвиг перед строкой, pt: строка вытеснена
@@ -154,19 +205,56 @@ namespace Writersword.Core.Models.Rendering
     }
 
     /// <summary>
+    /// С какой стороны от объекта разрешено идти тексту.
+    /// </summary>
+    public enum SKWrapSide
+    {
+        /// <summary>Только по той стороне, где больше свободного места.</summary>
+        LargestOnly = 0,
+        /// <summary>С обеих сторон: строка идёт слева от объекта и продолжается справа.</summary>
+        BothSides = 1,
+        /// <summary>Только слева от объекта.</summary>
+        LeftOnly = 2,
+        /// <summary>Только справа от объекта.</summary>
+        RightOnly = 3
+    }
+
+    /// <summary>
+    /// Свободный отрезок строки при обтекании: левый край и ширина, pt,
+    /// от левого края текстовой области параграфа.
+    /// </summary>
+    public readonly struct SKWrapFragment
+    {
+        public SKWrapFragment(float leftPt, float widthPt)
+        {
+            LeftPt = leftPt;
+            WidthPt = widthPt;
+        }
+
+        public float LeftPt { get; }
+        public float WidthPt { get; }
+        public float RightPt => LeftPt + WidthPt;
+    }
+
+    /// <summary>
     /// Зона исключения при обтекании текстом — габарит плавающего объекта с полями.
     /// Координаты в pt: Y — относительно верха первой строки параграфа,
     /// X — относительно левого края текстовой области параграфа.
     /// </summary>
     public readonly struct SKWrapZone
     {
-        public SKWrapZone(float topPt, float bottomPt, float leftPt, float rightPt)
+        public SKWrapZone(float topPt, float bottomPt, float leftPt, float rightPt,
+            SKWrapSide side = SKWrapSide.LargestOnly)
         {
             TopPt = topPt;
             BottomPt = bottomPt;
             LeftPt = leftPt;
             RightPt = rightPt;
+            Side = side;
         }
+
+        /// <summary>С какой стороны от этого объекта разрешено идти тексту.</summary>
+        public SKWrapSide Side { get; }
 
         public float TopPt { get; }
         public float BottomPt { get; }

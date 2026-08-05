@@ -153,6 +153,14 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         }
         public ObservableCollection<CharacterLabel> Labels { get; } = new();
 
+        // Пустые списки чипов убираются из разметки целиком: сам по себе пустой
+        // ItemsControl нулевой высоты, но забирает интервал StackPanel, и между
+        // подписью и полем ввода повисает лишний зазор. Уведомления приходят
+        // из подписок на сами коллекции — их правят и вьюмодель, и code-behind.
+        public bool HasLabels => Labels.Count > 0;
+        public bool HasTags => Tags.Count > 0;
+        public bool HasAlternateNames => AlternateNames.Count > 0;
+
         public ReactiveCommand<Unit, Unit> OpenPickerCommand { get; }
         public ReactiveCommand<Unit, Unit> DeleteAvatarCommand { get; }
         public ReactiveCommand<string, Unit> AddNameCommand { get; }
@@ -184,14 +192,23 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         }
 
         /// <summary>
-        /// Метка, чей значок выводится бейджем поверх аватара в карточке:
-        /// первая по порядку пользователя из тех, что помечены к показу.
-        /// Тот же принцип, что на карточках списков — смысл несёт объект.
+        /// Метки, показываемые значками вокруг аватара, в порядке
+        /// пользователя. Прежде в шапке висел один-единственный бейдж —
+        /// первая метка по порядку; остальные были видны только списком
+        /// фишек ниже. Дуга вокруг аватара вмещает их все.
         /// </summary>
-        public CharacterLabel? CardBadge =>
-            Labels.Where(l => l.ShowOnCard).OrderBy(l => l.Order).FirstOrDefault();
+        public System.Collections.Generic.IReadOnlyList<CharacterLabel> CardLabels =>
+            Labels.Where(l => l.ShowOnCard && l.Id != CharacterBuiltinLabels.DeadId)
+                  .OrderBy(l => l.Order)
+                  .ToList();
 
-        public bool HasCardBadge => CardBadge != null;
+        /// <summary>
+        /// «Мёртв» отдельным списком из нуля или одного элемента: она
+        /// выносится на ту же окружность вокруг аватара, но в верхний правый
+        /// угол, а не в общую нижнюю дугу.
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyList<CharacterLabel> DeadLabels =>
+            Labels.Where(l => l.ShowOnCard && l.Id == CharacterBuiltinLabels.DeadId).ToList();
 
         public Func<Task<string?>>? RequestPickerOpen { get; set; }
 
@@ -314,7 +331,39 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         public string NarrativeEndPoint { get => _narrativeEndPoint; set => this.RaiseAndSetIfChanged(ref _narrativeEndPoint, value); }
 
         private bool _isCollective;
-        public bool IsCollective { get => _isCollective; set => this.RaiseAndSetIfChanged(ref _isCollective, value); }
+        public bool IsCollective
+        {
+            get => _isCollective;
+            set
+            {
+                if (_isCollective == value) return;
+                this.RaiseAndSetIfChanged(ref _isCollective, value);
+                SyncCollectiveAnketa(value);
+            }
+        }
+
+        /// <summary>
+        /// Состав карточки следует за признаком группы: включённый флаг
+        /// подключает набор «Народ / Группа», снятый — отключает. Тот же набор
+        /// прицепляет кнопка создания группы в списке, поэтому карточка,
+        /// сделанная группой любым из двух путей, выглядит одинаково.
+        ///
+        /// Значения полей при отключении остаются — как и при обычном
+        /// DetachAnketa: переключатель правит состав карточки, а не стирает
+        /// написанное. Автор мог ошибиться и вернуть человека обратно.
+        /// </summary>
+        private void SyncCollectiveAnketa(bool isCollective)
+        {
+            if (_anketaService == null) return;
+            if (_anketaService.GetById(CharacterAnketa.CollectiveId) == null) return;
+
+            var attached = AttachedAnketas.Any(a => a.Id == CharacterAnketa.CollectiveId);
+
+            if (isCollective && !attached)
+                AttachAnketa(CharacterAnketa.CollectiveId);
+            else if (!isCollective && attached)
+                DetachAnketa(CharacterAnketa.CollectiveId);
+        }
 
         private string _populationNote = string.Empty;
         public string PopulationNote { get => _populationNote; set => this.RaiseAndSetIfChanged(ref _populationNote, value); }
@@ -334,6 +383,10 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             ReloadKnownTags();
             ReloadKnownLabels();
             ReloadAnketas(character);
+
+            Labels.CollectionChanged += (_, _) => this.RaisePropertyChanged(nameof(HasLabels));
+            Tags.CollectionChanged += (_, _) => this.RaisePropertyChanged(nameof(HasTags));
+            AlternateNames.CollectionChanged += (_, _) => this.RaisePropertyChanged(nameof(HasAlternateNames));
 
             OpenPickerCommand = ReactiveCommand.CreateFromTask(async () =>
             {
@@ -389,13 +442,16 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                 {
                     Labels.Add(new CharacterLabel
                     {
-                        // У встроенных меток Id общий для всех персонажей —
-                        // по нему они опознаются как встроенные.
-                        Id = known.IsBuiltIn ? known.Id : Guid.NewGuid().ToString(),
+                        // Идентификатор берётся у образца из реестра: по нему
+                        // метка у разных персонажей опознаётся как одна и та
+                        // же, и по нему же расходится правка общей метки.
+                        Id = known.Id,
                         Name = known.Name,
                         Icon = known.Icon,
                         IconImage = known.IconImage,
                         Color = known.Color,
+                        IconColor = known.IconColor,
+                        ShowBackdrop = known.ShowBackdrop,
                         Effect = known.Effect,
                         ShowOnCard = known.ShowOnCard,
                         Description = known.Description,
@@ -404,11 +460,15 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
                     return;
                 }
 
-                Labels.Add(new CharacterLabel
+                // Метки в проекте ещё нет — заводим и сразу вносим в реестр,
+                // иначе её не предложат другому персонажу.
+                var created = new CharacterLabel
                 {
                     Name = trimmed,
                     Order = Labels.Count
-                });
+                };
+                Labels.Add(created);
+                _characterService.SaveGlobalLabel(created);
             });
             RemoveLabelCommand = ReactiveCommand.Create<string>(id =>
             {
@@ -423,8 +483,8 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             Labels.CollectionChanged += (_, _) =>
             {
                 this.RaisePropertyChanged(nameof(IsDead));
-                this.RaisePropertyChanged(nameof(CardBadge));
-                this.RaisePropertyChanged(nameof(HasCardBadge));
+                this.RaisePropertyChanged(nameof(CardLabels));
+                this.RaisePropertyChanged(nameof(DeadLabels));
             };
         }
 
@@ -432,8 +492,13 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
         /// Применить метку из редактора: существующая заменяется по Id (замена
         /// элемента коллекции перерисовывает чип и триггерит автосейв), новая
         /// добавляется в конец. Порядок перенумеровывается.
+        ///
+        /// asGlobal — записать вид в реестр проекта и разнести его по всем
+        /// персонажам с этой же меткой. Без него правка остаётся личной: у
+        /// одного «Ранен» может быть с каплей, у другого — с крестом, и это
+        /// законно.
         /// </summary>
-        public void UpsertLabel(CharacterLabel label)
+        public void UpsertLabel(CharacterLabel label, bool asGlobal = false)
         {
             var index = -1;
             for (int i = 0; i < Labels.Count; i++)
@@ -443,6 +508,22 @@ namespace Writersword.Modules.Characters.ViewModels.Tabs
             else Labels.Add(label);
 
             RenumberLabels();
+
+            // Метка, которой в реестре ещё нет, вносится туда в любом
+            // случае: реестр — это каталог меток проекта, а не только список
+            // тех, чей вид кто-то решил сделать общим. Личная правка уже
+            // known-метки в реестр при этом не уходит.
+            var isKnown = _characterService.GetAllLabels().Any(l => l.Id == label.Id);
+            if (!isKnown)
+            {
+                _characterService.SaveGlobalLabel(label);
+                return;
+            }
+
+            if (!asGlobal) return;
+
+            _characterService.SaveGlobalLabel(label);
+            _characterService.ApplyLabelToAll(label);
         }
 
         /// <summary>

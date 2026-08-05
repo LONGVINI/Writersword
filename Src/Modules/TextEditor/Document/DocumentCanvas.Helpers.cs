@@ -53,11 +53,13 @@ namespace Writersword.Modules.TextEditor.Document
         // полную десериализацию с пересбором всех вью-моделей.
         private ImagePropertiesCommand? _pendingImageCommand;
 
-        private void BeginImageEdit(string description)
+        private void BeginImageEdit(string description) => BeginImageEdit(_selectedImage, description);
+
+        private void BeginImageEdit(ImageBlock? image, string description)
         {
-            if (_selectedImage is null) return;
+            if (image is null) return;
             _logger.Debug("[UNDO] BeginImageEdit: {D}", description);
-            _pendingImageCommand = new ImagePropertiesCommand(_selectedImage, description)
+            _pendingImageCommand = new ImagePropertiesCommand(image, description)
             {
                 Changed = () =>
                 {
@@ -109,7 +111,17 @@ namespace Writersword.Modules.TextEditor.Document
         // Очищает содержимое всех выделенных ячеек и сбрасывает cell-range режим.
         private void ClearCellRangeSelection()
         {
-            if (_tableSelections.Count == 0) return;
+            if (_tableSelections.Count == 0)
+            {
+                // Флаг режима сбрасывается даже когда очищать нечего. Диапазон ячеек
+                // снимается и в других местах (клик, ввод текста, перестроение), а
+                // флаг там оставался поднятым — и ранний выход отсюда его не трогал.
+                // В таком состоянии Delete и Backspace попадали в ветку «идёт
+                // выделение ячеек», уходили сюда и не удаляли ничего: набор текста
+                // работал, а удаление было наглухо заблокировано до следующего клика.
+                _isCellRangeSelecting = false;
+                return;
+            }
 
             BeginEdit("Delete cell contents");
 
@@ -209,13 +221,38 @@ namespace Writersword.Modules.TextEditor.Document
                 int si = DocVm?.Paragraphs.IndexOf(sVm) ?? 0;
                 int ei = DocVm?.Paragraphs.IndexOf(eVm) ?? 0;
 
+                // Картинки, через которые прошло выделение, удаляются вместе с текстом:
+                // они подсвечены как выделенные, и оставить их висеть в документе значило бы
+                // соврать пользователю. Инлайн-картинки сюда не относятся — их символ
+                // уходит вместе с текстом абзаца.
+                var imagesToDelete = ImagesInTextSelection();
+                if (imagesToDelete.Count > 0 && DocVm is not null)
+                {
+                    var flowBlocks = DocVm.Document.Sections[0].Blocks;
+                    foreach (var image in imagesToDelete)
+                    {
+                        flowBlocks.Remove(image);
+                        DocVm.Document.Sections[0].FloatingObjects.Remove(image);
+                    }
+                    _imagesInTextSelection = new HashSet<ImageBlock>();
+                }
+
                 var toDelete = new List<ParagraphViewModel>();
                 for (int di = ei; di > si; di--)
                     if (di < (DocVm?.Paragraphs.Count ?? 0))
                         toDelete.Add(DocVm!.Paragraphs[di]);
 
                 // Удаляем хвост первого параграфа и голову последнего, сохраняя форматирование.
-                sVm.Model.SpliceText(s2, st.Length, et[e2..]);
+                // Хвост последнего переносим посимвольно: плоский текст потерял бы и
+                // форматирование символов, и картинки в строке.
+                var headCells = sVm.Model.ToCharCells();
+                if (headCells.Count > s2) headCells.RemoveRange(s2, headCells.Count - s2);
+
+                var tailCells = eVm.Model.ToCharCells();
+                if (e2 > 0) tailCells.RemoveRange(0, Math.Min(e2, tailCells.Count));
+                headCells.AddRange(tailCells);
+
+                sVm.Model.RebuildFromCharCells(headCells);
                 sVm.RefreshPlainTextFromModel();
                 foreach (var p in toDelete) DocVm?.DeleteParagraph(p);
                 _caretChar = s2;
@@ -339,6 +376,10 @@ namespace Writersword.Modules.TextEditor.Document
 
                 blocks.Add(new ClipboardBlock { Kind = ClipboardBlockKind.Paragraph, Text = text, Block = CloneParagraphBlock(pvm.Model, from, to) });
                 plainParts.Add(text);
+
+                // Картинки, стоящие в потоке сразу за этим абзацем и попавшие в выделение,
+                // кладём следом — тогда при вставке они окажутся между теми же абзацами.
+                AppendImagesAfterParagraph(blocks, pvm.Model);
             }
 
             if (blocks.Count == 0) return;
@@ -575,8 +616,8 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 await CopyImageToClipboard(_selectedImage);
                 var toRemove = _selectedImage;
+                ExitImageCropMode(apply: false);
                 _selectedImage = null;
-                _imageCropMode = false;
                 DocVm?.RemoveImage(toRemove);
                 ImageSelectionChanged?.Invoke(false);
                 InvalidateFull();
@@ -601,6 +642,63 @@ namespace Writersword.Modules.TextEditor.Document
                 SyncSel(); ResetCaret(); InvalidateFull();
             }
         }
+
+        /// <summary>
+        /// Добавляет в буфер картинки, идущие в потоке сразу за абзацем и попавшие
+        /// в текстовое выделение. Порядок буфера повторяет порядок документа, поэтому
+        /// вставка воспроизводит ту же структуру «абзац — картинка — абзац».
+        /// </summary>
+        private void AppendImagesAfterParagraph(List<ClipboardBlock> blocks, ParagraphBlock para)
+        {
+            if (_imagesInTextSelection.Count == 0 || DocVm is null) return;
+
+            var flowBlocks = DocVm.Document.Sections[0].Blocks;
+            int idx = flowBlocks.IndexOf(para);
+            if (idx < 0) return;
+
+            for (int i = idx + 1; i < flowBlocks.Count; i++)
+            {
+                if (flowBlocks[i] is not ImageBlock image) break;
+                if (!_imagesInTextSelection.Contains(image)) break;
+                blocks.Add(new ClipboardBlock
+                {
+                    Kind = ClipboardBlockKind.Image,
+                    Image = CloneImageBlockForClipboard(image)
+                });
+            }
+        }
+
+        /// <summary>Копия картинки для буфера: все свойства, файл переиспользуется.</summary>
+        private static ImageBlock CloneImageBlockForClipboard(ImageBlock src) => new()
+        {
+            ImageFileName = src.ImageFileName,
+            WidthPt = src.WidthPt,
+            HeightPt = src.HeightPt,
+            LockAspectRatio = src.LockAspectRatio,
+            RotationDeg = src.RotationDeg,
+            Opacity = src.Opacity,
+            BorderColor = src.BorderColor,
+            BorderThicknessPt = src.BorderThicknessPt,
+            FlipHorizontal = src.FlipHorizontal,
+            FlipVertical = src.FlipVertical,
+            CropLeftFrac = src.CropLeftFrac,
+            CropTopFrac = src.CropTopFrac,
+            CropRightFrac = src.CropRightFrac,
+            CropBottomFrac = src.CropBottomFrac,
+            WrapMode = src.WrapMode,
+            WrapSide = src.WrapSide,
+            PinnedPage = src.PinnedPage,
+            Alignment = src.Alignment,
+            Anchor = src.Anchor,
+            WrapPadTopPt = src.WrapPadTopPt,
+            WrapPadBottomPt = src.WrapPadBottomPt,
+            WrapPadLeftPt = src.WrapPadLeftPt,
+            WrapPadRightPt = src.WrapPadRightPt,
+            OffsetXPt = src.OffsetXPt,
+            OffsetYPt = src.OffsetYPt,
+            ZOrder = src.ZOrder,
+            AltText = src.AltText
+        };
 
         /// <summary>
         /// Создаёт глубокую копию ParagraphBlock для внутреннего буфера обмена.
@@ -755,8 +853,8 @@ namespace Writersword.Modules.TextEditor.Document
                     : DocVm.InsertImageClone(_clipboardImage);
                 if (pasted is not null)
                 {
+                    ExitImageCropMode(apply: false);
                     _selectedImage = pasted;
-                    _imageCropMode = false;
                     ImageSelectionChanged?.Invoke(true);
                 }
                 RebuildLayouts();
@@ -855,6 +953,13 @@ namespace Writersword.Modules.TextEditor.Document
                             if (postAnchor != null)
                                 anchorBlock = postAnchor;
                         }
+                        else if (block.Kind == ClipboardBlockKind.Image && block.Image != null)
+                        {
+                            // Картинка возвращается на то же место в потоке — сразу за
+                            // абзацем, после которого она стояла при копировании.
+                            isFirstBlock = false;
+                            DocVm.InsertImageAfterBlock(block.Image, anchorBlock);
+                        }
                         else if (block.Kind == ClipboardBlockKind.Paragraph)
                         {
                             var anchorVm = DocVm.Paragraphs.FirstOrDefault(v => v.Model == anchorBlock);
@@ -878,6 +983,9 @@ namespace Writersword.Modules.TextEditor.Document
                                 if (nv != null)
                                 {
                                     ApplyClipboardParagraph(nv, block);
+                                    // Картинки в строках вставленного абзаца получают свои копии
+                                    // объектов: иначе оригинал и копия делили бы одну картинку.
+                                    DocVm.MaterializeInlineImages(nv.Model);
                                     anchorBlock = nv.Model;
                                 }
                             }
@@ -923,6 +1031,13 @@ namespace Writersword.Modules.TextEditor.Document
                 text = await cb.TryGetTextAsync();
 #pragma warning restore CS0618
             }
+            if (string.IsNullOrEmpty(text)) return;
+
+            // Символ-заполнитель объекта из чужого текста вставлять нельзя: сам объект
+            // в этот документ не переносится, и в строке осталась бы позиция-невидимка,
+            // по которой ходит каретка, а показывать нечего.
+            if (text.IndexOf(RunModel.ObjectPlaceholder) >= 0)
+                text = text.Replace(RunModel.ObjectPlaceholder.ToString(), string.Empty);
             if (string.IsNullOrEmpty(text)) return;
 
             _ = PrefetchClipboardAsync();
@@ -1482,10 +1597,64 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (_isTransitioning && TopLevel.GetTopLevel(this) is not null)
                 _isTransitioning = false;
+            RefreshImagesInTextSelection();
             _contentDirty = true;
             _caretOnlyRedraw = false;
             InvalidateVisual();
         }
+
+        /// <summary>
+        /// Пересчитывает набор плавающих картинок, попавших в текстовое выделение:
+        /// это те, что стоят в потоке между первым и последним выделенными абзацами.
+        /// Считается здесь, на UI-потоке: рендер только читает готовый набор.
+        ///
+        /// Картинка «в тексте» сюда не входит — она обычный символ абзаца и попадает
+        /// в выделение вместе с текстом.
+        /// </summary>
+        private void RefreshImagesInTextSelection()
+        {
+            // Выделение внутри одного абзаца картинок между абзацами не захватывает —
+            // самый частый случай (набор текста) не платит ни за что.
+            if (DocVm is null || !HasSel() || _selStartPara == _selEndPara)
+            {
+                if (_imagesInTextSelection.Count > 0)
+                    _imagesInTextSelection = new HashSet<ImageBlock>();
+                return;
+            }
+
+            var (sp, _, ep, _) = NormalizeSelection();
+            var startModel = GetVmAt(sp)?.Model;
+            var endModel = GetVmAt(ep)?.Model;
+            if (startModel is null || endModel is null)
+            {
+                if (_imagesInTextSelection.Count > 0)
+                    _imagesInTextSelection = new HashSet<ImageBlock>();
+                return;
+            }
+
+            var found = new HashSet<ImageBlock>();
+            foreach (var section in DocVm.Document.Sections)
+            {
+                // Абзацы ячеек таблиц в Blocks не лежат — там IndexOf вернёт -1,
+                // и раздел просто пропускается.
+                int si = section.Blocks.IndexOf(startModel);
+                int ei = section.Blocks.IndexOf(endModel);
+                if (si < 0 || ei < 0) continue;
+                if (ei < si) (si, ei) = (ei, si);
+
+                for (int i = si + 1; i < ei; i++)
+                    if (section.Blocks[i] is ImageBlock image)
+                        found.Add(image);
+            }
+
+            _imagesInTextSelection = found;
+        }
+
+        /// <summary>Картинки, попавшие в текущее текстовое выделение (для копирования и удаления).</summary>
+        private List<ImageBlock> ImagesInTextSelection()
+            => _imagesInTextSelection.Count == 0
+                ? new List<ImageBlock>()
+                : new List<ImageBlock>(_imagesInTextSelection);
 
         private void ResetCaret()
         {

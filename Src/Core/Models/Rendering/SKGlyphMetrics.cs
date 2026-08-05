@@ -104,5 +104,12 @@ namespace Writersword.Core.Models.Rendering
         /// Используется для отладки и для корректного порядка отрисовки.
         /// </summary>
         public int LineIndex { get; init; }
+
+        /// <summary>
+        /// Отрезок строки, к которому относится прямоугольник (см. SKLineLayout.WrapFragments).
+        /// У строки, разорванной обтекаемым объектом, выделение состоит из нескольких
+        /// прямоугольников, и растяжку по ширине каждый обязан считать по своему отрезку.
+        /// </summary>
+        public int FragmentIndex { get; init; }
     }
 }

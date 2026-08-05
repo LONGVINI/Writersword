@@ -17,6 +17,12 @@ namespace Writersword.Modules.Characters.Services
     {
         private static readonly ILogger _logger = Log.ForContext<CharacterAvatarService>();
         private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png", ".webp" };
+
+        // Значки меток: к форматам аватаров добавлены мелкие растры, которые
+        // в качестве фотографии бессмысленны, и вектор. Список отдельный —
+        // иначе SVG попал бы в выбор аватарок, где его нечем показать.
+        private static readonly string[] AllowedIconExtensions =
+            { ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".ico", ".svg" };
         private const string ZipAvatarsFolder = "Characters/assets/avatars";
 
         // Несгруппированная библиотека пользователя.
@@ -88,11 +94,17 @@ namespace Writersword.Modules.Characters.Services
 
         // ── Сохранение ────────────────────────────────────────────────────
 
-        public async Task<string?> SaveToProjectAsync(byte[] imageData, string suggestedName)
+        public Task<string?> SaveToProjectAsync(byte[] imageData, string suggestedName)
+            => SaveToProjectAsync(imageData, suggestedName, AllowedExtensions);
+
+        public Task<string?> SaveIconToProjectAsync(byte[] imageData, string suggestedName)
+            => SaveToProjectAsync(imageData, suggestedName, AllowedIconExtensions);
+
+        private async Task<string?> SaveToProjectAsync(byte[] imageData, string suggestedName, string[] allowedExtensions)
         {
             if (_context == null) { _logger.Warning("SaveToProjectAsync: no context"); return null; }
             var ext = Path.GetExtension(suggestedName).ToLowerInvariant();
-            if (!AllowedExtensions.Contains(ext)) return null;
+            if (!allowedExtensions.Contains(ext)) return null;
             var uniqueName = GetUniqueProjectName(suggestedName);
             try
             {

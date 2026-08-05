@@ -120,6 +120,15 @@ namespace Writersword.Core.Interfaces.Services.Input
         void UnbindExecutor(string moduleType);
 
         /// <summary>
+        /// Отвязать executor только если сейчас привязан именно этот экземпляр.
+        /// Экземпляров одного moduleType в приложении несколько (по одному на
+        /// вкладку), а слот executor'а один: закрытие любого из них по общему
+        /// UnbindExecutor снимало привязку живого модуля, и его горячие клавиши
+        /// переставали выполняться.
+        /// </summary>
+        void UnbindExecutor(string moduleType, IHotKeyProvider provider);
+
+        /// <summary>
         /// Отменить регистрацию горячих клавиш модуля полностью.
         /// Удаляет и определения и executor.
         /// Используется только при полном удалении модуля из системы.

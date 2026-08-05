@@ -522,10 +522,36 @@ namespace Writersword.Modules.TextEditor.Document
             _wrapZoneImagesOverride = null;
             _wrapAnchorIn.Clear();
             _wrapAnchorOut = new Dictionary<ParagraphBlock, float>();
+
+            // Ни один проход не публикуется по ходу дела: в первом проходе абзацы ещё не
+            // знают про картинку (её зоны собираются по ходу) и верстаются во всю ширину.
+            // Стоит показать этот кадр — и первая строка мигает полной шириной на каждой
+            // пересборке. Наружу уходит только итоговая раскладка.
+            _publishPassResults = false;
+            try
+            {
+                RebuildPageModeConverge();
+            }
+            finally
+            {
+                // Итоговая раскладка отдаётся рендеру ровно один раз — в том числе если
+                // проход упал: иначе канвас остался бы с раскладкой прошлой пересборки,
+                // а флаг публикации навсегда выключенным.
+                _publishPassResults = true;
+                PublishPassResults();
+                _wrapZoneImagesOverride = null;
+            }
+        }
+
+        /// <summary>
+        /// Проходы раскладки страниц до сходимости обтекания. Результат остаётся
+        /// в полях прохода — публикует его вызывающий.
+        /// </summary>
+        private void RebuildPageModeConverge()
+        {
             RebuildPageModePass();
 
-            List<ImageEntry> firstPassImages;
-            lock (_renderLock) { firstPassImages = _images; }
+            var firstPassImages = _passImages;
 
             bool hasWrapImages = false;
             foreach (var ie in firstPassImages)
@@ -572,8 +598,6 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (converged) break;
             }
-
-            _wrapZoneImagesOverride = null;
         }
 
         private void RebuildPageModePass()
@@ -606,6 +630,10 @@ namespace Writersword.Modules.TextEditor.Document
             var newTables = new List<TableEntry>();
             var newImages = new List<ImageEntry>();
             var newInlineTransferred = new HashSet<ImageBlock>();
+
+            // Картинки с жёсткой привязкой к странице: позиционируются после основного
+            // потока, когда известно общее число страниц и достроены недостающие.
+            var pinnedImages = new List<ImageBlock>();
 
             newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
 
@@ -914,6 +942,16 @@ namespace Writersword.Modules.TextEditor.Document
                             float boxWpt = imgWpt * absCos + imgHpt * absSin;
                             float boxHpt = imgWpt * absSin + imgHpt * absCos;
 
+                            // Обтекание: картинка в потоке обходит соседнюю обтекаемую
+                            // картинку так же, как текст. Полоса может сузиться (встанем
+                            // сбоку) или картинка уедет ниже зоны — тогда contentYPt
+                            // сдвигается здесь же.
+                            var imageZoneSource = _wrapZoneImagesOverride ?? newImages;
+                            ResolveInlineImageBand(
+                                imageZoneSource, ref contentYPt, boxWpt, boxHpt,
+                                textXPt, textWidthPt, pageBottomPt,
+                                out float bandLeftPt, out float bandRightPt, newPages, pageIdx);
+
                             // Перенос на новую страницу, если не влезает в остаток.
                             float available = pageBottomPt - contentYPt;
                             bool atPageTop = contentYPt <= pageYPt + mt + 0.5f;
@@ -944,18 +982,27 @@ namespace Writersword.Modules.TextEditor.Document
                                 pageIdx++;
                                 newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
                                 newInlineTransferred.Add(imageBlock);
+
+                                // На новой странице зоны обтекания другие — полосу
+                                // ищем заново от нового верха.
+                                ResolveInlineImageBand(
+                                    imageZoneSource, ref contentYPt, boxWpt, boxHpt,
+                                    textXPt, textWidthPt, pageBottomPt,
+                                    out bandLeftPt, out bandRightPt, newPages, pageIdx);
                             }
 
-                            // Горизонтальное выравнивание бокса картинки в текстовой колонке.
-                            float boxXPt = textXPt;
-                            float slackPt = textWidthPt - boxWpt;
+                            // Горизонтальное выравнивание бокса картинки внутри свободной
+                            // полосы: без обтекающих соседей это вся текстовая колонка.
+                            float bandWidthPt = bandRightPt - bandLeftPt;
+                            float boxXPt = bandLeftPt;
+                            float slackPt = bandWidthPt - boxWpt;
                             if (slackPt > 0f)
                             {
                                 boxXPt = imageBlock.Alignment switch
                                 {
-                                    Models.Styles.TextAlignment.Center => textXPt + slackPt / 2f,
-                                    Models.Styles.TextAlignment.Right => textXPt + slackPt,
-                                    _ => textXPt
+                                    Models.Styles.TextAlignment.Center => bandLeftPt + slackPt / 2f,
+                                    Models.Styles.TextAlignment.Right => bandLeftPt + slackPt,
+                                    _ => bandLeftPt
                                 };
                             }
 
@@ -968,13 +1015,58 @@ namespace Writersword.Modules.TextEditor.Document
                             newImages.Add(new ImageEntry(imageBlock, imgYPt, imgXPt, imgWpt, imgHpt, pageIdx));
                             contentYPt += boxHpt;
                         }
+                        else if (imageBlock.PinnedPage > 0)
+                        {
+                            // Привязанная к странице: позицию считаем позже, когда станут
+                            // известны все страницы (её может ещё не существовать).
+                            pinnedImages.Add(imageBlock);
+                        }
                         else
                         {
-                            // Плавающая: позиция по смещению относительно области страницы,
-                            // текст не сдвигается (обтекание пока не реализовано).
+                            // Плавающая: позиция по смещению относительно области страницы.
                             float fx = pageXPt + ml + (float)imageBlock.OffsetXPt;
                             float fy = pageYPt + mt + (float)imageBlock.OffsetYPt;
-                            newImages.Add(new ImageEntry(imageBlock, fy, fx, imgWpt, imgHpt, pageIdx));
+
+                            // Проходы сходимости обтекания обязаны видеть картинку ТАМ ЖЕ,
+                            // где по ней построены зоны, то есть на позиции первого прохода.
+                            //
+                            // Иначе получается петля: обтекание вытесняет текст вниз →
+                            // поток над картинкой становится выше → на следующем проходе
+                            // картинка встаёт относительно уже ДРУГОЙ страницы и уезжает
+                            // на неё целиком → зоны, посчитанные по прошлому положению,
+                            // остаются на прежнем месте → текст обтекает пустоту, а
+                            // картинка стоит там, где текста нет. Раскладка при этом не
+                            // сходится и скачет между проходами по чётности итерации.
+                            //
+                            // Во время перетаскивания проход всего один, картинка
+                            // пересчитывается как обычно и следует за мышью.
+                            ImageEntry? frozen = null;
+                            if (_wrapZoneImagesOverride is { } frozenImages)
+                            {
+                                foreach (var fe in frozenImages)
+                                {
+                                    if (!ReferenceEquals(fe.Block, imageBlock)) continue;
+                                    frozen = fe;
+                                    break;
+                                }
+                            }
+
+                            if (frozen is { } fz)
+                            {
+                                newImages.Add(new ImageEntry(
+                                    imageBlock, fz.Ypt, fz.XPt, imgWpt, imgHpt, fz.PageIndex));
+                            }
+                            else
+                            {
+                                // Страницу определяем СРАЗУ, а не пересчётом в конце прохода.
+                                // Зоны обтекания строятся по ходу дела и берут страницу из
+                                // записи: если она там ещё «страница блока в потоке», а к концу
+                                // прохода станет другой, картинка рисуется на одной странице,
+                                // а текст сдвигает на другой — ровно то, чего быть не должно.
+                                newImages.Add(new ImageEntry(
+                                    imageBlock, fy, fx, imgWpt, imgHpt,
+                                    ResolveFloatingImagePage(imageBlock, fy, imgWpt, imgHpt, newPages, pageIdx)));
+                            }
                         }
                     }
                     continue;
@@ -1027,17 +1119,36 @@ namespace Writersword.Modules.TextEditor.Document
 
                 float pageStepPt = pageHeightPt + PageGapPt;
 
-                // Итеративная сходимость: если прошлый проход замерил реальную позицию
-                // первой строки этого абзаца — строим зоны от неё, а не от предсказания.
-                // Именно предсказание промахивалось на стыке страниц.
-                if (_wrapAnchorIn.TryGetValue(paraBlock, out float anchoredTopPt))
+                // Итеративная сходимость: замер прошлого прохода нужен только чтобы
+                // поймать переход абзаца на другую страницу — именно на стыке страниц
+                // промахивалось локальное предсказание.
+                //
+                // В остальном contentYPt — ТОЧНАЯ позиция абзаца в этом проходе: всё,
+                // что выше, уже разложено, включая вытеснения обтеканием. Якорь же
+                // измерен в предыдущем проходе, когда поток выше был другим, и слепое
+                // доверие ему сдвигало зоны под уже переехавший абзац: картинка
+                // оказывалась «на его вертикали», хотя стоит выше, и первая строка
+                // улетала вниз, оставляя пустой промежуток, в котором ничего нет.
+                //
+                // Поэтому якорь применяется только при расхождении масштаба страницы.
+                if (_wrapAnchorIn.TryGetValue(paraBlock, out float anchoredTopPt)
+                    && Math.Abs(anchoredTopPt - paraStartYPt) > pageStepPt * 0.5f)
                 {
                     paraStartYPt = anchoredTopPt;
                     float adv = (anchoredTopPt - (pageYPt + mt)) / pageStepPt;
                     paraPageAdvance = adv <= 0f ? 0 : (int)MathF.Floor(adv + 0.001f);
                 }
 
-                var wrapZones = ComputeWrapZones(zoneSource, paraStartYPt, textXPt, textWidthPt);
+                // newPages нужен зонам, чтобы обрезать габарит картинки её собственной
+                // страницей: свисающая за нижний край картинка не должна двигать текст
+                // на следующей странице, где её не видно.
+                // Страницу абзацу здесь не задаём: он может начаться на одной странице
+                // и продолжиться на следующей, и его хвост обязан обтекать картинки ТОЙ
+                // страницы, куда он уехал. Развязку по страницам даёт обрезка зоны краями
+                // своей страницы: зона следующей страницы лежит ниже всех строк текущей,
+                // а зона предыдущей — выше всех строк следующей.
+                var wrapZones = ComputeWrapZones(
+                    zoneSource, paraStartYPt, textXPt, textWidthPt, newPages);
 
                 // Геометрия страниц для абзаца: если он не поместится целиком,
                 // строки после разрыва должны сравниваться с зонами от своего
@@ -1065,6 +1176,12 @@ namespace Writersword.Modules.TextEditor.Document
                         pvm, layout, contentYPt, FallbackLinePt,
                         pageIdx, 0, 0,
                         AbsXPt: anchorXPt - AnchorMarginPt));
+
+                    // Якорь занимает строку так же, как любой пустой параграф. Без сдвига
+                    // он был нулевой высоты, и таблица начиналась вплотную к предыдущему
+                    // блоку: у двух таблиц подряд между ними стоит один общий якорь, и
+                    // отступ между ними пропадал совсем.
+                    contentYPt += FallbackLinePt;
                     continue;
                 }
 
@@ -1151,19 +1268,46 @@ namespace Writersword.Modules.TextEditor.Document
                     {
                         float lnTop = contentYPt;
                         float lnBot = contentYPt + line.Height;
-                        float lnLeft = absXPt + line.WrapLeftPt;
-                        float lnRight = lnLeft + line.TextWidth;
                         float throwToPt = float.NaN;
                         foreach (var ie in zoneSource)
                         {
                             if (ie.Block.WrapMode is not (WrapMode.Square or WrapMode.Tight)) continue;
+
+                            // Только картинки ЭТОЙ страницы. Прямоугольники сравниваются
+                            // в координатах документа, а они сквозные: картинка, свисающая
+                            // за низ своей страницы, дотягивалась ими до строк следующей
+                            // и перебрасывала их вниз — на второй странице появлялся провал
+                            // от картинки, которой там не видно. Чем сильнее повёрнута
+                            // картинка, тем дальше вниз уходил её габарит и тем заметнее это.
+                            if (ie.PageIndex != pageIdx) continue;
+
                             float iT = ie.Ypt, iB = ie.Ypt + ie.HeightPt;
                             float iL = ie.XPt, iR = ie.XPt + ie.WidthPt;
-                            if (lnBot > iT + 0.5f && lnTop < iB - 0.5f
-                                && lnRight > iL + 0.5f && lnLeft < iR - 0.5f)
+                            if (lnBot <= iT + 0.5f || lnTop >= iB - 0.5f) continue;
+
+                            // Строка, разорванная объектом, занимает несколько отрезков:
+                            // её ширина включает прыжок через картинку, и проверка «от
+                            // начала до конца строки» всегда видела бы наложение. Каждый
+                            // отрезок проверяется отдельно.
+                            bool overlaps = false;
+                            if (line.HasWrapFragments)
                             {
-                                if (float.IsNaN(throwToPt) || iB > throwToPt) throwToPt = iB;
+                                foreach (var fragment in line.WrapFragments)
+                                {
+                                    float fL = absXPt + fragment.LeftPt;
+                                    float fR = fL + fragment.WidthPt;
+                                    if (fR > iL + 0.5f && fL < iR - 0.5f) { overlaps = true; break; }
+                                }
                             }
+                            else
+                            {
+                                float lnLeft = absXPt + line.WrapLeftPt;
+                                float lnRight = lnLeft + line.TextWidth;
+                                overlaps = lnRight > iL + 0.5f && lnLeft < iR - 0.5f;
+                            }
+
+                            if (overlaps && (float.IsNaN(throwToPt) || iB > throwToPt))
+                                throwToPt = iB;
                         }
 
                         if (!float.IsNaN(throwToPt) && throwToPt + WrapThrowGapPt > contentYPt + 0.5f)
@@ -1213,28 +1357,92 @@ namespace Writersword.Modules.TextEditor.Document
                     AbsXPt: absXPt, Marker: paraMarker));
             }
 
-            // Плавающая картинка могла быть перетащена за пределы страницы своего
-            // блока — переопределяем её страницу по центру: рисоваться и клиповаться
-            // она должна там, где реально находится, а не «под» чужим листом.
+            // ── Картинки с жёсткой привязкой к странице ──────────────────────
+            // Документ обязан держать столько страниц, чтобы привязанная страница
+            // существовала: удаление текста не утаскивает такую картинку выше, страницы
+            // до неё просто остаются пустыми. Пустые листы достраиваются здесь, ПОСЛЕ
+            // основного потока — только он знает, сколько страниц вышло по тексту.
+            int maxPinnedPage = 0;
+            foreach (var pinned in pinnedImages)
+                if (pinned.PinnedPage > maxPinnedPage) maxPinnedPage = pinned.PinnedPage;
+
+            while (newPages.Count < maxPinnedPage)
+            {
+                pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+            }
+
+            // Позиция привязанной картинки отсчитывается от краёв ЕЁ страницы, а не от
+            // страницы её места в потоке: в этом и смысл привязки.
+            foreach (var pinned in pinnedImages)
+            {
+                int pinnedIdx = Math.Clamp(pinned.PinnedPage - 1, 0, Math.Max(0, newPages.Count - 1));
+                if (pinnedIdx >= newPages.Count) continue;
+
+                var pinnedPage = newPages[pinnedIdx];
+                float pinnedW = (float)pinned.WidthPt;
+                float pinnedH = (float)pinned.HeightPt;
+                if (pinnedW <= 0f || pinnedH <= 0f) continue;
+
+                newImages.Add(new ImageEntry(
+                    pinned,
+                    pinnedPage.Ypt + pinnedPage.PadTopPt + (float)pinned.OffsetYPt,
+                    pinnedPage.PadLeftPt + pinnedPage.MarginLeftPt + (float)pinned.OffsetXPt,
+                    pinnedW, pinnedH, pinnedIdx));
+            }
+
+            // Страницы, которые держат сами картинки. Перетащенная на следующий лист
+            // картинка становится его содержимым — и лист обязан существовать, даже
+            // если текста на него не хватило. Иначе выходила петля: текст без обтекания
+            // умещался на одну страницу, вторая пропадала, картинке было некуда встать,
+            // она возвращалась — и всё повторялось, отсюда дёрганье при перетаскивании.
+            //
+            // Петли здесь нет: положение картинки считается от её собственного якоря и
+            // от числа страниц не зависит — зависимость односторонняя.
+            float imagePageStepPt = pageHeightPt + PageGapPt;
+            int neededPages = 0;
+            foreach (var ie in newImages)
+            {
+                if (ie.Block.WrapMode == WrapMode.Inline || ie.InLine) continue;
+
+                double rotRad = ie.Block.RotationDeg * Math.PI / 180.0;
+                float boxH = ie.WidthPt * (float)Math.Abs(Math.Sin(rotRad))
+                           + ie.HeightPt * (float)Math.Abs(Math.Cos(rotRad));
+                float topPt = ie.Ypt + ie.HeightPt / 2f - boxH / 2f;
+
+                // Номер листа, на который попадает верх картинки.
+                int page = (int)Math.Floor((topPt - PageGapPt) / imagePageStepPt) + 1;
+                if (page > neededPages) neededPages = page;
+            }
+
+            while (newPages.Count < neededPages)
+            {
+                pageYPt = pageYPt + pageHeightPt + PageGapPt;
+                newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
+            }
+
+            // Плавающая картинка без привязки могла быть перетащена за пределы страницы
+            // своего блока — переопределяем её страницу по центру: рисоваться и
+            // клиповаться она должна там, где реально находится, а не «под» чужим листом.
             for (int ii = 0; ii < newImages.Count; ii++)
             {
                 var ie = newImages[ii];
                 if (ie.Block.WrapMode == WrapMode.Inline) continue;
+                if (ie.Block.PinnedPage > 0) continue;   // привязанная страницу не меняет
 
-                float cyImg = ie.Ypt + ie.HeightPt / 2f;
-                int resolvedPage = ie.PageIndex;
-                for (int p = 0; p < newPages.Count; p++)
-                {
-                    if (cyImg >= newPages[p].Ypt - PageGapPt / 2f
-                        && cyImg <= newPages[p].Ypt + newPages[p].HeightPt + PageGapPt / 2f)
-                    {
-                        resolvedPage = p;
-                        break;
-                    }
-                }
+                // Страница уже определена при создании записи — здесь только уточняем её
+                // для картинок, которым на тот момент не хватало страниц (документ вырос
+                // по ходу прохода). Правило то же: страница по верхнему краю габарита.
+                int resolvedPage = ResolveFloatingImagePage(
+                    ie.Block, ie.Ypt, ie.WidthPt, ie.HeightPt, newPages, ie.PageIndex);
+
                 if (resolvedPage != ie.PageIndex)
                     newImages[ii] = ie with { PageIndex = resolvedPage };
             }
+
+            // Картинки в строках текста: регистрируем после вёрстки абзацев — их позиция
+            // известна только по готовым строкам.
+            CollectInlineImageEntries(newLayouts, newImages);
 
             float newCanvasH = pageYPt + pageHeightPt + PageGapPt;
 
@@ -1246,16 +1454,165 @@ namespace Writersword.Modules.TextEditor.Document
                 newCanvasH = PageGapPt + rows * (newPages[0].HeightPt + PageGapPt);
             }
 
+            // Результат прохода: промежуточные проходы сходимости обтекания его только
+            // копят, наружу уходит последний. Иначе рендер успевает поймать промежуточный
+            // кадр — в первом проходе абзац ещё не знает про картинку и верстается во всю
+            // ширину, и первая строка мигает полной шириной на каждой пересборке.
+            _passLayouts = newLayouts;
+            _passPages = newPages;
+            _passTables = newTables;
+            _passImages = newImages;
+            _passInlineTransferred = newInlineTransferred;
+            _passCanvasHeightPt = newCanvasH;
+
+            if (_publishPassResults) PublishPassResults();
+        }
+
+        // Результат последнего выполненного прохода раскладки страниц.
+        private List<ParaLayout> _passLayouts = new();
+        private List<PageRect> _passPages = new();
+        private List<TableEntry> _passTables = new();
+        private List<ImageEntry> _passImages = new();
+        private HashSet<ImageBlock> _passInlineTransferred = new();
+        private float _passCanvasHeightPt;
+
+        // Публиковать ли результат каждого прохода сразу. Выключается на время итераций
+        // сходимости обтекания.
+        private bool _publishPassResults = true;
+
+        /// <summary>
+        /// Отдаёт результат последнего прохода рендеру. Единственное место, где меняется
+        /// видимая раскладка страниц.
+        /// </summary>
+        private void PublishPassResults()
+        {
             lock (_renderLock)
             {
-                _layouts = newLayouts;
-                _pages = newPages;
-                _tables = newTables;
-                _images = newImages;
-                _inlineTransferredImages = newInlineTransferred;
-                _canvasHeightPt = newCanvasH;
-                _canvasHeight = newCanvasH * PtToPx;
+                _layouts = _passLayouts;
+                _pages = _passPages;
+                _tables = _passTables;
+                _images = _passImages;
+                _inlineTransferredImages = _passInlineTransferred;
+                _canvasHeightPt = _passCanvasHeightPt;
+                _canvasHeight = _passCanvasHeightPt * PtToPx;
             }
+        }
+
+        /// <summary>
+        /// Регистрирует встроенные в строку картинки как записи списка картинок.
+        /// Рисует такую картинку рендер текста, но выделение, маркеры размера, поворот
+        /// и обрезка работают по единому списку — без записи по картинке в строке
+        /// нельзя было бы даже кликнуть.
+        ///
+        /// Геометрия повторяет SKTextRenderer.RenderParagraphLines символ в символ:
+        /// тот же сдвиг выравнивания, та же накопленная добавка растяжки по ширине
+        /// и та же база строки. Любое расхождение развело бы рамку выделения
+        /// с самой картинкой.
+        /// </summary>
+        private void CollectInlineImageEntries(List<ParaLayout> layouts, List<ImageEntry> target)
+        {
+            foreach (var pl in layouts)
+            {
+                var layout = pl.Layout;
+                if (layout is null || layout.Lines.Count == 0) continue;
+
+                int lineFrom = Math.Max(0, pl.LineFrom);
+                int lineTo = Math.Min(pl.LineTo, layout.Lines.Count);
+                if (lineFrom >= lineTo) continue;
+
+                float paraX = pl.AbsXPt + layout.LeftIndentPt;
+                float yBase = layout.Lines[lineFrom].Y;
+
+                for (int li = lineFrom; li < lineTo; li++)
+                {
+                    var line = layout.Lines[li];
+                    float lineY = pl.Ypt + (line.Y - yBase);
+                    float lineShift = SKTextRenderer.LineAlignShift(layout, li);
+                    int justifyFragment = 0;
+                    float extraPerSpace = SKTextRenderer.JustifyExtraPerSpace(layout, li, 0);
+                    float justifyShift = 0f;
+
+                    foreach (var seg in line.Segments)
+                    {
+                        // Разорванная объектом строка растягивается по отрезкам —
+                        // повторяем логику рендера, иначе рамка картинки в строке
+                        // разъедется с самой картинкой.
+                        if (seg.WrapFragmentIndex != justifyFragment)
+                        {
+                            justifyFragment = seg.WrapFragmentIndex;
+                            extraPerSpace = SKTextRenderer.JustifyExtraPerSpace(
+                                layout, li, justifyFragment);
+                            justifyShift = 0f;
+                        }
+
+                        if (seg.InlineImageId is Guid inlineId)
+                        {
+                            var block = FindInlineImage(inlineId);
+                            if (block is not null && block.WidthPt > 0.0 && block.HeightPt > 0.0)
+                            {
+                                float segX = paraX + seg.X + lineShift + justifyShift;
+                                float baseY = lineY + line.Baseline;
+
+                                // Бокс сегмента — AABB повёрнутой картинки, сама картинка
+                                // центрирована в нём (так же считает DrawInlineImageSegment).
+                                float boxW = seg.ObjectWidthPt;
+                                float boxH = seg.ObjectHeightPt;
+                                float imgW = (float)block.WidthPt;
+                                float imgH = (float)block.HeightPt;
+
+                                target.Add(new ImageEntry(
+                                    block,
+                                    baseY - boxH + (boxH - imgH) / 2f,
+                                    segX + (boxW - imgW) / 2f,
+                                    imgW, imgH, pl.PageIndex, InLine: true));
+                            }
+                        }
+
+                        if (extraPerSpace > 0f)
+                        {
+                            int segSpaces = 0;
+                            foreach (var c in seg.Text)
+                                if (c == ' ' || c == '\t') segSpaces++;
+                            justifyShift += segSpaces * extraPerSpace;
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Страница плавающей картинки — та, где находится её ВЕРХНИЙ край. Верх берётся
+        /// у повёрнутого габарита: по нему же строится зона обтекания, и считать страницу
+        /// по неповёрнутому краю значило бы развести две геометрии.
+        ///
+        /// Единая точка для всей раскладки: и зоны обтекания по ходу прохода, и отрисовка
+        /// обязаны видеть у картинки ОДНУ И ТУ ЖЕ страницу.
+        /// </summary>
+        private static int ResolveFloatingImagePage(
+            ImageBlock block, float imgYPt, float imgWpt, float imgHpt,
+            List<PageRect> pages, int fallbackPage)
+        {
+            if (pages.Count == 0) return fallbackPage;
+
+            double rotRad = block.RotationDeg * Math.PI / 180.0;
+            float boxH = imgWpt * (float)Math.Abs(Math.Sin(rotRad))
+                       + imgHpt * (float)Math.Abs(Math.Cos(rotRad));
+            float topPt = imgYPt + imgHpt / 2f - boxH / 2f;
+
+            int resolved = fallbackPage;
+            for (int p = 0; p < pages.Count; p++)
+            {
+                float pageTop = pages[p].Ypt;
+                float pageBottom = pageTop + pages[p].HeightPt;
+
+                // Верх выше этой страницы (в зазоре или над первым листом) либо
+                // в её пределах — картинка принадлежит ей.
+                if (topPt < pageTop || topPt <= pageBottom) return p;
+
+                // Верх ниже — картинка на одной из следующих страниц.
+                resolved = p;
+            }
+            return resolved;
         }
 
         private void RebuildFlowMode(float maxWidthPt, float padHPt, float padWPt)
@@ -1357,11 +1714,17 @@ namespace Writersword.Modules.TextEditor.Document
 
             float newCanvasH = yPt + padHPt;
 
+            // В потоковом режиме картинки-блоки не верстаются, но встроенные в строку
+            // рисуются и здесь — их записи нужны для выделения и маркеров.
+            var newFlowImages = new List<ImageEntry>();
+            CollectInlineImageEntries(newLayouts, newFlowImages);
+
             lock (_renderLock)
             {
                 _layouts = newLayouts;
                 _pages = new List<PageRect>();
                 _tables = newTables;
+                _images = newFlowImages;
                 _canvasHeightPt = newCanvasH;
                 _canvasHeight = newCanvasH * PtToPx;
             }

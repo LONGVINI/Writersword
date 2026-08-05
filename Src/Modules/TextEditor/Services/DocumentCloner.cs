@@ -133,7 +133,8 @@ namespace Writersword.Modules.TextEditor.Services
                 Header = CloneHeaderFooter(source.Header),
                 Footer = CloneHeaderFooter(source.Footer),
                 Blocks = new List<BlockModel>(source.Blocks.Count),
-                FloatingObjects = new List<BlockModel>(source.FloatingObjects.Count)
+                FloatingObjects = new List<BlockModel>(source.FloatingObjects.Count),
+                InlineObjects = new List<BlockModel>(source.InlineObjects.Count)
             };
 
             foreach (var block in source.Blocks)
@@ -141,6 +142,11 @@ namespace Writersword.Modules.TextEditor.Services
 
             foreach (var block in source.FloatingObjects)
                 clone.FloatingObjects.Add(CloneBlock(block));
+
+            // Объекты в строке — такая же часть документа: без них снимок потеряет
+            // встроенные картинки ровно так же, как раньше терялся поворот.
+            foreach (var block in source.InlineObjects)
+                clone.InlineObjects.Add(CloneBlock(block));
 
             return clone;
         }
@@ -292,6 +298,11 @@ namespace Writersword.Modules.TextEditor.Services
 
         private static ImageBlock CloneImage(ImageBlock source)
         {
+            // Копируются ВСЕ свойства картинки. Снимок документа строится именно из
+            // этого клона, поэтому забытое здесь поле не попадает ни в кеш, ни в файл:
+            // правка выглядит применённой на экране и исчезает после перезапуска.
+            // Так терялись поворот, прозрачность, рамка, отражение, обрезка и отступы
+            // обтекания — в клоне они оставались значениями по умолчанию.
             return new ImageBlock
             {
                 Id = source.Id,
@@ -300,7 +311,23 @@ namespace Writersword.Modules.TextEditor.Services
                 WidthPt = source.WidthPt,
                 HeightPt = source.HeightPt,
                 LockAspectRatio = source.LockAspectRatio,
+                RotationDeg = source.RotationDeg,
+                Opacity = source.Opacity,
+                BorderColor = source.BorderColor,
+                BorderThicknessPt = source.BorderThicknessPt,
+                FlipHorizontal = source.FlipHorizontal,
+                FlipVertical = source.FlipVertical,
+                CropLeftFrac = source.CropLeftFrac,
+                CropTopFrac = source.CropTopFrac,
+                CropRightFrac = source.CropRightFrac,
+                CropBottomFrac = source.CropBottomFrac,
                 WrapMode = source.WrapMode,
+                WrapSide = source.WrapSide,
+                PinnedPage = source.PinnedPage,
+                WrapPadTopPt = source.WrapPadTopPt,
+                WrapPadBottomPt = source.WrapPadBottomPt,
+                WrapPadLeftPt = source.WrapPadLeftPt,
+                WrapPadRightPt = source.WrapPadRightPt,
                 Alignment = source.Alignment,
                 Anchor = source.Anchor,
                 OffsetXPt = source.OffsetXPt,

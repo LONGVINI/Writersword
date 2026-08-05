@@ -39,5 +39,14 @@ namespace Writersword.Core.Interfaces.Services
         /// <param name="relativePath">Путь к папке (например "TextEditor/images")</param>
         /// <returns>Список относительных путей к файлам</returns>
         IEnumerable<string> GetFiles(string relativePath);
+
+        /// <summary>
+        /// Записать накопленные изменения на диск.
+        /// В RELEASE архив держится открытым всю сессию и копит записи в памяти —
+        /// до сброса вставленный файл существует только в оперативке и не переживёт
+        /// аварийное выключение. Вызывать после записи данных, потеря которых
+        /// недопустима (файлы картинок).
+        /// </summary>
+        void Flush();
     }
 }

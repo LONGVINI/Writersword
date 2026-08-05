@@ -197,7 +197,19 @@ namespace Writersword.Modules.TextEditor.Document
             // картинки должен запускать ресайз или поворот, а не снимать выделение.
             if (_selectedImage is not null && !IsEditingBlocked)
             {
-                int corner = HitTestImageHandle(xPt, yPt);
+                // Маркеры ловятся в системе координат страницы самой картинки, а не той,
+                // что ближе к указателю: у картинки, лежащей мимо своего листа, это разные
+                // страницы. Жест ресайза и поворота переводится на ту же страницу, иначе
+                // геометрия считалась бы в двух разных системах.
+                var (handleXPt, handleYPt) = LogicalPointForSelectedImage(
+                    (float)(pt.X / zoom * PxToPt), (float)(pt.Y / zoom * PxToPt), xPt, yPt);
+
+                int corner = HitTestImageHandle(handleXPt, handleYPt);
+                if (corner >= 0 && _pagesPerRow > 1)
+                {
+                    int selPage = SelectedImagePageIndex();
+                    if (selPage >= 0) _gesturePage = selPage;
+                }
                 if (corner == 8)
                 {
                     float pageShiftRot = GetPageShiftXPt();
@@ -221,11 +233,42 @@ namespace Writersword.Modules.TextEditor.Document
                     e.Handled = true;
                     return;
                 }
+                // Режим обрезки: маркеры двигают только рамку кадрирования, размер
+                // картинки не меняется и документ не перестраивается — срез уходит
+                // в картинку одной операцией при выходе из режима.
+                if (corner >= 0 && corner <= 7 && _imageCropMode)
+                {
+                    _imageResizing = true;
+                    _imageResizeMoved = false;
+                    _imageCropDragging = true;
+                    _imageResizeCorner = corner;
+                    _imgResizeStartXPt = xPt;
+                    _imgResizeStartYPt = yPt;
+                    _imgResizeStartRotDeg = _selectedImage.RotationDeg;
+                    _imgCropStartL = _cropPendLeft;
+                    _imgCropStartT = _cropPendTop;
+                    _imgCropStartR = _cropPendRight;
+                    _imgCropStartB = _cropPendBottom;
+                    Cursor = ImageHandleCursor(corner);
+                    e.Pointer.Capture(this);
+                    e.Handled = true;
+                    return;
+                }
+
+                // Клик мимо маркеров при активной обрезке завершает её и применяет срез.
+                if (_imageCropMode)
+                {
+                    ExitImageCropMode(apply: true);
+                    ImageSelectionChanged?.Invoke(_selectedImage is not null);
+                    e.Handled = true;
+                    return;
+                }
+
                 if (corner >= 0)
                 {
                     _imageResizing = true;
                     _imageResizeMoved = false;
-                    _imageCropDragging = _imageCropMode;
+                    _imageCropDragging = false;
                     _imageOverflowPreviewMode = true;
                     _imagePreviewStartTransferred = _inlineTransferredImages.Contains(_selectedImage);
                     _imageResizeCorner = corner;
@@ -236,13 +279,7 @@ namespace Writersword.Modules.TextEditor.Document
                     _imgResizeStartOffX = _selectedImage.OffsetXPt;
                     _imgResizeStartOffY = _selectedImage.OffsetYPt;
                     _imgResizeStartRotDeg = _selectedImage.RotationDeg;
-                    _imgCropStartL = _selectedImage.CropLeftFrac;
-                    _imgCropStartT = _selectedImage.CropTopFrac;
-                    _imgCropStartR = _selectedImage.CropRightFrac;
-                    _imgCropStartB = _selectedImage.CropBottomFrac;
-                    BeginImageEdit(_imageCropDragging
-                        ? "Обрезка изображения"
-                        : "Изменение размера изображения");
+                    BeginImageEdit("Изменение размера изображения");
                     Cursor = ImageHandleCursor(corner);
                     e.Pointer.Capture(this);
                     e.Handled = true;
@@ -254,9 +291,27 @@ namespace Writersword.Modules.TextEditor.Document
             // Учитываем горизонтальный сдвиг центрирования листа — он применяется при
             // отрисовке ко всему содержимому, но не запечён в координатах раскладки.
             float pageShiftXPt = GetPageShiftXPt();
+
+            // Страницы рядом: указатель переведён в логические координаты через страницу
+            // жеста (ближайшую к точке нажатия). Картинка, промахнувшаяся мимо своего листа,
+            // нарисована на территории соседнего — ближайшей к ней страницей оказывается
+            // чужая, и попадание по ней считалось в чужой системе координат: кликнуть по
+            // такой картинке было нельзя. Для проверки попадания точка переводится через
+            // страницу САМОЙ картинки — ту же, через которую её нарисовали.
+            float imgHitRawXPt = (float)(pt.X / zoom * PxToPt);
+            float imgHitRawYPt = (float)(pt.Y / zoom * PxToPt);
+
             for (int ii = 0; ii < _images.Count; ii++)
             {
                 var ie = _images[ii];
+
+                float xHitPt = xPt;
+                float yHitPt = yPt;
+                if (_pagesPerRow > 1 && ie.PageIndex >= 0 && ie.PageIndex != _gesturePage)
+                {
+                    (xHitPt, yHitPt) = VisualToLogicalPt(
+                        imgHitRawXPt, imgHitRawYPt, ie.PageIndex);
+                }
 
                 // Картинка «за текстом»: приоритет у текста. Клик по строке текста
                 // поверх картинки ставит каретку; клик по свободному от текста
@@ -269,7 +324,7 @@ namespace Writersword.Modules.TextEditor.Document
                 float imgLeft = ie.XPt + pageShiftXPt;
                 float imgCx = imgLeft + ie.WidthPt / 2f;
                 float imgCy = ie.Ypt + ie.HeightPt / 2f;
-                var (lxHit, lyHit) = RotatePointAround(xPt, yPt, imgCx, imgCy, -(float)ie.Block.RotationDeg);
+                var (lxHit, lyHit) = RotatePointAround(xHitPt, yHitPt, imgCx, imgCy, -(float)ie.Block.RotationDeg);
                 if (lxHit >= imgLeft && lxHit <= imgLeft + ie.WidthPt
                     && lyHit >= ie.Ypt && lyHit <= ie.Ypt + ie.HeightPt)
                 {
@@ -278,17 +333,41 @@ namespace Writersword.Modules.TextEditor.Document
                     _isSelecting = false;
                     _tableSelections.Clear();
 
-                    // Плавающую картинку можно перетаскивать. Блок (Inline) не двигаем —
-                    // его режим меняется отдельно (клавиша F / будущая панель настроек).
+                    // Плавающую картинку тащим свободно — она позиционируется смещением.
                     if (ie.Block.WrapMode != WrapMode.Inline)
                     {
                         _imageDragging = true;
                         _imageDragMoved = false;
-                        _imgDragStartXPt = xPt;
-                        _imgDragStartYPt = yPt;
+
+                        // Точка старта берётся в той же системе координат, в которой пойдут
+                        // точки движения. Для закреплённой картинки это её страница: нажать
+                        // могли по части, свисающей над соседним листом, и тогда страница
+                        // жеста оказалась бы чужой, а вся дельта — смещённой на шаг листа.
+                        float dragStartXPt = xPt;
+                        float dragStartYPt = yPt;
+                        if (_pagesPerRow > 1 && ie.Block.PinnedPage > 0)
+                        {
+                            float pinnedRawXPt = (float)(pt.X / zoom * PxToPt);
+                            float pinnedRawYPt = (float)(pt.Y / zoom * PxToPt);
+                            (dragStartXPt, dragStartYPt) = VisualToLogicalPt(
+                                pinnedRawXPt, pinnedRawYPt, ie.Block.PinnedPage - 1);
+                        }
+
+                        _imgDragStartXPt = dragStartXPt;
+                        _imgDragStartYPt = dragStartYPt;
                         _imgDragStartOffX = ie.Block.OffsetXPt;
                         _imgDragStartOffY = ie.Block.OffsetYPt;
                         BeginImageEdit("Перемещение изображения");
+                        e.Pointer.Capture(this);
+                    }
+                    else if (IsInlineObjectImage(ie.Block))
+                    {
+                        // Картинка в тексте — символ абзаца, свободных координат у неё нет.
+                        // Перетаскивание переносит её в ТУ ТОЧКУ ТЕКСТА, куда её бросили:
+                        // символ вынимается из старого места и вставляется в новое.
+                        _inlineImageDragging = true;
+                        _inlineImageDragMoved = false;
+                        _inlineDragImage = ie.Block;
                         e.Pointer.Capture(this);
                     }
 
@@ -307,8 +386,9 @@ namespace Writersword.Modules.TextEditor.Document
             }
             if (_selectedImage is not null)
             {
+                // Незавершённая обрезка применяется: работа пользователя не теряется.
+                ExitImageCropMode(apply: true);
                 _selectedImage = null;
-                _imageCropMode = false;
                 // Снятие выделения — риббон возвращается к выравниванию абзаца,
                 // контекстная вкладка скрывается.
                 DocVm?.FireCursorContextChanged();
@@ -475,10 +555,41 @@ namespace Writersword.Modules.TextEditor.Document
             // Страницы рядом: во время жеста над объектом маппинг идёт через страницу,
             // где жест начался — заход указателя на соседнюю страницу не даёт скачка
             // логических координат. Вне жеста — через ближайшую страницу.
-            bool objectGesture = _imageRotating || _imageResizing || _imageDragging
+            // Перетаскивание картинки СПЕЦИАЛЬНО не фиксируется на странице жеста:
+            // в режиме страниц рядом соседняя страница нарисована справа, и тащить
+            // картинку на неё нужно вправо. При фиксации указатель переводился через
+            // страницу старта, движение вправо оставалось движением по ней же, а на
+            // соседнюю страницу картинка попадала движением ВНИЗ — по логическому
+            // столбику страниц. Со свободным маппингом картинка идёт за курсором:
+            // скачок логической координаты на границе страниц как раз и переносит её
+            // на ту страницу, над которой курсор.
+            //
+            // Поворот и ресайз фиксацию сохраняют: там скачок исказил бы геометрию.
+            //
+            // Исключение — картинка, закреплённая за страницей. Её смещения отсчитываются
+            // от закреплённой страницы, а свободный маппинг даёт на границе страниц скачок
+            // логической координаты на целый шаг листа. Этот скачок попадал в дельту
+            // перетаскивания: смещение вырастало на страницу, картинка уходила с закреплённой
+            // страницы, оставаясь закреплённой за ней, и продолжала двигать её текст, ничего
+            // при этом не делая на той странице, где её видно. Для закреплённой маппинг
+            // фиксируется её страницей, и она движется в той же системе координат, в которой
+            // хранится.
+            bool pinnedImageDrag = _imageDragging
+                && _selectedImage is not null
+                && _selectedImage.PinnedPage > 0;
+
+            bool objectGesture = _imageRotating || _imageResizing
+                || pinnedImageDrag
                 || _tableDragMode != TableDragMode.None;
+            // Страница маппинга для закреплённой картинки — её собственная, а не та, над
+            // которой нажали: картинка может свисать за край и быть подхваченной за часть,
+            // лежащую над соседним листом.
+            int gestureMapPage = pinnedImageDrag
+                ? _selectedImage!.PinnedPage - 1
+                : _gesturePage;
+
             (xPt, yPt) = objectGesture
-                ? VisualToLogicalPt(xPt, yPt, _gesturePage)
+                ? VisualToLogicalPt(xPt, yPt, gestureMapPage)
                 : VisualToLogicalPt(xPt, yPt);
 
             // ── Поворот выделенной картинки ───────────────────────────────
@@ -508,6 +619,7 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     _selectedImage.RotationDeg = newDeg;
                     _imageRotateMoved = true;
+                    InvalidateInlineImageLayout(_selectedImage);
                     // Пересбор раскладки: инлайн-картинка занимает в потоке AABB
                     // повёрнутого прямоугольника, текст ниже сдвигается вживую.
                     // InvalidateMeasure обновляет высоту канваса и extent скролла —
@@ -526,6 +638,7 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     _imageResizing = false;
                     _imageCropDragging = false;
+                    _imageResizeCorner = -1;
                     if (_imageOverflowPreviewMode)
                     {
                         _imageOverflowPreviewMode = false;
@@ -545,12 +658,40 @@ namespace Writersword.Modules.TextEditor.Document
                 && _selectedImage is not null
                 && !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             {
-                int hoverCorner = HitTestImageHandle(xPt, yPt);
+                var (hoverXPt, hoverYPt) = LogicalPointForSelectedImage(
+                    (float)(rawPt.X / zoom * PxToPt), (float)(rawPt.Y / zoom * PxToPt), xPt, yPt);
+                int hoverCorner = HitTestImageHandle(hoverXPt, hoverYPt);
                 if (hoverCorner >= 0)
                 {
                     Cursor = ImageHandleCursor(hoverCorner);
                     return;
                 }
+            }
+
+            // ── Перетаскивание картинки «в тексте» ────────────────────────
+            // Ведём каретку за курсором: она и показывает, куда встанет картинка.
+            if (_inlineImageDragging)
+            {
+                if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+                {
+                    _inlineImageDragging = false;
+                    return;
+                }
+
+                _inlineImageDragMoved = true;
+                var (dropPara, dropChar) = HitTest(rawPt);
+                if (dropPara >= 0)
+                {
+                    _caretPara = dropPara;
+                    _caretChar = dropChar;
+                    _caretLineHint = -1;
+                    SyncSel();
+                    ResetCaret();
+                    InvalidateFull();
+                }
+                Cursor = new Cursor(StandardCursorType.DragMove);
+                e.Handled = true;
+                return;
             }
 
             // ── Перетаскивание плавающей картинки ─────────────────────────
@@ -921,9 +1062,14 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (_imageResizing)
             {
-                // Фиксируем изменение размера в Undo только если реально тянули маркер.
-                if (_imageResizeMoved) CommitImageEdit();
-                else CancelImageEdit();
+                // Обрезка не пишется в Undo по каждому маркеру: рамка кадрирования
+                // применяется одной операцией при выходе из режима обрезки.
+                if (!_imageCropDragging)
+                {
+                    // Фиксируем изменение размера в Undo только если реально тянули маркер.
+                    if (_imageResizeMoved) CommitImageEdit();
+                    else CancelImageEdit();
+                }
                 _imageResizing = false;
                 _imageCropDragging = false;
                 _imageResizeMoved = false;
@@ -963,6 +1109,24 @@ namespace Writersword.Modules.TextEditor.Document
                 }
                 // Синхронизируем поле градусов на контекстной вкладке «Формат».
                 ImageSelectionChanged?.Invoke(true);
+                e.Handled = true;
+                return;
+            }
+
+            if (_inlineImageDragging)
+            {
+                var dragged = _inlineDragImage;
+                bool moved = _inlineImageDragMoved;
+
+                _inlineImageDragging = false;
+                _inlineImageDragMoved = false;
+                _inlineDragImage = null;
+                e.Pointer.Capture(null);
+                Cursor = new Cursor(StandardCursorType.Ibeam);
+
+                if (moved && dragged is not null)
+                    MoveInlineImageToCaret(dragged);
+
                 e.Handled = true;
                 return;
             }
@@ -1050,6 +1214,22 @@ namespace Writersword.Modules.TextEditor.Document
 
                 var (lx, ly) = RotatePointAround(xPt, yPt, cx, cy, -(float)ie.Block.RotationDeg);
 
+                // В режиме обрезки маркеры стоят на рамке кадрирования, а не на
+                // границах видимой части. Рамка живёт в неотражённых координатах,
+                // поэтому точку зеркалим обратно, если у картинки включено отражение.
+                bool cropHandles = TryGetCropRects(ie, out _, out var pendRect);
+                if (cropHandles)
+                {
+                    if (ie.Block.FlipHorizontal) lx = 2f * cx - lx;
+                    if (ie.Block.FlipVertical) ly = 2f * cy - ly;
+                    left = pendRect.Left + pageShiftXPt;
+                    right = pendRect.Right + pageShiftXPt;
+                    top = pendRect.Top;
+                    bottom = pendRect.Bottom;
+                    cx = (left + right) / 2f;
+                    cy = (top + bottom) / 2f;
+                }
+
                 var handles = new[]
                 {
                     (hx: left,  hy: top),
@@ -1067,6 +1247,9 @@ namespace Writersword.Modules.TextEditor.Document
                         && Math.Abs(ly - handles[c].hy) <= ImageHandleHitPt)
                         return c;
                 }
+
+                // В режиме обрезки маркер поворота не показывается и не ловится.
+                if (cropHandles) break;
 
                 float rotX = cx;
                 float rotY = top - ImageRotateHandleOffsetPt;
@@ -1154,18 +1337,22 @@ namespace Writersword.Modules.TextEditor.Document
             _selectedImage.WidthPt = newW;
             _selectedImage.HeightPt = newH;
             _imageResizeMoved = true;
+            // Картинка в строке: новый габарит переверстает строку, только если сбросить
+            // кеш раскладки абзаца — текст в нём не изменился.
+            InvalidateInlineImageLayout(_selectedImage);
             RebuildLayouts();
             InvalidateMeasure();
             InvalidateFull();
         }
 
-        // Применяет обрезку выделенной картинки по текущей позиции указателя.
-        // Тяга маркера внутрь срезает соответствующий край: видимый бокс уменьшается,
-        // масштаб картинки не меняется (как кадрирование в Word). Тяга наружу
-        // возвращает срезанное вплоть до исходного изображения.
+        // Двигает рамку кадрирования по текущей позиции указателя. Сама картинка не
+        // меняется: рамка живёт в отложенных долях среза и уходит в картинку одной
+        // операцией при выходе из режима обрезки. Тяга маркера внутрь срезает край,
+        // тяга наружу возвращает срезанное вплоть до границ исходного изображения.
         private void ApplyImageCrop(float xPt, float yPt)
         {
-            if (_selectedImage is null) return;
+            if (_cropImage is null) return;
+            if (_cropFullWPt <= 0.0 || _cropFullHPt <= 0.0) return;
 
             int corner = _imageResizeCorner;
 
@@ -1177,65 +1364,41 @@ namespace Writersword.Modules.TextEditor.Document
             double ldx = dx * cos + dy * sin;
             double ldy = -dx * sin + dy * cos;
 
+            // Отражение переворачивает направление тяги: маркер, за который держит
+            // пользователь, на экране находится с зеркальной стороны рамки.
+            if (_cropImage.FlipHorizontal) ldx = -ldx;
+            if (_cropImage.FlipVertical) ldy = -ldy;
+
             float sx = corner switch { 1 or 2 or 5 => 1f, 0 or 3 or 7 => -1f, _ => 0f };
             float sy = corner switch { 2 or 3 or 6 => 1f, 0 or 1 or 4 => -1f, _ => 0f };
 
-            const double minPt = 8.0;
+            double minFracW = Math.Min(CropMinSidePt / _cropFullWPt, 0.5);
+            double minFracH = Math.Min(CropMinSidePt / _cropFullHPt, 0.5);
 
-            double newW = _imgResizeStartW;
-            double newH = _imgResizeStartH;
             double cropL = _imgCropStartL;
             double cropT = _imgCropStartT;
             double cropR = _imgCropStartR;
             double cropB = _imgCropStartB;
 
-            // Полный (необрезанный) размер в текущем масштабе — база долей кадрирования.
-            double visWFrac = Math.Max(1.0 - _imgCropStartL - _imgCropStartR, 0.01);
-            double visHFrac = Math.Max(1.0 - _imgCropStartT - _imgCropStartB, 0.01);
-            double fullW = _imgResizeStartW / visWFrac;
-            double fullH = _imgResizeStartH / visHFrac;
-
             if (sx > 0f)
-            {
-                // Правый край: ширина меняется, срез справа пересчитывается.
-                newW = Math.Clamp(_imgResizeStartW + ldx, minPt, fullW * (1.0 - _imgCropStartL));
-                cropR = 1.0 - _imgCropStartL - newW / fullW;
-            }
+                cropR = Math.Clamp(_imgCropStartR - ldx / _cropFullWPt,
+                                   0.0, Math.Max(0.0, 1.0 - _imgCropStartL - minFracW));
             else if (sx < 0f)
-            {
-                // Левый край: ширина меняется, срез слева пересчитывается.
-                newW = Math.Clamp(_imgResizeStartW - ldx, minPt, fullW * (1.0 - _imgCropStartR));
-                cropL = 1.0 - _imgCropStartR - newW / fullW;
-            }
+                cropL = Math.Clamp(_imgCropStartL + ldx / _cropFullWPt,
+                                   0.0, Math.Max(0.0, 1.0 - _imgCropStartR - minFracW));
 
             if (sy > 0f)
-            {
-                newH = Math.Clamp(_imgResizeStartH + ldy, minPt, fullH * (1.0 - _imgCropStartT));
-                cropB = 1.0 - _imgCropStartT - newH / fullH;
-            }
+                cropB = Math.Clamp(_imgCropStartB - ldy / _cropFullHPt,
+                                   0.0, Math.Max(0.0, 1.0 - _imgCropStartT - minFracH));
             else if (sy < 0f)
-            {
-                newH = Math.Clamp(_imgResizeStartH - ldy, minPt, fullH * (1.0 - _imgCropStartB));
-                cropT = 1.0 - _imgCropStartB - newH / fullH;
-            }
+                cropT = Math.Clamp(_imgCropStartT + ldy / _cropFullHPt,
+                                   0.0, Math.Max(0.0, 1.0 - _imgCropStartB - minFracH));
 
-            // Для плавающей картинки при срезе слева/сверху смещаем якорь,
-            // чтобы противоположный край оставался на месте.
-            if (_selectedImage.WrapMode != WrapMode.Inline)
-            {
-                if (sx < 0f) _selectedImage.OffsetXPt = _imgResizeStartOffX + (_imgResizeStartW - newW);
-                if (sy < 0f) _selectedImage.OffsetYPt = _imgResizeStartOffY + (_imgResizeStartH - newH);
-            }
-
-            _selectedImage.CropLeftFrac = Math.Clamp(cropL, 0.0, 0.95);
-            _selectedImage.CropTopFrac = Math.Clamp(cropT, 0.0, 0.95);
-            _selectedImage.CropRightFrac = Math.Clamp(cropR, 0.0, 0.95);
-            _selectedImage.CropBottomFrac = Math.Clamp(cropB, 0.0, 0.95);
-            _selectedImage.WidthPt = newW;
-            _selectedImage.HeightPt = newH;
+            _cropPendLeft = Math.Clamp(cropL, 0.0, 0.95);
+            _cropPendTop = Math.Clamp(cropT, 0.0, 0.95);
+            _cropPendRight = Math.Clamp(cropR, 0.0, 0.95);
+            _cropPendBottom = Math.Clamp(cropB, 0.0, 0.95);
             _imageResizeMoved = true;
-            RebuildLayouts();
-            InvalidateMeasure();
             InvalidateFull();
         }
 
@@ -1326,13 +1489,23 @@ namespace Writersword.Modules.TextEditor.Document
             // последующие правки/undo обновляют канвас корректно (не упираются в _zooming).
             FinishZoomImmediately();
 
+            // Завершение обрезки с клавиатуры: Enter применяет рамку кадрирования,
+            // Esc отбрасывает её и возвращает картинку к прежним границам.
+            if (_imageCropMode && (e.Key == Key.Enter || e.Key == Key.Escape))
+            {
+                ExitImageCropMode(apply: e.Key == Key.Enter);
+                ImageSelectionChanged?.Invoke(_selectedImage is not null);
+                e.Handled = true;
+                return;
+            }
+
             // Удаление выделенной картинки — раньше хоткеев и прочей обработки.
             if (_selectedImage is not null && (e.Key == Key.Delete || e.Key == Key.Back))
             {
                 _logger.Debug("[IMG] delete selected image {F}", _selectedImage.ImageFileName);
+                ExitImageCropMode(apply: false);
                 DocVm?.RemoveImage(_selectedImage);
                 _selectedImage = null;
-                _imageCropMode = false;
                 ImageSelectionChanged?.Invoke(false);
                 e.Handled = true;
                 return;
@@ -1869,11 +2042,15 @@ namespace Writersword.Modules.TextEditor.Document
             if (IsEditingBlocked) return;
             _caretLineHint = -1;
 
-            if (_isCellRangeSelecting)
+            // Диапазон ячеек очищается только когда он реально есть. Поднятый флаг
+            // без выделенных ячеек больше не съедает нажатие: он сбрасывается, и
+            // удаление идёт обычным путём.
+            if (_isCellRangeSelecting && _tableSelections.Count > 0)
             {
                 ClearCellRangeSelection();
                 return;
             }
+            _isCellRangeSelecting = false;
 
             // Параграфное выделение захватило таблицы — удаляем их из документа.
             if (_tableSelections.Count > 0 && DocVm is not null)
@@ -1895,11 +2072,14 @@ namespace Writersword.Modules.TextEditor.Document
             if (IsEditingBlocked) return;
             _caretLineHint = -1;
 
-            if (_isCellRangeSelecting)
+            // См. ExecuteDeleteBackSmart: поднятый флаг без выделенных ячеек
+            // блокировал удаление, теперь он просто сбрасывается.
+            if (_isCellRangeSelecting && _tableSelections.Count > 0)
             {
                 ClearCellRangeSelection();
                 return;
             }
+            _isCellRangeSelecting = false;
 
             // Параграфное выделение захватило таблицы — удаляем их из документа.
             if (_tableSelections.Count > 0 && DocVm is not null)
@@ -2505,7 +2685,6 @@ namespace Writersword.Modules.TextEditor.Document
                 else if (next is not null && !IsInCell(_caretPara + 1) && !nextIsPostTableAnchor)
                 {
                     // Сливаем следующий параграф в текущий, сохраняя форматирование обоих.
-                    string nextText = next.PlainText ?? "";
                     // Если текущий абзац ПУСТ, а следующий — элемент списка, принимаем его
                     // форматирование (стиль, отступы, список). Иначе при удалении пустой строки
                     // над списком терялся бы маркер: содержимое списка вливалось в не-списочный
@@ -2515,7 +2694,11 @@ namespace Writersword.Modules.TextEditor.Document
                         pvm.Model.Properties = next.Model.Properties.Clone();
                         pvm.Model.ListProperties = next.Model.ListProperties.Clone();
                     }
-                    pvm.Model.SpliceText(text.Length, text.Length, nextText);
+                    // Содержимое переносим посимвольно, а не плоским текстом: так переезжают
+                    // и форматирование каждого символа, и картинки в строке.
+                    var mergedCells = pvm.Model.ToCharCells();
+                    mergedCells.AddRange(next.Model.ToCharCells());
+                    pvm.Model.RebuildFromCharCells(mergedCells);
                     pvm.RefreshPlainTextFromModel();
                     DocVm?.DeleteParagraph(next);
                 }

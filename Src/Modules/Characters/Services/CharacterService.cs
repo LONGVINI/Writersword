@@ -1,4 +1,4 @@
-using Serilog;
+﻿using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,6 +15,7 @@ namespace Writersword.Modules.Characters.Services
         private readonly IRelationshipService _relationshipService;
         private readonly ICharacterAnketaService _anketaService;
         private readonly List<Character> _characters = new();
+        private readonly List<CharacterLabel> _labels = new();
         private object? _context;
 
         private const string AvatarFolder = "Characters/avatars";
@@ -63,18 +64,79 @@ namespace Writersword.Modules.Characters.Services
         public Character? GetById(string id) => _characters.FirstOrDefault(c => c.Id == id);
 
         /// <summary>
-        /// По одной метке на имя. Встроенные («Мёртв») идут первыми, остальные
+        /// Реестр меток проекта. Встроенные («Мёртв») идут первыми, остальные
         /// по алфавиту — порядок нужен только для подсказок при вводе.
         /// </summary>
         public IReadOnlyList<CharacterLabel> GetAllLabels() =>
-            _characters
-                .SelectMany(c => c.Labels)
+            _labels
                 .Where(l => !string.IsNullOrWhiteSpace(l.Name))
-                .GroupBy(l => l.Name, StringComparer.CurrentCultureIgnoreCase)
-                .Select(g => g.First())
                 .OrderByDescending(l => l.IsBuiltIn)
                 .ThenBy(l => l.Name, StringComparer.CurrentCultureIgnoreCase)
                 .ToList().AsReadOnly();
+
+        public void SaveGlobalLabel(CharacterLabel label)
+        {
+            if (IsReadOnly) return;
+            if (label == null || string.IsNullOrWhiteSpace(label.Name)) return;
+
+            // Метка ищется по идентификатору, а при промахе — по имени:
+            // проекты старше реестра собрали его из копий персонажей, и там
+            // одно имя вполне могло разойтись по нескольким идентификаторам.
+            var index = _labels.FindIndex(l => l.Id == label.Id);
+            if (index < 0)
+                index = _labels.FindIndex(l =>
+                    string.Equals(l.Name, label.Name, StringComparison.CurrentCultureIgnoreCase));
+
+            var entry = CloneAsTemplate(label);
+            if (index >= 0) _labels[index] = entry;
+            else _labels.Add(entry);
+
+            _logger.Debug("Global label saved: {Name}", entry.Name);
+        }
+
+        public int ApplyLabelToAll(CharacterLabel label)
+        {
+            if (IsReadOnly) return 0;
+            if (label == null) return 0;
+
+            var affected = 0;
+            foreach (var character in _characters)
+            {
+                var own = character.Labels.FirstOrDefault(l => l.Id == label.Id);
+                if (own == null) continue;
+
+                own.Name = label.Name;
+                own.Icon = label.Icon;
+                own.IconImage = label.IconImage;
+                own.Color = label.Color;
+                own.IconColor = label.IconColor;
+                own.ShowBackdrop = label.ShowBackdrop;
+                own.Effect = label.Effect;
+                own.Description = label.Description;
+                character.UpdatedAt = DateTime.UtcNow;
+                affected++;
+            }
+
+            _logger.Debug("Label '{Name}' applied to {Count} characters", label.Name, affected);
+            return affected;
+        }
+
+        // Образец для реестра: личные поля персонажа в него не уходят.
+        // Порядок и показ на карточке каждый персонаж держит свои — иначе
+        // сохранение общей метки переставляло бы значки у всех подряд.
+        private static CharacterLabel CloneAsTemplate(CharacterLabel label) => new()
+        {
+            Id = label.Id,
+            Name = label.Name,
+            Icon = label.Icon,
+            IconImage = label.IconImage,
+            Color = label.Color,
+            IconColor = label.IconColor,
+            ShowBackdrop = label.ShowBackdrop,
+            Effect = label.Effect,
+            Description = label.Description,
+            ShowOnCard = label.ShowOnCard
+        };
 
         public IReadOnlyList<string> GetAllTags() =>
             _characters.SelectMany(c => c.Tags).Distinct().OrderBy(t => t).ToList().AsReadOnly();
@@ -163,10 +225,12 @@ namespace Writersword.Modules.Characters.Services
                 Tags = new List<string>(original.Tags),
                 Labels = original.Labels.Select(l => new CharacterLabel
                 {
-                    Id = l.IsBuiltIn ? l.Id : Guid.NewGuid().ToString(),
+                    Id = l.Id,
                     Name = l.Name,
                     Icon = l.Icon,
                     Color = l.Color,
+                    IconColor = l.IconColor,
+                    ShowBackdrop = l.ShowBackdrop,
                     Effect = l.Effect,
                     IconImage = l.IconImage,
                     ShowOnCard = l.ShowOnCard,
@@ -367,6 +431,7 @@ namespace Writersword.Modules.Characters.Services
         public CharactersModuleData GetModuleData() => new()
         {
             Characters = _characters.ToList(),
+            Labels = _labels.ToList(),
             Relationships = _relationshipService.GetAll().ToList()
         };
 
@@ -389,11 +454,54 @@ namespace Writersword.Modules.Characters.Services
                     foreach (var p in c.Parameters)
                         if (string.IsNullOrWhiteSpace(p.FieldId))
                             p.FieldId = CharacterFieldId.FromName(p.Name);
+
+                    // Встроенная «Мёртв» приводится к текущему виду сразу при
+                    // загрузке, а не при первом открытии карточки: значок
+                    // виден на карточках списков, куда карточку персонажа
+                    // никто мог и не открывать.
+                    foreach (var l in c.Labels)
+                        CharacterBuiltinLabels.NormalizeBuiltIn(l);
                 }
 
                 _characters.AddRange(data.Characters);
             }
-            _logger.Debug("Module data loaded: {Count} characters", _characters.Count);
+
+            LoadLabelRegistry(data);
+
+            _logger.Debug("Module data loaded: {Count} characters, {LabelCount} labels",
+                _characters.Count, _labels.Count);
+        }
+
+        /// <summary>
+        /// Реестр меток. Проекты, сохранённые до его появления, реестра не
+        /// содержат — он собирается из меток персонажей по одной на имя, как
+        /// это раньше делалось на лету при каждом обращении. Собранное сразу
+        /// уходит в файл при ближайшем сохранении, и дальше метка живёт в
+        /// реестре сама по себе: правка перестаёт зависеть от того, у кого
+        /// она нашлась первой, а удаление персонажа больше не уносит её вид.
+        /// </summary>
+        private void LoadLabelRegistry(CharactersModuleData data)
+        {
+            _labels.Clear();
+
+            if (data.Labels != null && data.Labels.Count > 0)
+            {
+                foreach (var label in data.Labels)
+                {
+                    CharacterBuiltinLabels.NormalizeBuiltIn(label);
+                    _labels.Add(label);
+                }
+                return;
+            }
+
+            var collected = _characters
+                .SelectMany(c => c.Labels)
+                .Where(l => !string.IsNullOrWhiteSpace(l.Name))
+                .GroupBy(l => l.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(g => g.First());
+
+            foreach (var label in collected)
+                _labels.Add(CloneAsTemplate(label));
         }
 
         public Character CreateWithId(Character character)

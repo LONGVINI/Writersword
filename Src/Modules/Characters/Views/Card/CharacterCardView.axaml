@@ -27,6 +27,13 @@
 			<Setter Property="VerticalContentAlignment" Value="Stretch"/>
 			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
 		</Style>
+		<!-- Тема кладёт под полосу вкладок два пикселя отступа
+		     (TabControlTopPlacementItemsPresenter, Margin 0,0,0,2). Между
+		     вкладками и шапкой карточки от них остаётся тёмная нить,
+		     и всё, что цепляется к кромке шапки, выглядит сдвинутым. -->
+		<Style Selector="TabControl.card-tabs /template/ ItemsPresenter#PART_ItemsPresenter">
+			<Setter Property="Margin" Value="0"/>
+		</Style>
 		<Style Selector="TabControl.card-tabs /template/ ContentPresenter#PART_SelectedContentHost">
 			<Setter Property="VerticalAlignment" Value="Stretch"/>
 			<Setter Property="HorizontalAlignment" Value="Stretch"/>
@@ -112,4 +119,5 @@
 		     модели, ждёт функциональности» в Docs/Characters. -->
 
 	</TabControl>
+
 </UserControl>

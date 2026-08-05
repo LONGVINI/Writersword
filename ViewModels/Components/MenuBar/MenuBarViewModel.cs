@@ -68,6 +68,10 @@ namespace Writersword.ViewModels.Components.MenuBar
         public ReactiveCommand<Unit, Unit> OpenSettingsCommand { get; }
         public ReactiveCommand<Unit, Unit> ExitCommand { get; }
 
+        // ── Команды: Tools ─────────────────────────────────────────────────────
+
+        public ReactiveCommand<Unit, Unit> CompactProjectCommand { get; }
+
         // ── Команды: View ──────────────────────────────────────────────────────
 
         public ReactiveCommand<Unit, Unit> ToggleFullscreenCommand { get; }
@@ -111,6 +115,7 @@ namespace Writersword.ViewModels.Components.MenuBar
             CloseOtherTabsCommand = ReactiveCommand.CreateFromTask(CloseOtherTabs);
             OpenSettingsCommand = ReactiveCommand.CreateFromTask(OpenSettings);
             ExitCommand = ReactiveCommand.Create(Exit);
+            CompactProjectCommand = ReactiveCommand.CreateFromTask(CompactProject);
             ToggleFullscreenCommand = ReactiveCommand.Create(ToggleFullscreen);
             SaveWorkspaceGlobalCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceGlobal);
             ResetWorkspaceToGlobalCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToGlobal);

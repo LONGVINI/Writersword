@@ -148,10 +148,12 @@ namespace Writersword.Modules.Common
         /// </summary>
         public virtual void Dispose()
         {
-            if (this is IHotKeyProvider)
+            if (this is IHotKeyProvider disposedProvider)
             {
                 var hotKeyService = CoreServices.GetService<IHotKeyService>();
-                hotKeyService?.UnbindExecutor(moduleType);
+                // Привязка снимается только если она принадлежит этому экземпляру:
+                // у другой вкладки того же типа модуля executor должен уцелеть.
+                hotKeyService?.UnbindExecutor(moduleType, disposedProvider);
             }
             _cachedView = null;
         }

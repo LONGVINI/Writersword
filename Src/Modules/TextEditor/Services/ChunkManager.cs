@@ -206,7 +206,10 @@ namespace Writersword.Modules.TextEditor.Services
                     currentChunk.Runs.Add(new RunModel
                     {
                         Text = piece,
-                        Properties = run.Properties?.Clone()
+                        Properties = run.Properties?.Clone(),
+                        // Объектный run — один символ-заполнитель, разрезать его нельзя,
+                        // а ссылку на картинку обязан унести кусок целиком.
+                        InlineImageId = run.InlineImageId
                     });
                     currentChunk.InvalidateLength();
 

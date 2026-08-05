@@ -316,6 +316,38 @@ namespace Writersword
 
                 mainWindow.Opened += async (s, e) =>
                 {
+                    // Настройки производительности применяются при старте.
+                    // Раньше они применялись только из сеттеров окна настроек, то
+                    // есть автосохранение в файл проекта не включалось вовсе — пока
+                    // человек сам не щёлкал галочку, единственной защитой оставался
+                    // кеш .wsasd.
+                    try
+                    {
+                        var perf = settingsService
+                            .GetModuleSettings<Writersword.Core.Models.Settings.PerformanceSettings>("performance")
+                            ?? new Writersword.Core.Models.Settings.PerformanceSettings();
+
+                        var cacheUpdateService = Services.GetService<ICacheUpdateService>();
+                        if (cacheUpdateService != null && perf.CachingIntervalSeconds > 0)
+                            cacheUpdateService.SetInterval(TimeSpan.FromSeconds(perf.CachingIntervalSeconds));
+
+                        var autoSaveService = Services.GetService<IAutoSaveService>();
+                        if (autoSaveService != null)
+                        {
+                            autoSaveService.SetInterval(TimeSpan.FromSeconds(
+                                Math.Max(0, perf.AutoSaveIntervalSeconds)));
+                            autoSaveService.IsEnabled = perf.AutoSaveEnabled;
+                        }
+
+                        Log.ForContext<App>().Debug(
+                            "Performance settings applied: autoSave={Enabled}/{AutoSaveSec}s, cache={CacheSec}s",
+                            perf.AutoSaveEnabled, perf.AutoSaveIntervalSeconds, perf.CachingIntervalSeconds);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.ForContext<App>().Error(ex, "Failed to apply performance settings");
+                    }
+
                     // Таймер истории версий живёт отдельно от автосохранения:
                     // частоту точек задают настройки истории, а не интервал
                     // защиты от падения.

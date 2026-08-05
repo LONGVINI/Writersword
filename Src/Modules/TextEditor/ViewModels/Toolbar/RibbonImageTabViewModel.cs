@@ -16,6 +16,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         private TextAlignment _currentAlignment = TextAlignment.Left;
         private WrapMode _currentWrap = WrapMode.Inline;
+        private WrapSide _currentWrapSide = WrapSide.LargestOnly;
+        private int _pinnedPage;
         private bool _isAspectLocked = true;
         private decimal _rotationDegrees;
         private decimal _imageWidth;
@@ -70,8 +72,46 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 // Всегда raise — см. CurrentAlignment: переключатели строго взаимоисключающие.
                 _currentWrap = value;
                 this.RaisePropertyChanged(nameof(CurrentWrap));
+                this.RaisePropertyChanged(nameof(IsWrapPaddingEnabled));
+                this.RaisePropertyChanged(nameof(WrapPaddingOpacity));
+                this.RaisePropertyChanged(nameof(IsPinAvailable));
             }
         }
+
+        /// <summary>
+        /// Закреплена ли картинка за страницей. Номер страницы наружу не выносится:
+        /// закрепляется та страница, на которой картинка стоит в момент нажатия.
+        /// </summary>
+        public bool IsPinnedToPage => _pinnedPage > 0;
+
+        /// <summary>
+        /// Есть ли смысл в закреплении. У картинки «в тексте» её место определяет текст,
+        /// а не номер страницы — группа закрепления для неё не показывается.
+        /// </summary>
+        public bool IsPinAvailable => _currentWrap != WrapMode.Inline;
+
+        /// <summary>Сторона, с которой текст обходит картинку (для подсветки кнопок).</summary>
+        public WrapSide CurrentWrapSide
+        {
+            get => _currentWrapSide;
+            private set
+            {
+                // Всегда raise — см. CurrentAlignment: переключатели взаимоисключающие.
+                _currentWrapSide = value;
+                this.RaisePropertyChanged(nameof(CurrentWrapSide));
+            }
+        }
+
+        /// <summary>
+        /// Отступы обтекания имеют смысл только когда текст реально обтекает картинку.
+        /// В режимах «В тексте» и «За текстом» группа отступов заблокирована.
+        /// Сторона обтекания включается по тому же условию.
+        /// </summary>
+        public bool IsWrapPaddingEnabled
+            => _currentWrap == WrapMode.Square || _currentWrap == WrapMode.Tight;
+
+        /// <summary>Приглушение группы отступов, когда обтекание выключено.</summary>
+        public double WrapPaddingOpacity => IsWrapPaddingEnabled ? 1.0 : 0.4;
 
         /// <summary>Заблокированы ли пропорции при изменении размера.</summary>
         public bool IsAspectLocked
@@ -94,8 +134,19 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             {
                 _isCropMode = value;
                 this.RaisePropertyChanged(nameof(IsCropMode));
+                this.RaisePropertyChanged(nameof(IsSizeEditEnabled));
+                this.RaisePropertyChanged(nameof(SizeEditOpacity));
             }
         }
+
+        /// <summary>
+        /// Пока идёт обрезка, размер картинки менять нельзя: маркеры и поля размера
+        /// заняты рамкой кадрирования. Разблокируется по выходу из режима обрезки.
+        /// </summary>
+        public bool IsSizeEditEnabled => !_isCropMode;
+
+        /// <summary>Приглушение полей размера на время обрезки.</summary>
+        public double SizeEditOpacity => _isCropMode ? 0.4 : 1.0;
 
         /// <summary>
         /// Угол поворота картинки в градусах по часовой стрелке.
@@ -207,7 +258,18 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 if (_borderThickness != clamped)
                 {
                     _borderThickness = clamped;
-                    if (!_syncing) _target.SetImageBorder(_borderHexColor, (double)clamped);
+                    if (!_syncing)
+                    {
+                        // Толщина при «нет цвета» давала невидимую рамку: пользователь
+                        // менял число, а на листе ничего не появлялось. Ненулевая
+                        // толщина без выбранного цвета включает чёрную рамку.
+                        if (clamped > 0m && _borderHexColor == "#00000000")
+                        {
+                            _borderHexColor = "#000000";
+                            this.RaisePropertyChanged(nameof(BorderHexColor));
+                        }
+                        _target.SetImageBorder(_borderHexColor, (double)clamped);
+                    }
                 }
                 this.RaisePropertyChanged(nameof(BorderThickness));
             }
@@ -227,6 +289,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                     if (_borderThickness <= 0m && _borderHexColor != "#00000000")
                     {
                         _borderThickness = 1.5m;
+                        this.RaisePropertyChanged(nameof(BorderThickness));
+                    }
+                    // Выбор «нет цвета» — это отказ от рамки: обнуляем и толщину,
+                    // иначе поле показывало бы толщину несуществующей рамки.
+                    else if (_borderHexColor == "#00000000" && _borderThickness > 0m)
+                    {
+                        _borderThickness = 0m;
                         this.RaisePropertyChanged(nameof(BorderThickness));
                     }
                     _target.SetImageBorder(_borderHexColor, (double)_borderThickness);
@@ -321,6 +390,15 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public ICommand WrapSquareCommand { get; }
         public ICommand WrapBehindCommand { get; }
 
+        // ── Привязка к странице ───────────────────────────────────────────
+        public ICommand TogglePinToPageCommand { get; }
+
+        // ── Сторона обтекания ─────────────────────────────────────────────
+        public ICommand WrapSideLargestCommand { get; }
+        public ICommand WrapSideBothCommand { get; }
+        public ICommand WrapSideLeftCommand { get; }
+        public ICommand WrapSideRightCommand { get; }
+
         // ── Поворот ───────────────────────────────────────────────────────
         public ICommand RotateLeft90Command { get; }
         public ICommand RotateRight90Command { get; }
@@ -360,6 +438,26 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             WrapBehindCommand = ReactiveCommand.Create(() =>
                 { _target.SetImageWrapMode(WrapMode.Behind); SyncFromTarget(); });
 
+            // Включение привязывает картинку к странице, на которой она сейчас лежит;
+            // выключение возвращает обычный перенос вслед за текстом.
+            TogglePinToPageCommand = ReactiveCommand.Create(() =>
+            {
+                int page = _pinnedPage > 0
+                    ? 0
+                    : (_target.GetSelectedImageCurrentPage() ?? 1);
+                _target.SetImagePinnedPage(page);
+                SyncFromTarget();
+            });
+
+            WrapSideLargestCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageWrapSide(WrapSide.LargestOnly); SyncFromTarget(); });
+            WrapSideBothCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageWrapSide(WrapSide.BothSides); SyncFromTarget(); });
+            WrapSideLeftCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageWrapSide(WrapSide.LeftOnly); SyncFromTarget(); });
+            WrapSideRightCommand = ReactiveCommand.Create(() =>
+                { _target.SetImageWrapSide(WrapSide.RightOnly); SyncFromTarget(); });
+
             RotateLeft90Command = ReactiveCommand.Create(() =>
                 { RotationDegrees = _rotationDegrees - 90m; });
             RotateRight90Command = ReactiveCommand.Create(() =>
@@ -397,6 +495,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             {
                 CurrentAlignment = info.Value.Align;
                 CurrentWrap = info.Value.Wrap;
+                CurrentWrapSide = _target.GetSelectedImageWrapSide() ?? WrapSide.LargestOnly;
+
+                _pinnedPage = _target.GetSelectedImagePinnedPage() ?? 0;
+                this.RaisePropertyChanged(nameof(IsPinnedToPage));
                 IsAspectLocked = info.Value.LockAspect;
                 IsCropMode = _target.GetImageCropMode();
 

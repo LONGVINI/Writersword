@@ -124,7 +124,11 @@ namespace Writersword.Modules.TextEditor.Document
             float XPt,
             float WidthPt,
             float HeightPt,
-            int PageIndex);
+            int PageIndex,
+            // Картинка встроена в строку текста: рисует её рендер текста, а запись нужна
+            // для выделения, маркеров размера, поворота и обрезки — они работают по
+            // единому списку картинок.
+            bool InLine = false);
 
         // ── Атомарный снимок для render-потока ────────────────────────────
         private readonly object _renderLock = new();
@@ -135,6 +139,11 @@ namespace Writersword.Modules.TextEditor.Document
 
         // Выделенная картинка (для рамки и удаления). null — ничего не выделено.
         private ImageBlock? _selectedImage;
+
+        // Картинки, попавшие в ТЕКСТОВОЕ выделение (оно прошло через них по потоку).
+        // Пересчитывается на UI-потоке в RefreshImagesInTextSelection, рендер только читает —
+        // поэтому набор всегда подменяется целиком, а не правится на месте.
+        private HashSet<ImageBlock> _imagesInTextSelection = new();
         private readonly SKPaint _paintImageSelection = new()
         {
             Style = SKPaintStyle.Stroke,
@@ -142,6 +151,12 @@ namespace Writersword.Modules.TextEditor.Document
             StrokeWidth = 1.5f,
             IsAntialias = true
         };
+
+        // Перетаскивание картинки «в тексте». У неё нет свободных координат — она символ
+        // абзаца, поэтому drag переносит её в точку текста под курсором, а не в точку листа.
+        private bool _inlineImageDragging;
+        private bool _inlineImageDragMoved;
+        private ImageBlock? _inlineDragImage;
 
         // Перетаскивание плавающей картинки.
         private bool _imageDragging;
@@ -241,6 +256,36 @@ namespace Writersword.Modules.TextEditor.Document
         // При 1 все дельты нулевые — поведение идентично прежнему.
         private int _pagesPerRow = 1;
 
+        // Настройка числа страниц в ряду: 0 — авто, иначе фиксированное число.
+        // _pagesPerRow — уже вычисленное действующее значение.
+        private int _pagesPerRowSetting = 1;
+
+        /// <summary>
+        /// Пересчитывает действующее число страниц в ряду. В авто-режиме берётся столько,
+        /// сколько влезает в ширину канваса при текущем масштабе: отдалили — страниц в
+        /// ряду больше, приблизили — меньше. Ширина канваса уже поделена на зум, поэтому
+        /// отдельно следить за масштабом не нужно.
+        /// </summary>
+        private void UpdateEffectivePagesPerRow()
+        {
+            if (_pagesPerRowSetting > 0)
+            {
+                _pagesPerRow = _pagesPerRowSetting;
+                return;
+            }
+
+            float pageWidthPt = GetPageWidthPt();
+            if (pageWidthPt <= 1f) { _pagesPerRow = 1; return; }
+
+            float availablePt = (float)(_canvasWidth * PxToPt);
+            float stepPt = pageWidthPt + PageGapPt * 2f;
+
+            // Последней странице ряда зазор справа не нужен — добавляем его к доступной
+            // ширине, иначе ряд из ровно N страниц не считался бы влезающим.
+            int fit = (int)Math.Floor((availablePt + PageGapPt * 2f) / stepPt);
+            _pagesPerRow = Math.Clamp(fit, 1, 12);
+        }
+
         /// <summary>
         /// Дельта визуальной позиции страницы относительно логической (в пунктах).
         /// Колонки раскладываются слева направо, ряды сверху вниз, блок рядов
@@ -258,7 +303,12 @@ namespace Writersword.Modules.TextEditor.Document
 
             float canvasWPt = (float)(_canvasWidth * PxToPt);
             float gapX = PageGapPt * 2f;
-            float totalW = cols * pg.WidthPt + (cols - 1) * gapX;
+
+            // Центрируем КАЖДЫЙ ряд по числу страниц именно в нём. По ширине полного ряда
+            // неполный последний прижимался бы влево: две страницы из трёх — и они уже
+            // не по центру, а одна-единственная висит слева.
+            int inThisRow = Math.Max(1, Math.Min(cols, pages.Count - row * cols));
+            float totalW = inThisRow * pg.WidthPt + (inThisRow - 1) * gapX;
             float marginX = Math.Max((canvasWPt - totalW) / 2f, 0f);
 
             float visX = marginX + col * (pg.WidthPt + gapX);
@@ -336,6 +386,39 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         /// <summary>
+        /// Точка указателя в системе координат страницы ВЫДЕЛЕННОЙ картинки. Нужна там,
+        /// где проверяется попадание по её маркерам: картинка может лежать мимо своего
+        /// листа, на территории соседнего, и перевод через ближайшую страницу дал бы
+        /// координаты чужой системы — маркеры не ловились бы. Если картинки нет или
+        /// режим одностраничный, возвращается точка как есть.
+        /// </summary>
+        private (float XPt, float YPt) LogicalPointForSelectedImage(
+            float rawXPt, float rawYPt, float fallbackXPt, float fallbackYPt)
+        {
+            if (_pagesPerRow <= 1 || _selectedImage is null)
+                return (fallbackXPt, fallbackYPt);
+
+            foreach (var ie in _images)
+            {
+                if (!ReferenceEquals(ie.Block, _selectedImage)) continue;
+                if (ie.PageIndex < 0) break;
+                return VisualToLogicalPt(rawXPt, rawYPt, ie.PageIndex);
+            }
+
+            return (fallbackXPt, fallbackYPt);
+        }
+
+        /// <summary>Индекс страницы выделенной картинки, либо -1.</summary>
+        private int SelectedImagePageIndex()
+        {
+            if (_selectedImage is null) return -1;
+            foreach (var ie in _images)
+                if (ReferenceEquals(ie.Block, _selectedImage))
+                    return ie.PageIndex;
+            return -1;
+        }
+
+        /// <summary>
         /// Живой сдвиг центрирования листа для одностраничного режима (компенсация
         /// между запечённым _layoutPageXPt и текущей шириной канваса). В режиме
         /// страниц рядом центрирование выполняет PageVisualDelta — сдвиг нулевой.
@@ -351,11 +434,48 @@ namespace Writersword.Modules.TextEditor.Document
         // а не размер. Сбрасывается при снятии выделения.
         private bool _imageCropMode;
 
+        // Картинка, для которой включён режим обрезки, и отложенные доли среза.
+        // Пока режим активен, сама картинка не меняется: на канвасе показывается
+        // исходное изображение целиком с затемнением срезаемых краёв. Границы
+        // применяются одним действием при выходе из режима (кнопка «Обрезка» или
+        // Enter — применить, Esc — отменить). Изменение размера в этом режиме
+        // заблокировано: маркеры двигают только рамку кадрирования.
+        private ImageBlock? _cropImage;
+        private double _cropPendLeft;
+        private double _cropPendTop;
+        private double _cropPendRight;
+        private double _cropPendBottom;
+
+        // Полный (несрезанный) размер картинки в пунктах на момент входа в режим.
+        private double _cropFullWPt;
+        private double _cropFullHPt;
+
+        // Минимальная сторона рамки кадрирования, пункты.
+        private const double CropMinSidePt = 8.0;
+
         // Акцентная заливка маркеров в режиме обрезки.
         private readonly SKPaint _paintImageHandleCropFill = new()
         {
             Style = SKPaintStyle.Fill,
             Color = new SKColor(0xE0, 0x7B, 0x39),
+            IsAntialias = true
+        };
+
+        // Затемнение срезаемой части картинки в режиме обрезки.
+        private readonly SKPaint _paintCropDim = new()
+        {
+            Style = SKPaintStyle.Fill,
+            Color = new SKColor(0x1A, 0x1A, 0x1A, 0x99),
+            IsAntialias = true
+        };
+
+        // Пунктирный контур исходных границ картинки в режиме обрезки.
+        private readonly SKPaint _paintCropOutline = new()
+        {
+            Style = SKPaintStyle.Stroke,
+            Color = new SKColor(0xE0, 0x7B, 0x39, 0xB0),
+            StrokeWidth = 1f,
+            PathEffect = SKPathEffect.CreateDash(new[] { 4f, 3f }, 0f),
             IsAntialias = true
         };
 
@@ -394,6 +514,14 @@ namespace Writersword.Modules.TextEditor.Document
 
         // Кеш декодированных изображений по имени файла внутри проекта.
         private readonly Dictionary<string, SKImage?> _imageCache = new();
+
+        // Имена файлов, для которых декодирование уже запущено в фоне — чтобы один и тот же
+        // файл не ставился в очередь на каждом кадре, пока предыдущая загрузка не завершилась.
+        private readonly HashSet<string> _imageLoadsInFlight = new();
+
+        // Синхронизирует доступ к _imageCache и _imageLoadsInFlight между render-потоком
+        // (чтение) и фоновыми задачами декодирования (запись).
+        private readonly object _imageCacheLock = new();
 
         // Поля live-preview шрифта вынесены в DocumentCanvas.FontPreview.cs.
 
@@ -591,6 +719,16 @@ namespace Writersword.Modules.TextEditor.Document
         private static ImageBlock? _clipboardImage;
         private static byte[]? _clipboardImageBytes;
 
+        /// <summary>
+        /// Имя файла скопированной, но ещё не вставленной картинки — или null.
+        /// Читает очистка неиспользуемых картинок: файл скопированного изображения
+        /// удалять нельзя, пока копия жива в буфере.
+        /// </summary>
+        internal static string? ClipboardImageFileName
+            => string.IsNullOrEmpty(_clipboardImage?.ImageFileName)
+                ? null
+                : _clipboardImage!.ImageFileName;
+
         // Форматы картинки в системном буфере (Avalonia 12: DataFormat/DataTransfer).
         // "PNG" — читают современные приложения (браузеры, новый Office); CF_DIB
         // ("DeviceIndependentBitmap") — классический формат Windows, читают Word, Paint.
@@ -599,17 +737,26 @@ namespace Writersword.Modules.TextEditor.Document
         private static readonly Avalonia.Input.DataFormat<byte[]> ClipboardImageDibFormat =
             Avalonia.Input.DataFormat.CreateBytesPlatformFormat("DeviceIndependentBitmap");
 
-        private enum ClipboardBlockKind { Paragraph, Table }
+        private enum ClipboardBlockKind { Paragraph, Table, Image }
         private sealed class ClipboardBlock
         {
             public ClipboardBlockKind Kind { get; set; }
             public string? Text { get; set; }           // plain-text для Paragraph (fallback)
             public ParagraphBlock? Block { get; set; }  // полная модель параграфа (стили + runs)
             public TableBlock? Table { get; set; }      // для Table (уже слайснутая)
+
+            // Плавающая картинка, через которую прошло выделение. Хранится вместе
+            // с порядком блоков, поэтому при вставке встаёт между теми же абзацами.
+            public ImageBlock? Image { get; set; }
         }
 
         // ── Рендеринг ─────────────────────────────────────────────────────
         private readonly SKTextRenderer _renderer = new();
+
+        // Вёрстка строки спрашивает габарит встроенной картинки у канваса:
+        // сам рендер текста документа не видит.
+        private void WireInlineImageSizeResolver()
+            => _renderer.InlineImageSize = GetInlineImageSize;
         private StyleResolver? _styleResolver;
 
         /// <summary>
@@ -1073,6 +1220,19 @@ namespace Writersword.Modules.TextEditor.Document
             if (sender is not ScrollViewer sv) return;
             _scrollOffsetY = sv.Offset.Y;
             _viewportHeight = sv.Viewport.Height;
+
+            // Горизонтальная позиция листа для линейки зависит от Offset.X, но публикуется
+            // в линейку только при пересборке раскладки (RebuildPageModePass). При скролле
+            // раскладка не пересобирается, поэтому линейка держала старое значение и уезжала
+            // относительно страницы. Переотправляем позицию при каждом изменении прокрутки —
+            // расчёт совпадает с расчётом в RebuildPageModePass.
+            double pageOffsetXPx = _layoutPageXPt * PtToPx * Zoom - sv.Offset.X;
+            if (Math.Abs(pageOffsetXPx - _lastPageOffsetXPx) > 0.01)
+            {
+                _lastPageOffsetXPx = pageOffsetXPx;
+                PageOffsetXChanged?.Invoke(pageOffsetXPx);
+            }
+
             // Контент не менялся — скролл лишь сдвигает окно по уже отрисованному
             // overscan-битмапу. Ветка _caretOnlyRedraw в RenderWithSKCanvas переиспользует
             // битмап, пока вьюпорт внутри его диапазона, и уходит в полный рендер только
@@ -1171,9 +1331,19 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.CommitTextEditsDelegate = CommitTextEditsGranular;
             DocVm.CommitParagraphPropertyGranularDelegate = CommitParagraphPropertyGranular;
             DocVm.GetCaretWordRangeDelegate = GetCaretWordRange;
+            DocVm.GetCaretTargetDelegate = GetCaretTarget;
+            DocVm.InlineImageInserted -= OnInlineImageInserted;
+            DocVm.InlineImageInserted += OnInlineImageInserted;
+            DocVm.InlineObjectsChanged -= RefreshParagraphAfterInlineChange;
+            DocVm.InlineObjectsChanged += RefreshParagraphAfterInlineChange;
             DocVm.TrySetImageAlignmentDelegate = TrySetSelectedImageAlignment;
             DocVm.GetSelectedImageAlignmentDelegate = GetSelectedImageAlignment;
             DocVm.SetImageWrapModeDelegate = SetSelectedImageWrapMode;
+            DocVm.SetImageWrapSideDelegate = SetSelectedImageWrapSide;
+            DocVm.GetSelectedImageWrapSideDelegate = GetSelectedImageWrapSide;
+            DocVm.SetImagePinnedPageDelegate = SetSelectedImagePinnedPage;
+            DocVm.GetSelectedImagePinnedPageDelegate = GetSelectedImagePinnedPage;
+            DocVm.GetSelectedImageCurrentPageDelegate = GetSelectedImageCurrentPage;
             DocVm.SetImageLockAspectDelegate = SetSelectedImageLockAspect;
             DocVm.DeleteSelectedImageDelegate = DeleteSelectedImageFromCanvas;
             DocVm.GetSelectedImageInfoDelegate = GetSelectedImageInfo;
@@ -1190,7 +1360,9 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.GetImageCropModeDelegate = GetSelectedImageCropMode;
             DocVm.SetImageWrapPaddingDelegate = SetSelectedImageWrapPadding;
             DocVm.GetSelectedImageWrapPaddingDelegate = GetSelectedImageWrapPadding;
-            _pagesPerRow = DocVm.PagesPerRow;
+            WireInlineImageSizeResolver();
+            _pagesPerRowSetting = DocVm.PagesPerRow;
+            UpdateEffectivePagesPerRow();
 
             foreach (var pvm in DocVm.Paragraphs)
             {
@@ -1208,6 +1380,11 @@ namespace Writersword.Modules.TextEditor.Document
             Writersword.Modules.TextEditor.Models.Styles.TextAlignment alignment)
         {
             if (_selectedImage is null)
+                return false;
+
+            // Картинка в строке — обычный символ абзаца: выравнивание относится к абзацу,
+            // как в Word. Команду не поглощаем, пусть идёт по обычному пути.
+            if (IsInlineObjectImage(_selectedImage))
                 return false;
 
             // Плавающая картинка позиционируется смещением якоря, выравнивание к ней
@@ -1233,7 +1410,9 @@ namespace Writersword.Modules.TextEditor.Document
 
         /// <summary>Выравнивание выделенной блок-картинки для отображения в риббоне (или null).</summary>
         private Writersword.Modules.TextEditor.Models.Styles.TextAlignment? GetSelectedImageAlignment()
-            => _selectedImage is not null && _selectedImage.WrapMode == WrapMode.Inline
+            => _selectedImage is not null
+               && _selectedImage.WrapMode == WrapMode.Inline
+               && !IsInlineObjectImage(_selectedImage)
                 ? _selectedImage.Alignment
                 : (Writersword.Modules.TextEditor.Models.Styles.TextAlignment?)null;
 
@@ -1243,8 +1422,11 @@ namespace Writersword.Modules.TextEditor.Document
             if (_selectedImage is null || _selectedImage.WrapMode == mode) return;
 
             BeginImageEdit("Обтекание изображения");
-            // Переход из блока (Inline) в плавающий режим: фиксируем текущее положение
+
+            // Переход из строки текста в плавающий режим: фиксируем текущее положение
             // как смещение якоря, чтобы картинка не прыгнула в угол страницы.
+            double offsetXPt = _selectedImage.OffsetXPt;
+            double offsetYPt = _selectedImage.OffsetYPt;
             if (_selectedImage.WrapMode == WrapMode.Inline && mode != WrapMode.Inline)
             {
                 for (int i = 0; i < _images.Count; i++)
@@ -1254,16 +1436,209 @@ namespace Writersword.Modules.TextEditor.Document
                     if (entry.PageIndex >= 0 && entry.PageIndex < _pages.Count)
                     {
                         var pg = _pages[entry.PageIndex];
-                        _selectedImage.OffsetXPt = entry.XPt - pg.PadLeftPt - pg.MarginLeftPt;
-                        _selectedImage.OffsetYPt = entry.Ypt - pg.Ypt - pg.PadTopPt;
+                        offsetXPt = entry.XPt - pg.PadLeftPt - pg.MarginLeftPt;
+                        offsetYPt = entry.Ypt - pg.Ypt - pg.PadTopPt;
                     }
                     break;
                 }
             }
-            _selectedImage.WrapMode = mode;
+
+            // «В тексте» — это символ в строке, остальные режимы — отдельный блок.
+            // Смена режима переносит картинку между двумя представлениями.
+            bool wasInLine = IsInlineObjectImage(_selectedImage);
+            bool converted = false;
+
+            if (wasInLine && mode != WrapMode.Inline)
+            {
+                InvalidateInlineImageLayout(_selectedImage);
+                converted = DocVm?.ConvertInlineImageToBlock(
+                    _selectedImage, mode, offsetXPt, offsetYPt) ?? false;
+            }
+            else if (!wasInLine && mode == WrapMode.Inline)
+            {
+                converted = DocVm?.ConvertBlockImageToInline(_selectedImage) ?? false;
+            }
+
+            if (!converted)
+            {
+                _selectedImage.WrapMode = mode;
+                _selectedImage.OffsetXPt = offsetXPt;
+                _selectedImage.OffsetYPt = offsetYPt;
+            }
+
+            // Картинка «в тексте» — обычный символ абзаца: её место определяет текст,
+            // а не номер страницы. Закрепление тут бессмысленно и опасно — текст утащит
+            // символ на другую страницу, а закрепление осталось бы от старой. Снимаем.
+            if (mode == WrapMode.Inline) _selectedImage.PinnedPage = 0;
+
+            CommitImageEdit();
+            InvalidateInlineImageLayout(_selectedImage);
+            RebuildLayouts();
+            InvalidateMeasure();
+            InvalidateFull();
+        }
+
+        // Меняет сторону обтекания выделенной картинки: с обеих сторон, только слева,
+        // только справа или по большей стороне.
+        private void SetSelectedImageWrapSide(Models.Document.WrapSide side)
+        {
+            if (_selectedImage is null || _selectedImage.WrapSide == side) return;
+
+            BeginImageEdit("Сторона обтекания");
+            _selectedImage.WrapSide = side;
             CommitImageEdit();
             RebuildLayouts();
+            InvalidateMeasure();
             InvalidateFull();
+        }
+
+        private Models.Document.WrapSide? GetSelectedImageWrapSide()
+            => _selectedImage?.WrapSide;
+
+        /// <summary>
+        /// Включает жёсткую привязку картинки к странице (1-based) или снимает её (0).
+        /// При включении смещения пересчитываются от краёв этой страницы — картинка
+        /// остаётся визуально там же, где была, и дальше уже никуда не переезжает.
+        /// </summary>
+        private void SetSelectedImagePinnedPage(int page)
+        {
+            if (_selectedImage is null) return;
+
+            int normalized = Math.Max(0, page);
+            if (_selectedImage.PinnedPage == normalized) return;
+
+            BeginImageEdit("Привязка к странице");
+
+            // Текущее положение картинки на листе — единственное, что нельзя терять
+            // ни при закреплении, ни при откреплении: смещения после переключения
+            // начинают отсчитываться от ДРУГОЙ страницы, и без пересчёта картинка
+            // прыгает на столько страниц, на сколько её увело закрепление.
+            ImageEntry? current = null;
+            foreach (var ie in _images)
+            {
+                if (!ReferenceEquals(ie.Block, _selectedImage)) continue;
+                current = ie;
+                break;
+            }
+
+            if (normalized > 0)
+            {
+                // Закрепление: смещения переводим на ту страницу, где картинка стоит.
+                if (current is { } pinEntry
+                    && pinEntry.PageIndex >= 0 && pinEntry.PageIndex < _pages.Count)
+                {
+                    var pg = _pages[pinEntry.PageIndex];
+                    _selectedImage.OffsetXPt = pinEntry.XPt - (pg.PadLeftPt + pg.MarginLeftPt);
+                    _selectedImage.OffsetYPt = pinEntry.Ypt - (pg.Ypt + pg.PadTopPt);
+                }
+            }
+            else if (current is { } freeEntry)
+            {
+                // Открепление: картинка снова пойдёт за своим местом в потоке, поэтому
+                // и место в потоке переносим на её страницу — за первый абзац той
+                // страницы, где она сейчас лежит. Смещения пересчитываются от этой же
+                // страницы: картинка остаётся ровно там, где была, и сразу начинает
+                // обтекаться текстом вокруг себя, а не улетает на чужой лист.
+                MoveImageBlockToPage(_selectedImage, freeEntry);
+            }
+
+            _selectedImage.PinnedPage = normalized;
+            CommitImageEdit();
+            RebuildLayouts();
+            InvalidateMeasure();
+            InvalidateFull();
+        }
+
+        /// <summary>
+        /// Переносит блок картинки в поток той страницы, на которой она сейчас лежит,
+        /// и пересчитывает смещения от краёв этой страницы. Визуально картинка остаётся
+        /// на месте, но дальше живёт как обычная плавающая картинка этой страницы.
+        /// </summary>
+        private void MoveImageBlockToPage(ImageBlock image, ImageEntry entry)
+        {
+            if (DocVm is null) return;
+            if (entry.PageIndex < 0 || entry.PageIndex >= _pages.Count) return;
+
+            var section = DocVm.Document.Sections[0];
+
+            // Первый абзац этой страницы — новое место картинки в потоке блоков.
+            ParagraphBlock? host = null;
+            foreach (var pl in _layouts)
+            {
+                if (pl.PageIndex != entry.PageIndex || pl.Cell is not null) continue;
+                if (pl.Vm?.Model is not { } model) continue;
+                if (section.Blocks.IndexOf(model) < 0) continue;
+                host = model;
+                break;
+            }
+
+            if (host is not null)
+            {
+                // Место в потоке переезжает на страницу, где картинка видна, поэтому
+                // и смещения отсчитываются от неё — обе величины описывают одну страницу.
+                var page = _pages[entry.PageIndex];
+                image.OffsetXPt = entry.XPt - (page.PadLeftPt + page.MarginLeftPt);
+                image.OffsetYPt = entry.Ypt - (page.Ypt + page.PadTopPt);
+
+                section.Blocks.Remove(image);
+                int hostIdx = section.Blocks.IndexOf(host);
+                if (hostIdx < 0) section.Blocks.Add(image);
+                else section.Blocks.Insert(hostIdx + 1, image);
+                return;
+            }
+
+            // Абзаца на этой странице нет: лист держала сама привязка. Место в потоке
+            // менять не на что, оно остаётся прежним — а плавающая картинка без
+            // привязки отсчитывается от страницы СВОЕГО МЕСТА В ПОТОКЕ, а не от той,
+            // где она видна (см. RebuildPageModePass: fy = pageYPt + mt + OffsetYPt).
+            // Считать смещения от видимой страницы здесь нельзя: раскладка прибавит
+            // их к другой странице, и картинка прыгнет ровно на столько листов, на
+            // сколько её увела привязка. Лист под ней при этом не исчезает — его
+            // достроит проход по картинкам, которым нужна своя страница.
+            var flowPage = _pages[ResolveFlowPageIndex(image, section)];
+            image.OffsetXPt = entry.XPt - (flowPage.PadLeftPt + flowPage.MarginLeftPt);
+            image.OffsetYPt = entry.Ypt - (flowPage.Ypt + flowPage.PadTopPt);
+        }
+
+        /// <summary>
+        /// Страница, на которой поток дойдёт до места этого блока: страница последнего
+        /// абзаца перед ним. Плавающая картинка без привязки отсчитывает свои смещения
+        /// именно от неё. Абзац может быть разорван по страницам — берём последнюю его
+        /// запись, поток продолжается там, где абзац закончился.
+        /// </summary>
+        private int ResolveFlowPageIndex(ImageBlock image, SectionModel section)
+        {
+            int blockIdx = section.Blocks.IndexOf(image);
+            if (blockIdx <= 0) return 0;
+
+            for (int i = blockIdx - 1; i >= 0; i--)
+            {
+                if (section.Blocks[i] is not ParagraphBlock previous) continue;
+
+                int pageIdx = -1;
+                foreach (var pl in _layouts)
+                {
+                    if (pl.Cell is not null) continue;
+                    if (!ReferenceEquals(pl.Vm?.Model, previous)) continue;
+                    pageIdx = pl.PageIndex;
+                }
+
+                if (pageIdx >= 0 && pageIdx < _pages.Count) return pageIdx;
+            }
+
+            return 0;
+        }
+
+        private int? GetSelectedImagePinnedPage() => _selectedImage?.PinnedPage;
+
+        /// <summary>Номер страницы (1-based), на которой картинка сейчас лежит.</summary>
+        private int? GetSelectedImageCurrentPage()
+        {
+            if (_selectedImage is null) return null;
+            foreach (var ie in _images)
+                if (ReferenceEquals(ie.Block, _selectedImage))
+                    return ie.PageIndex + 1;
+            return null;
         }
 
         // Включает/выключает блокировку пропорций выделенной картинки.
@@ -1281,6 +1656,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (_selectedImage is null) return;
             var img = _selectedImage;
+            ExitImageCropMode(apply: false);
             _selectedImage = null;
             DocVm?.RemoveImage(img);
             ImageSelectionChanged?.Invoke(false);
@@ -1305,6 +1681,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _selectedImage.HeightPt = Math.Max(4.0, _selectedImage.HeightPt * (w / _selectedImage.WidthPt));
             _selectedImage.WidthPt = w;
             CommitImageEdit();
+            InvalidateInlineImageLayout(_selectedImage);
             RebuildLayouts();
             InvalidateMeasure();
             InvalidateFull();
@@ -1323,6 +1700,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _selectedImage.WidthPt = Math.Max(4.0, _selectedImage.WidthPt * (h / _selectedImage.HeightPt));
             _selectedImage.HeightPt = h;
             CommitImageEdit();
+            InvalidateInlineImageLayout(_selectedImage);
             RebuildLayouts();
             InvalidateMeasure();
             InvalidateFull();
@@ -1346,8 +1724,12 @@ namespace Writersword.Modules.TextEditor.Document
         private void SetSelectedImageBorder(string? colorHex, double thicknessPt)
         {
             if (_selectedImage is null) return;
-            string? color = string.IsNullOrEmpty(colorHex) || colorHex == "#00000000" ? null : colorHex;
+            string? color = NormalizeBorderColor(colorHex);
             double thick = Math.Clamp(thicknessPt, 0.0, 50.0);
+            // Толщина без цвета рисовала «невидимую» рамку — пользователь менял
+            // число, а на листе ничего не появлялось. Ненулевая толщина всегда даёт
+            // видимую рамку: цвет по умолчанию — чёрный.
+            if (thick > 0.0 && color is null) color = "#000000";
             _logger.Debug("[IMG] border request color={C} thick={T}", color ?? "none", thick);
             if (_selectedImage.BorderColor == color
                 && Math.Abs(_selectedImage.BorderThicknessPt - thick) < 0.01) return;
@@ -1356,6 +1738,30 @@ namespace Writersword.Modules.TextEditor.Document
             _selectedImage.BorderThicknessPt = thick;
             CommitImageEdit();
             InvalidateFull();
+        }
+
+        // Приводит код цвета рамки к сплошному hex, понятному SKColor.TryParse.
+        // Палитра умеет отдавать код градиента ("grad|...") — из него берётся
+        // первый стоп. Пустой и полностью прозрачный цвет означают «рамки нет».
+        private static string? NormalizeBorderColor(string? colorHex)
+        {
+            if (string.IsNullOrWhiteSpace(colorHex)) return null;
+            string raw = colorHex.Trim();
+            if (string.Equals(raw, "#00000000", StringComparison.OrdinalIgnoreCase)) return null;
+
+            string hex = raw;
+            try
+            {
+                var spec = Writersword.Core.Models.Project.GradientSpec.Parse(raw);
+                if (!string.IsNullOrWhiteSpace(spec?.SolidHex)) hex = spec!.SolidHex.Trim();
+            }
+            catch
+            {
+                hex = raw;
+            }
+
+            if (string.Equals(hex, "#00000000", StringComparison.OrdinalIgnoreCase)) return null;
+            return SKColor.TryParse(hex, out var parsed) && parsed.Alpha > 0 ? hex : null;
         }
 
         // Переключает зеркальное отражение выделенной картинки по горизонтали.
@@ -1378,13 +1784,127 @@ namespace Writersword.Modules.TextEditor.Document
             InvalidateFull();
         }
 
-        // Включает/выключает режим обрезки выделенной картинки.
+        // Включает/выключает режим обрезки выделенной картинки. Выключение
+        // применяет накопленную рамку кадрирования к картинке.
         private void SetSelectedImageCropMode(bool on)
         {
             bool next = on && _selectedImage is not null;
             if (_imageCropMode == next) return;
-            _imageCropMode = next;
+            if (next) EnterImageCropMode();
+            else ExitImageCropMode(apply: true);
+        }
+
+        // Входит в режим обрезки: запоминает исходные доли среза и полный размер
+        // картинки, от которого считается рамка кадрирования.
+        private void EnterImageCropMode()
+        {
+            if (_selectedImage is null) return;
+            var img = _selectedImage;
+
+            double visWFrac = Math.Max(1.0 - img.CropLeftFrac - img.CropRightFrac, 0.01);
+            double visHFrac = Math.Max(1.0 - img.CropTopFrac - img.CropBottomFrac, 0.01);
+
+            _cropImage = img;
+            _cropFullWPt = img.WidthPt / visWFrac;
+            _cropFullHPt = img.HeightPt / visHFrac;
+            _cropPendLeft = img.CropLeftFrac;
+            _cropPendTop = img.CropTopFrac;
+            _cropPendRight = img.CropRightFrac;
+            _cropPendBottom = img.CropBottomFrac;
+            _imageCropMode = true;
+            _imageCropDragging = false;
             InvalidateFull();
+        }
+
+        /// <summary>
+        /// Выходит из режима обрезки. apply = true — накопленная рамка применяется
+        /// к картинке одной undo-операцией, false — изменения отбрасываются.
+        /// </summary>
+        private void ExitImageCropMode(bool apply)
+        {
+            if (!_imageCropMode)
+            {
+                _cropImage = null;
+                return;
+            }
+
+            var img = _cropImage;
+            _imageCropMode = false;
+            _imageCropDragging = false;
+            _cropImage = null;
+
+            if (apply && img is not null) ApplyPendingCrop(img);
+            else InvalidateFull();
+        }
+
+        // Переносит отложенную рамку кадрирования на картинку: доли среза, новый
+        // видимый размер и (для плавающей картинки) сдвиг якоря, чтобы видимая
+        // область осталась ровно там, где её показывал предпросмотр.
+        private void ApplyPendingCrop(ImageBlock img)
+        {
+            double pl = Math.Clamp(_cropPendLeft, 0.0, 0.95);
+            double pt = Math.Clamp(_cropPendTop, 0.0, 0.95);
+            double pr = Math.Clamp(_cropPendRight, 0.0, 0.95);
+            double pb = Math.Clamp(_cropPendBottom, 0.0, 0.95);
+
+            double newW = _cropFullWPt * Math.Max(1.0 - pl - pr, 0.01);
+            double newH = _cropFullHPt * Math.Max(1.0 - pt - pb, 0.01);
+
+            bool changed = Math.Abs(img.CropLeftFrac - pl) > 0.0005
+                || Math.Abs(img.CropTopFrac - pt) > 0.0005
+                || Math.Abs(img.CropRightFrac - pr) > 0.0005
+                || Math.Abs(img.CropBottomFrac - pb) > 0.0005;
+            if (!changed)
+            {
+                InvalidateFull();
+                return;
+            }
+
+            BeginImageEdit(img, "Обрезка изображения");
+            if (img.WrapMode != WrapMode.Inline)
+            {
+                img.OffsetXPt += _cropFullWPt * (pl - img.CropLeftFrac);
+                img.OffsetYPt += _cropFullHPt * (pt - img.CropTopFrac);
+            }
+            img.CropLeftFrac = pl;
+            img.CropTopFrac = pt;
+            img.CropRightFrac = pr;
+            img.CropBottomFrac = pb;
+            img.WidthPt = newW;
+            img.HeightPt = newH;
+            CommitImageEdit();
+
+            RebuildLayouts();
+            InvalidateMeasure();
+            InvalidateFull();
+            ImageSelectionChanged?.Invoke(_selectedImage is not null);
+        }
+
+        /// <summary>
+        /// Прямоугольники предпросмотра обрезки для записи раскладки: full — исходная
+        /// картинка целиком, pending — текущая рамка кадрирования. false — запись
+        /// принадлежит не обрезаемой картинке или режим обрезки выключен.
+        /// </summary>
+        private bool TryGetCropRects(ImageEntry ie, out SKRect full, out SKRect pending)
+        {
+            full = default;
+            pending = default;
+            if (!_imageCropMode || _cropImage is null) return false;
+            if (!ReferenceEquals(ie.Block, _cropImage)) return false;
+            if (_cropFullWPt <= 0.0 || _cropFullHPt <= 0.0) return false;
+
+            float fullW = (float)_cropFullWPt;
+            float fullH = (float)_cropFullHPt;
+            float fullX = ie.XPt - fullW * (float)ie.Block.CropLeftFrac;
+            float fullY = ie.Ypt - fullH * (float)ie.Block.CropTopFrac;
+
+            full = new SKRect(fullX, fullY, fullX + fullW, fullY + fullH);
+            pending = new SKRect(
+                fullX + fullW * (float)_cropPendLeft,
+                fullY + fullH * (float)_cropPendTop,
+                fullX + fullW * (float)(1.0 - _cropPendRight),
+                fullY + fullH * (float)(1.0 - _cropPendBottom));
+            return true;
         }
 
         // Текущее состояние режима обрезки для синхронизации вкладки.
@@ -1406,6 +1926,7 @@ namespace Writersword.Modules.TextEditor.Document
             BeginImageEdit("Поворот изображения");
             _selectedImage.RotationDeg = normalized;
             CommitImageEdit();
+            InvalidateInlineImageLayout(_selectedImage);
             RebuildLayouts();
             InvalidateMeasure();
             InvalidateFull();
@@ -1552,7 +2073,8 @@ namespace Writersword.Modules.TextEditor.Document
             // и визуальные позиции страниц другие — пересбор дёшев (кеш абзацев тёплый).
             if (e.PropertyName == nameof(DocumentViewModel.PagesPerRow) && DocVm is not null)
             {
-                _pagesPerRow = DocVm.PagesPerRow;
+                _pagesPerRowSetting = DocVm.PagesPerRow;
+                UpdateEffectivePagesPerRow();
                 RebuildLayouts();
                 InvalidateMeasure();
                 InvalidateFull();
@@ -1752,6 +2274,10 @@ namespace Writersword.Modules.TextEditor.Document
             double viewportW = _parentScrollViewer?.Viewport.Width > 0
                 ? _parentScrollViewer.Viewport.Width : availW;
             _canvasWidth = Math.Max(viewportW / zoom, 1);
+
+            // Авто-режим страниц в ряду зависит от ширины канваса и масштаба — обе
+            // величины только что посчитаны, здесь и пересчитываем.
+            UpdateEffectivePagesPerRow();
 
             if (_styleResolver is null && DocVm is not null)
                 _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
@@ -2155,7 +2681,8 @@ namespace Writersword.Modules.TextEditor.Document
         /// null — обтекаемых объектов рядом нет.
         /// </summary>
         private List<SKWrapZone>? ComputeWrapZones(
-            List<ImageEntry> images, float paraTopPt, float textXPt, float textWidthPt)
+            List<ImageEntry> images, float paraTopPt, float textXPt, float textWidthPt,
+            List<PageRect>? pages = null, int? pageIndex = null)
         {
             List<SKWrapZone>? zones = null;
 
@@ -2163,6 +2690,11 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 var wm = ie.Block.WrapMode;
                 if (wm != WrapMode.Square && wm != WrapMode.Tight) continue;
+
+                // Картинка обтекается только СВОЕЙ страницей. Чужая в расчёт не идёт
+                // вообще — ни габаритом, ни отступами: свесившаяся за нижний край
+                // картинка не должна двигать текст там, где её не видно.
+                if (pageIndex is int paraPage && ie.PageIndex != paraPage) continue;
 
                 double rad = ie.Block.RotationDeg * Math.PI / 180.0;
                 float absCos = (float)Math.Abs(Math.Cos(rad));
@@ -2179,6 +2711,48 @@ namespace Writersword.Modules.TextEditor.Document
                 float left = cx - boxW / 2f - (float)ie.Block.WrapPadLeftPt - textXPt;
                 float right = cx + boxW / 2f + (float)ie.Block.WrapPadRightPt - textXPt;
 
+                // Зона живёт только на своей странице. Картинка у нижнего края страницы
+                // свисает за текстовую зону и рисуется обрезанной по листу — но её габарит
+                // в координатах документа дотягивался до текста СЛЕДУЮЩЕЙ страницы и двигал
+                // его там, где самой картинки не видно.
+                //
+                // Страница картинки может ещё не существовать в списке: страницы
+                // достраиваются по мере вёрстки, а закреплённая картинка живёт на
+                // странице, до которой текст пока не дошёл. Отсутствие страницы в
+                // списке не отменяет обрезку — иначе необрезанная зона со страницы,
+                // которой «ещё нет», ложится на текст текущей. Геометрия недостающей
+                // страницы считается от последней имеющейся: все страницы раздела
+                // одного размера и идут с постоянным шагом.
+                if (pages is not null && ie.PageIndex >= 0 && pages.Count > 0)
+                {
+                    float pageTopPt, pageHeightPt, padTopPt, padBottomPt;
+
+                    if (ie.PageIndex < pages.Count)
+                    {
+                        var pg = pages[ie.PageIndex];
+                        pageTopPt = pg.Ypt;
+                        pageHeightPt = pg.HeightPt;
+                        padTopPt = pg.PadTopPt;
+                        padBottomPt = pg.PadBottomPt;
+                    }
+                    else
+                    {
+                        var lastPage = pages[pages.Count - 1];
+                        float stepPt = lastPage.HeightPt + PageGapPt;
+                        pageTopPt = lastPage.Ypt + stepPt * (ie.PageIndex - (pages.Count - 1));
+                        pageHeightPt = lastPage.HeightPt;
+                        padTopPt = lastPage.PadTopPt;
+                        padBottomPt = lastPage.PadBottomPt;
+                    }
+
+                    float pageTextTopPt = pageTopPt + padTopPt;
+                    float pageTextBottomPt = pageTopPt + pageHeightPt - padBottomPt;
+
+                    if (top < pageTextTopPt) top = pageTextTopPt;
+                    if (bottom > pageTextBottomPt) bottom = pageTextBottomPt;
+                    if (bottom <= top) continue;
+                }
+
                 // Зона целиком выше параграфа или слишком далеко ниже — не влияет.
                 if (bottom <= paraTopPt) continue;
                 if (top >= paraTopPt + 3000f) continue;
@@ -2189,10 +2763,310 @@ namespace Writersword.Modules.TextEditor.Document
                 right = Math.Min(right, textWidthPt);
 
                 zones ??= new List<SKWrapZone>();
-                zones.Add(new SKWrapZone(top - paraTopPt, bottom - paraTopPt, left, right));
+                zones.Add(new SKWrapZone(
+                    top - paraTopPt, bottom - paraTopPt, left, right,
+                    ie.Block.WrapSide switch
+                    {
+                        Models.Document.WrapSide.BothSides => SKWrapSide.BothSides,
+                        Models.Document.WrapSide.LeftOnly => SKWrapSide.LeftOnly,
+                        Models.Document.WrapSide.RightOnly => SKWrapSide.RightOnly,
+                        _ => SKWrapSide.LargestOnly
+                    }));
             }
 
             return zones;
+        }
+
+        /// <summary>
+        /// Встроенная в строку картинка по её Id. Живёт в InlineObjects раздела,
+        /// а run абзаца хранит только ссылку.
+        /// </summary>
+        private ImageBlock? FindInlineImage(Guid id)
+        {
+            var document = DocVm?.Document;
+            if (document is null) return null;
+
+            foreach (var section in document.Sections)
+            {
+                foreach (var block in section.InlineObjects)
+                {
+                    if (block is ImageBlock image && image.Id == id)
+                        return image;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Переносит картинку «в тексте» в позицию каретки — туда, где её отпустили.
+        /// Картинка в тексте это символ абзаца, поэтому «перетаскивание» для неё —
+        /// вырезать символ из старого места и вставить в новое, ровно как в Word.
+        /// </summary>
+        private void MoveInlineImageToCaret(ImageBlock image)
+        {
+            if (DocVm is null || IsEditingBlocked) return;
+
+            var owner = DocVm.FindInlineImageOwner(image);
+            if (owner is not { } source) return;
+
+            if (_caretPara < 0 || _caretPara >= _layouts.Count) return;
+            var target = _layouts[_caretPara].Cell?.ParaBlock ?? _layouts[_caretPara].Vm?.Model;
+            if (target is null) return;
+
+            int at = Math.Max(0, Math.Min(_caretChar, target.TotalLength));
+
+            // Бросили ровно туда же, откуда взяли — ничего не делаем, иначе в историю
+            // отмены попадёт пустая операция.
+            bool sameParagraph = ReferenceEquals(target, source.Para);
+            if (sameParagraph && (at == source.CharIndex || at == source.CharIndex + 1)) return;
+
+            BeginEdit("Перемещение картинки в тексте");
+
+            source.Para.SpliceText(source.CharIndex, source.CharIndex + 1, string.Empty);
+
+            // Изъятие символа сдвинуло позиции правее него в ТОМ ЖЕ абзаце.
+            if (sameParagraph && at > source.CharIndex) at--;
+
+            target.InsertInlineObject(at, image.Id);
+
+            CommitEdit();
+
+            RefreshParagraphAfterInlineChange(source.Para);
+            if (!sameParagraph) RefreshParagraphAfterInlineChange(target);
+
+            // Каретка встаёт сразу за картинкой, сама картинка остаётся выделенной.
+            for (int i = 0; i < _layouts.Count; i++)
+            {
+                var pl = _layouts[i];
+                var plPara = pl.Cell?.ParaBlock ?? pl.Vm?.Model;
+                if (!ReferenceEquals(plPara, target)) continue;
+                _caretPara = i;
+                _caretChar = at + 1;
+                _caretLineHint = -1;
+                break;
+            }
+
+            SyncSel();
+            InvalidateMeasure();
+            InvalidateFull();
+        }
+
+        /// <summary>Живёт ли картинка в строке текста (а не блоком в потоке).</summary>
+        private bool IsInlineObjectImage(ImageBlock? image)
+        {
+            if (image is null) return false;
+            var document = DocVm?.Document;
+            if (document is null) return false;
+
+            foreach (var section in document.Sections)
+                if (section.InlineObjects.Contains(image))
+                    return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Сбрасывает раскладку абзацев, в которых стоит эта встроенная картинка.
+        /// Кеш раскладки валиден по тексту и ширине колонки, а размер и поворот картинки
+        /// не меняют ни того, ни другого — без явного сброса новая геометрия картинки
+        /// осталась бы невидимой до следующей правки текста.
+        /// </summary>
+        private void InvalidateInlineImageLayout(ImageBlock? image)
+        {
+            if (DocVm is null || !IsInlineObjectImage(image)) return;
+
+            Guid imageId = image!.Id;
+            bool cellTouched = false;
+
+            foreach (var pvm in DocVm.Paragraphs)
+            {
+                if (!ParagraphHasInlineImage(pvm.Model, imageId)) continue;
+                _layoutCache.Remove(pvm);
+            }
+
+            foreach (var kv in _cellVmCache)
+            {
+                if (!ParagraphHasInlineImage(kv.Key, imageId)) continue;
+                _layoutCache.Remove(kv.Value);
+                cellTouched = true;
+            }
+
+            if (cellTouched) InvalidateCellLayoutCaches();
+        }
+
+        private static bool ParagraphHasInlineImage(ParagraphBlock para, Guid imageId)
+        {
+            foreach (var id in para.EnumerateInlineImageIds())
+                if (id == imageId) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Абзац и позиция каретки — точка вставки картинки в строку. Для каретки внутри
+        /// ячейки таблицы отдаёт абзац ячейки: его нет в Blocks, и без этого картинка
+        /// ушла бы в основной поток вместо ячейки.
+        /// </summary>
+        private (ParagraphBlock Para, int CharIndex)? GetCaretTarget()
+        {
+            if (_caretPara < 0 || _caretPara >= _layouts.Count) return null;
+
+            var pl = _layouts[_caretPara];
+            var para = pl.Cell?.ParaBlock ?? pl.Vm?.Model;
+            if (para is null) return null;
+
+            return (para, Math.Max(0, Math.Min(_caretChar, para.TotalLength)));
+        }
+
+        /// <summary>
+        /// Картинка встала в строку: ставим каретку сразу за ней и пересобираем раскладку
+        /// абзаца — его текст изменился на один символ, кеш раскладки больше не годится.
+        /// </summary>
+        private void OnInlineImageInserted(ParagraphBlock para, int charIndex)
+        {
+            RefreshParagraphAfterInlineChange(para);
+
+            for (int i = 0; i < _layouts.Count; i++)
+            {
+                var pl = _layouts[i];
+                var plPara = pl.Cell?.ParaBlock ?? pl.Vm?.Model;
+                if (!ReferenceEquals(plPara, para)) continue;
+
+                _caretPara = i;
+                _caretChar = charIndex + 1;
+                _caretLineHint = -1;
+                break;
+            }
+
+            InvalidateMeasure();
+            InvalidateFull();
+        }
+
+        /// <summary>
+        /// Приводит абзац в согласованное состояние после изменения его объектов в строке:
+        /// текст вью-модели и кеш раскладки должны увидеть новый символ-заполнитель.
+        /// </summary>
+        private void RefreshParagraphAfterInlineChange(ParagraphBlock para)
+        {
+            if (DocVm is null) return;
+
+            foreach (var pvm in DocVm.Paragraphs)
+            {
+                if (!ReferenceEquals(pvm.Model, para)) continue;
+                pvm.RefreshPlainTextFromModel();
+                _layoutCache.Remove(pvm);
+                RebuildLayouts();
+                return;
+            }
+
+            if (_cellVmCache.TryGetValue(para, out var cellVm))
+            {
+                cellVm.RefreshPlainTextFromModel();
+                _layoutCache.Remove(cellVm);
+                InvalidateCellLayoutCaches();
+            }
+
+            RebuildLayouts();
+        }
+
+        /// <summary>
+        /// Габарит встроенной картинки для вёрстки строки, в пунктах.
+        /// Повёрнутая картинка занимает в строке свой AABB — как и в потоке блоков.
+        /// </summary>
+        private (float WidthPt, float HeightPt)? GetInlineImageSize(Guid id)
+        {
+            var image = FindInlineImage(id);
+            if (image is null) return null;
+
+            double rad = image.RotationDeg * Math.PI / 180.0;
+            float absCos = (float)Math.Abs(Math.Cos(rad));
+            float absSin = (float)Math.Abs(Math.Sin(rad));
+
+            float w = (float)image.WidthPt;
+            float h = (float)image.HeightPt;
+
+            return (w * absCos + h * absSin, w * absSin + h * absCos);
+        }
+
+        /// <summary>
+        /// Свободная горизонтальная полоса для картинки-блока на её вертикали.
+        /// Картинка в потоке обходит соседнюю обтекаемую картинку так же, как это
+        /// делает текст: раньше блок занимал всю колонку и просто наезжал на неё.
+        /// Если бокс не помещается ни в один свободный промежуток, картинка уезжает
+        /// под зону — как строка, которую не удалось поставить сбоку.
+        /// contentYPt при этом сдвигается вниз.
+        /// </summary>
+        private void ResolveInlineImageBand(
+            List<ImageEntry> zoneSource,
+            ref float contentYPt,
+            float boxWpt,
+            float boxHpt,
+            float textXPt,
+            float textWidthPt,
+            float pageBottomPt,
+            out float bandLeftPt,
+            out float bandRightPt,
+            List<PageRect>? pages = null,
+            int? pageIndex = null)
+        {
+            bandLeftPt = textXPt;
+            bandRightPt = textXPt + textWidthPt;
+
+            if (DocVm?.ViewMode != EditorViewMode.Page) return;
+
+            var blocking = new List<SKWrapZone>();
+
+            for (int guard = 0; guard < 8; guard++)
+            {
+                var zones = ComputeWrapZones(
+                    zoneSource, contentYPt, textXPt, textWidthPt, pages, pageIndex);
+                if (zones is null || zones.Count == 0) return;
+
+                // Зоны, пересекающие вертикальную полосу самой картинки.
+                blocking.Clear();
+                float lowestBottomPt = float.MinValue;
+                foreach (var zone in zones)
+                {
+                    if (zone.BottomPt <= 0f || zone.TopPt >= boxHpt) continue;
+                    blocking.Add(zone);
+                    if (zone.BottomPt > lowestBottomPt) lowestBottomPt = zone.BottomPt;
+                }
+
+                if (blocking.Count == 0) return;
+
+                // Самый широкий свободный промежуток колонки между занятыми участками.
+                blocking.Sort((a, b) => a.LeftPt.CompareTo(b.LeftPt));
+                float cursorPt = 0f;
+                float bestLeftPt = 0f;
+                float bestWidthPt = 0f;
+
+                foreach (var zone in blocking)
+                {
+                    float gapPt = zone.LeftPt - cursorPt;
+                    if (gapPt > bestWidthPt) { bestWidthPt = gapPt; bestLeftPt = cursorPt; }
+                    if (zone.RightPt > cursorPt) cursorPt = zone.RightPt;
+                }
+
+                float tailPt = textWidthPt - cursorPt;
+                if (tailPt > bestWidthPt) { bestWidthPt = tailPt; bestLeftPt = cursorPt; }
+
+                if (bestWidthPt >= boxWpt)
+                {
+                    bandLeftPt = textXPt + bestLeftPt;
+                    bandRightPt = bandLeftPt + bestWidthPt;
+                    return;
+                }
+
+                // Сбоку не помещается — опускаем картинку под зону и проверяем заново:
+                // ниже может лежать следующая обтекаемая картинка.
+                float nextYPt = contentYPt + lowestBottomPt + WrapThrowGapPt;
+                if (nextYPt <= contentYPt) return;
+
+                contentYPt = nextYPt;
+
+                // Ушли за нижнюю границу листа — дальше решает перенос на страницу.
+                if (nextYPt >= pageBottomPt) return;
+            }
         }
 
         /// <summary>
@@ -2207,16 +3081,21 @@ namespace Writersword.Modules.TextEditor.Document
             ParagraphViewModel pvm, float widthPt, IReadOnlyList<SKWrapZone> zones,
             Rendering.SKTextRenderer.WrapPageContext? pages = null)
         {
+            // Абзац без модели верстать нечем — отдаём пустую раскладку той же ширины,
+            // чтобы вызывающий не разбирал null отдельной веткой.
             var block = pvm.Model;
-            bool preferPushDown = block is not null
-                && _wrapPushState.TryGetValue(block, out var prev) && prev;
+            if (block is null)
+                return _renderer.BuildLayout(new ParagraphBlock(), widthPt, _styleResolver!);
+
+            bool preferPushDown =
+                _wrapPushState.TryGetValue(block, out var prev) && prev;
 
             var layout = _renderer.BuildLayout(
                 block, widthPt, _styleResolver!, isCell: false,
                 wrapZones: zones, wrapPreferPushDown: preferPushDown,
                 wrapPages: pages);
 
-            if (block is not null) _wrapPushState[block] = layout.WrapPushedDown;
+            _wrapPushState[block] = layout.WrapPushedDown;
 
             return layout;
         }

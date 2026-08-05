@@ -223,6 +223,14 @@ namespace Writersword.Modules.TextEditor.Commands
             int insertPos = charPos;
             foreach (var snap in runs)
             {
+                if (snap.InlineImageId is Guid inlineId)
+                {
+                    // Объект в строке возвращается объектом, а не символом-заполнителем.
+                    para.InsertInlineObject(insertPos, inlineId, snap.Properties);
+                    insertPos += 1;
+                    continue;
+                }
+
                 InsertText(para, insertPos, snap.Text, snap.Properties);
                 insertPos += snap.Text.Length;
             }
@@ -270,7 +278,7 @@ namespace Writersword.Modules.TextEditor.Commands
                 string text = (run.Text ?? string.Empty).Substring(overlapStart, overlapEnd - overlapStart);
 
                 if (text.Length > 0)
-                    result.Add(new RunSnapshot(text, run.Properties));
+                    result.Add(new RunSnapshot(text, run.Properties, run.InlineImageId));
 
                 currentPos += runLen;
             }
@@ -413,6 +421,10 @@ namespace Writersword.Modules.TextEditor.Commands
             {
                 var prev = chunk.Runs[i - 1];
                 var curr = chunk.Runs[i];
+
+                // Объект в строке живёт отдельным раном: слияние с соседним текстом
+                // растворило бы символ-заполнитель в тексте и потеряло ссылку на картинку.
+                if (prev.IsInlineObject || curr.IsInlineObject) continue;
 
                 if (RunPropertiesEqual(prev.Properties, curr.Properties))
                 {

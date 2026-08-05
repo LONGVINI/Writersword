@@ -33,6 +33,9 @@ namespace Writersword.Modules.TextEditor.Services
             _document = document ?? throw new ArgumentNullException(nameof(document));
             _pageSettings = ConvertPageSettings(document.PageSettings);
             _renderer = new SKTextRenderer();
+            // Габарит картинки в строке: без него объект встал бы в строку нулевой ширины
+            // и переносы строк в печати разошлись бы с редактором.
+            _renderer.InlineImageSize = GetInlineImageSize;
             _styles = new StyleResolver(document.Styles);
             _pageLayout = _renderer.BuildPageLayout(_document, _pageSettings, _styles);
         }
@@ -44,6 +47,30 @@ namespace Writersword.Modules.TextEditor.Services
 
             var page = _pageLayout.Pages[pageIndex];
             SKTextRenderer.RenderPage(canvas, page, SKColors.Transparent);
+        }
+
+        /// <summary>
+        /// Габарит встроенной в строку картинки в пунктах. Повёрнутая картинка занимает
+        /// свой AABB — так же, как в редакторе.
+        /// </summary>
+        private (float WidthPt, float HeightPt)? GetInlineImageSize(Guid id)
+        {
+            foreach (var section in _document.Sections)
+            {
+                foreach (var block in section.InlineObjects)
+                {
+                    if (block is not ImageBlock image || image.Id != id) continue;
+
+                    double rad = image.RotationDeg * Math.PI / 180.0;
+                    float absCos = (float)Math.Abs(Math.Cos(rad));
+                    float absSin = (float)Math.Abs(Math.Sin(rad));
+                    float w = (float)image.WidthPt;
+                    float h = (float)image.HeightPt;
+
+                    return (w * absCos + h * absSin, w * absSin + h * absCos);
+                }
+            }
+            return null;
         }
 
         // ── Конвертация PageSettings ──────────────────────────────────────

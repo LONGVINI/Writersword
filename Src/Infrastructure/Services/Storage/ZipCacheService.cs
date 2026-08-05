@@ -40,15 +40,78 @@ namespace Writersword.Infrastructure.Services.Storage
             return fullPath + ".wsasd";
         }
 
+        /// <summary>
+        /// Путь резервной копии кеша. Создаётся при каждой записи: аварийное
+        /// выключение может застать перезапись основного файла и оставить обрывок,
+        /// и тогда точкой восстановления служит предыдущая копия.
+        /// </summary>
+        private string GetBackupPath(string projectPath) => GetCachePath(projectPath) + ".bak";
+
         public bool HasCache(string projectPath)
         {
-            return File.Exists(GetCachePath(projectPath));
+            if (File.Exists(GetCachePath(projectPath))) return true;
+
+            // Основной файл мог не пережить аварию — резервная копия остаётся
+            // полноценной точкой восстановления и поднимает режим сравнения.
+            return File.Exists(GetBackupPath(projectPath));
+        }
+
+        // Читается ли архив кеша: файл существует и в нём есть метаданные.
+        private bool IsReadableCacheArchive(string path)
+        {
+            if (!File.Exists(path)) return false;
+            try
+            {
+                using var archive = ZipFile.OpenRead(path);
+                return archive.GetEntry("cache.json") != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Готовит основной файл кеша к чтению. Повреждённый файл восстанавливается
+        /// из резервной копии всегда, отсутствующий — только при
+        /// restoreMissingFromBackup: во время работы файл могли убрать намеренно
+        /// (переключение воркмода), и подменять его копией нельзя. Проверки при
+        /// открытии проекта, наоборот, обязаны увидеть уцелевшую копию.
+        /// false — читать нечего, вызывающий работает как при отсутствии кеша.
+        /// </summary>
+        private bool EnsureCacheReadable(string cachePath, bool restoreMissingFromBackup = false)
+        {
+            if (IsReadableCacheArchive(cachePath)) return true;
+            if (!File.Exists(cachePath) && !restoreMissingFromBackup) return false;
+
+            var backupPath = cachePath + ".bak";
+            if (IsReadableCacheArchive(backupPath))
+            {
+                try
+                {
+                    File.Copy(backupPath, cachePath, overwrite: true);
+                    _logger.LogWarning(
+                        "Cache file was damaged or missing — restored from backup: {CachePath}", cachePath);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to restore cache from backup: {CachePath}", cachePath);
+                    return false;
+                }
+            }
+
+            if (File.Exists(cachePath))
+                _logger.LogError(
+                    "Cache file is damaged and has no usable backup: {CachePath}", cachePath);
+
+            return false;
         }
 
         public DateTime? GetCacheDate(string projectPath)
         {
             var cachePath = GetCachePath(projectPath);
-            if (!File.Exists(cachePath)) return null;
+            if (!File.Exists(cachePath) && !File.Exists(GetBackupPath(projectPath))) return null;
 
             if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
             {
@@ -60,6 +123,7 @@ namespace Writersword.Infrastructure.Services.Storage
             }
             try
             {
+                if (!EnsureCacheReadable(cachePath, restoreMissingFromBackup: true)) return null;
                 return LoadMetadata(cachePath)?.CacheDate;
             }
             catch (Exception ex)
@@ -83,7 +147,7 @@ namespace Writersword.Infrastructure.Services.Storage
         public Dictionary<string, object?>? LoadCache(string projectPath, string? expectedProjectId = null)
         {
             var cachePath = GetCachePath(projectPath);
-            if (!File.Exists(cachePath))
+            if (!File.Exists(cachePath) && !File.Exists(GetBackupPath(projectPath)))
             {
                 _logger.LogDebug("Cache not found: {CachePath}", cachePath);
                 return null;
@@ -99,6 +163,8 @@ namespace Writersword.Infrastructure.Services.Storage
             }
             try
             {
+                if (!EnsureCacheReadable(cachePath)) return null;
+
                 var customData = new Dictionary<string, object?>();
 
                 using (var archive = ZipFile.OpenRead(cachePath))
@@ -161,7 +227,7 @@ namespace Writersword.Infrastructure.Services.Storage
             LoadCacheWithSession(string projectPath, string? expectedProjectId = null)
         {
             var cachePath = GetCachePath(projectPath);
-            if (!File.Exists(cachePath))
+            if (!File.Exists(cachePath) && !File.Exists(GetBackupPath(projectPath)))
             {
                 _logger.LogDebug("Cache not found: {CachePath}", cachePath);
                 return null;
@@ -177,6 +243,8 @@ namespace Writersword.Infrastructure.Services.Storage
             }
             try
             {
+                if (!EnsureCacheReadable(cachePath)) return null;
+
                 var customData = new Dictionary<string, object?>();
                 var sessionData = new Dictionary<string, object?>();
 
@@ -246,7 +314,7 @@ namespace Writersword.Infrastructure.Services.Storage
         public ModuleCacheMetadata? LoadCacheMetadata(string projectPath)
         {
             var cachePath = GetCachePath(projectPath);
-            if (!File.Exists(cachePath)) return null;
+            if (!File.Exists(cachePath) && !File.Exists(GetBackupPath(projectPath))) return null;
 
             if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
             {
@@ -258,6 +326,7 @@ namespace Writersword.Infrastructure.Services.Storage
             }
             try
             {
+                if (!EnsureCacheReadable(cachePath, restoreMissingFromBackup: true)) return null;
                 return LoadMetadata(cachePath);
             }
             catch (Exception ex)
@@ -332,9 +401,9 @@ namespace Writersword.Infrastructure.Services.Storage
                     return;
                 }
 
-                bool fileExists = File.Exists(cachePath);
+                bool fileExists = EnsureCacheReadable(cachePath);
 
-                // Если файл принадлежит другому проекту — удаляем и создаём заново.
+                // Если файл принадлежит другому проекту — пишем архив заново.
                 if (fileExists)
                 {
                     var existingMeta = LoadMetadata(cachePath);
@@ -343,14 +412,29 @@ namespace Writersword.Infrastructure.Services.Storage
                         _logger.LogWarning(
                             "Cache belongs to different project ({ExistingId}), recreating for {NewId}",
                             existingMeta.ProjectId, projectId);
-                        File.Delete(cachePath);
                         fileExists = false;
                     }
                 }
 
+                // Запись идёт во временный файл и только потом подменяет основной.
+                // ZipArchiveMode.Update перезаписывает архив на месте: аварийное
+                // выключение посреди этой операции оставляло обрывок вместо точки
+                // восстановления, и приложение при следующем старте молча открывало
+                // сохранённую версию. Временный файл + File.Replace делают запись
+                // неделимой, а прежнее содержимое уезжает в .bak.
+                var tempPath = cachePath + ".tmp";
+                var backupPath = GetBackupPath(projectPath);
+
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); }
+                catch (IOException ex) { _logger.LogDebug(ex, "Stale temp cache file left in place"); }
+
+                // Записи модулей, которых нет в этом проходе, должны уцелеть —
+                // поэтому обновляем копию текущего архива, а не пустой файл.
+                if (fileExists) File.Copy(cachePath, tempPath, overwrite: true);
+
                 var archiveMode = fileExists ? ZipArchiveMode.Update : ZipArchiveMode.Create;
 
-                using (var archive = ZipFile.Open(cachePath, archiveMode))
+                using (var archive = ZipFile.Open(tempPath, archiveMode))
                 {
                     // Обновляем метаданные: читаем существующие, дополняем новыми.
                     ModuleCacheMetadata metadata;
@@ -461,6 +545,21 @@ namespace Writersword.Infrastructure.Services.Storage
                         await writer.WriteAsync(JsonConvert.SerializeObject(metadata, Formatting.Indented));
                 }
 
+                // Сброс на физический диск: без него запись остаётся в кеше файловой
+                // системы, и аппаратный ресет теряет её целиком.
+                using (var flushStream = new FileStream(
+                    tempPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                {
+                    flushStream.Flush(flushToDisk: true);
+                }
+
+                // Подмена одним шагом: прежний файл уходит в .bak и остаётся
+                // рабочей точкой восстановления, если следующая запись не доживёт.
+                if (File.Exists(cachePath))
+                    File.Replace(tempPath, cachePath, backupPath, ignoreMetadataErrors: true);
+                else
+                    File.Move(tempPath, cachePath);
+
                 _logger.LogDebug("Cache updated: {ModulesCount} modules written", modulesToSave.Count);
             }
             catch (Exception ex)
@@ -485,7 +584,10 @@ namespace Writersword.Infrastructure.Services.Storage
         public void DeleteCache(string projectPath)
         {
             var cachePath = GetCachePath(projectPath);
-            if (!File.Exists(cachePath)) return;
+            var backupPath = GetBackupPath(projectPath);
+            var tempPath = cachePath + ".tmp";
+
+            if (!File.Exists(cachePath) && !File.Exists(backupPath) && !File.Exists(tempPath)) return;
 
             if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
             {
@@ -494,15 +596,44 @@ namespace Writersword.Infrastructure.Services.Storage
             }
             try
             {
-                if (File.Exists(cachePath))
+                // Удаляются все следы точки восстановления: оставшаяся резервная
+                // копия воскресила бы уже принятую или отклонённую версию.
+                foreach (var path in new[] { cachePath, backupPath, tempPath })
                 {
-                    File.Delete(cachePath);
-                    _logger.LogDebug("Cache deleted: {CachePath}", cachePath);
+                    if (!File.Exists(path)) continue;
+                    File.Delete(path);
+                    _logger.LogDebug("Cache deleted: {CachePath}", path);
                 }
             }
             catch (IOException ex)
             {
                 _logger.LogError(ex, "Error deleting cache: {CachePath}", cachePath);
+            }
+            finally
+            {
+                _fileLock.Release();
+            }
+        }
+
+        public void MoveCacheToBackup(string projectPath)
+        {
+            var cachePath = GetCachePath(projectPath);
+            if (!File.Exists(cachePath)) return;
+
+            if (!_fileLock.Wait(TimeSpan.FromSeconds(3)))
+            {
+                _logger.LogWarning("Cache lock timeout in MoveCacheToBackup — skipping");
+                return;
+            }
+            try
+            {
+                var backupPath = GetBackupPath(projectPath);
+                File.Move(cachePath, backupPath, overwrite: true);
+                _logger.LogDebug("Cache moved to backup: {BackupPath}", backupPath);
+            }
+            catch (IOException ex)
+            {
+                _logger.LogError(ex, "Error moving cache to backup: {CachePath}", cachePath);
             }
             finally
             {

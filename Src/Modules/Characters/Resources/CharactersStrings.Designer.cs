@@ -1249,6 +1249,15 @@ namespace Writersword.Src.Modules.Characters.Resources {
         }
         
         /// <summary>
+        ///   Ищет локализованную строку, похожую на Find a character.
+        /// </summary>
+        public static string EditorSidebar_Search {
+            get {
+                return ResourceManager.GetString("EditorSidebar_Search", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Ищет локализованную строку, похожую на Basics.
         /// </summary>
         public static string Tab_Basics {

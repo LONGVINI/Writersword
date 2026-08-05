@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:tabs="using:Writersword.Modules.Characters.ViewModels.Tabs"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
@@ -9,6 +9,7 @@
              xmlns:sys="using:System"
              xmlns:colorControls="using:Writersword.Styles.UserControls"
              xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             xmlns:controls="using:Writersword.Modules.Characters.Controls"
              x:Class="Writersword.Modules.Characters.Views.Card.Tabs.CharacterBasicsTabView"
              x:DataType="tabs:CharacterBasicsTabViewModel">
 
@@ -366,6 +367,24 @@
 		<Style Selector="Border.chip:pointerover StackPanel.chip-actions">
 			<Setter Property="IsVisible" Value="True"/>
 		</Style>
+		<!-- Чип целиком — кнопка: щелчок открывает редактор. Фон ей не нужен
+		     ни в покое, ни под курсором, иначе за скруглённой плашкой чипа
+		     проступает прямоугольник системной подсветки. Локального
+		     Background="Transparent" мало: тема красит ContentPresenter
+		     внутри шаблона, и перебить её можно только оттуда же. -->
+		<Style Selector="Button.chip-host /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button.chip-host:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button.chip-host:pressed /template/ ContentPresenter#PART_ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
+
 		<Style Selector="Button.chip-action">
 			<Setter Property="Background" Value="Transparent"/>
 			<Setter Property="BorderThickness" Value="0"/>
@@ -375,13 +394,39 @@
 			<Setter Property="HorizontalContentAlignment" Value="Center"/>
 			<Setter Property="VerticalContentAlignment" Value="Center"/>
 		</Style>
+		<!-- Закладка группы уезжает за кромку шапки и возвращается из-за неё:
+		     не сжимается на месте, а будто её тянут за верхний край. Прячет
+		     её обрезка обёртки, поэтому за кромкой ленты не видно.
+		
+		     Набор переходов объявлен один раз и только здесь. Если задать его
+		     ещё и в «.on», при смене класса меняется сам набор, новый не
+		     успевает подхватить прежнее значение, и лента перескакивает
+		     без движения. -->
+		<Style Selector="Path.group-flag">
+			<Setter Property="RenderTransform" Value="translateY(-56px)"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<!-- Кривая падения ленты: резкий старт и долгое мягкое торможение
+					     к концу, без перелёта за конечную точку. Те же контрольные
+					     точки, что у cubic-bezier(0.165, 0.84, 0.44, 1) в вебе. -->
+					<TransformOperationsTransition Property="RenderTransform"
+					                               Duration="0:0:0.8">
+						<TransformOperationsTransition.Easing>
+							<SplineEasing X1="0.165" Y1="0.84" X2="0.44" Y2="1"/>
+						</TransformOperationsTransition.Easing>
+					</TransformOperationsTransition>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Path.group-flag.on">
+			<Setter Property="RenderTransform" Value="none"/>
+		</Style>
 	</UserControl.Styles>
 
 	<!-- Карточка = закреплённая шапка и прокручиваемый стек компонентов.
 	     Шапка не уезжает: при десятке подключённых наборов иначе теряется,
 	     чей это персонаж. -->
 	<Grid RowDefinitions="Auto,*">
-
 		<!-- ── Шапка ──────────────────────────────────────────────────── -->
 		<Border Grid.Row="0"
 		        Background="{DynamicResource BgSurfaceBrush}"
@@ -394,6 +439,29 @@
 			     роста имени. Потолок роста — правый край шапки: дальше
 			     растянуться некуда, и текст обрезается. -->
 			<Grid ColumnDefinitions="Auto,*">
+
+				<!-- Признак группы: закладка-ленточка цветом персонажа, свисающая
+				     с верхней кромки шапки — как на карточках основного списка.
+				     Отступ вверх гасит верхнее поле шапки, чтобы лента начиналась
+				     от самой кромки.
+				
+				     Обёртка режет по себе, а не по шапке: у шапки обрезка идёт
+				     по внутренней области и утащила бы ленту вниз на высоту поля. -->
+				<Panel Grid.Column="1"
+				       Width="26" Height="52"
+				       HorizontalAlignment="Right"
+				       VerticalAlignment="Top"
+				       Margin="0,-14,104,0"
+				       ClipToBounds="True"
+				       IsHitTestVisible="False">
+					<Path Classes="group-flag"
+					      Classes.on="{Binding IsCollective}"
+					      Data="M0,0 H10 V15 L5,10.5 L0,15 Z"
+					      Fill="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+					      Stretch="Fill"
+					      VerticalAlignment="Top"
+					      Height="52"/>
+				</Panel>
 
 				<!-- Аватар со спутниками. Кнопки идут по дуге слева от кольца,
 				     на 152 и 205 градусах — отсчёт от правого горизонта против
@@ -410,7 +478,7 @@
 				        VerticalAlignment="Center">
 
 					<!-- Цвет выше настроек: его меняют чаще. -->
-						<colorControls:ColorPickerButton Canvas.Left="8"
+					<colorControls:ColorPickerButton Canvas.Left="8"
 						    Canvas.Top="3"
 						    Width="22" Height="22"
 						    ShowCardPreview="True"
@@ -423,7 +491,7 @@
 						    BookmarkEnabled="{Binding GroupBookmark, Mode=TwoWay}"
 						    ApplyRingToAllCommand="{Binding ApplyRingToAllCommand}"/>
 
-						<Button Canvas.Left="6.5"
+					<Button Canvas.Left="6.5"
 						    Canvas.Top="56"
 						    Width="22" Height="22"
 						    Padding="0" CornerRadius="999"
@@ -433,10 +501,10 @@
 						    Click="OnCardSettingsClick"
 						    behaviours:TooltipBehavior.Tip="Настройки карточки"
 						    behaviours:TooltipBehavior.Description="Кольцо вокруг аватара, закладка группы, толщина рамки и вид аватара на карточке списка.">
-							<PathIcon Data="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"
-							      Width="12" Height="12"
-							      Foreground="White"/>
-						</Button>
+						<PathIcon Data="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"
+						      Width="12" Height="12"
+						      Foreground="White"/>
+					</Button>
 
 					<!-- Аватар. Закреплённый элемент обязан быть компактным,
 					     поэтому кружок 72 вместо прежних 96: крупный портрет —
@@ -450,27 +518,27 @@
 					        Padding="0"
 					        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Avatar_PickTooltip}">
 					<Panel Width="84" Height="84">
-						<Border Width="72"
-						        Height="72"
-						        CornerRadius="36"
-						        ClipToBounds="True"
-						        HorizontalAlignment="Center"
-						        VerticalAlignment="Center"
-						        Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
-							<Panel>
-								<Image Source="{Binding AvatarBitmap}"
-								       Stretch="UniformToFill"
-								       IsVisible="{Binding AvatarBitmap,
-								           Converter={x:Static ObjectConverters.IsNotNull}}"/>
+					<Border Width="72"
+					        Height="72"
+					        CornerRadius="36"
+					        ClipToBounds="True"
+					        HorizontalAlignment="Center"
+					        VerticalAlignment="Center"
+					        Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
+						<Panel>
+							<Image Source="{Binding AvatarBitmap}"
+							       Stretch="UniformToFill"
+							       IsVisible="{Binding AvatarBitmap,
+							           Converter={x:Static ObjectConverters.IsNotNull}}"/>
 
-								<TextBlock Text="{Binding AvatarGlyph}"
-								           FontSize="30"
-								           HorizontalAlignment="Center"
-								           VerticalAlignment="Center"
-								           Foreground="White"
-								           IsVisible="{Binding AvatarBitmap,
-								               Converter={x:Static ObjectConverters.IsNull}}"/>
-							</Panel>
+							<TextBlock Text="{Binding AvatarGlyph}"
+							           FontSize="30"
+							           HorizontalAlignment="Center"
+							           VerticalAlignment="Center"
+							           Foreground="White"
+							           IsVisible="{Binding AvatarBitmap,
+							               Converter={x:Static ObjectConverters.IsNull}}"/>
+				</Panel>
 						</Border>
 
 						<!-- Кольцо цветом персонажа вокруг аватара с зазором -->
@@ -483,32 +551,52 @@
 						        HorizontalAlignment="Center"
 						        VerticalAlignment="Center"/>
 
-						<!-- Бейдж метки поверх аватара: смысл несёт объект-значок,
-                             поэтому «мёртв» виден прямо в шапке карточки. -->
-						<Border Width="24" Height="24"
-						        CornerRadius="12"
-						        HorizontalAlignment="Right"
-						        VerticalAlignment="Bottom"
-						        BorderThickness="2"
-						        BorderBrush="{DynamicResource BgSurfaceBrush}"
-						        IsHitTestVisible="False"
-						        IsVisible="{Binding HasCardBadge}"
-						        Background="{Binding CardBadge.Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
-							<!-- Своя картинка вместо встроенного значка, если автор
-							     её задал: герб дома, эмблема клуба. -->
-							<Panel>
-								<Path Data="{Binding CardBadge.Icon, Converter={x:Static conv:LabelIconToGeometryConverter.Instance}}"
-								      Fill="White"
-								      Stretch="Uniform"
-								      Margin="4"
-								      IsVisible="{Binding !CardBadge.HasCustomIcon}"/>
-								<Border CornerRadius="12" ClipToBounds="True"
-								        IsVisible="{Binding CardBadge.HasCustomIcon}">
-									<Image Source="{Binding CardBadge.IconImage, Converter={x:Static conv:LabelIconToImageConverter.Instance}}"
-									       Stretch="UniformToFill"/>
-								</Border>
-							</Panel>
-						</Border>
+						<!-- Значки меток поверх аватара: смысл несёт объект-значок,
+						     поэтому «мёртв» виден прямо в шапке карточки. Раскладка
+						     и вид значка — те же, что на карточках списков: одна
+						     дуга по нижнему краю аватара, шаг сжимается сам.
+						     Прежде здесь висел один бейдж в правом нижнем углу, и
+						     остальные метки в шапке не показывались вовсе. -->
+						<ItemsControl ItemsSource="{Binding CardLabels}"
+						              IsHitTestVisible="False"
+						              ClipToBounds="False">
+							<ItemsControl.ItemsPanel>
+								<ItemsPanelTemplate>
+									<controls:LabelArcPanel ItemSize="18" ArcRadius="33"/>
+								</ItemsPanelTemplate>
+							</ItemsControl.ItemsPanel>
+							<ItemsControl.ItemTemplate>
+								<DataTemplate x:DataType="models:CharacterLabel">
+									<controls:CharacterLabelIcon
+										Label="{Binding}"
+										IconSize="18"
+										RimBrush="{DynamicResource BgSurfaceBrush}"
+										RimThickness="1.5"/>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
+
+						<!-- «Мёртв» — особая метка: одна, в верхнем правом углу
+						     аватара под сорок пять градусов, на той же окружности,
+						     что и общая нижняя дуга. -->
+						<ItemsControl ItemsSource="{Binding DeadLabels}"
+						              IsHitTestVisible="False"
+						              ClipToBounds="False">
+							<ItemsControl.ItemsPanel>
+								<ItemsPanelTemplate>
+									<controls:LabelArcPanel CenterAngle="-45" ItemSize="18" ArcRadius="33"/>
+								</ItemsPanelTemplate>
+							</ItemsControl.ItemsPanel>
+							<ItemsControl.ItemTemplate>
+								<DataTemplate x:DataType="models:CharacterLabel">
+									<controls:CharacterLabelIcon
+										Label="{Binding}"
+										IconSize="18"
+										RimBrush="{DynamicResource BgSurfaceBrush}"
+										RimThickness="1.5"/>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
 					</Panel>
 					</Button>
 
@@ -629,72 +717,102 @@
 						     под ней — самое длинное поле блока, и начинать
 						     компонент с высокого прямоугольника значит прятать
 						     всё остальное под него. -->
-						<Grid ColumnDefinitions="260,16,*">
-							<StackPanel Grid.Column="0" Spacing="4">
-								<TextBlock Classes="field-label"
-								           Text="{x:Static loc:CharactersStrings.Field_ImportanceLevel}"/>
+						<Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="16">
+							<!-- Делитель колонок: тонкая линия по центру блока. Не рамка,
+							     а подсказка глазу, где кончается одно и начинается другое. -->
+							<Rectangle Grid.Column="1"
+							           Width="1"
+							           VerticalAlignment="Stretch"
+							           Opacity="0.5"
+							           Fill="{DynamicResource BorderDefaultBrush}"/>
 
-								<!-- Ступени стоят рядом, а не прячутся в списке: их
-								     всего четыре, и выбор из четырёх не стоит
-								     раскрытия списка. Римская цифра занимает мало
-								     места и держит порядок ступеней перед глазами;
-								     что она значит, говорит подсказка. -->
-								<StackPanel Orientation="Horizontal" Spacing="6">
-									<RadioButton Classes="importance"
-									             GroupName="Importance"
-									             Content="I"
-									             IsChecked="{Binding ImportanceLevel,
-									                 Converter={StaticResource EnumToBooleanConverter},
-									                 ConverterParameter=Primary, Mode=TwoWay}"
-									             behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Importance_Primary}"
-									             behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Importance_PrimaryHint}"/>
+							<Grid Grid.Column="0" ColumnDefinitions="Auto,16,Auto,16,*">
+								<StackPanel Grid.Column="0" Spacing="4">
+									<StackPanel Orientation="Horizontal" Spacing="6">
+										<TextBlock Classes="field-label"
+										           Text="{x:Static loc:CharactersStrings.Field_ImportanceLevel}"/>
+										<!-- Что означает выбранная ступень, говорит подсказка: строка
+										     под рядом кнопок меняла высоту блока при каждом
+										     переключении и уводила вниз всё, что за ней. -->
+										<Border Classes="hint"
+										        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Field_ImportanceLevel}"
+										        behaviours:TooltipBehavior.Description="{Binding ImportanceLevelHint}">
+											<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
+										</Border>
+									</StackPanel>
 
-									<RadioButton Classes="importance"
-									             GroupName="Importance"
-									             Content="II"
-									             IsChecked="{Binding ImportanceLevel,
-									                 Converter={StaticResource EnumToBooleanConverter},
-									                 ConverterParameter=Secondary, Mode=TwoWay}"
-									             behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Importance_Secondary}"
-									             behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Importance_SecondaryHint}"/>
+									<!-- Ступени стоят рядом, а не прячутся в списке: их
+									     всего четыре, и выбор из четырёх не стоит
+									     раскрытия списка. Римская цифра занимает мало
+									     места и держит порядок ступеней перед глазами;
+									     что она значит, говорит подсказка. -->
+									<StackPanel Orientation="Horizontal" Spacing="6">
+										<RadioButton Classes="importance"
+										             GroupName="Importance"
+										             Content="I"
+										             IsChecked="{Binding ImportanceLevel,
+										                 Converter={StaticResource EnumToBooleanConverter},
+										                 ConverterParameter=Primary, Mode=TwoWay}"
+										             behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Importance_Primary}"
+										             behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Importance_PrimaryHint}"/>
 
-									<RadioButton Classes="importance"
-									             GroupName="Importance"
-									             Content="III"
-									             IsChecked="{Binding ImportanceLevel,
-									                 Converter={StaticResource EnumToBooleanConverter},
-									                 ConverterParameter=Tertiary, Mode=TwoWay}"
-									             behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Importance_Tertiary}"
-									             behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Importance_TertiaryHint}"/>
+										<RadioButton Classes="importance"
+										             GroupName="Importance"
+										             Content="II"
+										             IsChecked="{Binding ImportanceLevel,
+										                 Converter={StaticResource EnumToBooleanConverter},
+										                 ConverterParameter=Secondary, Mode=TwoWay}"
+										             behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Importance_Secondary}"
+										             behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Importance_SecondaryHint}"/>
 
-									<RadioButton Classes="importance importance-custom"
-									             GroupName="Importance"
-									             Content="{x:Static loc:CharactersStrings.Importance_Custom}"
-									             IsChecked="{Binding ImportanceLevel,
-									                 Converter={StaticResource EnumToBooleanConverter},
-									                 ConverterParameter=Custom, Mode=TwoWay}"
-									             behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Importance_Custom}"
-									             behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Importance_CustomHint}"/>
+										<RadioButton Classes="importance"
+										             GroupName="Importance"
+										             Content="III"
+										             IsChecked="{Binding ImportanceLevel,
+										                 Converter={StaticResource EnumToBooleanConverter},
+										                 ConverterParameter=Tertiary, Mode=TwoWay}"
+										             behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Importance_Tertiary}"
+										             behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Importance_TertiaryHint}"/>
+
+										<RadioButton Classes="importance importance-custom"
+										             GroupName="Importance"
+										             Content="{x:Static loc:CharactersStrings.Importance_Custom}"
+										             IsChecked="{Binding ImportanceLevel,
+										                 Converter={StaticResource EnumToBooleanConverter},
+										                 ConverterParameter=Custom, Mode=TwoWay}"
+										             behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Importance_Custom}"
+										             behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Importance_CustomHint}"/>
+									</StackPanel>
 								</StackPanel>
 
-								<!-- Что означает выбранная цифра — прямо под рядом,
-								     а не только в подсказке: римская цифра сама по
-								     себе не говорит ничего, и наводить ради этого
-								     курсор не должно быть обязательным. -->
-								<TextBlock Text="{Binding ImportanceLevelHint}"
-								           FontSize="11"
-								           TextWrapping="Wrap"
-								           Margin="0,2,0,0"
-								           Foreground="{DynamicResource TextSecondaryBrush}"/>
-							</StackPanel>
+								<StackPanel Grid.Column="2" Spacing="4"
+								            IsVisible="{Binding ImportanceLevel,
+								                Converter={StaticResource IsCustomImportanceConverter}}">
+									<TextBlock Classes="field-label"
+									           Text="{x:Static loc:CharactersStrings.Field_CustomImportanceLabel}"/>
+									<TextBox Classes="field"
+									         Width="240"
+									         Text="{Binding CustomImportanceLabel, Mode=TwoWay}"/>
+								</StackPanel>
+							</Grid>
 
-							<StackPanel Grid.Column="2" Spacing="4"
-							            IsVisible="{Binding ImportanceLevel,
-							                Converter={StaticResource IsCustomImportanceConverter}}">
-								<TextBlock Classes="field-label"
-								           Text="{x:Static loc:CharactersStrings.Field_CustomImportanceLabel}"/>
-								<TextBox Classes="field"
-								         Text="{Binding CustomImportanceLabel, Mode=TwoWay}"/>
+							<!-- ── Группа или человек ─────────────────────── -->
+							<!-- Флаг был в модели с самого начала, но задать его
+							     из карточки было негде: превью цвета зависело
+							     от значения, которое нельзя выставить. -->
+							<StackPanel Grid.Column="2"
+							            Orientation="Horizontal"
+							            Spacing="6"
+							            VerticalAlignment="Top">
+								<CheckBox IsChecked="{Binding IsCollective, Mode=TwoWay}"
+								          Content="{x:Static loc:CharactersStrings.Block_Group}"
+								          FontSize="11"
+								          Foreground="{DynamicResource TextSecondaryBrush}"/>
+								<Border Classes="hint"
+								        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Block_Group}"
+								        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Group_Hint}">
+									<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
+								</Border>
 							</StackPanel>
 						</Grid>
 
@@ -723,31 +841,255 @@
 							         MinHeight="120"/>
 						</StackPanel>
 
-						<!-- ── Группа или человек ─────────────────────── -->
-						<!-- Флаг был в модели с самого начала, но задать его
-						     из карточки было негде: превью цвета зависело
-						     от значения, которое нельзя выставить. -->
-						<StackPanel Spacing="6">
-							<StackPanel Orientation="Horizontal" Spacing="6">
-								<CheckBox IsChecked="{Binding IsCollective, Mode=TwoWay}"
-								          Content="{x:Static loc:CharactersStrings.Block_Group}"
-								          FontSize="11"
-								          Foreground="{DynamicResource TextSecondaryBrush}"/>
-								<Border Classes="hint"
-								        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Block_Group}"
-								        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Group_Hint}">
-									<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
-								</Border>
+					</StackPanel>
+				</Border>
+
+				<!-- ── Компонент: классификация ───────────────────────── -->
+				<!-- Метки и теги делают одно — раскладывают персонажа по полкам,
+				     только метка видна на карточке, а тег живёт в фильтрах. -->
+				<Border Classes="block">
+					<StackPanel Spacing="10">
+
+						<Border Classes="block-header">
+							<StackPanel Orientation="Horizontal" Spacing="8">
+								<Border Width="3" Height="14" CornerRadius="2"
+								        Background="{DynamicResource AccentDefaultBrush}"/>
+								<TextBlock Classes="block-title"
+								           Text="{x:Static loc:CharactersStrings.Block_Classification}"/>
+							</StackPanel>
+						</Border>
+
+						<!-- Метки и теги стоят рядом: оба списка короткие, и полная
+						     ширина блока под каждый из них уходила в пустоту. -->
+						<Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="16">
+							<!-- Делитель колонок: тонкая линия по центру блока. Не рамка,
+							     а подсказка глазу, где кончаются метки и начинаются
+							     теги, поэтому приглушена. -->
+							<Rectangle Grid.Column="1"
+							           Width="1"
+							           VerticalAlignment="Stretch"
+							           Opacity="0.5"
+							           Fill="{DynamicResource BorderDefaultBrush}"/>
+
+							<!-- ── Метки ──────────────────────────────────── -->
+							<StackPanel Grid.Column="0" Spacing="4">
+								<Grid ColumnDefinitions="Auto,*,Auto">
+									<StackPanel Grid.Column="0"
+									            Orientation="Horizontal" Spacing="6">
+										<TextBlock Classes="subhead"
+										           Text="{x:Static loc:CharactersStrings.Field_Labels}"/>
+										<Border Classes="hint"
+										        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Field_Labels}"
+										        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Hint_Labels}">
+											<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
+										</Border>
+									</StackPanel>
+
+									<!-- Быстрая отметка «мёртв»: встроенная метка. Кнопка
+									     исчезает, как только метка появилась — состояние
+									     дальше показывает её чип, а не два разных органа. -->
+									<Button Grid.Column="2"
+									    Click="OnMarkDeadClick"
+									    IsVisible="{Binding !IsDead}"
+									    Background="Transparent"
+									    BorderBrush="{DynamicResource BorderDefaultBrush}"
+									    BorderThickness="1"
+									    CornerRadius="12"
+									    Padding="10,3"
+									    FontSize="11"
+									    Foreground="{DynamicResource TextSecondaryBrush}">
+										<StackPanel Orientation="Horizontal" Spacing="6">
+											<Border Width="14" Height="14" CornerRadius="7" Background="#B71C1C">
+												<Path Data="M12,2C7.03,2 3,6.03 3,11c0,2.85 1.34,5.38 3.42,7.02V21c0,0.55 0.45,1 1,1h1.5v-2h2v2h2v-2h2v2H16c0.55,0 1,-0.45 1,-1v-2.98C19.66,16.38 21,13.85 21,11C21,6.03 16.97,2 12,2zM8.5,13C7.67,13 7,12.33 7,11.5C7,10.67 7.67,10 8.5,10s1.5,0.67 1.5,1.5C10,12.33 9.33,13 8.5,13zM15.5,13c-0.83,0 -1.5,-0.67 -1.5,-1.5c0,-0.83 0.67,-1.5 1.5,-1.5s1.5,0.67 1.5,1.5C17,12.33 16.33,13 15.5,13z"
+												      Fill="White" Stretch="Uniform" Margin="2"/>
+											</Border>
+											<TextBlock Text="{x:Static loc:CharactersStrings.Label_Dead}" VerticalAlignment="Center"/>
+										</StackPanel>
+									</Button>
+								</Grid>
+
+								<ItemsControl ItemsSource="{Binding Labels}" IsVisible="{Binding HasLabels}">
+									<ItemsControl.ItemsPanel>
+										<ItemsPanelTemplate>
+											<WrapPanel Orientation="Horizontal"/>
+										</ItemsPanelTemplate>
+									</ItemsControl.ItemsPanel>
+									<ItemsControl.ItemTemplate>
+										<DataTemplate x:DataType="models:CharacterLabel">
+											<!-- Чип метки заодно перетаскивается: порядок
+											     задавался только стрелками, а на десятке
+											     меток это утомительно. Щелчок по-прежнему
+											     открывает редактор — перетаскивание
+											     начинается только после сдвига мыши
+											     на несколько пикселей. -->
+											<Button Classes="chip-host" Background="Transparent"
+											        BorderThickness="0"
+											        Padding="0"
+											        Margin="0,0,6,6"
+											        Click="OnLabelChipClick"
+											        DragDrop.AllowDrop="True"
+											        PointerPressed="OnLabelChipPointerPressed"
+											        PointerMoved="OnLabelChipPointerMoved"
+											        PointerReleased="OnLabelChipPointerReleased"
+											        DragDrop.DragOver="OnLabelChipDragOver"
+											        DragDrop.Drop="OnLabelChipDrop">
+												<Border Classes="chip"
+												        Background="{DynamicResource BgSurfaceBrush}"
+												        BorderBrush="{DynamicResource BorderDefaultBrush}"
+												        BorderThickness="1"
+												        CornerRadius="12"
+												        Padding="6,4"
+												        behaviours:TooltipBehavior.Tip="{Binding Name}"
+												        behaviours:TooltipBehavior.Description="{Binding Description}">
+													<StackPanel Orientation="Horizontal" Spacing="6">
+														<controls:CharacterLabelIcon
+															Label="{Binding}"
+															IconSize="16"
+															VerticalAlignment="Center"/>
+														<TextBlock Text="{Binding Name}"
+														           FontSize="11"
+														           VerticalAlignment="Center"
+														           Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+														<StackPanel Classes="chip-actions"
+														            Orientation="Horizontal"
+														            Spacing="0"
+														            VerticalAlignment="Center">
+															<Button Classes="chip-action" Click="OnLabelMoveLeftClick">
+																<Path Data="M15.41,7.41 L14,6 8,12 14,18 15.41,16.59 10.83,12z"
+																      Fill="{DynamicResource TextSecondaryBrush}"
+																      Stretch="Uniform"
+																      Width="8" Height="8"/>
+															</Button>
+															<Button Classes="chip-action" Click="OnLabelMoveRightClick">
+																<Path Data="M10,6 L8.59,7.41 13.17,12 8.59,16.59 10,18 16,12z"
+																      Fill="{DynamicResource TextSecondaryBrush}"
+																      Stretch="Uniform"
+																      Width="8" Height="8"/>
+															</Button>
+															<Button Classes="chip-action" Click="OnLabelRemoveClick">
+																<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+																      Fill="{DynamicResource TextSecondaryBrush}"
+																      Stretch="Uniform"
+																      Width="8" Height="8"/>
+															</Button>
+														</StackPanel>
+													</StackPanel>
+												</Border>
+											</Button>
+										</DataTemplate>
+									</ItemsControl.ItemTemplate>
+								</ItemsControl>
+
+								<Grid>
+									<Grid.ColumnDefinitions>
+										<ColumnDefinition Width="*" MaxWidth="240"/>
+										<ColumnDefinition Width="Auto"/>
+									</Grid.ColumnDefinitions>
+									<!-- Ввод метки подсказывает уже заведённые в проекте:
+									     совпадение по имени подхватывает саму метку
+									     со значком и цветом, а не заводит похожую. -->
+									<AutoCompleteBox Grid.Column="0"
+									                 ItemsSource="{Binding KnownLabelNames}"
+									                 FilterMode="ContainsOrdinal"
+									                 MinimumPrefixLength="1"
+									                 MaxDropDownHeight="180"
+									                 PlaceholderText="{x:Static loc:CharactersStrings.Label_AddPlaceholder}"
+									                 KeyDown="OnNewLabelKeyDown"
+									                 FontSize="12"
+									                 Background="{DynamicResource BgSurfaceBrush}"
+									                 Foreground="{DynamicResource TextPrimaryBrush}"
+									                 BorderBrush="{DynamicResource BorderDefaultBrush}"
+									                 BorderThickness="1"
+									                 CornerRadius="4"
+									                 Padding="8,6"/>
+									<Button Grid.Column="1"
+									        Margin="6,0,0,0"
+									        Content="{x:Static loc:CharactersStrings.Button_AddLabel}"
+									        Click="OnAddLabelClick"
+									        FontSize="11"
+									        Padding="10,6"
+									        CornerRadius="4"/>
+								</Grid>
 							</StackPanel>
 
-							<StackPanel Spacing="4" IsVisible="{Binding IsCollective}">
-								<TextBlock Classes="field-label"
-								           Text="{x:Static loc:CharactersStrings.Group_Population}"/>
-								<TextBox Classes="field"
-								         Text="{Binding PopulationNote, Mode=TwoWay}"
-								         PlaceholderText="{x:Static loc:CharactersStrings.Group_PopulationPlaceholder}"/>
+							<!-- ── Теги ───────────────────────────────────── -->
+							<StackPanel Grid.Column="2" Spacing="4">
+								<StackPanel Orientation="Horizontal" Spacing="6">
+									<TextBlock Classes="subhead"
+									           Text="{x:Static loc:CharactersStrings.Field_Tags}"/>
+									<Border Classes="hint"
+									        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Field_Tags}"
+									        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Hint_Tags}">
+										<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
+									</Border>
+								</StackPanel>
+
+								<ItemsControl ItemsSource="{Binding Tags}" IsVisible="{Binding HasTags}">
+									<ItemsControl.ItemsPanel>
+										<ItemsPanelTemplate>
+											<WrapPanel Orientation="Horizontal"/>
+										</ItemsPanelTemplate>
+									</ItemsControl.ItemsPanel>
+									<ItemsControl.ItemTemplate>
+										<!-- Тип элемента указан явно: без него компилируемые
+										     привязки взяли бы вьюмодель вместо строки тега. -->
+										<DataTemplate x:DataType="sys:String">
+											<!-- Тег — короткое слово, и раздувать его в плашку
+											     размером с кнопку незачем: отступы вдвое
+											     меньше, чем у меток, которые несут значок
+											     и цвет. -->
+											<Border Classes="chip"
+											        Background="{DynamicResource AccentSubtleBrush}"
+											        CornerRadius="10"
+											        Padding="6,1"
+											        Margin="0,0,4,4">
+												<StackPanel Orientation="Horizontal" Spacing="2">
+													<TextBlock Text="{Binding}"
+													           FontSize="11"
+													           VerticalAlignment="Center"
+													           Foreground="{DynamicResource TextPrimaryBrush}"/>
+													<StackPanel Classes="chip-actions"
+													            Orientation="Horizontal"
+													            VerticalAlignment="Center">
+														<Button Classes="chip-action" Click="OnTagRemoveClick">
+															<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+															      Fill="{DynamicResource TextSecondaryBrush}"
+															      Stretch="Uniform"
+															      Width="8" Height="8"/>
+														</Button>
+													</StackPanel>
+												</StackPanel>
+											</Border>
+										</DataTemplate>
+									</ItemsControl.ItemTemplate>
+								</ItemsControl>
+
+								<!-- Ввод тега с подсказкой уже заведённых в проекте:
+								     список фильтруется по мере набора, выбор из него
+								     кладёт готовое значение в поле, Enter добавляет.
+								     Это дешёвая защита от трёх написаний одного тега,
+								     после которых фильтр списка перестаёт работать. -->
+								<Grid>
+									<Grid.ColumnDefinitions>
+										<ColumnDefinition Width="*" MaxWidth="240"/>
+									</Grid.ColumnDefinitions>
+									<AutoCompleteBox ItemsSource="{Binding KnownTags}"
+								                 FilterMode="ContainsOrdinal"
+								                 MinimumPrefixLength="1"
+								                 MaxDropDownHeight="180"
+								                 PlaceholderText="{x:Static loc:CharactersStrings.Tag_AddPlaceholder}"
+								                 KeyDown="OnNewTagKeyDown"
+								                 FontSize="12"
+								                 Background="{DynamicResource BgSurfaceBrush}"
+								                 Foreground="{DynamicResource TextPrimaryBrush}"
+								                 BorderBrush="{DynamicResource BorderDefaultBrush}"
+								                 BorderThickness="1"
+									                 CornerRadius="4"
+									                 Padding="8,6"/>
+								</Grid>
 							</StackPanel>
-						</StackPanel>
+						</Grid>
 
 					</StackPanel>
 				</Border>
@@ -771,7 +1113,7 @@
 						     остальные: прежние, будущие, прозвища. Поиск идёт
 						     по всем сразу, поэтому персонаж, ставший Дианой,
 						     находится и по имени Вадим. -->
-						<StackPanel Spacing="8">
+						<StackPanel Spacing="4">
 							<StackPanel Orientation="Horizontal" Spacing="6">
 								<TextBlock Classes="subhead"
 								           Text="{x:Static loc:CharactersStrings.Field_AlternateNames}"/>
@@ -782,7 +1124,7 @@
 								</Border>
 							</StackPanel>
 
-							<ItemsControl ItemsSource="{Binding AlternateNames}">
+							<ItemsControl ItemsSource="{Binding AlternateNames}" IsVisible="{Binding HasAlternateNames}">
 								<ItemsControl.ItemsPanel>
 									<ItemsPanelTemplate>
 										<WrapPanel Orientation="Horizontal"/>
@@ -794,7 +1136,7 @@
 										     вместе с пометкой: правка идёт тем же
 										     потоком, что и добавление, отдельного
 										     редактора под одно поле не заводим. -->
-										<Button Background="Transparent"
+										<Button Classes="chip-host" Background="Transparent"
 										        BorderThickness="0"
 										        Padding="0"
 										        Margin="0,0,6,6"
@@ -850,9 +1192,14 @@
 							     «другие имена» и так ясно, что сюда вводят имя,
 							     а пример вроде «Алина» в каждой карточке читается
 							     как чужое значение. -->
-							<TextBox Classes="field"
-							         x:Name="NewNameBox"
-							         KeyDown="OnNewNameKeyDown"/>
+							<Grid>
+								<Grid.ColumnDefinitions>
+									<ColumnDefinition Width="*" MaxWidth="240"/>
+								</Grid.ColumnDefinitions>
+								<TextBox Classes="field"
+								         x:Name="NewNameBox"
+								         KeyDown="OnNewNameKeyDown"/>
+							</Grid>
 						</StackPanel>
 
 						<!-- Обращения по группам сняты с карточки: кто как кого
@@ -860,246 +1207,6 @@
 						     и на карточке это читалось как отдельная механика
 						     без видимой пользы. Модель и разрешение обращений
 						     остались нетронутыми, данные никуда не делись. -->
-
-					</StackPanel>
-				</Border>
-
-				<!-- ── Компонент: классификация ───────────────────────── -->
-				<!-- Метки и теги делают одно — раскладывают персонажа по полкам,
-				     только метка видна на карточке, а тег живёт в фильтрах. -->
-				<Border Classes="block">
-					<StackPanel Spacing="10">
-
-						<Border Classes="block-header">
-							<StackPanel Orientation="Horizontal" Spacing="8">
-								<Border Width="3" Height="14" CornerRadius="2"
-								        Background="{DynamicResource AccentDefaultBrush}"/>
-								<TextBlock Classes="block-title"
-								           Text="{x:Static loc:CharactersStrings.Block_Classification}"/>
-							</StackPanel>
-						</Border>
-
-						<!-- ── Метки ──────────────────────────────────── -->
-						<StackPanel Spacing="8">
-							<Grid ColumnDefinitions="Auto,*,Auto">
-								<StackPanel Grid.Column="0"
-								            Orientation="Horizontal" Spacing="6">
-									<TextBlock Classes="subhead"
-									           Text="{x:Static loc:CharactersStrings.Field_Labels}"/>
-									<Border Classes="hint"
-									        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Field_Labels}"
-									        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Hint_Labels}">
-										<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
-									</Border>
-								</StackPanel>
-
-								<!-- Быстрая отметка «мёртв»: встроенная метка. Кнопка
-								     исчезает, как только метка появилась — состояние
-								     дальше показывает её чип, а не два разных органа. -->
-								<Button Grid.Column="2"
-								    Click="OnMarkDeadClick"
-								    IsVisible="{Binding !IsDead}"
-								    Background="Transparent"
-								    BorderBrush="{DynamicResource BorderDefaultBrush}"
-								    BorderThickness="1"
-								    CornerRadius="12"
-								    Padding="10,3"
-								    FontSize="11"
-								    Foreground="{DynamicResource TextSecondaryBrush}">
-									<StackPanel Orientation="Horizontal" Spacing="6">
-										<Border Width="14" Height="14" CornerRadius="7" Background="#B71C1C">
-											<Path Data="M12,2C7.03,2 3,6.03 3,11c0,2.85 1.34,5.38 3.42,7.02V21c0,0.55 0.45,1 1,1h1.5v-2h2v2h2v-2h2v2H16c0.55,0 1,-0.45 1,-1v-2.98C19.66,16.38 21,13.85 21,11C21,6.03 16.97,2 12,2zM8.5,13C7.67,13 7,12.33 7,11.5C7,10.67 7.67,10 8.5,10s1.5,0.67 1.5,1.5C10,12.33 9.33,13 8.5,13zM15.5,13c-0.83,0 -1.5,-0.67 -1.5,-1.5c0,-0.83 0.67,-1.5 1.5,-1.5s1.5,0.67 1.5,1.5C17,12.33 16.33,13 15.5,13z"
-											      Fill="White" Stretch="Uniform" Margin="2"/>
-										</Border>
-										<TextBlock Text="{x:Static loc:CharactersStrings.Label_Dead}" VerticalAlignment="Center"/>
-									</StackPanel>
-								</Button>
-							</Grid>
-
-							<ItemsControl ItemsSource="{Binding Labels}">
-								<ItemsControl.ItemsPanel>
-									<ItemsPanelTemplate>
-										<WrapPanel Orientation="Horizontal"/>
-									</ItemsPanelTemplate>
-								</ItemsControl.ItemsPanel>
-								<ItemsControl.ItemTemplate>
-									<DataTemplate x:DataType="models:CharacterLabel">
-										<!-- Чип метки заодно перетаскивается: порядок
-										     задавался только стрелками, а на десятке
-										     меток это утомительно. Щелчок по-прежнему
-										     открывает редактор — перетаскивание
-										     начинается только после сдвига мыши
-										     на несколько пикселей. -->
-										<Button Background="Transparent"
-										        BorderThickness="0"
-										        Padding="0"
-										        Margin="0,0,6,6"
-										        Click="OnLabelChipClick"
-										        DragDrop.AllowDrop="True"
-										        PointerPressed="OnLabelChipPointerPressed"
-										        PointerMoved="OnLabelChipPointerMoved"
-										        PointerReleased="OnLabelChipPointerReleased"
-										        DragDrop.DragOver="OnLabelChipDragOver"
-										        DragDrop.Drop="OnLabelChipDrop">
-											<Border Classes="chip"
-											        Background="{DynamicResource BgSurfaceBrush}"
-											        BorderBrush="{DynamicResource BorderDefaultBrush}"
-											        BorderThickness="1"
-											        CornerRadius="12"
-											        Padding="6,4"
-											        behaviours:TooltipBehavior.Tip="{Binding Name}"
-											        behaviours:TooltipBehavior.Description="{Binding Description}">
-												<StackPanel Orientation="Horizontal" Spacing="6">
-													<Border Width="16" Height="16"
-													        CornerRadius="8"
-													        ClipToBounds="True"
-													        VerticalAlignment="Center"
-													        Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
-														<Panel>
-															<Path Data="{Binding Icon, Converter={x:Static conv:LabelIconToGeometryConverter.Instance}}"
-															      Fill="White"
-															      Stretch="Uniform"
-															      Margin="3"
-															      IsVisible="{Binding !HasCustomIcon}"/>
-															<Image Source="{Binding IconImage, Converter={x:Static conv:LabelIconToImageConverter.Instance}}"
-															       Stretch="UniformToFill"
-															       IsVisible="{Binding HasCustomIcon}"/>
-														</Panel>
-													</Border>
-													<TextBlock Text="{Binding Name}"
-													           FontSize="11"
-													           VerticalAlignment="Center"
-													           Foreground="{DynamicResource TextPrimaryBrush}"/>
-
-													<StackPanel Classes="chip-actions"
-													            Orientation="Horizontal"
-													            Spacing="0"
-													            VerticalAlignment="Center">
-														<Button Classes="chip-action" Click="OnLabelMoveLeftClick">
-															<Path Data="M15.41,7.41 L14,6 8,12 14,18 15.41,16.59 10.83,12z"
-															      Fill="{DynamicResource TextSecondaryBrush}"
-															      Stretch="Uniform"
-															      Width="8" Height="8"/>
-														</Button>
-														<Button Classes="chip-action" Click="OnLabelMoveRightClick">
-															<Path Data="M10,6 L8.59,7.41 13.17,12 8.59,16.59 10,18 16,12z"
-															      Fill="{DynamicResource TextSecondaryBrush}"
-															      Stretch="Uniform"
-															      Width="8" Height="8"/>
-														</Button>
-														<Button Classes="chip-action" Click="OnLabelRemoveClick">
-															<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-															      Fill="{DynamicResource TextSecondaryBrush}"
-															      Stretch="Uniform"
-															      Width="8" Height="8"/>
-														</Button>
-													</StackPanel>
-												</StackPanel>
-											</Border>
-										</Button>
-									</DataTemplate>
-								</ItemsControl.ItemTemplate>
-							</ItemsControl>
-
-							<Grid ColumnDefinitions="*,Auto">
-								<!-- Ввод метки подсказывает уже заведённые в проекте:
-								     совпадение по имени подхватывает саму метку
-								     со значком и цветом, а не заводит похожую. -->
-								<AutoCompleteBox Grid.Column="0"
-								                 ItemsSource="{Binding KnownLabelNames}"
-								                 FilterMode="ContainsOrdinal"
-								                 MinimumPrefixLength="1"
-								                 MaxDropDownHeight="180"
-								                 PlaceholderText="{x:Static loc:CharactersStrings.Label_AddPlaceholder}"
-								                 Margin="0,0,6,0"
-								                 KeyDown="OnNewLabelKeyDown"
-								                 FontSize="12"
-								                 Background="{DynamicResource BgSurfaceBrush}"
-								                 Foreground="{DynamicResource TextPrimaryBrush}"
-								                 BorderBrush="{DynamicResource BorderDefaultBrush}"
-								                 BorderThickness="1"
-								                 CornerRadius="4"
-								                 Padding="8,6"/>
-								<Button Grid.Column="1"
-								        Content="{x:Static loc:CharactersStrings.Button_AddLabel}"
-								        Click="OnAddLabelClick"
-								        FontSize="11"
-								        Padding="10,6"
-								        CornerRadius="4"/>
-							</Grid>
-						</StackPanel>
-
-						<!-- ── Теги ───────────────────────────────────── -->
-						<StackPanel Spacing="8">
-							<StackPanel Orientation="Horizontal" Spacing="6">
-								<TextBlock Classes="subhead"
-								           Text="{x:Static loc:CharactersStrings.Field_Tags}"/>
-								<Border Classes="hint"
-								        behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.Field_Tags}"
-								        behaviours:TooltipBehavior.Description="{x:Static loc:CharactersStrings.Hint_Tags}">
-									<PathIcon Data="M11 15h2v2h-2zm0-8h2v6h-2zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"/>
-								</Border>
-							</StackPanel>
-
-							<ItemsControl ItemsSource="{Binding Tags}">
-								<ItemsControl.ItemsPanel>
-									<ItemsPanelTemplate>
-										<WrapPanel Orientation="Horizontal"/>
-									</ItemsPanelTemplate>
-								</ItemsControl.ItemsPanel>
-								<ItemsControl.ItemTemplate>
-									<!-- Тип элемента указан явно: без него компилируемые
-									     привязки взяли бы вьюмодель вместо строки тега. -->
-									<DataTemplate x:DataType="sys:String">
-										<!-- Тег — короткое слово, и раздувать его в плашку
-										     размером с кнопку незачем: отступы вдвое
-										     меньше, чем у меток, которые несут значок
-										     и цвет. -->
-										<Border Classes="chip"
-										        Background="{DynamicResource AccentSubtleBrush}"
-										        CornerRadius="10"
-										        Padding="6,1"
-										        Margin="0,0,4,4">
-											<StackPanel Orientation="Horizontal" Spacing="2">
-												<TextBlock Text="{Binding}"
-												           FontSize="11"
-												           VerticalAlignment="Center"
-												           Foreground="{DynamicResource TextPrimaryBrush}"/>
-												<StackPanel Classes="chip-actions"
-												            Orientation="Horizontal"
-												            VerticalAlignment="Center">
-													<Button Classes="chip-action" Click="OnTagRemoveClick">
-														<Path Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-														      Fill="{DynamicResource TextSecondaryBrush}"
-														      Stretch="Uniform"
-														      Width="8" Height="8"/>
-													</Button>
-												</StackPanel>
-											</StackPanel>
-										</Border>
-									</DataTemplate>
-								</ItemsControl.ItemTemplate>
-							</ItemsControl>
-
-							<!-- Ввод тега с подсказкой уже заведённых в проекте:
-							     список фильтруется по мере набора, выбор из него
-							     кладёт готовое значение в поле, Enter добавляет.
-							     Это дешёвая защита от трёх написаний одного тега,
-							     после которых фильтр списка перестаёт работать. -->
-							<AutoCompleteBox ItemsSource="{Binding KnownTags}"
-							                 FilterMode="ContainsOrdinal"
-							                 MinimumPrefixLength="1"
-							                 MaxDropDownHeight="180"
-							                 PlaceholderText="{x:Static loc:CharactersStrings.Tag_AddPlaceholder}"
-							                 KeyDown="OnNewTagKeyDown"
-							                 FontSize="12"
-							                 Background="{DynamicResource BgSurfaceBrush}"
-							                 Foreground="{DynamicResource TextPrimaryBrush}"
-							                 BorderBrush="{DynamicResource BorderDefaultBrush}"
-							                 BorderThickness="1"
-							                 CornerRadius="4"
-							                 Padding="8,6"/>
-						</StackPanel>
 
 					</StackPanel>
 				</Border>
@@ -1420,8 +1527,7 @@
 				</Border>
 
 			</StackPanel>
-
-			</Grid>
+		</Grid>
 		</ScrollViewer>
 
 		<!-- Призрак перетаскиваемой картинки — как у карточек в списке

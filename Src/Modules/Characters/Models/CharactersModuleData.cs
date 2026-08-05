@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Writersword.Core.Models.Preview;
 
 namespace Writersword.Modules.Characters.Models
@@ -21,6 +21,21 @@ namespace Writersword.Modules.Characters.Models
         public List<string> ActiveTemplateIds { get; set; } = new();
 
         public List<Character> Characters { get; set; } = new();
+
+        /// <summary>
+        /// Реестр меток проекта: по одной записи на метку, независимо от
+        /// того, скольким персонажам она поставлена и поставлена ли вообще.
+        ///
+        /// До реестра общей метки не существовало — вид «Ранен» брался у
+        /// первого попавшегося персонажа, у которого такая метка нашлась.
+        /// Стоило поправить её у него — и новые персонажи получали новый
+        /// вид, а стоило его удалить — вид терялся вместе с ним.
+        ///
+        /// У персонажа при этом остаётся своя копия метки с тем же
+        /// идентификатором: цвета, значок и подпись он волен менять только
+        /// себе, а реестр хранит образец, от которого пляшут остальные.
+        /// </summary>
+        public List<CharacterLabel> Labels { get; set; } = new();
         public List<CharacterRelationship> Relationships { get; set; } = new();
         public List<CharacterAnketa> CustomAnketas { get; set; } = new();
         public List<CharacterFolder> Folders { get; set; } = new();

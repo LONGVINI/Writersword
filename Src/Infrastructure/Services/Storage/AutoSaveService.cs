@@ -122,7 +122,10 @@ namespace Writersword.Infrastructure.Services.Project
 
                 _logger.LogDebug("Auto-saving tab: {TabTitle}", activeTab.Title);
 
-                bool success = await _projectWorkflow.SaveDocumentAsync(activeTab, isAutoSave: true);
+                // Без всплывающего уведомления: автосохранение идёт по таймеру и не
+                // должно рапортовать о себе каждые несколько минут.
+                bool success = await _projectWorkflow.SaveDocumentAsync(
+                    activeTab, showNotification: false, isAutoSave: true);
 
                 if (success)
                 {

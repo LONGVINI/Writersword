@@ -1175,19 +1175,19 @@
     <value>months</value>
   </data>
   <data name="Settings_Backups_Unit_Tooltip" xml:space="preserve">
-    <value>Click to change the unit: minutes, hours, days, weeks, months and back to minutes.</value>
+    <value>Click to change the unit: minutes, hours, days, weeks, months</value>
   </data>
   <data name="Settings_Backups_Unlimited" xml:space="preserve">
     <value>No limit</value>
   </data>
   <data name="Settings_Backups_MinInterval_Hint" xml:space="preserve">
-    <value>Limits automatic points only. A point taken by the button, on application close or before a rollback is always created.</value>
+    <value>Limits automatic points only. A point taken by the button, on application close or before a rollback is always created</value>
   </data>
   <data name="Settings_Backups_Thinning" xml:space="preserve">
     <value>Thin out older points</value>
   </data>
   <data name="Settings_Backups_Thinning_Hint" xml:space="preserve">
-    <value>All points are kept for today, one per day for the last week, one per week beyond that. Points created by the button are never removed.</value>
+    <value>Keeps one point per day for the last week and one per week beyond that. Points created by the button are never removed</value>
   </data>
   <data name="Settings_Backups_UserPoints" xml:space="preserve">
     <value>Points taken by hand</value>
@@ -1211,7 +1211,7 @@
     <value>How many to keep</value>
   </data>
   <data name="Settings_Backups_UserPoints_Hint" xml:space="preserve">
-    <value>These points are never thinned out — the moment was marked deliberately. The rule below decides whether they live forever or eventually give way.</value>
+    <value>Never thinned out — removed only by the rule below</value>
   </data>
   <data name="Settings_Backups_CreatePoint" xml:space="preserve">
     <value>Take a point now</value>
@@ -1226,14 +1226,13 @@
     <value>Storage folder</value>
   </data>
   <data name="Settings_Backups_Location_Hint" xml:space="preserve">
-    <value>Empty means a service folder in the user profile — nothing appears next to the project. The path can also be set inside the project itself: it then travels with the file, and if that folder does not exist on another machine, the settings of whoever opened it are used.</value>
+    <value>An empty field means a service folder in the user profile — nothing appears next to the project</value>
   </data>
   <data name="Settings_Backups_ProjectOverride" xml:space="preserve">
     <value>Own folder for this project</value>
   </data>
   <data name="Settings_Backups_ProjectOverride_Hint" xml:space="preserve">
-    <value>The path is stored *inside the project itself* and travels with the file.
-If that folder does not exist on another machine there will be no error — *the settings of whoever opened it* are used instead.</value>
+    <value>A local path is stored *inside the project* and travels with the file. If that folder is missing on another machine, *the settings of whoever opened it* are used</value>
   </data>
   <data name="Settings_Backups_Browse" xml:space="preserve">
     <value>Browse…</value>
@@ -1263,7 +1262,7 @@ Yes — save and roll back, No — roll back and lose them, Cancel — do nothin
     <value>Warning: after the rollback there will be less data than there is now.</value>
   </data>
   <data name="Settings_Backups_Hint" xml:space="preserve">
-    <value>A restore point records the state of the project before a save. Identical content is stored once, so images and avatars are not copied again for every point.</value>
+    <value>Identical content is stored once, so images and avatars are not copied again for every point</value>
   </data>
   <data name="Settings_Backups_Points" xml:space="preserve">
     <value>Restore points</value>
@@ -1340,7 +1339,7 @@ Point contents:</value>
     <value>Compare</value>
   </data>
   <data name="Settings_Backups_Compare_Tooltip" xml:space="preserve">
-    <value>Open the point next to the current version: switch between them right in the editor and adopt whichever you need.</value>
+    <value>Open the point next to the current version: you can switch between them right in the editor and accept the one you need</value>
   </data>
   <data name="Compare_SaveBlocked" xml:space="preserve">
     <value>A version comparison is in progress — saving is disabled. Pick a version with the buttons in the banner above.</value>

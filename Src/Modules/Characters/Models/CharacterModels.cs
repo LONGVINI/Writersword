@@ -98,6 +98,11 @@ namespace Writersword.Modules.Characters.Models
 
     public class CharacterAnketa
     {
+        // Встроенный набор полей коллективного персонажа. Идентификатор нужен
+        // и сервису анкет, и признаку группы на карточке, и кнопке создания
+        // группы в списке — литерал в трёх местах расходится молча.
+        public const string CollectiveId = "builtin_collective";
+
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public string Name { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;

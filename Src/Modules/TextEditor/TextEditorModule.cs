@@ -6,7 +6,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Writersword.Core.Interfaces.Modules;
+using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Models.Settings;
 using Writersword.Modules.Common;
@@ -370,7 +372,11 @@ namespace Writersword.Modules.TextEditor
                 bool hasChanges = payload.ChangedChunks.Count > 0
                                   || payload.RemovedChunks.Count > 0
                                   || payload.ChangedAnnotations.Count > 0
-                                  || payload.RemovedAnnotations.Count > 0;
+                                  || payload.RemovedAnnotations.Count > 0
+                                  // Правки картинок и фигур живут вне чанков:
+                                  // поворот, размер, обрезка, прозрачность, рамка,
+                                  // обтекание и позиция видны только здесь.
+                                  || payload.StructureChanged;
 
                 if (!hasChanges)
                 {
@@ -469,11 +475,164 @@ namespace Writersword.Modules.TextEditor
         // и удаляет лишние. Удаляются только файлы без ссылок — используемые не трогаются.
         private void CleanupUnusedImages(Writersword.Modules.TextEditor.Models.Document.DocumentModel document)
         {
-            // Авто-очистка файлов картинок временно отключена: удаление конфликтовало
-            // с восстановлением (recovery) и отменой — после удаления и сохранения картинка
-            // терялась. Переработать так, чтобы учитывать снимки recovery и историю undo,
-            // прежде чем что-либо удалять.
+            // Авто-очистка по таймеру намеренно не делается: она и раньше удаляла файл,
+            // который возвращался по Ctrl+Z или из версии восстановления. Уборка живёт
+            // отдельной командой CompactUnusedImages и запускается только пользователем.
             _ = document;
+        }
+
+        /// <summary>
+        /// Имена файлов картинок, на которые ссылается документ.
+        /// </summary>
+        private static void CollectImageNames(
+            Writersword.Modules.TextEditor.Models.Document.DocumentModel? document,
+            HashSet<string> target)
+        {
+            if (document is null) return;
+
+            void Walk(System.Collections.Generic.IEnumerable<Models.Document.BlockModel> blocks)
+            {
+                foreach (var block in blocks)
+                {
+                    switch (block)
+                    {
+                        case Models.Document.ImageBlock image
+                            when !string.IsNullOrEmpty(image.ImageFileName):
+                            target.Add(image.ImageFileName);
+                            break;
+
+                        // Картинка может лежать внутри ячейки таблицы или надписи —
+                        // такие ссылки тоже живые.
+                        case Models.Document.TableBlock table:
+                            foreach (var cell in table.Cells)
+                                Walk(cell.Paragraphs);
+                            break;
+
+                        case Models.Document.FloatingTextBlock floatingText:
+                            Walk(floatingText.Paragraphs);
+                            break;
+                    }
+                }
+            }
+
+            foreach (var section in document.Sections)
+            {
+                Walk(section.Blocks);
+                Walk(section.FloatingObjects);
+                Walk(section.InlineObjects);
+            }
+        }
+
+        /// <summary>
+        /// Собирает имена файлов картинок, которые ещё могут понадобиться:
+        /// текущий документ, вся история отмены и повтора, версия из кеша
+        /// восстановления и картинка в буфере обмена. Всё, чего здесь нет,
+        /// вернуть уже неоткуда.
+        /// </summary>
+        private HashSet<string> CollectLiveImageReferences(string? projectPath)
+        {
+            var live = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            CollectImageNames(_viewModel?.DocumentViewModel?.Document, live);
+
+            // История отмены и повтора: снимки хранят JSON документа до и после
+            // операции, имена картинок вытаскиваются прямо из него.
+            foreach (var command in _undoStack.AllCommands)
+            {
+                if (command is not Commands.DocumentSnapshotCommand snapshot) continue;
+                foreach (var name in snapshot.ReferencedImageFiles)
+                    if (!string.IsNullOrEmpty(name)) live.Add(name);
+            }
+
+            // Версия из кеша восстановления: пока она не принята и не отклонена,
+            // её картинки нужны — иначе выбор версии в Compare даст дырки.
+            if (!string.IsNullOrEmpty(projectPath))
+            {
+                try
+                {
+                    var cacheService = CoreServices
+                        .GetService<Writersword.Core.Interfaces.Services.IZipCacheService>();
+                    var cached = cacheService?.GetModuleCustomData(projectPath!, moduleType);
+                    var cachedDocument = (PrepareCustomData(cached) as PreparedDocumentData)?.Document;
+                    CollectImageNames(cachedDocument, live);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning(ex, "Failed to read cache references — cleanup aborted for safety");
+                    throw;
+                }
+            }
+
+            var clipboardName = DocumentCanvas.ClipboardImageFileName;
+            if (!string.IsNullOrEmpty(clipboardName)) live.Add(clipboardName!);
+
+            return live;
+        }
+
+        /// <summary>
+        /// Удаляет из проекта файлы картинок, на которые не осталось ни одной живой
+        /// ссылки. Возвращает число удалённых файлов и освобождённый объём в байтах.
+        /// Вызывается только по явной команде пользователя.
+        /// </summary>
+        public (int Removed, long FreedBytes) CompactUnusedImages(string? projectPath)
+        {
+            var ctx = CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context;
+            if (ctx is null)
+            {
+                _logger.Warning("CompactUnusedImages: no active document context");
+                return (0, 0);
+            }
+
+            var live = CollectLiveImageReferences(projectPath);
+
+            int removed = 0;
+            long freed = 0;
+
+            foreach (var path in ctx.GetFiles("TextEditor/Images").ToList())
+            {
+                string name = path.Substring(path.LastIndexOf('/') + 1);
+                if (string.IsNullOrEmpty(name)) continue;
+                if (live.Contains(name)) continue;
+
+                long size = ctx.ReadFile(path)?.LongLength ?? 0;
+                ctx.DeleteFile(path);
+                removed++;
+                freed += size;
+
+                _logger.Debug("Unused image removed: {Name} ({Size} bytes)", name, size);
+            }
+
+            if (removed > 0)
+            {
+                // Архив переписывается — только после этого файл проекта реально
+                // уменьшается, а не просто теряет запись в оглавлении.
+                ctx.FlushStorage();
+                _logger.Information("Compact: {Count} unused images removed, {Freed} bytes freed",
+                    removed, freed);
+            }
+
+            return (removed, freed);
+        }
+
+        /// <summary>
+        /// Имена картинок, на которые документ ссылается, но файлов в проекте нет.
+        /// Пустой список — всё на месте.
+        /// </summary>
+        public IReadOnlyList<string> FindMissingImageFiles()
+        {
+            var ctx = CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context;
+            if (ctx is null || _viewModel?.DocumentViewModel?.Document is null)
+                return System.Array.Empty<string>();
+
+            var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            CollectImageNames(_viewModel.DocumentViewModel.Document, referenced);
+
+            var missing = new List<string>();
+            foreach (var name in referenced)
+                if (!ctx.FileExists($"TextEditor/Images/{name}"))
+                    missing.Add(name);
+
+            return missing;
         }
 
         public override void SetCustomData(object? data)
@@ -632,11 +791,37 @@ namespace Writersword.Modules.TextEditor
                 _documentLoadedFromData = true;
 
                 _logger.Debug("Document loaded (v{V}), title={Title}", p.EnvelopeVersion, p.Document.Title);
+
+                // Проверка ссылок на файлы картинок — фоном, после загрузки.
+                // Отсутствующий файл раньше давал просто пустое место на листе,
+                // и понять, что картинка потеряна, было нельзя.
+                Dispatcher.UIThread.Post(WarnOnMissingImages, DispatcherPriority.Background);
                 return;
             }
 
             _viewModel.LoadNewDocument(_localSettings);
             ApplyReadOnlyFromContext();
+        }
+
+        // Сообщает о картинках, файлы которых не найдены в проекте.
+        private void WarnOnMissingImages()
+        {
+            try
+            {
+                var missing = FindMissingImageFiles();
+                if (missing.Count == 0) return;
+
+                _logger.Warning("Missing image files in project: {Files}", string.Join(", ", missing));
+
+                CoreServices.GetService<Writersword.Core.Interfaces.Services.UI.INotificationService>()
+                    ?.ShowWarning(missing.Count == 1
+                        ? "Файл одной картинки не найден в проекте — она не отображается"
+                        : $"Не найдены файлы картинок: {missing.Count} — они не отображаются");
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Missing image check failed");
+            }
         }
 
         /// <summary>
@@ -693,16 +878,20 @@ namespace Writersword.Modules.TextEditor
         }
 
         /// <summary>
-        /// Освежает в сессионном кэше ТОЛЬКО масштаб из DocumentViewModel.Zoom, не трогая канвас
-        /// (каретку/скролл). Вызывается из GetSessionData на фоновом потоке (autosave-таймер):
-        /// канвас оттуда трогать нельзя, но зум — простое свойство, читать его безопасно. Без
-        /// этого фоновое сохранение писало бы устаревший масштаб (залипал старый, напр. 68%).
+        /// Освежает в сессионном кэше состояние вида из DocumentViewModel — масштаб, режим
+        /// отображения и число страниц в ряду, — не трогая канвас (каретку/скролл).
+        /// Вызывается из GetSessionData на фоновом потоке (autosave-таймер): канвас оттуда
+        /// трогать нельзя, но это простые свойства вью-модели, читать их безопасно. Без
+        /// этого фоновое сохранение писало бы устаревшее состояние (залипал старый масштаб,
+        /// напр. 68%, и прежний режим отображения).
         /// </summary>
         private void UpdateCachedZoomOnly()
         {
             var dvm = _viewModel?.DocumentViewModel;
             if (dvm is null) return;
             double zoom = dvm.Zoom;
+            string viewMode = dvm.ViewMode.ToString();
+            int pagesPerRow = dvm.PagesPerRow;
 
             try
             {
@@ -722,7 +911,9 @@ namespace Writersword.Modules.TextEditor
                     para,
                     ch,
                     scroll,
-                    zoom
+                    zoom,
+                    viewMode,
+                    pagesPerRow
                 });
             }
             catch (Exception ex)
@@ -749,6 +940,26 @@ namespace Writersword.Modules.TextEditor
                 double scrollY = root.TryGetProperty("scroll", out var s) ? s.GetDouble() : 0;
                 double zoom = root.TryGetProperty("zoom", out var z) ? z.GetDouble() : 0;
 
+                // Режим отображения и число страниц в ряду — такое же состояние вида, как
+                // масштаб. В документе режим тоже лежит, но его запись идёт через дельту
+                // содержимого и до диска не доходит, пока текст не менялся. Ведущим считаем
+                // сессионное значение; отсутствие поля (данные прежних версий) означает
+                // «оставить то, что пришло из документа».
+                EditorViewMode? viewMode = null;
+                if (root.TryGetProperty("viewMode", out var vmProp)
+                    && vmProp.ValueKind == System.Text.Json.JsonValueKind.String
+                    && Enum.TryParse<EditorViewMode>(vmProp.GetString(), out var parsedViewMode))
+                {
+                    viewMode = parsedViewMode;
+                }
+
+                int? pagesPerRow = null;
+                if (root.TryGetProperty("pagesPerRow", out var pprProp)
+                    && pprProp.ValueKind == System.Text.Json.JsonValueKind.Number)
+                {
+                    pagesPerRow = pprProp.GetInt32();
+                }
+
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                 {
                     // Масштаб — часть состояния вида (SessionData), а не содержимого документа.
@@ -757,6 +968,15 @@ namespace Writersword.Modules.TextEditor
                     // на фоновом потоке он освежает зум из DocumentViewModel, поэтому залипания нет.
                     if (zoom > 0.01 && _viewModel?.DocumentViewModel is { } dvm)
                         dvm.Zoom = zoom;
+
+                    // Режим и число страниц применяются тоже до каретки и скролла: они меняют
+                    // пагинацию, а значит и координату, на которую встанет скролл.
+                    if ((viewMode is not null || pagesPerRow is not null) && _viewModel is { } vm)
+                    {
+                        vm.ApplyRestoredViewState(
+                            viewMode ?? vm.DocumentViewModel?.ViewMode ?? EditorViewMode.Page,
+                            pagesPerRow ?? vm.DocumentViewModel?.PagesPerRow ?? 1);
+                    }
 
                     var canvas = _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
                     canvas?.RestoreCaretState(docParaIdx, charIdx);
@@ -783,14 +1003,17 @@ namespace Writersword.Modules.TextEditor
             if (canvas is null) return;
 
             var (docParaIdx, charIdx, scrollY) = canvas.GetCaretState();
-            double zoom = _viewModel?.DocumentViewModel?.Zoom ?? 1.0;
+            var dvm = _viewModel?.DocumentViewModel;
+            double zoom = dvm?.Zoom ?? 1.0;
 
             _cachedSessionData = System.Text.Json.JsonSerializer.Serialize(new
             {
                 para = docParaIdx,
                 ch = charIdx,
                 scroll = scrollY,
-                zoom = zoom
+                zoom = zoom,
+                viewMode = (dvm?.ViewMode ?? EditorViewMode.Page).ToString(),
+                pagesPerRow = dvm?.PagesPerRow ?? 1
             });
         }
 

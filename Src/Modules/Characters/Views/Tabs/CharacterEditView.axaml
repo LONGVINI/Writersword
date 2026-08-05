@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels"
              xmlns:views="using:Writersword.Modules.Characters.Views"
@@ -91,13 +91,38 @@
             <Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
         </Style>
 
-        <!-- Кнопки управления боковым списком (компактный режим, скрытие). -->
+        <!-- Площадка аватарки в строке списка. В компактном режиме подписей
+             нет, и она занимает обе колонки разом — те, что идут после полоски
+             цвета. Центр считается по ним, то есть по внутренней области
+             плитки; полоска в расчёт не входит и лежит слева от неё.
+
+             Отступы здесь обнулены намеренно: подбирать их бесполезно, остаток
+             строки зависит от ширины панели и полосы прокрутки, и подобранные
+             числа врут при первом же их изменении. -->
+        <Style Selector="Panel.avatar-slot.compact">
+            <Setter Property="Grid.ColumnSpan" Value="2"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0"/>
+        </Style>
+
+        <!-- Кнопки управления боковым списком (компактный режим, скрытие).
+             Размер задан жёстко, а не выведен из содержимого: значки разной
+             величины (16, 12, 16) давали кнопки разной высоты, и нажимные
+             области с подсветкой наведения не совпадали. 24 — это ровно треть
+             содержимого шапки в компактном режиме (84 минус поля 6 и 6),
+             поэтому три кнопки делят полосу без остатка. Поля обнулены:
+             содержимое выравнивает по центру сама кнопка. -->
         <Style Selector="Button.side-tool">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="5"/>
+            <Setter Property="Padding" Value="0"/>
             <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Width" Value="24"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
         <Style Selector="Button.side-tool:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
@@ -206,12 +231,17 @@
                         BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
                         Opacity="{Binding DeadRowOpacity}"
                         ToolTip.Tip="{Binding Name}">
-                    <Grid ColumnDefinitions="4,46,*" Height="48">
+                    <Grid ColumnDefinitions="4,46,*" Height="52">
                         <!-- Полоска цветом/градиентом персонажа по левому краю блока. -->
                         <Border Grid.Column="0"
                                 Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
-                        <Panel Grid.Column="1"
-                               Width="36" Height="36" Margin="6,0,2,0"
+                        <!-- Отступов нет: плитка 36 центруется в колонке 46
+                             сама, а локальное значение Margin перебивало бы
+                             сеттер стиля avatar-slot.compact. -->
+                        <Panel Classes="avatar-slot"
+                               Classes.compact="{ReflectionBinding $parent[UserControl].DataContext.IsSidebarCompact}"
+                               Grid.Column="1"
+                               Width="36" Height="36"
                                VerticalAlignment="Center">
                                 <Border Width="28" Height="28" CornerRadius="14"
                                         HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -327,55 +357,103 @@
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <Border Grid.Column="0" IsVisible="{Binding IsSidebarShown}">
+        <Border Grid.Column="0"
+                IsVisible="{Binding IsSidebarShown}"
+                ClipToBounds="True">
             <Grid RowDefinitions="Auto,*"
                   Background="{DynamicResource BgPanelBrush}">
 
-                <Border Grid.Row="0" Padding="8,8"
+                <Border Grid.Row="0" Padding="6,8"
                         BorderBrush="{DynamicResource BorderDefaultBrush}"
                         BorderThickness="0,0,0,1">
-                    <Grid ColumnDefinitions="*,Auto,Auto">
-                        <TextBox Grid.Column="0"
-                                 Text="{ReflectionBinding SearchQuery}"
-                                 PlaceholderText="{x:Static loc:CharactersStrings.Search_Placeholder}"
-                                 FontSize="12"
-                                 Background="{DynamicResource BgSurfaceBrush}"
-                                 Foreground="{DynamicResource TextPrimaryBrush}"
-                                 BorderBrush="{DynamicResource BorderDefaultBrush}"
-                                 BorderThickness="1" CornerRadius="6" Padding="7,5"
-                                 Margin="0,0,6,0"
-                                 IsVisible="{Binding IsSidebarFull}"/>
+                    <Panel>
 
-                        <!-- Переключение полный/компактный список -->
-                        <Button Grid.Column="1" Classes="side-tool"
-                                Click="OnCompactToggleClick"
-                                behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.EditorSidebar_ToggleCompact}">
-                            <Panel Width="14" Height="14">
-                                <!-- В полном режиме: значок «только аватарки» -->
+                        <!-- Полный режим: поле поиска и две кнопки справа от него. -->
+                        <Grid ColumnDefinitions="*,Auto,Auto"
+                              IsVisible="{Binding IsSidebarFull}">
+                            <TextBox Grid.Column="0"
+                                     x:Name="SidebarSearchBox"
+                                     Text="{ReflectionBinding SearchQuery}"
+                                     PlaceholderText="{x:Static loc:CharactersStrings.Search_Placeholder}"
+                                     FontSize="12"
+                                     Background="{DynamicResource BgSurfaceBrush}"
+                                     Foreground="{DynamicResource TextPrimaryBrush}"
+                                     BorderBrush="{DynamicResource BorderDefaultBrush}"
+                                     BorderThickness="1" CornerRadius="6" Padding="7,5"
+                                     Margin="0,0,6,0"
+                                     KeyDown="OnSidebarSearchKeyDown"
+                                     LostFocus="OnSidebarSearchLostFocus"/>
+
+                            <!-- Переключение полный/компактный список -->
+                            <Button Grid.Column="1" Classes="side-tool"
+                                    Click="OnCompactToggleClick">
                                 <Ellipse Width="12" Height="12"
-                                         HorizontalAlignment="Center" VerticalAlignment="Center"
-                                         IsVisible="{Binding IsSidebarFull}"/>
-                                <!-- В компактном: значок списка с подписями -->
-                                <StackPanel Spacing="3" VerticalAlignment="Center"
-                                            IsVisible="{Binding IsSidebarCompact}">
-                                    <Rectangle Width="12" Height="2"/>
-                                    <Rectangle Width="12" Height="2"/>
-                                    <Rectangle Width="12" Height="2"/>
-                                </StackPanel>
-                            </Panel>
-                        </Button>
+                                         HorizontalAlignment="Center"
+                                         VerticalAlignment="Center"/>
+                            </Button>
 
-                        <!-- Скрыть список полностью -->
-                        <Button Grid.Column="2" Classes="side-tool"
-                                Click="OnHideSidebarClick"
-                                behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.EditorSidebar_Hide}">
-                            <Path Width="14" Height="14"
-                                  Data="M9,2 L4,7 L9,12"
-                                  Fill="Transparent"
-                                  StrokeLineCap="Round"
-                                  StrokeJoin="Round"/>
-                        </Button>
-                    </Grid>
+                            <!-- Скрыть список полностью -->
+                            <Button Grid.Column="2" Classes="side-tool"
+                                    Click="OnHideSidebarClick">
+                                <Path Width="16" Height="16"
+                                      Data="M10.5,3 L5.5,8 L10.5,13"
+                                      Fill="Transparent"
+                                      StrokeLineCap="Round"
+                                      StrokeJoin="Round"/>
+                            </Button>
+                        </Grid>
+
+                        <!-- Компактный режим: поля поиска нет, вместо него лупа —
+                             набирать запрос вслепую, по одним аватаркам, нельзя.
+                             Три кнопки равны по ширине и делят полосу поровну:
+                             в сетке с колонками Auto их прижимало к её краям.
+
+                             Все три значка лежат в поле 16 на 16 и нарисованы
+                             симметрично относительно точки 8,8. Растяжение
+                             (Stretch) не используется: оно подгоняет под рамку
+                             только очертание, а обводка остаётся прежней, и
+                             значки снова разъезжаются по видимой толщине. -->
+                        <UniformGrid Columns="3"
+                                     IsVisible="{Binding IsSidebarCompact}">
+                            <Button Classes="side-tool"
+                                    Click="OnSidebarSearchClick">
+                                <!-- Окружность радиуса 4 с центром 6.75,6.75 и
+                                     ручка от неё под 45 градусов до 13.25:
+                                     очертание занимает от 2.75 до 13.25 по обеим
+                                     осям, то есть ровно середину поля. -->
+                                <Path Width="16" Height="16"
+                                      Data="M2.75,6.75 A4,4 0 1 0 10.75,6.75 A4,4 0 1 0 2.75,6.75 M9.6,9.6 L13.25,13.25"
+                                      Fill="Transparent"
+                                      StrokeLineCap="Round"
+                                      StrokeJoin="Round"/>
+                            </Button>
+
+                            <Button Classes="side-tool"
+                                    Click="OnCompactToggleClick">
+                                <!-- Три полосы дают 12 на 12; поле того же
+                                     размера, что у соседей, задаёт Panel. -->
+                                <Panel Width="16" Height="16">
+                                    <StackPanel Spacing="3"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center">
+                                        <Rectangle Width="12" Height="2"/>
+                                        <Rectangle Width="12" Height="2"/>
+                                        <Rectangle Width="12" Height="2"/>
+                                    </StackPanel>
+                                </Panel>
+                            </Button>
+
+                            <Button Classes="side-tool"
+                                    Click="OnHideSidebarClick">
+                                <Path Width="16" Height="16"
+                                      Data="M10.5,3 L5.5,8 L10.5,13"
+                                      Fill="Transparent"
+                                      StrokeLineCap="Round"
+                                      StrokeJoin="Round"/>
+                            </Button>
+                        </UniformGrid>
+
+                    </Panel>
                 </Border>
 
                 <!-- Без поиска: плоский список — папки (в той же последовательности,
@@ -437,6 +515,7 @@
              Разворачивает в тот режим, из которого список скрыли. -->
         <Border Grid.Column="0"
                 IsVisible="{Binding IsSidebarHidden}"
+                ClipToBounds="True"
                 Background="{DynamicResource BgPanelBrush}">
             <Button Classes="side-tool"
                     Click="OnRestoreSidebarClick"
@@ -444,8 +523,8 @@
                     VerticalAlignment="Top"
                     Margin="0,8,0,0"
                     behaviours:TooltipBehavior.Tip="{x:Static loc:CharactersStrings.EditorSidebar_Show}">
-                <Path Width="14" Height="14"
-                      Data="M5,2 L10,7 L5,12"
+                <Path Width="16" Height="16"
+                      Data="M5.5,3 L10.5,8 L5.5,13"
                       Fill="Transparent"
                       StrokeLineCap="Round"
                       StrokeJoin="Round"/>

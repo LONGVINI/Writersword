@@ -60,23 +60,31 @@
                            Margin="0 0 0 8"
                            Opacity="0.4"/>
 
-				<!-- Заголовок -->
-				<TextBlock Text="{Binding Title, ElementName=RootView}"
-                           Foreground="{Binding TooltipForeground, ElementName=RootView}"
-                           FontSize="13"
-                           FontWeight="SemiBold"
-                           TextWrapping="Wrap"/>
+				<!-- Заголовок и описание. Отступ между ними задан Spacing:
+				     скрытый заголовок не оставляет пустого места сверху. -->
+				<StackPanel Spacing="4">
 
-				<!-- Описание. Текст собирается в code-behind: поддерживаются
-				     переносы строк и выделение фрагментов звёздочками. -->
-				<TextBlock x:Name="DescriptionText"
-                           IsVisible="{Binding Description, ElementName=RootView,
-                                      Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                           Foreground="{Binding TooltipForeground, ElementName=RootView}"
-                           FontSize="11"
-                           Opacity="0.75"
-                           TextWrapping="Wrap"
-                           Margin="0 4 0 0"/>
+					<!-- Заголовок. Скрывается если не задан: у значка рядом
+					     с подписью раздела он лишь повторял бы эту подпись. -->
+					<TextBlock Text="{Binding Title, ElementName=RootView}"
+                               IsVisible="{Binding Title, ElementName=RootView,
+                                          Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               Foreground="{Binding TooltipForeground, ElementName=RootView}"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               TextWrapping="Wrap"/>
+
+					<!-- Описание. Текст собирается в code-behind: поддерживаются
+					     переносы строк и выделение фрагментов звёздочками. -->
+					<TextBlock x:Name="DescriptionText"
+                               IsVisible="{Binding Description, ElementName=RootView,
+                                          Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               Foreground="{Binding TooltipForeground, ElementName=RootView}"
+                               FontSize="11"
+                               Opacity="0.75"
+                               TextWrapping="Wrap"/>
+
+				</StackPanel>
 
 				<!-- Горячие клавиши — заполняется программно из code-behind -->
 				<StackPanel x:Name="HotKeysContainer"

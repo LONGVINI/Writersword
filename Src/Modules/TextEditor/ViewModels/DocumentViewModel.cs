@@ -121,6 +121,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Func<(ParagraphViewModel Pvm, int From, int To)?>? GetCaretWordRangeDelegate
         { get; set; }
 
+        /// <summary>
+        /// Абзац и позиция каретки в нём. Заполняет канвас: только он знает точную
+        /// каретку, включая абзацы внутри ячеек таблицы, которых нет в Blocks.
+        /// Используется вставкой картинки в строку — она встаёт ровно под курсор.
+        /// </summary>
+        public Func<(ParagraphBlock Para, int CharIndex)?>? GetCaretTargetDelegate
+        { get; set; }
+
         // Гранулярный коммит свойств абзаца (выравнивание/отступы/интервалы) через TextUndoStack.
         // Канвас строит SetParagraphPropertyCommand на каждый абзац и пушит одной командой.
         // Возвращает true, если обработал; иначе ApplyParaProperty идёт снапшотным путём.
@@ -160,6 +168,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         // Делегаты команд контекстной вкладки «Формат» (работают с выделенной картинкой).
         public Action<WrapMode>? SetImageWrapModeDelegate { get; set; }
+        public Action<WrapSide>? SetImageWrapSideDelegate { get; set; }
+        public Func<WrapSide?>? GetSelectedImageWrapSideDelegate { get; set; }
+        public Action<int>? SetImagePinnedPageDelegate { get; set; }
+        public Func<int?>? GetSelectedImagePinnedPageDelegate { get; set; }
+        public Func<int?>? GetSelectedImageCurrentPageDelegate { get; set; }
         public Action<bool>? SetImageLockAspectDelegate { get; set; }
         public Action? DeleteSelectedImageDelegate { get; set; }
         public Func<(WrapMode Wrap, bool LockAspect, Writersword.Modules.TextEditor.Models.Styles.TextAlignment Align)?>? GetSelectedImageInfoDelegate { get; set; }
@@ -205,6 +218,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
         /// кэша абзацев — это быстро, в отличие от ParagraphFormatChanged.
         /// </summary>
         public event Action? StructureChanged;
+
+        /// <summary>
+        /// Сообщает о структурном изменении документа, сделанном в обход вью-модели —
+        /// например уборкой картинок вне страниц при закрытии.
+        /// </summary>
+        public void RaiseStructureChanged() => StructureChanged?.Invoke();
 
         /// <summary>
         /// Документ восстановлен после Undo/Redo (снапшот заменил состояние). Владелец (риббон,
@@ -308,7 +327,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public int PagesPerRow
         {
             get => _pagesPerRow;
-            set => this.RaiseAndSetIfChanged(ref _pagesPerRow, Math.Clamp(value, 1, 2));
+            // 0 — авто: столько страниц в ряду, сколько влезает по ширине при текущем
+            // масштабе. Отдалили — стало больше, приблизили — меньше, вплоть до одной.
+            set => this.RaiseAndSetIfChanged(ref _pagesPerRow, Math.Clamp(value, 0, 12));
         }
 
         public double Zoom
@@ -581,11 +602,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (vmIndex <= 0) return;
 
             var previous = Paragraphs[vmIndex - 1];
-            int caretPosition = previous.PlainText?.Length ?? 0;
 
-            // Дописываем текст следующего параграфа сохраняя форматирование обоих.
-            int prevLen = previous.PlainText?.Length ?? 0;
-            previous.Model.SpliceText(prevLen, prevLen, textToMerge);
+            // Дописываем содержимое следующего абзаца посимвольно, а не плоским текстом:
+            // так переезжают и форматирование каждого символа, и картинки в строке —
+            // вставка plain-текста превратила бы картинку в пустой символ-заполнитель.
+            var merged = previous.Model.ToCharCells();
+            int caretPosition = merged.Count;
+            merged.AddRange(target.Model.ToCharCells());
+            previous.Model.RebuildFromCharCells(merged);
             previous.RefreshPlainTextFromModel();
 
             _document.Sections[0].Blocks.Remove(target.Model);
@@ -887,6 +911,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         // ── Команды выделенной картинки (контекстная вкладка «Формат») ─────
         public void SetImageWrapMode(WrapMode mode) { if (IsReadOnly) return; SetImageWrapModeDelegate?.Invoke(mode); }
+        public void SetImageWrapSide(WrapSide side) { if (IsReadOnly) return; SetImageWrapSideDelegate?.Invoke(side); }
+        public WrapSide? GetSelectedImageWrapSide() => GetSelectedImageWrapSideDelegate?.Invoke();
+        public void SetImagePinnedPage(int page) { if (IsReadOnly) return; SetImagePinnedPageDelegate?.Invoke(page); }
+        public int? GetSelectedImagePinnedPage() => GetSelectedImagePinnedPageDelegate?.Invoke();
+        public int? GetSelectedImageCurrentPage() => GetSelectedImageCurrentPageDelegate?.Invoke();
         public void SetImageLockAspect(bool locked) { if (IsReadOnly) return; SetImageLockAspectDelegate?.Invoke(locked); }
         public void DeleteSelectedImage() { if (IsReadOnly) return; DeleteSelectedImageDelegate?.Invoke(); }
         public (WrapMode Wrap, bool LockAspect, Writersword.Modules.TextEditor.Models.Styles.TextAlignment Align)? GetSelectedImageInfo()
@@ -1257,7 +1286,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         // ── ITextEditorCommandTarget: вставка ─────────────────────────────
 
-        public void InsertTable(int rows, int columns) => InsertBlock(BuildEmptyTable(rows, columns));
+        public void InsertTable(int rows, int columns) => InsertBlockAtCaret(BuildEmptyTable(rows, columns));
 
         public void InsertTableBlock(TableBlock table) => InsertBlock(table);
 
@@ -1317,6 +1346,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
             string fileName = $"img_{System.Guid.NewGuid():N}{ext}";
             ctx.WriteFile($"TextEditor/Images/{fileName}", data);
 
+            // Байты картинки уходят на диск сразу. Кеш восстановления хранит только
+            // JSON документа, поэтому после аварии он сошлётся на этот файл — и тот
+            // обязан существовать. Без сброса в RELEASE он остался бы в памяти
+            // открытого архива до ближайшего сохранения.
+            ctx.FlushStorage();
+
             // Размер по умолчанию берём из самого изображения (пиксели при 96 dpi -> пункты),
             // ширину разумно ограничиваем, сохраняя пропорции.
             double widthPt = 200, heightPt = 150;
@@ -1348,14 +1383,206 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // Снимок до/после вставки — для Ctrl+Z.
             BeginEditDelegate?.Invoke("Вставка изображения");
             var section = _document.Sections[0];
-            int idx = _activeParagraph is not null ? section.Blocks.IndexOf(_activeParagraph.Model) : -1;
-            if (idx >= 0)
-                section.Blocks.Insert(idx + 1, image);
-            else
-                section.Blocks.Add(image);
+
+            // Картинка «в тексте» — обычный символ в строке под кареткой. Отдельным блоком
+            // она становится только когда включено обтекание.
+            if (!InsertImageIntoLine(section, image))
+            {
+                int idx = _activeParagraph is not null ? section.Blocks.IndexOf(_activeParagraph.Model) : -1;
+                if (idx >= 0)
+                    section.Blocks.Insert(idx + 1, image);
+                else
+                    section.Blocks.Add(image);
+            }
             CommitEditDelegate?.Invoke();
 
             StructureChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// Кладёт картинку в хранилище встроенных объектов раздела и вставляет её
+        /// в абзац каретки одним символом. Возвращает false, если режим обтекания
+        /// не Inline либо каретки нет — тогда вызывающий кладёт картинку блоком.
+        /// </summary>
+        private bool InsertImageIntoLine(SectionModel section, ImageBlock image)
+        {
+            if (image.WrapMode != WrapMode.Inline) return false;
+
+            var target = GetCaretTargetDelegate?.Invoke();
+            ParagraphBlock? para = target?.Para;
+            int at = target?.CharIndex ?? 0;
+
+            // Канвас каретку не отдал (например, вставка сразу после загрузки документа) —
+            // работаем по активному абзацу.
+            if (para is null && _activeParagraph is not null)
+            {
+                para = _activeParagraph.Model;
+                at = Math.Max(0, Math.Min(_activeParagraph.SelectionStart, para.TotalLength));
+            }
+
+            if (para is null) return false;
+
+            section.InlineObjects.Add(image);
+            para.InsertInlineObject(at, image.Id);
+            InlineImageInserted?.Invoke(para, at);
+            return true;
+        }
+
+        /// <summary>
+        /// Картинка встроена в строку: абзац и позиция символа. Канвас по этому событию
+        /// ставит каретку сразу за картинкой и пересобирает раскладку абзаца.
+        /// </summary>
+        public event Action<ParagraphBlock, int>? InlineImageInserted;
+
+        /// <summary>
+        /// Состав объектов в строках абзаца изменился (картинка ушла из строки или
+        /// пришла в неё). Канвас перечитывает текст абзаца и сбрасывает его раскладку.
+        /// </summary>
+        public event Action<ParagraphBlock>? InlineObjectsChanged;
+
+        /// <summary>
+        /// Все абзацы документа, включая абзацы ячеек таблиц и надписей: картинка
+        /// в строке может стоять в любом из них.
+        /// </summary>
+        private IEnumerable<ParagraphBlock> EnumerateAllParagraphs()
+        {
+            foreach (var section in _document.Sections)
+            {
+                foreach (var block in section.Blocks)
+                {
+                    if (block is ParagraphBlock para)
+                    {
+                        yield return para;
+                    }
+                    else if (block is TableBlock table)
+                    {
+                        foreach (var cell in table.Cells)
+                            foreach (var cellPara in cell.Paragraphs)
+                                yield return cellPara;
+                    }
+                    else if (block is FloatingTextBlock floatingText)
+                    {
+                        foreach (var textPara in floatingText.Paragraphs)
+                            yield return textPara;
+                    }
+                }
+
+                foreach (var block in section.FloatingObjects)
+                    if (block is FloatingTextBlock floatingText)
+                        foreach (var textPara in floatingText.Paragraphs)
+                            yield return textPara;
+            }
+        }
+
+        /// <summary>Раздел, в чьём хранилище объектов строки лежит картинка (или null).</summary>
+        private SectionModel? FindSectionOfInlineImage(ImageBlock image)
+        {
+            foreach (var section in _document.Sections)
+                if (section.InlineObjects.Contains(image))
+                    return section;
+            return null;
+        }
+
+        /// <summary>
+        /// Абзац, в строке которого стоит картинка, и позиция её символа.
+        /// </summary>
+        public (ParagraphBlock Para, int CharIndex)? FindInlineImageOwner(ImageBlock image)
+        {
+            if (image is null) return null;
+            foreach (var para in EnumerateAllParagraphs())
+            {
+                int idx = para.IndexOfInlineObject(image.Id);
+                if (idx >= 0) return (para, idx);
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Выводит картинку из строки текста в отдельный плавающий блок с заданным
+        /// обтеканием: символ из абзаца убирается, картинка переезжает из хранилища
+        /// объектов строки в поток блоков сразу за своим абзацем. Смещения задаются
+        /// вызывающим по текущему положению картинки, чтобы она не прыгнула.
+        /// </summary>
+        public bool ConvertInlineImageToBlock(ImageBlock image, WrapMode mode,
+            double offsetXPt, double offsetYPt)
+        {
+            if (IsReadOnly || image is null) return false;
+
+            var section = FindSectionOfInlineImage(image);
+            if (section is null) return false;
+
+            var owner = FindInlineImageOwner(image);
+            if (owner is { } found)
+                found.Para.SpliceText(found.CharIndex, found.CharIndex + 1, string.Empty);
+
+            section.InlineObjects.Remove(image);
+            image.WrapMode = mode;
+            image.OffsetXPt = offsetXPt;
+            image.OffsetYPt = offsetYPt;
+
+            int at = owner is { } o ? section.Blocks.IndexOf(o.Para) : -1;
+            if (at >= 0) section.Blocks.Insert(at + 1, image);
+            else section.Blocks.Add(image);
+
+            if (owner is { } changed) InlineObjectsChanged?.Invoke(changed.Para);
+            StructureChanged?.Invoke();
+            return true;
+        }
+
+        /// <summary>
+        /// Встраивает картинку-блок в строку текста. Место выбирается по её месту в
+        /// потоке: конец предыдущего абзаца, иначе начало следующего — так картинка
+        /// остаётся там же, где стояла, но становится обычным символом.
+        /// </summary>
+        public bool ConvertBlockImageToInline(ImageBlock image)
+        {
+            if (IsReadOnly || image is null) return false;
+
+            SectionModel? section = null;
+            foreach (var s in _document.Sections)
+                if (s.Blocks.Contains(image) || s.FloatingObjects.Contains(image))
+                { section = s; break; }
+            if (section is null) return false;
+
+            int idx = section.Blocks.IndexOf(image);
+            section.Blocks.Remove(image);
+            section.FloatingObjects.Remove(image);
+
+            ParagraphBlock? owner = null;
+            int at = 0;
+
+            if (idx > 0)
+            {
+                for (int i = Math.Min(idx, section.Blocks.Count) - 1; i >= 0; i--)
+                    if (section.Blocks[i] is ParagraphBlock prev)
+                    { owner = prev; at = prev.TotalLength; break; }
+            }
+
+            if (owner is null)
+            {
+                for (int i = Math.Max(0, idx); i < section.Blocks.Count; i++)
+                    if (section.Blocks[i] is ParagraphBlock next)
+                    { owner = next; at = 0; break; }
+            }
+
+            bool addedParagraph = false;
+            if (owner is null)
+            {
+                owner = new ParagraphBlock();
+                section.Blocks.Add(owner);
+                addedParagraph = true;
+            }
+
+            image.WrapMode = WrapMode.Inline;
+            image.OffsetXPt = 0.0;
+            image.OffsetYPt = 0.0;
+            section.InlineObjects.Add(image);
+            owner.InsertInlineObject(at, image.Id);
+
+            if (addedParagraph) RebuildParagraphViewModels();
+            InlineObjectsChanged?.Invoke(owner);
+            StructureChanged?.Invoke();
+            return true;
         }
         /// <summary>
         /// Вставляет точную копию картинки (все свойства: размер, кроп, поворот, рамка).
@@ -1384,6 +1611,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 CropRightFrac = src.CropRightFrac,
                 CropBottomFrac = src.CropBottomFrac,
                 WrapMode = src.WrapMode,
+                WrapSide = src.WrapSide,
+                PinnedPage = src.PinnedPage,
                 Alignment = src.Alignment,
                 Anchor = src.Anchor,
                 WrapPadTopPt = src.WrapPadTopPt,
@@ -1399,16 +1628,20 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             BeginEditDelegate?.Invoke("Вставка изображения");
             var section = _document.Sections[0];
-            // Копию ставим сразу ПОСЛЕ исходной картинки (anchorAfter) — тогда плавающая
-            // копия окажется на той же странице рядом. Иначе — после активного абзаца,
-            // иначе — в конец.
-            int idx = anchorAfter is not null ? section.Blocks.IndexOf(anchorAfter) : -1;
-            if (idx < 0)
-                idx = _activeParagraph is not null ? section.Blocks.IndexOf(_activeParagraph.Model) : -1;
-            if (idx >= 0)
-                section.Blocks.Insert(idx + 1, image);
-            else
-                section.Blocks.Add(image);
+            // Копия картинки «в тексте» встаёт символом под кареткой, как и оригинал.
+            if (!InsertImageIntoLine(section, image))
+            {
+                // Копию ставим сразу ПОСЛЕ исходной картинки (anchorAfter) — тогда плавающая
+                // копия окажется на той же странице рядом. Иначе — после активного абзаца,
+                // иначе — в конец.
+                int idx = anchorAfter is not null ? section.Blocks.IndexOf(anchorAfter) : -1;
+                if (idx < 0)
+                    idx = _activeParagraph is not null ? section.Blocks.IndexOf(_activeParagraph.Model) : -1;
+                if (idx >= 0)
+                    section.Blocks.Insert(idx + 1, image);
+                else
+                    section.Blocks.Add(image);
+            }
             CommitEditDelegate?.Invoke();
 
             StructureChanged?.Invoke();
@@ -1431,6 +1664,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
             string fileName = $"img_{System.Guid.NewGuid():N}.png";
             ctx.WriteFile($"TextEditor/Images/{fileName}", data);
 
+            // См. InsertImageBytes: файл должен лежать на диске к моменту, когда на
+            // него сошлётся кеш восстановления.
+            ctx.FlushStorage();
+
             bool floating = template.WrapMode != WrapMode.Inline;
             var image = new ImageBlock
             {
@@ -1449,6 +1686,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 CropRightFrac = template.CropRightFrac,
                 CropBottomFrac = template.CropBottomFrac,
                 WrapMode = template.WrapMode,
+                WrapSide = template.WrapSide,
+                PinnedPage = template.PinnedPage,
                 Alignment = template.Alignment,
                 Anchor = template.Anchor,
                 WrapPadTopPt = template.WrapPadTopPt,
@@ -1465,24 +1704,66 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             BeginEditDelegate?.Invoke("Вставка изображения");
             var section = _document.Sections[0];
-            // Вставляем в поток у каретки (после активного абзаца). Нет каретки —
-            // в начало документа, чтобы вставка была видна, а не улетела в конец.
-            int idx = _activeParagraph is not null ? section.Blocks.IndexOf(_activeParagraph.Model) : -1;
-            if (idx < 0 && section.Blocks.Count > 0) idx = 0;
-            if (idx >= 0)
-                section.Blocks.Insert(idx + 1, image);
-            else
-                section.Blocks.Add(image);
+            if (!InsertImageIntoLine(section, image))
+            {
+                // Вставляем в поток у каретки (после активного абзаца). Нет каретки —
+                // в начало документа, чтобы вставка была видна, а не улетела в конец.
+                int idx = _activeParagraph is not null ? section.Blocks.IndexOf(_activeParagraph.Model) : -1;
+                if (idx < 0 && section.Blocks.Count > 0) idx = 0;
+                if (idx >= 0)
+                    section.Blocks.Insert(idx + 1, image);
+                else
+                    section.Blocks.Add(image);
+            }
             CommitEditDelegate?.Invoke();
 
             StructureChanged?.Invoke();
             return image;
         }
 
+        /// <summary>
+        /// Вставляет картинку в поток сразу за указанным блоком. Используется вставкой
+        /// из буфера: картинка, через которую прошло выделение, возвращается между теми
+        /// же абзацами, что и в исходном тексте. Id у копии новый — вставок может быть
+        /// несколько, и они не должны делить один объект.
+        /// </summary>
+        public ImageBlock? InsertImageAfterBlock(ImageBlock src, BlockModel? after)
+        {
+            if (IsReadOnly || src is null || _document.Sections.Count == 0) return null;
+
+            var section = _document.Sections[0];
+            var copy = CloneImageBlock(src);
+
+            int idx = after is not null ? section.Blocks.IndexOf(after) : -1;
+            if (idx >= 0) section.Blocks.Insert(idx + 1, copy);
+            else section.Blocks.Add(copy);
+
+            StructureChanged?.Invoke();
+            return copy;
+        }
+
         public void RemoveImage(ImageBlock image)
         {
             if (IsReadOnly) return;
             if (image is null) return;
+
+            // Картинка в строке: убираем её символ из абзаца, иначе в тексте осталась бы
+            // пустая позиция, по которой каретка ходит, а показывать нечего.
+            var inlineSection = FindSectionOfInlineImage(image);
+            if (inlineSection is not null)
+            {
+                BeginEditDelegate?.Invoke("Удаление изображения");
+                var owner = FindInlineImageOwner(image);
+                if (owner is { } found)
+                    found.Para.SpliceText(found.CharIndex, found.CharIndex + 1, string.Empty);
+                inlineSection.InlineObjects.Remove(image);
+                CommitEditDelegate?.Invoke();
+
+                if (owner is { } changed) InlineObjectsChanged?.Invoke(changed.Para);
+                StructureChanged?.Invoke();
+                return;
+            }
+
             foreach (var section in _document.Sections)
             {
                 if (section.Blocks.Contains(image) || section.FloatingObjects.Contains(image))
@@ -1497,6 +1778,110 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 }
             }
         }
+
+        /// <summary>
+        /// Убирает из хранилища объектов строки картинки, на которые больше не ссылается
+        /// ни один run: их символы удалены правкой текста (Delete, Backspace, вырезание).
+        /// Вызывается перед сохранением — до этого момента объект должен жить, иначе
+        /// отмена удаления восстановила бы ссылку в никуда.
+        /// Возвращает число выброшенных объектов.
+        /// </summary>
+        public int PurgeOrphanInlineObjects()
+        {
+            var referenced = new HashSet<Guid>();
+            foreach (var para in EnumerateAllParagraphs())
+                foreach (var id in para.EnumerateInlineImageIds())
+                    referenced.Add(id);
+
+            int removed = 0;
+            foreach (var section in _document.Sections)
+            {
+                for (int i = section.InlineObjects.Count - 1; i >= 0; i--)
+                {
+                    if (referenced.Contains(section.InlineObjects[i].Id)) continue;
+                    section.InlineObjects.RemoveAt(i);
+                    removed++;
+                }
+            }
+            return removed;
+        }
+
+        /// <summary>
+        /// Выдаёт каждой картинке в строках абзаца собственную копию объекта. Нужно после
+        /// вставки из буфера: иначе вставленный абзац ссылался бы на ту же картинку, что и
+        /// исходный, и изменение размера в одном месте меняло бы её в обоих.
+        /// Ссылки на пропавшие объекты (вставка из другого документа) убираются вместе
+        /// с символом — пустого места в тексте не остаётся.
+        /// </summary>
+        public void MaterializeInlineImages(ParagraphBlock? para)
+        {
+            if (para is null || _document.Sections.Count == 0) return;
+
+            var cells = para.ToCharCells();
+            bool changed = false;
+
+            for (int i = cells.Count - 1; i >= 0; i--)
+            {
+                if (cells[i].InlineImageId is not Guid sourceId) continue;
+
+                var source = FindInlineImageById(sourceId);
+                if (source is null)
+                {
+                    cells.RemoveAt(i);
+                    changed = true;
+                    continue;
+                }
+
+                var copy = CloneImageBlock(source);
+                _document.Sections[0].InlineObjects.Add(copy);
+                cells[i] = new ParagraphBlock.CharCell(cells[i].Ch, cells[i].Props, copy.Id);
+                changed = true;
+            }
+
+            if (!changed) return;
+
+            para.RebuildFromCharCells(cells);
+            InlineObjectsChanged?.Invoke(para);
+        }
+
+        private ImageBlock? FindInlineImageById(Guid id)
+        {
+            foreach (var section in _document.Sections)
+                foreach (var block in section.InlineObjects)
+                    if (block is ImageBlock image && image.Id == id)
+                        return image;
+            return null;
+        }
+
+        /// <summary>Копия картинки со всеми свойствами и новым Id. Файл переиспользуется.</summary>
+        private static ImageBlock CloneImageBlock(ImageBlock src) => new()
+        {
+            ImageFileName = src.ImageFileName,
+            WidthPt = src.WidthPt,
+            HeightPt = src.HeightPt,
+            LockAspectRatio = src.LockAspectRatio,
+            RotationDeg = src.RotationDeg,
+            Opacity = src.Opacity,
+            BorderColor = src.BorderColor,
+            BorderThicknessPt = src.BorderThicknessPt,
+            FlipHorizontal = src.FlipHorizontal,
+            FlipVertical = src.FlipVertical,
+            CropLeftFrac = src.CropLeftFrac,
+            CropTopFrac = src.CropTopFrac,
+            CropRightFrac = src.CropRightFrac,
+            CropBottomFrac = src.CropBottomFrac,
+            WrapMode = src.WrapMode,
+            WrapSide = src.WrapSide,
+            PinnedPage = src.PinnedPage,
+            Alignment = src.Alignment,
+            Anchor = src.Anchor,
+            WrapPadTopPt = src.WrapPadTopPt,
+            WrapPadBottomPt = src.WrapPadBottomPt,
+            WrapPadLeftPt = src.WrapPadLeftPt,
+            WrapPadRightPt = src.WrapPadRightPt,
+            ZOrder = src.ZOrder,
+            AltText = src.AltText
+        };
 
         public void InsertShape(ShapeType st) { }
         public void InsertFloatingTextBox() { }
@@ -2073,63 +2458,101 @@ namespace Writersword.Modules.TextEditor.ViewModels
             RebuildParagraphViewModels();
         }
 
+        /// <summary>
+        /// Вставляет блок в позицию каретки. Каретка внутри текста разрезает абзац, и
+        /// блок встаёт между половинами — как это делает вставка картинки. В начале или
+        /// конце абзаца резать нечего, блок просто встаёт перед ним или после него.
+        /// Позицию каретки знает только канвас, поэтому она берётся у него делегатом;
+        /// без делегата или для абзаца из ячейки таблицы работает прежний путь
+        /// «после активного абзаца».
+        /// </summary>
+        private void InsertBlockAtCaret(BlockModel block)
+        {
+            if (IsReadOnly) return;
+            if (_document.Sections.Count == 0) return;
+            var section = _document.Sections[0];
+
+            var target = GetCaretTargetDelegate?.Invoke();
+            ParagraphBlock? para = target?.Para;
+
+            // Абзацы ячеек таблицы в Blocks не лежат — IndexOf вернёт -1.
+            int paraIdx = para is null ? -1 : section.Blocks.IndexOf(para);
+            if (paraIdx < 0)
+            {
+                InsertBlock(block);
+                return;
+            }
+
+            int plainLen = para!.GetPlainText().Length;
+            int cut = Math.Clamp(target?.CharIndex ?? 0, 0, plainLen);
+
+            if (cut == 0)
+            {
+                section.Blocks.Insert(paraIdx, block);
+                RebuildParagraphViewModels();
+                return;
+            }
+
+            if (cut >= plainLen)
+            {
+                section.Blocks.Insert(paraIdx + 1, block);
+                RebuildParagraphViewModels();
+                return;
+            }
+
+            // Хвост уезжает в новый абзац. Форматирование абзаца наследуется, как при
+            // разбиении по Enter, иначе продолжение текста теряет выравнивание, отступы
+            // и место в списке.
+            var tailRuns = Commands.DocumentModelHelper.DeleteRange(para, cut, plainLen - cut);
+
+            var tail = new ParagraphBlock { Properties = para.Properties.Clone() };
+            if (para.ListProperties is not null)
+            {
+                var lp = para.ListProperties.Clone();
+                lp.ContinueNumbering = true;
+                tail.ListProperties = lp;
+            }
+            if (tailRuns.Length > 0)
+                Commands.DocumentModelHelper.RestoreRuns(tail, 0, tailRuns);
+
+            section.Blocks.Insert(paraIdx + 1, tail);
+            section.Blocks.Insert(paraIdx + 1, block);
+            RebuildParagraphViewModels();
+        }
+
         private static void ApplyCharPropertyToRange(
     ParagraphBlock block, int selStart, int selEnd,
     Action<RunProperties> mutate, bool clearAll)
         {
-            var chars = new List<(char ch, RunProperties? props)>();
-            foreach (var chunk in block.Chunks)
-                foreach (var run in chunk.Runs)
-                    foreach (var ch in run.Text)
-                        chars.Add((ch, run.Properties?.Clone()));
+            // Посимвольный разбор идёт через ячейки параграфа: обход по run.Text потерял бы
+            // ссылку на встроенную картинку, и форматирование куска текста с картинкой
+            // превращало бы её в пустой символ-заполнитель.
+            var cells = block.ToCharCells();
+            for (int i = 0; i < cells.Count; i++)
+                cells[i] = new ParagraphBlock.CharCell(
+                    cells[i].Ch, cells[i].Props?.Clone(), cells[i].InlineImageId);
 
-            int len = chars.Count;
+            int len = cells.Count;
             selStart = Math.Max(0, Math.Min(selStart, len));
             selEnd = Math.Max(selStart, Math.Min(selEnd, len));
 
             for (int i = selStart; i < selEnd; i++)
             {
-                var (ch, props) = chars[i];
+                var cell = cells[i];
                 if (clearAll)
                 {
-                    chars[i] = (ch, null);
+                    cells[i] = new ParagraphBlock.CharCell(cell.Ch, null, cell.InlineImageId);
                 }
                 else
                 {
-                    var newProps = props?.Clone() ?? new RunProperties();
+                    var newProps = cell.Props?.Clone() ?? new RunProperties();
                     mutate(newProps);
-                    chars[i] = (ch, newProps.IsDefault() ? null : newProps);
+                    cells[i] = new ParagraphBlock.CharCell(
+                        cell.Ch, newProps.IsDefault() ? null : newProps, cell.InlineImageId);
                 }
             }
 
-            block.Chunks.Clear();
-            var newChunk = new TextChunk();
-            block.Chunks.Add(newChunk);
-
-            if (chars.Count == 0)
-            {
-                newChunk.Runs.Add(new RunModel { Text = string.Empty });
-                block.InvalidateAllChunks();
-                return;
-            }
-
-            var sb = new System.Text.StringBuilder();
-            var currentProps = chars[0].props;
-
-            foreach (var (ch, props) in chars)
-            {
-                bool sameProps = RunPropertiesEqualValue(props, currentProps);
-                if (!sameProps)
-                {
-                    newChunk.Runs.Add(new RunModel { Text = sb.ToString(), Properties = currentProps });
-                    sb.Clear();
-                    currentProps = props;
-                }
-                sb.Append(ch);
-            }
-
-            newChunk.Runs.Add(new RunModel { Text = sb.ToString(), Properties = currentProps });
-            block.InvalidateAllChunks();
+            block.RebuildFromCharCells(cells);
         }
 
         private static bool RunPropertiesEqualValue(RunProperties? a, RunProperties? b)

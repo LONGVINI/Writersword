@@ -51,5 +51,12 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// Хранятся отдельно от потока блоков.
         /// </summary>
         public List<BlockModel> FloatingObjects { get; set; } = new();
+
+        /// <summary>
+        /// Объекты, встроенные в строку текста: на них ссылаются run-ы абзацев
+        /// через <see cref="Inline.RunModel.InlineImageId"/>. Отдельным блоком в
+        /// потоке не раскладываются — их место в строке определяет вёрстка абзаца.
+        /// </summary>
+        public List<BlockModel> InlineObjects { get; set; } = new();
     }
 }

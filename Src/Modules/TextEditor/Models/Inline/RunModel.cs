@@ -23,6 +23,27 @@ namespace Writersword.Modules.TextEditor.Models.Inline
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public RunProperties? Properties { get; set; }
 
+        /// <summary>
+        /// Id встроенной картинки, если этот run — объект в строке, а не текст.
+        /// Сама картинка лежит в SectionModel.InlineObjects, а здесь остаётся ссылка.
+        /// Text такого run — ровно один символ <see cref="ObjectPlaceholder"/>:
+        /// вся посимвольная арифметика редактора (каретка, выделение, отмена ввода,
+        /// хеши чанков) продолжает работать без изменений и считает картинку
+        /// одним символом.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Guid? InlineImageId { get; set; }
+
+        /// <summary>
+        /// Символ-заполнитель объекта в тексте (U+FFFC OBJECT REPLACEMENT CHARACTER).
+        /// Записан кодом намеренно: сам символ невидим в редакторе кода.
+        /// </summary>
+        public const char ObjectPlaceholder = (char)0xFFFC;
+
+        /// <summary>Является ли run встроенным объектом (картинкой).</summary>
+        [JsonIgnore]
+        public bool IsInlineObject => InlineImageId.HasValue;
+
         /// <summary>Создаёт глубокую копию Run.</summary>
         public RunModel Clone()
         {
@@ -30,7 +51,8 @@ namespace Writersword.Modules.TextEditor.Models.Inline
             {
                 Id = Guid.NewGuid(),
                 Text = Text,
-                Properties = Properties?.Clone()
+                Properties = Properties?.Clone(),
+                InlineImageId = InlineImageId
             };
         }
     }

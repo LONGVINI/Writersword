@@ -61,7 +61,10 @@ namespace Writersword.Infrastructure.Services.Storage
                 .Interval(_interval)
                 .Subscribe(_ => ScheduleCacheUpdate());
 
-            _logger.LogDebug("Started for: {ProjectPath}", projectPath);
+            // Information, а не Debug: по этой строке видно, что защита от падения
+            // вообще включилась для проекта. Её отсутствие в журнале — сразу диагноз.
+            _logger.LogInformation("Cache protection started for {ProjectPath}, interval {Seconds}s",
+                projectPath, _interval.TotalSeconds);
         }
 
         /// <summary>
@@ -159,7 +162,12 @@ namespace Writersword.Infrastructure.Services.Storage
 
                 if (customData.Count == 0)
                 {
-                    _logger.LogDebug("No modules to cache");
+                    // Warning: модули есть, а данных нет — обычно это модуль, чей
+                    // сбор состояния вернул null. Молчать нельзя: в этом состоянии
+                    // защиты от падения не существует.
+                    _logger.LogWarning(
+                        "Cache tick: modules returned no data ({Count} active) — nothing is protected",
+                        activeModules.Count());
                     return;
                 }
 
@@ -288,7 +296,8 @@ namespace Writersword.Infrastructure.Services.Storage
                     CacheSaved?.Invoke(this, EventArgs.Empty);
                 });
 
-                _logger.LogDebug("Cache updated: {Count} modules", customData.Count);
+                _logger.LogInformation("Cache updated: {Count} modules, {Path}",
+                    customData.Count, projectPath + ".wsasd");
             }
             catch (Exception ex)
             {

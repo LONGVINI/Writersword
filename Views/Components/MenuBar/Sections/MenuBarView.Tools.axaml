@@ -13,4 +13,12 @@
               Header="{x:Static loc:Strings.Menu_Tools_Statistics}"
               IsEnabled="False"/>
 
+	<Separator/>
+
+	<!-- Удаляет из проекта файлы картинок, на которые не осталось ссылок. -->
+	<MenuItem x:Name="HotKey_Tools_CompactProject"
+              Header="Сжать проект"
+              Command="{Binding CompactProjectCommand}"
+              IsEnabled="{Binding HasActiveTab}"/>
+
 </MenuItem>

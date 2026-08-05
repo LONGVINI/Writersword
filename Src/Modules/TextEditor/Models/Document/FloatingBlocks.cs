@@ -21,6 +21,21 @@ namespace Writersword.Modules.TextEditor.Models.Document
     }
 
     /// <summary>
+    /// С какой стороны от обтекаемого объекта разрешено идти тексту.
+    /// </summary>
+    public enum WrapSide
+    {
+        /// <summary>Только по той стороне, где больше свободного места (как было всегда).</summary>
+        LargestOnly = 0,
+        /// <summary>С обеих сторон: строка идёт слева от объекта и продолжается справа.</summary>
+        BothSides = 1,
+        /// <summary>Только слева от объекта.</summary>
+        LeftOnly = 2,
+        /// <summary>Только справа от объекта.</summary>
+        RightOnly = 3
+    }
+
+    /// <summary>
     /// Якорь привязки плавающего объекта.
     /// </summary>
     public enum FloatAnchor
@@ -90,6 +105,13 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// <summary>Режим обтекания текстом.</summary>
         public WrapMode WrapMode { get; set; } = WrapMode.Inline;
 
+        /// <summary>
+        /// С какой стороны обтекать. Значимо при WrapMode Square/Tight.
+        /// По умолчанию — по большей стороне: так вёл себя редактор до появления
+        /// двустороннего обтекания, и старые документы не меняются.
+        /// </summary>
+        public WrapSide WrapSide { get; set; } = WrapSide.LargestOnly;
+
         /// <summary>Отступ по умолчанию от обтекающей картинки, пт (~0.21 см). Совпадает
         /// с прежним единым зазором зоны — старые документы выглядят так же.</summary>
         public const double WrapPadDefaultPt = 6.0;
@@ -111,6 +133,17 @@ namespace Writersword.Modules.TextEditor.Models.Document
 
         /// <summary>Якорь привязки при WrapMode != Inline.</summary>
         public FloatAnchor Anchor { get; set; } = FloatAnchor.Paragraph;
+
+        /// <summary>
+        /// Жёсткая привязка к номеру страницы (1-based). 0 — привязки нет, картинка
+        /// переезжает между страницами сама, следуя за своим местом в потоке.
+        ///
+        /// При включённой привязке картинка принадлежит ровно этой странице и никуда
+        /// не переезжает: её смещения отсчитываются от краёв этой страницы, а документ
+        /// держит столько страниц, чтобы она существовала — удаление текста не утащит
+        /// картинку выше, страницы до неё останутся пустыми.
+        /// </summary>
+        public int PinnedPage { get; set; }
 
         /// <summary>Горизонтальное смещение от якоря в пунктах.</summary>
         public double OffsetXPt { get; set; }

@@ -31,6 +31,7 @@ namespace Writersword.Modules.TextEditor.Views
             InitializeComponent();
             WireCanvas();
             WireScroll();
+            WireContentTopOffset();
             WirePageTooltip();
         }
 
@@ -59,14 +60,51 @@ namespace Writersword.Modules.TextEditor.Views
                 var scrollViewer = this.FindControl<ScrollViewer>("DocumentScrollViewer");
                 if (scrollViewer is null) return;
 
+                var pageCanvas = this.FindControl<DocumentCanvas>("PageCanvas");
+
                 vm.Ruler.ScrollOffsetY = scrollViewer.Offset.Y;
                 vm.Ruler.ViewportHeight = scrollViewer.Viewport.Height;
+                if (pageCanvas is not null)
+                    vm.Ruler.FocusedPageIndex = pageCanvas.GetPageAtOffset(scrollViewer.Offset.Y) - 1;
 
                 scrollViewer.ScrollChanged += (_, _) =>
                 {
                     vm.Ruler.ScrollOffsetY = scrollViewer.Offset.Y;
                     vm.Ruler.ViewportHeight = scrollViewer.Viewport.Height;
+                    // Вертикальная линейка следует за страницей вверху вьюпорта (как в Word),
+                    // а не за страницей каретки: при скролле далеко от каретки шкала иначе
+                    // привязывалась к невидимой странице и уезжала.
+                    if (pageCanvas is not null)
+                        vm.Ruler.FocusedPageIndex = pageCanvas.GetPageAtOffset(scrollViewer.Offset.Y) - 1;
                 };
+            };
+        }
+
+        /// <summary>
+        /// Держит у линейки актуальный вертикальный сдвиг канваса внутри вьюпорта.
+        /// ArrangeOverride канваса возвращает реальную высоту документа, и когда она меньше
+        /// высоты вьюпорта, Avalonia (Layoutable.ArrangeCore при VerticalAlignment=Stretch)
+        /// центрирует канвас по вертикали. Лист тогда стоит ниже верха вьюпорта, а линейка
+        /// об этом не знала и рисовала шкалу от верха — на мелком зуме расхождение достигало
+        /// десятков пикселей. Считаем сдвиг по реальной геометрии, а не по предположению
+        /// о выравнивании: TranslatePoint даёт положение верха канваса в координатах
+        /// ScrollViewer, прибавленный Offset.Y снимает вклад прокрутки.
+        /// Подписка одна на всё время жизни вью — DataContext читается на каждом вызове.
+        /// </summary>
+        private void WireContentTopOffset()
+        {
+            var scrollViewer = this.FindControl<ScrollViewer>("DocumentScrollViewer");
+            var pageCanvas = this.FindControl<DocumentCanvas>("PageCanvas");
+            if (scrollViewer is null || pageCanvas is null) return;
+
+            pageCanvas.LayoutUpdated += (_, _) =>
+            {
+                if (DataContext is not TextEditorViewModel vm) return;
+
+                var origin = pageCanvas.TranslatePoint(new Point(0, 0), scrollViewer);
+                if (origin is null) return;
+
+                vm.Ruler.ContentTopOffsetPx = origin.Value.Y + scrollViewer.Offset.Y;
             };
         }
 

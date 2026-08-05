@@ -118,11 +118,12 @@ namespace Writersword.Core.Models.Rendering
                 float x = GetCaretXInLine(line, charIndex);
                 float lineExtra = (lineIdx == 0) ? FirstLineIndentPt : 0f;
 
+                var (caretY, caretH) = GetCaretBox(line);
                 return new SKCaretRect
                 {
                     X = LeftIndentPt + lineExtra + x,
-                    Y = line.Y,
-                    Height = line.Height,
+                    Y = caretY,
+                    Height = caretH,
                     Baseline = line.Baseline
                 };
             }
@@ -131,13 +132,32 @@ namespace Writersword.Core.Models.Rendering
             float lastX = GetCaretXInLine(lastLine, charIndex);
             float lastLineExtra = (Lines.Count == 1) ? FirstLineIndentPt : 0f;
 
+            var (lastCaretY, lastCaretH) = GetCaretBox(lastLine);
             return new SKCaretRect
             {
                 X = LeftIndentPt + lastLineExtra + lastX,
-                Y = lastLine.Y,
-                Height = lastLine.Height,
+                Y = lastCaretY,
+                Height = lastCaretH,
                 Baseline = lastLine.Baseline
             };
+        }
+
+        /// <summary>
+        /// Вертикаль каретки в строке: верх и высота, в pt относительно начала параграфа.
+        ///
+        /// Обычную строку каретка перекрывает целиком. Но строку может растянуть
+        /// встроенная картинка — тогда каретка во всю строку выглядела бы огромной рядом
+        /// с текстом своего кегля. В такой строке каретка рисуется по метрикам текста
+        /// и сидит на той же базовой линии, что и буквы.
+        /// </summary>
+        private static (float Y, float Height) GetCaretBox(SKLineLayout line)
+        {
+            float textHeight = line.TextAscentPt + line.TextDescentPt;
+            if (textHeight <= 0f || textHeight >= line.Height)
+                return (line.Y, line.Height);
+
+            float top = line.Y + line.Baseline - line.TextAscentPt;
+            return (top, textHeight);
         }
 
         /// <summary>
@@ -172,10 +192,38 @@ namespace Writersword.Core.Models.Rendering
 
                 float lineExtra = (i == 0) ? FirstLineIndentPt : 0f;
 
+                float left = LeftIndentPt + lineExtra + x1;
+                float right = LeftIndentPt + lineExtra + x2;
+
+                // Строка, разорванная обтекаемым объектом, идёт по нескольким отрезкам,
+                // и её X включает прыжок через объект. Один прямоугольник от начала до
+                // конца накрыл бы и картинку — режем выделение по отрезкам строки.
+                if (line.HasWrapFragments)
+                {
+                    float originPt = line.WrapFragments[0].LeftPt;
+                    for (int f = 0; f < line.WrapFragments.Count; f++)
+                    {
+                        var fragment = line.WrapFragments[f];
+                        float fragLeft = LeftIndentPt + (fragment.LeftPt - originPt);
+                        float fragRight = fragLeft + fragment.WidthPt;
+
+                        float clippedLeft = Math.Max(left, fragLeft);
+                        float clippedRight = Math.Min(right, fragRight);
+                        if (clippedRight <= clippedLeft) continue;
+
+                        result.Add(new SKSelectionRect
+                        {
+                            Rect = new SKRect(clippedLeft, line.Y, clippedRight, line.Y + line.Height),
+                            LineIndex = i,
+                            FragmentIndex = f
+                        });
+                    }
+                    continue;
+                }
+
                 result.Add(new SKSelectionRect
                 {
-                    Rect = new SKRect(LeftIndentPt + lineExtra + x1, line.Y,
-                                           LeftIndentPt + lineExtra + x2, line.Y + line.Height),
+                    Rect = new SKRect(left, line.Y, right, line.Y + line.Height),
                     LineIndex = i
                 });
             }
@@ -230,8 +278,16 @@ namespace Writersword.Core.Models.Rendering
                     IsTrailingEdge = false
                 };
 
+            // Правый край строки — по последнему сегменту, а НЕ по сумме ширин: строка,
+            // разорванная обтекаемым объектом, содержит прыжок через него, и сумма ширин
+            // сегментов заметно меньше её реального размаха. По сумме любой клик правее
+            // картинки считался кликом за концом строки — каретка прыгала в край.
             float totalWidth = 0f;
-            foreach (var seg in line.Segments) totalWidth += seg.Width;
+            foreach (var seg in line.Segments)
+            {
+                float segRight = seg.X + seg.Width;
+                if (segRight > totalWidth) totalWidth = segRight;
+            }
 
             if (xPt <= 0)
                 return new SKHitTestResult
@@ -295,12 +351,48 @@ namespace Writersword.Core.Models.Rendering
                 }
             }
 
-            return new SKHitTestResult
+            // Точка не попала ни в один сегмент — это промежуток между отрезками строки,
+            // то есть клик по самому обтекаемому объекту. Каретка встаёт к ближайшему
+            // краю текста: слева от объекта — в конец левого куска, справа — в начало правого.
+            float bestDistance = float.MaxValue;
+            var nearest = new SKHitTestResult
             {
                 CharIndex = line.LastCharIndex + 1,
                 IsInside = false,
                 IsTrailingEdge = true
             };
+
+            foreach (var seg in line.Segments)
+            {
+                float segLeft = seg.X;
+                float segRight = seg.X + seg.Width;
+
+                float distLeft = Math.Abs(xPt - segLeft);
+                if (distLeft < bestDistance)
+                {
+                    bestDistance = distLeft;
+                    nearest = new SKHitTestResult
+                    {
+                        CharIndex = seg.GlobalCharOffset,
+                        IsInside = false,
+                        IsTrailingEdge = false
+                    };
+                }
+
+                float distRight = Math.Abs(xPt - segRight);
+                if (distRight < bestDistance)
+                {
+                    bestDistance = distRight;
+                    nearest = new SKHitTestResult
+                    {
+                        CharIndex = seg.GlobalCharOffset + seg.Text.Length,
+                        IsInside = false,
+                        IsTrailingEdge = true
+                    };
+                }
+            }
+
+            return nearest;
         }
 
         // Глобальный индекс сразу за последним непробельным символом строки.

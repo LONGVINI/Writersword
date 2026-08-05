@@ -108,6 +108,24 @@ namespace Writersword.Modules.TextEditor.Contracts
 
         // ── Работа с выделенным изображением ──────────────────────────────
         void SetImageWrapMode(WrapMode mode);
+
+        /// <summary>С какой стороны от картинки идёт текст при обтекании.</summary>
+        void SetImageWrapSide(WrapSide side);
+
+        /// <summary>Сторона обтекания выделенной картинки, либо null если ничего не выделено.</summary>
+        WrapSide? GetSelectedImageWrapSide();
+
+        /// <summary>
+        /// Жёсткая привязка картинки к номеру страницы (1-based). 0 — привязки нет,
+        /// картинка переезжает между страницами вслед за своим местом в потоке.
+        /// </summary>
+        void SetImagePinnedPage(int page);
+
+        /// <summary>Номер страницы привязки выделенной картинки (0 — нет), либо null.</summary>
+        int? GetSelectedImagePinnedPage();
+
+        /// <summary>Номер страницы, на которой картинка сейчас находится (1-based), либо null.</summary>
+        int? GetSelectedImageCurrentPage();
         void SetImageLockAspect(bool locked);
         void DeleteSelectedImage();
         (WrapMode Wrap, bool LockAspect, Writersword.Modules.TextEditor.Models.Styles.TextAlignment Align)? GetSelectedImageInfo();

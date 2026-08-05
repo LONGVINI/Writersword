@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -48,11 +49,26 @@ namespace Writersword.Modules.TextEditor.Services
         /// </summary>
         public List<string> BlockOrder { get; set; } = new();
 
+        /// <summary>
+        /// Хеши блоков без текстовых чанков (картинки, фигуры): BlockId → хеш свойств.
+        /// Поворот, размер, обрезка, прозрачность, рамка, обтекание и позиция живут
+        /// только здесь — в чанках их нет.
+        /// </summary>
+        public Dictionary<string, string> ObjectHashes { get; set; } = new();
+
+        /// <summary>
+        /// Изменились свойства объектов или порядок блоков по сравнению с прошлой
+        /// дельтой. Отдельный флаг, потому что такие правки не создают ни
+        /// изменившихся, ни удалённых чанков.
+        /// </summary>
+        public bool StructureChanged { get; set; }
+
         public bool IsEmpty =>
             ChangedChunks.Count == 0
             && RemovedChunks.Count == 0
             && ChangedAnnotations.Count == 0
-            && RemovedAnnotations.Count == 0;
+            && RemovedAnnotations.Count == 0
+            && !StructureChanged;
     }
 
     /// <summary>
@@ -144,7 +160,22 @@ namespace Writersword.Modules.TextEditor.Services
             {
                 CollectBlocksForDelta(section.Blocks, payload, existingChunkIds);
                 CollectBlocksForDelta(section.FloatingObjects, payload, existingChunkIds);
+                CollectBlocksForDelta(section.InlineObjects, payload, existingChunkIds);
+
+                // Параметры страницы и колонок, колонтитулы, состав и порядок
+                // блоков раздела — всё это тоже не отражается в чанках.
+                var currentSection = section;
+                payload.ObjectHashes["section:" + section.Id] = SafeHash(
+                    payload,
+                    () => _hashService.ComputeSectionPropertiesHash(currentSection),
+                    $"section {currentSection.Id}");
             }
+
+            // Заголовок, стили документа, параметры страницы и оформление листа.
+            payload.ObjectHashes["document"] = SafeHash(
+                payload,
+                () => _hashService.ComputeDocumentPropertiesHash(document),
+                "document");
 
             foreach (var annotation in document.Annotations)
             {
@@ -179,7 +210,56 @@ namespace Writersword.Modules.TextEditor.Services
                 foreach (var block in section.Blocks)
                     payload.BlockOrder.Add(block.Id.ToString());
 
+            // Правки картинок и фигур, а также перестановка блоков, не создают
+            // изменившихся чанков. Без этого сравнения снимок документа считался
+            // неизменным: поворот, обрезка и прочие свойства не попадали ни в кеш,
+            // ни в сохранение — на диск уходила прежняя базовая линия.
+            if (previousPayload is not null)
+            {
+                if (previousPayload.ObjectHashes.Count != payload.ObjectHashes.Count)
+                {
+                    payload.StructureChanged = true;
+                }
+                else
+                {
+                    foreach (var kv in payload.ObjectHashes)
+                    {
+                        if (previousPayload.ObjectHashes.TryGetValue(kv.Key, out var previousHash)
+                            && previousHash == kv.Value)
+                            continue;
+
+                        payload.StructureChanged = true;
+                        break;
+                    }
+                }
+
+                if (!payload.StructureChanged
+                    && !previousPayload.BlockOrder.SequenceEqual(payload.BlockOrder))
+                    payload.StructureChanged = true;
+            }
+
             return payload;
+        }
+
+        /// <summary>
+        /// Хеш свойств с защитой от исключений. Сбой хеширования не имеет права
+        /// ронять снимок документа: выше по стеку это означало бы возврат null из
+        /// TakeStateSnapshot, то есть отсутствие и кеша, и сохранения. При ошибке
+        /// блок считается изменённым — данные уйдут в файл в любом случае.
+        /// </summary>
+        private string SafeHash(DeltaCachePayload payload, Func<string> compute, string key)
+        {
+            try
+            {
+                return compute();
+            }
+            catch (Exception ex)
+            {
+                payload.StructureChanged = true;
+                System.Diagnostics.Debug.WriteLine(
+                    $"[DELTA] Hash failed for {key}: {ex.Message}");
+                return "hash-error";
+            }
         }
 
         /// <summary>
@@ -221,6 +301,15 @@ namespace Writersword.Modules.TextEditor.Services
                         foreach (var cellPara in cell.Paragraphs)
                         {
                             _chunkManager.NormalizeChunks(cellPara);
+
+                            // Оформление абзаца внутри ячейки живёт вне чанков.
+                            // Хеш считается после нормализации: она может разбить
+                            // или склеить чанки, а их состав входит в хеш.
+                            payload.ObjectHashes[cellPara.Id.ToString()] = SafeHash(
+                                payload,
+                                () => _hashService.ComputeBlockPropertiesHash(cellPara),
+                                $"cell paragraph {cellPara.Id}");
+
                             foreach (var chunk in cellPara.Chunks)
                             {
                                 string chunkKey = chunk.Id.ToString();
@@ -245,6 +334,13 @@ namespace Writersword.Modules.TextEditor.Services
                     foreach (var para in floatingText.Paragraphs)
                     {
                         _chunkManager.NormalizeChunks(para);
+
+                        // Оформление абзаца внутри надписи живёт вне чанков.
+                        payload.ObjectHashes[para.Id.ToString()] = SafeHash(
+                            payload,
+                            () => _hashService.ComputeBlockPropertiesHash(para),
+                            $"floating paragraph {para.Id}");
+
                         foreach (var chunk in para.Chunks)
                         {
                             string chunkKey = chunk.Id.ToString();
@@ -263,6 +359,15 @@ namespace Writersword.Modules.TextEditor.Services
                         }
                     }
                 }
+
+                // Собственные свойства блока — всё, чего нет в чанках: оформление
+                // абзаца и списка, геометрия картинок и фигур, структура и оформление
+                // таблицы, параметры надписи, тип разрыва, состав дочерних элементов.
+                // Считается последним: нормализация чанков выше могла изменить их состав.
+                payload.ObjectHashes[block.Id.ToString()] = SafeHash(
+                    payload,
+                    () => _hashService.ComputeBlockPropertiesHash(block),
+                    $"block {block.BlockType} {block.Id}");
             }
         }
 

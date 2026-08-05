@@ -166,6 +166,16 @@ namespace Writersword.Modules.TextEditor.Services
             {
                 foreach (var run in chunk.Runs)
                 {
+                    // Картинка в строке: её символ-заполнитель в текстовом экспорте
+                    // выглядел бы мусорным глифом. Заменяем ссылкой на альтернативный текст.
+                    if (run.IsInlineObject)
+                    {
+                        sb.Append("![](");
+                        sb.Append(run.InlineImageId);
+                        sb.Append(')');
+                        continue;
+                    }
+
                     string text = run.Text;
                     if (run.Properties is null) { sb.Append(text); continue; }
 

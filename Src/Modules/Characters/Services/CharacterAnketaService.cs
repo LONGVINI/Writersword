@@ -723,7 +723,7 @@ namespace Writersword.Modules.Characters.Services
         {
             return new CharacterAnketa
             {
-                Id = "builtin_collective",
+                Id = CharacterAnketa.CollectiveId,
                 Name = "Народ / Группа",
                 Description = "Среднестатистические параметры для коллективного персонажа — расы, народа, социальной группы",
                 IsBuiltIn = true,

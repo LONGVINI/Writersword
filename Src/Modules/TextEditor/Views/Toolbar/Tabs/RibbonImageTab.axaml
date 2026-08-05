@@ -343,7 +343,9 @@
 						</Grid>
 						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
 
-							<StackPanel Spacing="3">
+							<StackPanel Spacing="3"
+							            IsEnabled="{Binding IsSizeEditEnabled}"
+							            Opacity="{Binding SizeEditOpacity}">
 								<StackPanel Orientation="Horizontal" Spacing="3">
 									<PathIcon Width="13" Height="13" VerticalAlignment="Center"
 									          Foreground="{DynamicResource TextSecondaryBrush}"
@@ -354,7 +356,7 @@
 									               Increment="1"
 									               FormatString="0.##"
 									               ClipValueToMinMax="True"
-									               behaviours:TooltipBehavior.Tip="Ширина картинки в выбранных единицах"
+									               behaviours:TooltipBehavior.Tip="Ширина картинки в выбранных единицах. В режиме обрезки заблокирована"
 									               behaviours:TooltipBehavior.ShowDelay="700"/>
 								</StackPanel>
 								<StackPanel Orientation="Horizontal" Spacing="3">
@@ -367,12 +369,14 @@
 									               Increment="1"
 									               FormatString="0.##"
 									               ClipValueToMinMax="True"
-									               behaviours:TooltipBehavior.Tip="Высота картинки в выбранных единицах"
+									               behaviours:TooltipBehavior.Tip="Высота картинки в выбранных единицах. В режиме обрезки заблокирована"
 									               behaviours:TooltipBehavior.ShowDelay="700"/>
 								</StackPanel>
 							</StackPanel>
 
-							<StackPanel Spacing="3" VerticalAlignment="Center">
+							<StackPanel Spacing="3" VerticalAlignment="Center"
+							            IsEnabled="{Binding IsSizeEditEnabled}"
+							            Opacity="{Binding SizeEditOpacity}">
 								<ToggleButton Classes="SegSmall" Content="мм"
 								              Command="{Binding UnitMmCommand}"
 								              IsChecked="{Binding UnitIsMm, Mode=OneWay}"
@@ -388,6 +392,8 @@
 							<ToggleButton Classes="RibbonToggleLarge"
 							              Command="{Binding ToggleAspectCommand}"
 							              IsChecked="{Binding IsAspectLocked, Mode=OneWay}"
+							              IsEnabled="{Binding IsSizeEditEnabled}"
+							              Opacity="{Binding SizeEditOpacity}"
 							              behaviours:TooltipBehavior.Tip="Сохранять пропорции при изменении размера"
 							              behaviours:TooltipBehavior.ShowDelay="700">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
@@ -400,7 +406,7 @@
 							<ToggleButton Classes="RibbonToggleLarge"
 							              Command="{Binding ToggleCropModeCommand}"
 							              IsChecked="{Binding IsCropMode, Mode=OneWay}"
-							              behaviours:TooltipBehavior.Tip="Режим обрезки: маркеры срезают края картинки вместо изменения размера"
+							              behaviours:TooltipBehavior.Tip="Режим обрезки: маркеры двигают рамку кадрирования, размер картинки заблокирован. Срез применяется при выходе из режима — повторный клик или Enter, Esc отменяет"
 							              behaviours:TooltipBehavior.ShowDelay="700">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
 									<PathIcon Width="18" Height="18"
@@ -448,12 +454,18 @@
 				</Border>
 
 				<!-- ── Группа: Отступы обтекания ────────────────────────────── -->
-				<Border Classes="RibbonGroup">
+				<!-- Активна только в режиме «Обтекание»: в режимах «В тексте» и      -->
+				<!-- «За текстом» отступы ни на что не влияют.                        -->
+				<Border Classes="RibbonGroup"
+				        behaviours:TooltipBehavior.Tip="Отступы работают только в режиме «Обтекание»"
+				        behaviours:TooltipBehavior.ShowDelay="700">
 					<DockPanel>
 						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
 							<TextBlock Classes="RibbonGroupLabel" Text="Отступы обтекания"/>
 						</Grid>
-						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"
+						            IsEnabled="{Binding IsWrapPaddingEnabled}"
+						            Opacity="{Binding WrapPaddingOpacity}">
 
 							<!-- 4 стороны: верх/низ, лево/право -->
 							<Grid ColumnDefinitions="Auto Auto" RowDefinitions="Auto Auto">
@@ -535,7 +547,7 @@
 							<StackPanel Orientation="Horizontal" Spacing="4">
 								<controls:ColorPickerButton Width="20" Height="20" VerticalAlignment="Center"
 								                            HexColor="{Binding BorderHexColor, Mode=TwoWay}"
-								                            behaviours:TooltipBehavior.Tip="Цвет рамки картинки"
+								                            behaviours:TooltipBehavior.Tip="Цвет рамки картинки. «Нет цвета» убирает рамку"
 								                            behaviours:TooltipBehavior.ShowDelay="700"/>
 								<TextBlock FontSize="10" VerticalAlignment="Center"
 								           Foreground="{DynamicResource TextSecondaryBrush}"
@@ -551,10 +563,16 @@
 							</StackPanel>
 
 							<StackPanel Orientation="Horizontal" Spacing="4">
-								<Slider Classes="knob" Width="90"
+								<PathIcon Width="13" Height="13" VerticalAlignment="Center"
+								          Foreground="{DynamicResource TextSecondaryBrush}"
+								          Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18V4c4.41 0 8 3.59 8 8s-3.59 8-8 8z"/>
+								<TextBlock FontSize="10" VerticalAlignment="Center"
+								           Foreground="{DynamicResource TextSecondaryBrush}"
+								           Text="Видимость"/>
+								<Slider Classes="knob" Width="72"
 								        Minimum="0" Maximum="100"
 								        Value="{Binding OpacityValue, Mode=TwoWay}"
-								        behaviours:TooltipBehavior.Tip="Прозрачность картинки"
+								        behaviours:TooltipBehavior.Tip="Видимость картинки: 100% — полностью непрозрачная, 0% — невидимая"
 								        behaviours:TooltipBehavior.ShowDelay="700"/>
 								<NumericUpDown Classes="RibbonNum" Width="64"
 								               Value="{Binding OpacityPercent, Mode=TwoWay}"
@@ -562,9 +580,102 @@
 								               Increment="5"
 								               FormatString="0"
 								               ClipValueToMinMax="True"
-								               behaviours:TooltipBehavior.Tip="Непрозрачность картинки в процентах"
+								               behaviours:TooltipBehavior.Tip="Видимость картинки в процентах: 100% — полностью непрозрачная, 0% — невидимая"
 								               behaviours:TooltipBehavior.ShowDelay="700"/>
 							</StackPanel>
+
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ── Группы, зависящие от режима ──────────────────────────── -->
+				<!-- Стоят в конце ленты намеренно: они появляются и исчезают вместе
+				     с режимом обтекания, и в середине от этого прыгали бы все соседние
+				     группы. Нужны они заметно реже остальных. -->
+
+				<!-- ── Группа: Сторона обтекания ────────────────────────────── -->
+				<Border Classes="RibbonGroup"
+				        IsVisible="{Binding IsWrapPaddingEnabled}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Сторона"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="2">
+
+							<ToggleButton Classes="RibbonToggleLarge"
+							              Command="{Binding WrapSideLargestCommand}"
+							              IsChecked="{Binding CurrentWrapSide, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=LargestOnly, Mode=OneWay}"
+							              behaviours:TooltipBehavior.Tip="Текст идёт только по той стороне, где больше места"
+							              behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="18" Height="18"
+									          Data="M3 3h18v2H3V3zm0 16h18v2H3v-2zM3 7h6v2H3V7zm0 4h6v2H3v-2zm0 4h6v2H3v-2zM11 7h10v8H11V7z"/>
+									<TextBlock FontSize="9" Text="По большей" HorizontalAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+
+							<ToggleButton Classes="RibbonToggleLarge"
+							              Command="{Binding WrapSideBothCommand}"
+							              IsChecked="{Binding CurrentWrapSide, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=BothSides, Mode=OneWay}"
+							              behaviours:TooltipBehavior.Tip="Строка идёт слева от картинки и продолжается справа"
+							              behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="18" Height="18"
+									          Data="M3 3h18v2H3V3zm0 16h18v2H3v-2zM3 7h4v2H3V7zm0 4h4v2H3v-2zm0 4h4v2H3v-2zm14-8h4v2h-4V7zm0 4h4v2h-4v-2zm0 4h4v2h-4v-2zM9 7h6v8H9V7z"/>
+									<TextBlock FontSize="9" Text="С обеих" HorizontalAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+
+							<ToggleButton Classes="RibbonToggleLarge"
+							              Command="{Binding WrapSideLeftCommand}"
+							              IsChecked="{Binding CurrentWrapSide, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=LeftOnly, Mode=OneWay}"
+							              behaviours:TooltipBehavior.Tip="Текст идёт только слева от картинки"
+							              behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="18" Height="18"
+									          Data="M3 3h18v2H3V3zm0 16h18v2H3v-2zM3 7h8v2H3V7zm0 4h8v2H3v-2zm0 4h8v2H3v-2zM13 7h8v8h-8V7z"/>
+									<TextBlock FontSize="9" Text="Слева" HorizontalAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+
+							<ToggleButton Classes="RibbonToggleLarge"
+							              Command="{Binding WrapSideRightCommand}"
+							              IsChecked="{Binding CurrentWrapSide, Converter={x:Static converters:EqualityConverter.Instance}, ConverterParameter=RightOnly, Mode=OneWay}"
+							              behaviours:TooltipBehavior.Tip="Текст идёт только справа от картинки"
+							              behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="18" Height="18"
+									          Data="M3 3h18v2H3V3zm0 16h18v2H3v-2zM13 7h8v2h-8V7zm0 4h8v2h-8v-2zm0 4h8v2h-8v-2zM3 7h8v8H3V7z"/>
+									<TextBlock FontSize="9" Text="Справа" HorizontalAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
+
+						</StackPanel>
+					</DockPanel>
+				</Border>
+
+				<!-- ── Группа: Привязка к странице ──────────────────────────── -->
+				<!-- Картинке «в тексте» закрепление ни к чему: её место определяет
+				     текст, а не номер страницы — группа для неё не показывается. -->
+				<Border Classes="RibbonGroup"
+				        IsVisible="{Binding IsPinAvailable}">
+					<DockPanel>
+						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
+							<TextBlock Classes="RibbonGroupLabel" Text="Страница"/>
+						</Grid>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+
+							<ToggleButton Classes="RibbonToggleLarge"
+							              Command="{Binding TogglePinToPageCommand}"
+							              IsChecked="{Binding IsPinnedToPage, Mode=OneWay}"
+							              behaviours:TooltipBehavior.Tip="Картинка остаётся на текущей странице и не переносится на другую вслед за текстом. Страница и все страницы до неё сохраняются, даже если текста на них не останется"
+							              behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Width="18" Height="18"
+									          Data="M14 4v6l3 3v2h-4v5l-1 1-1-1v-5H7v-2l3-3V4H9V2h6v2h-1z"/>
+									<TextBlock FontSize="9" Text="Закрепить" HorizontalAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
 
 						</StackPanel>
 					</DockPanel>

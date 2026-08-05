@@ -377,6 +377,10 @@
     <value>Show list</value>
     <comment>Editor sidebar restore button tooltip</comment>
   </data>
+  <data name="EditorSidebar_Search" xml:space="preserve">
+    <value>Find a character</value>
+    <comment>Compact sidebar search button tooltip</comment>
+  </data>
   <data name="Placeholder_SelectCharacter" xml:space="preserve">
     <value>Select a character to view details</value>
     <comment>Empty right panel</comment>
@@ -944,7 +948,7 @@
     <value>A group, not a person</value>
   </data>
   <data name="Group_Hint" xml:space="preserve">
-    <value>A people, a family, a squad, an organisation. Same card — only the look in lists changes: a group gets a ribbon in the corner.</value>
+    <value>A people, a family, a squad, an organisation. The card gets the "Group / People" field set, a "How many" field and a ribbon in the corner in lists. Clear the box and the set is detached — whatever you wrote stays in the fields.</value>
   </data>
   <data name="Group_Population" xml:space="preserve">
     <value>How many</value>

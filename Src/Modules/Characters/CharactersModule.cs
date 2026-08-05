@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using Serilog;
@@ -54,8 +54,8 @@ namespace Writersword.Modules.Characters
             _avatarService.RegisterPackDirectory(avatarsDir);
 
             // Свои картинки меток рисуются прямо из модели в шаблонах списков
-            // и карточки — конвертеру нужен доступ к хранилищу файлов проекта.
-            Converters.LabelIconToImageConverter.AvatarService = _avatarService;
+            // и карточки — загрузчику нужен доступ к хранилищу файлов проекта.
+            Services.LabelIconImages.AvatarService = _avatarService;
             Views.LabelEditorOverlay.AvatarService = _avatarService;
         }
 
@@ -322,7 +322,7 @@ namespace Writersword.Modules.Characters
 
                 // Картинки меток кэшируются по ссылке, а в другом проекте
                 // за той же ссылкой лежит другой файл.
-                Converters.LabelIconToImageConverter.ResetCache();
+                Services.LabelIconImages.ResetCache();
 
                 if (_relationshipService is RelationshipService rs)
                     rs.LoadRelationships(moduleData.Relationships ?? new List<CharacterRelationship>());

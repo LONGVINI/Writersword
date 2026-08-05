@@ -23,6 +23,9 @@ namespace Writersword.Modules.TextEditor.Commands
                 RotationDeg = i.RotationDeg;
                 WrapMode = i.WrapMode;
                 Alignment = i.Alignment;
+                Anchor = i.Anchor;
+                ZOrder = i.ZOrder;
+                AltText = i.AltText;
                 LockAspectRatio = i.LockAspectRatio;
                 Opacity = i.Opacity;
                 BorderColor = i.BorderColor;
@@ -46,6 +49,9 @@ namespace Writersword.Modules.TextEditor.Commands
             public double RotationDeg { get; }
             public WrapMode WrapMode { get; }
             public Models.Styles.TextAlignment Alignment { get; }
+            public FloatAnchor Anchor { get; }
+            public int ZOrder { get; }
+            public string? AltText { get; }
             public bool LockAspectRatio { get; }
             public double Opacity { get; }
             public string? BorderColor { get; }
@@ -70,6 +76,9 @@ namespace Writersword.Modules.TextEditor.Commands
                 i.RotationDeg = RotationDeg;
                 i.WrapMode = WrapMode;
                 i.Alignment = Alignment;
+                i.Anchor = Anchor;
+                i.ZOrder = ZOrder;
+                i.AltText = AltText;
                 i.LockAspectRatio = LockAspectRatio;
                 i.Opacity = Opacity;
                 i.BorderColor = BorderColor;

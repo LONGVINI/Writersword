@@ -123,6 +123,25 @@ namespace Writersword.Infrastructure.Services.Input
                 _logger.LogDebug("Executor unbound: {ModuleType}", moduleType);
         }
 
+        public void UnbindExecutor(string moduleType, IHotKeyProvider provider)
+        {
+            if (!_executors.TryGetValue(moduleType, out var bound))
+                return;
+
+            if (!ReferenceEquals(bound, provider))
+            {
+                // Слот занят другим живым экземпляром того же типа модуля —
+                // закрытие этого его привязку не трогает.
+                _logger.LogDebug(
+                    "Executor unbind skipped — slot belongs to another instance: {ModuleType}",
+                    moduleType);
+                return;
+            }
+
+            _executors.Remove(moduleType);
+            _logger.LogDebug("Executor unbound: {ModuleType}", moduleType);
+        }
+
         public void UnregisterModule(string moduleType)
         {
             _executors.Remove(moduleType);
@@ -169,8 +188,19 @@ namespace Writersword.Infrastructure.Services.Input
                 {
                     _logger.LogDebug("Executing: {Id}", matched.hotKey.Id);
                     ClearSequence();
-                    ExecuteEntry(matched);
-                    return true;
+
+                    // Обработанной нажатие считается только если действие реально
+                    // выполнено. Иначе клавиша возвращается вызывающему: у модуля
+                    // остаётся собственная обработка (Delete/Backspace/стрелки в
+                    // редакторе), и потеря нажатия из-за отсутствующего executor'а
+                    // или неактивной команды становится невозможной.
+                    if (ExecuteEntry(matched))
+                        return true;
+
+                    _logger.LogWarning(
+                        "HotKey {Id} matched but not executed — passing key to the module",
+                        matched.hotKey.Id);
+                    return false;
                 }
             }
 
@@ -675,22 +705,35 @@ namespace Writersword.Infrastructure.Services.Input
             _sequenceTimer = null;
         }
 
-        private void ExecuteEntry(
+        /// <summary>
+        /// Выполняет действие горячей клавиши.
+        /// Возвращает true только если действие действительно выполнено:
+        /// неактивная команда и отсутствующий executor дают false, и нажатие
+        /// уходит обратно в модуль вместо того чтобы пропасть.
+        /// </summary>
+        private bool ExecuteEntry(
             (HotKey hotKey, ICommand? command, IHotKeyProvider? executor) entry)
         {
             if (entry.command != null)
             {
-                if (entry.command.CanExecute(null))
-                    entry.command.Execute(null);
+                if (!entry.command.CanExecute(null))
+                {
+                    _logger.LogDebug("Command cannot execute: {Id}", entry.hotKey.Id);
+                    return false;
+                }
+
+                entry.command.Execute(null);
+                return true;
             }
-            else if (entry.executor != null)
+
+            if (entry.executor != null)
             {
                 entry.executor.ExecuteHotKey(entry.hotKey.Id);
+                return true;
             }
-            else
-            {
-                _logger.LogDebug("No executor bound for: {Id}", entry.hotKey.Id);
-            }
+
+            _logger.LogDebug("No executor bound for: {Id}", entry.hotKey.Id);
+            return false;
         }
 
         private IEnumerable<(HotKey hotKey, ICommand? command, IHotKeyProvider? executor)>

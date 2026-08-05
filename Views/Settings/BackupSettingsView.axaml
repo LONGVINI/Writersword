@@ -130,7 +130,6 @@
                 <TextBlock Classes="SectionHeader"
                            Text="{x:Static loc:Strings.Settings_Backups_Section}"/>
                 <infra:HintMark VerticalAlignment="Center"
-                                behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_Section}"
                                 behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_Hint}"/>
             </StackPanel>
             <Separator/>
@@ -148,7 +147,6 @@
                 <TextBlock Classes="SectionHeader"
                            Text="{x:Static loc:Strings.Settings_Backups_Location}"/>
                 <infra:HintMark VerticalAlignment="Center"
-                                behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_Location}"
                                 behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_Location_Hint}"/>
             </StackPanel>
             <Separator/>
@@ -191,12 +189,15 @@
                         </RadioButton>
                     </StackPanel>
                 </Border>
+
+                <infra:HintMark VerticalAlignment="Center"
+                                behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_ProjectOverride_Hint}"/>
             </StackPanel>
 
             <Grid ColumnDefinitions="*,8,Auto,8,Auto">
                 <TextBox Grid.Column="0"
                          Text="{Binding CurrentPath}"
-                         Watermark="{Binding CurrentPathWatermark}"
+                         PlaceholderText="{Binding CurrentPathWatermark}"
                          FontSize="12"/>
 
                 <Button Grid.Column="2"
@@ -238,13 +239,8 @@
 
         <!-- ── Когда снимать точку ─────────────────────────────────────── -->
         <StackPanel Spacing="10" IsEnabled="{Binding Enabled}">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Classes="SectionHeader"
-                           Text="{x:Static loc:Strings.Settings_Backups_When}"/>
-                <infra:HintMark VerticalAlignment="Center"
-                                behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_When}"
-                                behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_MinInterval_Hint}"/>
-            </StackPanel>
+            <TextBlock Classes="SectionHeader"
+                       Text="{x:Static loc:Strings.Settings_Backups_When}"/>
             <Separator/>
 
             <CheckBox IsChecked="{Binding OnManualSave}"
@@ -259,8 +255,17 @@
             <!-- Предохранитель частоты: сохранений может быть сколько угодно,
                  точка возникает не чаще заданного промежутка. -->
             <StackPanel Spacing="0">
-                <TextBlock Classes="FieldLabel"
-                           Text="{x:Static loc:Strings.Settings_Backups_MinInterval}"/>
+                <StackPanel Orientation="Horizontal"
+                            Spacing="6"
+                            HorizontalAlignment="Left"
+                            Margin="0,0,0,4">
+                    <TextBlock Classes="FieldLabel"
+                               Text="{x:Static loc:Strings.Settings_Backups_MinInterval}"
+                               Margin="0"
+                               VerticalAlignment="Center"/>
+                    <infra:HintMark VerticalAlignment="Center"
+                                    behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_MinInterval_Hint}"/>
+                </StackPanel>
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <NumericUpDown Value="{Binding IntervalValue, Mode=TwoWay}"
                                    Minimum="1"
@@ -282,7 +287,6 @@
                             VerticalAlignment="Center"
                             HorizontalContentAlignment="Center"
                             Command="{Binding CycleIntervalUnitCommand}"
-                            behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_MinInterval}"
                             behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_Unit_Tooltip}">
                         <TextBlock x:Name="IntervalUnitLabel"
                                    Text="{Binding IntervalUnitText}"
@@ -300,17 +304,18 @@
 
         <!-- ── Сколько хранить ─────────────────────────────────────────── -->
         <StackPanel Spacing="10" IsEnabled="{Binding Enabled}">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Classes="SectionHeader"
-                           Text="{x:Static loc:Strings.Settings_Backups_MaxSnapshots}"/>
-                <infra:HintMark VerticalAlignment="Center"
-                                behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_Thinning}"
-                                behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_Thinning_Hint}"/>
-            </StackPanel>
+            <TextBlock Classes="SectionHeader"
+                       Text="{x:Static loc:Strings.Settings_Backups_MaxSnapshots}"/>
             <Separator/>
 
-            <CheckBox IsChecked="{Binding Thinning}"
-                      Content="{x:Static loc:Strings.Settings_Backups_Thinning}"/>
+            <StackPanel Orientation="Horizontal"
+                        Spacing="8"
+                        HorizontalAlignment="Left">
+                <CheckBox IsChecked="{Binding Thinning}"
+                          Content="{x:Static loc:Strings.Settings_Backups_Thinning}"/>
+                <infra:HintMark VerticalAlignment="Center"
+                                behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_Thinning_Hint}"/>
+            </StackPanel>
 
             <StackPanel Spacing="0">
                 <TextBlock Classes="FieldLabel"
@@ -329,7 +334,6 @@
                 <TextBlock Classes="SectionHeader"
                            Text="{x:Static loc:Strings.Settings_Backups_UserPoints}"/>
                 <infra:HintMark VerticalAlignment="Center"
-                                behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_UserPoints}"
                                 behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_UserPoints_Hint}"/>
             </StackPanel>
             <Separator/>
@@ -477,7 +481,6 @@
                                                 FontSize="12"
                                                 Cursor="Hand"
                                                 Content="{x:Static loc:Strings.Settings_Backups_Compare}"
-                                                behaviours:TooltipBehavior.Tip="{x:Static loc:Strings.Settings_Backups_Compare}"
                                                 behaviours:TooltipBehavior.Description="{x:Static loc:Strings.Settings_Backups_Compare_Tooltip}"
                                                 Command="{Binding $parent[ItemsControl].DataContext.CompareCommand}"
                                                 CommandParameter="{Binding}"

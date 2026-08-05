@@ -80,26 +80,16 @@ namespace Writersword.Modules.TextEditor.Document
             float w = (float)RulerWidthPx;
             float h = (float)Bounds.Height;
             double zoom = _vm.Zoom;
-            double scrollY = _vm.ScrollOffsetY;
 
             const double PageGapPt = 15.0;
             const double PtToPx = 96.0 / 72.0;
 
-            double pageHeightPx = MmToPx(_vm.PageHeightMm, zoom);
-            double marginTopPx = MmToPx(_vm.MarginTopMm, zoom);
-            double marginBotPx = MmToPx(_vm.MarginBottomMm, zoom);
             double pageGapPx = PageGapPt * PtToPx * zoom;
-            double pageWithGapH = pageHeightPx + pageGapPx;
 
             // ── Страница по индексу каретки ───────────────────────────────
-            // Используем FocusedPageIndex — ту страницу, где стоит каретка,
-            // а не страницу в центре viewport. Это точное поведение как в Word.
-            int currentPageIdx = Math.Max(0, _vm.FocusedPageIndex);
-
-            double pTopY = pageGapPx + currentPageIdx * pageWithGapH - scrollY;
-            double tTopY = pTopY + marginTopPx;
-            double tBotY = pTopY + pageHeightPx - marginBotPx;
-            double pBotY = pTopY + pageHeightPx;
+            // Геометрия считается там же, где и для попаданий указателя —
+            // одна формула на отрисовку и на drag полей.
+            var (_, pBotY, tTopY, tBotY) = ComputePageGeometry();
 
             // ── Фон ──────────────────────────────────────────────────────
             using var bgPaint = new SKPaint { Color = ColBg };
@@ -228,7 +218,17 @@ namespace Writersword.Modules.TextEditor.Document
             double pageHeightPx = MmToPx(_vm.PageHeightMm, zoom);
             double pageGapPx = PageGapPt * PtToPx * zoom;
             int pageIdx = Math.Max(0, _vm.FocusedPageIndex);
-            double pTopY = pageGapPx + pageIdx * (pageHeightPx + pageGapPx) - scrollY;
+
+            // Ряд страницы: в режиме двух страниц рядом вертикальная позиция задаётся рядом,
+            // а не порядковым номером страницы (так же считает PageVisualDelta канваса).
+            int cols = Math.Max(1, _vm.PagesPerRow);
+            int rowIdx = pageIdx / cols;
+
+            // ContentTopOffsetPx — сдвиг канваса внутри вьюпорта. Когда документ ниже вьюпорта,
+            // Avalonia центрирует канвас по вертикали, и лист стоит ниже верха вьюпорта.
+            // Без этого слагаемого шкала уезжает вверх относительно листа на мелком зуме.
+            double pTopY = _vm.ContentTopOffsetPx
+                + pageGapPx + rowIdx * (pageHeightPx + pageGapPx) - scrollY;
             double pBotY = pTopY + pageHeightPx;
             double tTopY = pTopY + MmToPx(_vm.MarginTopMm, zoom);
             double tBotY = pTopY + pageHeightPx - MmToPx(_vm.MarginBottomMm, zoom);

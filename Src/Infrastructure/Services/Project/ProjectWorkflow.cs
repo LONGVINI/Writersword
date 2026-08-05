@@ -98,6 +98,18 @@ namespace Writersword.Infrastructure.Services.Project
                     var cacheDate = cacheMeta?.CacheDate;
                     var saveDate = File.GetLastWriteTime(filePath);
 
+                    if (!cacheDate.HasValue)
+                    {
+                        // Файл точки восстановления есть, но не читается — обычно это
+                        // оборванная аварийным выключением запись. Молчать нельзя:
+                        // раньше проект в этом случае открывался как обычно, и человек
+                        // не знал, что несохранённая работа не восстановлена.
+                        _logger.LogWarning(
+                            "Cache file exists but cannot be read — opening saved version: {Path}", filePath);
+                        _notificationService.ShowWarning(
+                            "Точка автосохранения повреждена и не восстановлена — открыта сохранённая версия");
+                    }
+
                     if (cacheDate.HasValue)
                     {
                         _logger.LogDebug("Cache found - Cache: {CacheDate}, Save: {SaveDate}", cacheDate, saveDate);
@@ -235,6 +247,12 @@ namespace Writersword.Infrastructure.Services.Project
 
                         var cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
                         cacheUpdateService.Stop();
+
+                        // В режиме сравнения модули только для чтения, кеш остановлен,
+                        // а Ctrl+S отклоняется. Без явного предупреждения работа с
+                        // висящим баннером выглядит обычной, а защиты от падения нет.
+                        _notificationService.ShowWarning(
+                            "Открыты две версии проекта. Пока висит баннер, правки не сохраняются — выберите версию");
                         _logger.LogDebug("Compare mode enabled, cache disabled");
                     }
                 }
@@ -295,6 +313,16 @@ namespace Writersword.Infrastructure.Services.Project
                 {
                     var cacheDate = await Task.Run(() => _cacheService.GetCacheDate(filePath));
                     var saveDate = File.GetLastWriteTime(filePath);
+
+                    if (!cacheDate.HasValue)
+                    {
+                        // См. OpenDocumentAsync: повреждённая точка восстановления
+                        // не должна проходить незамеченной.
+                        _logger.LogWarning(
+                            "Cache file exists but cannot be read (lazy tab) — opening saved version: {Path}", filePath);
+                        _notificationService.ShowWarning(
+                            "Точка автосохранения повреждена и не восстановлена — открыта сохранённая версия");
+                    }
 
                     if (cacheDate.HasValue)
                     {
@@ -397,6 +425,12 @@ namespace Writersword.Infrastructure.Services.Project
 
                         var cacheUpdateService = App.Services.GetRequiredService<ICacheUpdateService>();
                         cacheUpdateService.Stop();
+
+                        // В режиме сравнения модули только для чтения, кеш остановлен,
+                        // а Ctrl+S отклоняется. Без явного предупреждения работа с
+                        // висящим баннером выглядит обычной, а защиты от падения нет.
+                        _notificationService.ShowWarning(
+                            "Открыты две версии проекта. Пока висит баннер, правки не сохраняются — выберите версию");
                         _logger.LogDebug("Compare mode enabled for lazy tab, cache disabled");
                     }
                 }

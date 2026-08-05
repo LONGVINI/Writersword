@@ -157,26 +157,32 @@ namespace Writersword.Infrastructure.Behaviours
 
         static TooltipBehavior()
         {
-            TipProperty.Changed.AddClassHandler<Control>(OnTipChanged);
+            TipProperty.Changed.AddClassHandler<Control>(OnHintSourceChanged);
+            DescriptionProperty.Changed.AddClassHandler<Control>(OnHintSourceChanged);
         }
 
         /// <summary>
-        /// Вызывается при изменении свойства Tip.
+        /// Вызывается при изменении Tip или Description.
         /// Подписывает или отписывает обработчики событий указателя.
+        /// Подсказке достаточно любого из двух текстов: у значка рядом
+        /// с подписью раздела заголовок повторял бы саму подпись.
         /// </summary>
-        private static void OnTipChanged(Control element, AvaloniaPropertyChangedEventArgs e)
+        private static void OnHintSourceChanged(Control element, AvaloniaPropertyChangedEventArgs e)
         {
             element.PointerEntered -= OnPointerEntered;
             element.PointerExited -= OnPointerExited;
             element.PointerPressed -= OnPointerPressed;
 
-            if (!string.IsNullOrEmpty(e.NewValue as string))
+            bool hasContent = !string.IsNullOrEmpty(GetTip(element))
+                              || !string.IsNullOrEmpty(GetDescription(element));
+
+            if (hasContent)
             {
                 element.PointerEntered += OnPointerEntered;
                 element.PointerExited += OnPointerExited;
                 element.PointerPressed += OnPointerPressed;
-                _logger.Debug("TooltipBehavior: subscribed to {Element}, text='{Tip}'",
-                    element.GetType().Name, e.NewValue);
+                _logger.Debug("TooltipBehavior: subscribed to {Element}, tip='{Tip}'",
+                    element.GetType().Name, GetTip(element));
             }
         }
 
@@ -358,7 +364,8 @@ namespace Writersword.Infrastructure.Behaviours
         private static void ShowTooltip(Control element)
         {
             string? tip = GetTip(element);
-            if (string.IsNullOrEmpty(tip)) return;
+            string? description = GetDescription(element);
+            if (string.IsNullOrEmpty(tip) && string.IsNullOrEmpty(description)) return;
 
             var bgBrush = ResolveBrush(element, "AppTooltipBackground", new SolidColorBrush(Color.Parse("#2D2D30")));
             var borderBrush = ResolveBrush(element, "AppTooltipBorderBrush", new SolidColorBrush(Color.Parse("#3E3E42")));
@@ -368,13 +375,14 @@ namespace Writersword.Infrastructure.Behaviours
             // HotKeyId имеет приоритет над HotKey
             var hotKeyString = ResolveHotKeyString(GetHotKeyId(element)) ?? GetHotKey(element);
 
-            _logger.Debug("TooltipBehavior: creating TooltipView, text='{Tip}'", tip);
+            _logger.Debug("TooltipBehavior: creating TooltipView, tip='{Tip}', description='{Description}'",
+                tip, description);
 
             // ParsedHotKeys устанавливается последним — RebuildHotKeys использует кисти
             var view = new TooltipView
             {
                 Title = tip,
-                Description = GetDescription(element),
+                Description = description,
                 PreviewPath = GetPreviewPath(element),
                 TooltipBackground = bgBrush,
                 TooltipBorderBrush = borderBrush,

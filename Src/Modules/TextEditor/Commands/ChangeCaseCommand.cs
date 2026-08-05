@@ -43,6 +43,11 @@ namespace Writersword.Modules.TextEditor.Commands
                 {
                     int rl = run.Text.Length;
                     if (rl == 0) continue;
+
+                    // Объект в строке регистр не имеет: его символ-заполнитель занимает
+                    // позицию, но переписывать его буквой нельзя.
+                    if (run.IsInlineObject) { offset += rl; continue; }
+
                     int runStart = offset;
                     int s = Math.Max(_from, runStart);
                     int e = Math.Min(to, runStart + rl);

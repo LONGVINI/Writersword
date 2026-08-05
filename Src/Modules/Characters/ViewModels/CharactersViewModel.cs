@@ -1,4 +1,4 @@
-using Avalonia.Input;
+﻿using Avalonia.Input;
 using ReactiveUI;
 using Serilog;
 using System;
@@ -354,6 +354,14 @@ namespace Writersword.Modules.Characters.ViewModels
         public double CardAvatarSize => Math.Max(40, _cardTopHeight - 12);
         // Кольцо чуть больше аватара — рисуется снаружи картинки.
         public double CardRingSize => CardAvatarSize + 8;
+        // Значки меток идут по дуге вокруг аватарки и растут вместе с ней:
+        // при мелких карточках значок в шестнадцать точек закрывал бы пол-лица,
+        // при крупных — терялся бы. Нижний предел оставлен, чтобы фигура
+        // внутри значка не выродилась в пятно.
+        public double CardLabelIconSize => Math.Max(12, CardAvatarSize * 0.3);
+        // Дуга проходит по краю аватарки: значок садится на неё серединой и
+        // краем заходит на картинку — так же, как бейдж состояния.
+        public double CardLabelArcRadius => CardAvatarSize / 2 + CardLabelIconSize * 0.15;
         public double CardNameHeight => _cardNameHeight;
         public double CardTotalHeight => _cardTopHeight + _cardNameHeight;
         public double CardIconFontSize => _cardIconSize;
@@ -535,6 +543,8 @@ namespace Writersword.Modules.Characters.ViewModels
             this.RaisePropertyChanged(nameof(CardTopHeight));
             this.RaisePropertyChanged(nameof(CardAvatarSize));
             this.RaisePropertyChanged(nameof(CardRingSize));
+            this.RaisePropertyChanged(nameof(CardLabelIconSize));
+            this.RaisePropertyChanged(nameof(CardLabelArcRadius));
             this.RaisePropertyChanged(nameof(CardNameHeight));
             this.RaisePropertyChanged(nameof(CardTotalHeight));
             this.RaisePropertyChanged(nameof(CardIconFontSize));
@@ -780,7 +790,7 @@ namespace Writersword.Modules.Characters.ViewModels
         private void CreateCollectiveCharacter()
         {
             if (IsReadOnly) return;
-            var collective = _anketaService.GetById("builtin_collective");
+            var collective = _anketaService.GetById(CharacterAnketa.CollectiveId);
             var anketas = collective is not null
                 ? new[] { collective }
                 : System.Array.Empty<CharacterAnketa>();
@@ -938,6 +948,28 @@ namespace Writersword.Modules.Characters.ViewModels
             if (item.Color != character.Color) item.Color = character.Color;
             if (item.AvatarRing != character.AvatarRing) item.AvatarRing = character.AvatarRing;
             if (item.GroupBookmark != character.GroupBookmark) item.GroupBookmark = character.GroupBookmark;
+            if (item.IsCollective != character.IsCollective) item.IsCollective = character.IsCollective;
+        }
+
+        /// <summary>
+        /// Перечитать метки во всех строках списка из модели. Нужно после
+        /// правки общей метки: она меняет метки сразу у многих персонажей,
+        /// а каждая строка держит свою копию списка меток.
+        /// </summary>
+        public void RefreshLabelsFromModel()
+        {
+            foreach (var folder in Folders)
+                foreach (var item in folder.Characters)
+                    RefreshLabels(item);
+
+            foreach (var item in FilteredCharacters)
+                RefreshLabels(item);
+        }
+
+        private void RefreshLabels(CharacterListItemViewModel item)
+        {
+            var character = _characterService.GetById(item.Id);
+            if (character != null) item.SetLabels(character.Labels);
         }
 
         public void OpenCharacter(string characterId) => EditCharacter(characterId);

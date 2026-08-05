@@ -1,9 +1,10 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="using:Writersword.Modules.Characters.Views"
              xmlns:conv="using:Writersword.Modules.Characters.Converters"
              xmlns:icv="using:Writersword.Infrastructure.Converters"
              xmlns:colorControls="using:Writersword.Styles.UserControls"
+             xmlns:controls="using:Writersword.Modules.Characters.Controls"
              x:Class="Writersword.Modules.Characters.Views.LabelEditorOverlay"
              x:DataType="views:LabelEditorDraft"
              IsVisible="False">
@@ -34,9 +35,6 @@
 		<Style Selector="Button.iconOpt.selected">
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 			<Setter Property="BorderThickness" Value="2"/>
-		</Style>
-		<Style Selector="Button.iconOpt Path">
-			<Setter Property="Fill" Value="{DynamicResource TextPrimaryBrush}"/>
 		</Style>
 
 		<Style Selector="TextBlock.fieldLabel">
@@ -82,13 +80,11 @@
 					        FontSize="14" Padding="6,2"/>
 				</Grid>
 
-				<!-- Превью: значок в цвете + имя, как метка будет выглядеть -->
+				<!-- Превью: значок и имя, как метка будет выглядеть. Рисуется
+				     тем же контролом, что и значок на карточке, поэтому
+				     показывает ровно то, что получится. -->
 				<StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-					<Border Width="22" Height="22" CornerRadius="11"
-					        Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
-						<Path Data="{Binding Icon, Converter={x:Static conv:LabelIconToGeometryConverter.Instance}}"
-						      Fill="White" Stretch="Uniform" Margin="5"/>
-					</Border>
+					<controls:CharacterLabelIcon Label="{Binding Preview}" IconSize="22"/>
 					<TextBlock Text="{Binding Name}"
 					           FontSize="13" FontWeight="Medium"
 					           VerticalAlignment="Center"
@@ -114,9 +110,10 @@
 								        Classes.selected="{Binding IsSelected}"
 								        Margin="0,0,6,6"
 								        Click="OnIconClick">
-									<Path Data="{Binding Key, Converter={x:Static conv:LabelIconToGeometryConverter.Instance}}"
-									      Stretch="Uniform"
-									      Width="16" Height="16"/>
+									<!-- Тот же контрол, что рисует метку на карточке:
+									     иначе значок в наборе и значок на карточке
+									     снова разъедутся, как это уже было. -->
+									<controls:CharacterLabelIcon Label="{Binding Sample}" IconSize="16"/>
 								</Button>
 							</DataTemplate>
 						</ItemsControl.ItemTemplate>
@@ -134,8 +131,7 @@
 						        BorderBrush="{DynamicResource AccentDefaultBrush}"
 						        BorderThickness="2"
 						        IsVisible="{Binding HasCustomIcon}">
-							<Image Source="{Binding IconImage, Converter={x:Static conv:LabelIconToImageConverter.Instance}}"
-							       Stretch="UniformToFill"/>
+							<controls:CharacterLabelIcon Label="{Binding Preview}" IconSize="30"/>
 						</Border>
 
 						<Button Content="Своя картинка"
@@ -154,14 +150,41 @@
 				</StackPanel>
 
 				<StackPanel Spacing="4">
-					<TextBlock Classes="fieldLabel" Text="Цвет"/>
+					<!-- Два цвета врозь: кружком метка отличается от соседних,
+					     фигура остаётся читаемой на любом из них. Цвет фигуры
+					     красит и встроенное очертание, и одноцветный вектор;
+					     растровая картинка идёт как есть. -->
+					<TextBlock Classes="fieldLabel" Text="Цвет кружка"/>
 					<colorControls:ColorPickerButton Width="24" Height="24"
 					        HorizontalAlignment="Left"
+					        IsEnabled="{Binding ShowBackdrop}"
 					        HexColor="{Binding Color, Mode=TwoWay}"/>
 				</StackPanel>
 
+				<StackPanel Spacing="4">
+					<TextBlock Classes="fieldLabel" Text="Цвет фигуры"/>
+					<colorControls:ColorPickerButton Width="24" Height="24"
+					        HorizontalAlignment="Left"
+					        HexColor="{Binding IconColor, Mode=TwoWay}"/>
+				</StackPanel>
+
+				<!-- Без кружка остаётся одна фигура: так уместнее для готовых
+				     эмблем и гербов, которым круглая подложка только мешает. -->
+				<CheckBox IsChecked="{Binding ShowBackdrop, Mode=TwoWay}"
+				          Content="Кружок под значком"
+				          FontSize="12"
+				          Foreground="{DynamicResource TextPrimaryBrush}"/>
+
 				<CheckBox IsChecked="{Binding Dim, Mode=TwoWay}"
 				          Content="Затемнять карточку (как у метки «Мёртв»)"
+				          FontSize="12"
+				          Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+				<!-- Правка по умолчанию личная. Галка делает вид общим: он
+				     уходит в реестр проекта и разносится по всем персонажам с
+				     этой же меткой. -->
+				<CheckBox IsChecked="{Binding ApplyToAll, Mode=TwoWay}"
+				          Content="Общая метка — применить ко всем персонажам"
 				          FontSize="12"
 				          Foreground="{DynamicResource TextPrimaryBrush}"/>
 

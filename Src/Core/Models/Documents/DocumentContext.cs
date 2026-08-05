@@ -60,6 +60,22 @@ namespace Writersword.Core.Services
         }
 
         /// <summary>
+        /// Сбросить накопленные изменения хранилища на диск.
+        /// Нужен после записи данных, потеря которых недопустима: в RELEASE архив
+        /// проекта держится открытым и до сброса живёт только в памяти.
+        /// </summary>
+        public void FlushStorage()
+        {
+            if (FileStorage == null)
+            {
+                _logger.LogWarning("FileStorage is null, cannot flush");
+                return;
+            }
+
+            FileStorage.Flush();
+        }
+
+        /// <summary>
         /// Прочитать файл из проекта (удобный метод для модулей)
         /// </summary>
         /// <param name="relativePath">Относительный путь</param>

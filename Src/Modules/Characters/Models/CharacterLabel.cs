@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace Writersword.Modules.Characters.Models
@@ -44,7 +44,30 @@ namespace Writersword.Modules.Characters.Models
 
         public bool HasCustomIcon => !string.IsNullOrWhiteSpace(IconImage);
 
+        /// <summary>
+        /// Цвет кружка-подложки под фигурой. Поддерживает и одноцвет, и
+        /// градиент — тем же разбором, что цвет персонажа.
+        /// </summary>
         public string Color { get; set; } = "#607D8B";
+
+        /// <summary>
+        /// Цвет самой фигуры: встроенной либо одноцветной картинки формата
+        /// SVG. Растровая картинка идёт как есть — перекрашивать чужой герб
+        /// или фотографию программа не берётся.
+        ///
+        /// Пусто означает белый. Именно пусто, а не записанный белый: белая
+        /// фигура на цветном кружке — вид по умолчанию, и он не должен
+        /// зависеть от того, открывал пользователь редактор цвета или нет.
+        /// </summary>
+        public string? IconColor { get; set; }
+
+        /// <summary>
+        /// Рисовать кружок под фигурой. Без него остаётся одна фигура: так
+        /// уместнее для готовых эмблем и гербов, которым круглая подложка
+        /// только мешает.
+        /// </summary>
+        public bool ShowBackdrop { get; set; } = true;
+
         public CharacterLabelEffect Effect { get; set; } = CharacterLabelEffect.None;
 
         /// <summary>Показывать значок метки на карточке в списках. Метки с
@@ -99,6 +122,13 @@ namespace Writersword.Modules.Characters.Models
         public const string BuiltInPrefix = "builtin.";
         public const string DeadId = "builtin.dead";
 
+        /// <summary>Прежний цвет «Мёртв», когда цвет красил кружок.</summary>
+        private const string LegacyDeadColor = "#B71C1C";
+
+        /// <summary>Вид «Мёртв»: красный череп на почти чёрном кружке.</summary>
+        public const string DeadBackdropColor = "#1A1012";
+        public const string DeadIconColor = "#FF5252";
+
         /// <summary>Создать экземпляр метки «Мёртв». Имя передаётся снаружи —
         /// модель не тянет ресурсы локализации.</summary>
         public static CharacterLabel CreateDead(string localizedName) => new()
@@ -106,7 +136,8 @@ namespace Writersword.Modules.Characters.Models
             Id = DeadId,
             Name = localizedName,
             Icon = CharacterLabelIcons.Skull,
-            Color = "#B71C1C",
+            Color = DeadBackdropColor,
+            IconColor = DeadIconColor,
             Effect = CharacterLabelEffect.Dim,
             ShowOnCard = true,
             Order = -1
@@ -124,6 +155,17 @@ namespace Writersword.Modules.Characters.Models
             if (label == null) return;
             if (label.Id != DeadId) return;
             if (label.Icon == CharacterLabelIcons.Cross) label.Icon = CharacterLabelIcons.Skull;
+
+            // Цвет метки раньше красил кружок, а фигура была жёстко белой.
+            // Теперь цвет фигуры — отдельное поле, и у «Мёртв» это красный
+            // череп на почти чёрном кружке. Переносится только нетронутое
+            // значение по умолчанию: свой подобранный цвет остаётся как есть.
+            if (string.IsNullOrWhiteSpace(label.IconColor) &&
+                string.Equals(label.Color, LegacyDeadColor, StringComparison.OrdinalIgnoreCase))
+            {
+                label.Color = DeadBackdropColor;
+                label.IconColor = DeadIconColor;
+            }
         }
     }
 }

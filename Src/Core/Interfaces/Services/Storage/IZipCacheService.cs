@@ -62,9 +62,16 @@ namespace Writersword.Core.Interfaces.Services
         object? GetModuleCustomData(string projectPath, string moduleType);
 
         /// <summary>
-        /// Удалить кеш проекта
+        /// Удалить кеш проекта вместе с резервной копией
         /// </summary>
         void DeleteCache(string projectPath);
+
+        /// <summary>
+        /// Убрать основной файл кеша, сохранив его как резервную копию.
+        /// Для мест, где кеш должен временно исчезнуть из виду (переключение
+        /// воркмода), но точка восстановления обязана пережить аварию.
+        /// </summary>
+        void MoveCacheToBackup(string projectPath);
 
         /// <summary>
         /// Прочитать ModulesData из project.json без эксклюзивной блокировки файла

@@ -151,6 +151,45 @@ namespace Writersword.Infrastructure.Services.Storage
         }
 
         /// <summary>
+        /// Сбросить накопленные изменения на диск.
+        /// ZipArchive в режиме Update пишет файл только при закрытии, поэтому
+        /// сброс = закрыть архив и открыть заново. В DEBUG архив и так закрывается
+        /// после каждой операции — там метод ничего не делает.
+        /// </summary>
+#pragma warning disable CS0162 // Недостижимый код (ожидается в DEBUG/RELEASE режимах)
+        public void Flush()
+        {
+            if (_isDisposed) return;
+
+            lock (_sync)
+            {
+                if (_archive == null) return;
+
+                using var fileGate = ProjectFileLock.Acquire(_zipFilePath);
+                try
+                {
+                    _archive.Dispose();
+                    _archive = null;
+
+                    if (KeepArchiveOpen)
+                        OpenArchive(ZipArchiveMode.Update);
+
+                    _logger.LogDebug("Archive flushed to disk: {FilePath}", _zipFilePath);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Flush error");
+
+                    // Архив закрыт, а открыть заново не вышло — попытка восстановить
+                    // рабочее состояние, иначе дальнейшие записи уйдут в никуда.
+                    try { if (KeepArchiveOpen && _archive == null) OpenArchive(ZipArchiveMode.Update); }
+                    catch (Exception reopenEx) { _logger.LogError(reopenEx, "Archive reopen after flush failed"); }
+                }
+            }
+        }
+#pragma warning restore CS0162
+
+        /// <summary>
         /// Прочитать файл из ZIP
         /// DEBUG: Открывает ZIP → читает → закрывает
         /// RELEASE: Читает из уже открытого ZIP

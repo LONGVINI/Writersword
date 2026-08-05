@@ -78,6 +78,31 @@ namespace Writersword.Modules.TextEditor.Document
             // scrollYInPts нужен только для DrawCaret (рисуется в координатах документа).
             float scrollYInPts = scale > 0f ? scrollY / scale : 0f;
 
+            // Фоновая подложка-скелет: серый фон холста и пустые белые листы на всю видимую
+            // область. Рисуется до всех веток (кэш-блит и полный рендер), поэтому при быстром
+            // скролле, когда контентный снимок не успевает за компоновочным сдвигом ScrollViewer,
+            // под открывшейся областью уже лежат белые листы, а не прозрачность с фоном
+            // ScrollViewer. Контентный снимок кладётся поверх и перекрывает скелет там, где
+            // текст и картинки уже готовы.
+            {
+                var skeletonMode = DocVm?.ViewMode ?? EditorViewMode.Draft;
+                canvas.Save();
+                canvas.Scale(scale, scale);
+                if (skeletonMode == EditorViewMode.Page)
+                {
+                    RenderPageSkeleton(canvas, pages, canvasHeightPt, canvasWidth);
+                }
+                else
+                {
+                    double zBg = Math.Max(Zoom, 0.01);
+                    float bgWPt = (float)(Bounds.Width / (PtToPx * zBg)) + 2f;
+                    float bgHPt = Math.Max(canvasHeightPt,
+                        (float)(Bounds.Height / (PtToPx * zBg))) + 2f;
+                    canvas.DrawRect(0, 0, bgWPt, bgHPt, _paintCanvasBg);
+                }
+                canvas.Restore();
+            }
+
             if (_caretOnlyRedraw && !_contentDirty)
             {
                 // Проверка валидности и DrawImage выполняются ПОД ОДНИМ локом:
@@ -430,6 +455,72 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
+        // Рисует «скелет» страниц (серый фон холста + белые листы с тенью) прямо в
+        // lease-канвас как фоновую подложку под контентным битмапом. При быстром скролле
+        // полоса overscan не успевает за компоновочным сдвигом ScrollViewer, и в открывшейся
+        // области раньше просвечивал фон ScrollViewer (коричневое). Скелет закрывает всю
+        // видимую площадь пустыми белыми листами на нейтральном сером фоне — глаз не режет,
+        // а реальный текст и картинки дорисовываются поверх из контентного снимка.
+        // Отрисовка ограничена диапазоном ±3 вьюпорта вокруг прокрутки, чтобы на больших
+        // документах не перебирать все страницы на каждом кадре.
+        private void RenderPageSkeleton(
+            SKCanvas canvas,
+            List<PageRect> pages,
+            float canvasHeightPt,
+            double canvasWidth)
+        {
+            float canvasWPt = (float)(canvasWidth * PxToPt);
+
+            double z = Math.Max(Zoom, 0.01);
+            float boundsWPt = (float)(Bounds.Width / (PtToPx * z));
+            float boundsHPt = (float)(Bounds.Height / (PtToPx * z));
+            float bgWPt = Math.Max(canvasWPt, boundsWPt) + 2f;
+            float bgHPt = Math.Max(canvasHeightPt, boundsHPt) + 2f;
+
+            canvas.DrawRect(0, 0, bgWPt, bgHPt, _paintCanvasBg);
+
+            if (pages is null || pages.Count == 0) return;
+
+            float scale = (float)(PtToPx * z);
+            float scrollTopPt = scale > 0f ? (float)_scrollOffsetY / scale : 0f;
+            float viewPt = scale > 0f
+                ? (float)(_viewportHeight > 0 ? _viewportHeight : Bounds.Height) / scale
+                : 0f;
+            float margin = viewPt * 3f;
+            float loPt = scrollTopPt - margin;
+            float hiPt = scrollTopPt + viewPt + margin;
+
+            float curPageXPt = Math.Max((canvasWPt - GetPageWidthPt()) / 2f, 0f);
+            float pageXShiftPt = curPageXPt - _layoutPageXPt;
+
+            if (_pagesPerRow <= 1)
+            {
+                canvas.Save();
+                if (MathF.Abs(pageXShiftPt) > 0.01f)
+                    canvas.Translate(pageXShiftPt, 0);
+                for (int pi = 0; pi < pages.Count; pi++)
+                {
+                    var page = pages[pi];
+                    if (page.Ypt + page.HeightPt < loPt || page.Ypt > hiPt) continue;
+                    canvas.DrawRect(page.PadLeftPt + 3, page.Ypt + 3, page.WidthPt, page.HeightPt, _paintPageShadow);
+                    canvas.DrawRect(page.PadLeftPt, page.Ypt, page.WidthPt, page.HeightPt, _paintPageWhite);
+                }
+                canvas.Restore();
+                return;
+            }
+
+            for (int pi = 0; pi < pages.Count; pi++)
+            {
+                var page = pages[pi];
+                var (dxp, dyp) = PageVisualDelta(pi, pages);
+                float visX = page.PadLeftPt + dxp;
+                float visY = page.Ypt + dyp;
+                if (visY + page.HeightPt < loPt || visY > hiPt) continue;
+                canvas.DrawRect(visX + 3, visY + 3, page.WidthPt, page.HeightPt, _paintPageShadow);
+                canvas.DrawRect(visX, visY, page.WidthPt, page.HeightPt, _paintPageWhite);
+            }
+        }
+
         private void RenderPageMode(
             SKCanvas canvas,
             List<ParaLayout> layouts,
@@ -484,6 +575,21 @@ namespace Writersword.Modules.TextEditor.Document
             // Страницы рядом: контент каждой страницы переносится на её визуальную
             // позицию (клип по листу с запасом + трансляция). Логические координаты
             // раскладки не меняются — весь режим живёт только в отображении.
+            //
+            // Листы рисуются все сразу, отдельным проходом до контента: контент страницы
+            // может выходить за её пределы (картинка мимо листа), и белый лист соседа,
+            // нарисованный позже, закрасил бы уже нарисованное поверх него.
+            for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
+            {
+                var bgPage = pages[pi];
+                var (bgDx, bgDy) = PageVisualDelta(pi, pages);
+                float bgX = bgPage.PadLeftPt + bgDx;
+                float bgY = bgPage.Ypt + bgDy;
+
+                canvas.DrawRect(bgX + 3, bgY + 3, bgPage.WidthPt, bgPage.HeightPt, _paintPageShadow);
+                canvas.DrawRect(bgX, bgY, bgPage.WidthPt, bgPage.HeightPt, _paintPageWhite);
+            }
+
             for (int pi = firstPage; pi <= lastPage && pi < pages.Count; pi++)
             {
                 var page = pages[pi];
@@ -491,13 +597,45 @@ namespace Writersword.Modules.TextEditor.Document
                 float visX = page.PadLeftPt + dxp;
                 float visY = page.Ypt + dyp;
 
-                canvas.DrawRect(visX + 3, visY + 3, page.WidthPt, page.HeightPt, _paintPageShadow);
-                canvas.DrawRect(visX, visY, page.WidthPt, page.HeightPt, _paintPageWhite);
+                var pageClipRect = new SKRect(
+                    visX - PageGapPt, visY - PageGapPt,
+                    visX + page.WidthPt + PageGapPt, visY + page.HeightPt + PageGapPt);
+
+                // Картинка, промахнувшаяся мимо своего листа, рисуется целиком, бледной и
+                // заштрихованной: объект в документе есть, и его должно быть видно, чтобы
+                // выделить и вернуть. В одностраничном виде так и происходит, а здесь её
+                // резал клип листа — на экране оставалась полоска шириной в межстраничный
+                // зазор. Клип расширяется до габарита таких картинок вместе с их рамкой
+                // выделения и ручками.
+                foreach (var ie in images)
+                {
+                    if (ie.InLine || ie.PageIndex != pi) continue;
+                    if (ie.Block.WrapMode == WrapMode.Inline) continue;
+                    if (!IsImageOffItsPage(ie, page)) continue;
+
+                    double offRad = ie.Block.RotationDeg * Math.PI / 180.0;
+                    float offCos = (float)Math.Abs(Math.Cos(offRad));
+                    float offSin = (float)Math.Abs(Math.Sin(offRad));
+                    float offBoxW = ie.WidthPt * offCos + ie.HeightPt * offSin;
+                    float offBoxH = ie.WidthPt * offSin + ie.HeightPt * offCos;
+                    float offCx = ie.XPt + ie.WidthPt / 2f + dxp;
+                    float offCy = ie.Ypt + ie.HeightPt / 2f + dyp;
+
+                    // Запас на рамку выделения и ручки размера по краям габарита.
+                    const float OffPageClipPadPt = 12f;
+                    float offLeft = offCx - offBoxW / 2f - OffPageClipPadPt;
+                    float offTop = offCy - offBoxH / 2f - OffPageClipPadPt;
+                    float offRight = offCx + offBoxW / 2f + OffPageClipPadPt;
+                    float offBottom = offCy + offBoxH / 2f + OffPageClipPadPt;
+
+                    if (offLeft < pageClipRect.Left) pageClipRect.Left = offLeft;
+                    if (offTop < pageClipRect.Top) pageClipRect.Top = offTop;
+                    if (offRight > pageClipRect.Right) pageClipRect.Right = offRight;
+                    if (offBottom > pageClipRect.Bottom) pageClipRect.Bottom = offBottom;
+                }
 
                 canvas.Save();
-                canvas.ClipRect(new SKRect(
-                    visX - PageGapPt, visY - PageGapPt,
-                    visX + page.WidthPt + PageGapPt, visY + page.HeightPt + PageGapPt));
+                canvas.ClipRect(pageClipRect);
                 canvas.Translate(dxp, dyp);
                 RenderPageContent(canvas, layouts, pages, tables, images, pi, pi, drawCaret);
                 canvas.Restore();
@@ -517,11 +655,19 @@ namespace Writersword.Modules.TextEditor.Document
             int lastPage,
             bool drawCaret)
         {
+            // Отрисовка встроенных в строку картинок: рендер текста статический и
+            // общий для всех канвасов, поэтому обработчик ставится перед каждым
+            // проходом — он замкнут на документ именно этого канваса.
+            SKTextRenderer.DrawInlineObject = DrawInlineImageSegment;
+
             // Изображения-блоки (рисуются поверх белого листа, в координатах в пунктах).
             // Картинки за текстом (Behind) и блок-картинки (Inline) — рисуются до текста.
             foreach (var ie in images)
             {
                 if (ie.PageIndex < firstPage || ie.PageIndex > lastPage) continue;
+                // Картинку в строке рисует рендер текста на своём месте в строке —
+                // здесь она была бы нарисована второй раз, поверх текста.
+                if (ie.InLine) continue;
                 var wm = ie.Block.WrapMode;
                 if (wm == WrapMode.InFront || wm == WrapMode.Square || wm == WrapMode.Tight) continue;
                 var skImg = GetImageBitmap(ie.Block.ImageFileName);
@@ -529,7 +675,19 @@ namespace Writersword.Modules.TextEditor.Document
                 // Клип по прямоугольнику своей страницы: часть картинки за пределами
                 // листа (в межстраничном зазоре или за краем) обрезается. Предпросмотр
                 // переполнения не клипуем — серая часть под листом должна быть видна.
+                // Клип работает и во время перетаскивания: по обрезу краем листа сразу
+                // видно, какой странице картинка принадлежит и когда она на неё перешла.
+                // Без этого страницу приходилось угадывать и узнавать только на отпускании.
+                //
+                // Снимается он только для картинки, целиком ушедшей мимо своего листа:
+                // клип спрятал бы её полностью — объект в документе есть, а на экране
+                // его нет, ни найти, ни выделить, ни вернуть. Такая рисуется бледной
+                // и заштрихованной.
+                bool imgOffPage = ie.PageIndex < pages.Count
+                    && IsImageOffItsPage(ie, pages[ie.PageIndex]);
+
                 bool imgClip = ie.PageIndex < pages.Count
+                    && !imgOffPage
                     && !(_imageOverflowPreviewMode
                          && ReferenceEquals(ie.Block, _imageOverflowPreviewBlock));
                 if (imgClip)
@@ -559,7 +717,8 @@ namespace Writersword.Modules.TextEditor.Document
                     ? _paintImageDrawOverflow
                     : _paintImageDraw;
                 // Непрозрачность картинки: альфа paint-а модулирует пиксели при отрисовке.
-                byte imgAlpha = (byte)Math.Clamp(ie.Block.Opacity * 255.0, 0.0, 255.0);
+                double imgOpacity = imgOffPage ? ie.Block.Opacity * 0.45 : ie.Block.Opacity;
+                byte imgAlpha = (byte)Math.Clamp(imgOpacity * 255.0, 0.0, 255.0);
                 _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, imgAlpha);
                 var imgRect = new SKRect(ie.XPt, ie.Ypt, ie.XPt + ie.WidthPt, ie.Ypt + ie.HeightPt);
                 // Кадрирование: рисуется только видимая часть исходного изображения.
@@ -584,6 +743,18 @@ namespace Writersword.Modules.TextEditor.Document
                     _paintImageBorderDraw.StrokeWidth = (float)ie.Block.BorderThicknessPt;
                     canvas.DrawRect(imgRect, _paintImageBorderDraw);
                 }
+
+                // Картинка попала в текстовое выделение — заливаем той же кистью, что и текст.
+                // Иначе выделение «проходит сквозь» картинку: пользователь не видит, что она
+                // тоже будет скопирована и удалена.
+                if (_imagesInTextSelection.Contains(ie.Block))
+                    canvas.DrawRect(imgRect, _paintSelection);
+
+                // Картинка целиком мимо своего листа: она ничего не делает и не печатается.
+                // Помечаем красной штриховкой поверх бледной картинки — видно, что объект
+                // есть и где он лежит, но что он вне страницы.
+                if (imgOffPage) DrawOffPageHatch(canvas, imgRect);
+
                 if (hasXform) canvas.Restore();
                 if (imgClip) canvas.Restore();
             }
@@ -649,6 +820,7 @@ namespace Writersword.Modules.TextEditor.Document
             foreach (var ie in images)
             {
                 if (ie.PageIndex < firstPage || ie.PageIndex > lastPage) continue;
+                if (ie.InLine) continue;
                 var wm = ie.Block.WrapMode;
                 if (wm != WrapMode.InFront && wm != WrapMode.Square && wm != WrapMode.Tight) continue;
                 var skImg = GetImageBitmap(ie.Block.ImageFileName);
@@ -656,7 +828,19 @@ namespace Writersword.Modules.TextEditor.Document
                 // Клип по прямоугольнику своей страницы: часть картинки за пределами
                 // листа (в межстраничном зазоре или за краем) обрезается. Предпросмотр
                 // переполнения не клипуем — серая часть под листом должна быть видна.
+                // Клип работает и во время перетаскивания: по обрезу краем листа сразу
+                // видно, какой странице картинка принадлежит и когда она на неё перешла.
+                // Без этого страницу приходилось угадывать и узнавать только на отпускании.
+                //
+                // Снимается он только для картинки, целиком ушедшей мимо своего листа:
+                // клип спрятал бы её полностью — объект в документе есть, а на экране
+                // его нет, ни найти, ни выделить, ни вернуть. Такая рисуется бледной
+                // и заштрихованной.
+                bool imgOffPage = ie.PageIndex < pages.Count
+                    && IsImageOffItsPage(ie, pages[ie.PageIndex]);
+
                 bool imgClip = ie.PageIndex < pages.Count
+                    && !imgOffPage
                     && !(_imageOverflowPreviewMode
                          && ReferenceEquals(ie.Block, _imageOverflowPreviewBlock));
                 if (imgClip)
@@ -686,7 +870,8 @@ namespace Writersword.Modules.TextEditor.Document
                     ? _paintImageDrawOverflow
                     : _paintImageDraw;
                 // Непрозрачность картинки: альфа paint-а модулирует пиксели при отрисовке.
-                byte imgAlpha = (byte)Math.Clamp(ie.Block.Opacity * 255.0, 0.0, 255.0);
+                double imgOpacity = imgOffPage ? ie.Block.Opacity * 0.45 : ie.Block.Opacity;
+                byte imgAlpha = (byte)Math.Clamp(imgOpacity * 255.0, 0.0, 255.0);
                 _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, imgAlpha);
                 var imgRect = new SKRect(ie.XPt, ie.Ypt, ie.XPt + ie.WidthPt, ie.Ypt + ie.HeightPt);
                 // Кадрирование: рисуется только видимая часть исходного изображения.
@@ -711,12 +896,83 @@ namespace Writersword.Modules.TextEditor.Document
                     _paintImageBorderDraw.StrokeWidth = (float)ie.Block.BorderThicknessPt;
                     canvas.DrawRect(imgRect, _paintImageBorderDraw);
                 }
+
+                // Картинка попала в текстовое выделение — заливаем той же кистью, что и текст.
+                // Иначе выделение «проходит сквозь» картинку: пользователь не видит, что она
+                // тоже будет скопирована и удалена.
+                if (_imagesInTextSelection.Contains(ie.Block))
+                    canvas.DrawRect(imgRect, _paintSelection);
+
+                // Картинка целиком мимо своего листа: она ничего не делает и не печатается.
+                // Помечаем красной штриховкой поверх бледной картинки — видно, что объект
+                // есть и где он лежит, но что он вне страницы.
+                if (imgOffPage) DrawOffPageHatch(canvas, imgRect);
+
                 if (hasXform) canvas.Restore();
                 if (imgClip) canvas.Restore();
             }
 
+            // Предпросмотр обрезки — поверх всего: исходная картинка целиком,
+            // срезаемые края затемнены, рамка кадрирования с маркерами. Картинка в
+            // документе при этом не тронута: срез применяется при выходе из режима.
+            if (_imageCropMode && _cropImage is not null)
+            {
+                foreach (var ie in images)
+                {
+                    if (!ReferenceEquals(ie.Block, _cropImage)) continue;
+                    if (ie.PageIndex < firstPage || ie.PageIndex > lastPage) continue;
+                    if (!TryGetCropRects(ie, out var fullRect, out var pendRect)) continue;
+
+                    float visCx = ie.XPt + ie.WidthPt / 2f;
+                    float visCy = ie.Ypt + ie.HeightPt / 2f;
+                    float cropRot = (float)ie.Block.RotationDeg;
+
+                    canvas.Save();
+                    if (cropRot != 0f) canvas.RotateDegrees(cropRot, visCx, visCy);
+                    if (ie.Block.FlipHorizontal || ie.Block.FlipVertical)
+                        canvas.Scale(
+                            ie.Block.FlipHorizontal ? -1f : 1f,
+                            ie.Block.FlipVertical ? -1f : 1f,
+                            visCx, visCy);
+
+                    var cropImg = GetImageBitmap(ie.Block.ImageFileName);
+                    if (cropImg is not null)
+                    {
+                        _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
+                        canvas.DrawImage(cropImg,
+                            new SKRect(0f, 0f, cropImg.Width, cropImg.Height),
+                            fullRect, _imageSampling, _paintImageDraw);
+                    }
+
+                    // Затемняем то, что уйдёт под нож.
+                    if (pendRect.Top > fullRect.Top)
+                        canvas.DrawRect(new SKRect(fullRect.Left, fullRect.Top, fullRect.Right, pendRect.Top), _paintCropDim);
+                    if (pendRect.Bottom < fullRect.Bottom)
+                        canvas.DrawRect(new SKRect(fullRect.Left, pendRect.Bottom, fullRect.Right, fullRect.Bottom), _paintCropDim);
+                    if (pendRect.Left > fullRect.Left)
+                        canvas.DrawRect(new SKRect(fullRect.Left, pendRect.Top, pendRect.Left, pendRect.Bottom), _paintCropDim);
+                    if (pendRect.Right < fullRect.Right)
+                        canvas.DrawRect(new SKRect(pendRect.Right, pendRect.Top, fullRect.Right, pendRect.Bottom), _paintCropDim);
+
+                    canvas.DrawRect(fullRect, _paintCropOutline);
+                    canvas.DrawRect(pendRect, _paintImageSelection);
+
+                    float pcx = (pendRect.Left + pendRect.Right) / 2f;
+                    float pcy = (pendRect.Top + pendRect.Bottom) / 2f;
+                    DrawImageHandle(canvas, pendRect.Left, pendRect.Top);
+                    DrawImageHandle(canvas, pendRect.Right, pendRect.Top);
+                    DrawImageHandle(canvas, pendRect.Right, pendRect.Bottom);
+                    DrawImageHandle(canvas, pendRect.Left, pendRect.Bottom);
+                    DrawImageHandle(canvas, pcx, pendRect.Top);
+                    DrawImageHandle(canvas, pendRect.Right, pcy);
+                    DrawImageHandle(canvas, pcx, pendRect.Bottom);
+                    DrawImageHandle(canvas, pendRect.Left, pcy);
+
+                    canvas.Restore();
+                }
+            }
             // Рамка выделенной картинки — поверх всего.
-            if (_selectedImage is not null)
+            else if (_selectedImage is not null)
             {
                 foreach (var ie in images)
                 {
@@ -762,6 +1018,224 @@ namespace Writersword.Modules.TextEditor.Document
             RenderCellFlowFull(canvas, tables);
         }
 
+        // Кисти предупреждения: картинка лежит мимо своего листа.
+        private static readonly SKPaint _paintOffPageHatch = new()
+        {
+            Color = new SKColor(0xE0, 0x30, 0x30, 0xE0),
+            StrokeWidth = 2f,
+            IsStroke = true,
+            IsAntialias = true
+        };
+
+        // Заливка поверх всего габарита: пометка должна читаться сразу и целиком,
+        // а не только по редким диагоналям.
+        private static readonly SKPaint _paintOffPageFill = new()
+        {
+            Color = new SKColor(0xE0, 0x30, 0x30, 0x38),
+            IsAntialias = true
+        };
+
+        /// <summary>Лежит ли картинка целиком за пределами своей страницы.</summary>
+        private static bool IsImageOffItsPage(ImageEntry ie, PageRect page)
+        {
+            float left = ie.XPt, right = ie.XPt + ie.WidthPt;
+            float top = ie.Ypt, bottom = ie.Ypt + ie.HeightPt;
+
+            float pageLeft = page.PadLeftPt, pageRight = page.PadLeftPt + page.WidthPt;
+            float pageTop = page.Ypt, pageBottom = page.Ypt + page.HeightPt;
+
+            return right <= pageLeft || left >= pageRight
+                || bottom <= pageTop || top >= pageBottom;
+        }
+
+        /// <summary>
+        /// Косая красная штриховка поверх габарита картинки — метка «объект мимо листа».
+        /// Рисуется всегда, независимо от выделения: пользователь должен видеть, что
+        /// картинка существует, но на страницу не попадает и ни на что не влияет.
+        /// </summary>
+        private static void DrawOffPageHatch(SKCanvas canvas, SKRect rect)
+        {
+            canvas.DrawRect(rect, _paintOffPageFill);
+            canvas.DrawRect(rect, _paintOffPageHatch);
+
+            const float StepPt = 9f;
+            float span = rect.Width + rect.Height;
+            for (float offset = 0f; offset < span; offset += StepPt)
+            {
+                float x0 = rect.Left + offset;
+                float y0 = rect.Top;
+                float x1 = rect.Left;
+                float y1 = rect.Top + offset;
+
+                // Обрезаем диагональ по прямоугольнику картинки.
+                if (x0 > rect.Right)
+                {
+                    y0 += x0 - rect.Right;
+                    x0 = rect.Right;
+                }
+                if (y1 > rect.Bottom)
+                {
+                    x1 += y1 - rect.Bottom;
+                    y1 = rect.Bottom;
+                }
+                if (y0 > rect.Bottom || x1 > rect.Right) continue;
+
+                canvas.DrawLine(x0, y0, x1, y1, _paintOffPageHatch);
+            }
+        }
+
+        /// <summary>
+        /// Рисует картинку, встроенную в строку текста. Вызывается из рендера
+        /// абзаца через SKTextRenderer.DrawInlineObject: сегмент знает только Id
+        /// и габарит, всё остальное берётся из самой картинки.
+        /// segX — левый край сегмента, baseY — базовая линия строки: картинка
+        /// стоит на ней, как крупный глиф.
+        /// </summary>
+        private void DrawInlineImageSegment(SKCanvas canvas, SKRunSegment seg, float segX, float baseY)
+        {
+            if (seg.InlineImageId is not Guid id) return;
+
+            var block = FindInlineImage(id);
+            if (block is null) return;
+
+            var skImg = GetImageBitmap(block.ImageFileName);
+            if (skImg is null) return;
+
+            // Бокс сегмента — это AABB повёрнутой картинки; сама картинка
+            // центрируется в нём, как и в потоке блоков.
+            float boxW = seg.ObjectWidthPt;
+            float boxH = seg.ObjectHeightPt;
+            float imgW = (float)block.WidthPt;
+            float imgH = (float)block.HeightPt;
+
+            float left = segX + (boxW - imgW) / 2f;
+            float top = baseY - boxH + (boxH - imgH) / 2f;
+
+            float cx = segX + boxW / 2f;
+            float cy = baseY - boxH / 2f;
+
+            float rotDeg = (float)block.RotationDeg;
+            bool hasXform = rotDeg != 0f || block.FlipHorizontal || block.FlipVertical;
+
+            canvas.Save();
+
+            // Обрезка по своему листу. Плавающие картинки клипует проход по списку
+            // картинок, а эту рисует рендер текста — он про страницы ничего не знает,
+            // и без клипа картинка, вылезшая за край страницы, продолжает рисоваться
+            // по серому фону и залезает в межстраничный зазор.
+            //
+            // Страницу ищем по НАИБОЛЬШЕМУ перекрытию с габаритом картинки, а не по
+            // базовой линии: у высокой строки на стыке страниц базовая линия попадает
+            // в межстраничный зазор, где страницы нет вообще — поиск не находил ничего
+            // и клип не ставился совсем. Если перекрытия нет ни с одной страницей,
+            // берём ближайшую: клип должен стоять всегда.
+            if (DocVm?.ViewMode == EditorViewMode.Page)
+            {
+                List<PageRect> clipPages;
+                lock (_renderLock) { clipPages = _pages; }
+
+                float imgTopY = baseY - boxH;
+                float imgCenterY = baseY - boxH / 2f;
+
+                int bestPage = -1;
+                float bestOverlap = 0f;
+                float bestDistance = float.MaxValue;
+
+                for (int p = 0; p < clipPages.Count; p++)
+                {
+                    float pageTop = clipPages[p].Ypt;
+                    float pageBottom = pageTop + clipPages[p].HeightPt;
+
+                    float overlap = Math.Min(baseY, pageBottom) - Math.Max(imgTopY, pageTop);
+                    if (overlap > bestOverlap)
+                    {
+                        bestOverlap = overlap;
+                        bestPage = p;
+                        continue;
+                    }
+                    if (bestOverlap > 0f) continue;
+
+                    float distance = imgCenterY < pageTop ? pageTop - imgCenterY
+                                   : imgCenterY > pageBottom ? imgCenterY - pageBottom
+                                   : 0f;
+                    if (distance < bestDistance)
+                    {
+                        bestDistance = distance;
+                        bestPage = p;
+                    }
+                }
+
+                if (bestPage >= 0)
+                {
+                    var pg = clipPages[bestPage];
+                    canvas.ClipRect(new SKRect(
+                        pg.PadLeftPt, pg.Ypt,
+                        pg.PadLeftPt + pg.WidthPt, pg.Ypt + pg.HeightPt));
+                }
+            }
+            if (hasXform)
+            {
+                if (rotDeg != 0f) canvas.RotateDegrees(rotDeg, cx, cy);
+                if (block.FlipHorizontal || block.FlipVertical)
+                    canvas.Scale(
+                        block.FlipHorizontal ? -1f : 1f,
+                        block.FlipVertical ? -1f : 1f,
+                        cx, cy);
+            }
+
+            byte imgAlpha = (byte)Math.Clamp(block.Opacity * 255.0, 0.0, 255.0);
+            _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, imgAlpha);
+
+            var dst = new SKRect(left, top, left + imgW, top + imgH);
+
+            float srcW = skImg.Width;
+            float srcH = skImg.Height;
+            var src = new SKRect(
+                srcW * (float)Math.Clamp(block.CropLeftFrac, 0.0, 0.95),
+                srcH * (float)Math.Clamp(block.CropTopFrac, 0.0, 0.95),
+                srcW * (float)(1.0 - Math.Clamp(block.CropRightFrac, 0.0, 0.95)),
+                srcH * (float)(1.0 - Math.Clamp(block.CropBottomFrac, 0.0, 0.95)));
+            if (src.Right <= src.Left + 1f) src.Right = src.Left + 1f;
+            if (src.Bottom <= src.Top + 1f) src.Bottom = src.Top + 1f;
+
+            canvas.DrawImage(skImg, src, dst, _imageSampling, _paintImageDraw);
+            _paintImageDraw.Color = new SKColor(0xFF, 0xFF, 0xFF, 0xFF);
+
+            if (block.BorderThicknessPt > 0.0
+                && !string.IsNullOrEmpty(block.BorderColor)
+                && SKColor.TryParse(block.BorderColor, out var borderColor)
+                && borderColor.Alpha > 0)
+            {
+                _paintImageBorderDraw.Color =
+                    borderColor.WithAlpha((byte)(borderColor.Alpha * imgAlpha / 255));
+                _paintImageBorderDraw.StrokeWidth = (float)block.BorderThicknessPt;
+                canvas.DrawRect(dst, _paintImageBorderDraw);
+            }
+
+            // Выделенная картинка в строке: в режиме разметки рамку, маркеры размера,
+            // поворота и обрезки рисует общий проход по списку картинок — он полнее.
+            // В потоковом и черновом режимах того прохода нет, поэтому простую рамку
+            // с маркерами рисуем здесь.
+            if (ReferenceEquals(block, _selectedImage)
+                && (DocVm?.ViewMode ?? EditorViewMode.Draft) != EditorViewMode.Page)
+            {
+                canvas.DrawRect(dst, _paintImageSelection);
+
+                float mx = (dst.Left + dst.Right) / 2f;
+                float my = (dst.Top + dst.Bottom) / 2f;
+                DrawImageHandle(canvas, dst.Left, dst.Top);
+                DrawImageHandle(canvas, dst.Right, dst.Top);
+                DrawImageHandle(canvas, dst.Right, dst.Bottom);
+                DrawImageHandle(canvas, dst.Left, dst.Bottom);
+                DrawImageHandle(canvas, mx, dst.Top);
+                DrawImageHandle(canvas, dst.Right, my);
+                DrawImageHandle(canvas, mx, dst.Bottom);
+                DrawImageHandle(canvas, dst.Left, my);
+            }
+
+            canvas.Restore();
+        }
+
         // Рисует один квадратный маркер изменения размера (белая заливка, оранжевая рамка).
         // В режиме обрезки маркеры заливаются акцентным цветом — видно смену режима.
         private void DrawImageHandle(SKCanvas canvas, float cxPt, float cyPt)
@@ -804,26 +1278,56 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         // Загружает и кеширует декодированное изображение по имени файла внутри проекта.
+        // Декодирование выполняется в фоновой задаче: при промахе кеша метод сразу возвращает
+        // null, не блокируя render-поток чтением ZIP и SKImage.FromEncodedData. Готовое
+        // изображение попадает в кеш, после чего запрашивается перерисовка и картинка
+        // появляется на следующем кадре. За счёт этого при быстром скролле текст и лист
+        // рисуются мгновенно, а изображения подгружаются постепенно.
         private SKImage? GetImageBitmap(string fileName)
         {
             if (string.IsNullOrEmpty(fileName)) return null;
-            if (_imageCache.TryGetValue(fileName, out var cached)) return cached;
 
-            SKImage? img = null;
-            try
+            lock (_imageCacheLock)
             {
-                var ctx = Writersword.Core.Services.CoreServices
-                    .GetService<Writersword.Core.Interfaces.WorkFlows.ITabCollection>()?.ActiveTab?.Context;
-                var bytes = ctx?.ReadFile($"TextEditor/Images/{fileName}");
-                if (bytes is { Length: > 0 })
-                    img = SKImage.FromEncodedData(bytes);
+                if (_imageCache.TryGetValue(fileName, out var cached)) return cached;
+                if (_imageLoadsInFlight.Contains(fileName)) return null;
+                _imageLoadsInFlight.Add(fileName);
             }
-            catch { img = null; }
 
-            // Кешируем только удачную загрузку: если файл временно отсутствует
-            // (например, во время операции), при следующем кадре попробуем снова.
-            if (img is not null) _imageCache[fileName] = img;
-            return img;
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                SKImage? img = null;
+                try
+                {
+                    var ctx = Writersword.Core.Services.CoreServices
+                        .GetService<Writersword.Core.Interfaces.WorkFlows.ITabCollection>()?.ActiveTab?.Context;
+                    var bytes = ctx?.ReadFile($"TextEditor/Images/{fileName}");
+                    if (bytes is { Length: > 0 })
+                        img = SKImage.FromEncodedData(bytes);
+                }
+                catch { img = null; }
+
+                lock (_imageCacheLock)
+                {
+                    _imageLoadsInFlight.Remove(fileName);
+                    // Кешируем только удачную загрузку: если файл временно отсутствует
+                    // (например, во время операции), при следующем кадре попробуем снова.
+                    if (img is not null) _imageCache[fileName] = img;
+                }
+
+                if (img is not null)
+                {
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    {
+                        // Сбрасываем кеш-битмап, чтобы полный ре-рендер отрисовал
+                        // только что загруженное изображение, а не старый снимок.
+                        _contentDirty = true;
+                        InvalidateVisual();
+                    });
+                }
+            });
+
+            return null;
         }
 
         // Заливает целиком ячейки из _cellFlowFull (полностью попавшие в потоковое выделение).
@@ -881,6 +1385,11 @@ namespace Writersword.Modules.TextEditor.Document
             double canvasWidth,
             bool drawCaret)
         {
+            // Отрисовка встроенных в строку картинок: обработчик статический и общий для
+            // всех канвасов, поэтому ставится перед каждым проходом — он замкнут на
+            // документ именно этого канваса.
+            SKTextRenderer.DrawInlineObject = DrawInlineImageSegment;
+
             float canvasWPt = (float)(canvasWidth * PxToPt);
 
             canvas.DrawRect(0, 0, canvasWPt, canvasHeightPt, _paintTransparent);
@@ -919,6 +1428,28 @@ namespace Writersword.Modules.TextEditor.Document
             float absY = pl.Ypt;
 
             bool isCell = pl.Cell != null;
+
+            // Клип по своему листу на весь абзац: за краем страницы бумаги нет, и ничто
+            // из его содержимого туда попадать не должно. Раньше клип стоял только на
+            // плавающих картинках, и всё, что рисует рендер текста, — в первую очередь
+            // картинка в строке — спокойно вылезало за край и рисовалось по серому фону
+            // и по межстраничному зазору.
+            bool pageClip = false;
+            if (DocVm?.ViewMode == EditorViewMode.Page)
+            {
+                List<PageRect> clipPages;
+                lock (_renderLock) { clipPages = _pages; }
+
+                if (pl.PageIndex >= 0 && pl.PageIndex < clipPages.Count)
+                {
+                    var pg = clipPages[pl.PageIndex];
+                    canvas.Save();
+                    canvas.ClipRect(new SKRect(
+                        pg.PadLeftPt, pg.Ypt,
+                        pg.PadLeftPt + pg.WidthPt, pg.Ypt + pg.HeightPt));
+                    pageClip = true;
+                }
+            }
 
             if (isCell)
             {
@@ -967,6 +1498,9 @@ namespace Writersword.Modules.TextEditor.Document
                 DrawCaret(canvas, pl, absX, absY, renderLayout);
 
             if (isCell)
+                canvas.Restore();
+
+            if (pageClip)
                 canvas.Restore();
         }
 
@@ -1124,6 +1658,13 @@ namespace Writersword.Modules.TextEditor.Document
             // оставшихся на предыдущей странице.
             float yBase = pl.LineFrom < sl.Lines.Count ? sl.Lines[pl.LineFrom].Y : 0f;
 
+            // Строка, разорванная обтекаемым объектом, даёт НЕСКОЛЬКО прямоугольников —
+            // по одному на отрезок. Разбивка по «голубизне» ниже сама рисует все отрезки
+            // строки целиком, поэтому по второму прямоугольнику той же строки её нельзя
+            // рисовать повторно: полупрозрачная кисть в наложении даёт двойную заливку,
+            // и выделение рядом с картинкой выглядит темнее остального.
+            int drawnGroupLine = -1;
+
             foreach (var r in rects)
             {
                 if (r.LineIndex < pl.LineFrom || r.LineIndex >= pl.LineTo) continue;
@@ -1149,9 +1690,13 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     DrawSelectionRect(canvas, sl, r.LineIndex, r.Rect.Left, r.Rect.Width,
                         r.Rect.Top, r.Rect.Height, lineSelStart, lineSelEnd,
-                        xPt, yPt, yBase, SelectionPaintAt(pl, lineSelStart));
+                        xPt, yPt, yBase, SelectionPaintAt(pl, lineSelStart), r.FragmentIndex);
                     continue;
                 }
+
+                // Эта строка уже отрисована по группам — вместе со всеми своими отрезками.
+                if (r.LineIndex == drawnGroupLine) continue;
+                drawnGroupLine = r.LineIndex;
 
                 // Режем выделенный фрагмент строки на группы по «голубизне» заливки и красим
                 // каждую своей кистью. Иначе при смене заливки внутри строки (голубое -> белое)
@@ -1186,7 +1731,8 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 if (rr.LineIndex != lineIndex) continue;
                 DrawSelectionRect(canvas, sl, lineIndex, rr.Rect.Left, rr.Rect.Width,
-                    rr.Rect.Top, rr.Rect.Height, subFrom, subTo, xPt, yPt, yBase, paint);
+                    rr.Rect.Top, rr.Rect.Height, subFrom, subTo, xPt, yPt, yBase, paint,
+                    rr.FragmentIndex);
             }
         }
 
@@ -1194,17 +1740,30 @@ namespace Writersword.Modules.TextEditor.Document
         private void DrawSelectionRect(
             SKCanvas canvas, SKTextLayout sl, int lineIndex,
             float rectLeft, float rectWidth, float rectTop, float rectHeight,
-            int selFrom, int selTo, float xPt, float yPt, float yBase, SKPaint paint)
+            int selFrom, int selTo, float xPt, float yPt, float yBase, SKPaint paint,
+            int fragmentIndex = 0)
         {
             float firstLineBaked = (lineIndex == 0) ? sl.FirstLineIndentPt : 0f;
             float left = xPt + rectLeft - firstLineBaked + LineAlignShift(sl, lineIndex);
             float width = rectWidth;
 
-            float extra = SKTextRenderer.JustifyExtraPerSpace(sl, lineIndex);
+            // Растяжка по ширине считается по отрезку, которому принадлежит ЭТОТ
+            // прямоугольник, и по символам внутри него. Строка, разорванная объектом,
+            // даёт несколько прямоугольников: если каждому подставлять сдвиг, посчитанный
+            // по границам всего выделения, правый кусок съезжает влево на растяжку,
+            // набранную левым, и накладывается на него — выделение выглядит темнее.
+            float extra = lineIndex < sl.Lines.Count
+                ? SKTextRenderer.JustifyExtraPerSpace(sl, lineIndex, fragmentIndex)
+                : 0f;
             if (extra > 0f && lineIndex < sl.Lines.Count)
             {
-                float leftShift = JustifyShiftBeforeChar(sl, lineIndex, selFrom);
-                float rightShift = JustifyShiftBeforeChar(sl, lineIndex, selTo);
+                var (fragFrom, fragTo) = FragmentCharRange(sl.Lines[lineIndex], fragmentIndex);
+                int shiftFrom = Math.Max(selFrom, fragFrom);
+                int shiftTo = Math.Min(selTo, fragTo);
+                if (shiftTo < shiftFrom) shiftTo = shiftFrom;
+
+                float leftShift = JustifyShiftBeforeChar(sl, lineIndex, shiftFrom);
+                float rightShift = JustifyShiftBeforeChar(sl, lineIndex, shiftTo);
                 left += leftShift;
                 width += rightShift - leftShift;
             }
@@ -1404,24 +1963,38 @@ namespace Writersword.Modules.TextEditor.Document
         // сегмента (ближайшая граница слова).
         private static float UnstretchJustifyX(SKTextLayout layout, int lineIndex, float stretchedX)
         {
-            float extra = SKTextRenderer.JustifyExtraPerSpace(layout, lineIndex);
-            if (extra <= 0f) return stretchedX;
             if (lineIndex < 0 || lineIndex >= layout.Lines.Count) return stretchedX;
             var line = layout.Lines[lineIndex];
 
+            float extra = SKTextRenderer.JustifyExtraPerSpace(layout, lineIndex, 0);
+            if (extra <= 0f && !line.HasWrapFragments) return stretchedX;
+
+            // Разорванная объектом строка растягивается по отрезкам: накопленный сдвиг
+            // сбрасывается на каждом переходе, и добавка берётся своя.
+            int fragment = 0;
             float cumStretch = 0f;
             foreach (var seg in line.Segments)
             {
+                if (seg.WrapFragmentIndex != fragment)
+                {
+                    fragment = seg.WrapFragmentIndex;
+                    extra = SKTextRenderer.JustifyExtraPerSpace(layout, lineIndex, fragment);
+                    cumStretch = 0f;
+                }
+
                 float stretchedLeft = seg.X + cumStretch;
                 if (stretchedX < stretchedLeft)
                     return seg.X;
                 if (stretchedX <= stretchedLeft + seg.Width)
                     return seg.X + (stretchedX - stretchedLeft);
 
-                int spaces = 0;
-                foreach (var c in seg.Text)
-                    if (c == ' ' || c == '\t') spaces++;
-                cumStretch += spaces * extra;
+                if (extra > 0f)
+                {
+                    int spaces = 0;
+                    foreach (var c in seg.Text)
+                        if (c == ' ' || c == '\t') spaces++;
+                    cumStretch += spaces * extra;
+                }
             }
             return line.TextWidth;
         }
@@ -1432,30 +2005,81 @@ namespace Writersword.Modules.TextEditor.Document
         // Для не-Justify и последней строки даёт 0.
         private static float JustifyShiftBeforeChar(SKTextLayout layout, int lineIndex, int globalCharIndex)
         {
-            float extra = SKTextRenderer.JustifyExtraPerSpace(layout, lineIndex);
-            if (extra <= 0f) return 0f;
+            if (lineIndex < 0 || lineIndex >= layout.Lines.Count) return 0f;
             var line = layout.Lines[lineIndex];
 
-            // Граница последнего слова: пробелы за ней (хвостовые) растяжки не получают.
+            // Строку, разорванную обтекаемым объектом, растягивает каждый отрезок сам:
+            // считаем сдвиг внутри того отрезка, где стоит символ, и только по его пробелам.
+            int fragment = FragmentOfChar(line, globalCharIndex);
+
+            float extra = SKTextRenderer.JustifyExtraPerSpace(layout, lineIndex, fragment);
+            if (extra <= 0f) return 0f;
+
+            bool InFragment(Core.Models.Rendering.SKRunSegment seg)
+                => !line.HasWrapFragments || seg.WrapFragmentIndex == fragment;
+
+            // Граница последнего слова отрезка: пробелы за ней растяжки не получают.
             int lastWordEnd = -1;
             foreach (var s in line.Segments)
+            {
+                if (!InFragment(s)) continue;
                 for (int k = 0; k < s.Text.Length; k++)
                 {
                     char c = s.Text[k];
                     if (c != ' ' && c != '\t') lastWordEnd = s.GlobalCharOffset + k + 1;
                 }
+            }
             if (lastWordEnd < 0) return 0f;
 
             int limit = Math.Min(globalCharIndex, lastWordEnd);
             int spacesBefore = 0;
             foreach (var s in line.Segments)
+            {
+                if (!InFragment(s)) continue;
                 for (int k = 0; k < s.Text.Length; k++)
                 {
                     if (s.GlobalCharOffset + k >= limit) return spacesBefore * extra;
                     char c = s.Text[k];
                     if (c == ' ' || c == '\t') spacesBefore++;
                 }
+            }
             return spacesBefore * extra;
+        }
+
+        // Диапазон символов [from, to) отрезка разорванной строки. Для обычной строки —
+        // вся строка.
+        private static (int From, int To) FragmentCharRange(SKLineLayout line, int fragmentIndex)
+        {
+            if (!line.HasWrapFragments)
+                return (line.FirstCharIndex, line.LastCharIndex + 1);
+
+            int from = int.MaxValue;
+            int to = int.MinValue;
+            foreach (var s in line.Segments)
+            {
+                if (s.WrapFragmentIndex != fragmentIndex) continue;
+                if (s.GlobalCharOffset < from) from = s.GlobalCharOffset;
+                int end = s.GlobalCharOffset + s.Text.Length;
+                if (end > to) to = end;
+            }
+
+            return from == int.MaxValue
+                ? (line.FirstCharIndex, line.FirstCharIndex)
+                : (from, to);
+        }
+
+        // Отрезок разорванной строки, в котором лежит символ. Для обычной строки — 0.
+        private static int FragmentOfChar(SKLineLayout line, int globalCharIndex)
+        {
+            if (!line.HasWrapFragments) return 0;
+
+            int fragment = 0;
+            foreach (var s in line.Segments)
+            {
+                if (s.GlobalCharOffset > globalCharIndex) break;
+                fragment = s.WrapFragmentIndex;
+            }
+            return fragment;
         }
 
         // Глобальный индекс сразу за последним непробельным символом визуальной строки.

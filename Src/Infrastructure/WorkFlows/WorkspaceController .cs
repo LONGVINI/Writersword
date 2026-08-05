@@ -185,7 +185,10 @@ namespace Writersword.Infrastructure.Workspace
                 // Тяжёлые модули (IStateSnapshotModule) внутри GetCustomData сами
                 // прыгают на UI-поток только за быстрым снимком — как при периодическом
                 // автосохранении CacheUpdateService, это тот же проверенный путь.
-                cacheService.DeleteCache(_projectPath);
+                // Файл убирается в резервную копию, а не удаляется: до записи нового
+                // кеша проходит заметное время, и авария в этом окне не должна
+                // оставлять проект вообще без точки восстановления.
+                cacheService.MoveCacheToBackup(_projectPath);
 
                 pendingCachePath = _projectPath;
                 pendingCacheProjectId = _tab.GetProject().Id;

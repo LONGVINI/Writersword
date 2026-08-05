@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.ObjectModel;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -22,7 +22,29 @@ namespace Writersword.Modules.Characters.Views
             set => this.RaiseAndSetIfChanged(ref _isSelected, value);
         }
 
-        public LabelIconOption(string key) => Key = key;
+        /// <summary>
+        /// Метка-образец для показа этого варианта. Набор рисуется тем же
+        /// контролом, что и сама метка на карточках: иначе значок в наборе и
+        /// значок на карточке снова разъедутся, как это уже было.
+        ///
+        /// Подложки у образца нет — она к выбору фигуры отношения не имеет
+        /// и только мешала бы разглядеть очертание.
+        /// </summary>
+        public CharacterLabel Sample { get; } = new();
+
+        public LabelIconOption(string key)
+        {
+            Key = key;
+            Sample.Icon = key;
+            Sample.ShowBackdrop = false;
+        }
+
+        /// <summary>Показать набор в текущем цвете фигуры.</summary>
+        public void SetColor(string color)
+        {
+            Sample.IconColor = color;
+            this.RaisePropertyChanged(nameof(Sample));
+        }
     }
 
     /// <summary>
@@ -35,10 +57,82 @@ namespace Writersword.Modules.Characters.Views
         public string Name { get => _name; set => this.RaiseAndSetIfChanged(ref _name, value); }
 
         private string _icon = CharacterLabelIcons.Dot;
-        public string Icon { get => _icon; set => this.RaiseAndSetIfChanged(ref _icon, value); }
+        public string Icon
+        {
+            get => _icon;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _icon, value);
+                RaisePreviewChanged();
+            }
+        }
 
         private string _color = "#607D8B";
-        public string Color { get => _color; set => this.RaiseAndSetIfChanged(ref _color, value); }
+        public string Color
+        {
+            get => _color;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _color, value);
+                RaisePreviewChanged();
+            }
+        }
+
+        /// <summary>
+        /// Цвет фигуры. В черновике всегда непустой — редактору цвета
+        /// нечего показывать в пустом поле, — а в метку белый уезжает
+        /// пустотой: см. IconColorOrEmpty.
+        /// </summary>
+        private string _iconColor = DefaultIconColor;
+        public string IconColor
+        {
+            get => _iconColor;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _iconColor, value);
+                // Набор встроенных значков показывается без кружка, в цвете
+                // фигуры: выбирают там именно очертание.
+                foreach (var option in Icons) option.SetColor(value);
+                RaisePreviewChanged();
+            }
+        }
+
+        /// <summary>
+        /// Записать вид в реестр проекта и разнести по всем персонажам с
+        /// этой же меткой. По умолчанию выключено: правка метки у одного
+        /// персонажа не должна менять её у остальных — «Ранен» с каплей у
+        /// одного и с крестом у другого это законно.
+        /// </summary>
+        private bool _applyToAll;
+        public bool ApplyToAll
+        {
+            get => _applyToAll;
+            set => this.RaiseAndSetIfChanged(ref _applyToAll, value);
+        }
+
+        /// <summary>Рисовать кружок под фигурой.</summary>
+        private bool _showBackdrop = true;
+        public bool ShowBackdrop
+        {
+            get => _showBackdrop;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _showBackdrop, value);
+                RaisePreviewChanged();
+            }
+        }
+
+        public const string DefaultIconColor = "#FFFFFF";
+
+        /// <summary>
+        /// Белый — вид по умолчанию, и в метке он хранится пустотой: иначе
+        /// метка, у которой цвет фигуры никто не трогал, отличалась бы от
+        /// метки, где белый выбрали руками.
+        /// </summary>
+        public string? IconColorOrEmpty =>
+            string.Equals(_iconColor, DefaultIconColor, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : _iconColor;
 
         private bool _dim;
         public bool Dim { get => _dim; set => this.RaiseAndSetIfChanged(ref _dim, value); }
@@ -61,12 +155,31 @@ namespace Writersword.Modules.Characters.Views
             {
                 this.RaiseAndSetIfChanged(ref _iconImage, value);
                 this.RaisePropertyChanged(nameof(HasCustomIcon));
+                RaisePreviewChanged();
             }
         }
 
         public bool HasCustomIcon => !string.IsNullOrWhiteSpace(_iconImage);
 
         public ObservableCollection<LabelIconOption> Icons { get; } = new();
+
+        /// <summary>
+        /// Метка в текущем состоянии черновика — для превью. Превью рисуется
+        /// тем же контролом, что и значок на карточке, поэтому показывает
+        /// ровно то, что получится: и цвет фигуры, и подложку, и свою
+        /// картинку, включая перекрашенный вектор.
+        /// </summary>
+        public CharacterLabel Preview => new()
+        {
+            Name = Name,
+            Icon = Icon,
+            Color = Color,
+            IconImage = IconImage,
+            IconColor = IconColorOrEmpty,
+            ShowBackdrop = ShowBackdrop
+        };
+
+        private void RaisePreviewChanged() => this.RaisePropertyChanged(nameof(Preview));
     }
 
     /// <summary>
@@ -86,11 +199,22 @@ namespace Writersword.Modules.Characters.Views
             CharacterLabelIcons.Crown
         };
 
+        // Растровые форматы плюс вектор. Вектор перекрашивается в цвет метки,
+        // растр идёт как есть: перекрашивать чужой герб программа не берётся.
+        private static readonly FilePickerFileType IconFileType = new("Картинки значка")
+        {
+            Patterns = new[]
+            {
+                "*.png", "*.jpg", "*.jpeg", "*.webp",
+                "*.bmp", "*.gif", "*.ico", "*.svg"
+            }
+        };
+
         private static readonly ILogger _logger = Log.ForContext<LabelEditorOverlay>();
 
         private LabelEditorDraft? _draft;
         private CharacterLabel? _original;
-        private Action<CharacterLabel>? _apply;
+        private Action<CharacterLabel, bool>? _apply;
 
         public LabelEditorOverlay()
         {
@@ -100,9 +224,10 @@ namespace Writersword.Modules.Characters.Views
         /// <summary>
         /// Показать редактор. label == null — создание новой метки;
         /// иначе — правка существующей (Id и Order сохраняются).
-        /// Колбэк apply вызывается по OK с готовой меткой.
+        /// Колбэк apply вызывается по OK с готовой меткой и признаком
+        /// «сделать вид общим для всех персонажей с этой меткой».
         /// </summary>
-        public void ShowFor(CharacterLabel? label, Action<CharacterLabel> apply)
+        public void ShowFor(CharacterLabel? label, Action<CharacterLabel, bool> apply)
         {
             _original = label;
             _apply = apply;
@@ -114,11 +239,19 @@ namespace Writersword.Modules.Characters.Views
                 Dim = label?.Effect == CharacterLabelEffect.Dim,
                 ShowOnCard = label?.ShowOnCard ?? true,
                 Description = label?.Description ?? string.Empty,
-                IconImage = label?.IconImage
+                IconImage = label?.IconImage,
+                IconColor = string.IsNullOrWhiteSpace(label?.IconColor)
+                    ? LabelEditorDraft.DefaultIconColor
+                    : label!.IconColor!,
+                ShowBackdrop = label?.ShowBackdrop ?? true
             };
 
             foreach (var key in IconSet)
-                _draft.Icons.Add(new LabelIconOption(key) { IsSelected = key == _draft.Icon });
+            {
+                var option = new LabelIconOption(key) { IsSelected = key == _draft.Icon };
+                option.SetColor(_draft.IconColor);
+                _draft.Icons.Add(option);
+            }
 
             DataContext = _draft;
             IsVisible = true;
@@ -148,9 +281,11 @@ namespace Writersword.Modules.Characters.Views
                     ShowOnCard = _draft.ShowOnCard,
                     Order = _original?.Order ?? int.MaxValue,
                     Description = _draft.Description.Trim(),
-                    IconImage = _draft.IconImage
+                    IconImage = _draft.IconImage,
+                    IconColor = _draft.IconColorOrEmpty,
+                    ShowBackdrop = _draft.ShowBackdrop
                 };
-                _apply(result);
+                _apply(result, _draft.ApplyToAll);
             }
             CloseOverlay();
         }
@@ -180,7 +315,7 @@ namespace Writersword.Modules.Characters.Views
                 {
                     Title = "Картинка метки",
                     AllowMultiple = false,
-                    FileTypeFilter = new[] { FilePickerFileTypes.ImageAll }
+                    FileTypeFilter = new[] { IconFileType }
                 });
 
                 if (files == null || files.Count == 0) return;
@@ -189,7 +324,9 @@ namespace Writersword.Modules.Characters.Views
                 using var buffer = new System.IO.MemoryStream();
                 await stream.CopyToAsync(buffer);
 
-                var imageRef = await AvatarService.SaveToProjectAsync(buffer.ToArray(), files[0].Name);
+                // Значок сохраняется отдельным методом от аватара: у значков
+                // шире список форматов, и вектор проходит только здесь.
+                var imageRef = await AvatarService.SaveIconToProjectAsync(buffer.ToArray(), files[0].Name);
                 if (!string.IsNullOrEmpty(imageRef)) _draft.IconImage = imageRef;
             }
             catch (Exception ex)

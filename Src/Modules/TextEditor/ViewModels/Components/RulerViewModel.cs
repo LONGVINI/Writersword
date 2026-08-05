@@ -63,6 +63,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
 
         private double _scrollOffsetY = 0;
         private double _viewportHeight = 600;
+        private double _contentTopOffsetPx = 0;
+        private int _pagesPerRow = 1;
 
         private RulerIndentMarkerType? _draggingIndentMarker;
         private int _draggingColumnIndex = -1;
@@ -205,6 +207,29 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         {
             get => _viewportHeight;
             set => this.RaiseAndSetIfChanged(ref _viewportHeight, value);
+        }
+
+        /// <summary>
+        /// Вертикальное смещение канваса внутри вьюпорта, px. Когда высота документа меньше
+        /// высоты вьюпорта (мелкий зум, короткий документ), Avalonia центрирует канвас по
+        /// вертикали, и верх первой страницы оказывается ниже верха вьюпорта. Вертикальная
+        /// линейка прибавляет это смещение — иначе её шкала не совпадает с листом.
+        /// Горизонтальный аналог — PageOffsetXPx.
+        /// </summary>
+        public double ContentTopOffsetPx
+        {
+            get => _contentTopOffsetPx;
+            set => this.RaiseAndSetIfChanged(ref _contentTopOffsetPx, value);
+        }
+
+        /// <summary>
+        /// Число страниц в ряду (1 или 2). В режиме двух страниц рядом вертикальная позиция
+        /// страницы определяется её рядом, а не порядковым номером.
+        /// </summary>
+        public int PagesPerRow
+        {
+            get => _pagesPerRow;
+            set => this.RaiseAndSetIfChanged(ref _pagesPerRow, Math.Clamp(value, 1, 2));
         }
 
         public List<RulerIndentMarker> IndentMarkers { get; } = new()

@@ -13,6 +13,14 @@ namespace Writersword.Modules.Characters.Interfaces
         // ── Сохранение ────────────────────────────────────────────────────
 
         Task<string?> SaveToProjectAsync(byte[] imageData, string suggestedName);
+
+        /// <summary>
+        /// Сохранить картинку значка метки. Отдельно от аватаров: у значков
+        /// шире список форматов — сюда идут и мелкие растры, и векторный SVG,
+        /// который аватаром быть не может (его некуда обрезать по кругу без
+        /// растеризации и он не проходит через загрузчик битмапов).
+        /// </summary>
+        Task<string?> SaveIconToProjectAsync(byte[] imageData, string suggestedName);
         Task<string?> SaveToLibraryAsync(byte[] imageData, string suggestedName);
         Task<string?> CopyProjectAvatarToLibraryAsync(string projectRef);
         void DeleteAvatar(string? avatarRef);

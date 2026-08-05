@@ -239,39 +239,157 @@ namespace Writersword.Modules.TextEditor.Models.Document
         }
 
         /// <summary>
+        /// Символ параграфа вместе с его форматированием. Объект в строке (картинка)
+        /// представлен одной ячейкой с символом-заполнителем
+        /// <see cref="Inline.RunModel.ObjectPlaceholder"/> и ссылкой на объект: вся
+        /// посимвольная арифметика редактора считает его обычным символом.
+        /// </summary>
+        public readonly struct CharCell
+        {
+            public CharCell(char ch, Inline.RunProperties? props, Guid? inlineImageId = null)
+            {
+                Ch = ch;
+                Props = props;
+                InlineImageId = inlineImageId;
+            }
+
+            public char Ch { get; }
+            public Inline.RunProperties? Props { get; }
+            public Guid? InlineImageId { get; }
+
+            public bool IsInlineObject => InlineImageId.HasValue;
+        }
+
+        /// <summary>
+        /// Разворачивает содержимое параграфа в плоский список символов с форматированием.
+        /// Единственный способ разбирать параграф посимвольно: он не теряет ссылку на
+        /// встроенный объект, тогда как обход по run.Text превратил бы картинку
+        /// в голый символ-заполнитель.
+        /// </summary>
+        public List<CharCell> ToCharCells()
+        {
+            var cells = new List<CharCell>();
+            foreach (var chunk in Chunks)
+            {
+                foreach (var run in chunk.Runs)
+                {
+                    if (run.InlineImageId is Guid objectId)
+                    {
+                        // Объектный run занимает ровно одну позицию независимо от того,
+                        // что лежит в его Text.
+                        cells.Add(new CharCell(
+                            Inline.RunModel.ObjectPlaceholder, run.Properties, objectId));
+                        continue;
+                    }
+
+                    foreach (var ch in run.Text)
+                        cells.Add(new CharCell(ch, run.Properties));
+                }
+            }
+            return cells;
+        }
+
+        /// <summary>
+        /// Пересобирает чанки и раны из плоского списка символов. Соседние символы
+        /// с одинаковым форматированием сливаются в один run, объект в строке всегда
+        /// остаётся отдельным раном — иначе ссылка на картинку потерялась бы при слиянии.
+        /// </summary>
+        public void RebuildFromCharCells(IReadOnlyList<CharCell> cells)
+        {
+            Chunks.Clear();
+            var newChunk = new TextChunk();
+            Chunks.Add(newChunk);
+
+            if (cells.Count == 0)
+            {
+                newChunk.Runs.Add(new Inline.RunModel { Text = string.Empty });
+                InvalidateAllChunks();
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            Inline.RunProperties? currentProps = null;
+            bool hasPendingText = false;
+
+            void FlushText()
+            {
+                if (!hasPendingText) return;
+                newChunk.Runs.Add(new Inline.RunModel
+                {
+                    Text = sb.ToString(),
+                    Properties = currentProps
+                });
+                sb.Clear();
+                hasPendingText = false;
+            }
+
+            foreach (var cell in cells)
+            {
+                if (cell.IsInlineObject)
+                {
+                    FlushText();
+                    newChunk.Runs.Add(new Inline.RunModel
+                    {
+                        Text = Inline.RunModel.ObjectPlaceholder.ToString(),
+                        Properties = cell.Props,
+                        InlineImageId = cell.InlineImageId
+                    });
+                    continue;
+                }
+
+                if (!hasPendingText)
+                {
+                    currentProps = cell.Props;
+                    hasPendingText = true;
+                }
+                else if (!ReferenceEquals(cell.Props, currentProps)
+                    && !RunPropertiesEqual(cell.Props, currentProps))
+                {
+                    FlushText();
+                    currentProps = cell.Props;
+                    hasPendingText = true;
+                }
+
+                sb.Append(cell.Ch);
+            }
+
+            FlushText();
+
+            if (newChunk.Runs.Count == 0)
+                newChunk.Runs.Add(new Inline.RunModel { Text = string.Empty });
+
+            InvalidateAllChunks();
+        }
+
+        /// <summary>
         /// Вставляет/удаляет текст в диапазоне [from, to) с сохранением форматирования.
         /// Используется для всех операций редактирования (ввод, Delete, Backspace).
         /// В отличие от SetPlainText, не уничтожает RunProperties.
         /// </summary>
         public void SpliceText(int from, int to, string insert)
         {
-            // Строим плоский список символов с их форматированием.
-            var chars = new List<(char ch, Models.Inline.RunProperties? props)>();
-            foreach (var chunk in Chunks)
-                foreach (var run in chunk.Runs)
-                    foreach (var ch in run.Text)
-                        chars.Add((ch, run.Properties));
+            var cells = ToCharCells();
 
-            int len = chars.Count;
+            int len = cells.Count;
             from = Math.Max(0, Math.Min(from, len));
             to = Math.Max(from, Math.Min(to, len));
 
             // Удаляем диапазон.
             if (to > from)
-                chars.RemoveRange(from, to - from);
+                cells.RemoveRange(from, to - from);
 
             // Определяем свойства для вставляемого текста:
             // берём форматирование символа в позиции вставки (или предыдущего).
             Inline.RunProperties? insertProps = null;
             if (from > 0)
-                insertProps = chars[from - 1].props;
-            else if (from < chars.Count)
-                insertProps = chars[from].props;
+                insertProps = cells[from - 1].Props;
+            else if (from < cells.Count)
+                insertProps = cells[from].Props;
 
             // Пустой абзац (символов нет): у пустого рана может быть форматирование — его
             // проставляют при Enter, чтобы ввод продолжал шрифт/начертание. Без этого ввод
             // в пустой абзац сбрасывался бы на дефолтный шрифт.
-            if (insertProps is null && chars.Count == 0)
+            if (insertProps is null && cells.Count == 0)
             {
                 foreach (var chunk in Chunks)
                 {
@@ -283,48 +401,74 @@ namespace Writersword.Modules.TextEditor.Models.Document
 
             // Вставляем новые символы.
             for (int i = 0; i < insert.Length; i++)
-                chars.Insert(from + i, (insert[i], insertProps));
+                cells.Insert(from + i, new CharCell(insert[i], insertProps));
 
-            // Реконструируем чанки/раны, объединяя соседние символы с одинаковым форматированием.
-            Chunks.Clear();
-            var newChunk = new TextChunk();
-            Chunks.Add(newChunk);
+            RebuildFromCharCells(cells);
+        }
 
-            if (chars.Count == 0)
+        /// <summary>
+        /// Вставляет объект в строку (картинку) в позицию at как один символ.
+        /// Форматирование наследуется от соседнего символа — объект встаёт в поток
+        /// текста и дальше живёт по правилам обычного символа.
+        /// </summary>
+        public void InsertInlineObject(int at, Guid inlineImageId, Inline.RunProperties? props = null)
+        {
+            var cells = ToCharCells();
+            at = Math.Max(0, Math.Min(at, cells.Count));
+
+            var inherited = props;
+            if (inherited is null && at > 0) inherited = cells[at - 1].Props;
+            if (inherited is null && at < cells.Count) inherited = cells[at].Props;
+
+            cells.Insert(at, new CharCell(
+                Inline.RunModel.ObjectPlaceholder, inherited, inlineImageId));
+
+            RebuildFromCharCells(cells);
+        }
+
+        /// <summary>
+        /// Id встроенного объекта в позиции charIndex или null, если там обычный символ.
+        /// </summary>
+        public Guid? GetInlineImageIdAt(int charIndex)
+        {
+            if (charIndex < 0) return null;
+
+            int pos = 0;
+            foreach (var chunk in Chunks)
             {
-                newChunk.Runs.Add(new Models.Inline.RunModel { Text = string.Empty });
-                InvalidateAllChunks();
-                return;
-            }
-
-            var sb = new System.Text.StringBuilder();
-            var currentProps = chars[0].props;
-
-            foreach (var (ch, props) in chars)
-            {
-                bool sameProps = ReferenceEquals(props, currentProps)
-                    || RunPropertiesEqual(props, currentProps);
-
-                if (!sameProps)
+                foreach (var run in chunk.Runs)
                 {
-                    newChunk.Runs.Add(new Models.Inline.RunModel
-                    {
-                        Text = sb.ToString(),
-                        Properties = currentProps
-                    });
-                    sb.Clear();
-                    currentProps = props;
+                    int runLen = run.InlineImageId.HasValue ? 1 : (run.Text?.Length ?? 0);
+                    if (charIndex < pos + runLen)
+                        return run.InlineImageId;
+                    pos += runLen;
                 }
-                sb.Append(ch);
             }
+            return null;
+        }
 
-            newChunk.Runs.Add(new Models.Inline.RunModel
+        /// <summary>Позиция объекта с заданным Id в тексте параграфа или -1.</summary>
+        public int IndexOfInlineObject(Guid inlineImageId)
+        {
+            int pos = 0;
+            foreach (var chunk in Chunks)
             {
-                Text = sb.ToString(),
-                Properties = currentProps
-            });
+                foreach (var run in chunk.Runs)
+                {
+                    if (run.InlineImageId == inlineImageId) return pos;
+                    pos += run.InlineImageId.HasValue ? 1 : (run.Text?.Length ?? 0);
+                }
+            }
+            return -1;
+        }
 
-            InvalidateAllChunks();
+        /// <summary>Id всех объектов в строке, встречающихся в параграфе.</summary>
+        public IEnumerable<Guid> EnumerateInlineImageIds()
+        {
+            foreach (var chunk in Chunks)
+                foreach (var run in chunk.Runs)
+                    if (run.InlineImageId is Guid id)
+                        yield return id;
         }
 
         /// <summary>
