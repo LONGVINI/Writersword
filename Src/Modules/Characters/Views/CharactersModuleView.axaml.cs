@@ -37,6 +37,11 @@ namespace Writersword.Modules.Characters.Views
         private Panel? _tabContent;
         private bool _cardsProgressiveDone;
 
+        // Вьюха сейчас в визуальном дереве. Нужен затем, что контекст данных
+        // может приехать и до присоединения, и после него, а восстанавливать
+        // список папок имеет смысл только когда есть и то и другое.
+        private bool _attachedToTree;
+
         public CharactersModuleView()
         {
             InitializeComponent();
@@ -52,12 +57,24 @@ namespace Writersword.Modules.Characters.Views
             // независимо от того, где сейчас фокус (после RefreshAll фокус теряется).
             _topLevel?.AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
             AddHandler(TextBox.LostFocusEvent, OnTextBoxLostFocus, RoutingStrategies.Bubble);
+            _attachedToTree = true;
+
+            // Список папок очищается при отсоединении вьюхи, значит и
+            // восстанавливать его нужно здесь же, при присоединении. Раньше
+            // восстановление висело на Loaded, а это другое событие: оно
+            // поднимается при первой загрузке контрола и при повторном
+            // присоединении к дереву не срабатывает. Из-за этого возврат в
+            // рабочий режим показывал «Персонажей нет» — данные были на
+            // месте, но список так и оставался пустым до перезахода в проект.
+            EnsureFoldersLoaded();
+
             _log.Debug("CharactersModuleView attached to visual tree");
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnDetachedFromVisualTree(e);
+            _attachedToTree = false;
             _topLevel?.RemoveHandler(KeyDownEvent, OnKeyDown);
             _topLevel = null;
             CommitAllPendingEdits();
@@ -86,6 +103,23 @@ namespace Writersword.Modules.Characters.Views
             _subscribedVm.SearchFocusRequested -= OnSearchFocusRequested;
             _subscribedVm.FolderDeleteRequested -= OnFolderDeleteRequested;
             _subscribedVm = null;
+        }
+
+        /// <summary>
+        /// Вернуть список папок, если он пуст после отсоединения вьюхи.
+        /// Данные при этом не перечитываются: список собирается заново из
+        /// уже загруженной вьюмодели и сервиса.
+        ///
+        /// Проверка на пустоту обязательна: при первом открытии список уже
+        /// наполняет SetCustomData, и повторный запуск отменил бы его на
+        /// середине — карточки начали бы строиться дважды.
+        /// </summary>
+        private void EnsureFoldersLoaded()
+        {
+            if (DataContext is not CharactersViewModel vm) return;
+            if (vm.Folders.Count > 0) return;
+
+            _ = vm.RequestProgressiveRefreshAsync();
         }
 
         private void OnLoaded(object? sender, RoutedEventArgs e)
@@ -139,6 +173,10 @@ namespace Writersword.Modules.Characters.Views
             _editView = null;
             _graphView = null;
             _templatesView = null;
+
+            // Контекст мог приехать уже после присоединения к дереву — тогда
+            // список папок восстанавливается здесь.
+            if (_attachedToTree) EnsureFoldersLoaded();
 
             if (DataContext is CharactersViewModel vm)
             {

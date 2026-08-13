@@ -171,6 +171,17 @@ namespace Writersword.Modules.TextEditor.Document
                         : 20f;
                     _tableDragStartVal = (float)(colWidthPt * 25.4 / 72.0); // мм
                 }
+                else if (handleHit.Type == TableHandleType.RowResize)
+                {
+                    // Отсчёт от фактической высоты строки из раскладки, а не от заданной
+                    // минимальной: у строки, которую ещё не трогали, минимальной высоты
+                    // нет вовсе, и перетаскивание начиналось бы от нуля рывком.
+                    _tableDragStartVal = handleHit.ColIndex >= 0
+                                         && handleHit.ColIndex < te.Layout.Rows.Count
+                        ? te.Layout.Rows[handleHit.ColIndex].HeightPt
+                        : 14f;
+                    _tableDragStartXPt = yPt; // для вертикального жеста начало отсчёта по Y
+                }
                 else
                 {
                     _tableDragStartVal = (float)te.Table.LeftIndentPt; // pt
@@ -183,6 +194,17 @@ namespace Writersword.Modules.TextEditor.Document
                     _activeCellTableEntryIdx = handleHit.EntryIdx;
                     if (DocVm is not null) DocVm.ActiveTable = te.Table;
                 }
+
+                // Снимок для отмены берётся здесь, до первой правки модели: дальше
+                // перетаскивание меняет ширины и отступ на каждом движении мыши, и
+                // «до» из середины жеста вернуло бы не исходное состояние. В стек
+                // снимок уйдёт один раз, на отпускании — см. FinishTableDrag.
+                BeginTableEdit(te.Table, _tableDragMode switch
+                {
+                    TableDragMode.ColResize => "Resize column",
+                    TableDragMode.RowResize => "Resize row",
+                    _ => "Move table"
+                });
 
                 Cursor = new Cursor(handleHit.Type == TableHandleType.RowResize
                     ? StandardCursorType.SizeNorthSouth
@@ -767,22 +789,19 @@ namespace Writersword.Modules.TextEditor.Document
                 }
                 else if (_tableDragMode == TableDragMode.RowResize)
                 {
-                    // Изменяем высоту строки по вертикальному drag (Y delta)
-                    float deltaYPt = yPt - _tableDragStartXPt; // используем StartXPt как startYPt
-                    if (_activeTableBlock is not null
-                        && _tableDragColIndex >= 0
-                        && _activeCellTableEntryIdx >= 0
-                        && _activeCellTableEntryIdx < _tables.Count)
+                    // Высота строки по вертикальному жесту. Записывается как минимальная:
+                    // потянув вниз, строку делают выше, но набранный в ней текст всё
+                    // равно раздвинет её дальше, а не окажется обрезан.
+                    float deltaYPt = yPt - _tableDragStartXPt; // StartXPt хранит начало по Y
+                    if (_activeTableBlock is not null && _tableDragColIndex >= 0)
                     {
-                        var te = _tables[_activeCellTableEntryIdx];
-                        if (_tableDragColIndex < te.Layout.Rows.Count)
-                        {
-                            // RowHeight задаём через свойство RowHeight на модели
-                            // Сохраняем min 5pt
-                            double newHeightPt = Math.Max(5.0, _tableDragStartVal + deltaYPt);
-                            // Применяем ко всем ячейкам строки через RowHeightPt в TableBlock
-                            // (если нет отдельного поля — пока пропускаем, только rebuild)
-                        }
+                        double newHeightPt = Math.Max(14.0, _tableDragStartVal + deltaYPt);
+                        _activeTableBlock.SetRowMinHeightPt(_tableDragColIndex, newHeightPt);
+                        if (DocVm is not null) DocVm.ActiveTable = _activeTableBlock;
+                        InvalidateCellLayoutCaches();
+                        RebuildLayouts();
+                        NotifyCaretEnteredTableCallback();
+                        InvalidateFull();
                     }
                 }
 
@@ -1419,9 +1438,23 @@ namespace Writersword.Modules.TextEditor.Document
                 }
             }
 
+            // Снимок закрывается здесь, после фиксации ширин: они часть того же
+            // изменения, и отмена обязана вернуть их вместе с перетащенной границей.
+            // Жест целиком даёт ровно один шаг отмены — снимок один на всё нажатие,
+            // а не на каждое движение мыши. Щелчок по ручке без перетаскивания в
+            // историю не попадёт: снимок сравнивает состояния и пустой шаг отбросит.
+            if (_tableDragMode != TableDragMode.None) CommitTableEdit();
+
             _tableDragMode = TableDragMode.None;
             _tableDragEntryIdx = -1;
             _tableDragColIndex = -1;
+
+            // Жест за ручку таблицы делает её активной, не трогая каретку (см. OnPointerPressed,
+            // ветка _tableDragMode). Линейка при этом уходит в табличный режим и держит маркеры
+            // абзаца в координатах ячейки, хотя каретка стоит в обычном абзаце: левая стрелка
+            // рисуется от левого края ячейки и «не пускает» текст дальше её границ. По окончании
+            // жеста возвращаем контекст туда, где реально стоит каретка.
+            SyncCellContextToCaret();
         }
 
         // ── Keyboard ─────────────────────────────────────────────────────
@@ -1435,6 +1468,21 @@ namespace Writersword.Modules.TextEditor.Document
             RecoverFromStuckTransition();
             if (string.IsNullOrEmpty(e.Text)) return;
             if (IsEditingBlocked) { e.Handled = true; return; }
+
+            // Управляющие символы во вводе. Интересует прежде всего BEL (0x07): попав в
+            // документ, он вместе с текстом уходит в лог, а консоль на нём пищит через
+            // драйвер системного динамика — мимо микшера и звуковой схемы. Это объясняло бы
+            // звонок при выключенных звуках Windows. Табуляцию, перевод строки и возврат
+            // каретки пропускаем: они законные.
+            foreach (char ch in e.Text)
+            {
+                if (ch >= ' ' || ch == '\t' || ch == '\n' || ch == '\r') continue;
+                _logger.Warning(
+                    "[INPUT] управляющий символ во вводе: код=0x{Code:X2} длинаТекста={Len}",
+                    (int)ch, e.Text.Length);
+                break;
+            }
+
             _caretLineHint = -1;
 
             if (_isCellRangeSelecting)
@@ -1663,6 +1711,19 @@ namespace Writersword.Modules.TextEditor.Document
                     vm.TableDeleteColDelegate = ExecuteTableDeleteColumn;
                     vm.TableDeleteDelegate = ExecuteTableDelete;
                     vm.TableSetCellBackgroundDelegate = ExecuteTableSetCellBackground;
+                    vm.TableSetCellVAlignDelegate = ExecuteTableSetCellVAlign;
+                    vm.TableSetCellHAlignDelegate = ExecuteTableSetCellHAlign;
+                    vm.TableSetCellPaddingDelegate = ExecuteTableSetCellPadding;
+                    vm.TableGetCellPaddingDelegate = QueryTableCellPadding;
+                    vm.TableSetLineToolDelegate = ExecuteTableSetLineTool;
+                    vm.TableGetLineToolDelegate = QueryTableLineTool;
+                    vm.TableMergeCellsDelegate = ExecuteTableMergeCells;
+                    vm.TableSplitCellDelegate = ExecuteTableSplitCell;
+                    vm.TableSetCellAlignDelegate = ExecuteTableSetCellAlign;
+                    vm.TableGetCellVAlignDelegate = QueryTableCellVAlign;
+                    vm.TableGetCellHAlignDelegate = QueryTableCellHAlign;
+                    vm.TableSetRowHeightDelegate = ExecuteTableSetRowHeight;
+                    vm.TableSetColumnWidthDelegate = ExecuteTableSetColumnWidth;
                     vm.TableSetLeftEdgeDelegate = leftIndentPt =>
                     {
                         if (_activeTableBlock is null) return;
@@ -1693,6 +1754,23 @@ namespace Writersword.Modules.TextEditor.Document
                 vm.TableDeleteColDelegate = null;
                 vm.TableDeleteDelegate = null;
                 vm.TableSetCellBackgroundDelegate = null;
+                vm.TableSetCellVAlignDelegate = null;
+                vm.TableSetCellHAlignDelegate = null;
+                vm.TableSetCellPaddingDelegate = null;
+                vm.TableGetCellPaddingDelegate = null;
+
+                // Инструмент границ сбрасывается вместе с выходом из таблицы:
+                // держать режим рисования там, где рисовать нечего, бессмысленно.
+                ExecuteTableSetLineTool(0);
+                vm.TableSetLineToolDelegate = null;
+                vm.TableGetLineToolDelegate = null;
+                vm.TableMergeCellsDelegate = null;
+                vm.TableSplitCellDelegate = null;
+                vm.TableSetCellAlignDelegate = null;
+                vm.TableGetCellVAlignDelegate = null;
+                vm.TableGetCellHAlignDelegate = null;
+                vm.TableSetRowHeightDelegate = null;
+                vm.TableSetColumnWidthDelegate = null;
                 vm.TableSetLeftEdgeDelegate = null;
             }
 
@@ -1760,6 +1838,11 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             CaretEnteredTable?.Invoke(offsets, widths, tableOffsetMm, _activeCellCol);
+
+            // Границы по колонкам, отданные выше, — края СТОЛБЦА. Точные границы зоны абзаца
+            // (контентный бокс ячейки, за её полями и рамкой) и позиции отступов приходят
+            // следом и эти края уточняют.
+            PublishRulerGeometry();
         }
 
         /// <summary>Tab — следующая ячейка.</summary>
@@ -2297,6 +2380,7 @@ namespace Writersword.Modules.TextEditor.Document
             InvalidateCellLayoutCaches();
             _cellVmCache.Clear();
             double oldCanvasH = _canvasHeight;
+            _caretIndexPending = true;
             RebuildLayouts();
 
             if (Math.Abs(_canvasHeight - oldCanvasH) > 0.5)
@@ -2307,20 +2391,43 @@ namespace Writersword.Modules.TextEditor.Document
             // поэтому корректно работает при переходе на новую страницу во время печати.
             // Предварительно устанавливаем _caretPara на любой слайс нужной VM —
             // SnapCaretToCorrectSlice начинает поиск от targetVm = GetVmAt(_caretPara).
-            if (targetBlock != null && _cellVmCache.TryGetValue(targetBlock, out var targetVm))
+            if (targetBlock != null)
             {
-                for (int i = 0; i < _layouts.Count; i++)
+                int found = -1;
+                if (_cellVmCache.TryGetValue(targetBlock, out var targetVm))
                 {
-                    if (_layouts[i].Vm == targetVm) { _caretPara = i; break; }
+                    for (int i = 0; i < _layouts.Count; i++)
+                    {
+                        if (_layouts[i].Vm == targetVm) { found = i; break; }
+                    }
                 }
+
+                // Кэш VM ячеек очищен выше и наполняется заново самой пересборкой. Если она
+                // отложена (порционный прогрев раскладки) или абзац попал в раскладку с другой
+                // VM, поиск по кэшу не находит ничего — и _caretPara остаётся от прежней
+                // раскладки. После вставки абзаца все индексы сдвинуты, поэтому прежний номер
+                // указывает уже на другую ячейку или на абзац за таблицей. Второй проход ищет
+                // слайс прямо по блоку абзаца и от кэша не зависит.
+                if (found < 0)
+                {
+                    for (int i = 0; i < _layouts.Count; i++)
+                    {
+                        if (ReferenceEquals(_layouts[i].Cell?.ParaBlock, targetBlock)) { found = i; break; }
+                    }
+                }
+
+                if (found >= 0) _caretPara = found;
             }
             SnapCaretToCorrectSlice();
+            _caretIndexPending = false;
 
             NotifyCaretEnteredTableCallback();
 
             // Контекст ячейки для линейки
             if (IsInCell(_caretPara) && DocVm is not null)
                 FireCellCursorContext(_layouts[_caretPara].Cell!.ParaBlock);
+
+            PublishRulerGeometry();
 
             SyncSel(); ResetCaret(); InvalidateFull();
         }
@@ -2532,6 +2639,21 @@ namespace Writersword.Modules.TextEditor.Document
             return true;
         }
 
+        /// <summary>
+        /// Ставит каретку в конец предыдущего слайса раскладки. Нужна после удаления блока,
+        /// стоявшего между двумя таблицами: его индекс займёт первая ячейка следующей таблицы,
+        /// и каретка, оставшись на прежнем номере, оказалась бы за таблицей — как будто
+        /// нажатие перенесло её вперёд, а не удалило абзац.
+        /// </summary>
+        private void MoveCaretToPreviousSlice()
+        {
+            if (_caretPara <= 0) { _caretChar = 0; return; }
+
+            _caretPara--;
+            _caretChar = GetVmAt(_caretPara)?.PlainText?.Length ?? 0;
+            _caretLineHint = -1;
+        }
+
         public void ExecuteDeleteBack()
         {
             _caretLineHint = -1;
@@ -2584,31 +2706,18 @@ namespace Writersword.Modules.TextEditor.Document
                 }
                 else if (IsBlockAfterTable(pvm.Model))
                 {
-                    // Правый якорь таблицы — защищён полностью, Backspace ничего не делает.
-                    // Он нужен только для позиционирования каретки, не для редактирования.
+                    // Правый якорь таблицы — защищён, Backspace ничего не делает: он
+                    // единственное место, откуда можно писать после таблицы.
                 }
-                else if (string.IsNullOrEmpty(text) && IsBlockBeforeTable(pvm.Model))
+                else if (string.IsNullOrEmpty(text) && IsBlockBeforeTable(pvm.Model)
+                         && GetVmAt(_caretPara - 1) is null)
                 {
-                    // Левый якорь таблицы — переходим в предыдущий параграф
-                    // и удаляем там последний символ, сам якорь не трогаем.
-                    var prevVm = GetVmAt(_caretPara - 1);
-                    if (prevVm is not null)
-                    {
-                        string prevText = prevVm.PlainText ?? "";
-                        if (prevText.Length > 0)
-                        {
-                            prevVm.Model.SpliceText(prevText.Length - 1, prevText.Length, string.Empty);
-                            prevVm.RefreshPlainTextFromModel();
-                            _caretPara--;
-                            _caretChar = prevVm.PlainText?.Length ?? 0;
-                        }
-                        else
-                        {
-                            // Предыдущий тоже пустой — просто переходим туда.
-                            _caretPara--;
-                            _caretChar = 0;
-                        }
-                    }
+                    // Левый якорь таблицы, выше которого нет ни одного параграфа: удалять
+                    // его нельзя, нормализация вернёт его обратно на ближайшем пересборе.
+                    // Backspace здесь просто ничего не делает.
+                    //
+                    // Когда параграф выше есть, эта ветка не работает: пустая строка перед
+                    // таблицей — обычный пустой абзац, и Backspace обязан удалять именно её.
                 }
                 else
                 {
@@ -2678,7 +2787,7 @@ namespace Writersword.Modules.TextEditor.Document
                     && IsBlockBeforeTable(pvm.Model);
                 if (currentIsPostTableAnchor || currentIsPreTableAnchor)
                 {
-                    // Delete на любом якоре таблицы ничего не делает.
+                    // Якоря таблицы Delete не трогает.
                 }
                 else if (nextIsBreakAnchor)
                     DocVm?.DeleteBreakWithAnchor(next!);
@@ -3038,7 +3147,45 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (TextUndoStack is null || DocVm is null || !TextUndoStack.CanUndo) return;
             _logger.Debug("[UNDO] ExecuteUndo (text): '{D}'", TextUndoStack.UndoDescription);
+
+            // Тип команды выясняется до отката: лёгкий стек рассчитан на правки текста
+            // и обходится перерисовкой абзаца, а снимок таблицы меняет ширины столбцов,
+            // отступ и состав ячеек — раскладку нужно пересобрать, иначе модель
+            // откатывается, а на экране остаётся прежняя таблица.
+            bool tableChanged = TextUndoStack.PeekUndo is Commands.TableSnapshotCommand;
             TextUndoStack.Undo(DocVm.Document);
+            if (tableChanged) RefreshAfterTableCommand();
+        }
+
+        // Пересборка вида после отката или повтора снимка таблицы.
+        // Вью-модели абзацев здесь намеренно не пересобираются: обход всего документа
+        // ради одной таблицы — ровно та цена, от которой уходили, отказавшись от
+        // снимков документа. Абзацы ячеек в общем потоке и не лежат, так что трогать
+        // их незачем.
+        // А вот отпечаток состояния сбросить обязательно. В него входят вью-модель,
+        // коллекция абзацев, их число, ширина и режим — геометрии таблицы там нет,
+        // поэтому после отката measure-проход считал состояние прежним и пропускал
+        // пересчёт. Высота таблицы оставалась старой, блоки под ней не смещались, и
+        // текст налезал на таблицу.
+        // Каретка после отката может указывать за пределы новой раскладки — её
+        // положение приводится в допустимые границы, как и при откате снимка.
+        private void RefreshAfterTableCommand()
+        {
+            InvalidateCellLayoutCaches();
+            _cellVmCache.Clear();
+            _layoutsFingerprintDocVm = null;
+            _layoutsFingerprintParagraphs = null;
+            _layoutsFingerprintStyleResolver = null;
+            _layoutsFingerprintParagraphCount = -1;
+            RebuildLayouts();
+            _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
+            _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
+            SyncSel();
+            ResetCaret();
+            // Отпечаток сброшен выше, поэтому measure-проход теперь обязан пересчитать
+            // раскладку — без этого запроса он может и не состояться.
+            InvalidateMeasure();
+            InvalidateFull();
         }
 
         // Откат одного снапшота документа (цвет, картинки, таблицы, вставка и т.п.).
@@ -3062,7 +3209,10 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (TextUndoStack is null || DocVm is null || !TextUndoStack.CanRedo) return;
             _logger.Debug("[UNDO] ExecuteRedo (text): '{D}'", TextUndoStack.RedoDescription);
+
+            bool tableChanged = TextUndoStack.PeekRedo is Commands.TableSnapshotCommand;
             TextUndoStack.Redo(DocVm.Document);
+            if (tableChanged) RefreshAfterTableCommand();
         }
 
         // Повтор одного снапшота документа.

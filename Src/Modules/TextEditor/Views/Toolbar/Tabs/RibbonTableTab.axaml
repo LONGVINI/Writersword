@@ -1,101 +1,209 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels.Toolbar"
              xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              xmlns:loc="using:Writersword.Modules.TextEditor.Resources"
              xmlns:controls="using:Writersword.Styles.UserControls"
+             xmlns:conv="using:Writersword.Infrastructure.Converters"
              x:Class="Writersword.Modules.TextEditor.Views.Toolbar.Tabs.RibbonTableTab"
              x:DataType="vm:RibbonTableTabViewModel">
 
 	<UserControl.Styles>
-		<Style Selector="Button.RibbonBtn">
+		<!-- Единственный размер кнопки на всей вкладке: 26×26, только иконка.
+		     Подписи убраны — назначение читается из тултипа, а лента перестала
+		     расползаться по ширине втрое больше окна.
+		     26 — не произвольное число: два ряда таких кнопок плюс RowSpacing 4
+		     дают 56, ровно столько же занимает тело группы на вкладке «Главная»
+		     (там это два ряда кнопок по 26 в «Шрифте» и «Абзаце»). Из-за этого
+		     высота ленты не меняется при переключении вкладок.
+		     Вертикальных отступов у кнопок нет по той же причине: расстояние
+		     между рядами задаёт RowSpacing сетки, иначе к 56 добавились бы ещё
+		     четыре пикселя полей. -->
+		<Style Selector="Button.TBtn">
 			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
 			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
 			<Setter Property="BorderThickness"            Value="1"/>
 			<Setter Property="CornerRadius"               Value="3"/>
-			<Setter Property="Padding"                    Value="4"/>
-			<Setter Property="MinWidth"                   Value="26"/>
-			<Setter Property="MinHeight"                  Value="26"/>
-			<Setter Property="VerticalAlignment"          Value="Center"/>
+			<Setter Property="Padding"                    Value="0"/>
+			<Setter Property="Width"                      Value="26"/>
+			<Setter Property="Height"                     Value="26"/>
 			<Setter Property="HorizontalContentAlignment" Value="Center"/>
 			<Setter Property="VerticalContentAlignment"   Value="Center"/>
 			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
 			<Setter Property="Cursor"                     Value="Hand"/>
 		</Style>
-		<Style Selector="Button.RibbonBtn /template/ ContentPresenter">
+		<Style Selector="Button.TBtn /template/ ContentPresenter">
 			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
 			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
 			<Setter Property="BorderThickness" Value="1"/>
 			<Setter Property="CornerRadius"    Value="3"/>
 		</Style>
-		<Style Selector="Button.RibbonBtn:pointerover /template/ ContentPresenter">
+		<Style Selector="Button.TBtn:pointerover /template/ ContentPresenter">
 			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
-		<Style Selector="Button.RibbonBtn:pressed /template/ ContentPresenter">
+		<Style Selector="Button.TBtn:pressed /template/ ContentPresenter">
 			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
-		<Style Selector="Button.RibbonBtnLarge">
-			<Setter Property="Background"                 Value="{DynamicResource BgSurfaceBrush}"/>
-			<Setter Property="BorderBrush"                Value="{DynamicResource BorderSubtleBrush}"/>
-			<Setter Property="BorderThickness"            Value="1"/>
-			<Setter Property="CornerRadius"               Value="3"/>
-			<Setter Property="Padding"                    Value="4 2"/>
-			<Setter Property="MinWidth"                   Value="44"/>
-			<Setter Property="MinHeight"                  Value="54"/>
+		<!-- Опасное действие: удаление. Подсвечивается красным при наведении,
+		     чтобы удаление строки не жалось визуально к её добавлению. -->
+		<Style Selector="Button.TBtn.Danger:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="#3A1F22"/>
+			<Setter Property="BorderBrush" Value="#C0504D"/>
+		</Style>
+		<Style Selector="Button.TBtn.Danger PathIcon">
+			<Setter Property="Foreground" Value="#D98C89"/>
+		</Style>
+
+		<!-- Включённое состояние. Обычная кнопка с классом Active вместо ToggleButton:
+		     у ToggleButton клик ставит IsChecked локальным значением, оно перебивает
+		     привязку по приоритету, и дальше индикатор живёт своей жизнью. -->
+		<Style Selector="Button.TBtn.Active /template/ ContentPresenter">
+			<Setter Property="Background"             Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush"            Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.TBtn.Active:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.TBtn.Active PathIcon">
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Половина сдвоенной кнопки «перо + стрелка». Своей рамки нет вовсе:
+		     рамка у пары одна, общая, её рисует внешний Border. Пока рамки были у
+		     каждой половины, при наведении на любую из них в глазах оказывались
+		     два прямоугольника сразу — общий контур и контур половины.
+		     Здесь меняется только заливка, и сразу видно, что именно сработает. -->
+		<Style Selector="Button.PenHalf">
+			<Setter Property="Background"                 Value="Transparent"/>
+			<Setter Property="BorderThickness"            Value="0"/>
+			<Setter Property="Padding"                    Value="0"/>
+			<Setter Property="MinWidth"                   Value="0"/>
+			<Setter Property="MinHeight"                  Value="0"/>
 			<Setter Property="VerticalAlignment"          Value="Stretch"/>
-			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<!-- Растяжение, а не центрирование: содержимое кнопки тянет плашку цвета
+			     на всю доступную ширину, при центрировании она осталась бы короткой. -->
+			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
 			<Setter Property="VerticalContentAlignment"   Value="Center"/>
 			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
 			<Setter Property="Cursor"                     Value="Hand"/>
 		</Style>
-		<Style Selector="Button.RibbonBtnLarge /template/ ContentPresenter">
-			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
-			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
-			<Setter Property="BorderThickness" Value="1"/>
-			<Setter Property="CornerRadius"    Value="3"/>
+		<!-- Скругление у заливки повторяет внешний край общей рамки. Прямоугольная
+		     заливка ложилась поверх скруглений и срезала углы — кнопка выглядела
+		     квадратной. Обрезкой это не лечится: ClipToBounds режет по
+		     прямоугольнику, а не по скруглённому контуру. -->
+		<Style Selector="Button.PenHalf /template/ ContentPresenter">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="CornerRadius"    Value="2 0 0 2"/>
 		</Style>
-		<Style Selector="Button.RibbonBtnLarge:pointerover /template/ ContentPresenter">
-			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
-			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		<!-- Панель обводится акцентом при наведении на любую половину. Состояние
+		     навешивается классами по IsPointerOver самих половин: у голого Border
+		     собственное :pointerover не выставляется. Двух классов вместо одного
+		     достаточно, чтобы обойтись без конвертера «или».
+		     Цвет рамки в покое задан здесь же, а не атрибутом на самом Border:
+		     атрибут — локальное значение, оно сильнее стиля, и акцентный контур
+		     не появился бы вовсе.
+		     Заливки нет ни у одной половины: отклик даёт рамка, а залитый кусок
+		     разваливал бы панель на две кнопки. -->
+		<Style Selector="Border.PenSplit">
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="Background"  Value="{DynamicResource BgSurfaceBrush}"/>
 		</Style>
-		<Style Selector="Button.RibbonBtnLarge:pressed /template/ ContentPresenter">
-			<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+		<Style Selector="Border.PenSplit.HotLeft, Border.PenSplit.HotArrow, Border.PenSplit.MenuOpen">
 			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
+		<!-- Обвязка группы повторяет вкладку «Главная» до пикселя: рамка, отступы
+		     и подпись задают всю высоту ленты помимо содержимого, и стоит им
+		     разойтись — вкладки прыгают по высоте при переключении. Подпись здесь
+		     обычный TextBlock, а не Grid с подписью внутри, как на «Главной»,
+		     поэтому её собственный Margin повторяет отступы того Grid. -->
 		<Style Selector="Border.RibbonGroup">
 			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
 			<Setter Property="BorderThickness" Value="1"/>
 			<Setter Property="CornerRadius"    Value="4"/>
-			<Setter Property="Margin"          Value="2 2 0 2"/>
-			<Setter Property="Padding"         Value="4 2"/>
+			<Setter Property="Margin"          Value="2 3"/>
+			<Setter Property="Padding"         Value="6 4 6 0"/>
 		</Style>
 		<Style Selector="TextBlock.RibbonGroupLabel">
 			<Setter Property="FontSize"            Value="10"/>
-			<Setter Property="Foreground"          Value="{DynamicResource TextSecondaryBrush}"/>
-			<Setter Property="HorizontalAlignment" Value="Center"/>
-		</Style>
-		<Style Selector="Grid.RibbonGroupLabelGrid">
-			<Setter Property="Margin" Value="0 2 0 0"/>
+			<Setter Property="Foreground"          Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="TextAlignment"       Value="Center"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="VerticalAlignment"   Value="Center"/>
+			<Setter Property="Margin"              Value="0 3 0 2"/>
 		</Style>
 
-		<!-- PathIcon наследует цвет через Foreground -->
 		<Style Selector="PathIcon">
 			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
 		</Style>
 
-		<!-- Цветной квадратик для заливки -->
+		<!-- Цветной квадратик заливки -->
 		<Style Selector="Button.ColorBtn">
-			<Setter Property="Width"          Value="20"/>
-			<Setter Property="Height"         Value="20"/>
-			<Setter Property="Padding"        Value="0"/>
+			<Setter Property="Width"           Value="18"/>
+			<Setter Property="Height"          Value="18"/>
+			<Setter Property="Padding"         Value="0"/>
+			<Setter Property="Margin"          Value="1"/>
 			<Setter Property="BorderThickness" Value="1"/>
 			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
 			<Setter Property="CornerRadius"    Value="2"/>
 			<Setter Property="Cursor"          Value="Hand"/>
+		</Style>
+
+		<!-- Числовое поле ленты — общий класс NumericUpDown.Ribbon из
+		     Styles/Controls/NumericUpDown.axaml: геометрия, рамка, стрелки и
+		     состояния описаны там же и одинаковы для всех вкладок ленты.
+		     Ширина остаётся местной: у полей размера, отступов и толщины линии
+		     она разная. -->
+
+		<!-- Пункт списка стилей линии: во всю ширину выпадашки, без колонок под
+		     значок и стрелку, которые есть у MenuItem. -->
+		<Style Selector="Button.LineItem">
+			<Setter Property="Background"                 Value="Transparent"/>
+			<Setter Property="BorderThickness"            Value="0"/>
+			<Setter Property="CornerRadius"               Value="3"/>
+			<Setter Property="Padding"                    Value="8 0"/>
+			<Setter Property="Height"                     Value="26"/>
+			<Setter Property="HorizontalAlignment"        Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Foreground"                 Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"                     Value="Hand"/>
+		</Style>
+		<Style Selector="Button.LineItem /template/ ContentPresenter">
+			<Setter Property="Background"   Value="Transparent"/>
+			<Setter Property="CornerRadius" Value="3"/>
+		</Style>
+		<Style Selector="Button.LineItem:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+
+		<!-- Иконки границ рисуются двумя слоями: бледная сетка 2×2 даёт контекст,
+		     поверх акцентом выделена та часть, которую поставит кнопка. Одним цветом
+		     это неразличимо: рамка с крестом на 16px читается как четыре точки.
+		     Path со Stretch=None, а не PathIcon: PathIcon подгоняет геометрию под
+		     размер, и слои с разным габаритом разъехались бы между собой. -->
+		<Style Selector="Path.BdrGhost">
+			<Setter Property="Fill"    Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="Opacity" Value="0.35"/>
+			<Setter Property="Stretch" Value="None"/>
+		</Style>
+		<Style Selector="Path.BdrMark">
+			<Setter Property="Fill"    Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Stretch" Value="None"/>
+		</Style>
+
+		<!-- Значок-подпись слева от числового поля вместо букв «Ш» и «В» -->
+		<Style Selector="PathIcon.TCaption">
+			<Setter Property="Width"             Value="14"/>
+			<Setter Property="Height"            Value="14"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
 		</Style>
 	</UserControl.Styles>
 
@@ -106,241 +214,310 @@
 				<!-- ── Группа: Таблица ──────────────────────────────────── -->
 				<Border Classes="RibbonGroup">
 					<DockPanel>
-						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
-							<TextBlock Classes="RibbonGroupLabel" Text="{x:Static loc:TextEditorStrings.Table_Group}"/>
-						</Grid>
-						<StackPanel Orientation="Horizontal" Spacing="2">
+						<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel"
+								   Text="{x:Static loc:TextEditorStrings.Table_Group}"/>
+						<Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto"
+							  RowSpacing="4" VerticalAlignment="Center">
 
-							<Button Command="{Binding DeleteTableCommand}"
-									Classes="RibbonBtnLarge"
-									behaviours:TooltipBehavior.Tip="Удалить таблицу"
-									behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Width="18" Height="18"
-											  Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-									<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_Delete}" HorizontalAlignment="Center"/>
-								</StackPanel>
-							</Button>
-
-							<Button Command="{Binding AutoFitCommand}"
-									Classes="RibbonBtnLarge"
+							<Button Grid.Row="0" Grid.Column="0" Margin="1 0"
+									Command="{Binding AutoFitCommand}" Classes="TBtn"
 									behaviours:TooltipBehavior.Tip="Автоподбор ширины по содержимому"
 									behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Width="18" Height="18"
-											  Data="M3 21h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18V7H3v2zm0-6v2h18V3H3z"/>
-									<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_AutoFit}" HorizontalAlignment="Center"/>
-								</StackPanel>
+								<PathIcon Width="14" Height="14"
+										  Data="M3 21h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18V7H3v2zm0-6v2h18V3H3z"/>
 							</Button>
 
-							<StackPanel Spacing="2" VerticalAlignment="Center">
-								<Button Command="{Binding DistributeColumnsCommand}"
-										Classes="RibbonBtn" Width="54"
-										behaviours:TooltipBehavior.Tip="Выровнять ширину столбцов"
-										behaviours:TooltipBehavior.ShowDelay="700">
-									<StackPanel Orientation="Horizontal" Spacing="3">
-										<PathIcon Width="12" Height="12" Data="M3 3h2v18H3zm8 0h2v18h-2zm8 0h2v18h-2z"/>
-										<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_DistributeColumns}"/>
-									</StackPanel>
-								</Button>
-								<Button Command="{Binding DistributeRowsCommand}"
-										Classes="RibbonBtn" Width="54"
-										behaviours:TooltipBehavior.Tip="Выровнять высоту строк"
-										behaviours:TooltipBehavior.ShowDelay="700">
-									<StackPanel Orientation="Horizontal" Spacing="3">
-										<PathIcon Width="12" Height="12" Data="M3 3h18v2H3zm0 8h18v2H3zm0 8h18v2H3z"/>
-										<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_DistributeRows}"/>
-									</StackPanel>
-								</Button>
+							<Button Grid.Row="0" Grid.Column="1" Margin="1 0"
+									Command="{Binding DistributeColumnsCommand}" Classes="TBtn"
+									behaviours:TooltipBehavior.Tip="Выровнять ширину столбцов"
+									behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Width="14" Height="14" Data="M3 3h2v18H3zm8 0h2v18h-2zm8 0h2v18h-2z"/>
+							</Button>
+
+							<Button Grid.Row="1" Grid.Column="0" Margin="1 0"
+									Command="{Binding DistributeRowsCommand}" Classes="TBtn"
+									behaviours:TooltipBehavior.Tip="Выровнять высоту строк"
+									behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Width="14" Height="14" Data="M3 3h18v2H3zm0 8h18v2H3zm0 8h18v2H3z"/>
+							</Button>
+
+							<Button Grid.Row="1" Grid.Column="1" Margin="1 0"
+									Command="{Binding DeleteTableCommand}" Classes="TBtn Danger"
+									behaviours:TooltipBehavior.Tip="Удалить таблицу целиком"
+									behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Width="14" Height="14"
+										  Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+							</Button>
+
+						</Grid>
+					</DockPanel>
+				</Border>
+
+				<!-- ── Группа: Строки и столбцы ─────────────────────────── -->
+				<!-- Верхний ряд — четыре добавления, нижний — удаления.
+				     Раньше это были две отдельные группы по три крупные кнопки. -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel"
+								   Text="{x:Static loc:TextEditorStrings.Table_Structure_Group}"/>
+						<Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,Auto,Auto"
+							  RowSpacing="4" VerticalAlignment="Center">
+
+							<Button Grid.Row="0" Grid.Column="0" Margin="1 0"
+									Command="{Binding AddRowAboveCommand}" Classes="TBtn"
+									behaviours:TooltipBehavior.Tip="Вставить строку выше"
+									behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Width="14" Height="14"
+										  Data="M3 3h18v4H3V3zm0 6h18v2H3V9zm0 4h18v2H3v-2zm0 4h18v2H3v-2zM12 1l-4 4h8l-4-4z"/>
+							</Button>
+							<Button Grid.Row="0" Grid.Column="1" Margin="1 0"
+									Command="{Binding AddRowBelowCommand}" Classes="TBtn"
+									behaviours:TooltipBehavior.Tip="Вставить строку ниже"
+									behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Width="14" Height="14"
+										  Data="M3 3h18v4H3V3zm0 6h18v2H3V9zm0 4h18v2H3v-2zm0 4h18v2H3v-2zM12 23l4-4H8l4 4z"/>
+							</Button>
+							<Button Grid.Row="0" Grid.Column="2" Margin="1 0"
+									Command="{Binding AddColumnLeftCommand}" Classes="TBtn"
+									behaviours:TooltipBehavior.Tip="Вставить столбец слева"
+									behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Width="14" Height="14"
+										  Data="M11 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h6v-2H5V5h6V3zm1 9l-4-4v3H5v2h3v3l4-4zm9 5h-3v-3h-2v3h-3v2h3v3h2v-3h3z"/>
+							</Button>
+							<Button Grid.Row="0" Grid.Column="3" Margin="1 0"
+									Command="{Binding AddColumnRightCommand}" Classes="TBtn"
+									behaviours:TooltipBehavior.Tip="Вставить столбец справа"
+									behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Width="14" Height="14"
+										  Data="M13 3h6c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2h-6v-2h6V5h-6V3zm-1 9l4-4v3h3v2h-3v3l-4-4zM3 17H0v-2h3v-3l4 4-4 4v-3z"/>
+							</Button>
+
+							<Button Grid.Row="1" Grid.Column="0" Margin="1 0"
+									Command="{Binding DeleteRowCommand}" Classes="TBtn Danger"
+									behaviours:TooltipBehavior.Tip="Удалить строку"
+									behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Width="14" Height="14"
+										  Data="M3 3h18v2H3V3zm2 6h14v2H5V9zm0 4h14v2H5v-2zm12 6H7v-2h10v2z"/>
+							</Button>
+							<Button Grid.Row="1" Grid.Column="1" Margin="1 0"
+									Command="{Binding DeleteColumnCommand}" Classes="TBtn Danger"
+									behaviours:TooltipBehavior.Tip="Удалить столбец"
+									behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Width="14" Height="14"
+										  Data="M3 3h2v18H3V3zm6 2h2v14H9V5zm4 0h2v14h-2V5zm6-2h2v18h-2V3z"/>
+							</Button>
+							<Button Grid.Row="1" Grid.Column="2" Margin="1 0"
+									Command="{Binding MergeCellsCommand}" Classes="TBtn"
+									behaviours:TooltipBehavior.Tip="Объединить выделенные ячейки"
+									behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Width="14" Height="14"
+										  Data="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/>
+							</Button>
+							<Button Grid.Row="1" Grid.Column="3" Margin="1 0"
+									Command="{Binding SplitCellCommand}" Classes="TBtn"
+									behaviours:TooltipBehavior.Tip="Разбить объединённую ячейку на исходные"
+									behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Width="14" Height="14"
+										  Data="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zm-5-5h-2v2h-2v-2H9v-2h2V7h2v2h2z"/>
+							</Button>
+
+						</Grid>
+					</DockPanel>
+				</Border>
+
+				<!-- ── Группа: Размер ───────────────────────────────────── -->
+				<!-- Ширина столбца и высота строки под кареткой. Команды в модуле
+				     были давно, но на ленту их никто не выводил. -->
+				<Border Classes="RibbonGroup">
+					<DockPanel>
+						<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel"
+								   Text="{x:Static loc:TextEditorStrings.Table_Size_Group}"/>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+						<StackPanel Spacing="2" VerticalAlignment="Center">
+
+							<StackPanel Orientation="Horizontal" Spacing="3">
+								<!-- Горизонтальная двойная стрелка между вертикальными границами -->
+								<PathIcon Classes="TCaption"
+										  Data="M3 4h2v16H3V4zm16 0h2v16h-2V4zM8.7 8.3L5 12l3.7 3.7 1.4-1.4L8.8 13h6.4l-1.3 1.3 1.4 1.4L19 12l-3.7-3.7-1.4 1.4 1.3 1.3H8.8l1.3-1.3-1.4-1.4z"
+										  behaviours:TooltipBehavior.Tip="Ширина столбца"
+										  behaviours:TooltipBehavior.ShowDelay="700"/>
+								<NumericUpDown Classes="Ribbon" Width="78" Minimum="5" Maximum="400" Increment="1"
+											   FormatString="0.#" ClipValueToMinMax="True"
+											   Value="{Binding ColumnWidthMm, Mode=TwoWay}"
+											   behaviours:TooltipBehavior.Tip="Ширина столбца под кареткой, мм"
+											   behaviours:TooltipBehavior.ShowDelay="700"/>
+							</StackPanel>
+
+							<StackPanel Orientation="Horizontal" Spacing="3">
+								<!-- Вертикальная двойная стрелка между горизонтальными границами -->
+								<PathIcon Classes="TCaption"
+										  Data="M4 3h16v2H4V3zm0 16h16v2H4v-2zM8.3 8.7l1.4 1.4L11 8.8v6.4l-1.3-1.3-1.4 1.4L12 19l3.7-3.7-1.4-1.4-1.3 1.3V8.8l1.3 1.3 1.4-1.4L12 5 8.3 8.7z"
+										  behaviours:TooltipBehavior.Tip="Высота строки"
+										  behaviours:TooltipBehavior.ShowDelay="700"/>
+								<NumericUpDown Classes="Ribbon" Width="78" Minimum="6" Maximum="600" Increment="1"
+											   FormatString="0.#" ClipValueToMinMax="True"
+											   Value="{Binding RowHeightPt, Mode=TwoWay}"
+											   behaviours:TooltipBehavior.Tip="Высота строки под кареткой, пункты"
+											   behaviours:TooltipBehavior.ShowDelay="700"/>
 							</StackPanel>
 
 						</StackPanel>
-					</DockPanel>
-				</Border>
 
-				<!-- ── Группа: Строки ───────────────────────────────────── -->
-				<Border Classes="RibbonGroup">
-					<DockPanel>
-						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
-							<TextBlock Classes="RibbonGroupLabel" Text="{x:Static loc:TextEditorStrings.Table_Rows_Group}"/>
-						</Grid>
-						<StackPanel Orientation="Horizontal" Spacing="2">
+						<!-- Поля ячейки спрятаны под одну кнопку: настройка редкая, а
+						     четыре поля в ленте занимали целую группу. -->
+						<Button Classes="TBtn"
+								behaviours:TooltipBehavior.Tip="Поля ячейки — внутренние отступы от рамки до текста"
+								behaviours:TooltipBehavior.ShowDelay="700">
+							<PathIcon Width="14" Height="14"
+									  Data="M0 0H16V2H0Z M0 14H16V16H0Z M0 0H2V16H0Z M14 0H16V16H14Z M5 5H11V11H5Z"/>
+							<Button.Flyout>
+								<Flyout Placement="Bottom" ShowMode="Standard">
+									<StackPanel Spacing="4" Margin="4">
+										<TextBlock Text="{x:Static loc:TextEditorStrings.Table_Padding_Group}"
+												   FontSize="11"
+												   Foreground="{DynamicResource TextSecondaryBrush}"/>
+										<Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,Auto,Auto"
+											  RowSpacing="3">
 
-							<Button Command="{Binding AddRowAboveCommand}"
-									Classes="RibbonBtnLarge"
-									behaviours:TooltipBehavior.Tip="Вставить строку выше"
-									behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Width="18" Height="18"
-											  Data="M3 3h18v4H3V3zm0 6h18v2H3V9zm0 4h18v2H3v-2zm0 4h18v2H3v-2zM12 1l-4 4h8l-4-4z"/>
-									<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_AddRowAbove}" HorizontalAlignment="Center"/>
-								</StackPanel>
-							</Button>
+											<PathIcon Grid.Row="0" Grid.Column="0" Classes="TCaption" Margin="0 0 3 0"
+													  Data="M3 3h18v2H3V3zM7 8h10v11H7V8z"
+													  behaviours:TooltipBehavior.Tip="Поле сверху"/>
+											<NumericUpDown Grid.Row="0" Grid.Column="1" Classes="Ribbon" Width="66"
+														   Minimum="0" Maximum="100" Increment="1"
+														   FormatString="0.#" ClipValueToMinMax="True"
+														   Value="{Binding PadTopPt, Mode=TwoWay}"
+														   behaviours:TooltipBehavior.Tip="Поле сверху, пункты"/>
 
-							<Button Command="{Binding AddRowBelowCommand}"
-									Classes="RibbonBtnLarge"
-									behaviours:TooltipBehavior.Tip="Вставить строку ниже"
-									behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Width="18" Height="18"
-											  Data="M3 3h18v4H3V3zm0 6h18v2H3V9zm0 4h18v2H3v-2zm0 4h18v2H3v-2zM12 23l4-4H8l4 4z"/>
-									<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_AddRowBelow}" HorizontalAlignment="Center"/>
-								</StackPanel>
-							</Button>
+											<PathIcon Grid.Row="0" Grid.Column="2" Classes="TCaption" Margin="8 0 3 0"
+													  Data="M3 19h18v2H3v-2zM7 5h10v11H7V5z"
+													  behaviours:TooltipBehavior.Tip="Поле снизу"/>
+											<NumericUpDown Grid.Row="0" Grid.Column="3" Classes="Ribbon" Width="66"
+														   Minimum="0" Maximum="100" Increment="1"
+														   FormatString="0.#" ClipValueToMinMax="True"
+														   Value="{Binding PadBottomPt, Mode=TwoWay}"
+														   behaviours:TooltipBehavior.Tip="Поле снизу, пункты"/>
 
-							<Button Command="{Binding DeleteRowCommand}"
-									Classes="RibbonBtnLarge"
-									behaviours:TooltipBehavior.Tip="Удалить строку"
-									behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Width="18" Height="18"
-											  Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM3 3h18v2H3z"/>
-									<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_DeleteRow}" HorizontalAlignment="Center"/>
-								</StackPanel>
-							</Button>
+											<PathIcon Grid.Row="1" Grid.Column="0" Classes="TCaption" Margin="0 0 3 0"
+													  Data="M3 3h2v18H3V3zM8 7h11v10H8V7z"
+													  behaviours:TooltipBehavior.Tip="Поле слева"/>
+											<NumericUpDown Grid.Row="1" Grid.Column="1" Classes="Ribbon" Width="66"
+														   Minimum="0" Maximum="100" Increment="1"
+														   FormatString="0.#" ClipValueToMinMax="True"
+														   Value="{Binding PadLeftPt, Mode=TwoWay}"
+														   behaviours:TooltipBehavior.Tip="Поле слева, пункты"/>
 
-						</StackPanel>
-					</DockPanel>
-				</Border>
+											<PathIcon Grid.Row="1" Grid.Column="2" Classes="TCaption" Margin="8 0 3 0"
+													  Data="M19 3h2v18h-2V3zM5 7h11v10H5V7z"
+													  behaviours:TooltipBehavior.Tip="Поле справа"/>
+											<NumericUpDown Grid.Row="1" Grid.Column="3" Classes="Ribbon" Width="66"
+														   Minimum="0" Maximum="100" Increment="1"
+														   FormatString="0.#" ClipValueToMinMax="True"
+														   Value="{Binding PadRightPt, Mode=TwoWay}"
+														   behaviours:TooltipBehavior.Tip="Поле справа, пункты"/>
 
-				<!-- ── Группа: Столбцы ──────────────────────────────────── -->
-				<Border Classes="RibbonGroup">
-					<DockPanel>
-						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
-							<TextBlock Classes="RibbonGroupLabel" Text="{x:Static loc:TextEditorStrings.Table_Columns_Group}"/>
-						</Grid>
-						<StackPanel Orientation="Horizontal" Spacing="2">
-
-							<Button Command="{Binding AddColumnLeftCommand}"
-									Classes="RibbonBtnLarge"
-									behaviours:TooltipBehavior.Tip="Вставить столбец слева"
-									behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Width="18" Height="18"
-											  Data="M11 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h6v-2H5V5h6V3zm1 9l-4-4v3H5v2h3v3l4-4zm9 5h-3v-3h-2v3h-3v2h3v3h2v-3h3z"/>
-									<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_AddColumnLeft}" HorizontalAlignment="Center"/>
-								</StackPanel>
-							</Button>
-
-							<Button Command="{Binding AddColumnRightCommand}"
-									Classes="RibbonBtnLarge"
-									behaviours:TooltipBehavior.Tip="Вставить столбец справа"
-									behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Width="18" Height="18"
-											  Data="M13 3h6c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2h-6v-2h6V5h-6V3zm-1 9l4-4v3h3v2h-3v3l-4-4zM3 17H0v-2h3v-3l4 4-4 4v-3z"/>
-									<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_AddColumnRight}" HorizontalAlignment="Center"/>
-								</StackPanel>
-							</Button>
-
-							<Button Command="{Binding DeleteColumnCommand}"
-									Classes="RibbonBtnLarge"
-									behaviours:TooltipBehavior.Tip="Удалить столбец"
-									behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Width="18" Height="18"
-											  Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-									<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_DeleteColumn}" HorizontalAlignment="Center"/>
-								</StackPanel>
-							</Button>
-
-						</StackPanel>
-					</DockPanel>
-				</Border>
-
-				<!-- ── Группа: Ячейки ───────────────────────────────────── -->
-				<Border Classes="RibbonGroup">
-					<DockPanel>
-						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
-							<TextBlock Classes="RibbonGroupLabel" Text="{x:Static loc:TextEditorStrings.Table_Cells_Group}"/>
-						</Grid>
-						<StackPanel Orientation="Horizontal" Spacing="2">
-
-							<Button Command="{Binding MergeCellsCommand}"
-									Classes="RibbonBtnLarge"
-									behaviours:TooltipBehavior.Tip="Объединить выделенные ячейки"
-									behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Width="18" Height="18"
-											  Data="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/>
-									<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_MergeCells}" HorizontalAlignment="Center"/>
-								</StackPanel>
-							</Button>
-
-							<Button Command="{Binding SplitCellCommand}"
-									Classes="RibbonBtnLarge"
-									behaviours:TooltipBehavior.Tip="Разбить ячейку на исходные"
-									behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Width="18" Height="18"
-											  Data="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zm-5-5h-2v2h-2v-2H9v-2h2V7h2v2h2z"/>
-									<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_SplitCell}" HorizontalAlignment="Center"/>
-								</StackPanel>
-							</Button>
+										</Grid>
+									</StackPanel>
+								</Flyout>
+							</Button.Flyout>
+						</Button>
 
 						</StackPanel>
 					</DockPanel>
 				</Border>
 
 				<!-- ── Группа: Выравнивание ─────────────────────────────── -->
+				<!-- Кнопки приплюснуты до 26×18: три ряда по 18 плюс два зазора по 1
+				     дают ровно 56 — столько же занимает тело группы на «Главной».
+				     При прежних 28×24 с полями по кругу сетка занимала 78 и одна
+				     тянула всю вкладку вверх, из-за чего лента подпрыгивала при
+				     переходе на «Работу с таблицами». Зазор именно 1, а не 2: на три
+				     ряда 56 нацело не делится, и остаток в два пикселя уходит в
+				     промежутки. Значок уменьшен до 14: в кнопке высотой 18 под
+				     содержимое остаётся 16, и прежние 16 упирались бы в рамку без
+				     единого пикселя поля. -->
 				<Border Classes="RibbonGroup">
 					<DockPanel>
-						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
-							<TextBlock Classes="RibbonGroupLabel" Text="{x:Static loc:TextEditorStrings.Table_Align_Group}"/>
-						</Grid>
-						<!-- 3×3 сетка кнопок выравнивания -->
-						<Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,Auto,Auto"
+						<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel"
+								   Text="{x:Static loc:TextEditorStrings.Table_Align_Group}"/>
+						<!-- Четвёртый столбец — выравнивание по ширине: в значке обе строки
+						     текста растянуты от края до края ячейки. -->
+						<Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,Auto,Auto,Auto"
+							  RowSpacing="1"
 							  VerticalAlignment="Center" HorizontalAlignment="Center">
 
-							<!-- Верх -->
 							<Button Grid.Row="0" Grid.Column="0" Command="{Binding AlignTopLeftCommand}"
-									Classes="RibbonBtn" Width="22" Height="17"
+										Classes.Active="{Binding IsAlignTopLeft}"
+									Classes="TBtn" Width="26" Height="18" Margin="1 0"
 									behaviours:TooltipBehavior.Tip="Сверху слева">
-								<PathIcon Width="11" Height="11" Data="M3 3h18v2H3V3zm2 4h5v10H5V7zm9 0h5v10h-5V7z"/>
+								<PathIcon Width="14" Height="14" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M2 3H10V5H2Z M2 6H6V8H2Z"/>
 							</Button>
 							<Button Grid.Row="0" Grid.Column="1" Command="{Binding AlignTopCenterCommand}"
-									Classes="RibbonBtn" Width="22" Height="17"
+										Classes.Active="{Binding IsAlignTopCenter}"
+									Classes="TBtn" Width="26" Height="18" Margin="1 0"
 									behaviours:TooltipBehavior.Tip="Сверху по центру">
-								<PathIcon Width="11" Height="11" Data="M3 3h18v2H3V3zm4 4h4v10H7V7zm6 0h4v10h-4V7z"/>
+								<PathIcon Width="14" Height="14" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M4 3H12V5H4Z M6 6H10V8H6Z"/>
 							</Button>
 							<Button Grid.Row="0" Grid.Column="2" Command="{Binding AlignTopRightCommand}"
-									Classes="RibbonBtn" Width="22" Height="17"
+										Classes.Active="{Binding IsAlignTopRight}"
+									Classes="TBtn" Width="26" Height="18" Margin="1 0"
 									behaviours:TooltipBehavior.Tip="Сверху справа">
-								<PathIcon Width="11" Height="11" Data="M3 3h18v2H3V3zm10 4h5v10h-5V7zm-9 0h5v10H4V7z"/>
+								<PathIcon Width="14" Height="14" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M6 3H14V5H6Z M10 6H14V8H10Z"/>
+								</Button>
+								<Button Grid.Row="0" Grid.Column="3" Command="{Binding AlignTopJustifyCommand}"
+										Classes.Active="{Binding IsAlignTopJustify}"
+										Classes="TBtn" Width="26" Height="18" Margin="1 0"
+										behaviours:TooltipBehavior.Tip="Сверху по ширине">
+									<PathIcon Width="14" Height="14" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M2 3H14V5H2Z M2 6H14V8H2Z"/>
 							</Button>
 
-							<!-- Середина -->
 							<Button Grid.Row="1" Grid.Column="0" Command="{Binding AlignMiddleLeftCommand}"
-									Classes="RibbonBtn" Width="22" Height="17"
+										Classes.Active="{Binding IsAlignMiddleLeft}"
+									Classes="TBtn" Width="26" Height="18" Margin="1 0"
 									behaviours:TooltipBehavior.Tip="По центру слева">
-								<PathIcon Width="11" Height="11" Data="M2 11h9v2H2v-2zm0-4h5v2H2V7zm0 8h5v2H2v-2zm11-8h5v12h-5V7zm7 0h2v12h-2V7z"/>
+								<PathIcon Width="14" Height="14" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M2 6H10V8H2Z M2 9H6V11H2Z"/>
 							</Button>
 							<Button Grid.Row="1" Grid.Column="1" Command="{Binding AlignMiddleCenterCommand}"
-									Classes="RibbonBtn" Width="22" Height="17"
+										Classes.Active="{Binding IsAlignMiddleCenter}"
+									Classes="TBtn" Width="26" Height="18" Margin="1 0"
 									behaviours:TooltipBehavior.Tip="По центру">
-								<PathIcon Width="11" Height="11" Data="M3 11h18v2H3v-2zM7 7h4v10H7V7zm6 0h4v10h-4V7z"/>
+								<PathIcon Width="14" Height="14" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M4 6H12V8H4Z M6 9H10V11H6Z"/>
 							</Button>
 							<Button Grid.Row="1" Grid.Column="2" Command="{Binding AlignMiddleRightCommand}"
-									Classes="RibbonBtn" Width="22" Height="17"
+										Classes.Active="{Binding IsAlignMiddleRight}"
+									Classes="TBtn" Width="26" Height="18" Margin="1 0"
 									behaviours:TooltipBehavior.Tip="По центру справа">
-								<PathIcon Width="11" Height="11" Data="M22 11H4v2h18v-2zm-7-4h-4v10h4V7zm7 0h-2v10h2V7zM2 7H7v12H2V7z"/>
+								<PathIcon Width="14" Height="14" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M6 6H14V8H6Z M10 9H14V11H10Z"/>
+								</Button>
+								<Button Grid.Row="1" Grid.Column="3" Command="{Binding AlignMiddleJustifyCommand}"
+										Classes.Active="{Binding IsAlignMiddleJustify}"
+										Classes="TBtn" Width="26" Height="18" Margin="1 0"
+										behaviours:TooltipBehavior.Tip="По центру по ширине">
+									<PathIcon Width="14" Height="14" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M2 6H14V8H2Z M2 9H14V11H2Z"/>
 							</Button>
 
-							<!-- Низ -->
 							<Button Grid.Row="2" Grid.Column="0" Command="{Binding AlignBottomLeftCommand}"
-									Classes="RibbonBtn" Width="22" Height="17"
+										Classes.Active="{Binding IsAlignBottomLeft}"
+									Classes="TBtn" Width="26" Height="18" Margin="1 0"
 									behaviours:TooltipBehavior.Tip="Снизу слева">
-								<PathIcon Width="11" Height="11" Data="M3 19h18v2H3v-2zm2-4h5V5H5v10zm9 0h5V5h-5v10z"/>
+								<PathIcon Width="14" Height="14" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M2 9H10V11H2Z M2 12H6V14H2Z"/>
 							</Button>
 							<Button Grid.Row="2" Grid.Column="1" Command="{Binding AlignBottomCenterCommand}"
-									Classes="RibbonBtn" Width="22" Height="17"
+										Classes.Active="{Binding IsAlignBottomCenter}"
+									Classes="TBtn" Width="26" Height="18" Margin="1 0"
 									behaviours:TooltipBehavior.Tip="Снизу по центру">
-								<PathIcon Width="11" Height="11" Data="M3 19h18v2H3v-2zm4-4h4V5H7v10zm6 0h4V5h-4v10z"/>
+								<PathIcon Width="14" Height="14" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M4 9H12V11H4Z M6 12H10V14H6Z"/>
 							</Button>
 							<Button Grid.Row="2" Grid.Column="2" Command="{Binding AlignBottomRightCommand}"
-									Classes="RibbonBtn" Width="22" Height="17"
+										Classes.Active="{Binding IsAlignBottomRight}"
+									Classes="TBtn" Width="26" Height="18" Margin="1 0"
 									behaviours:TooltipBehavior.Tip="Снизу справа">
-								<PathIcon Width="11" Height="11" Data="M3 19h18v2H3v-2zm10-4h5V5h-5v10zm-9 0h5V5H4v10z"/>
+								<PathIcon Width="14" Height="14" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M6 9H14V11H6Z M10 12H14V14H10Z"/>
+								</Button>
+								<Button Grid.Row="2" Grid.Column="3" Command="{Binding AlignBottomJustifyCommand}"
+										Classes.Active="{Binding IsAlignBottomJustify}"
+										Classes="TBtn" Width="26" Height="18" Margin="1 0"
+										behaviours:TooltipBehavior.Tip="Снизу по ширине">
+									<PathIcon Width="14" Height="14" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M2 9H14V11H2Z M2 12H14V14H2Z"/>
 							</Button>
 
 						</Grid>
@@ -350,128 +527,361 @@
 				<!-- ── Группа: Заливка ──────────────────────────────────── -->
 				<Border Classes="RibbonGroup">
 					<DockPanel>
-						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
-							<TextBlock Classes="RibbonGroupLabel" Text="{x:Static loc:TextEditorStrings.Table_Style_Group}"/>
-						</Grid>
-						<StackPanel VerticalAlignment="Center" Spacing="2">
-							<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_CellColor}" Foreground="{DynamicResource TextSecondaryBrush}"/>
-							<WrapPanel MaxWidth="120">
-								<!-- Нет заливки -->
+						<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel"
+								   Text="{x:Static loc:TextEditorStrings.Table_Style_Group}"/>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+
+							<!-- Произвольный цвет: тот же контрол, что у цвета текста.
+							     Выбор применяется к выделенным ячейкам сразу. -->
+							<StackPanel Spacing="2" VerticalAlignment="Center">
+								<controls:ColorPickerButton Width="20" Height="20"
+										HexColor="{Binding CellColorPick, Mode=TwoWay}"
+										behaviours:TooltipBehavior.Tip="Произвольный цвет заливки ячейки"
+										behaviours:TooltipBehavior.ShowDelay="700"/>
 								<Button Command="{Binding SetCellBackgroundNoneCommand}"
-										Classes="ColorBtn"
-										behaviours:TooltipBehavior.Tip="Нет заливки">
+										Classes="ColorBtn" Width="20" Height="20" Margin="0"
+										behaviours:TooltipBehavior.Tip="Убрать заливку"
+										behaviours:TooltipBehavior.ShowDelay="700">
 									<Grid>
-										<Rectangle Fill="White" Width="16" Height="16"/>
-										<Line StartPoint="0,0" EndPoint="16,16" Stroke="Red" StrokeThickness="1.5"/>
+										<Rectangle Fill="White" Width="14" Height="14"/>
+										<Line StartPoint="0,0" EndPoint="14,14" Stroke="Red" StrokeThickness="1.5"/>
 									</Grid>
 								</Button>
-								<!-- Синий -->
-								<Button Command="{Binding SetCellBackgroundBlueCommand}"
-										Classes="ColorBtn"
-										behaviours:TooltipBehavior.Tip="Синий (#BDD7EE)">
-									<Rectangle Fill="#BDD7EE" Width="16" Height="16"/>
+							</StackPanel>
+
+							<!-- Быстрые образцы частых цветов -->
+							<Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,Auto"
+								  VerticalAlignment="Center">
+								<Button Grid.Row="0" Grid.Column="0" Command="{Binding SetCellBackgroundBlueCommand}"
+										Classes="ColorBtn" behaviours:TooltipBehavior.Tip="Синий (#BDD7EE)">
+									<Rectangle Fill="#BDD7EE" Width="14" Height="14"/>
 								</Button>
-								<!-- Зелёный -->
-								<Button Command="{Binding SetCellBackgroundGreenCommand}"
-										Classes="ColorBtn"
-										behaviours:TooltipBehavior.Tip="Зелёный (#C6EFCE)">
-									<Rectangle Fill="#C6EFCE" Width="16" Height="16"/>
+								<Button Grid.Row="0" Grid.Column="1" Command="{Binding SetCellBackgroundGreenCommand}"
+										Classes="ColorBtn" behaviours:TooltipBehavior.Tip="Зелёный (#C6EFCE)">
+									<Rectangle Fill="#C6EFCE" Width="14" Height="14"/>
 								</Button>
-								<!-- Жёлтый -->
-								<Button Command="{Binding SetCellBackgroundYellowCommand}"
-										Classes="ColorBtn"
-										behaviours:TooltipBehavior.Tip="Жёлтый (#FFEB9C)">
-									<Rectangle Fill="#FFEB9C" Width="16" Height="16"/>
+								<Button Grid.Row="0" Grid.Column="2" Command="{Binding SetCellBackgroundYellowCommand}"
+										Classes="ColorBtn" behaviours:TooltipBehavior.Tip="Жёлтый (#FFEB9C)">
+									<Rectangle Fill="#FFEB9C" Width="14" Height="14"/>
 								</Button>
-								<!-- Красный -->
-								<Button Command="{Binding SetCellBackgroundRedCommand}"
-										Classes="ColorBtn"
-										behaviours:TooltipBehavior.Tip="Красный (#FFC7CE)">
-									<Rectangle Fill="#FFC7CE" Width="16" Height="16"/>
+								<Button Grid.Row="1" Grid.Column="0" Command="{Binding SetCellBackgroundRedCommand}"
+										Classes="ColorBtn" behaviours:TooltipBehavior.Tip="Красный (#FFC7CE)">
+									<Rectangle Fill="#FFC7CE" Width="14" Height="14"/>
 								</Button>
-								<!-- Серый -->
-								<Button Command="{Binding SetCellBackgroundGrayCommand}"
-										Classes="ColorBtn"
-										behaviours:TooltipBehavior.Tip="Серый (#D9D9D9)">
-									<Rectangle Fill="#D9D9D9" Width="16" Height="16"/>
+								<Button Grid.Row="1" Grid.Column="1" Command="{Binding SetCellBackgroundGrayCommand}"
+										Classes="ColorBtn" behaviours:TooltipBehavior.Tip="Серый (#D9D9D9)">
+									<Rectangle Fill="#D9D9D9" Width="14" Height="14"/>
 								</Button>
-							</WrapPanel>
+								<Button Grid.Row="1" Grid.Column="2" Command="{Binding SetCellBackgroundNoneCommand}"
+										Classes="ColorBtn" behaviours:TooltipBehavior.Tip="Белый (без заливки)">
+									<Rectangle Fill="White" Width="14" Height="14"/>
+								</Button>
+							</Grid>
+
 						</StackPanel>
 					</DockPanel>
 				</Border>
 
 				<!-- ── Группа: Границы ──────────────────────────────────── -->
+				<!-- Слева перо (цвет, толщина, стиль), справа стороны применения.
+				     Перо настраивается один раз и действует на все кнопки сторон. -->
 				<Border Classes="RibbonGroup">
 					<DockPanel>
-						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
-							<TextBlock Classes="RibbonGroupLabel" Text="{x:Static loc:TextEditorStrings.Table_Borders}"/>
-						</Grid>
-						<StackPanel Orientation="Horizontal" Spacing="2">
+						<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel"
+								   Text="{x:Static loc:TextEditorStrings.Table_Borders}"/>
+						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
 
+							<!-- Перо: чем и как рисовать. Дальше, через разделитель, — куда
+							     это приложить.
+							     Верхняя строка — чем рисовать: толщина и узор. Нижняя — цвет
+							     во всю ширину блока. Раньше цвет стоял сверху кружком рядом со
+							     словом «Линия», и по кружку не читалось ни то, каким узором
+							     ляжет граница, ни то, насколько она будет толстой. -->
+							<StackPanel Spacing="4" VerticalAlignment="Center">
+								<StackPanel Orientation="Horizontal" Spacing="3">
+									<NumericUpDown Classes="Ribbon" Width="74" Minimum="0.25" Maximum="6"
+												   Increment="0.25" FormatString="0.##" ClipValueToMinMax="True"
+												   Value="{Binding BorderThicknessPt, Mode=TwoWay}"
+												   behaviours:TooltipBehavior.Tip="Толщина линии, пункты"
+												   behaviours:TooltipBehavior.ShowDelay="700"/>
+									<!-- Вместо обрезанного слова «Сплошн...» — образец самой линии.
+									     Рисуется примитивами, а не PathIcon: у линий разной толщины
+									     разный габарит, и PathIcon растянул бы каждую по-своему. -->
+									<Button Classes="TBtn" Width="46"
+											x:Name="BorderStyleButton"
+												behaviours:TooltipBehavior.Tip="Стиль линии границы"
+											behaviours:TooltipBehavior.ShowDelay="700">
+										<Button.Content>
+											<!-- Толщина образца берётся из настройки: при 0,5pt линия
+											     волосяная, как в таблице, а не жирный брусок. -->
+											<Grid Width="26" Height="16">
+												<Rectangle IsVisible="{Binding IsBorderSingle}"
+														   Height="{Binding BorderSampleThickness}"
+														   VerticalAlignment="Center"
+														   Fill="{DynamicResource TextPrimaryBrush}"/>
+												<StackPanel IsVisible="{Binding IsBorderDouble}"
+															VerticalAlignment="Center" Spacing="3">
+													<Rectangle Height="{Binding BorderSampleThickness}"
+															   Fill="{DynamicResource TextPrimaryBrush}"/>
+													<Rectangle Height="{Binding BorderSampleThickness}"
+															   Fill="{DynamicResource TextPrimaryBrush}"/>
+												</StackPanel>
+												<Line IsVisible="{Binding IsBorderDashed}"
+													  StartPoint="0,8" EndPoint="26,8"
+													  Stroke="{DynamicResource TextPrimaryBrush}"
+													  StrokeThickness="{Binding BorderSampleThickness}"
+													  StrokeDashArray="3,2"/>
+												<Line IsVisible="{Binding IsBorderDotted}"
+													  StartPoint="0,8" EndPoint="26,8"
+													  Stroke="{DynamicResource TextPrimaryBrush}"
+													  StrokeThickness="{Binding BorderSampleThickness}"
+													  StrokeDashArray="1,1.5"/>
+												<Rectangle IsVisible="{Binding IsBorderThick}"
+														   Height="5" VerticalAlignment="Center"
+														   Fill="{DynamicResource TextPrimaryBrush}"/>
+											</Grid>
+										</Button.Content>
+										<Button.Flyout>
+											<!-- В меню сами линии, а не их названия: рисунок узора
+											     понятнее слова «Пунктир». Названия остались в
+											     подсказках. Толщина здесь одинаковая — меню
+											     показывает узор, реальную толщину показывает
+											     образец на кнопке. -->
+											<!-- Обычный Flyout со списком кнопок, а не MenuFlyout:
+											     у MenuItem в шаблоне есть колонка под значок слева
+											     и под стрелку подменю справа, они и давали пустоты
+											     по краям. Здесь ширина ровно по образцу линии.
+											     Закрытие после выбора — в code-behind. -->
+											<Flyout Placement="Bottom" ShowMode="Standard">
+												<StackPanel Width="150" Spacing="1">
+
+													<Button Classes="LineItem" Command="{Binding SetBorderStyleSingleCommand}"
+															Click="OnLineStyleChosen"
+															behaviours:TooltipBehavior.Tip="Сплошная">
+														<Rectangle Height="1.5" VerticalAlignment="Center"
+																   Fill="{DynamicResource TextPrimaryBrush}"/>
+													</Button>
+
+													<Button Classes="LineItem" Command="{Binding SetBorderStyleDoubleCommand}"
+															Click="OnLineStyleChosen"
+															behaviours:TooltipBehavior.Tip="Двойная">
+														<StackPanel VerticalAlignment="Center" Spacing="3">
+															<Rectangle Height="1.5" Fill="{DynamicResource TextPrimaryBrush}"/>
+															<Rectangle Height="1.5" Fill="{DynamicResource TextPrimaryBrush}"/>
+														</StackPanel>
+													</Button>
+
+													<Button Classes="LineItem" Command="{Binding SetBorderStyleDashedCommand}"
+															Click="OnLineStyleChosen"
+															behaviours:TooltipBehavior.Tip="Пунктир">
+														<Line StartPoint="0,7" EndPoint="130,7"
+															  Stroke="{DynamicResource TextPrimaryBrush}"
+															  StrokeThickness="1.5" StrokeDashArray="4,3"/>
+													</Button>
+
+													<Button Classes="LineItem" Command="{Binding SetBorderStyleDottedCommand}"
+															Click="OnLineStyleChosen"
+															behaviours:TooltipBehavior.Tip="Точки">
+														<Line StartPoint="0,7" EndPoint="130,7"
+															  Stroke="{DynamicResource TextPrimaryBrush}"
+															  StrokeThickness="1.5" StrokeDashArray="1,2"/>
+													</Button>
+
+													<Button Classes="LineItem" Command="{Binding SetBorderStyleThickCommand}"
+															Click="OnLineStyleChosen"
+															behaviours:TooltipBehavior.Tip="Жирная">
+														<Rectangle Height="4" VerticalAlignment="Center"
+																   Fill="{DynamicResource TextPrimaryBrush}"/>
+													</Button>
+
+													<Rectangle Height="1" Margin="4 3"
+															   Fill="{DynamicResource BorderDefaultBrush}"/>
+
+													<Button Classes="LineItem" Command="{Binding EditCustomLinePatternCommand}"
+															Click="OnLineStyleChosen"
+															behaviours:TooltipBehavior.Tip="Задать собственное чередование штрихов и пробелов">
+														<StackPanel Orientation="Horizontal" Spacing="6"
+																	VerticalAlignment="Center">
+															<PathIcon Width="12" Height="12"
+																	  Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+															<TextBlock Text="Свой узор…" FontSize="11"
+																	   VerticalAlignment="Center"/>
+														</StackPanel>
+													</Button>
+
+												</StackPanel>
+											</Flyout>
+										</Button.Flyout>
+									</Button>
+								</StackPanel>
+
+								<!-- Нижняя строка: слева действие, справа выбор цвета — разделение
+								     как у цвета шрифта в Word. Нажатие на длинную кнопку сразу
+								     обводит выделенные ячейки текущим пером, стрелка открывает
+								     список цветов. Рамка одна на обе половины, внутри только
+								     разделитель — вместе они читаются как один элемент.
+								     Ширина складывается в 123 и повторяет строку выше
+								     (74 поля, 3 зазора, 46 образца): 1 рамки, 102 кнопки,
+								     1 разделителя, 18 стрелки, 1 рамки.
+								     Внутри кнопки рисуется не заливка, а сама линия текущего
+								     стиля и толщины в выбранном цвете — до нажатия видно, чем
+								     именно ляжет граница. -->
+								<Border Classes="PenSplit" Height="26" CornerRadius="3"
+										Classes.HotLeft="{Binding #PenApplyButton.IsPointerOver}"
+										Classes.HotArrow="{Binding #BorderColorArrow.IsPointerOver}"
+										Classes.MenuOpen="{Binding #BorderColorArrow.IsMenuOpen}"
+										BorderThickness="1">
+								<StackPanel Orientation="Horizontal" Spacing="0">
+									<Button x:Name="PenApplyButton"
+											Classes="PenHalf" Width="102" Margin="0"
+											Command="{Binding BorderAllCommand}"
+											behaviours:TooltipBehavior.Tip="Обвести выделенные ячейки текущим пером"
+											behaviours:TooltipBehavior.ShowDelay="700">
+										<!-- Плашка тянется на всю оставшуюся ширину, а не стоит фиксированной:
+										     при жёсткой ширине она обрывалась заметно раньше стрелки, и
+										     между ней и краем кнопки зияла пустота. -->
+										<Grid ColumnDefinitions="Auto,*" Margin="7 0"
+											  VerticalAlignment="Center">
+											<!-- Ведро с краской, а не перо: перо и карандаш в этой же
+											     ленте заняты режимами рисования границы по линии сетки,
+											     и третий пишущий значок рядом с ними читался как ещё
+											     один такой же режим. Ведро говорит про цвет, а не про
+											     инструмент. -->
+											<PathIcon Grid.Column="0" Width="13" Height="13"
+													  VerticalAlignment="Center"
+													  Foreground="{DynamicResource TextSecondaryBrush}"
+													  Data="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.59-.59 1.54 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10L10 5.21 14.79 10H5.21zM19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z"/>
+											<!-- Плашка показывает цвет и только цвет. Рисовать здесь линию
+											     текущего стиля не годится: при 0,25–0,5 pt она волосяная,
+											     цвет по ней не прочитать, и кнопка читается как «нарисовать
+											     линию», а не как «цвет пера». Узор и толщину показывает
+											     образец в строке выше — там это и место.
+											     Белое основание под цветом обязательно: лента тёмная, и
+											     чёрное перо на ней выглядело бы пустой рамкой. Со светлой
+											     подложкой честно виден любой цвет, а рамка отделяет от
+											     подложки сам белый. -->
+											<Border Grid.Column="1" Margin="5 0 0 0"
+													Height="10" CornerRadius="2"
+													HorizontalAlignment="Stretch"
+													VerticalAlignment="Center"
+													BorderBrush="{DynamicResource BorderDefaultBrush}"
+													BorderThickness="1"
+													Background="White">
+												<Border Background="{Binding BorderColorPick, Converter={x:Static conv:ColorCodeToBrushConverter.Instance}}"/>
+											</Border>
+										</Grid>
+									</Button>
+
+									<!-- Отдельного разделителя нет: им работает левая грань стрелки.
+									     Ширина 19 — это грань плюс 18 под значок; 18 и 24 чётные, и
+									     значок 12×6 центрируется без остатка. При нечётных сторонах
+									     половина пикселя уходит вбок, и стрелка встаёт криво. -->
+									<controls:ColorPickerButton x:Name="BorderColorArrow"
+											Classes="arrow" Width="19" Height="24"
+											HexColor="{Binding BorderColorPick, Mode=TwoWay}"
+											behaviours:TooltipBehavior.Tip="Выбрать цвет линии границы"
+											behaviours:TooltipBehavior.ShowDelay="700"/>
+								</StackPanel>
+								</Border>
+							</StackPanel>
+
+							<!-- Разделитель: слева настраивают перо, справа выбирают, куда его
+							     приложить. Без него блок читался как одна каша из кнопок. -->
+							<Rectangle Width="1" Margin="2 3" VerticalAlignment="Stretch"
+									   Fill="{DynamicResource BorderDefaultBrush}"/>
+
+							<!-- Инструменты границ: режимы, а не разовые действия. Нажатие
+							     включает режим и подсвечивает кнопку, повторное — выключает.
+							     Взаимоисключающие: включение одного гасит другой. -->
 							<StackPanel Spacing="2" VerticalAlignment="Center">
-								<Button Command="{Binding BorderAllCommand}"
-										Classes="RibbonBtn" Width="60"
+								<Button Command="{Binding TogglePencilToolCommand}"
+										Classes="TBtn" Classes.Active="{Binding IsPencilTool}"
+										behaviours:TooltipBehavior.Tip="Карандаш: провести границу по линии сетки текущим пером"
+										behaviours:TooltipBehavior.ShowDelay="700">
+									<PathIcon Width="14" Height="14"
+											  Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+								</Button>
+								<Button Command="{Binding ToggleEraserToolCommand}"
+										Classes="TBtn" Classes.Active="{Binding IsEraserTool}"
+										behaviours:TooltipBehavior.Tip="Ластик: убрать границу по линии сетки"
+										behaviours:TooltipBehavior.ShowDelay="700">
+									<PathIcon Width="14" Height="14"
+											  Data="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.77c-.78.78-.78 2.04 0 2.83L5.03 20h6.97l8.42-8.42c.78-.78.78-2.05 0-2.83l-3.87-3.87c-.39-.39-.9-.59-1.41-.59zM6.44 18l-2.44-2.44 5.66-5.66 2.44 2.44L6.44 18z"/>
+								</Button>
+							</StackPanel>
+
+							<Rectangle Width="1" Margin="2 3" VerticalAlignment="Stretch"
+									   Fill="{DynamicResource BorderDefaultBrush}"/>
+
+							<Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,Auto,Auto"
+								  RowSpacing="4" VerticalAlignment="Center">
+
+								<Button Grid.Row="0" Grid.Column="0" Margin="1 0"
+										Command="{Binding BorderAllCommand}" Classes="TBtn"
 										behaviours:TooltipBehavior.Tip="Все границы">
-									<StackPanel Orientation="Horizontal" Spacing="3">
-										<PathIcon Width="12" Height="12" Data="M3 3h18v18H3V3zm2 2v14h14V5H5zm2 2h10v2H7V7zm0 4h10v2H7v-2zm0 4h10v2H7v-2z"/>
-										<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_BorderAll}"/>
-									</StackPanel>
+									<Grid Width="16" Height="16">
+										<Path Classes="BdrGhost" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M0 7H16V8H0Z M7 0H8V16H7Z"/>
+										<Path Classes="BdrMark"  Data="M0 0H16V1.6H0Z M0 14.4H16V16H0Z M0 0H1.6V16H0Z M14.4 0H16V16H14.4Z M0 7.2H16V8.8H0Z M7.2 0H8.8V16H7.2Z"/>
+									</Grid>
 								</Button>
-								<Button Command="{Binding BorderNoneCommand}"
-										Classes="RibbonBtn" Width="60"
-										behaviours:TooltipBehavior.Tip="Нет границ">
-									<StackPanel Orientation="Horizontal" Spacing="3">
-										<PathIcon Width="12" Height="12" Data="M3 3h18v2H3V3zm0 16h18v2H3v-2zM3 3v18H5V3H3zm16 0v18h2V3h-2z"/>
-										<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_BorderNone}"/>
-									</StackPanel>
-								</Button>
-							</StackPanel>
-
-							<StackPanel Spacing="2" VerticalAlignment="Center">
-								<Button Command="{Binding BorderOuterCommand}"
-										Classes="RibbonBtn" Width="60"
+								<Button Grid.Row="0" Grid.Column="1" Margin="1 0"
+										Command="{Binding BorderOuterCommand}" Classes="TBtn"
 										behaviours:TooltipBehavior.Tip="Только внешние границы">
-									<StackPanel Orientation="Horizontal" Spacing="3">
-										<PathIcon Width="12" Height="12" Data="M3 3h18v18H3V3zm2 2v14h14V5H5z"/>
-										<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_BorderOuter}"/>
-									</StackPanel>
+									<Grid Width="16" Height="16">
+										<Path Classes="BdrGhost" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M0 7H16V8H0Z M7 0H8V16H7Z"/>
+										<Path Classes="BdrMark"  Data="M0 0H16V1.6H0Z M0 14.4H16V16H0Z M0 0H1.6V16H0Z M14.4 0H16V16H14.4Z"/>
+									</Grid>
 								</Button>
-								<Button Command="{Binding BorderInnerCommand}"
-										Classes="RibbonBtn" Width="60"
+								<Button Grid.Row="0" Grid.Column="2" Margin="1 0"
+										Command="{Binding BorderInnerCommand}" Classes="TBtn"
 										behaviours:TooltipBehavior.Tip="Только внутренние границы">
-									<StackPanel Orientation="Horizontal" Spacing="3">
-										<PathIcon Width="12" Height="12" Data="M11 3v8H3v2h8v8h2v-8h8v-2h-8V3h-2z"/>
-										<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_BorderInner}"/>
-									</StackPanel>
+									<Grid Width="16" Height="16">
+										<Path Classes="BdrGhost" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M0 7H16V8H0Z M7 0H8V16H7Z"/>
+										<Path Classes="BdrMark"  Data="M0 7.2H16V8.8H0Z M7.2 0H8.8V16H7.2Z"/>
+									</Grid>
 								</Button>
-							</StackPanel>
+								<Button Grid.Row="0" Grid.Column="3" Margin="1 0"
+										Command="{Binding BorderNoneCommand}" Classes="TBtn Danger"
+										behaviours:TooltipBehavior.Tip="Убрать все границы">
+									<Grid Width="16" Height="16">
+										<Path Classes="BdrGhost" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M0 7H16V8H0Z M7 0H8V16H7Z"/>
+									</Grid>
+								</Button>
 
-							<StackPanel Spacing="2" VerticalAlignment="Center">
-								<StackPanel Orientation="Horizontal" Spacing="2">
-									<Button Command="{Binding BorderTopCommand}"
-											Classes="RibbonBtn" Width="28"
-											behaviours:TooltipBehavior.Tip="Верхняя граница">
-										<PathIcon Width="12" Height="12" Data="M3 3h18v2H3V3z"/>
-									</Button>
-									<Button Command="{Binding BorderBottomCommand}"
-											Classes="RibbonBtn" Width="28"
-											behaviours:TooltipBehavior.Tip="Нижняя граница">
-										<PathIcon Width="12" Height="12" Data="M3 19h18v2H3v-2z"/>
-									</Button>
-								</StackPanel>
-								<StackPanel Orientation="Horizontal" Spacing="2">
-									<Button Command="{Binding BorderLeftCommand}"
-											Classes="RibbonBtn" Width="28"
-											behaviours:TooltipBehavior.Tip="Левая граница">
-										<PathIcon Width="12" Height="12" Data="M3 3h2v18H3V3z"/>
-									</Button>
-									<Button Command="{Binding BorderRightCommand}"
-											Classes="RibbonBtn" Width="28"
-											behaviours:TooltipBehavior.Tip="Правая граница">
-										<PathIcon Width="12" Height="12" Data="M19 3h2v18h-2V3z"/>
-									</Button>
-								</StackPanel>
-							</StackPanel>
+								<Button Grid.Row="1" Grid.Column="0" Margin="1 0"
+										Command="{Binding BorderTopCommand}" Classes="TBtn"
+										behaviours:TooltipBehavior.Tip="Верхняя граница">
+									<Grid Width="16" Height="16">
+										<Path Classes="BdrGhost" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M0 7H16V8H0Z M7 0H8V16H7Z"/>
+										<Path Classes="BdrMark"  Data="M0 0H16V2H0Z"/>
+									</Grid>
+								</Button>
+								<Button Grid.Row="1" Grid.Column="1" Margin="1 0"
+										Command="{Binding BorderBottomCommand}" Classes="TBtn"
+										behaviours:TooltipBehavior.Tip="Нижняя граница">
+									<Grid Width="16" Height="16">
+										<Path Classes="BdrGhost" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M0 7H16V8H0Z M7 0H8V16H7Z"/>
+										<Path Classes="BdrMark"  Data="M0 14H16V16H0Z"/>
+									</Grid>
+								</Button>
+								<Button Grid.Row="1" Grid.Column="2" Margin="1 0"
+										Command="{Binding BorderLeftCommand}" Classes="TBtn"
+										behaviours:TooltipBehavior.Tip="Левая граница">
+									<Grid Width="16" Height="16">
+										<Path Classes="BdrGhost" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M0 7H16V8H0Z M7 0H8V16H7Z"/>
+										<Path Classes="BdrMark"  Data="M0 0H2V16H0Z"/>
+									</Grid>
+								</Button>
+								<Button Grid.Row="1" Grid.Column="3" Margin="1 0"
+										Command="{Binding BorderRightCommand}" Classes="TBtn"
+										behaviours:TooltipBehavior.Tip="Правая граница">
+									<Grid Width="16" Height="16">
+										<Path Classes="BdrGhost" Data="M0 0H16V1H0Z M0 15H16V16H0Z M0 0H1V16H0Z M15 0H16V16H15Z M0 7H16V8H0Z M7 0H8V16H7Z"/>
+										<Path Classes="BdrMark"  Data="M14 0H16V16H14Z"/>
+									</Grid>
+								</Button>
+
+							</Grid>
 
 						</StackPanel>
 					</DockPanel>
@@ -480,112 +890,66 @@
 				<!-- ── Группа: Сортировка ───────────────────────────────── -->
 				<Border Classes="RibbonGroup">
 					<DockPanel>
-						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
-							<TextBlock Classes="RibbonGroupLabel" Text="{x:Static loc:TextEditorStrings.Table_Sort_Group}"/>
-						</Grid>
-						<StackPanel Spacing="2" VerticalAlignment="Center">
-							<Button Command="{Binding SortAscCommand}"
-									Classes="RibbonBtn" Width="80"
+						<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel"
+								   Text="{x:Static loc:TextEditorStrings.Table_Sort_Group}"/>
+						<StackPanel Spacing="4" VerticalAlignment="Center">
+							<Button Command="{Binding SortAscCommand}" Classes="TBtn"
 									behaviours:TooltipBehavior.Tip="Сортировать по возрастанию (А→Я, 1→9)"
 									behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Orientation="Horizontal" Spacing="4">
-									<PathIcon Width="14" Height="14"
-											  Data="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z"/>
-									<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_SortAsc}"/>
-								</StackPanel>
+								<PathIcon Width="14" Height="14" Data="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z"/>
 							</Button>
-							<Button Command="{Binding SortDescCommand}"
-									Classes="RibbonBtn" Width="80"
+							<Button Command="{Binding SortDescCommand}" Classes="TBtn"
 									behaviours:TooltipBehavior.Tip="Сортировать по убыванию (Я→А, 9→1)"
 									behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Orientation="Horizontal" Spacing="4">
-									<PathIcon Width="14" Height="14"
-											  Data="M3 6h18v2H3V6zm0 7h12v-2H3v2zm0 5h6v-2H3v2z"/>
-									<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_SortDesc}"/>
-								</StackPanel>
+								<PathIcon Width="14" Height="14" Data="M3 6h18v2H3V6zm0 7h12v-2H3v2zm0 5h6v-2H3v2z"/>
 							</Button>
 						</StackPanel>
 					</DockPanel>
 				</Border>
 
-				<!-- ── Группа: Заголовок ─────────────────────────────────── -->
+				<!-- ── Группа: Страницы ─────────────────────────────────── -->
+				<!-- Повтор заголовка, режим разбивки и подписи разрыва — всё, что
+				     касается поведения таблицы на границе страниц, в одной группе. -->
 				<Border Classes="RibbonGroup">
 					<DockPanel>
-						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
-							<TextBlock Classes="RibbonGroupLabel" Text="{x:Static loc:TextEditorStrings.Table_Header_Group}"/>
-						</Grid>
-						<StackPanel Spacing="2" VerticalAlignment="Center">
-							<Button Command="{Binding RepeatHeaderCommand}"
-									Classes="RibbonBtnLarge"
+						<TextBlock DockPanel.Dock="Bottom" Classes="RibbonGroupLabel"
+								   Text="{x:Static loc:TextEditorStrings.Table_Split_Group}"/>
+						<Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto"
+							  RowSpacing="4" VerticalAlignment="Center">
+
+							<Button Grid.Row="0" Grid.Column="0" Margin="1 0"
+									Command="{Binding RepeatHeaderCommand}"
+									Classes="TBtn" Classes.Active="{Binding IsRepeatHeader}"
 									behaviours:TooltipBehavior.Tip="Повторять первую строку таблицы как заголовок на каждой странице"
 									behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Width="18" Height="18"
-											  Data="M3 3h18v3H3V3zm0 5h18v2H3V8zm0 4h18v2H3v-2zm0 4h18v2H3v-2z"/>
-									<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_RepeatHeader}" HorizontalAlignment="Center"/>
-								</StackPanel>
+								<PathIcon Width="14" Height="14"
+										  Data="M3 3h18v3H3V3zm0 5h18v2H3V8zm0 4h18v2H3v-2zm0 4h18v2H3v-2z"/>
 							</Button>
-						</StackPanel>
-					</DockPanel>
-				</Border>
 
-				<!-- ── Группа: Разбивка по страницам ────────────────────── -->
-				<Border Classes="RibbonGroup">
-					<DockPanel>
-						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
-							<TextBlock Classes="RibbonGroupLabel" Text="{x:Static loc:TextEditorStrings.Table_Split_Group}"/>
-						</Grid>
-						<StackPanel Orientation="Horizontal" Spacing="2">
-
-							<!-- Кнопка-тоггл: текст и иконка меняются в зависимости от IsByCell -->
-							<Button Command="{Binding ToggleSplitModeCommand}"
-									Classes="RibbonBtnLarge"
-									behaviours:TooltipBehavior.Tip="Режим разбивки: По строке — строка переходит на следующую страницу целиком; По ячейке — ячейка разрывается посередине"
+							<Button Grid.Row="0" Grid.Column="1" Margin="1 0"
+									Command="{Binding ToggleSplitModeCommand}"
+									Classes="TBtn" Classes.Active="{Binding IsByCell}"
+									behaviours:TooltipBehavior.Tip="Режим разбивки: выключено — строка переходит на следующую страницу целиком; включено — ячейка разрывается посередине"
 									behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Spacing="2" HorizontalAlignment="Center">
-
-									<!-- Режим По строке (IsByCell = false) -->
-									<PathIcon Width="18" Height="18"
-											  IsVisible="{Binding !IsByCell}"
-											  Data="M3 3h18v4H3V3zm0 6h18v2H3V9zm0 4h18v2H3v-2zm0 4h18v2H3v-2z"/>
-									<TextBlock FontSize="9" HorizontalAlignment="Center"
-											   IsVisible="{Binding !IsByCell}"
-											   Text="{x:Static loc:TextEditorStrings.Table_SplitByRow}"/>
-
-									<!-- Режим По ячейке (IsByCell = true) -->
-									<PathIcon Width="18" Height="18"
-											  IsVisible="{Binding IsByCell}"
-											  Data="M3 3h18v2H3V3zm0 4h18v6H3V7zm0 8h18v2H3v-2zm0 4h18v2H3v-2z"/>
-									<TextBlock FontSize="9" HorizontalAlignment="Center"
-											   IsVisible="{Binding IsByCell}"
-											   Text="{x:Static loc:TextEditorStrings.Table_SplitByCell}"/>
-
-								</StackPanel>
+								<PathIcon Width="14" Height="14"
+										  Data="M3 3h18v2H3V3zm0 4h18v6H3V7zm0 8h18v2H3v-2zm0 4h18v2H3v-2z"/>
 							</Button>
 
-							<!-- Метки разрыва и продолжения -->
-							<StackPanel Spacing="2" VerticalAlignment="Center">
-								<Button Command="{Binding SetBreakLabelCommand}"
-										Classes="RibbonBtn" Width="80"
-										behaviours:TooltipBehavior.Tip="Добавить/изменить/убрать текст под таблицей перед разрывом страницы. Первый клик — добавить дефолтный текст. Второй клик — открыть диалог редактирования."
-										behaviours:TooltipBehavior.ShowDelay="700">
-									<StackPanel Orientation="Horizontal" Spacing="4">
-										<PathIcon Width="12" Height="12" Data="M3 3h18v2H3V3zm0 4h12v2H3V7zm11 4l4 4-4 4v-3h-3v-2h3v-3z"/>
-										<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_BreakLabel}"/>
-									</StackPanel>
-								</Button>
-								<Button Command="{Binding SetContinuationLabelCommand}"
-										Classes="RibbonBtn" Width="80"
-										behaviours:TooltipBehavior.Tip="Добавить/изменить/убрать текст в начале продолжения таблицы на следующей странице. Первый клик — добавить дефолтный текст. Второй клик — открыть диалог редактирования."
-										behaviours:TooltipBehavior.ShowDelay="700">
-									<StackPanel Orientation="Horizontal" Spacing="4">
-										<PathIcon Width="12" Height="12" Data="M14 3l-4 4 4 4V8h3V5h-3V3zm-3 8H3v2h8v-2zm0 4H3v2h8v-2z"/>
-										<TextBlock FontSize="9" Text="{x:Static loc:TextEditorStrings.Table_ContinuationLabel}"/>
-									</StackPanel>
-								</Button>
-							</StackPanel>
+							<Button Grid.Row="1" Grid.Column="0" Margin="1 0"
+									Command="{Binding SetBreakLabelCommand}" Classes="TBtn"
+									behaviours:TooltipBehavior.Tip="Подпись под таблицей перед разрывом страницы. Первый клик — дефолтный текст, второй — диалог редактирования, пустая строка — убрать."
+									behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Width="14" Height="14" Data="M3 3h18v2H3V3zm0 4h12v2H3V7zm11 4l4 4-4 4v-3h-3v-2h3v-3z"/>
+							</Button>
 
-						</StackPanel>
+							<Button Grid.Row="1" Grid.Column="1" Margin="1 0"
+									Command="{Binding SetContinuationLabelCommand}" Classes="TBtn"
+									behaviours:TooltipBehavior.Tip="Подпись над продолжением таблицы на следующей странице. Первый клик — дефолтный текст, второй — диалог редактирования, пустая строка — убрать."
+									behaviours:TooltipBehavior.ShowDelay="700">
+								<PathIcon Width="14" Height="14" Data="M14 3l-4 4 4 4V8h3V5h-3V3zm-3 8H3v2h8v-2zm0 4H3v2h8v-2z"/>
+							</Button>
+
+						</Grid>
 					</DockPanel>
 				</Border>
 

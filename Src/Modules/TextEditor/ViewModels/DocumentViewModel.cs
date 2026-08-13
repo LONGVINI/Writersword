@@ -190,10 +190,60 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public Action<double, double, double, double>? SetImageWrapPaddingDelegate { get; set; }
         public Func<(double TopPt, double BottomPt, double LeftPt, double RightPt)?>? GetSelectedImageWrapPaddingDelegate { get; set; }
         public Action<int>? TableSetCellVAlignDelegate { get; set; }
+
+        /// <summary>
+        /// Абзацы всех выделенных ячеек таблицы. Пусто — выделения ячеек нет.
+        /// Нужно форматированию абзаца: при выделении диапазона правка обязана
+        /// применяться ко всем ячейкам, а не к одной под кареткой.
+        /// </summary>
+        public Func<System.Collections.Generic.IReadOnlyList<ParagraphBlock>>? GetSelectedCellParagraphsDelegate { get; set; }
+
+        public Action<double, double, double, double>? TableSetCellPaddingDelegate { get; set; }
+        public Func<(double TopPt, double BottomPt, double LeftPt, double RightPt)?>? TableGetCellPaddingDelegate { get; set; }
+
+        // Инструмент рисования границ живёт в канвасе: он же обрабатывает нажатия
+        // и показывает курсор. Лента только переключает и читает состояние.
+        public Action<int>? TableSetLineToolDelegate { get; set; }
+        public Func<int>? TableGetLineToolDelegate { get; set; }
+
+        // Совмещённая установка обеих координат — один шаг отмены на нажатие.
+        public Action<int, Writersword.Modules.TextEditor.Models.Styles.TextAlignment>? TableSetCellAlignDelegate { get; set; }
+
+        // Чтение текущего выравнивания целевых ячеек. Нужно ленте, чтобы держать
+        // активной ту кнопку, которая соответствует ячейке под кареткой.
+        public Func<int?>? TableGetCellVAlignDelegate { get; set; }
+        public Func<Writersword.Modules.TextEditor.Models.Styles.TextAlignment?>? TableGetCellHAlignDelegate { get; set; }
         public Action<string?>? TableSetCellBackgroundDelegate { get; set; }
         public Action<string, BorderStyle, double, string?>? TableSetCellBorderDelegate { get; set; }
         public Action<double>? TableSetColumnWidthDelegate { get; set; }
         public Action<double>? TableSetRowHeightDelegate { get; set; }
+
+        /// <summary>
+        /// Открыть шаг отмены перед правкой модели и закрыть после неё. Механизм
+        /// снимков живёт в полотне, а часть операций с таблицами выполняется здесь —
+        /// без этой пары они меняли документ мимо истории, и Ctrl+Z откатывал не их,
+        /// а то, что было до них. Делегаты назначает полотно; если их нет (полотно
+        /// ещё не подключено), правка просто пройдёт без записи, как и раньше.
+        /// </summary>
+        public Action<string>? BeginUndoStepDelegate { get; set; }
+        public Action? CommitUndoStepDelegate { get; set; }
+
+        /// <summary>
+        /// То же самое, но снимок берётся с одной таблицы, а не со всего документа.
+        /// Годится для правок, не меняющих состав блоков раздела: содержимое ячеек,
+        /// ширины, объединение, сортировка, флаги таблицы. Для операций, где таблица
+        /// появляется или исчезает целиком, нужен снимок документа — снимка самой
+        /// таблицы для её возврата в раздел недостаточно.
+        /// </summary>
+        public Action<TableBlock, string>? BeginTableUndoStepDelegate { get; set; }
+        public Action? CommitTableUndoStepDelegate { get; set; }
+
+        private void BeginUndoStep(string description) => BeginUndoStepDelegate?.Invoke(description);
+        private void CommitUndoStep() => CommitUndoStepDelegate?.Invoke();
+
+        private void BeginTableUndoStep(TableBlock table, string description)
+            => BeginTableUndoStepDelegate?.Invoke(table, description);
+        private void CommitTableUndoStep() => CommitTableUndoStepDelegate?.Invoke();
         public Action? TableAutoFitDelegate { get; set; }
         public Action? TableDistributeColsDelegate { get; set; }
         public Action? TableDistributeRowsDelegate { get; set; }
@@ -995,6 +1045,20 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (IsReadOnly) return;
 
+            // Выделен диапазон ячеек — список применяется ко всем их абзацам.
+            // Ветка ниже работает с одним абзацем активной ячейки, из-за неё
+            // список доставался только той ячейке, где стоит каретка.
+            var cellParagraphs = GetSelectedCellParagraphsDelegate?.Invoke();
+            if (cellParagraphs is { Count: > 0 })
+            {
+                if (!_suppressFormatSnapshot) BeginEditDelegate?.Invoke("Format list");
+                foreach (var para in cellParagraphs) mutate(para);
+                if (!_suppressFormatSnapshot) CommitEditDelegate?.Invoke();
+                FireCursorContextChanged();
+                ParagraphFormatChanged?.Invoke();
+                return;
+            }
+
             if (TableActiveCellParagraph is not null)
             {
                 if (!_suppressFormatSnapshot) BeginEditDelegate?.Invoke("Format list");
@@ -1125,7 +1189,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public ListProperties? GetActiveListProperties()
         {
-            var p = _activeParagraph?.Model;
+            // Абзац ячейки в Paragraphs не лежит, _activeParagraph про него не знает.
+            // Без этой ветки список внутри таблицы считался «не списком»: диалог
+            // настроек и метка на линейке ничего не получали.
+            var p = TableActiveCellParagraph ?? _activeParagraph?.Model;
             if (p?.ListProperties is null) return null;
             var clone = p.ListProperties.Clone();
             // Позиция текста для диалога = фактический левый отступ абзаца.
@@ -1161,15 +1228,21 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 if (b.ListProperties is null) return;
                 var ps = _document.PageSettings;
-                double marginLeftPt = (ps.MarginLeftMm + ps.MarginGutterMm) * 72.0 / 25.4;
                 double textWidthPt =
                     (ps.GetPhysicalWidthMm() - ps.MarginLeftMm - ps.MarginGutterMm - ps.MarginRightMm) * 72.0 / 25.4;
-                // Правый предел метки оставляет место под саму цифру, зазор и минимум текста —
-                // иначе у правого края номер налезал бы на текст, а строка уходила за страницу.
-                const double MinTextPt = 36.0;
-                double reserve = b.ListProperties.ComputedMarkerWidthPt + b.ListProperties.MarkerTextMinGapPt + MinTextPt;
-                double upperPt = Math.Max(-marginLeftPt, textWidthPt - reserve);
-                b.ListProperties.MarkerIndentPt = Math.Clamp(pt, -marginLeftPt, upperPt);
+
+                // Слева метка не ограничивается. Любой предел здесь — левое поле страницы,
+                // ширина зоны — срабатывал раньше линейки и останавливал жест там, где место
+                // ещё было видно. Пусть номер уезжает куда угодно: это выбор пользователя,
+                // и он его видит.
+                // Правый предел метки — правый край текстовой зоны. Место под текст здесь не
+                // резервируется: когда рядом с номером текст перестаёт помещаться, раскладка
+                // отдаёт номеру первую строку целиком, а текст уводит на вторую
+                // (SKTextRenderer.BuildLayout, MarkerOwnsFirstLine). Прежний резерв «цифра +
+                // зазор + минимум текста» останавливал метку задолго до этого перехода.
+                double upperPt = textWidthPt - (b.Properties.RightIndent ?? 0.0);
+
+                b.ListProperties.MarkerIndentPt = Math.Min(pt, upperPt);
             });
 
         public void SetListTextIndentPt(double pt)
@@ -1928,6 +2001,26 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void TableSetCellHAlign(Writersword.Modules.TextEditor.Models.Styles.TextAlignment align)
         { if (IsReadOnly) return; TableSetCellHAlignDelegate?.Invoke(align); }
         public void TableSetCellVAlign(int vAlign) { if (IsReadOnly) return; TableSetCellVAlignDelegate?.Invoke(vAlign); }
+
+        public void TableSetCellPadding(double topPt, double bottomPt, double leftPt, double rightPt)
+        { if (IsReadOnly) return; TableSetCellPaddingDelegate?.Invoke(topPt, bottomPt, leftPt, rightPt); }
+
+        public (double TopPt, double BottomPt, double LeftPt, double RightPt)? TableGetCellPadding()
+            => TableGetCellPaddingDelegate?.Invoke();
+
+        // Переключение инструмента правкой документа не является, поэтому работает
+        // и в режиме только для чтения — рисование границ канвас всё равно не даст.
+        public void TableSetLineTool(int tool) => TableSetLineToolDelegate?.Invoke(tool);
+        public int TableGetLineTool() => TableGetLineToolDelegate?.Invoke() ?? 0;
+
+        public void TableSetCellAlign(int vAlign,
+            Writersword.Modules.TextEditor.Models.Styles.TextAlignment hAlign)
+        { if (IsReadOnly) return; TableSetCellAlignDelegate?.Invoke(vAlign, hAlign); }
+
+        // Чтение состояния идёт и в режиме сравнения: подсветка кнопок не правка.
+        public int? TableGetCellVAlign() => TableGetCellVAlignDelegate?.Invoke();
+        public Writersword.Modules.TextEditor.Models.Styles.TextAlignment? TableGetCellHAlign()
+            => TableGetCellHAlignDelegate?.Invoke();
         public void TableSetCellBackground(string? color) { if (IsReadOnly) return; TableSetCellBackgroundDelegate?.Invoke(color); }
         public void TableSetCellBorder(string side, BorderStyle style, double thicknessPt, string? color)
         { if (IsReadOnly) return; TableSetCellBorderDelegate?.Invoke(side, style, thicknessPt, color); }
@@ -1943,7 +2036,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (IsReadOnly) return;
             var table = ActiveTable;
             if (table is null) return;
+            BeginTableUndoStep(table, "Toggle repeat header");
             table.RepeatHeader = !table.RepeatHeader;
+            CommitTableUndoStep();
             FireParagraphFormatChanged();
         }
 
@@ -1954,9 +2049,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (IsReadOnly) return;
             var table = ActiveTable;
             if (table is null) return;
+            BeginTableUndoStep(table, "Toggle split mode");
             table.SplitMode = table.SplitMode == Models.Document.TableSplitMode.ByRow
                 ? Models.Document.TableSplitMode.ByCell
                 : Models.Document.TableSplitMode.ByRow;
+            CommitTableUndoStep();
             FireParagraphFormatChanged();
         }
         public bool TableGetSplitModeByCell() =>
@@ -1966,14 +2063,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
         {
             if (IsReadOnly) return;
             var table = ActiveTable; if (table is null) return;
+            BeginTableUndoStep(table, "Set break label");
             table.BreakLabel = string.IsNullOrWhiteSpace(text) ? null : text;
+            CommitTableUndoStep();
             FireParagraphFormatChanged();
         }
         public void TableSetContinuationLabel(string? text)
         {
             if (IsReadOnly) return;
             var table = ActiveTable; if (table is null) return;
+            BeginTableUndoStep(table, "Set continuation label");
             table.ContinuationLabel = string.IsNullOrWhiteSpace(text) ? null : text;
+            CommitTableUndoStep();
             FireParagraphFormatChanged();
         }
         public string? TableGetBreakLabel() => ActiveTable?.BreakLabel;
@@ -1984,45 +2085,61 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         // ── Операции с таблицами (модель) ─────────────────────────────────
 
+        // Все операции ниже вызываются из контекстного меню таблицы и меняют модель
+        // напрямую. Каждая открывает и закрывает шаг отмены сама: снимок берётся до
+        // первой правки и закрывается после последней, включая ветку, где таблица
+        // удаляется целиком — иначе Ctrl+Z откатывал бы не эту операцию, а предыдущую.
+
         public void TableAddRowBelow(TableBlock table, int afterRow)
         {
             if (IsReadOnly) return;
+            BeginTableUndoStep(table, "Add row");
             int insertRow = afterRow + 1;
             foreach (var cell in table.Cells)
                 if (cell.Row >= insertRow) cell.Row++;
             for (int c = 0; c < table.ColumnCount; c++)
                 table.Cells.Add(new TableCell { Row = insertRow, Column = c });
+            table.InsertRowMinHeight(insertRow);
             table.RowCount++;
+            CommitTableUndoStep();
         }
 
         public void TableAddRowAbove(TableBlock table, int beforeRow)
         {
             if (IsReadOnly) return;
+            BeginTableUndoStep(table, "Add row");
             foreach (var cell in table.Cells)
                 if (cell.Row >= beforeRow) cell.Row++;
             for (int c = 0; c < table.ColumnCount; c++)
                 table.Cells.Add(new TableCell { Row = beforeRow, Column = c });
+            table.InsertRowMinHeight(beforeRow);
             table.RowCount++;
+            CommitTableUndoStep();
         }
 
         public void TableDeleteRow(TableBlock table, int row)
         {
             if (IsReadOnly) return;
+            BeginUndoStep("Delete row");
             if (table.RowCount <= 1)
             {
                 _document.Sections[0].Blocks.Remove(table);
+                CommitUndoStep();
                 RebuildParagraphViewModels();
                 return;
             }
             table.Cells.RemoveAll(c => c.Row == row);
             foreach (var cell in table.Cells)
                 if (cell.Row > row) cell.Row--;
+            table.RemoveRowMinHeight(row);
             table.RowCount--;
+            CommitUndoStep();
         }
 
         public void TableAddColumnRight(TableBlock table, int afterCol)
         {
             if (IsReadOnly) return;
+            BeginTableUndoStep(table, "Add column");
             int insertCol = afterCol + 1;
             foreach (var cell in table.Cells)
                 if (cell.Column >= insertCol) cell.Column++;
@@ -2031,11 +2148,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
             table.Columns.Insert(insertCol,
                 new TableColumnDefinition { WidthType = TableColumnWidthType.Auto });
             table.ColumnCount++;
+            CommitTableUndoStep();
         }
 
         public void TableAddColumnLeft(TableBlock table, int beforeCol)
         {
             if (IsReadOnly) return;
+            BeginTableUndoStep(table, "Add column");
             foreach (var cell in table.Cells)
                 if (cell.Column >= beforeCol) cell.Column++;
             for (int r = 0; r < table.RowCount; r++)
@@ -2043,14 +2162,17 @@ namespace Writersword.Modules.TextEditor.ViewModels
             table.Columns.Insert(beforeCol,
                 new TableColumnDefinition { WidthType = TableColumnWidthType.Auto });
             table.ColumnCount++;
+            CommitTableUndoStep();
         }
 
         public void TableDeleteColumn(TableBlock table, int col)
         {
             if (IsReadOnly) return;
+            BeginUndoStep("Delete column");
             if (table.ColumnCount <= 1)
             {
                 _document.Sections[0].Blocks.Remove(table);
+                CommitUndoStep();
                 RebuildParagraphViewModels();
                 return;
             }
@@ -2060,6 +2182,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (col < table.Columns.Count)
                 table.Columns.RemoveAt(col);
             table.ColumnCount--;
+            CommitUndoStep();
         }
 
         public void TableMergeCells(TableBlock table,
@@ -2068,6 +2191,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (IsReadOnly) return;
             var mainCell = table.GetCell(startRow, startCol);
             if (mainCell is null) return;
+            BeginTableUndoStep(table, "Merge cells");
 
             for (int r = startRow; r <= endRow; r++)
             {
@@ -2086,6 +2210,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             }
             mainCell.RowSpan = endRow - startRow + 1;
             mainCell.ColSpan = endCol - startCol + 1;
+            CommitTableUndoStep();
         }
 
         public void TableSplitCell(TableBlock table, int row, int col)
@@ -2093,6 +2218,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (IsReadOnly) return;
             var mainCell = table.GetCell(row, col);
             if (mainCell is null || (mainCell.RowSpan == 1 && mainCell.ColSpan == 1)) return;
+            BeginTableUndoStep(table, "Split cell");
 
             int rowSpan = mainCell.RowSpan;
             int colSpan = mainCell.ColSpan;
@@ -2105,14 +2231,17 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     if (r == row && c == col) continue;
                     table.Cells.Add(new TableCell { Row = r, Column = c });
                 }
+            CommitTableUndoStep();
         }
 
         public void TableSetColumnWidth(TableBlock table, int colIndex, double widthMm)
         {
             if (IsReadOnly) return;
             if (colIndex < 0 || colIndex >= table.Columns.Count) return;
+            BeginTableUndoStep(table, "Resize column");
             table.Columns[colIndex].WidthType = TableColumnWidthType.Fixed;
             table.Columns[colIndex].WidthValue = Math.Max(5.0, widthMm);
+            CommitTableUndoStep();
         }
 
         public TableBlock? FindTable(Func<TableBlock, bool> predicate)
@@ -2382,6 +2511,34 @@ namespace Writersword.Modules.TextEditor.ViewModels
         private void ApplyParaProperty(Action<ParagraphProperties> mutate)
         {
             if (IsReadOnly) return;
+
+            // Выделен диапазон ячеек: правка идёт по всем их абзацам. Ветка ниже
+            // работает с единственным абзацем активной ячейки, и при выделении
+            // нескольких ячеек форматирование доставалось только первой.
+            var cellParagraphs = GetSelectedCellParagraphsDelegate?.Invoke();
+            if (cellParagraphs is { Count: > 0 })
+            {
+                if (!_suppressFormatSnapshot)
+                    BeginEditDelegate?.Invoke("Format paragraph");
+
+                foreach (var para in cellParagraphs)
+                    mutate(para.Properties);
+
+                if (!_suppressFormatSnapshot)
+                    CommitEditDelegate?.Invoke();
+
+                // Контекст риббона обновляем по абзацу активной ячейки: кнопки
+                // выравнивания должны показать новое состояние сразу.
+                if (TableActiveCellParagraph is not null)
+                {
+                    var activeVm = new ParagraphViewModel(TableActiveCellParagraph);
+                    CursorContextChanged?.Invoke(BuildCursorContext(activeVm));
+                }
+
+                ParagraphFormatChanged?.Invoke();
+                return;
+            }
+
             // Режим таблицы: применяем к параграфу активной ячейки (снапшотный путь как был).
             if (TableActiveCellParagraph is not null)
             {
@@ -2437,24 +2594,34 @@ namespace Writersword.Modules.TextEditor.ViewModels
             ParagraphFormatChanged?.Invoke();
         }
 
+        // Через эти два метода в документ попадают все вставляемые блоки: таблица,
+        // картинка, фигура, разрыв, сноска. Шага отмены здесь не было ни у одного —
+        // Ctrl+Z после вставки таблицы честно отвечал «нечего отменять».
+        // Снимок берётся документа, а не блока: меняется состав раздела, и вернуть
+        // блок на место по снимку его самого невозможно.
+        // Вложенность безопасна: вставка из буфера уже открывает свой шаг снаружи,
+        // счётчик глубины в полотне сложит их в один.
         private void InsertBlock(BlockModel block)
         {
             if (IsReadOnly) return;
             if (_document.Sections.Count == 0) return;
             var section = _document.Sections[0];
 
+            BeginUndoStep("Insert block");
             if (_activeParagraph is not null)
             {
                 int idx = section.Blocks.IndexOf(_activeParagraph.Model);
                 if (idx >= 0)
                 {
                     section.Blocks.Insert(idx + 1, block);
+                    CommitUndoStep();
                     RebuildParagraphViewModels();
                     return;
                 }
             }
 
             section.Blocks.Add(block);
+            CommitUndoStep();
             RebuildParagraphViewModels();
         }
 
@@ -2479,6 +2646,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             int paraIdx = para is null ? -1 : section.Blocks.IndexOf(para);
             if (paraIdx < 0)
             {
+                // Шаг откроет InsertBlock — второй раз открывать не нужно.
                 InsertBlock(block);
                 return;
             }
@@ -2486,9 +2654,12 @@ namespace Writersword.Modules.TextEditor.ViewModels
             int plainLen = para!.GetPlainText().Length;
             int cut = Math.Clamp(target?.CharIndex ?? 0, 0, plainLen);
 
+            BeginUndoStep("Insert block");
+
             if (cut == 0)
             {
                 section.Blocks.Insert(paraIdx, block);
+                CommitUndoStep();
                 RebuildParagraphViewModels();
                 return;
             }
@@ -2496,6 +2667,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (cut >= plainLen)
             {
                 section.Blocks.Insert(paraIdx + 1, block);
+                CommitUndoStep();
                 RebuildParagraphViewModels();
                 return;
             }
@@ -2517,6 +2689,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             section.Blocks.Insert(paraIdx + 1, tail);
             section.Blocks.Insert(paraIdx + 1, block);
+            CommitUndoStep();
             RebuildParagraphViewModels();
         }
 
@@ -2594,17 +2767,24 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
                 // Якорь после таблицы: пустой ParagraphBlock (текст пустой).
                 // Проверяем через GetPlainText() — Chunks.Count всегда >= 1 даже у нового блока.
+                // Якорь после таблицы нужен всегда, в том числе между двумя таблицами: это
+                // единственное место, куда встаёт каретка при клике справа от таблицы, и
+                // единственный способ разъединить таблицы потом. Зазора он не создаёт —
+                // между двумя таблицами раскладка рисует его сбоку, не занимая строки
+                // (Layout.cs, ветка «Якорь после таблицы»).
                 bool hasAfter = i + 1 < blocks.Count
                     && blocks[i + 1] is ParagraphBlock afterPb
                     && string.IsNullOrEmpty(afterPb.GetPlainText());
                 if (!hasAfter)
                     blocks.Insert(i + 1, new ParagraphBlock());
 
-                // Якорь перед таблицей: пустой ParagraphBlock.
-                // Обычный параграф с текстом не считается якорем.
-                bool hasBefore = i > 0
-                    && blocks[i - 1] is ParagraphBlock beforePb
-                    && string.IsNullOrEmpty(beforePb.GetPlainText());
+                // Якорь перед таблицей вставляется, только когда блока-параграфа перед ней
+                // нет вовсе: иначе каретке негде встать выше таблицы. Требовать здесь именно
+                // ПУСТОЙ абзац нельзя — тогда над каждой таблицей появляется лишняя строка:
+                // якорь занимает высоту строки в потоке (Layout.cs, AbsXPt: anchorXPt), и
+                // удалить её пользователь не может, нормализация возвращает её обратно.
+                //
+                bool hasBefore = i > 0 && blocks[i - 1] is ParagraphBlock;
                 if (!hasBefore)
                     blocks.Insert(i, new ParagraphBlock());
             }
@@ -2655,6 +2835,89 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (focusIdx < Paragraphs.Count)
                 Paragraphs[focusIdx].RequestFocusAtPosition?.Invoke(
                     Paragraphs[focusIdx].PlainText?.Length ?? 0);
+        }
+
+        /// <summary>
+        /// Удаляет пустой абзац-разделитель между двумя таблицами, ставя их вплотную.
+        /// Возвращает false, если абзац разделителем не является — тогда вызывающий
+        /// обрабатывает нажатие как обычно.
+        ///
+        /// Сам по себе такой абзац создаётся по умолчанию (NormalizeTableAnchors ставит
+        /// якорь после каждой таблицы) и служит местом, где можно набирать текст между
+        /// таблицами. Но удалить его было нельзя ничем: Backspace и Delete считали его
+        /// защищённым якорем с обеих сторон, а нормализация возвращала его обратно.
+        /// Поставить две таблицы рядом было невозможно.
+        /// </summary>
+        public bool TryDeleteTableSeparator(ParagraphViewModel anchor)
+        {
+            if (IsReadOnly) return false;
+            if (_document.Sections.Count == 0) return false;
+            if (!string.IsNullOrEmpty(anchor.PlainText)) return false;
+
+            var blocks = _document.Sections[0].Blocks;
+            int idx = blocks.IndexOf(anchor.Model);
+
+            // Разделитель — только абзац, у которого таблица и сверху, и снизу.
+            // Якорь между таблицей и текстом трогать нельзя: он единственное место,
+            // откуда можно писать после таблицы.
+            if (idx <= 0 || idx + 1 >= blocks.Count) return false;
+            if (blocks[idx - 1] is not TableBlock || blocks[idx + 1] is not TableBlock) return false;
+
+            blocks.RemoveAt(idx);
+
+            int vmIdx = Paragraphs.IndexOf(anchor);
+            if (vmIdx >= 0) Paragraphs.RemoveAt(vmIdx);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Вставляет пустой абзац сразу после таблицы и возвращает его. null — если абзац
+        /// там уже есть или таблица не найдена.
+        ///
+        /// Нужен, чтобы разъединить две поставленные вплотную таблицы: между ними нет ни
+        /// одного блока, поставить туда каретку нечем, и вернуть разделитель иначе никак.
+        /// </summary>
+        /// <summary>
+        /// Сразу за этой таблицей идёт другая таблица — то есть места для каретки между ними
+        /// нет вовсе.
+        /// </summary>
+        public bool IsTableFollowedByTable(TableBlock table)
+        {
+            if (_document.Sections.Count == 0) return false;
+            var blocks = _document.Sections[0].Blocks;
+            int idx = blocks.IndexOf(table);
+            return idx >= 0 && idx + 1 < blocks.Count && blocks[idx + 1] is TableBlock;
+        }
+
+        /// <summary>
+        /// Пустой абзац-якорь сразу за таблицей — то место сбоку-снизу от неё, куда встаёт
+        /// каретка при клике правее таблицы. null — если там не абзац или он не пуст.
+        /// </summary>
+        public ParagraphBlock? GetEmptyAnchorAfterTable(TableBlock table)
+        {
+            if (_document.Sections.Count == 0) return null;
+            var blocks = _document.Sections[0].Blocks;
+            int idx = blocks.IndexOf(table);
+            if (idx < 0 || idx + 1 >= blocks.Count) return null;
+            return blocks[idx + 1] is ParagraphBlock pb && string.IsNullOrEmpty(pb.GetPlainText())
+                ? pb
+                : null;
+        }
+
+        public ParagraphBlock? InsertParagraphAfterTable(TableBlock table)
+        {
+            if (IsReadOnly) return null;
+            if (_document.Sections.Count == 0) return null;
+
+            var blocks = _document.Sections[0].Blocks;
+            int idx = blocks.IndexOf(table);
+            if (idx < 0) return null;
+            if (idx + 1 < blocks.Count && blocks[idx + 1] is ParagraphBlock) return null;
+
+            var para = new ParagraphBlock();
+            blocks.Insert(idx + 1, para);
+            return para;
         }
 
         private void AddAnnotation(
@@ -2826,11 +3089,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void TableAutoFitColumns(TableBlock table)
         {
             if (IsReadOnly) return;
+            BeginTableUndoStep(table, "Autofit columns");
             for (int i = 0; i < table.Columns.Count; i++)
             {
                 table.Columns[i].WidthType = TableColumnWidthType.Auto;
                 table.Columns[i].WidthValue = 0;
             }
+            CommitTableUndoStep();
             ParagraphFormatChanged?.Invoke();
         }
 
@@ -2839,12 +3104,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
             if (IsReadOnly) return;
             int cols = table.ColumnCount;
             if (cols == 0) return;
+            BeginTableUndoStep(table, "Distribute columns");
             double each = 100.0 / cols;
             for (int i = 0; i < table.Columns.Count; i++)
             {
                 table.Columns[i].WidthType = TableColumnWidthType.Percent;
                 table.Columns[i].WidthValue = each;
             }
+            CommitTableUndoStep();
             ParagraphFormatChanged?.Invoke();
         }
 
@@ -2868,9 +3135,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 : rows.OrderByDescending(x => double.TryParse(x.SortKey, out var d) ? d : double.MinValue)
                       .ThenByDescending(x => x.SortKey, StringComparer.CurrentCulture).ToList();
 
+            // Снимок берётся здесь, а не в начале метода: до этой точки шли только
+            // чтение и сортировка списка, модель не менялась. Открывать шаг раньше
+            // значило бы записать в историю выход по любому из ранних return.
+            BeginTableUndoStep(table, "Sort table");
             for (int newRow = 0; newRow < sorted.Count; newRow++)
                 foreach (var cell in sorted[newRow].Cells)
                     cell.Row = newRow;
+            CommitTableUndoStep();
 
             ParagraphFormatChanged?.Invoke();
         }

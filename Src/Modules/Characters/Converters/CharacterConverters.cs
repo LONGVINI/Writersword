@@ -182,6 +182,29 @@ namespace Writersword.Modules.Characters.Converters
     }
 
     /// <summary>
+    /// Толщина рамки → отрицательные поля той же величины.
+    ///
+    /// Нужно заливке цветом персонажа в режиме полоски. Кисть строит градиент
+    /// по прямоугольнику своего элемента, а заливка лежит внутри рамки и
+    /// потому меньше её на толщину с каждой стороны: переходы в заливке и в
+    /// рамке шли с разным шагом и не стыковались. Отрицательные поля выводят
+    /// заливку ровно на внешний прямоугольник рамки, и градиент становится
+    /// сквозным.
+    /// </summary>
+    public class NegativeThicknessConverter : IValueConverter
+    {
+        public static readonly NegativeThicknessConverter Instance = new();
+
+        public object? Convert(object? value, Type t, object? p, CultureInfo c)
+        {
+            var size = value is double d ? d : 0d;
+            return new Avalonia.Thickness(-size);
+        }
+
+        public object? ConvertBack(object? value, Type t, object? p, CultureInfo c) => throw new NotImplementedException();
+    }
+
+    /// <summary>
     /// Персонаж → символ в кружке: заданная иконка либо первая буква имени.
     /// Та же логика, что у аватара в карточке и на карточках списка.
     /// </summary>

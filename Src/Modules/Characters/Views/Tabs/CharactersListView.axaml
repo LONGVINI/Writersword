@@ -60,6 +60,9 @@
         <Style Selector="Border.card-root:pointerover Path.group-bookmark">
             <Setter Property="Opacity" Value="0"/>
         </Style>
+        <!-- Значок «Мёртв» стоит слева от кнопок правки и виден всегда:
+             отступ справа рассчитан по их ширине (CardDeadBadgeMargin), так
+             что под кнопки он не попадает и прятать его незачем. -->
         <!-- Цветопикер тоже только при наведении на карточку. -->
         <Style Selector="Border.card-root colorControls|ColorPickerButton">
             <Setter Property="Opacity" Value="0"/>
@@ -405,7 +408,8 @@
                                             <controls:PerfItemsRepeater.ItemTemplate>
                                                 <DataTemplate DataType="vm:CharacterListItemViewModel">
 
-                                                    <Border Classes="card-root"
+                                                    <Border x:Name="CardRoot"
+                                                            Classes="card-root"
                                                             CornerRadius="10"
                                                             Background="{DynamicResource BgPanelBrush}"
                                                             BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
@@ -461,8 +465,13 @@
 
                                                         <DockPanel>
 
-                                                            <!-- цветная зона: сверху у плитки, слева у строки списка -->
+                                                            <!-- цветная зона: сверху у плитки, слева у строки списка.
+                                                                 Лежит выше зоны имени: значки меток идут по дуге вокруг
+                                                                 аватарки и краем заходят на её территорию, а всё, что
+                                                                 рисуется позже, перекрывало бы их. Площадями зоны не
+                                                                 пересекаются, так что подписи это не мешает. -->
                                                             <Panel DockPanel.Dock="{Binding $parent[UserControl].DataContext.CardZoneDock}"
+                                                                   ZIndex="1"
                                                                    Width="{Binding $parent[UserControl].DataContext.CardZoneWidth}"
                                                                    Height="{Binding $parent[UserControl].DataContext.CardTopHeight, FallbackValue=60}">
 
@@ -497,8 +506,22 @@
                                                                         </Flyout>
                                                                     </Button.Flyout>
                                                                     <Panel>
-                                                                        <Border Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
-                                                                                CornerRadius="{Binding $parent[UserControl].DataContext.CardZoneCornerRadius}"/>
+                                                                        <!-- Заливка цветом персонажа.
+                                                                             Прямоугольник заливки выведен на внешний край
+                                                                             рамки карточки: отрицательные поля в толщину
+                                                                             рамки и высота всей карточки вместе с ней.
+                                                                             Иначе градиент в заливке и в рамке считается по
+                                                                             разным прямоугольникам, и полосы не стыкуются.
+                                                                             Лишнее срезает обёртка — обрезка стоит на ней,
+                                                                             а не на зоне, чтобы не задеть значки меток. -->
+                                                                        <Border CornerRadius="{Binding $parent[UserControl].DataContext.CardZoneCornerRadius}"
+                                                                                ClipToBounds="True">
+                                                                            <Border Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+                                                                                    CornerRadius="10"
+                                                                                    VerticalAlignment="Top"
+                                                                                    Height="{Binding #CardRoot.Bounds.Height}"
+                                                                                    Margin="{Binding FrameThickness, Converter={x:Static conv:NegativeThicknessConverter.Instance}}"/>
+                                                                        </Border>
                                                                         <Border CornerRadius="{Binding $parent[UserControl].DataContext.CardZoneCornerRadius}"
                                                                                 ClipToBounds="True"
                                                                                 IsVisible="{Binding AvatarBitmap, Converter={x:Static ObjectConverters.IsNotNull}}">
@@ -524,8 +547,7 @@
                                                                     VerticalAlignment="Center"
                                                                     ZIndex="2"
                                                                     Command="{Binding OpenAvatarPickerCommand}"
-                                                                    IsVisible="{Binding ShowCircleNoPhoto}"
-                                                                    ToolTip.Tip="{x:Static res:CharactersStrings.AvatarPickerFlyout_Upload}">
+                                                                    IsVisible="{Binding ShowCircleNoPhoto}">
                                                                     <Panel>
                                                                         <Ellipse Width="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
                                                                                  Height="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
@@ -635,7 +657,8 @@
                                                                         <ItemsPanelTemplate>
                                                                             <controls:LabelArcPanel
                                                                                 ItemSize="{Binding $parent[UserControl].DataContext.CardLabelIconSize, FallbackValue=16}"
-                                                                                ArcRadius="{Binding $parent[UserControl].DataContext.CardLabelArcRadius, FallbackValue=26}"/>
+                                                                                ArcRadius="{Binding $parent[UserControl].DataContext.CardLabelArcRadius, FallbackValue=26}"
+                                                                                Straight="{Binding ShowAvatarStrip}"/>
                                                                         </ItemsPanelTemplate>
                                                                     </ItemsControl.ItemsPanel>
                                                                     <ItemsControl.ItemTemplate>
@@ -651,24 +674,24 @@
                                                                     </ItemsControl.ItemTemplate>
                                                                 </ItemsControl>
 
-                                                                <!-- «Мёртв» — особая метка: она на той же окружности, но
-                                                                     одна в верхнем правом углу аватарки, под сорок пять
-                                                                     градусов. В угол самой карточки её не поставить —
-                                                                     там закладка-ленточка группы и выезжающие кнопки
-                                                                     правки. Раскладка та же, отличается только серединой
-                                                                     дуги; при живом персонаже список пуст и не рисуется
+                                                                <!-- «Мёртв» — особая метка: одна, в самом правом верхнем
+                                                                     углу цветной зоны. Раскладка по дуге ей не годится:
+                                                                     дуга считается от размера аватарки, а он зависит от
+                                                                     высоты карточки и вида аватара — значок гулял то на
+                                                                     портрет, то к середине. Здесь положение задано прямо
+                                                                     выравниванием и не зависит ни от чего.
+
+                                                                     Отступ справа считается по ширине кнопок правки,
+                                                                     поэтому значок стоит слева от них и виден всегда.
+                                                                     При живом персонаже список пуст и не рисуется
                                                                      ничего. -->
                                                                 <ItemsControl ItemsSource="{Binding DeadLabels}"
+                                                                              Classes="dead-badge"
                                                                               ZIndex="3"
-                                                                              ClipToBounds="False">
-                                                                    <ItemsControl.ItemsPanel>
-                                                                        <ItemsPanelTemplate>
-                                                                            <controls:LabelArcPanel
-                                                                                CenterAngle="-45"
-                                                                                ItemSize="{Binding $parent[UserControl].DataContext.CardLabelIconSize, FallbackValue=16}"
-                                                                                ArcRadius="{Binding $parent[UserControl].DataContext.CardLabelArcRadius, FallbackValue=26}"/>
-                                                                        </ItemsPanelTemplate>
-                                                                    </ItemsControl.ItemsPanel>
+                                                                              ClipToBounds="False"
+                                                                              HorizontalAlignment="Right"
+                                                                              VerticalAlignment="Top"
+                                                                              Margin="{Binding $parent[UserControl].DataContext.CardDeadBadgeMargin}">
                                                                     <ItemsControl.ItemTemplate>
                                                                         <DataTemplate x:DataType="models:CharacterLabel">
                                                                             <controls:CharacterLabelIcon
@@ -723,8 +746,7 @@
                                                                         HorizontalAlignment="Stretch"
                                                                         VerticalAlignment="Stretch"
                                                                         HorizontalContentAlignment="{Binding $parent[UserControl].DataContext.CardNamePanelAlignment}"
-                                                                        IsVisible="{Binding IsShowingNameDisplay}"
-                                                                        ToolTip.Tip="{x:Static loc:CharactersStrings.Character_RenameTooltip}">
+                                                                        IsVisible="{Binding IsShowingNameDisplay}">
                                                                     <!-- Подпись карточки трогать нельзя: выравнивание
                                                                          задают HorizontalContentAlignment кнопки
                                                                          и TextAlignment самого текста, и любая обёртка
@@ -750,7 +772,7 @@
                                                              уровне всей карточки (hover-only через opacity): в плитке это
                                                              углы цветной зоны, в строке списка — углы строки. -->
                                                         <StackPanel Orientation="{Binding $parent[UserControl].DataContext.CardControlsOrientation}"
-                                                                    Spacing="3"
+                                                                    Spacing="2"
                                                                     HorizontalAlignment="{Binding $parent[UserControl].DataContext.CardPickerHAlign}"
                                                                     VerticalAlignment="{Binding $parent[UserControl].DataContext.CardControlsVAlign}"
                                                                     Margin="{Binding $parent[UserControl].DataContext.CardPickerMargin}"
@@ -766,8 +788,7 @@
                                                                 BookmarkEnabled="{Binding GroupBookmark, Mode=TwoWay}"
                                                                 ApplyRingToAllCommand="{Binding ApplyRingToAllCommand}"
                                                                 Width="{Binding $parent[UserControl].DataContext.CardColorButtonSize, FallbackValue=20}"
-                                                                Height="{Binding $parent[UserControl].DataContext.CardColorButtonSize, FallbackValue=20}"
-                                                                ToolTip.Tip="{x:Static loc:CharactersStrings.ColorPicker_Tooltip}"/>
+                                                                Height="{Binding $parent[UserControl].DataContext.CardColorButtonSize, FallbackValue=20}"/>
 
                                                             <!-- Настройки карточки: открывает окно по центру модуля
                                                                  (CardSettingsOverlay) — кольцо, закладка, толщина рамки. -->
@@ -778,8 +799,7 @@
                                                                     Background="#88000000" BorderThickness="0"
                                                                     HorizontalContentAlignment="Center"
                                                                     VerticalContentAlignment="Center"
-                                                                    Click="OnCardSettingsClick"
-                                                                    ToolTip.Tip="Настройки карточки">
+                                                                    Click="OnCardSettingsClick">
                                                                 <PathIcon Data="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"
                                                                           Width="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
                                                                           Height="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
@@ -798,8 +818,7 @@
                                                             <Button Command="{Binding RequestDeleteCommand}"
                                                                     Padding="4,3"
                                                                     Background="#88000000"
-                                                                    BorderThickness="0" CornerRadius="4"
-                                                                    ToolTip.Tip="{x:Static loc:CharactersStrings.Character_DeleteTooltip}">
+                                                                    BorderThickness="0" CornerRadius="4">
                                                                 <Button.Styles>
                                                                     <Style Selector="Button:pointerover /template/ ContentPresenter">
                                                                         <Setter Property="Background" Value="#BB660000"/>
@@ -814,8 +833,7 @@
                                                                     CommandParameter="{Binding Id}"
                                                                     Padding="4,3"
                                                                     Background="#88000000"
-                                                                    BorderThickness="0" CornerRadius="4"
-                                                                    ToolTip.Tip="{x:Static loc:CharactersStrings.Character_EditTooltip}">
+                                                                    BorderThickness="0" CornerRadius="4">
                                                                 <PathIcon Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
                                                                           Width="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
                                                                           Height="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"

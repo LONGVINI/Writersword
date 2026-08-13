@@ -13,13 +13,22 @@
             BorderBrush="{DynamicResource BorderSubtleBrush}"
             Background="{Binding HexColor, ElementName=Root, Converter={x:Static conv:ColorCodeToBrushConverter.Instance}}"
             VerticalAlignment="Stretch"
-            HorizontalAlignment="Stretch"
-            ToolTip.Tip="{x:Static res:SharedStrings.ColorPicker_ChangeColor}">
+            HorizontalAlignment="Stretch">
 		<Button.Styles>
+			<!-- Подсказка навешивается стилем и только круглому варианту. Атрибутом
+			     на кнопке она доставалась и прямоугольному, где подсказку задаёт
+			     вызывающая сторона, — и над лентой всплывали сразу две.
+			     Убрать её потом стилем было бы нельзя: атрибут — локальное значение,
+			     оно сильнее стиля. -->
+			<Style Selector="res|ColorPickerButton:not(.arrow) Button#TriggerButton">
+				<Setter Property="ToolTip.Tip" Value="{x:Static res:SharedStrings.ColorPicker_ChangeColor}"/>
+			</Style>
+
 			<Style Selector="Button#TriggerButton">
 				<Setter Property="Template">
 					<ControlTemplate>
-						<Border CornerRadius="999"
+						<Border Name="RoundRoot"
+                                CornerRadius="999"
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"/>
@@ -29,9 +38,76 @@
 			<!-- Подсветка при наведении — ТОЛЬКО цветом рамки (отрисовка). Толщину
 			     не трогаем: BorderThickness — свойство раскладки, его смена
 			     инвалидирует measure и заставляет ItemsRepeater перемерять все
-			     видимые карточки (77 мс, «мерцает всё окно»). Оставляем 1.5. -->
-			<Style Selector="Button#TriggerButton:pointerover /template/ Border">
+			     видимые карточки (77 мс, «мерцает всё окно»). Оставляем 1.5.
+			     Селектор бьёт строго по имени круглой подложки: без имени он красил
+			     бы и рамку прямоугольного варианта, объявленного ниже. -->
+			<Style Selector="Button#TriggerButton:pointerover /template/ Border#RoundRoot">
 				<Setter Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}"/>
+			</Style>
+
+			<!-- ══ Вариант «только стрелка»: Classes="arrow" ═══════════════════════
+			     Нужен там, где цвет уже показан соседней кнопкой-действием, а от
+			     пикера требуется лишь список цветов — как у цвета шрифта в Word.
+			     Стили лежат здесь, а не в UserControl.Styles: круглый шаблон выше
+			     объявлен именно в этой коллекции, она ближе к кнопке и потому
+			     сильнее — из UserControl.Styles прямоугольный шаблон не применялся
+			     вовсе. Внутри коллекции решает порядок, поэтому блок идёт последним.
+			     Размер круглого варианта задан на самом контроле, так что ширину и
+			     высоту прямоугольного нужно указывать на месте использования. -->
+			<Style Selector="res|ColorPickerButton.arrow Button#TriggerButton">
+				<Setter Property="Cursor" Value="Hand"/>
+				<Setter Property="Template">
+					<ControlTemplate>
+						<!-- Кисти и толщина заданы напрямую, без TemplateBinding: у кнопки
+						     они проставлены атрибутами в разметке — заливка цветом и
+						     круглая рамка 1.5 — и пришли бы сюда как есть.
+						     Цвет рамки, наоборот, не задан вовсе: атрибут был бы локальным
+						     значением и перебил бы стили наведения ниже. -->
+						<!-- Рамка только слева. Остальные три грани легли бы точно на общую
+						     рамку панели и дали бы двойную линию; левая же грань нужна и
+						     сама по себе — она разделяет половины. -->
+						<Border Name="ArrowRoot" Background="Transparent"
+						        CornerRadius="0 2 2 0" BorderThickness="1 0 0 0">
+							<!-- 12×6 — размер в пропорции значка (10:5) с чётными сторонами.
+							     При нечётной стороне остаток от центрирования равен половине
+							     пикселя, округление уводит его в одну сторону, и стрелка
+							     встаёт заметно не по центру. -->
+							<PathIcon Width="12" Height="6"
+							          HorizontalAlignment="Center" VerticalAlignment="Center"
+							          Data="M0 0L5 5L10 0Z"
+							          Foreground="{DynamicResource TextSecondaryBrush}"/>
+						</Border>
+					</ControlTemplate>
+				</Setter>
+			</Style>
+			<!-- В покое левая грань — обычный разделитель. Цвет задан стилем, а не
+			     атрибутом: атрибут был бы локальным значением и перебил бы состояния
+			     ниже. -->
+			<Style Selector="res|ColorPickerButton.arrow Button#TriggerButton /template/ Border#ArrowRoot">
+				<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			</Style>
+			<!-- Наведение, нажатие и открытый список показывают контур, а не заливку:
+			     рядом стоит кнопка-действие в общей рамке, и заливка стрелки читалась
+			     бы как отдельный элемент. Пока список открыт, стрелка остаётся
+			     подсвеченной — иначе непонятно, чей это попап висит на экране. -->
+			<Style Selector="res|ColorPickerButton.arrow Button#TriggerButton:pointerover /template/ Border#ArrowRoot">
+				<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			</Style>
+			<!-- Нажатие безопасно подсвечивать вместе с открытым списком: признак
+			     IsMenuOpen поднимается уже в момент открытия, поэтому внешняя рамка
+			     загорается одновременно с гранью, и одинокой полоски при уводе
+			     курсора с зажатой кнопкой не остаётся. -->
+			<Style Selector="res|ColorPickerButton.arrow Button#TriggerButton:pressed /template/ Border#ArrowRoot">
+				<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			</Style>
+			<Style Selector="res|ColorPickerButton.arrow Button#TriggerButton:flyout-open /template/ Border#ArrowRoot">
+				<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			</Style>
+			<Style Selector="res|ColorPickerButton.arrow Button#TriggerButton:pointerover /template/ PathIcon">
+				<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+			</Style>
+			<Style Selector="res|ColorPickerButton.arrow Button#TriggerButton:flyout-open /template/ PathIcon">
+				<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
 			</Style>
 		</Button.Styles>
 		<Button.Flyout>

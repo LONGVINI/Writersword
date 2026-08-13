@@ -204,6 +204,50 @@ namespace Writersword.Modules.TextEditor.Contracts
         /// <summary>Выравнивание по вертикали внутри ячейки (0=Top,1=Middle,2=Bottom).</summary>
         void TableSetCellVAlign(int vAlign);
 
+        /// <summary>
+        /// Внутренние поля ячейки в пунктах. Применяются ко всем целевым ячейкам
+        /// одной операцией — один шаг отмены на изменение.
+        /// </summary>
+        void TableSetCellPadding(double topPt, double bottomPt, double leftPt, double rightPt);
+
+        /// <summary>
+        /// Поля целевых ячеек. null — каретка не в таблице либо в выделении
+        /// значения разные и показывать в полях нечего.
+        /// </summary>
+        (double TopPt, double BottomPt, double LeftPt, double RightPt)? TableGetCellPadding();
+
+        /// <summary>
+        /// Инструмент рисования границ: 0 — обычная работа с текстом, 1 — карандаш
+        /// (проводит линию по границе), 2 — ластик (убирает линию). Режим держится
+        /// до повторного нажатия кнопки или Escape, поэтому передаётся отдельно от
+        /// команд, а не разовым действием.
+        /// </summary>
+        void TableSetLineTool(int tool);
+
+        /// <summary>Текущий инструмент рисования границ.</summary>
+        int TableGetLineTool();
+
+        /// <summary>
+        /// Задаёт обе координаты выравнивания ячейки одной операцией.
+        /// Нужна именно совмещённая: два отдельных вызова кладут в стек отмены
+        /// два снимка, и одно нажатие кнопки сетки приходилось бы отменять дважды.
+        /// </summary>
+        void TableSetCellAlign(int vAlign,
+            Writersword.Modules.TextEditor.Models.Styles.TextAlignment hAlign);
+
+        /// <summary>
+        /// Текущее выравнивание по горизонтали в целевых ячейках.
+        /// null — каретка не в таблице либо в выделении разные значения: в этом
+        /// случае ни одна кнопка выравнивания не должна выглядеть активной.
+        /// </summary>
+        Writersword.Modules.TextEditor.Models.Styles.TextAlignment? TableGetCellHAlign();
+
+        /// <summary>
+        /// Текущее выравнивание по вертикали в целевых ячейках (0=Top,1=Middle,2=Bottom).
+        /// null — каретка не в таблице либо в выделении разные значения.
+        /// </summary>
+        int? TableGetCellVAlign();
+
         // ── Оформление ячейки ─────────────────────────────────────────────
         /// <summary>Заливка фона ячейки. null — убрать заливку.</summary>
         void TableSetCellBackground(string? color);

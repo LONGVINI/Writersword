@@ -19,8 +19,14 @@
                       Grid.Column="1"
                       HorizontalScrollBarVisibility="Hidden"
                       VerticalScrollBarVisibility="Disabled">
+			<!-- Содержимое ленты центрируется по вертикали, а не растягивается:
+			     высота тела ленты задана снаружи одним числом, и без выравнивания
+			     группы растянулись бы на всю эту высоту вместе с кнопками внутри.
+			     Так рамки групп сохраняют свой размер, а лишняя высота уходит в
+			     поля сверху и снизу. -->
 			<ContentPresenter x:Name="ContentHost"
-                              HorizontalAlignment="Left"/>
+                              HorizontalAlignment="Left"
+                              VerticalAlignment="Center"/>
 		</ScrollViewer>
 
 		<Button x:Name="BtnScrollRight"

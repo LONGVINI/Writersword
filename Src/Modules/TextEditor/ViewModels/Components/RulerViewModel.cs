@@ -25,6 +25,48 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         ListMarker = 3
     }
 
+    /// <summary>
+    /// Фактическая геометрия абзаца под кареткой, снятая с раскладки. Единственный источник
+    /// положения стрелок на линейке: раскладка уже применила все свои правила — ограничители,
+    /// перенос текста списка на вторую строку, поля и рамку ячейки, — и любая попытка
+    /// повторить их расчётом по значениям модели рано или поздно с ней расходится.
+    ///
+    /// Все величины в миллиметрах. Отступы отсчитываются от зоны абзаца, а не от страницы:
+    /// у обычного абзаца зона — текстовая область страницы, у абзаца ячейки — её контентный
+    /// бокс (за полями и рамкой). <see cref="RightIndentMm"/> — расстояние от ПРАВОГО края
+    /// зоны, как линейка правый маркер и рисует.
+    /// </summary>
+    public readonly struct RulerParagraphGeometry
+    {
+        /// <summary>Левый край зоны абзаца от начала текстовой области страницы.</summary>
+        public double ZoneLeftMm { get; init; }
+
+        /// <summary>Ширина зоны абзаца.</summary>
+        public double ZoneWidthMm { get; init; }
+
+        /// <summary>Левый отступ (строки 2+) от левого края зоны.</summary>
+        public double LeftIndentMm { get; init; }
+
+        /// <summary>Начало текста первой строки от левого края зоны.</summary>
+        public double FirstLineMm { get; init; }
+
+        /// <summary>Правый отступ от правого края зоны.</summary>
+        public double RightIndentMm { get; init; }
+
+        /// <summary>Левый край номера/значка списка от левого края зоны.</summary>
+        public double MarkerMm { get; init; }
+
+        /// <summary>Абзац — элемент списка, метку показывать.</summary>
+        public bool HasMarker { get; init; }
+
+        /// <summary>
+        /// Насколько левее начала зоны разрешено уводить маркеры. Для абзаца ячейки это её
+        /// поле: номер списка можно поставить в самый край клетки, а не только от начала
+        /// текста. Для обычного абзаца — левое поле страницы.
+        /// </summary>
+        public double LeftOverhangMm { get; init; }
+    }
+
     public sealed class RulerColumnMarker
     {
         /// <summary>Индекс колонки (0-based). -1 = левый край таблицы.</summary>
@@ -265,6 +307,30 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         public event Action? IndentDragEnded;
         public Func<double>? GetMinParagraphIndentMm { get; set; }
 
+        /// <summary>
+        /// Правый предел для маркера в единицах линейки (в её текущей системе отсчёта:
+        /// вне таблицы от начала текстовой зоны, в таблице от левого края ячейки).
+        /// null — предела нет. Нужен для списка: номер и начало текста не могут уехать
+        /// вправо настолько, чтобы тексту не осталось места, — иначе раскладка упирает
+        /// строку в свой предел, а стрелка уходит дальше, и они расходятся.
+        /// </summary>
+        public Func<RulerIndentMarkerType, double?>? GetIndentUpperLimitUnits { get; set; }
+
+        /// <summary>
+        /// Насколько левее начала зоны можно увести маркер. Пока раскладка не прислала свою
+        /// величину, берётся левое поле страницы — прежнее поведение для обычного абзаца.
+        /// </summary>
+        private double LeftBoundUnits()
+            => _leftOverhangUnits > 0 ? _leftOverhangUnits : MmToUnits(MarginLeftMm);
+
+        /// <summary>Применяет предел из <see cref="GetIndentUpperLimitUnits"/> к позиции маркера.</summary>
+        private double ClampToUpperLimit(RulerIndentMarkerType type, double positionUnits)
+        {
+            if (GetIndentUpperLimitUnits?.Invoke(type) is double limit)
+                return Math.Min(positionUnits, limit);
+            return positionUnits;
+        }
+
         /// <summary>Начато перетаскивание поля страницы — владелец делает снапшот для Undo.</summary>
         public event Action? MarginDragStarted;
         public void BeginMarginDrag() => MarginDragStarted?.Invoke();
@@ -287,11 +353,26 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         /// <summary>Смещение левого края таблицы в единицах линейки от начала текстовой области.</summary>
         public double TableLeftEdgeUnits { get; private set; }
 
-        /// <summary>Левый край активной ячейки в единицах.</summary>
+        /// <summary>
+        /// Левый край зоны абзаца под кареткой в единицах: для ячейки — её контентный бокс,
+        /// за полем и рамкой. Пишется ТОЛЬКО из <see cref="ApplyParagraphGeometry"/>.
+        ///
+        /// Раньше сюда же писал метод, считавший края по маркерам столбцов. Края столбца и
+        /// контентный бокс различаются на поле ячейки — около 4-5 мм, — и во время жеста
+        /// значения чередовались кадр за кадром: геометрия себя блокирует, пока тянут маркер,
+        /// а тот метод продолжал возвращать старую точку отсчёта. Все стрелки рисуются от
+        /// неё, поэтому прыгали разом.
+        /// </summary>
         public double ActiveCellLeftUnits { get; private set; }
 
-        /// <summary>Правый край активной ячейки в единицах.</summary>
+        /// <summary>Правый край зоны абзаца под кареткой в единицах. Пишется там же.</summary>
         public double ActiveCellRightUnits { get; private set; }
+
+        /// <summary>
+        /// Насколько левее начала зоны можно увести маркер, в единицах. Приходит из раскладки
+        /// вместе с границами зоны: у ячейки это её поле, у обычного абзаца — поле страницы.
+        /// </summary>
+        private double _leftOverhangUnits;
 
         // ── Конвертация ───────────────────────────────────────────────────
 
@@ -334,17 +415,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             _firstLineIndentMm = firstLineIndentPt * PtToMm;
             _rightIndentMm = rightIndentPt * PtToMm;
 
-            // В режиме таблицы маркеры уже стоят в cell-relative координатах
-            // (они переведены в UpdateActiveCellBounds). Не перезаписываем их абсолютными
-            // значениями — иначе drag внутри ячейки будет использовать неверную начальную позицию.
-            if (Mode == RulerMode.Table)
-            {
-                this.RaisePropertyChanged(nameof(LeftIndentMm));
-                this.RaisePropertyChanged(nameof(FirstLineIndentMm));
-                this.RaisePropertyChanged(nameof(RightIndentMm));
-                return;
-            }
-
+            // Отступы абзаца внутри ячейки хранятся в модели относительно самой ячейки,
+            // а маркеры в табличном режиме рисуются и тянутся в тех же координатах —
+            // от левого края активной ячейки. Значит контекст курсора приходит уже в нужной
+            // системе отсчёта, и оба режима обслуживаются одним и тем же кодом без перевода.
             UpdateIndentMarkers();
             this.RaisePropertyChanged(nameof(LeftIndentMm));
             this.RaisePropertyChanged(nameof(FirstLineIndentMm));
@@ -379,40 +453,35 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
             Mode = RulerMode.Table;
         }
 
-        public void UpdateActiveCellBounds(int columnIndex)
+        /// <summary>
+        /// Ставит все стрелки и границы зоны по фактической геометрии абзаца под кареткой.
+        /// Единственный, кому разрешено двигать маркеры вне перетаскивания.
+        ///
+        /// Во время жеста вызов игнорируется: позицию ведёт мышь, а раскладка в этот момент
+        /// отдаёт ещё не применённое состояние — иначе стрелка дёргалась бы между двумя
+        /// значениями на каждом кадре.
+        /// </summary>
+        public void ApplyParagraphGeometry(RulerParagraphGeometry geometry)
         {
-            if (columnIndex < 0 || ColumnMarkers.Count == 0) return;
+            if (DraggingIndentMarker is not null) return;
 
-            int markerIdx = -1;
-            for (int i = 0; i < ColumnMarkers.Count; i++)
-                if (ColumnMarkers[i].ColumnIndex == columnIndex) { markerIdx = i; break; }
+            ActiveCellLeftUnits = MmToUnits(geometry.ZoneLeftMm);
+            ActiveCellRightUnits = MmToUnits(geometry.ZoneLeftMm + geometry.ZoneWidthMm);
+            _leftOverhangUnits = MmToUnits(geometry.LeftOverhangMm);
 
-            if (markerIdx < 0) return;
+            _leftIndentMm = geometry.LeftIndentMm;
+            _firstLineIndentMm = geometry.FirstLineMm;
+            _rightIndentMm = geometry.RightIndentMm;
+            _listMarkerMm = geometry.MarkerMm;
 
-            // Маркер с ColumnIndex=-1 хранит позицию левого края таблицы в RightEdge.
-            // Левый край ячейки col[n] = правый край маркера col[n-1].
-            ActiveCellLeftUnits = markerIdx > 0
-                ? ColumnMarkers[markerIdx - 1].RightEdge
-                : TableLeftEdgeUnits;
-            ActiveCellRightUnits = ColumnMarkers[markerIdx].RightEdge;
-
-            // Перевод маркеров отступа в cell-relative координаты.
-            // UpdateFromParagraphContext записывает абсолютные значения (от начала текстовой зоны),
-            // но в таблице все drag-операции работают в координатах от начала ячейки.
-            // Вычитаем смещение ячейки чтобы маркеры стояли корректно внутри ячейки.
-            var leftMarker = GetIndentMarker(RulerIndentMarkerType.LeftIndent);
-            var firstMarker = GetIndentMarker(RulerIndentMarkerType.FirstLineIndent);
-            var rightMarker = GetIndentMarker(RulerIndentMarkerType.RightIndent);
-            double cellW = ActiveCellRightUnits - ActiveCellLeftUnits;
-            if (leftMarker is not null)
-                leftMarker.Position = Math.Max(0, Math.Min(cellW, leftMarker.Position - ActiveCellLeftUnits));
-            if (firstMarker is not null)
-                firstMarker.Position = Math.Max(0, Math.Min(cellW, firstMarker.Position - ActiveCellLeftUnits));
-            if (rightMarker is not null)
-                rightMarker.Position = Math.Max(0, Math.Min(cellW, rightMarker.Position - ActiveCellLeftUnits));
+            UpdateIndentMarkers();
+            ShowListMarker = geometry.HasMarker;
 
             this.RaisePropertyChanged(nameof(ActiveCellLeftUnits));
             this.RaisePropertyChanged(nameof(ActiveCellRightUnits));
+            this.RaisePropertyChanged(nameof(LeftIndentMm));
+            this.RaisePropertyChanged(nameof(FirstLineIndentMm));
+            this.RaisePropertyChanged(nameof(RightIndentMm));
         }
 
         public void SwitchToParagraphMode()
@@ -438,6 +507,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
                 double pos = marker.Position;
                 if (IsSnapEnabled)
                     pos = Math.Round(pos / SnapStep) * SnapStep;
+                // Округление к шагу привязки может перебросить маркер за предел на четверть
+                // единицы — применяем предел после снапа, иначе отпускание кнопки возвращало
+                // бы стрелку туда, куда её во время жеста не пускали.
+                pos = ClampToUpperLimit(DraggingIndentMarker.Value, pos);
                 marker.Position = pos;
                 this.RaisePropertyChanged(nameof(IndentMarkers));
                 IndentMarkerChanged?.Invoke(DraggingIndentMarker.Value, UnitsToMm(pos));
@@ -544,14 +617,31 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
         }
 
         /// <summary>
-        /// Двигает ТОЛЬКО маркер абзацной стрелки (первой строки) на абсолютную позицию (мм от
-        /// начала текстовой зоны), не трогая остальные маркеры. Нужно во время drag метки списка,
-        /// чтобы абзацная стрелка ехала за меткой, а сама метка не сбрасывалась.
+        /// Двигает ТОЛЬКО маркер абзацной стрелки (первой строки), не трогая остальные маркеры.
+        /// Нужно во время drag метки списка, чтобы абзацная стрелка ехала за меткой, а сама
+        /// метка не сбрасывалась. Значение — в той же системе отсчёта, в которой линейка держит
+        /// все маркеры: вне таблицы от начала текстовой зоны, в таблице от левого края активной
+        /// ячейки. Это ровно то, что лежит в отступах абзаца, поэтому вызывающий передаёт
+        /// величину из модели как есть.
         /// </summary>
-        public void SetFirstLineMarkerAbsolute(double mm)
+        public void SetFirstLineMarkerMm(double mm)
         {
             _firstLineIndentMm = mm;
             var m = GetIndentMarker(RulerIndentMarkerType.FirstLineIndent);
+            if (m is not null) m.Position = MmToUnits(mm);
+            this.RaisePropertyChanged(nameof(IndentMarkers));
+        }
+
+        /// <summary>
+        /// Двигает ТОЛЬКО маркер левого отступа, не трогая остальные. Нужен при перетаскивании
+        /// метки списка: она везёт за собой левый отступ абзаца, и без этого нижняя стрелка
+        /// стояла на месте весь жест, показывая величину, которой в модели уже нет.
+        /// Система отсчёта — как у остальных маркеров линейки.
+        /// </summary>
+        public void SetLeftMarkerMm(double mm)
+        {
+            _leftIndentMm = mm;
+            var m = GetIndentMarker(RulerIndentMarkerType.LeftIndent);
             if (m is not null) m.Position = MmToUnits(mm);
             this.RaisePropertyChanged(nameof(IndentMarkers));
         }
@@ -590,13 +680,19 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
 
             double pageWidthUnits = MmToUnits(PageWidthMm);
             positionUnits = Math.Min(positionUnits, pageWidthUnits);
+            positionUnits = ClampToUpperLimit(DraggingIndentMarker.Value, positionUnits);
 
             if (DraggingIndentMarker == RulerIndentMarkerType.RightIndent)
                 positionUnits = Math.Max(positionUnits, -MmToUnits(MarginRightMm));
             else
-                positionUnits = Math.Max(positionUnits, -MmToUnits(MarginLeftMm));
+                positionUnits = Math.Max(positionUnits, -LeftBoundUnits());
 
-            if (DraggingIndentMarker == RulerIndentMarkerType.LeftIndent)
+            // Левая стрелка тянет за собой абзацную, сохраняя расстояние между ними: так
+            // сдвигается весь абзац целиком. У элемента списка это неверно — там абзацная
+            // стрелка показывает начало текста после номера и от левого отступа не зависит,
+            // левая же задаёт только строки 2+. ShowListMarker включён ровно тогда, когда
+            // активный абзац — элемент списка.
+            if (DraggingIndentMarker == RulerIndentMarkerType.LeftIndent && !ShowListMarker)
             {
                 var firstMarker = GetIndentMarker(RulerIndentMarkerType.FirstLineIndent);
                 if (firstMarker is not null)
@@ -628,9 +724,21 @@ namespace Writersword.Modules.TextEditor.ViewModels.Components
                 positionUnitsFromCellStart = Math.Round(positionUnitsFromCellStart / SnapStep) * SnapStep;
 
             double cellW = ActiveCellRightUnits - ActiveCellLeftUnits;
-            positionUnitsFromCellStart = Math.Max(0, Math.Min(positionUnitsFromCellStart, cellW));
+            positionUnitsFromCellStart = Math.Min(positionUnitsFromCellStart, cellW);
 
-            if (DraggingIndentMarker == RulerIndentMarkerType.LeftIndent)
+            // Влево метка идёт до левого поля страницы: запас приходит из раскладки и включает
+            // смещение самой зоны, поэтому номер уводится и за край клетки. Прежний запас был
+            // равен полю ячейки — те самые пара миллиметров, — и жест упирался вплотную к
+            // тексту. Остальные маркеры держатся начала зоны: у них левее ничего нет.
+            positionUnitsFromCellStart = DraggingIndentMarker == RulerIndentMarkerType.ListMarker
+                ? Math.Max(-LeftBoundUnits(), positionUnitsFromCellStart)
+                : Math.Max(0, positionUnitsFromCellStart);
+            positionUnitsFromCellStart =
+                ClampToUpperLimit(DraggingIndentMarker.Value, positionUnitsFromCellStart);
+
+            // Как и вне таблицы: у элемента списка абзацная стрелка живёт от номера,
+            // а не от левого отступа, и за нижней стрелкой не едет.
+            if (DraggingIndentMarker == RulerIndentMarkerType.LeftIndent && !ShowListMarker)
             {
                 var firstMarker = GetIndentMarker(RulerIndentMarkerType.FirstLineIndent);
                 if (firstMarker is not null)

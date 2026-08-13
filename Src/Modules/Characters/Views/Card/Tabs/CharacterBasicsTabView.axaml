@@ -472,9 +472,13 @@
 
 				     Холст 114 на 84 при кольце 84 — запас ровно под вылет
 				     кнопок влево, лишнего места вокруг нет. -->
+				<!-- Высота с запасом под значки меток: они садятся снаружи
+				     кольца и выходят за габарит кнопки аватара. Запас
+				     постоянный, а не по числу меток — иначе шапка дёргалась
+				     бы по высоте от того, повесил автор метку или снял. -->
 				<Canvas Grid.Column="0"
 				        Width="114"
-				        Height="84"
+				        Height="104"
 				        VerticalAlignment="Center">
 
 					<!-- Цвет выше настроек: его меняют чаще. -->
@@ -551,54 +555,67 @@
 						        HorizontalAlignment="Center"
 						        VerticalAlignment="Center"/>
 
-						<!-- Значки меток поверх аватара: смысл несёт объект-значок,
-						     поэтому «мёртв» виден прямо в шапке карточки. Раскладка
-						     и вид значка — те же, что на карточках списков: одна
-						     дуга по нижнему краю аватара, шаг сжимается сам.
-						     Прежде здесь висел один бейдж в правом нижнем углу, и
-						     остальные метки в шапке не показывались вовсе. -->
-						<ItemsControl ItemsSource="{Binding CardLabels}"
-						              IsHitTestVisible="False"
-						              ClipToBounds="False">
-							<ItemsControl.ItemsPanel>
-								<ItemsPanelTemplate>
-									<controls:LabelArcPanel ItemSize="18" ArcRadius="33"/>
-								</ItemsPanelTemplate>
-							</ItemsControl.ItemsPanel>
-							<ItemsControl.ItemTemplate>
-								<DataTemplate x:DataType="models:CharacterLabel">
-									<controls:CharacterLabelIcon
-										Label="{Binding}"
-										IconSize="18"
-										RimBrush="{DynamicResource BgSurfaceBrush}"
-										RimThickness="1.5"/>
-								</DataTemplate>
-							</ItemsControl.ItemTemplate>
-						</ItemsControl>
-
-						<!-- «Мёртв» — особая метка: одна, в верхнем правом углу
-						     аватара под сорок пять градусов, на той же окружности,
-						     что и общая нижняя дуга. -->
-						<ItemsControl ItemsSource="{Binding DeadLabels}"
-						              IsHitTestVisible="False"
-						              ClipToBounds="False">
-							<ItemsControl.ItemsPanel>
-								<ItemsPanelTemplate>
-									<controls:LabelArcPanel CenterAngle="-45" ItemSize="18" ArcRadius="33"/>
-								</ItemsPanelTemplate>
-							</ItemsControl.ItemsPanel>
-							<ItemsControl.ItemTemplate>
-								<DataTemplate x:DataType="models:CharacterLabel">
-									<controls:CharacterLabelIcon
-										Label="{Binding}"
-										IconSize="18"
-										RimBrush="{DynamicResource BgSurfaceBrush}"
-										RimThickness="1.5"/>
-								</DataTemplate>
-							</ItemsControl.ItemTemplate>
-						</ItemsControl>
 					</Panel>
 					</Button>
+
+					<!-- Значки меток лежат на холсте, а не внутри кнопки аватара:
+					     шаблон кнопки режет содержимое по своему скруглению, и
+					     значки, выходящие за кружок, обрезались ровно по его
+					     краю. Здесь же ничто не режет.
+
+					     Поле 114 на 114 с серединой ровно в середине аватара:
+					     аватар стоит на 30 по горизонтали при своих 84, значит
+					     его середина — 72 и 42, отсюда и сдвиги. -->
+					<ItemsControl Canvas.Left="15"
+					              Canvas.Top="-15"
+					              Width="114" Height="114"
+					              ItemsSource="{Binding CardLabels}"
+					              IsHitTestVisible="False"
+					              ClipToBounds="False">
+						<ItemsControl.ItemsPanel>
+							<ItemsPanelTemplate>
+								<!-- Радиус считается от кольца, а не от кружка: кольцо
+								     цвета персонажа кончается на 42, и значок садится
+								     сразу за ним. Меньшие радиусы клали значки внутрь
+								     портрета, на лицо. -->
+								<controls:LabelArcPanel ItemSize="16" ArcRadius="45" Sweep="120"/>
+							</ItemsPanelTemplate>
+						</ItemsControl.ItemsPanel>
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="models:CharacterLabel">
+								<controls:CharacterLabelIcon
+									Label="{Binding}"
+									IconSize="16"
+									RimBrush="{DynamicResource BgSurfaceBrush}"
+									RimThickness="1.5"/>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
+
+					<!-- «Мёртв» — особая метка: одна, в верхнем правом углу
+					     аватара под сорок пять градусов, на той же окружности,
+					     что и общая нижняя дуга. -->
+					<ItemsControl Canvas.Left="15"
+					              Canvas.Top="-15"
+					              Width="114" Height="114"
+					              ItemsSource="{Binding DeadLabels}"
+					              IsHitTestVisible="False"
+					              ClipToBounds="False">
+						<ItemsControl.ItemsPanel>
+							<ItemsPanelTemplate>
+								<controls:LabelArcPanel CenterAngle="-45" ItemSize="16" ArcRadius="45"/>
+							</ItemsPanelTemplate>
+						</ItemsControl.ItemsPanel>
+						<ItemsControl.ItemTemplate>
+							<DataTemplate x:DataType="models:CharacterLabel">
+								<controls:CharacterLabelIcon
+									Label="{Binding}"
+									IconSize="16"
+									RimBrush="{DynamicResource BgSurfaceBrush}"
+									RimThickness="1.5"/>
+							</DataTemplate>
+						</ItemsControl.ItemTemplate>
+					</ItemsControl>
 
 				</Canvas>
 
@@ -939,7 +956,6 @@
 												        BorderThickness="1"
 												        CornerRadius="12"
 												        Padding="6,4"
-												        behaviours:TooltipBehavior.Tip="{Binding Name}"
 												        behaviours:TooltipBehavior.Description="{Binding Description}">
 													<StackPanel Orientation="Horizontal" Spacing="6">
 														<controls:CharacterLabelIcon
@@ -1254,7 +1270,6 @@
 									        CornerRadius="12"
 									        Padding="10,4"
 									        Margin="0,0,6,6"
-									        behaviours:TooltipBehavior.Tip="{Binding Name}"
 									        behaviours:TooltipBehavior.Description="{Binding Description}">
 										<StackPanel Orientation="Horizontal" Spacing="6">
 											<TextBlock Text="{Binding Name}"
@@ -1304,7 +1319,6 @@
 												        BorderThickness="0"
 												        Padding="8,6"
 												        CornerRadius="4"
-												        behaviours:TooltipBehavior.Tip="{Binding Name}"
 												        behaviours:TooltipBehavior.Description="{Binding Description}">
 													<StackPanel Spacing="1">
 														<TextBlock Text="{Binding Name}" FontSize="12"/>

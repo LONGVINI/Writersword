@@ -53,10 +53,34 @@ namespace Writersword.Modules.Characters.Controls
         public static readonly StyledProperty<double> CenterAngleProperty =
             AvaloniaProperty.Register<LabelArcPanel, double>(nameof(CenterAngle), 90d);
 
+        /// <summary>
+        /// Раскладывать прямым рядом у края зоны вместо дуги. Дуга имеет
+        /// смысл, пока есть кружок аватарки, вокруг которого её вести. В
+        /// режиме, где фотография занимает всю зону карточки, кружка нет, и
+        /// дуга посреди снимка читается как случайно рассыпанные значки —
+        /// ряд у нижнего края, прямо над подписью имени, выглядит уместнее.
+        ///
+        /// Направление прижатия берётся из того же CenterAngle: низ (девяносто
+        /// градусов) даёт ряд по центру нижнего края, минус сорок пять —
+        /// правый верхний угол зоны, где стоит «Мёртв».
+        /// </summary>
+        public static readonly StyledProperty<bool> StraightProperty =
+            AvaloniaProperty.Register<LabelArcPanel, bool>(nameof(Straight));
+
+        /// <summary>
+        /// Отступы от краёв зоны в прямом режиме, по одному на сторону.
+        /// Порознь они нужны затем, что в правом верхнем углу карточки живут
+        /// кнопки правки: значку «Мёртв» там задаётся большой отступ справа,
+        /// чтобы встать левее них, и почти нулевой сверху.
+        /// </summary>
+        public static readonly StyledProperty<Thickness> EdgePaddingProperty =
+            AvaloniaProperty.Register<LabelArcPanel, Thickness>(nameof(EdgePadding), new Thickness(5));
+
         static LabelArcPanel()
         {
             AffectsMeasure<LabelArcPanel>(ItemSizeProperty);
-            AffectsArrange<LabelArcPanel>(ItemSizeProperty, ArcRadiusProperty, SweepProperty, GapProperty, CenterAngleProperty);
+            AffectsArrange<LabelArcPanel>(ItemSizeProperty, ArcRadiusProperty, SweepProperty,
+                GapProperty, CenterAngleProperty, StraightProperty, EdgePaddingProperty);
         }
 
         public double ItemSize
@@ -89,6 +113,18 @@ namespace Writersword.Modules.Characters.Controls
             set => SetValue(CenterAngleProperty, value);
         }
 
+        public bool Straight
+        {
+            get => GetValue(StraightProperty);
+            set => SetValue(StraightProperty, value);
+        }
+
+        public Thickness EdgePadding
+        {
+            get => GetValue(EdgePaddingProperty);
+            set => SetValue(EdgePaddingProperty, value);
+        }
+
         protected override Size MeasureOverride(Size availableSize)
         {
             var side = Math.Max(1d, ItemSize);
@@ -115,6 +151,12 @@ namespace Writersword.Modules.Characters.Controls
             var center = new Point(finalSize.Width / 2, finalSize.Height / 2);
 
             var middle = CenterAngle * Math.PI / 180.0;
+
+            if (Straight)
+            {
+                ArrangeStraight(finalSize, center, middle, side, count);
+                return finalSize;
+            }
 
             if (count == 1)
             {
@@ -152,6 +194,55 @@ namespace Writersword.Modules.Characters.Controls
             }
 
             return finalSize;
+        }
+
+        // Прямой ряд. Точка прижатия выводится из направления угла: косинус
+        // отвечает за прижатие по горизонтали, синус — по вертикали. Низ по
+        // центру и правый верхний угол получаются из одного и того же расчёта,
+        // отдельных ветвей под каждый случай нет.
+        private void ArrangeStraight(Size finalSize, Point center, double middle, double side, int count)
+        {
+            var padding = EdgePadding;
+            var toward = new Point(Math.Cos(middle), Math.Sin(middle));
+
+            // Отступ берётся с той стороны, к которой прижимаемся: угол задаёт
+            // направление, знак косинуса и синуса — сторону.
+            var padX = toward.X >= 0 ? padding.Right : padding.Left;
+            var padY = toward.Y >= 0 ? padding.Bottom : padding.Top;
+
+            var reachX = Math.Max(0d, finalSize.Width / 2 - side / 2 - padX);
+            var reachY = Math.Max(0d, finalSize.Height / 2 - side / 2 - padY);
+
+            var anchorX = center.X + toward.X * reachX;
+            var anchorY = center.Y + toward.Y * reachY;
+
+            if (count == 1)
+            {
+                ArrangeAtPoint(Children[0], anchorX, anchorY, side);
+                return;
+            }
+
+            // Тот же принцип, что на дуге: пока ряд помещается в ширину зоны,
+            // значки стоят с зазором, дальше шаг сжимается и они наезжают
+            // друг на друга. Ни один не пропадает.
+            var available = Math.Max(side, finalSize.Width - side - padding.Left - padding.Right);
+            var step = Math.Min(side + Math.Max(0d, Gap), available / (count - 1));
+            var total = step * (count - 1);
+
+            // Ряд, прижатый к краю по горизонтали, растёт от этого края
+            // внутрь зоны; ряд по центру расходится в обе стороны.
+            var startX = anchorX - total / 2 - total / 2 * toward.X;
+
+            for (var i = 0; i < count; i++)
+                ArrangeAtPoint(Children[i], startX + step * i, anchorY, side);
+        }
+
+        private static void ArrangeAtPoint(Control child, double centerX, double centerY, double side)
+        {
+            var size = child.DesiredSize;
+            var width = size.Width > 0 ? size.Width : side;
+            var height = size.Height > 0 ? size.Height : side;
+            child.Arrange(new Rect(centerX - width / 2, centerY - height / 2, width, height));
         }
 
         private static void ArrangeAt(Control child, Point center, double radius, double angle, double side)

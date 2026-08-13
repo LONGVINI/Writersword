@@ -6,6 +6,18 @@
              x:Class="Writersword.Modules.TextEditor.Views.Toolbar.RibbonView"
              x:DataType="vm:RibbonViewModel">
 
+	<UserControl.Resources>
+		<!-- Высота тела ленты — одна на все вкладки. Подгонка вкладок друг под
+		     друга по содержимому не работает: высоту набирают ещё и метрики
+		     шрифта подписи, отступы группы и поведение DockPanel, и любая
+		     правка внутри одной вкладки снова разводит их на пару пикселей.
+		     Здесь высота фиксируется явно, и лента перестаёт прыгать при
+		     переключении независимо от того, что лежит внутри вкладки.
+		     Если какая-то группа окажется обрезана снизу — увеличивать нужно
+		     это число, оно единственное. -->
+		<x:Double x:Key="RibbonBodyHeight">88</x:Double>
+	</UserControl.Resources>
+
 	<Border Background="{DynamicResource BgPanelBrush}"
             BorderBrush="{DynamicResource BorderDefaultBrush}"
             BorderThickness="0 0 0 1">
@@ -97,7 +109,8 @@
 				<TabItem.Header>
 					<TextBlock Text="{x:Static loc:TextEditorStrings.Ribbon_Home}"/>
 				</TabItem.Header>
-				<Panel IsHitTestVisible="{Binding IsEditingEnabled}"
+				<Panel Height="{StaticResource RibbonBodyHeight}"
+				       IsHitTestVisible="{Binding IsEditingEnabled}"
 				       Opacity="{Binding ContentOpacity}">
 					<tabs:RibbonHomeTab DataContext="{Binding Home}"/>
 				</Panel>
@@ -108,7 +121,8 @@
 				<TabItem.Header>
 					<TextBlock Text="{x:Static loc:TextEditorStrings.Ribbon_Insert}"/>
 				</TabItem.Header>
-				<Panel IsHitTestVisible="{Binding IsEditingEnabled}"
+				<Panel Height="{StaticResource RibbonBodyHeight}"
+				       IsHitTestVisible="{Binding IsEditingEnabled}"
 				       Opacity="{Binding ContentOpacity}">
 					<tabs:RibbonInsertTab DataContext="{Binding Insert}"/>
 				</Panel>
@@ -119,7 +133,8 @@
 				<TabItem.Header>
 					<TextBlock Text="{x:Static loc:TextEditorStrings.Ribbon_Layout}"/>
 				</TabItem.Header>
-				<Panel IsHitTestVisible="{Binding IsEditingEnabled}"
+				<Panel Height="{StaticResource RibbonBodyHeight}"
+				       IsHitTestVisible="{Binding IsEditingEnabled}"
 				       Opacity="{Binding ContentOpacity}">
 					<tabs:RibbonLayoutTab DataContext="{Binding Layout}"/>
 				</Panel>
@@ -130,7 +145,8 @@
 				<TabItem.Header>
 					<TextBlock Text="{x:Static loc:TextEditorStrings.Ribbon_References}"/>
 				</TabItem.Header>
-				<Panel IsHitTestVisible="{Binding IsEditingEnabled}"
+				<Panel Height="{StaticResource RibbonBodyHeight}"
+				       IsHitTestVisible="{Binding IsEditingEnabled}"
 				       Opacity="{Binding ContentOpacity}">
 					<tabs:RibbonReferencesTab DataContext="{Binding References}"/>
 				</Panel>
@@ -144,7 +160,8 @@
 				<TabItem.Header>
 					<TextBlock Text="Работа с таблицами"/>
 				</TabItem.Header>
-				<Panel IsHitTestVisible="{Binding IsEditingEnabled}"
+				<Panel Height="{StaticResource RibbonBodyHeight}"
+				       IsHitTestVisible="{Binding IsEditingEnabled}"
 				       Opacity="{Binding ContentOpacity}">
 					<tabs:RibbonTableTab DataContext="{Binding Table}"/>
 				</Panel>
@@ -158,7 +175,8 @@
 				<TabItem.Header>
 					<TextBlock Text="Формат"/>
 				</TabItem.Header>
-				<Panel IsHitTestVisible="{Binding IsEditingEnabled}"
+				<Panel Height="{StaticResource RibbonBodyHeight}"
+				       IsHitTestVisible="{Binding IsEditingEnabled}"
 				       Opacity="{Binding ContentOpacity}">
 					<tabs:RibbonImageTab DataContext="{Binding Image}"/>
 				</Panel>

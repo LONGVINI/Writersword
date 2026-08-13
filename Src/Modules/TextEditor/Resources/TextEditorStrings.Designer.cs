@@ -212,6 +212,9 @@ namespace Writersword.Modules.TextEditor.Resources
         public static string Table_ColorRed => ResourceManager.GetString("Table_ColorRed", _culture)!;
         public static string Table_ColorYellow => ResourceManager.GetString("Table_ColorYellow", _culture)!;
         public static string Table_Columns_Group => ResourceManager.GetString("Table_Columns_Group", _culture)!;
+        public static string Table_Structure_Group => ResourceManager.GetString("Table_Structure_Group", _culture)!;
+        public static string Table_Size_Group => ResourceManager.GetString("Table_Size_Group", _culture)!;
+        public static string Table_Padding_Group => ResourceManager.GetString("Table_Padding_Group", _culture)!;
         public static string Table_Delete => ResourceManager.GetString("Table_Delete", _culture)!;
         public static string Table_DeleteColumn => ResourceManager.GetString("Table_DeleteColumn", _culture)!;
         public static string Table_DeleteRow => ResourceManager.GetString("Table_DeleteRow", _culture)!;

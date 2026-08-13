@@ -793,6 +793,18 @@
     <value>Delete Row</value>
     <comment>Button label — removes current row</comment>
   </data>
+  <data name="Table_Structure_Group" xml:space="preserve">
+    <value>Rows and columns</value>
+    <comment>Ribbon group label — combined row and column operations</comment>
+  </data>
+  <data name="Table_Padding_Group" xml:space="preserve">
+    <value>Cell margins</value>
+    <comment>Ribbon group label — inner cell padding</comment>
+  </data>
+  <data name="Table_Size_Group" xml:space="preserve">
+    <value>Size</value>
+    <comment>Ribbon group label — column width and row height</comment>
+  </data>
   <data name="Table_Columns_Group" xml:space="preserve">
     <value>Columns</value>
     <comment>Ribbon group label — column operations</comment>

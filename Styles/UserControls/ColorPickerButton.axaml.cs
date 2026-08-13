@@ -36,6 +36,22 @@ namespace Writersword.Styles.UserControls
             set => SetValue(HexColorProperty, value);
         }
 
+        /// <summary>
+        /// Открыт ли список цветов. Нужно снаружи: когда пикер стоит внутри общей
+        /// рамки рядом с кнопкой-действием, подсветку держит эта рамка, а она про
+        /// состояние попапа сама не знает. Псевдокласс :flyout-open живёт на
+        /// внутренней кнопке и наружу не виден.
+        /// </summary>
+        public static readonly StyledProperty<bool> IsMenuOpenProperty =
+            AvaloniaProperty.Register<ColorPickerButton, bool>(nameof(IsMenuOpen));
+
+        public bool IsMenuOpen
+        {
+            get => GetValue(IsMenuOpenProperty);
+            set => SetValue(IsMenuOpenProperty, value);
+        }
+
+
         public static readonly StyledProperty<bool> ShowCardPreviewProperty =
             AvaloniaProperty.Register<ColorPickerButton, bool>(nameof(ShowCardPreview), false);
 
@@ -383,6 +399,9 @@ namespace Writersword.Styles.UserControls
         // секциями и на глазах проигрывал анимацию их сворачивания.
         private void OnFlyoutOpening(object? sender, EventArgs e)
         {
+            // Признак поднимается уже здесь, а не в Opened: между нажатием и
+            // показом попапа проходит кадр, и внешняя подсветка успевала мигнуть.
+            IsMenuOpen = true;
             // Переходы сворачивания снимаются на время показа: привязки ScaleY
             // применяют сохранённое состояние при построении/присоединении
             // содержимого, и объявленный заранее переход проигрывал это как
@@ -396,6 +415,7 @@ namespace Writersword.Styles.UserControls
 
         private void OnFlyoutOpened(object? sender, EventArgs e)
         {
+            IsMenuOpen = true;
             // Страховка: если флайаут не PopupFlyoutBase и Opening не сработало,
             // грузим данные и состояние секций хотя бы здесь (прежнее поведение).
             if (_flyout is not PopupFlyoutBase)
@@ -444,6 +464,7 @@ namespace Writersword.Styles.UserControls
 
         private void OnFlyoutClosed(object? sender, EventArgs e)
         {
+            IsMenuOpen = false;
             // Применённый при закрытии цвет уходит в «недавние» проекта.
             AddRecent(HexColor);
         }

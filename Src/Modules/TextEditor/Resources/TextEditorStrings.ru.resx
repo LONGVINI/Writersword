@@ -624,6 +624,15 @@
   <data name="Table_DeleteRow" xml:space="preserve">
     <value>Удалить строку</value>
   </data>
+  <data name="Table_Structure_Group" xml:space="preserve">
+    <value>Строки и столбцы</value>
+  </data>
+  <data name="Table_Padding_Group" xml:space="preserve">
+    <value>Поля ячейки</value>
+  </data>
+  <data name="Table_Size_Group" xml:space="preserve">
+    <value>Размер</value>
+  </data>
   <data name="Table_Columns_Group" xml:space="preserve">
     <value>Столбцы</value>
   </data>

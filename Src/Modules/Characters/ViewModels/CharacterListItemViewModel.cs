@@ -471,6 +471,25 @@ namespace Writersword.Modules.Characters.ViewModels
         /// </summary>
         public void ApplyAvatarRef(string? avatarRef) => SetAvatarRef(avatarRef);
 
+        /// <summary>
+        /// Подтянуть аватар из модели, не сообщая о смене наружу. Отличие от
+        /// ApplyAvatarRef в том, что источник правки — сама модель: колбэк
+        /// смены записал бы в неё ровно то, что оттуда и пришло, и потянул
+        /// бы за собой лишнее сохранение персонажа.
+        /// </summary>
+        public void SyncAvatarRef(string? avatarRef)
+        {
+            if (_avatarPath == avatarRef) return;
+
+            _bitmapLoaded = false;
+            _avatarBitmap?.Dispose();
+            _avatarBitmap = null;
+            _avatarPath = avatarRef;
+            this.RaisePropertyChanged(nameof(AvatarPath));
+            this.RaisePropertyChanged(nameof(AvatarBitmap));
+            RaiseAvatarViewProps();
+        }
+
         private void SetAvatarRef(string? avatarRef)
         {
             _bitmapLoaded = false;

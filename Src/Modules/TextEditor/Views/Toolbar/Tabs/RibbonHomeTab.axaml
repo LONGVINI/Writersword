@@ -53,7 +53,11 @@
             <Setter Property="CornerRadius"               Value="3"/>
             <Setter Property="Padding"                    Value="4 2"/>
             <Setter Property="MinWidth"                   Value="40"/>
-            <Setter Property="MinHeight"                  Value="54"/>
+            <!-- 56 — общая для всех вкладок высота тела группы. Задаётся не здесь:
+                 столько занимают два ряда кнопок по 26 со Spacing 4 в группах
+                 «Шрифт» и «Абзац». Крупная кнопка подогнана под них, иначе лента
+                 на этой вкладке была бы выше остальных на два пикселя. -->
+            <Setter Property="MinHeight"                  Value="56"/>
             <Setter Property="VerticalAlignment"          Value="Stretch"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment"   Value="Center"/>
@@ -962,7 +966,7 @@
                     <StackPanel>
                         <ListBox ItemsSource="{Binding VisibleStyles}"
                                  SelectedItem="{Binding CurrentStyleName}"
-                                 Classes="StyleGallery" Height="54"
+                                 Classes="StyleGallery" Height="56"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  ScrollViewer.VerticalScrollBarVisibility="Disabled">
                             <ListBox.ItemsPanel>
@@ -972,7 +976,7 @@
                             </ListBox.ItemsPanel>
                             <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="x:String">
-                                    <Border Classes="StyleCard" Width="62" Height="50" Padding="4 3">
+                                    <Border Classes="StyleCard" Width="62" Height="52" Padding="4 3">
                                         <StackPanel VerticalAlignment="Center" Spacing="1">
                                             <TextBlock Text="{Binding}"
                                                        FontSize="{Binding Converter={x:Static converters:StylePreviewSizeConverter.Instance}}"
@@ -1048,7 +1052,7 @@
                                 <Flyout Placement="Bottom">
                                     <ListBox ItemsSource="{Binding AvailableStyles}"
                                              SelectedItem="{Binding CurrentStyleName}"
-                                             Classes="StyleGallery" Height="54"
+                                             Classes="StyleGallery" Height="56"
                                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                              ScrollViewer.VerticalScrollBarVisibility="Disabled">
                                         <ListBox.ItemsPanel>
@@ -1058,7 +1062,7 @@
                                         </ListBox.ItemsPanel>
                                         <ListBox.ItemTemplate>
                                             <DataTemplate x:DataType="x:String">
-                                                <Border Classes="StyleCard" Width="62" Height="50" Padding="4 3">
+                                                <Border Classes="StyleCard" Width="62" Height="52" Padding="4 3">
                                                     <StackPanel VerticalAlignment="Center" Spacing="1">
                                                         <TextBlock Text="{Binding}"
                                                                    FontSize="{Binding Converter={x:Static converters:StylePreviewSizeConverter.Instance}}"

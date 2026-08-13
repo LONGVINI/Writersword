@@ -230,6 +230,24 @@ namespace Writersword.Modules.TextEditor.Views
                     Avalonia.Threading.DispatcherPriority.Background);
             };
 
+            // Фактическая геометрия абзаца под кареткой → положение стрелок линейки.
+            //
+            // Через диспетчер, но приоритетом Render: он отрабатывает в том же кадре, и
+            // отставания стрелок на одно действие не возникает. Фоновый приоритет, стоявший
+            // здесь раньше, доставлял геометрию уже после отрисовки — линейка показывала
+            // величины предыдущего абзаца.
+            //
+            // Прямой синхронный вызов тоже не годится: событие приходит изнутри
+            // RebuildLayouts (OnParagraphFormatChanged, NotifyCaretEnteredTableCallback), и
+            // запись свойств вью-модели посреди пересборки поднимает PropertyChanged, а с ним
+            // перерисовку линейки — вплоть до повторного входа в раскладку.
+            canvas.RulerGeometryChanged = geometry =>
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    vm.NotifyRulerGeometry(geometry),
+                    Avalonia.Threading.DispatcherPriority.Render);
+            };
+
             // Выделение/снятие картинки → контекстная вкладка «Формат».
             canvas.ImageSelectionChanged = selected =>
             {

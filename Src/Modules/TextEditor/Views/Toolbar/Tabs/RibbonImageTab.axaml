@@ -44,7 +44,9 @@
 			<Setter Property="CornerRadius"               Value="3"/>
 			<Setter Property="Padding"                    Value="4 2"/>
 			<Setter Property="MinWidth"                   Value="44"/>
-			<Setter Property="MinHeight"                  Value="54"/>
+			<!-- 56 — общая для всех вкладок высота тела группы: столько занимают
+			     два ряда кнопок по 26 в группах «Шрифт» и «Абзац» на «Главной». -->
+			<Setter Property="MinHeight"                  Value="56"/>
 			<Setter Property="VerticalAlignment"          Value="Stretch"/>
 			<Setter Property="HorizontalContentAlignment" Value="Center"/>
 			<Setter Property="VerticalContentAlignment"   Value="Center"/>
@@ -105,20 +107,25 @@
 			<Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
+		<!-- Обвязка группы повторяет вкладку «Главная» до пикселя: рамка, отступы
+		     и подпись задают всю высоту ленты помимо содержимого, и стоит им
+		     разойтись — вкладки прыгают по высоте при переключении. -->
 		<Style Selector="Border.RibbonGroup">
 			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
 			<Setter Property="BorderThickness" Value="1"/>
 			<Setter Property="CornerRadius"    Value="4"/>
-			<Setter Property="Margin"          Value="2 2 0 2"/>
-			<Setter Property="Padding"         Value="4 2"/>
+			<Setter Property="Margin"          Value="2 3"/>
+			<Setter Property="Padding"         Value="6 4 6 0"/>
 		</Style>
 		<Style Selector="TextBlock.RibbonGroupLabel">
 			<Setter Property="FontSize"            Value="10"/>
-			<Setter Property="Foreground"          Value="{DynamicResource TextSecondaryBrush}"/>
-			<Setter Property="HorizontalAlignment" Value="Center"/>
+			<Setter Property="Foreground"          Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="TextAlignment"       Value="Center"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="VerticalAlignment"   Value="Center"/>
 		</Style>
 		<Style Selector="Grid.RibbonGroupLabelGrid">
-			<Setter Property="Margin" Value="0 2 0 0"/>
+			<Setter Property="Margin" Value="0 3 0 2"/>
 		</Style>
 
 		<!-- PathIcon наследует цвет через Foreground -->
@@ -126,68 +133,11 @@
 			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
 		</Style>
 
-		<!-- Числовое поле риббона: вертикальные мини-стрелки справа -->
-		<Style Selector="NumericUpDown.RibbonNum">
-			<Setter Property="MinHeight"       Value="24"/>
-			<Setter Property="FontSize"        Value="12"/>
-			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
-			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
-			<Setter Property="BorderThickness" Value="1"/>
-			<Setter Property="CornerRadius"    Value="3"/>
-			<Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
-			<Setter Property="VerticalAlignment" Value="Center"/>
-		</Style>
-		<Style Selector="NumericUpDown.RibbonNum /template/ TextBox">
-			<Setter Property="BorderThickness" Value="0"/>
-			<Setter Property="Background"      Value="Transparent"/>
-			<Setter Property="CornerRadius"    Value="0"/>
-			<Setter Property="MinHeight"       Value="22"/>
-			<Setter Property="Padding"         Value="4 1"/>
-			<Setter Property="VerticalContentAlignment" Value="Center"/>
-		</Style>
-		<Style Selector="NumericUpDown.RibbonNum /template/ TextBox /template/ Border#PART_BorderElement">
-			<Setter Property="BorderThickness" Value="0"/>
-			<Setter Property="Background"      Value="Transparent"/>
-		</Style>
-		<Style Selector="NumericUpDown.RibbonNum ButtonSpinner">
-			<Setter Property="Template">
-				<ControlTemplate>
-					<Border Background="{TemplateBinding Background}"
-					        BorderBrush="{TemplateBinding BorderBrush}"
-					        BorderThickness="{TemplateBinding BorderThickness}"
-					        CornerRadius="{TemplateBinding CornerRadius}">
-						<Grid ColumnDefinitions="* Auto">
-							<ContentPresenter Name="PART_ContentPresenter"
-							                  Grid.Column="0"
-							                  Content="{TemplateBinding Content}"
-							                  ContentTemplate="{TemplateBinding ContentTemplate}"
-							                  Padding="{TemplateBinding Padding}"/>
-							<StackPanel Grid.Column="1" Orientation="Vertical" Width="15"
-							            VerticalAlignment="Center">
-								<RepeatButton Name="PART_IncreaseButton"
-								              Height="12" Padding="0"
-								              Background="Transparent" BorderThickness="0"
-								              HorizontalContentAlignment="Center"
-								              VerticalContentAlignment="Center"
-								              Cursor="Hand" Focusable="False">
-									<PathIcon Data="M7 14l5-5 5 5z" Width="9" Height="9"
-									          Foreground="{DynamicResource TextSecondaryBrush}"/>
-								</RepeatButton>
-								<RepeatButton Name="PART_DecreaseButton"
-								              Height="12" Padding="0"
-								              Background="Transparent" BorderThickness="0"
-								              HorizontalContentAlignment="Center"
-								              VerticalContentAlignment="Center"
-								              Cursor="Hand" Focusable="False">
-									<PathIcon Data="M7 10l5 5 5-5z" Width="9" Height="9"
-									          Foreground="{DynamicResource TextSecondaryBrush}"/>
-								</RepeatButton>
-							</StackPanel>
-						</Grid>
-					</Border>
-				</ControlTemplate>
-			</Setter>
-		</Style>
+		<!-- Числовое поле ленты — общий класс NumericUpDown.Ribbon из
+		     Styles/Controls/NumericUpDown.axaml: геометрия, рамка, стрелки и
+		     состояния описаны там же и одинаковы для всех вкладок ленты.
+		     Ширина остаётся местной: у полей поворота, размера и отступов
+		     она разная. -->
 
 		<!-- Ползунок в стиле палитровых градиентных ползунков -->
 		<Style Selector="Slider.knob">
@@ -307,7 +257,7 @@
 									          Data="M7.11 8.53L5.7 7.11C4.8 8.27 4.24 9.61 4.07 11h2.02c.14-.87.49-1.72 1.02-2.47zM6.09 13H4.07c.17 1.39.72 2.73 1.62 3.89l1.41-1.42c-.52-.75-.87-1.59-1.01-2.47zm1.01 5.32c1.16.9 2.51 1.44 3.9 1.61V17.9c-.87-.15-1.71-.49-2.46-1.03L7.1 18.32zM13 4.07V1L8.45 5.55 13 10V6.09c2.84.48 5 2.94 5 5.91s-2.16 5.43-5 5.91v2.02c3.95-.49 7-3.85 7-7.93s-3.05-7.44-7-7.93z"/>
 								</Button>
 
-								<NumericUpDown Classes="RibbonNum" Width="86"
+								<NumericUpDown Classes="Ribbon" Width="86"
 								               Value="{Binding RotationDegrees, Mode=TwoWay}"
 								               Minimum="-360" Maximum="720"
 								               Increment="1"
@@ -350,7 +300,7 @@
 									<PathIcon Width="13" Height="13" VerticalAlignment="Center"
 									          Foreground="{DynamicResource TextSecondaryBrush}"
 									          Data="M3 12l4-4v3h10V8l4 4-4 4v-3H7v3l-4-4z"/>
-									<NumericUpDown Classes="RibbonNum" Width="92"
+									<NumericUpDown Classes="Ribbon" Width="92"
 									               Value="{Binding ImageWidth, Mode=TwoWay}"
 									               Minimum="0.1" Maximum="99999.99"
 									               Increment="1"
@@ -363,7 +313,7 @@
 									<PathIcon Width="13" Height="13" VerticalAlignment="Center"
 									          Foreground="{DynamicResource TextSecondaryBrush}"
 									          Data="M12 3l4 4h-3v10h3l-4 4-4-4h3V7H8l4-4z"/>
-									<NumericUpDown Classes="RibbonNum" Width="92"
+									<NumericUpDown Classes="Ribbon" Width="92"
 									               Value="{Binding ImageHeight, Mode=TwoWay}"
 									               Minimum="0.1" Maximum="99999.99"
 									               Increment="1"
@@ -427,7 +377,7 @@
 						</Grid>
 						<StackPanel Orientation="Horizontal" Spacing="2">
 
-							<Button Classes="RibbonBtn" MinHeight="54" MinWidth="40"
+							<Button Classes="RibbonBtn" MinHeight="56" MinWidth="40"
 							        Command="{Binding FlipHorizontalCommand}"
 							        behaviours:TooltipBehavior.Tip="Отразить картинку по горизонтали"
 							        behaviours:TooltipBehavior.ShowDelay="700">
@@ -438,7 +388,7 @@
 								</StackPanel>
 							</Button>
 
-							<Button Classes="RibbonBtn" MinHeight="54" MinWidth="40"
+							<Button Classes="RibbonBtn" MinHeight="56" MinWidth="40"
 							        Command="{Binding FlipVerticalCommand}"
 							        behaviours:TooltipBehavior.Tip="Отразить картинку по вертикали"
 							        behaviours:TooltipBehavior.ShowDelay="700">
@@ -472,7 +422,7 @@
 								<StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="2" Margin="0 0 4 2">
 									<TextBlock Text="↑" FontSize="12" VerticalAlignment="Center"
 									           Foreground="{DynamicResource TextSecondaryBrush}"/>
-									<NumericUpDown Classes="RibbonNum" Width="70"
+									<NumericUpDown Classes="Ribbon" Width="70"
 									               Value="{Binding WrapPadTop, Mode=TwoWay}"
 									               Minimum="0" Maximum="50" Increment="0.1"
 									               FormatString="0.##" ClipValueToMinMax="True"
@@ -482,7 +432,7 @@
 								<StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="2" Margin="0 0 0 2">
 									<TextBlock Text="↓" FontSize="12" VerticalAlignment="Center"
 									           Foreground="{DynamicResource TextSecondaryBrush}"/>
-									<NumericUpDown Classes="RibbonNum" Width="70"
+									<NumericUpDown Classes="Ribbon" Width="70"
 									               Value="{Binding WrapPadBottom, Mode=TwoWay}"
 									               Minimum="0" Maximum="50" Increment="0.1"
 									               FormatString="0.##" ClipValueToMinMax="True"
@@ -492,7 +442,7 @@
 								<StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="2" Margin="0 0 4 0">
 									<TextBlock Text="←" FontSize="12" VerticalAlignment="Center"
 									           Foreground="{DynamicResource TextSecondaryBrush}"/>
-									<NumericUpDown Classes="RibbonNum" Width="70"
+									<NumericUpDown Classes="Ribbon" Width="70"
 									               Value="{Binding WrapPadLeft, Mode=TwoWay}"
 									               Minimum="0" Maximum="50" Increment="0.1"
 									               FormatString="0.##" ClipValueToMinMax="True"
@@ -502,7 +452,7 @@
 								<StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="2">
 									<TextBlock Text="→" FontSize="12" VerticalAlignment="Center"
 									           Foreground="{DynamicResource TextSecondaryBrush}"/>
-									<NumericUpDown Classes="RibbonNum" Width="70"
+									<NumericUpDown Classes="Ribbon" Width="70"
 									               Value="{Binding WrapPadRight, Mode=TwoWay}"
 									               Minimum="0" Maximum="50" Increment="0.1"
 									               FormatString="0.##" ClipValueToMinMax="True"
@@ -552,7 +502,7 @@
 								<TextBlock FontSize="10" VerticalAlignment="Center"
 								           Foreground="{DynamicResource TextSecondaryBrush}"
 								           Text="Рамка"/>
-								<NumericUpDown Classes="RibbonNum" Width="72"
+								<NumericUpDown Classes="Ribbon" Width="72"
 								               Value="{Binding BorderThickness, Mode=TwoWay}"
 								               Minimum="0" Maximum="50"
 								               Increment="0.5"
@@ -574,7 +524,7 @@
 								        Value="{Binding OpacityValue, Mode=TwoWay}"
 								        behaviours:TooltipBehavior.Tip="Видимость картинки: 100% — полностью непрозрачная, 0% — невидимая"
 								        behaviours:TooltipBehavior.ShowDelay="700"/>
-								<NumericUpDown Classes="RibbonNum" Width="64"
+								<NumericUpDown Classes="Ribbon" Width="64"
 								               Value="{Binding OpacityPercent, Mode=TwoWay}"
 								               Minimum="0" Maximum="100"
 								               Increment="5"

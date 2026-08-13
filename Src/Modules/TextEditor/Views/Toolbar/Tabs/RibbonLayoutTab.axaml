@@ -46,7 +46,9 @@
 			<Setter Property="CornerRadius"               Value="3"/>
 			<Setter Property="Padding"                    Value="4 2"/>
 			<Setter Property="MinWidth"                   Value="40"/>
-			<Setter Property="MinHeight"                  Value="54"/>
+			<!-- 56 — общая для всех вкладок высота тела группы: столько занимают
+			     два ряда кнопок по 26 в группах «Шрифт» и «Абзац» на «Главной». -->
+			<Setter Property="MinHeight"                  Value="56"/>
 			<Setter Property="VerticalAlignment"          Value="Stretch"/>
 			<Setter Property="HorizontalContentAlignment" Value="Center"/>
 			<Setter Property="VerticalContentAlignment"   Value="Center"/>

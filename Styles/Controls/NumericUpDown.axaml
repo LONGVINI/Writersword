@@ -56,4 +56,173 @@
 		<Setter Property="VerticalAlignment" Value="Center"/>
 		<Setter Property="HorizontalAlignment" Value="Stretch"/>
 	</Style>
+
+	<!-- ══ Компактное числовое поле ленты: NumericUpDown Classes="Ribbon" ══════
+	     Высота 24 — на уровне остальных мелких элементов ленты. Ширину класс не
+	     задаёт: она разная у полей размера, отступов и толщины линии, и ставится
+	     на месте использования.
+
+	     Стили идут после базовых намеренно: setter'ы применяются в порядке
+	     объявления, и базовый блок, стоя ниже, вернул бы обычную геометрию.
+
+	     BorderThickness=0 у самого NumericUpDown: рамку рисует ButtonSpinner,
+	     и если толщину задать в обоих местах, получаются две вложенные рамки —
+	     внешняя обрезается по высоте и от неё остаются только боковые полоски.
+	     Высота задана через MinHeight, а не Height: жёсткая высота обрезала бы
+	     содержимое вместе с горизонтальными краями рамки. -->
+	<Style Selector="NumericUpDown.Ribbon">
+		<Setter Property="MinHeight"         Value="20"/>
+		<Setter Property="FontSize"          Value="12"/>
+		<Setter Property="Background"        Value="Transparent"/>
+		<Setter Property="BorderThickness"   Value="0"/>
+		<Setter Property="Padding"           Value="0"/>
+		<Setter Property="Foreground"        Value="{DynamicResource TextPrimaryBrush}"/>
+		<Setter Property="VerticalAlignment" Value="Center"/>
+		<Setter Property="ShowButtonSpinner" Value="True"/>
+	</Style>
+
+	<Style Selector="NumericUpDown.Ribbon /template/ TextBox">
+		<Setter Property="BorderThickness"            Value="0"/>
+		<Setter Property="Background"                 Value="Transparent"/>
+		<Setter Property="CornerRadius"               Value="0"/>
+		<Setter Property="MinHeight"                  Value="16"/>
+		<!-- Число центрируется в текстовой зоне, а колонка стрелок занимает
+		     правую часть поля — из-за этого визуальный центр смещён влево.
+		     Левый отступ компенсирует ширину стрелок. -->
+		<Setter Property="Padding"                    Value="9 0 0 0"/>
+		<Setter Property="TextAlignment"              Value="Center"/>
+		<Setter Property="HorizontalContentAlignment" Value="Center"/>
+		<Setter Property="VerticalContentAlignment"   Value="Center"/>
+	</Style>
+
+	<Style Selector="NumericUpDown.Ribbon /template/ TextBox /template/ Border#PART_BorderElement">
+		<Setter Property="BorderThickness" Value="0"/>
+		<Setter Property="Background"      Value="Transparent"/>
+	</Style>
+
+	<!-- Рамку поля рисует именно ButtonSpinner: в шаблоне NumericUpDown он и есть
+	     корневой элемент. Его собственные Background/BorderBrush/BorderThickness
+	     задаются здесь явно — иначе после подмены шаблона TemplateBinding берёт
+	     значения по умолчанию, и края у блока просто нет. -->
+	<Style Selector="NumericUpDown.Ribbon ButtonSpinner">
+		<Setter Property="Background"        Value="{DynamicResource BgSurfaceBrush}"/>
+		<Setter Property="BorderBrush"       Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="BorderThickness"   Value="1"/>
+		<Setter Property="CornerRadius"      Value="3"/>
+		<Setter Property="MinHeight"         Value="20"/>
+		<Setter Property="VerticalAlignment" Value="Stretch"/>
+		<Setter Property="Template">
+			<ControlTemplate>
+				<Border Background="{TemplateBinding Background}"
+						BorderBrush="{TemplateBinding BorderBrush}"
+						BorderThickness="{TemplateBinding BorderThickness}"
+						CornerRadius="{TemplateBinding CornerRadius}">
+					<Grid ColumnDefinitions="* Auto">
+						<ContentPresenter Name="PART_ContentPresenter"
+										  Grid.Column="0"
+										  Content="{TemplateBinding Content}"
+										  ContentTemplate="{TemplateBinding ContentTemplate}"
+										  Padding="{TemplateBinding Padding}"/>
+						<!-- Строки *,* делят доступную высоту поровну: при любой высоте
+						     поля обе кнопки одинаковые и ни одна не обрезается. Фиксированная
+						     высота кнопок этого не давала — пара по 12px не влезала во
+						     внутреннюю область, и нижняя стрелка срезалась. -->
+						<!-- Отступ по краям обязателен: без него подсветка кнопки ложится
+						     поверх рамки поля и его правый край пропадает. Внутри отступа
+						     кнопки по-прежнему растянуты на всю доступную площадь. -->
+						<!-- Цвет значка берётся привязкой к Foreground самой кнопки, а не
+						     стилем «RepeatButton.RibbonSpin PathIcon»: на вкладках ленты
+						     объявлен общий стиль «PathIcon», он применяется позже глобального
+						     и перекрасил бы стрелки обратно. Локальное значение свойства
+						     сильнее любого стиля, поэтому привязка держится. -->
+						<!-- Данные пути начинаются строго с нуля координат. Внутри PathIcon
+						     стоит Viewbox с обычным Path, и масштабируется не фигура, а её
+						     габарит от начала координат: у материальных значков (M7 14…)
+						     треугольник занимает x 7…17, y 9…14, поэтому в квадрате значка
+						     он прижимался к правому нижнему углу и стрелка стояла не по
+						     центру кнопки. Соотношение 10×5 сохранено — значок остаётся
+						     той же формы. -->
+						<!-- Размеры значка 10×4 подобраны так, чтобы все отступы делились
+						     нацело и округление разметки не съедало пиксель с одной стороны.
+						     Кнопка 18 при рамке презентера 1 даёт 16×8 под содержимое:
+						     (16−10)/2 = 3 и (8−4)/2 = 2 по краям. Внутри самого значка
+						     Uniform сжимает путь 10×5 до 8×4, остаток по горизонтали — 1
+						     на сторону. При нечётном размере (9) получалось 3,5, половина
+						     пикселя уходила влево, и стрелка заметно смещалась. -->
+						<Grid Grid.Column="1" RowDefinitions="*,*" Width="18"
+							  Margin="0 1 2 1" VerticalAlignment="Stretch">
+							<RepeatButton Name="PART_IncreaseButton" Grid.Row="0" Classes="RibbonSpin">
+								<PathIcon Data="M0 5L5 0L10 5Z" Width="10" Height="4"
+										  Foreground="{Binding $parent[RepeatButton].Foreground}"/>
+							</RepeatButton>
+							<RepeatButton Name="PART_DecreaseButton" Grid.Row="1" Classes="RibbonSpin">
+								<PathIcon Data="M0 0L5 5L10 0Z" Width="10" Height="4"
+										  Foreground="{Binding $parent[RepeatButton].Foreground}"/>
+							</RepeatButton>
+						</Grid>
+					</Grid>
+				</Border>
+			</ControlTemplate>
+		</Setter>
+	</Style>
+
+	<!-- Состояния поля. Идут СТРОГО после базового стиля ButtonSpinner: стили
+	     применяются в порядке объявления, и базовый, стоя ниже, безусловно
+	     возвращал бы обычную рамку — из-за этого блок и не подсвечивался.
+	     Наведение — акцентная рамка, фокус — акцентная рамка и подложка,
+	     как у нажатой кнопки ленты. -->
+	<Style Selector="NumericUpDown.Ribbon:pointerover ButtonSpinner">
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="NumericUpDown.Ribbon:focus-within ButtonSpinner">
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="Background"  Value="{DynamicResource AccentSubtleBrush}"/>
+	</Style>
+	<Style Selector="NumericUpDown.Ribbon:disabled ButtonSpinner">
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+		<Setter Property="Background"  Value="{DynamicResource BgSurfaceBrush}"/>
+	</Style>
+
+	<!-- Стрелки: подложка во всю кнопку, обводка акцентом на наведении — та же
+	     пара кистей, что у кнопок ленты. Background="Transparent", а не null:
+	     прозрачная кисть участвует в hit-test, поэтому нажимается вся площадь
+	     кнопки, а не только контур значка. -->
+	<Style Selector="RepeatButton.RibbonSpin">
+		<Setter Property="Padding"                    Value="0"/>
+		<Setter Property="Margin"                     Value="0"/>
+		<Setter Property="MinWidth"                   Value="0"/>
+		<Setter Property="MinHeight"                  Value="0"/>
+		<Setter Property="Background"                 Value="Transparent"/>
+		<Setter Property="BorderThickness"            Value="0"/>
+		<Setter Property="Foreground"                 Value="{DynamicResource TextSecondaryBrush}"/>
+		<Setter Property="HorizontalAlignment"        Value="Stretch"/>
+		<Setter Property="VerticalAlignment"          Value="Stretch"/>
+		<Setter Property="HorizontalContentAlignment" Value="Center"/>
+		<Setter Property="VerticalContentAlignment"   Value="Center"/>
+		<Setter Property="Cursor"                     Value="Hand"/>
+		<Setter Property="Focusable"                  Value="False"/>
+	</Style>
+	<Style Selector="RepeatButton.RibbonSpin /template/ ContentPresenter">
+		<Setter Property="Background"          Value="Transparent"/>
+		<Setter Property="BorderBrush"         Value="Transparent"/>
+		<Setter Property="BorderThickness"     Value="1"/>
+		<Setter Property="CornerRadius"        Value="2"/>
+		<Setter Property="Margin"              Value="0"/>
+		<Setter Property="HorizontalAlignment" Value="Stretch"/>
+		<Setter Property="VerticalAlignment"   Value="Stretch"/>
+	</Style>
+	<Style Selector="RepeatButton.RibbonSpin:pointerover">
+		<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="RepeatButton.RibbonSpin:pointerover /template/ ContentPresenter">
+		<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="RepeatButton.RibbonSpin:pressed">
+		<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
+	<Style Selector="RepeatButton.RibbonSpin:pressed /template/ ContentPresenter">
+		<Setter Property="Background"  Value="{DynamicResource AccentPressedBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+	</Style>
 </Styles>

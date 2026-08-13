@@ -27,6 +27,16 @@ namespace Writersword.Modules.TextEditor.Commands
         /// <summary>Описание следующей операции Redo (для отображения в меню).</summary>
         public string? RedoDescription => _redoStack.Count > 0 ? _redoStack.Peek().Description : null;
 
+        /// <summary>
+        /// Команда, которую откатит ближайший Undo, без её выполнения. Нужна вызывающему,
+        /// чтобы понять, какое обновление вида потребуется: правка текста обходится
+        /// перерисовкой абзаца, а правка таблицы требует пересборки раскладки.
+        /// </summary>
+        public ITextCommand? PeekUndo => _undoStack.Last?.Value;
+
+        /// <summary>Команда, которую применит ближайший Redo, без её выполнения.</summary>
+        public ITextCommand? PeekRedo => _redoStack.Count > 0 ? _redoStack.Peek() : null;
+
         public TextUndoRedoStack(int maxSize = 100)
         {
             _maxSize = maxSize;

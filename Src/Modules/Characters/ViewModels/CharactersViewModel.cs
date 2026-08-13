@@ -311,11 +311,25 @@ namespace Writersword.Modules.Characters.ViewModels
             get => _viewMode;
             set
             {
+                var changed = _viewMode != value;
+
                 this.RaiseAndSetIfChanged(ref _viewMode, value);
                 this.RaisePropertyChanged(nameof(IsListMode));
                 this.RaisePropertyChanged(nameof(IsGridMode));
                 this.RaisePropertyChanged(nameof(ViewModeIndex));
                 RecalculateCardDimensions();
+
+                // Смена размера пересобирает карточки заново, а не растягивает
+                // существующие. От размера зависит не только ширина: своя
+                // высота, свой размер аватарки, кнопок и значков меток, а в
+                // режиме списка ещё и вся раскладка карточки. Пересчёт этих
+                // величин доезжает до уже построенных карточек не полностью —
+                // часть привязок читает их один раз при создании.
+                //
+                // Пересборка идёт тем же прогрессивным путём, что и при входе
+                // в модуль, поэтому список не подвисает даже на сотнях
+                // карточек.
+                if (changed) RefreshAll();
             }
         }
         public bool IsListMode => _viewMode == CharactersViewMode.List;
@@ -368,7 +382,19 @@ namespace Writersword.Modules.Characters.ViewModels
 
         // Размеры кнопок взаимодействия, пропорциональные ширине карточки (baseline 148).
         public double CardActionIconSize => Math.Max(11, Math.Round(_cardWidth * 11.0 / 148.0));
-        public double CardColorButtonSize => Math.Max(18, Math.Round(_cardWidth * 20.0 / 148.0));
+
+        // Кнопки левого угла (цвет, настройки) выводятся из размера правых, а
+        // не задаются своей пропорцией. Правая кнопка — это значок плюс поля
+        // по четыре точки с каждой стороны; раньше левая считалась отдельно и
+        // выходила на пару точек шире, отчего левый угол занимал заметно
+        // больше места, чем правый.
+        public double CardColorButtonSize => CardActionIconSize + 8;
+
+        // Отступ значка «Мёртв» от правого края: он встаёт слева от кнопок
+        // правки, а не под ними. Ширина пары кнопок плюс просвет между ними,
+        // поле самих кнопок и зазор до значка.
+        public Avalonia.Thickness CardDeadBadgeMargin =>
+            new(0, 4, CardColorButtonSize * 2 + 2 + 4 + 4, 0);
 
         // Количество колонок — используется для расчётов drag.
         public int CardsPerRow => _cardsPerRow;
@@ -407,8 +433,10 @@ namespace Writersword.Modules.Characters.ViewModels
         public Avalonia.Layout.HorizontalAlignment CardPickerHAlign =>
             UseListRowLayout ? Avalonia.Layout.HorizontalAlignment.Right
                              : Avalonia.Layout.HorizontalAlignment.Left;
+        // Поле левого угла равно полю правого: иначе углы карточки визуально
+        // не совпадают, даже когда сами кнопки одного размера.
         public Avalonia.Thickness CardPickerMargin =>
-            UseListRowLayout ? new Avalonia.Thickness(0, 0, 76, 0) : new Avalonia.Thickness(5);
+            UseListRowLayout ? new Avalonia.Thickness(0, 0, 76, 0) : new Avalonia.Thickness(4);
         public Avalonia.Thickness CardEditBtnsMargin =>
             UseListRowLayout ? new Avalonia.Thickness(0, 0, 10, 0) : new Avalonia.Thickness(4);
 
@@ -418,6 +446,10 @@ namespace Writersword.Modules.Characters.ViewModels
             UseListRowLayout ? new Avalonia.CornerRadius(8, 0, 0, 8)
                              : new Avalonia.CornerRadius(8, 8, 0, 0);
 
+        // Скругление подложки под именем — дополнение к скруглению цветной
+        // зоны: вместе они дают углы карточки. Подложка отсекает ту часть
+        // фона карточки, которая не должна быть цветной, и обязана повторять
+        // её форму — иначе прямой угол вылезет за скруглённый край.
         // Минимальная ширина слота (карточка + margin 6px с каждой стороны).
         // Передаётся в UniformGridLayout.MinItemWidth из code-behind.
         // UniformGridLayout сам вычислит число колонок и растянет карточки через ItemsStretch.Fill.
@@ -564,6 +596,7 @@ namespace Writersword.Modules.Characters.ViewModels
             this.RaisePropertyChanged(nameof(CardPickerHAlign));
             this.RaisePropertyChanged(nameof(CardPickerMargin));
             this.RaisePropertyChanged(nameof(CardEditBtnsMargin));
+            this.RaisePropertyChanged(nameof(CardDeadBadgeMargin));
             this.RaisePropertyChanged(nameof(CardZoneCornerRadius));
         }
 
@@ -945,6 +978,11 @@ namespace Writersword.Modules.Characters.ViewModels
             item.ShortDescription = character.ShortDescription;
             item.FallbackIcon = character.FallbackIcon;
             item.SetLabels(character.Labels);
+            // Аватар переносится наравне с остальным. Без этого смена фото в
+            // карточке персонажа доезжала до модели, но не до строк списков:
+            // они хранят собственную ссылку и загруженный по ней битмап, и
+            // показывали прежнее фото до пересбора списка.
+            item.SyncAvatarRef(character.AvatarPath);
             if (item.Color != character.Color) item.Color = character.Color;
             if (item.AvatarRing != character.AvatarRing) item.AvatarRing = character.AvatarRing;
             if (item.GroupBookmark != character.GroupBookmark) item.GroupBookmark = character.GroupBookmark;

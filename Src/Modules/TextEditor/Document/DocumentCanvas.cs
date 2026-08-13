@@ -587,6 +587,16 @@ namespace Writersword.Modules.TextEditor.Document
         private bool _caretVisible = true;
         private float _preferredCaretXPt = 0f;
 
+        // Индекс каретки (_caretPara) и список раскладок (_layouts) обновляются двумя
+        // отдельными шагами: пересборка сначала подменяет раскладку под _renderLock, и лишь
+        // потом вызывающий ищет новый индекс слайса. Рендер идёт на своём потоке и берёт
+        // снимок раскладки под тем же замком, а _caretPara читает как есть — в промежутке
+        // между этими шагами пара оказывается несогласованной, и кадр рисует каретку по
+        // старому номеру в новой раскладке: при серии Enter в ячейке она мелькала в соседней
+        // ячейке или за таблицей. Пока флаг взведён, каретка не рисуется — один-два кадра
+        // без неё незаметны, а промаха по чужому абзацу больше нет.
+        private bool _caretIndexPending;
+
         // Активна ли серия вертикальных перемещений (Up/Down подряд). В начале серии столбец
         // (_preferredCaretXPt) захватывается из ЖИВОЙ геометрии каретки и держится до любого
         // горизонтального перемещения/клика/правки (там вызывается UpdatePreferredX, который
@@ -881,6 +891,14 @@ namespace Writersword.Modules.TextEditor.Document
 
         public Action<IReadOnlyList<double>, IReadOnlyList<double>, double, int>? CaretEnteredTable { get; set; }
         public Action? CaretLeftTable { get; set; }
+
+        /// <summary>
+        /// Фактическая геометрия абзаца под кареткой для линейки: границы его зоны и реальные
+        /// позиции отступов, снятые с построенной раскладки. По ней линейка и ставит стрелки,
+        /// ничего не пересчитывая — раскладка единственная знает, где текст оказался на самом
+        /// деле после всех её ограничителей, полей ячейки и переноса первой строки.
+        /// </summary>
+        public Action<ViewModels.Components.RulerParagraphGeometry>? RulerGeometryChanged { get; set; }
 
         /// <summary>Выделена (true) или снята с выделения (false) картинка — для контекстной вкладки.</summary>
         public Action<bool>? ImageSelectionChanged { get; set; }
@@ -1273,6 +1291,10 @@ namespace Writersword.Modules.TextEditor.Document
                 _docVm.CommitTextEditsDelegate = null;
                 _docVm.CommitParagraphPropertyGranularDelegate = null;
                 _docVm.GetCaretWordRangeDelegate = null;
+                _docVm.BeginUndoStepDelegate = null;
+                _docVm.CommitUndoStepDelegate = null;
+                _docVm.BeginTableUndoStepDelegate = null;
+                _docVm.CommitTableUndoStepDelegate = null;
             }
 
             _docVm = DataContext as DocumentViewModel;
@@ -1305,6 +1327,14 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (DocVm is null) return;
 
+            // Вход в историю отмены для операций, выполняемых во вью-модели.
+            // Регистрируется здесь, а не при входе в таблицу: правки из контекстного
+            // меню и переключатели вкладки доступны и без каретки внутри таблицы.
+            DocVm.BeginUndoStepDelegate = BeginEdit;
+            DocVm.CommitUndoStepDelegate = CommitEdit;
+            DocVm.BeginTableUndoStepDelegate = BeginTableEdit;
+            DocVm.CommitTableUndoStepDelegate = CommitTableEdit;
+
             DocVm.Paragraphs.CollectionChanged -= OnParagraphsChanged;
             DocVm.PropertyChanged -= OnDocVmPropertyChanged;
             DocVm.ParagraphFormatChanged -= OnParagraphFormatChanged;
@@ -1328,6 +1358,7 @@ namespace Writersword.Modules.TextEditor.Document
             DocVm.CommitEditDelegate = CommitEdit;
             DocVm.CommitRunPropertyGranularDelegate = CommitRunPropertyGranular;
             DocVm.GetCellSelectionRangesDelegate = GetCellSelectionRanges;
+            DocVm.GetSelectedCellParagraphsDelegate = QuerySelectedCellParagraphs;
             DocVm.CommitTextEditsDelegate = CommitTextEditsGranular;
             DocVm.CommitParagraphPropertyGranularDelegate = CommitParagraphPropertyGranular;
             DocVm.GetCaretWordRangeDelegate = GetCaretWordRange;
@@ -2012,6 +2043,9 @@ namespace Writersword.Modules.TextEditor.Document
             if (_activeTableBlock is not null)
                 NotifyCaretEnteredTableCallback();
 
+            // Раскладка пересобрана — отступы могли поменяться и без движения каретки.
+            PublishRulerGeometry();
+
             InvalidateFull();
         }
 
@@ -2478,6 +2512,7 @@ namespace Writersword.Modules.TextEditor.Document
         {
             if (DocVm is null) return;
             double textWidthPt = GetCurrentTextWidthPt();
+            _cellListMarkers.Clear();
             foreach (var section in DocVm.Document.Sections)
             {
                 var map = Rendering.ListNumberingEngine.Compute(section.Blocks);
@@ -2488,14 +2523,82 @@ namespace Writersword.Modules.TextEditor.Document
                             map.TryGetValue(p, out var mi) ? mi.Text : null;
                         MigrateCorruptListMarker(p, textWidthPt);
                     }
+
+                ApplyListMarkerTextsInTables(section.Blocks, textWidthPt);
             }
         }
+
+        /// <summary>
+        /// Считает маркеры списков для абзацев внутри ячеек таблиц. Абзацы ячеек не
+        /// лежат в Blocks раздела, поэтому общий проход их не видел: свойства списка
+        /// у абзаца были, а текст маркера — нет, и элемент рисовался как голый
+        /// отступ без номера и без буллета.
+        /// Каждая ячейка считается отдельным потоком: нумерация идёт внутри ячейки
+        /// и начинается заново в следующей — сквозной счёт по таблице требовал бы
+        /// порядка обхода, которого у ячеек нет.
+        /// </summary>
+        private void ApplyListMarkerTextsInTables(
+            IReadOnlyList<Models.Document.BlockModel> blocks, double textWidthPt)
+        {
+            foreach (var block in blocks)
+            {
+                if (block is not Models.Document.TableBlock table) continue;
+
+                foreach (var cell in table.Cells)
+                {
+                    var cellMap = Rendering.ListNumberingEngine.Compute(cell.Paragraphs);
+
+                    // Диагностика пропадающих маркеров: видно, у скольких абзацев
+                    // ячейки есть свойства списка и скольким движок выдал маркер.
+                    // Расхождение означает, что список поставлен не всем абзацам.
+                    int withProps = 0;
+                    foreach (var p2 in cell.Paragraphs)
+                        if (p2.ListProperties is not null
+                            && p2.ListProperties.MarkerType != Models.Document.ListMarkerType.None)
+                            withProps++;
+                    if (withProps != cellMap.Count)
+                    {
+                        _logger.Debug(
+                            "[LIST] cell r{Row}c{Col}: свойства списка у {Props} абзацев, маркеров выдано {Markers}",
+                            cell.Row, cell.Column, withProps, cellMap.Count);
+                    }
+                    foreach (var para in cell.Paragraphs)
+                    {
+                        if (para.ListProperties is null) continue;
+
+                        if (cellMap.TryGetValue(para, out var info))
+                        {
+                            para.ListProperties.ComputedMarkerText = info.Text;
+                            // Сам значок рисуется не по тексту в модели, а по Marker
+                            // в записи раскладки: текст в модели нужен только чтобы
+                            // померить его ширину и отодвинуть первую строку.
+                            // Поэтому маркер запоминается и подставляется в ParaLayout
+                            // ячейки — без этого получался отступ без номера.
+                            _cellListMarkers[para] = info;
+                        }
+                        else
+                        {
+                            para.ListProperties.ComputedMarkerText = null;
+                        }
+
+                        MigrateCorruptListMarker(para, textWidthPt);
+                    }
+                }
+            }
+        }
+
+        // Маркеры списков для абзацев внутри ячеек. Заполняется
+        // ApplyListMarkerTextsInTables, читается при сборке раскладки ячеек.
+        private readonly Dictionary<ParagraphBlock, Rendering.ListMarkerInfo> _cellListMarkers = new();
 
         // Сбрасывает явно повреждённую позицию номера (левый край цифры у/за правым краем
         // текстовой зоны — след старых багов), чтобы номер вернулся к нормальному выступу слева.
         private static void MigrateCorruptListMarker(ParagraphBlock p, double textWidthPt)
         {
-            if (p.ListProperties?.MarkerIndentPt is double mi && mi > textWidthPt - 20.0)
+            // Порог был «textWidth − 20 pt» и захватывал теперь уже допустимые позиции: метку
+            // разрешено доводить до правого края зоны, там текст уходит на вторую строку.
+            // Сбрасываем только заведомо битое значение — номер целиком за пределами зоны.
+            if (p.ListProperties?.MarkerIndentPt is double mi && mi > textWidthPt)
                 p.ListProperties.MarkerIndentPt = null;
         }
 

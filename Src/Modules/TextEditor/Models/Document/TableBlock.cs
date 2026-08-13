@@ -126,6 +126,47 @@ namespace Writersword.Modules.TextEditor.Models.Document
         public List<TableColumnDefinition> Columns { get; set; } = new();
 
         /// <summary>
+        /// Заданная пользователем минимальная высота строк в пунктах, по индексу строки.
+        /// Именно минимальная, а не фиксированная: строка не может стать ниже этого
+        /// значения, но если содержимое выше — растёт по содержимому, как обычно.
+        /// Ноль или отсутствие записи означают «высота целиком по содержимому».
+        /// Список может быть короче числа строк — у остальных высота не задавалась.
+        /// </summary>
+        public List<double> RowMinHeightsPt { get; set; } = new();
+
+        /// <summary>Минимальная высота строки или 0, если не задавалась.</summary>
+        public double GetRowMinHeightPt(int row)
+            => row >= 0 && row < RowMinHeightsPt.Count ? RowMinHeightsPt[row] : 0;
+
+        /// <summary>
+        /// Задать минимальную высоту строки. Список при необходимости дополняется
+        /// нулями: строки до неё высоту могли не задавать вовсе.
+        /// </summary>
+        public void SetRowMinHeightPt(int row, double heightPt)
+        {
+            if (row < 0) return;
+            while (RowMinHeightsPt.Count <= row) RowMinHeightsPt.Add(0);
+            RowMinHeightsPt[row] = heightPt < 0 ? 0 : heightPt;
+        }
+
+        /// <summary>
+        /// Подвинуть высоты при вставке строки. Без этого заданные высоты остались бы
+        /// на прежних индексах и «переехали» бы на соседние строки.
+        /// </summary>
+        public void InsertRowMinHeight(int row)
+        {
+            if (row < 0 || row > RowMinHeightsPt.Count) return;
+            RowMinHeightsPt.Insert(row, 0);
+        }
+
+        /// <summary>Подвинуть высоты при удалении строки.</summary>
+        public void RemoveRowMinHeight(int row)
+        {
+            if (row < 0 || row >= RowMinHeightsPt.Count) return;
+            RowMinHeightsPt.RemoveAt(row);
+        }
+
+        /// <summary>
         /// Все ячейки таблицы в порядке строк.
         /// При объединении ячеек в списке присутствует только "главная" ячейка.
         /// </summary>

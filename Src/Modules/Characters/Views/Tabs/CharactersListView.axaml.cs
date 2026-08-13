@@ -218,6 +218,46 @@ namespace Writersword.Modules.Characters.Views.Tabs
             _ghostBorder = this.FindControl<Border>("DragGhostBorder");
             _ghostText = this.FindControl<TextBlock>("DragGhostText");
 
+            SetupContainerBindings();
+        }
+
+        /// <summary>
+        /// Подписки снимаются при отсоединении вьюхи, поэтому и ставить их
+        /// нужно при каждом присоединении, а не только в Loaded: это событие
+        /// поднимается при первой загрузке контрола и при повторном входе в
+        /// рабочий режим не срабатывает.
+        ///
+        /// Без них вьюмодель переставала получать ширину контейнера, а
+        /// раскладка — число колонок и минимальную ширину карточки. Ширина
+        /// оставалась той, что была задана значением по умолчанию, и карточки
+        /// после возврата в режим выходили сплющенными.
+        /// </summary>
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToVisualTree(e);
+            _attachedToTree = true;
+            SetupContainerBindings();
+        }
+
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnDetachedFromVisualTree(e);
+            _attachedToTree = false;
+
+            if (_foldersWatched is not null)
+            {
+                _foldersWatched.CollectionChanged -= OnFoldersChangedForLayout;
+                _foldersWatched = null;
+            }
+        }
+
+        // Вьюха сейчас в визуальном дереве. Смена контекста данных снимает
+        // подписки, и восстанавливать их имеет смысл только когда вьюха на
+        // месте: иначе подписка повиснет на контейнере, которого ещё нет.
+        private bool _attachedToTree;
+
+        private void SetupContainerBindings()
+        {
             // Подписываемся на ширину первого ItemsControl с карточками.
             // Он знает реальную ширину после вычета скроллбара и margins.
             // Порог 10px гасит осцилляцию от скроллбара.
@@ -236,6 +276,35 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 _cardsPerRowSubscription = vmAvatar
                     .WhenAnyValue(x => x.CardsPerRow)
                     .Subscribe(UpdateGridLayouts);
+
+                // Подписка отдаёт текущее значение сразу, но в этот момент
+                // визуального дерева ещё нет: UpdateGridLayouts обходит
+                // репитеры и не находит ни одного. Дальше число колонок не
+                // меняется, повторно подписка не срабатывает, и раскладка
+                // остаётся с минимальной шириной карточки из разметки — сто
+                // пятьдесят две точки, то есть размером «средние».
+                //
+                // Отсюда и сплющенные карточки после возврата в рабочий
+                // режим: число колонок считает сама раскладка по этой ширине,
+                // а не вьюмодель по выбранному размеру. Повторный вызов после
+                // построения дерева ставит настоящие значения.
+                ScheduleGridLayoutsUpdate();
+
+                // Репитеры живут внутри шаблона папки и пересоздаются вместе
+                // со списком папок: при смене размера карточек, при повторном
+                // входе в режим, при перезагрузке данных. Каждый новый берёт
+                // минимальную ширину карточки из разметки — сто пятьдесят две
+                // точки, то есть размер «средние», — и делит на неё ширину
+                // контейнера сам. Поэтому настройку приходится ставить заново
+                // после каждой пересборки списка, а не один раз при подписке.
+                if (!ReferenceEquals(_foldersWatched, vmAvatar.Folders))
+                {
+                    if (_foldersWatched is not null)
+                        _foldersWatched.CollectionChanged -= OnFoldersChangedForLayout;
+
+                    _foldersWatched = vmAvatar.Folders;
+                    _foldersWatched.CollectionChanged += OnFoldersChangedForLayout;
+                }
             }
 
             var foldersContainer = this.FindControl<ItemsControl>("FoldersContainer");
@@ -243,6 +312,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
             {
                 if (DataContext is CharactersViewModel vmInit && foldersContainer.Bounds.Width > 0)
                     vmInit.UpdateContainerWidth(foldersContainer.Bounds.Width);
+                _containerBoundsSubscription?.Dispose();
                 _containerBoundsSubscription = foldersContainer
                     .GetObservable(BoundsProperty)
                     .Subscribe(b =>
@@ -253,6 +323,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
             }
             else
             {
+                _containerBoundsSubscription?.Dispose();
                 _containerBoundsSubscription = this
                     .GetObservable(BoundsProperty)
                     .Subscribe(b =>
@@ -270,6 +341,13 @@ namespace Writersword.Modules.Characters.Views.Tabs
             _containerBoundsSubscription = null;
             _cardsPerRowSubscription?.Dispose();
             _cardsPerRowSubscription = null;
+
+            // Подписки сняты со старого контекста — сразу ставим их на новый.
+            // При возврате в рабочий режим контекст переустанавливается уже
+            // после присоединения вьюхи, и без этого вызова она оставалась
+            // без подписок: вьюмодель не получала ширину контейнера, а
+            // раскладка — число колонок, отчего карточки сплющивались.
+            if (_attachedToTree) SetupContainerBindings();
         }
 
         protected override void OnUnloaded(RoutedEventArgs e)
@@ -279,6 +357,29 @@ namespace Writersword.Modules.Characters.Views.Tabs
             _containerBoundsSubscription = null;
             _cardsPerRowSubscription?.Dispose();
             _cardsPerRowSubscription = null;
+        }
+
+        // Список папок, на пересборку которого поставлена настройка раскладки.
+        private System.Collections.Specialized.INotifyCollectionChanged? _foldersWatched;
+
+        private void OnFoldersChangedForLayout(
+            object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+            => ScheduleGridLayoutsUpdate();
+
+        /// <summary>
+        /// Поставить настройку раскладки в очередь на после построения дерева.
+        /// Сразу её применять бесполезно: репитеров ещё нет, и обход по
+        /// визуальному дереву не находит ни одного.
+        /// </summary>
+        private void ScheduleGridLayoutsUpdate()
+        {
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    if (DataContext is CharactersViewModel vm)
+                        UpdateGridLayouts(vm.CardsPerRow);
+                },
+                DispatcherPriority.Loaded);
         }
 
         private void UpdateGridLayouts(int cols)

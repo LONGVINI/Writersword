@@ -235,6 +235,12 @@ namespace Writersword.Modules.TextEditor.Document
                             paraHeight = cellPara.Layout.TotalHeightPt;
                         }
 
+                        // Маркер списка ячейки: значок рисуется по этому полю, а не по
+                        // тексту в модели. Без него элемент списка в ячейке выглядел
+                        // как обычный абзац с отступом.
+                        Rendering.ListMarkerInfo? cellMarker =
+                            _cellListMarkers.TryGetValue(paraBlock, out var mi) ? mi : null;
+
                         newLayouts.Add(new ParaLayout(
                             vm,
                             cellPara.Layout,
@@ -244,7 +250,8 @@ namespace Writersword.Modules.TextEditor.Document
                             lineFrom,
                             lineTo > 0 ? lineTo : cellPara.Layout.Lines.Count,
                             AbsXPt: cellContentX,
-                            Cell: info));
+                            Cell: info,
+                            Marker: cellMarker));
                     }
                 }
             }
@@ -646,6 +653,12 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Нумерация списков за один проход по блокам в порядке следования.
             var markerMap = Rendering.ListNumberingEngine.Compute(blocks);
+
+            // Абзацы в ячейках таблиц в blocks не входят, поэтому маркеры для них
+            // считаются отдельно и кладутся прямо в модель: раскладка ячеек строится
+            // ниже, и к этому моменту текст маркера должен быть готов.
+            _cellListMarkers.Clear();
+            ApplyListMarkerTextsInTables(blocks, GetCurrentTextWidthPt());
 
             // O(1) поиск ParagraphViewModel по ParagraphBlock.
             // Без этого словаря был O(n²): для каждого из N блоков — O(n) перебор Paragraphs.
@@ -1166,8 +1179,14 @@ namespace Writersword.Modules.TextEditor.Document
                     : BuildWrappedLayout(pvm, textWidthPt, wrapZones, wrapPages);
 
                 // Якорь перед таблицей: пустой параграф, следующий блок — таблица.
+                // Но если предыдущий блок тоже таблица, это разделитель между двумя
+                // таблицами, и он идёт ветке ниже — якорем ПОСЛЕ верхней. Разница в том,
+                // что здесь якорь занимает строку (contentYPt += FallbackLinePt), а там нет:
+                // абзац между таблицами подходит под оба условия, попадал в это, первое, и
+                // раздвигал таблицы на пустую строку, убрать которую было нечем.
                 bool isBeforeTableAnchor = string.IsNullOrEmpty(pvm.PlainText)
-                    && bi + 1 < blocks.Count && blocks[bi + 1] is TableBlock;
+                    && bi + 1 < blocks.Count && blocks[bi + 1] is TableBlock
+                    && !(bi > 0 && blocks[bi - 1] is TableBlock);
                 if (isBeforeTableAnchor)
                 {
                     float anchorXPt = textXPt + (float)((TableBlock)blocks[bi + 1]).LeftIndentPt;
@@ -1632,6 +1651,12 @@ namespace Writersword.Modules.TextEditor.Document
 
             // Нумерация списков за один проход по блокам в порядке следования.
             var markerMap = Rendering.ListNumberingEngine.Compute(blocks);
+
+            // Абзацы в ячейках таблиц в blocks не входят, поэтому маркеры для них
+            // считаются отдельно и кладутся прямо в модель: раскладка ячеек строится
+            // ниже, и к этому моменту текст маркера должен быть готов.
+            _cellListMarkers.Clear();
+            ApplyListMarkerTextsInTables(blocks, GetCurrentTextWidthPt());
 
             var pvmByBlock = new Dictionary<ParagraphBlock, ParagraphViewModel>(DocVm.Paragraphs.Count);
             foreach (var p in DocVm.Paragraphs)

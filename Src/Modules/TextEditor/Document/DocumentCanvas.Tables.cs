@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Avalonia.Input;
 using Writersword.Core.Models.Rendering;
 using Writersword.Modules.TextEditor.Models.Document;
 
@@ -46,15 +47,18 @@ namespace Writersword.Modules.TextEditor.Document
         private void ExecuteTableAddRow(bool above)
         {
             if (_activeTableBlock is null) return;
-            BeginEdit("Add row");
+            BeginTableEdit(_activeTableBlock, "Add row");
             int insertRow = above ? _activeCellRow : _activeCellRow + 1;
             foreach (var cell in _activeTableBlock.Cells)
                 if (cell.Row >= insertRow) cell.Row++;
             for (int c = 0; c < _activeTableBlock.ColumnCount; c++)
                 _activeTableBlock.Cells.Add(new TableCell { Row = insertRow, Column = c });
+            // Заданные высоты сдвигаются вместе со строками, иначе они достались бы
+            // соседям: список адресуется индексом строки.
+            _activeTableBlock.InsertRowMinHeight(insertRow);
             _activeTableBlock.RowCount++;
             if (above) _activeCellRow++;
-            CommitEdit();
+            CommitTableEdit();
             InvalidateCellLayoutCaches();
             RebuildLayouts();
             InvalidateFull();
@@ -95,13 +99,489 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (targets.Count == 0) return;
 
-            BeginEdit("Set cell background");
+            // Заливка может задеть ячейки нескольких таблиц сразу — выделение это
+            // допускает. Пока таблица одна, снимок берётся только с неё; если их
+            // больше, дешевле и надёжнее один снимок документа, чем несколько
+            // независимых шагов, которые пришлось бы откатывать по одному.
+            var touchedTables = new HashSet<TableBlock>();
+            if (_tableSelections.Count > 0)
+                foreach (var kv in _tableSelections) touchedTables.Add(kv.Key);
+            else if (_activeTableBlock is not null)
+                touchedTables.Add(_activeTableBlock);
+
+            bool singleTable = touchedTables.Count == 1;
+            if (singleTable) BeginTableEdit(_activeTableBlock ?? System.Linq.Enumerable.First(touchedTables), "Set cell background");
+            else BeginEdit("Set cell background");
+
             foreach (var cell in targets) cell.BackgroundColor = value;
-            CommitEdit();
+
+            if (singleTable) CommitTableEdit();
+            else CommitEdit();
 
             InvalidateCellLayoutCaches();
             RebuildLayouts();
             InvalidateFull();
+        }
+
+        // Ячейки, к которым применяется оформление: выделенный диапазон, а если
+        // диапазона нет — одна ячейка под кареткой. Логика общая для выравнивания
+        // по вертикали и по горизонтали.
+        private List<TableCell> CollectTargetCells(out HashSet<TableBlock> tables)
+        {
+            var targets = new List<TableCell>();
+            tables = new HashSet<TableBlock>();
+
+            if (_tableSelections.Count > 0)
+            {
+                foreach (var kv in _tableSelections)
+                {
+                    int minRow = Math.Min(kv.Value.sr, kv.Value.er);
+                    int maxRow = Math.Max(kv.Value.sr, kv.Value.er);
+                    int minCol = Math.Min(kv.Value.sc, kv.Value.ec);
+                    int maxCol = Math.Max(kv.Value.sc, kv.Value.ec);
+                    foreach (var cell in kv.Key.Cells)
+                    {
+                        if (cell.Row < minRow || cell.Row > maxRow) continue;
+                        if (cell.Column < minCol || cell.Column > maxCol) continue;
+                        targets.Add(cell);
+                        tables.Add(kv.Key);
+                    }
+                }
+                return targets;
+            }
+
+            if (_activeTableBlock is not null)
+            {
+                foreach (var cell in _activeTableBlock.Cells)
+                {
+                    if (cell.Row != _activeCellRow || cell.Column != _activeCellCol) continue;
+                    targets.Add(cell);
+                    tables.Add(_activeTableBlock);
+                    break;
+                }
+            }
+
+            return targets;
+        }
+
+        // Абзацы всех выделенных ячеек. Пустой список означает, что выделения ячеек
+        // нет и форматирование должно идти обычным путём — по абзацу под кареткой.
+        // Условие именно по _tableSelections: CollectTargetCells при отсутствии
+        // выделения подставляет ячейку под кареткой, и по нему отличить одно от
+        // другого нельзя.
+        private IReadOnlyList<ParagraphBlock> QuerySelectedCellParagraphs()
+        {
+            var result = new List<ParagraphBlock>();
+            if (_tableSelections.Count > 0)
+            {
+                foreach (var cell in CollectTargetCells(out _))
+                    result.AddRange(cell.Paragraphs);
+
+                return result;
+            }
+
+            // Обычное текстовое выделение, захватившее несколько абзацев ячеек.
+            // В _tableSelections оно не попадает — там лежит только выделение ячеек
+            // целиком, — а SelectionParagraphs собирает лишь абзацы верхнего уровня
+            // (они проверяются на принадлежность DocVm.Paragraphs, куда абзацы ячеек
+            // не входят). Из-за этого форматирование и отступы доставались одному
+            // абзацу с кареткой: выделив несколько пунктов списка в ячейке,
+            // пользователь двигал стрелкой линейки только текущий.
+            if (!HasSel()) return result;
+
+            var (sp, _, ep, _) = NormalizeSelection();
+            var seen = new HashSet<ParagraphBlock>();
+            for (int i = sp; i <= ep && i < _layouts.Count; i++)
+            {
+                var block = _layouts[i].Cell?.ParaBlock;
+                if (block is null) continue;
+                if (seen.Add(block)) result.Add(block);
+            }
+
+            // Один абзац отдаём пустым списком: вызывающий уйдёт по прежней ветке
+            // с TableActiveCellParagraph, и поведение одиночного выделения не меняется.
+            if (result.Count < 2) result.Clear();
+            return result;
+        }
+
+        // Высота строки под кареткой, из поля ленты. Как и перетаскивание, задаёт
+        // минимальную высоту: содержимое выше — строка растёт дальше.
+        private void ExecuteTableSetRowHeight(double heightPt)
+        {
+            if (_activeTableBlock is null) return;
+            BeginTableEdit(_activeTableBlock, "Set row height");
+            _activeTableBlock.SetRowMinHeightPt(_activeCellRow, Math.Max(14.0, heightPt));
+            CommitTableEdit();
+            InvalidateCellLayoutCaches();
+            RebuildLayouts();
+            InvalidateFull();
+        }
+
+        // Ширина столбца под кареткой, из поля ленты. Ширина задаётся фиксированной:
+        // явное число из поля — это именно требование, а не подсказка раскладке.
+        private void ExecuteTableSetColumnWidth(double widthMm)
+        {
+            if (_activeTableBlock is null) return;
+            if (_activeCellCol < 0 || _activeCellCol >= _activeTableBlock.Columns.Count) return;
+            BeginTableEdit(_activeTableBlock, "Set column width");
+            _activeTableBlock.Columns[_activeCellCol].WidthType = TableColumnWidthType.Fixed;
+            _activeTableBlock.Columns[_activeCellCol].WidthValue = Math.Max(5.0, widthMm);
+            CommitTableEdit();
+            InvalidateCellLayoutCaches();
+            RebuildLayouts();
+            InvalidateFull();
+        }
+
+        // Вертикальное выравнивание содержимого ячейки: 0 — верх, 1 — середина,
+        // 2 — низ. Значение приходит числом от ленты, здесь приводится к типу модели.
+        private void ExecuteTableSetCellVAlign(int vAlign)
+        {
+            var targets = CollectTargetCells(out var tables);
+            if (targets.Count == 0) return;
+
+            // Тип указан полностью: у самого полотна есть свойство VerticalAlignment
+            // от контрола Avalonia, и короткое имя разрешается в него, а не в
+            // перечисление модели.
+            var value = vAlign switch
+            {
+                1 => Models.Document.VerticalAlignment.Middle,
+                2 => Models.Document.VerticalAlignment.Bottom,
+                _ => Models.Document.VerticalAlignment.Top
+            };
+
+            bool singleTable = tables.Count == 1;
+            if (singleTable) BeginTableEdit(System.Linq.Enumerable.First(tables), "Cell vertical align");
+            else BeginEdit("Cell vertical align");
+
+            foreach (var cell in targets) cell.VerticalAlignment = value;
+
+            if (singleTable) CommitTableEdit();
+            else CommitEdit();
+
+            InvalidateCellLayoutCaches();
+            RebuildLayouts();
+            InvalidateFull();
+        }
+
+        // Горизонтальное выравнивание содержимого ячейки. Своего свойства у ячейки
+        // нет: текст в ней — обычные абзацы, поэтому выравнивание проставляется
+        // каждому абзацу ячейки, как это делает лента для основного потока.
+        private void ExecuteTableSetCellHAlign(Models.Styles.TextAlignment align)
+        {
+            var targets = CollectTargetCells(out var tables);
+            if (targets.Count == 0) return;
+
+            bool singleTable = tables.Count == 1;
+            if (singleTable) BeginTableEdit(System.Linq.Enumerable.First(tables), "Cell horizontal align");
+            else BeginEdit("Cell horizontal align");
+
+            foreach (var cell in targets)
+                foreach (var para in cell.Paragraphs)
+                    para.Properties.Alignment = align;
+
+            if (singleTable) CommitTableEdit();
+            else CommitEdit();
+
+            InvalidateCellLayoutCaches();
+            RebuildLayouts();
+            InvalidateFull();
+        }
+
+        // Внутренние поля ячейки. Меняют высоту строки и ширину текстовой зоны,
+        // поэтому после правки нужен и сброс кеша раскладки ячеек, и пересбор.
+        private void ExecuteTableSetCellPadding(
+            double topPt, double bottomPt, double leftPt, double rightPt)
+        {
+            var targets = CollectTargetCells(out var tables);
+            if (targets.Count == 0) return;
+
+            bool singleTable = tables.Count == 1;
+            if (singleTable) BeginTableEdit(System.Linq.Enumerable.First(tables), "Cell padding");
+            else BeginEdit("Cell padding");
+
+            foreach (var cell in targets)
+            {
+                cell.PaddingTopPt = Math.Max(0, topPt);
+                cell.PaddingBottomPt = Math.Max(0, bottomPt);
+                cell.PaddingLeftPt = Math.Max(0, leftPt);
+                cell.PaddingRightPt = Math.Max(0, rightPt);
+            }
+
+            if (singleTable) CommitTableEdit();
+            else CommitEdit();
+
+            InvalidateCellLayoutCaches();
+            RebuildLayouts();
+            InvalidateFull();
+        }
+
+        // Поля целевых ячеек. Разные значения внутри выделения дают null: показывать
+        // в полях ленты одно из них означало бы соврать про остальные.
+        private (double TopPt, double BottomPt, double LeftPt, double RightPt)? QueryTableCellPadding()
+        {
+            var targets = CollectTargetCells(out _);
+            if (targets.Count == 0) return null;
+
+            var first = targets[0];
+            for (int i = 1; i < targets.Count; i++)
+            {
+                var c = targets[i];
+                if (c.PaddingTopPt != first.PaddingTopPt) return null;
+                if (c.PaddingBottomPt != first.PaddingBottomPt) return null;
+                if (c.PaddingLeftPt != first.PaddingLeftPt) return null;
+                if (c.PaddingRightPt != first.PaddingRightPt) return null;
+            }
+
+            return (first.PaddingTopPt, first.PaddingBottomPt,
+                    first.PaddingLeftPt, first.PaddingRightPt);
+        }
+
+        // Активный инструмент границ: 0 — нет, 1 — карандаш, 2 — ластик.
+        // Режим, а не разовое действие: держится между нажатиями, пока его не
+        // выключат кнопкой или Escape.
+        private int _lineTool;
+
+        private void ExecuteTableSetLineTool(int tool)
+        {
+            int normalized = tool is 1 or 2 ? tool : 0;
+            if (_lineTool == normalized) return;
+            _lineTool = normalized;
+
+            // Курсор ставится сразу, не дожидаясь движения мыши: иначе после
+            // нажатия кнопки в ленте вид указателя менялся бы только над текстом.
+            Cursor = _lineTool == 0
+                ? new Cursor(StandardCursorType.Ibeam)
+                : new Cursor(StandardCursorType.Cross);
+
+            InvalidateFull();
+        }
+
+        private int QueryTableLineTool() => _lineTool;
+
+        // Объединение выделенных ячеек. Объединённая ячейка хранится как обычная,
+        // но с RowSpan/ColSpan больше единицы, а накрытых ею записей в Cells нет
+        // вовсе — GetCell разрешает любую точку прямоугольника в её владельца.
+        private void ExecuteTableMergeCells()
+        {
+            if (_activeTableBlock is not { } table) return;
+            if (!_tableSelections.TryGetValue(table, out var sel)) return;
+
+            int r1 = Math.Min(sel.sr, sel.er), r2 = Math.Max(sel.sr, sel.er);
+            int c1 = Math.Min(sel.sc, sel.ec), c2 = Math.Max(sel.sc, sel.ec);
+            if (r1 == r2 && c1 == c2) return;
+
+            // Прямоугольник расширяется до целых ячеек: в выделение мог попасть
+            // кусок уже объединённой ячейки, а разрезанной оставить её нельзя.
+            // Повторяем, пока границы не перестанут расти — расширение по одной
+            // ячейке может втянуть в прямоугольник следующую.
+            bool grown;
+            do
+            {
+                grown = false;
+                for (int r = r1; r <= r2; r++)
+                {
+                    for (int c = c1; c <= c2; c++)
+                    {
+                        var probe = table.GetCell(r, c);
+                        if (probe is null) continue;
+                        if (probe.Row < r1) { r1 = probe.Row; grown = true; }
+                        if (probe.Column < c1) { c1 = probe.Column; grown = true; }
+                        int pr2 = probe.Row + probe.RowSpan - 1;
+                        int pc2 = probe.Column + probe.ColSpan - 1;
+                        if (pr2 > r2) { r2 = pr2; grown = true; }
+                        if (pc2 > c2) { c2 = pc2; grown = true; }
+                    }
+                }
+            } while (grown);
+
+            var target = table.GetCell(r1, c1);
+            if (target is null) return;
+
+            BeginTableEdit(table, "Merge cells");
+
+            var absorbed = new List<Models.Document.TableCell>();
+            foreach (var cell in table.Cells)
+            {
+                if (ReferenceEquals(cell, target)) continue;
+                if (cell.Row < r1 || cell.Row > r2) continue;
+                if (cell.Column < c1 || cell.Column > c2) continue;
+                absorbed.Add(cell);
+            }
+
+            // Текст поглощённых ячеек переезжает в целевую. Пустые абзацы
+            // отбрасываются: иначе объединение пустых ячеек оставляло бы в итоговой
+            // столько пустых строк, сколько было ячеек.
+            foreach (var cell in absorbed)
+                foreach (var para in cell.Paragraphs)
+                    if (!string.IsNullOrEmpty(para.GetPlainText()))
+                        target.Paragraphs.Add(para);
+
+            foreach (var cell in absorbed)
+                table.Cells.Remove(cell);
+
+            target.RowSpan = r2 - r1 + 1;
+            target.ColSpan = c2 - c1 + 1;
+
+            CommitTableEdit();
+
+            _tableSelections.Remove(table);
+            _activeCellRow = r1;
+            _activeCellCol = c1;
+
+            InvalidateCellLayoutCaches();
+            RebuildLayouts();
+            NotifyCaretEnteredTableCallback();
+            InvalidateFull();
+        }
+
+        // Разбиение объединённой ячейки обратно на одиночные. Содержимое остаётся
+        // в исходной ячейке — восстанавливать его по бывшим ячейкам не из чего,
+        // при объединении текст был в неё перенесён. Так же ведёт себя Word.
+        private void ExecuteTableSplitCell()
+        {
+            if (_activeTableBlock is not { } table) return;
+
+            var cell = table.GetCell(_activeCellRow, _activeCellCol);
+            if (cell is null) return;
+            if (cell.RowSpan <= 1 && cell.ColSpan <= 1) return;
+
+            BeginTableEdit(table, "Split cell");
+
+            int r1 = cell.Row, c1 = cell.Column;
+            int r2 = r1 + cell.RowSpan - 1, c2 = c1 + cell.ColSpan - 1;
+
+            for (int r = r1; r <= r2; r++)
+            {
+                for (int c = c1; c <= c2; c++)
+                {
+                    if (r == r1 && c == c1) continue;
+                    table.Cells.Add(CreateCellLike(cell, r, c));
+                }
+            }
+
+            cell.RowSpan = 1;
+            cell.ColSpan = 1;
+
+            CommitTableEdit();
+
+            InvalidateCellLayoutCaches();
+            RebuildLayouts();
+            NotifyCaretEnteredTableCallback();
+            InvalidateFull();
+        }
+
+        // Новая пустая ячейка с оформлением образца: рамки, заливка, отступы и
+        // выравнивание. Без этого разбитая ячейка теряла бы вид соседей.
+        private static Models.Document.TableCell CreateCellLike(
+            Models.Document.TableCell source, int row, int column)
+            => new()
+            {
+                Row = row,
+                Column = column,
+                BackgroundColor = source.BackgroundColor,
+                Borders = source.Borders.Clone(),
+                VerticalAlignment = source.VerticalAlignment,
+                PaddingTopPt = source.PaddingTopPt,
+                PaddingBottomPt = source.PaddingBottomPt,
+                PaddingLeftPt = source.PaddingLeftPt,
+                PaddingRightPt = source.PaddingRightPt
+            };
+
+        // Обе координаты выравнивания за одну операцию: кнопка сетки задаёт
+        // вертикаль и горизонталь разом, и в стек отмены должен уйти один снимок.
+        // Раздельные вызовы клали два, и одно нажатие отменялось двумя Ctrl+Z.
+        private void ExecuteTableSetCellAlign(int vAlign, Models.Styles.TextAlignment hAlign)
+        {
+            var targets = CollectTargetCells(out var tables);
+            if (targets.Count == 0) return;
+
+            var vValue = vAlign switch
+            {
+                1 => Models.Document.VerticalAlignment.Middle,
+                2 => Models.Document.VerticalAlignment.Bottom,
+                _ => Models.Document.VerticalAlignment.Top
+            };
+
+            bool singleTable = tables.Count == 1;
+            if (singleTable) BeginTableEdit(System.Linq.Enumerable.First(tables), "Cell align");
+            else BeginEdit("Cell align");
+
+            foreach (var cell in targets)
+            {
+                cell.VerticalAlignment = vValue;
+                foreach (var para in cell.Paragraphs)
+                    para.Properties.Alignment = hAlign;
+            }
+
+            if (singleTable) CommitTableEdit();
+            else CommitEdit();
+
+            InvalidateCellLayoutCaches();
+            RebuildLayouts();
+            InvalidateFull();
+        }
+
+        // Текущее выравнивание целевых ячеек. Целевые собираются тем же
+        // CollectTargetCells, что и у сеттеров, — иначе подсветка кнопки могла бы
+        // расходиться с тем, на что эта кнопка подействует.
+        // Разные значения внутри выделения дают null: активной кнопки нет.
+        private int? QueryTableCellVAlign()
+        {
+            var targets = CollectTargetCells(out _);
+            if (targets.Count == 0) return null;
+
+            var first = targets[0].VerticalAlignment;
+            for (int i = 1; i < targets.Count; i++)
+                if (targets[i].VerticalAlignment != first) return null;
+
+            return first switch
+            {
+                Models.Document.VerticalAlignment.Middle => 1,
+                Models.Document.VerticalAlignment.Bottom => 2,
+                _ => 0
+            };
+        }
+
+        // Горизонтальное выравнивание ячейки хранится в её абзацах, поэтому
+        // проверяются все абзацы всех целевых ячеек. Ячейка без абзацев
+        // пропускается: своего значения у неё нет.
+        private Models.Styles.TextAlignment? QueryTableCellHAlign()
+        {
+            var targets = CollectTargetCells(out _);
+            if (targets.Count == 0) return null;
+
+            Models.Styles.TextAlignment? common = null;
+            bool any = false;
+
+            foreach (var cell in targets)
+            {
+                foreach (var para in cell.Paragraphs)
+                {
+                    var align = ResolveParagraphAlignment(para);
+                    if (!any) { common = align; any = true; }
+                    else if (common != align) return null;
+                }
+            }
+
+            return any ? common : null;
+        }
+
+        /// <summary>
+        /// Действующее выравнивание абзаца. Свойство абзаца допускает null — это
+        /// означает «унаследовать», а не «слева», поэтому у только что созданной
+        /// ячейки читать его напрямую нельзя: получалось бы «значение не определено»
+        /// и ни одна кнопка не подсвечивалась. Наследование разрешается той же
+        /// цепочкой стилей, по которой считает отрисовка, с тем же итоговым Left.
+        /// </summary>
+        private Models.Styles.TextAlignment ResolveParagraphAlignment(
+            Models.Document.ParagraphBlock para)
+        {
+            if (para.Properties.Alignment is { } explicitAlign) return explicitAlign;
+
+            var resolved = _styleResolver?.ResolveAlignment(para.Properties.StyleName);
+            return resolved is null
+                ? Models.Styles.TextAlignment.Left
+                : (Models.Styles.TextAlignment)(int)resolved.Value;
         }
 
         private void ExecuteTableDeleteRow()
@@ -112,6 +592,7 @@ namespace Writersword.Modules.TextEditor.Document
             _activeTableBlock.Cells.RemoveAll(c => c.Row == deleteRow);
             foreach (var cell in _activeTableBlock.Cells)
                 if (cell.Row > deleteRow) cell.Row--;
+            _activeTableBlock.RemoveRowMinHeight(deleteRow);
             _activeTableBlock.RowCount--;
             CommitEdit();
             if (_activeTableBlock.RowCount <= 0) { ExecuteTableDelete(); return; }
@@ -124,7 +605,7 @@ namespace Writersword.Modules.TextEditor.Document
         private void ExecuteTableAddColumn(bool left)
         {
             if (_activeTableBlock is null) return;
-            BeginEdit("Add column");
+            BeginTableEdit(_activeTableBlock, "Add column");
             int insertCol = left ? _activeCellCol : _activeCellCol + 1;
             foreach (var cell in _activeTableBlock.Cells)
                 if (cell.Column >= insertCol) cell.Column++;
@@ -137,7 +618,7 @@ namespace Writersword.Modules.TextEditor.Document
                 _activeTableBlock.Columns.Add(colDef);
             _activeTableBlock.ColumnCount++;
             if (left) _activeCellCol++;
-            CommitEdit();
+            CommitTableEdit();
             InvalidateCellLayoutCaches();
             RebuildLayouts();
             InvalidateFull();

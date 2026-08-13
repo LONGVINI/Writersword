@@ -120,6 +120,9 @@ namespace Writersword.Modules.TextEditor.Rendering
             // чтобы между правым краем цифры и текстом всегда был зазор (MarkerTextMinGapPt).
             // Стрелка метки стоит по левому краю цифры (позиция markerAbs); двигая её вправо,
             // пользователь сдвигает и текст первой строки. Строки 2+ идут по левому отступу.
+            // Первую строку занял номер, текст ушёл на вторую (см. ниже условие предела).
+            bool markerOwnsFirstLine = false;
+
             var listProps = para.ListProperties;
             if (listProps is not null && listProps.MarkerType != ListMarkerType.None)
             {
@@ -144,17 +147,28 @@ namespace Writersword.Modules.TextEditor.Rendering
                     // минимум места под текст, иначе строка уезжала бы за пределы страницы.
                     const double MinFirstLineWidthPt = 36.0;
                     double maxOffset = availableWidthPt - leftIndentPt - rightIndentPt - MinFirstLineWidthPt;
-                    if (offset > maxOffset) offset = maxOffset;
+                    if (offset > maxOffset)
+                    {
+                        // Справа от номера тексту уже не остаётся места. Прежний вариант
+                        // обрезал отступ по пределу, и первая строка ложилась поверх номера.
+                        // Вместо этого отдаём первую строку номеру целиком, а текст начинаем
+                        // со второй по левому отступу — так же поступает Word. Узкая ячейка,
+                        // крупный кегль или утащенный вправо номер приводят сюда штатно.
+                        markerOwnsFirstLine = true;
+                        offset = 0;
+                    }
                     firstLineIndentPt = (float)offset;
 
                     listProps.ComputedMarkerWidthPt = markerW;
                     listProps.ComputedFirstLineOffsetPt = offset;
+                    listProps.ComputedMarkerIndentPt = markerAbs;
                 }
                 else
                 {
                     firstLineIndentPt = 0f;
                     listProps.ComputedMarkerWidthPt = 0;
                     listProps.ComputedFirstLineOffsetPt = 0;
+                    listProps.ComputedMarkerIndentPt = markerAbs;
                 }
             }
 
@@ -188,6 +202,7 @@ namespace Writersword.Modules.TextEditor.Rendering
                 LeftIndentPt = leftIndentPt,
                 RightIndentPt = rightIndentPt,
                 FirstLineIndentPt = firstLineIndentPt,
+                MarkerOwnsFirstLine = markerOwnsFirstLine,
                 Alignment = alignment
             };
 
@@ -331,6 +346,12 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                 // Минимальная высота строки — высота пустой строки.
                 if (rowHeight < 14f) rowHeight = 14f;
+
+                // Высота, заданная пользователем, работает как нижняя граница, а не как
+                // жёсткий размер: строка не станет ниже неё, но при более высоком
+                // содержимом растёт дальше, иначе текст оказался бы обрезан.
+                float userMinPt = (float)table.GetRowMinHeightPt(row);
+                if (userMinPt > rowHeight) rowHeight = userMinPt;
 
                 rowLayout.HeightPt = rowHeight;
 
@@ -1605,6 +1626,23 @@ namespace Writersword.Modules.TextEditor.Rendering
                 ZoneY(0f, lineProbeHPt), lineProbeHPt, minBandWidthPt, bandFragments);
             ApplyBandToCurrentLine();
 
+            // Первая строка отдана номеру списка: текста в ней нет. Закрываем её пустой и
+            // начинаем вторую — с неё пойдёт текст, причём уже без отступа первой строки
+            // (ApplyBandToCurrentLine добавляет его только пока строк ещё нет). Высоту
+            // пустой строке даёт формат первого токена абзаца: по сегментам её посчитать
+            // не из чего, а нулевая высота посадила бы номер и текст на одну базовую линию.
+            if (layout.MarkerOwnsFirstLine)
+            {
+                currentLine.LastCharIndex = currentLine.FirstCharIndex - 1;
+                FinalizeLine(currentLine, layout, lineSpacing, tokens[0].Format);
+
+                bandExtraTop = ComputeBand(
+                    ZoneY(layout.TotalHeightPt, lineProbeHPt), lineProbeHPt,
+                    minBandWidthPt, bandFragments);
+                currentLine = new SKLineLayout { FirstCharIndex = tokens[0].GlobalIndex };
+                ApplyBandToCurrentLine();
+            }
+
             void StartNewLine(int firstCharIndex, float probeHPt, float requiredWidthPt)
             {
                 FinalizeLine(currentLine, layout, lineSpacing);
@@ -1823,10 +1861,16 @@ namespace Writersword.Modules.TextEditor.Rendering
             line.TextWidth = currentW;
         }
 
+        /// <param name="emptyLineMetrics">
+        /// Формат, по которому берутся метрики, когда сегментов в строке нет. Нужен строке
+        /// под номером списка: без него высота вышла бы нулевой и следующая строка встала
+        /// бы на ту же базовую линию, что и номер.
+        /// </param>
         private static void FinalizeLine(
             SKLineLayout line,
             SKTextLayout layout,
-            float lineSpacing)
+            float lineSpacing,
+            SKRunSegment? emptyLineMetrics = null)
         {
             float maxAscent = 0f;
             float maxDescent = 0f;
@@ -1862,6 +1906,17 @@ namespace Writersword.Modules.TextEditor.Rendering
                 if (descent > maxDescent) maxDescent = descent;
 
                 seg.GlyphMetrics = BuildGlyphMetrics(seg, font);
+            }
+
+            if (line.Segments.Count == 0 && emptyLineMetrics is not null)
+            {
+                var emptyTypeface = GetOrCreateTypeface(
+                    emptyLineMetrics.FontFamily, emptyLineMetrics.IsBold, emptyLineMetrics.IsItalic);
+                var emptyFont = GetOrCreateFont(emptyTypeface, emptyLineMetrics.FontSizePt);
+                emptyFont.GetFontMetrics(out var emptyMetrics);
+
+                maxAscent = maxTextAscent = Math.Abs(emptyMetrics.Ascent);
+                maxDescent = maxTextDescent = Math.Abs(emptyMetrics.Descent);
             }
 
             float lineHeightBase = maxAscent + maxDescent;
@@ -2669,13 +2724,19 @@ namespace Writersword.Modules.TextEditor.Rendering
             if (layout.Lines.Count == 0) return;
             var line = layout.Lines[0];
 
-            string family = StyleResolver.FallbackFontFamily;
-            float sizePt = StyleResolver.FallbackFontSizePt;
-            if (line.Segments.Count > 0)
+            // Гарнитуру и кегль берём у первой строки, где есть текст. Когда номер занимает
+            // первую строку один (MarkerOwnsFirstLine), сегментов в ней нет, и по прежнему
+            // коду номер рисовался бы фолбэк-шрифтом — не тем, которым набран сам пункт.
+            SKRunSegment? fontSource = null;
+            foreach (var candidate in layout.Lines)
             {
-                family = line.Segments[0].FontFamily;
-                sizePt = line.Segments[0].FontSizePt;
+                if (candidate.Segments.Count == 0) continue;
+                fontSource = candidate.Segments[0];
+                break;
             }
+
+            string family = fontSource?.FontFamily ?? StyleResolver.FallbackFontFamily;
+            float sizePt = fontSource?.FontSizePt ?? StyleResolver.FallbackFontSizePt;
 
             var typeface = GetOrCreateTypeface(family, false, false);
             var font = GetOrCreateFont(typeface, sizePt);

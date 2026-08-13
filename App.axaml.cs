@@ -83,6 +83,25 @@ namespace Writersword
                         "Dock.Avalonia stale popup reference — caught and ignored");
                     return;
                 }
+
+                // Всё остальное раньше проходило через этот обработчик молча: ветка выше
+                // отрабатывала свой случай, а прочие исключения не попадали ни в лог, ни
+                // куда-либо ещё. Из-за этого сбой в обработчике ввода выглядел как «нажатие
+                // ничего не сделало» — без единой строки в логе. Пишем со стеком, не гасим:
+                // Handled не ставим, поведение приложения не меняется.
+                Log.ForContext<App>().Error(e.Exception,
+                    "Необработанное исключение UI-потока");
+            };
+
+            // Фоновые потоки и незамеченные задачи: их исключения в лог не попадали вовсе.
+            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+                Log.ForContext<App>().Error(e.ExceptionObject as Exception,
+                    "Необработанное исключение домена, завершение={Terminating}", e.IsTerminating);
+
+            TaskScheduler.UnobservedTaskException += (_, e) =>
+            {
+                Log.ForContext<App>().Error(e.Exception, "Незамеченное исключение задачи");
+                e.SetObserved();
             };
 
             var configuration = new ConfigurationBuilder()

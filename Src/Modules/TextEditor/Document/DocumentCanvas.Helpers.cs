@@ -22,10 +22,29 @@ namespace Writersword.Modules.TextEditor.Document
     public sealed partial class DocumentCanvas
     {
         // ── Undo ─────────────────────────────────────────────────────────
+        // Глубина вложенности открытых шагов. Составные операции вызывают внутри
+        // себя более мелкие, которые тоже открывают шаг: вставка таблицы дёргает
+        // добавление строк и столбцов, те — свои правки. Без учёта вложенности
+        // внутренний BeginEdit затирал снимок внешнего, внутренний коммит забирал
+        // его себе, а внешнему доставалось пустое место — операция не попадала в
+        // историю вообще, и порядок отмены рассыпался.
+        // В стек уходит один снимок на всю составную операцию: «до» берётся у самого
+        // внешнего вызова, «после» — у самого внешнего завершения.
+        private int _editDepth;
+
         private void BeginEdit(string description)
         {
             if (DocVm is null) { _logger.Warning("[UNDO] BeginEdit({D}): DocVm is null", description); return; }
+
+            if (_pendingSnapshot is not null)
+            {
+                _editDepth++;
+                _logger.Debug("[UNDO] BeginEdit (вложенный, глубина {N}): {D}", _editDepth, description);
+                return;
+            }
+
             _logger.Debug("[UNDO] BeginEdit: {D}", description);
+            _editDepth = 1;
             _pendingSnapshot = new DocumentSnapshotCommand(DocVm, description, _caretPara, _caretChar);
             _pendingSnapshot.RestoreCaretCallback = (para, ch) =>
             {
@@ -34,16 +53,102 @@ namespace Writersword.Modules.TextEditor.Document
             };
         }
 
+        /// <summary>
+        /// Выбросить незакрытый снимок, не кладя его в стек. Нужен жестам: снимок
+        /// берётся на нажатии, до первой правки, но нажатие может закончиться
+        /// ничем — тогда шаг отмены был бы пустым.
+        /// </summary>
+        private void DiscardPendingEdit()
+        {
+            if (_pendingSnapshot is null) return;
+            if (_editDepth > 1) { _editDepth--; return; }
+            _logger.Debug("[UNDO] DiscardPendingEdit: '{D}'", _pendingSnapshot.Description);
+            _editDepth = 0;
+            _pendingSnapshot = null;
+        }
+
         private void CommitEdit()
         {
             if (_pendingSnapshot is null) { _logger.Warning("[UNDO] CommitEdit: no pending snapshot"); return; }
+
+            // Вложенное завершение только уменьшает глубину: документ ещё
+            // дорабатывается внешней операцией, и снимок «после» брать рано.
+            if (_editDepth > 1)
+            {
+                _editDepth--;
+                return;
+            }
+
             if (UndoStack is null) { _logger.Warning("[UNDO] CommitEdit: UndoStack is null"); return; }
             _pendingSnapshot.Commit(_caretPara, _caretChar);
             UndoStack.Push(_pendingSnapshot);
             RecordSnapshotInOrder();
             DocVm?.RaiseContentModified();
             _logger.Debug("[UNDO] CommitEdit: pushed '{D}', stackSize={S}", _pendingSnapshot.Description, UndoStack.CanUndo);
+            _editDepth = 0;
             _pendingSnapshot = null;
+        }
+
+        // ── Undo для операций с таблицами ────────────────────────────────
+        // Правки внутри одной таблицы пишутся снимком этой таблицы, а не всего
+        // документа: содержимое остальных страниц операция не затрагивает, а
+        // сериализация документа целиком на каждый шаг стоила заметной паузы и
+        // держала в стеке по две полные копии.
+        // Через снимок документа по-прежнему идут операции, меняющие состав блоков
+        // раздела: вставка и удаление таблицы, а также удаление последней строки или
+        // столбца — там таблица исчезает из документа, и снимка самой таблицы для
+        // возврата недостаточно.
+        private Writersword.Modules.TextEditor.Commands.TableSnapshotCommand? _pendingTableEdit;
+        private Models.Document.TableBlock? _pendingTableEditBlock;
+        private int _tableEditDepth;
+
+        private void BeginTableEdit(Models.Document.TableBlock? table, string description)
+        {
+            if (table is null) return;
+
+            // Вложенность — как у снимков документа: составная операция открывает шаг
+            // один раз, внутренние правки только увеличивают глубину.
+            if (_pendingTableEdit is not null)
+            {
+                _tableEditDepth++;
+                return;
+            }
+
+            _logger.Debug("[UNDO] BeginTableEdit: {D}", description);
+            _tableEditDepth = 1;
+            _pendingTableEditBlock = table;
+            _pendingTableEdit = new Writersword.Modules.TextEditor.Commands.TableSnapshotCommand(table, description);
+        }
+
+        private void CommitTableEdit()
+        {
+            if (_pendingTableEdit is null || _pendingTableEditBlock is null) return;
+            if (_tableEditDepth > 1) { _tableEditDepth--; return; }
+
+            _pendingTableEdit.Commit(_pendingTableEditBlock);
+            if (_pendingTableEdit.HasChanges)
+            {
+                PushTextCommand(_pendingTableEdit);
+                DocVm?.RaiseContentModified();
+                _logger.Debug("[UNDO] CommitTableEdit: pushed '{D}'", _pendingTableEdit.Description);
+            }
+            else
+            {
+                _logger.Debug("[UNDO] CommitTableEdit: '{D}' ничего не изменила", _pendingTableEdit.Description);
+            }
+
+            _tableEditDepth = 0;
+            _pendingTableEdit = null;
+            _pendingTableEditBlock = null;
+        }
+
+        private void DiscardTableEdit()
+        {
+            if (_pendingTableEdit is null) return;
+            if (_tableEditDepth > 1) { _tableEditDepth--; return; }
+            _tableEditDepth = 0;
+            _pendingTableEdit = null;
+            _pendingTableEditBlock = null;
         }
 
         // ── Undo для операций с картинками ───────────────────────────────
@@ -149,7 +254,20 @@ namespace Writersword.Modules.TextEditor.Document
 
             CommitEdit();
             InvalidateCellLayoutCaches();
+
+            // Вью-модели очищенных абзацев держат прежний текст: сами абзацы заменены на
+            // новые объекты, и старые записи кэша к документу больше не относятся.
+            _cellVmCache.Clear();
+
+            // Очистка ячеек укорачивает строки, и таблица становится ниже. Без
+            // InvalidateMeasure контрол остаётся с прежним измеренным размером: прокрутка
+            // считает документ высоким, страница рисуется на новом месте, а сверху остаётся
+            // пустое поле ровно на разницу высот. Соседний RebuildAfterCellEdit делает так же.
+            double oldCanvasH = _canvasHeight;
             RebuildLayouts();
+            if (Math.Abs(_canvasHeight - oldCanvasH) > 0.5)
+                InvalidateMeasure();
+
             InvalidateFull();
         }
 
@@ -1164,6 +1282,35 @@ namespace Writersword.Modules.TextEditor.Document
             // Страницы рядом: переводим точку указателя в логические координаты раскладки.
             (xPt, yPt) = VisualToLogicalPt(xPt, yPt);
 
+            // ── Фаза 0 (до всего): клик правее таблицы ────────────────────
+            // Каретка обязана встать в якорь сбоку-снизу от этой таблицы, где можно печатать.
+            // Решается по чистой геометрии — раньше это жило в ветке якорей ниже и работало
+            // лишь когда поиск сам выбирал ячейку нужной таблицы; на практике клик правее
+            // таблицы просто вставал на текст в ближайшей клетке.
+            for (int ti = 0; ti < tables.Count; ti++)
+            {
+                var te = tables[ti];
+                if (xPt <= te.XPt + te.Layout.TotalWidthPt) continue;
+
+                int rowTo = te.RowTo < 0 ? te.Layout.Rows.Count : te.RowTo;
+                float sliceH = 0f;
+                for (int ri = te.RowFrom; ri < rowTo && ri < te.Layout.Rows.Count; ri++)
+                    sliceH += te.Layout.Rows[ri].HeightPt;
+
+                if (yPt < te.Ypt || yPt > te.Ypt + sliceH) continue;
+
+                var anchorBlock = DocVm?.GetEmptyAnchorAfterTable(te.Table);
+                if (anchorBlock is null) break;
+
+                for (int i = 0; i < layouts.Count; i++)
+                {
+                    if (!ReferenceEquals(layouts[i].Vm.Model, anchorBlock)) continue;
+                    _caretLineHint = -1;
+                    return (i, 0);
+                }
+                break;
+            }
+
             // ── Фаза 0: приоритет clip-прямоугольника ячейки ──────────────
             // Клик в любой точке внутри clip-области ячейки (включая пустое пространство
             // ниже текста, padding, область между параграфами) должен попасть в эту ячейку,
@@ -1307,13 +1454,23 @@ namespace Writersword.Modules.TextEditor.Document
 
                     bool clickedLeft = xPt < tableLeft;
 
+                    // Ищем именно абзац-якорь, а не «первый блок не из этой таблицы».
+                    // Прежнее условие пропускало только ячейки ЭТОЙ таблицы, поэтому при
+                    // двух таблицах подряд ближайшим кандидатом оказывалась ячейка соседней,
+                    // и клик сбоку от таблицы отправлял каретку в её первую клетку.
+                    // Ячейка любой таблицы якорем быть не может: якорь — блок вне таблиц.
                     int anchorIdx = -1;
                     if (clickedLeft)
                     {
                         for (int i = bestIdx - 1; i >= 0; i--)
                         {
+                            // Слайсы этой же таблицы пропускаем — идём к её краю.
                             if (layouts[i].Cell?.Table == te.Table) continue;
-                            anchorIdx = i;
+                            // Дошли до края: якорь есть, только если сразу за ним стоит
+                            // абзац. Ячейка соседней таблицы якорем не является, и уводить
+                            // в неё каретку нельзя — раньше именно так клик сбоку и
+                            // отправлял её в первую клетку следующей таблицы.
+                            if (layouts[i].Cell == null) anchorIdx = i;
                             break;
                         }
                     }
@@ -1322,7 +1479,7 @@ namespace Writersword.Modules.TextEditor.Document
                         for (int i = bestIdx + 1; i < layouts.Count; i++)
                         {
                             if (layouts[i].Cell?.Table == te.Table) continue;
-                            anchorIdx = i;
+                            if (layouts[i].Cell == null) anchorIdx = i;
                             break;
                         }
                     }
@@ -1336,6 +1493,10 @@ namespace Writersword.Modules.TextEditor.Document
                         _caretLineHint = -1;
                         return (anchorIdx, charIdx);
                     }
+
+                    // Якоря нет: либо документ кончился, либо за таблицей сразу другая.
+                    // Второй случай уже отмечен в фазе 0 выше — там он ловится по геометрии,
+                    // независимо от того, какую ячейку выбрал поиск.
                     break;
                 }
             }
@@ -1369,6 +1530,12 @@ namespace Writersword.Modules.TextEditor.Document
             for (int li = best.LineFrom; li < Math.Min(best.LineTo, hitLayout.Lines.Count); li++)
             {
                 var ln = hitLayout.Lines[li];
+
+                // Первую строку занял номер списка — текста в ней нет, и подсказкой она быть
+                // не может: каретка рисуется по подсказанной строке и встала бы у номера.
+                // Клик по ней разбирает HitTestPoint ниже и отдаёт началу первой текстовой.
+                if (hitLayout.MarkerOwnsFirstLine && li == 0) continue;
+
                 if (localY <= ln.Y + ln.Height)
                 {
                     _caretLineHint = li;
@@ -1697,9 +1864,10 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         /// <summary>
-        /// Возвращает true если block — пустой параграф расположенный сразу перед TableBlock.
-        /// Такие параграфы защищены от удаления: Backspace должен удалять символ в предыдущем
-        /// параграфе, а не сам якорь.
+        /// Возвращает true если block — параграф, расположенный сразу перед TableBlock.
+        /// Delete на нём ничего не делает: присоединять таблицу к параграфу нельзя.
+        /// От удаления такой параграф защищён только когда он единственная позиция каретки
+        /// выше таблицы, то есть параграфа над ним нет — эту проверку делает вызывающий.
         /// </summary>
         private bool IsBlockBeforeTable(BlockModel block)
         {
@@ -1722,9 +1890,107 @@ namespace Writersword.Modules.TextEditor.Document
             return idx > 0 && blocks[idx - 1] is BreakBlock { BreakType: BreakType.Page };
         }
 
+        /// <summary>
+        /// Приводит контекст ячейки в соответствие текущему положению каретки: активная
+        /// таблица, делегаты табличных операций и режим линейки.
+        ///
+        /// UpdateCellContext звали только мышь, Tab/Shift+Tab и Escape. Клавиатурная
+        /// навигация стрелками и Home/End каретку из таблицы выводит, но контекст не
+        /// обновляла: линейка оставалась в табличном режиме и продолжала держать маркеры
+        /// абзаца в координатах покинутой ячейки — обычный список за её пределы не
+        /// вытаскивался. Переход стрелками между ячейками не двигал границы активной ячейки
+        /// по той же причине.
+        ///
+        /// Метод идемпотентен: пока каретка в той же ячейке (или вне таблиц), он ничего
+        /// не делает, поэтому его безопасно звать на каждое перемещение каретки.
+        /// </summary>
+        private void SyncCellContextToCaret()
+        {
+            bool nowInCell = IsInCell(_caretPara);
+            bool wasInCell = _activeTableBlock is not null;
+
+            if (!wasInCell && !nowInCell) return;
+
+            if (nowInCell && wasInCell)
+            {
+                var cell = _layouts[_caretPara].Cell!;
+                if (ReferenceEquals(cell.Table, _activeTableBlock)
+                    && cell.Cell.Row == _activeCellRow
+                    && cell.Cell.Column == _activeCellCol)
+                    return;
+            }
+
+            UpdateCellContext(wasInCell, nowInCell);
+        }
+
+        /// <summary>
+        /// Снимает с раскладки фактическую геометрию абзаца под кареткой и отдаёт её линейке.
+        /// Единственный источник положения стрелок: все правила — ограничители первой строки,
+        /// перенос текста списка на вторую строку, поля и рамка ячейки — уже применены здесь,
+        /// и повторять их расчётом по значениям модели не нужно.
+        /// </summary>
+        private void PublishRulerGeometry()
+        {
+            if (RulerGeometryChanged is null) return;
+            if (_caretPara < 0 || _caretPara >= _layouts.Count) return;
+
+            var pl = _layouts[_caretPara];
+            var layout = pl.Layout;
+            if (layout is null) return;
+
+            // Начало текстовой области страницы: от него линейка отсчитывает всё остальное.
+            float pageTextXPt = 0f;
+            if (_pages.Count > 0 && pl.PageIndex >= 0 && pl.PageIndex < _pages.Count)
+            {
+                var pg = _pages[pl.PageIndex];
+                pageTextXPt = pg.PadLeftPt + pg.MarginLeftPt;
+            }
+
+            // AbsXPt — левый край зоны абзаца: у обычного абзаца это начало текстовой области
+            // страницы, у абзаца ячейки — её контентный бокс (Layout.cs, cellContentX: за
+            // полем ячейки и рамкой). Именно от него раскладка откладывает отступы, поэтому
+            // и линейка обязана мерить от него же.
+            double zoneLeftPt = pl.AbsXPt - pageTextXPt;
+            double zoneWidthPt = layout.TextAreaWidthPt + layout.LeftIndentPt + layout.RightIndentPt;
+
+            // Насколько левее зоны разрешено уводить маркеры: до физического левого края
+            // страницы. Для обычного абзаца это её левое поле — прежнее поведение. Для абзаца
+            // ячейки к нему добавляется смещение самой зоны, поэтому номер списка уводится
+            // не только в поле клетки, но и дальше влево, за её край. Ограничивать его
+            // границами клетки не за чем: место там видно, и запрет выглядел произволом.
+            double pageMarginLeftPt = _pages.Count > 0 && pl.PageIndex >= 0 && pl.PageIndex < _pages.Count
+                ? _pages[pl.PageIndex].MarginLeftPt
+                : 0f;
+            double leftOverhangPt = Math.Max(0.0, zoneLeftPt) + pageMarginLeftPt;
+
+            const double PtToMm = 25.4 / 72.0;
+
+            var lp = pl.Vm.Model?.ListProperties;
+            bool hasMarker = lp is not null
+                && lp.MarkerType != Models.Document.ListMarkerType.None;
+
+            RulerGeometryChanged.Invoke(new ViewModels.Components.RulerParagraphGeometry
+            {
+                ZoneLeftMm = zoneLeftPt * PtToMm,
+                ZoneWidthMm = zoneWidthPt * PtToMm,
+                LeftIndentMm = layout.LeftIndentPt * PtToMm,
+                FirstLineMm = (layout.LeftIndentPt + layout.FirstLineIndentPt) * PtToMm,
+                RightIndentMm = layout.RightIndentPt * PtToMm,
+                MarkerMm = hasMarker ? lp!.ComputedMarkerIndentPt * PtToMm : 0.0,
+                HasMarker = hasMarker,
+                LeftOverhangMm = leftOverhangPt * PtToMm
+            });
+        }
+
         private void UpdateSelectionContext()
         {
             if (DocVm is null) return;
+
+            // Каретка могла переехать в другую ячейку или вовсе выйти из таблицы —
+            // контекст ячейки и режим линейки должны идти следом.
+            SyncCellContextToCaret();
+            PublishRulerGeometry();
+
             DocVm.SelectionParagraphs.Clear();
 
             var (sp, sc, ep, ec) = NormalizeSelection();

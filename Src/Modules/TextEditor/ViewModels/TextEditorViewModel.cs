@@ -117,6 +117,57 @@ namespace Writersword.Modules.TextEditor.ViewModels
                         }
                 return minPt == double.MaxValue ? double.MaxValue : minPt * 25.4 / 72.0;
             };
+
+            Ruler.GetIndentUpperLimitUnits = GetRulerIndentUpperLimitUnits;
+        }
+
+        /// <summary>
+        /// Правый предел для стрелок списка в единицах линейки. У двух стрелок он разный,
+        /// потому что уводить текст на вторую строку вправе только метка.
+        ///
+        /// Метка (фиолетовая) двигает номер, а текст первой строки идёт за ним. Её предел —
+        /// правый край зоны: чем правее метка, тем меньше места остаётся первой строке, и с
+        /// какого-то момента раскладка отдаёт первую строку номеру целиком, а текст начинает
+        /// со второй. Ничего под текст ей не резервируется — этот переход штатный.
+        ///
+        /// Абзацная стрелка задаёт лишь зазор между номером и текстом и такого перехода
+        /// не делает — ей предел ставится там, где текст ещё помещается в строку. Иначе
+        /// раскладка упирала строку в свой предел, стрелка уезжала дальше, и они расходились.
+        /// </summary>
+        private double? GetRulerIndentUpperLimitUnits(RulerIndentMarkerType type)
+        {
+            if (type != RulerIndentMarkerType.ListMarker
+                && type != RulerIndentMarkerType.FirstLineIndent)
+                return null;
+
+            var lp = DocumentViewModel?.GetActiveListProperties();
+            if (lp is null || lp.MarkerType == Models.Document.ListMarkerType.None)
+                return null;
+
+            const double PtToMm = 25.4 / 72.0;
+            // Тот же минимум ширины первой строки, что и в раскладке (SKTextRenderer.BuildLayout).
+            const double MinTextPt = 36.0;
+
+            // Границы зоны абзаца линейка получает из раскладки (ApplyParagraphGeometry): для
+            // ячейки это её контентный бокс, за полями и рамкой, поэтому вычитать поля здесь
+            // уже не нужно — они в этих границах учтены.
+            double availableMm = Ruler.Mode == RulerMode.Table
+                ? Ruler.UnitsToMm(Ruler.ActiveCellRightUnits - Ruler.ActiveCellLeftUnits)
+                : Ruler.PageWidthMm - Ruler.MarginLeftMm - Ruler.MarginRightMm;
+
+            double rightIndentMm = Ruler.UnitsToMm(
+                Ruler.GetIndentMarkerPosition(RulerIndentMarkerType.RightIndent));
+
+            if (type == RulerIndentMarkerType.FirstLineIndent)
+            {
+                // Дальше этой точки текст первой строки не пускает раскладка.
+                return Ruler.MmToUnits(availableMm - rightIndentMm - MinTextPt * PtToMm);
+            }
+
+            // Метка доходит до правого края зоны. Ни место под текст, ни ширину самого
+            // номера не резервируем: чем правее метка, тем меньше места остаётся первой
+            // строке, и с какого-то момента текст просто начинается со второй.
+            return Ruler.MmToUnits(availableMm - rightIndentMm);
         }
 
         // ── Document loading ──────────────────────────────────────────────
@@ -276,31 +327,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
             Ribbon.Home.UpdateFromCursorContext(ctx);
             StatusBar.Language = ctx.Language ?? Settings.DefaultLanguage;
 
-            // Не обновляем маркеры во время drag.
+            // Стрелки линейки отсюда больше не ставятся. Их единственный источник —
+            // NotifyRulerGeometry: фактическая геометрия абзаца, снятая с построенной
+            // раскладки. Здесь величины приходят из модели, и каждую поправку, которую
+            // раскладка сделала по-своему — ограничитель первой строки, перенос текста
+            // списка на вторую строку, поля и рамку ячейки, — пришлось бы повторять
+            // расчётом. Ровно на этом стрелки и расходились с текстом.
             if (Ruler.DraggingIndentMarker is null)
-            {
-                Ruler.UpdateFromParagraphContext(
-                    ctx.LeftIndentPt,
-                    ctx.LeftIndentPt + ctx.FirstLineIndentPt,
-                    ctx.RightIndentPt);
-
-                // Фиолетовая стрелка «метка» = позиция номера (левый край цифры). Видна только для
-                // абзацев-списков вне таблицы, обновляется при каждом переносе курсора.
-                const double PtToMm = 25.4 / 72.0;
-                var lp = DocumentViewModel?.GetActiveListProperties();
-                if (lp is not null && lp.MarkerType != Models.Document.ListMarkerType.None
-                    && Ruler.Mode == RulerMode.Paragraph)
-                {
-                    double markerAbsPt = lp.MarkerIndentPt
-                        ?? Math.Max(0.0, ctx.LeftIndentPt - Models.Document.ListProperties.DefaultHangingPt);
-                    Ruler.ShowListMarker = true;
-                    Ruler.ListMarkerMm = markerAbsPt * PtToMm;
-                }
-                else
-                {
-                    Ruler.ShowListMarker = false;
-                }
-            }
+                LogRulerState("курсор", RulerIndentMarkerType.ListMarker,
+                    ctx.LeftIndentPt * (25.4 / 72.0));
         }
 
         // ── Линейка ───────────────────────────────────────────────────────
@@ -337,6 +372,13 @@ namespace Writersword.Modules.TextEditor.ViewModels
         }
 
         /// <summary>
+        /// Фактическая геометрия абзаца под кареткой из раскладки — по ней линейка и ставит
+        /// стрелки. Единственный путь, которым они двигаются вне перетаскивания.
+        /// </summary>
+        public void NotifyRulerGeometry(RulerParagraphGeometry geometry)
+            => Ruler.ApplyParagraphGeometry(geometry);
+
+        /// <summary>
         /// Переключает линейку в режим таблицы при входе каретки в таблицу.
         /// </summary>
         public void NotifyCaretEnteredTable(
@@ -345,8 +387,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
             double tableOffsetMm = 0,
             int activeColumnIndex = 0)
         {
+            // Границы активной ячейки здесь не выставляются: их даёт NotifyRulerGeometry
+            // по контентному боксу из раскладки. Прежний вызов писал края СТОЛБЦА, то есть
+            // другую точку отсчёта, и стрелки прыгали между двумя вариантами.
             Ruler.UpdateTableColumns(columnOffsetsMm, columnWidthsMm, tableOffsetMm);
-            Ruler.UpdateActiveCellBounds(activeColumnIndex);
             Ribbon.IsTableTabVisible = true;
             // Синхронизируем кнопку-тоггл режима разбивки с текущей таблицей
             Ribbon.Table.SyncFromTarget();
@@ -407,15 +451,15 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         private void OnRulerIndentMarkerChanged(RulerIndentMarkerType markerType, double valueMm)
         {
-            // В режиме таблицы маркер позиционируется относительно левого края ячейки.
-            // SetLeftIndentPt/SetFirstLineIndentPt ожидают значение относительно начала текстовой зоны.
-            // Добавляем смещение ячейки чтобы перевести в абсолютные координаты.
-            if (Ruler.Mode == RulerMode.Table)
-            {
-                double cellOffsetMm = Ruler.UnitsToMm(Ruler.ActiveCellLeftUnits);
-                if (markerType != RulerIndentMarkerType.RightIndent)
-                    valueMm += cellOffsetMm;
-            }
+            // Смещение зоны к значению НЕ прибавляется. Все отступы абзаца внутри ячейки —
+            // левый, первой строки, правый и позиция метки списка — хранятся в модели
+            // относительно самой ячейки, и маркеры линейки живут в координатах её зоны
+            // (границы зоны приходят из раскладки, см. ApplyParagraphGeometry). То есть обе
+            // стороны уже в одной системе отсчёта, и прибавка ломала запись. Ошибка не была
+            // видна в первом столбце: там смещение равно нулю. В любом следующем в LeftIndent
+            // уходило значение шире самой ячейки, текстовая зона схлопывалась, и текст
+            // переставал переноситься.
+            LogRulerState("до", markerType, valueMm);
 
             double valuePt = valueMm * 72.0 / 25.4;
 
@@ -433,16 +477,14 @@ namespace Writersword.Modules.TextEditor.ViewModels
                         double newFirstRelMm = newAbsFirstMm - newLeftMm;
                         DocumentViewModel?.SetLeftIndentPt(newLeftMm * 72.0 / 25.4);
 
-                        // В списке нижняя стрелка (строки 2+) НЕ должна влиять на абзацную и метку:
-                        // возвращаем абзацную стрелку на позицию «метка + ширина + зазор».
+                        // В списке нижняя стрелка задаёт отступ строк 2+ и на первую строку
+                        // не влияет: её текст стоит от номера («метка + ширина + зазор»), эту
+                        // величину считает раскладка. Поэтому абзацную стрелку не трогаем
+                        // вовсе — ни новым значением, ни возвратом на старое. Подстановка
+                        // TextIndentPt, стоявшая здесь, равнялась только что записанному левому
+                        // отступу, и стрелка ездила ровно над нижней, ничего не двигая.
                         var lpL = DocumentViewModel?.GetActiveListProperties();
-                        if (lpL is not null && lpL.MarkerType != Models.Document.ListMarkerType.None)
-                        {
-                            double markerAbsMm = (lpL.MarkerIndentPt ?? 0.0) * 25.4 / 72.0;
-                            double advanceMm = (lpL.ComputedMarkerWidthPt + lpL.MarkerTextMinGapPt) * 25.4 / 72.0;
-                            Ruler.SetFirstLineMarkerAbsolute(markerAbsMm + advanceMm);
-                        }
-                        else
+                        if (lpL is null || lpL.MarkerType == Models.Document.ListMarkerType.None)
                         {
                             DocumentViewModel?.SetFirstLineIndentPt(newFirstRelMm * 72.0 / 25.4);
                         }
@@ -472,21 +514,121 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     break;
                 case RulerIndentMarkerType.ListMarker:
                     {
-                        // Фиолетовая метка задаёт позицию номера (левый край цифры).
+                        // Метка тащит пункт целиком: номер и текст едут вместе, зазор
+                        // между ними сохраняется. Раньше писалась только позиция номера,
+                        // текст стоял на месте, и перетаскивание меняло зазор — пункт
+                        // не смещался, а растягивался.
+                        var lpBefore = DocumentViewModel?.GetActiveListProperties();
+                        // TextIndentPt допускает null — «позиция текста не задана явно».
+                        // Подставляем ноль: дальше он служит только базой для сдвига.
+                        double oldTextPt = lpBefore?.TextIndentPt ?? 0.0;
+                        double oldMarkerPt = lpBefore?.MarkerIndentPt
+                            ?? Math.Max(0.0, oldTextPt
+                                             - Models.Document.ListProperties.DefaultHangingPt);
+
                         DocumentViewModel?.SetListMarkerIndentPt(valuePt);
-                        // Абзацная стрелка едет ВМЕСТЕ с меткой по ФАКТИЧЕСКОЙ (ограниченной) позиции
-                        // метки: начало текста = метка + ширина цифры + зазор. Поэтому она тоже не
-                        // уходит за край страницы, а блокируется вместе с меткой.
+
+                        // Сдвиг берём по ФАКТИЧЕСКИ применённой позиции: метка могла
+                        // упереться в ограничение, и текст обязан остановиться с ней,
+                        // иначе он уезжает дальше и зазор всё равно расползается.
+                        var lpApplied = DocumentViewModel?.GetActiveListProperties();
+                        if (lpBefore is not null && lpApplied is not null)
+                        {
+                            double appliedDeltaPt =
+                                (lpApplied.MarkerIndentPt ?? oldMarkerPt) - oldMarkerPt;
+                            if (Math.Abs(appliedDeltaPt) > 0.001)
+                            {
+                                // Текст едет за номером, но только пока ему остаётся место.
+                                // Дальше номер идёт один: тексту в первой строке места нет,
+                                // и раскладка уводит его на вторую. Без этого предела левый
+                                // отступ доезжал вместе с меткой до правого края, ширина
+                                // строки схлопывалась почти в ноль, и текст пропадал —
+                                // в узкой ячейке это происходило сразу.
+                                double newTextPt = oldTextPt + appliedDeltaPt;
+                                if (GetRulerIndentUpperLimitUnits(
+                                        RulerIndentMarkerType.FirstLineIndent) is double textLimitUnits)
+                                {
+                                    double textLimitPt = Ruler.UnitsToMm(textLimitUnits) * 72.0 / 25.4;
+                                    newTextPt = Math.Min(newTextPt, textLimitPt);
+                                }
+                                DocumentViewModel?.SetListTextIndentPt(newTextPt);
+                            }
+                        }
+                        // Абзацная стрелка встаёт по ФАКТИЧЕСКОЙ позиции текста, а не
+                        // по пересчёту «метка + ширина цифры + зазор». Пересчёт был
+                        // вторым источником правды: модель уже знает, где начинается
+                        // текст, и два писателя в одно свойство на каждом движении мыши
+                        // и давали дёрганье. Заодно стрелка автоматически упирается
+                        // вместе с меткой — текст дальше неё не уехал.
                         var lpMk = DocumentViewModel?.GetActiveListProperties();
                         if (lpMk is not null)
                         {
-                            double markerAbsMm = (lpMk.MarkerIndentPt ?? 0.0) * 25.4 / 72.0;
-                            double advanceMm = (lpMk.ComputedMarkerWidthPt + lpMk.MarkerTextMinGapPt) * 25.4 / 72.0;
-                            Ruler.SetFirstLineMarkerAbsolute(markerAbsMm + advanceMm);
+                            const double PtToMm = 25.4 / 72.0;
+
+                            // Абзацная стрелка = ФАКТИЧЕСКОЕ начало текста первой строки:
+                            // отступ абзаца плюс сдвиг, который только что посчитала раскладка
+                            // (запись выше синхронно пересобрала её). Формула «номер + ширина
+                            // + зазор» о правилах раскладки не знала: когда текст упирался в
+                            // свой предел или уходил на вторую строку, стрелка показывала
+                            // точку, где текста нет, и уезжала следом за меткой.
+                            Ruler.SetFirstLineMarkerMm(
+                                ((lpMk.TextIndentPt ?? 0.0) + lpMk.ComputedFirstLineOffsetPt) * PtToMm);
+
+                            // Нижняя стрелка едет за меткой: левый отступ ей метка и меняет.
+                            // Без этого она весь жест стояла на прежнем месте и прыгала уже
+                            // после отпускания, когда приходил контекст курсора.
+                            Ruler.SetLeftMarkerMm((lpMk.TextIndentPt ?? 0.0) * PtToMm);
                         }
                         break;
                     }
             }
+
+            // Второй снимок — уже после записи в модель и подстановки стрелок.
+            // Разница со снимком «до» показывает, что именно поменял этот кадр жеста
+            // и не переписал ли кто-то стрелку следом за нами.
+            LogRulerState("после", markerType, valueMm);
+        }
+
+        /// <summary>
+        /// Полный снимок состояния линейки и модели вокруг перетаскивания маркера.
+        /// Пишет всё разом: какой маркер тянут, какое значение пришло, где сейчас
+        /// стоят все четыре стрелки на линейке и какие величины лежат в абзаце.
+        /// По расхождению «линейка против модели» сразу видно, кто кого перетирает
+        /// и в какой системе отсчёта считает.
+        /// </summary>
+        private void LogRulerState(string stage, RulerIndentMarkerType markerType, double valueMm)
+        {
+            var lp = DocumentViewModel?.GetActiveListProperties();
+
+            // Где раскладка фактически начинает текст первой строки, мм от начала зоны.
+            // Это и есть точка, на которую обязана указывать абзацная стрелка: расхождение
+            // с «линейка: перв» сразу показывает, что стрелка живёт своей жизнью.
+            const double PtToMm = 25.4 / 72.0;
+            double textStartMm = lp is null
+                ? 0.0
+                : ((lp.TextIndentPt ?? 0.0) + lp.ComputedFirstLineOffsetPt) * PtToMm;
+
+            _logger.Debug(
+                "[RULER {Stage}] тянут={Type} value={Value:F2}мм | режим={Mode} смещЯчейки={CellLeft:F2}мм "
+                + "ячейка=[{CellL:F2}..{CellR:F2}] | линейка: лев={ML:F2} перв={MF:F2} прав={MR:F2} метка={MK:F2} "
+                + "показМетку={Show} | модель: метка={LpMarker} текст={LpText} ширЦифры={LpW:F2} зазор={LpGap:F2} "
+                + "сдвиг1йСтроки={LpOffset:F2} началоТекста={TextStart:F2}мм",
+                stage, markerType, valueMm,
+                Ruler.Mode,
+                Ruler.UnitsToMm(Ruler.ActiveCellLeftUnits),
+                Ruler.UnitsToMm(Ruler.ActiveCellLeftUnits),
+                Ruler.UnitsToMm(Ruler.ActiveCellRightUnits),
+                Ruler.UnitsToMm(Ruler.GetIndentMarkerPosition(RulerIndentMarkerType.LeftIndent)),
+                Ruler.UnitsToMm(Ruler.GetIndentMarkerPosition(RulerIndentMarkerType.FirstLineIndent)),
+                Ruler.UnitsToMm(Ruler.GetIndentMarkerPosition(RulerIndentMarkerType.RightIndent)),
+                Ruler.UnitsToMm(Ruler.GetIndentMarkerPosition(RulerIndentMarkerType.ListMarker)),
+                Ruler.ShowListMarker,
+                lp?.MarkerIndentPt?.ToString("F2") ?? "нет",
+                lp?.TextIndentPt?.ToString("F2") ?? "нет",
+                lp?.ComputedMarkerWidthPt ?? 0.0,
+                lp?.MarkerTextMinGapPt ?? 0.0,
+                lp?.ComputedFirstLineOffsetPt ?? 0.0,
+                textStartMm);
         }
 
         // Начало перетаскивания поля — делаем снапшот документа, чтобы Ctrl+Z вернул поля.
@@ -778,6 +920,18 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public void TableSetCellHAlign(Writersword.Modules.TextEditor.Models.Styles.TextAlignment align)
             => DocumentViewModel?.TableSetCellHAlign(align);
         public void TableSetCellVAlign(int vAlign) => DocumentViewModel?.TableSetCellVAlign(vAlign);
+        public void TableSetCellPadding(double topPt, double bottomPt, double leftPt, double rightPt)
+            => DocumentViewModel?.TableSetCellPadding(topPt, bottomPt, leftPt, rightPt);
+        public (double TopPt, double BottomPt, double LeftPt, double RightPt)? TableGetCellPadding()
+            => DocumentViewModel?.TableGetCellPadding();
+        public void TableSetLineTool(int tool) => DocumentViewModel?.TableSetLineTool(tool);
+        public int TableGetLineTool() => DocumentViewModel?.TableGetLineTool() ?? 0;
+        public void TableSetCellAlign(int vAlign,
+            Writersword.Modules.TextEditor.Models.Styles.TextAlignment hAlign)
+            => DocumentViewModel?.TableSetCellAlign(vAlign, hAlign);
+        public int? TableGetCellVAlign() => DocumentViewModel?.TableGetCellVAlign();
+        public Writersword.Modules.TextEditor.Models.Styles.TextAlignment? TableGetCellHAlign()
+            => DocumentViewModel?.TableGetCellHAlign();
         public void TableSetCellBackground(string? color) => DocumentViewModel?.TableSetCellBackground(color);
         public void TableSetCellBorder(string side, BorderStyle style, double thicknessPt, string? color)
             => DocumentViewModel?.TableSetCellBorder(side, style, thicknessPt, color);
