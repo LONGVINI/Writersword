@@ -107,6 +107,10 @@
 			<Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
+		<!-- Кнопка выбора единиц живёт в общем стиле Button.UnitToggle
+		     (Styles/Controls/UnitToggle.axaml) — она одинакова и здесь, и в ленте
+		     таблиц. Локальное объявление другим вкладкам не доставалось. -->
+
 		<!-- Обвязка группы повторяет вкладку «Главная» до пикселя: рамка, отступы
 		     и подпись задают всю высоту ленты помимо содержимого, и стоит им
 		     разойтись — вкладки прыгают по высоте при переключении. -->
@@ -293,65 +297,66 @@
 						</Grid>
 						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
 
-							<StackPanel Spacing="3"
-							            IsEnabled="{Binding IsSizeEditEnabled}"
-							            Opacity="{Binding SizeEditOpacity}">
-								<StackPanel Orientation="Horizontal" Spacing="3">
-									<PathIcon Width="13" Height="13" VerticalAlignment="Center"
-									          Foreground="{DynamicResource TextSecondaryBrush}"
-									          Data="M3 12l4-4v3h10V8l4 4-4 4v-3H7v3l-4-4z"/>
-									<NumericUpDown Classes="Ribbon" Width="92"
-									               Value="{Binding ImageWidth, Mode=TwoWay}"
-									               Minimum="0.1" Maximum="99999.99"
-									               Increment="1"
-									               FormatString="0.##"
-									               ClipValueToMinMax="True"
-									               behaviours:TooltipBehavior.Tip="Ширина картинки в выбранных единицах. В режиме обрезки заблокирована"
-									               behaviours:TooltipBehavior.ShowDelay="700"/>
-								</StackPanel>
-								<StackPanel Orientation="Horizontal" Spacing="3">
-									<PathIcon Width="13" Height="13" VerticalAlignment="Center"
-									          Foreground="{DynamicResource TextSecondaryBrush}"
-									          Data="M12 3l4 4h-3v10h3l-4 4-4-4h3V7H8l4-4z"/>
-									<NumericUpDown Classes="Ribbon" Width="92"
-									               Value="{Binding ImageHeight, Mode=TwoWay}"
-									               Minimum="0.1" Maximum="99999.99"
-									               Increment="1"
-									               FormatString="0.##"
-									               ClipValueToMinMax="True"
-									               behaviours:TooltipBehavior.Tip="Высота картинки в выбранных единицах. В режиме обрезки заблокирована"
-									               behaviours:TooltipBehavior.ShowDelay="700"/>
-								</StackPanel>
-							</StackPanel>
+							<!-- Поля, единицы и замок пропорций лежат общей сеткой: у поля ленты и -->
+							<!-- у кнопки разная собственная высота, и при раздельной укладке строки -->
+							<!-- расходились по вертикали. Справа от полей колонка из двух кнопок —  -->
+							<!-- единицы сверху, пропорции снизу.                                    -->
+							<Grid ColumnDefinitions="Auto Auto Auto" RowDefinitions="Auto Auto"
+							      VerticalAlignment="Center"
+							      IsEnabled="{Binding IsSizeEditEnabled}"
+							      Opacity="{Binding SizeEditOpacity}">
 
-							<StackPanel Spacing="3" VerticalAlignment="Center"
-							            IsEnabled="{Binding IsSizeEditEnabled}"
-							            Opacity="{Binding SizeEditOpacity}">
-								<ToggleButton Classes="SegSmall" Content="мм"
-								              Command="{Binding UnitMmCommand}"
-								              IsChecked="{Binding UnitIsMm, Mode=OneWay}"
-								              behaviours:TooltipBehavior.Tip="Размеры в миллиметрах"
-								              behaviours:TooltipBehavior.ShowDelay="700"/>
-								<ToggleButton Classes="SegSmall" Content="px"
-								              Command="{Binding UnitPxCommand}"
-								              IsChecked="{Binding UnitIsPx, Mode=OneWay}"
-								              behaviours:TooltipBehavior.Tip="Размеры в пикселях (96 DPI)"
-								              behaviours:TooltipBehavior.ShowDelay="700"/>
-							</StackPanel>
+								<PathIcon Grid.Row="0" Grid.Column="0"
+								          Width="13" Height="13" Margin="0 0 3 0"
+								          VerticalAlignment="Center"
+								          Foreground="{DynamicResource TextSecondaryBrush}"
+								          Data="M3 12l4-4v3h10V8l4 4-4 4v-3H7v3l-4-4z"/>
+								<NumericUpDown Grid.Row="0" Grid.Column="1"
+								               Classes="Ribbon" Width="92" Margin="0 0 0 3"
+								               Value="{Binding ImageWidth, Mode=TwoWay}"
+								               Minimum="0.1" Maximum="99999.99"
+								               Increment="1"
+								               FormatString="0.##"
+								               ClipValueToMinMax="True"
+								               behaviours:TooltipBehavior.Tip="Ширина картинки в выбранных единицах. В режиме обрезки заблокирована"
+								               behaviours:TooltipBehavior.ShowDelay="700"/>
 
-							<ToggleButton Classes="RibbonToggleLarge"
-							              Command="{Binding ToggleAspectCommand}"
-							              IsChecked="{Binding IsAspectLocked, Mode=OneWay}"
-							              IsEnabled="{Binding IsSizeEditEnabled}"
-							              Opacity="{Binding SizeEditOpacity}"
-							              behaviours:TooltipBehavior.Tip="Сохранять пропорции при изменении размера"
-							              behaviours:TooltipBehavior.ShowDelay="700">
-								<StackPanel Spacing="2" HorizontalAlignment="Center">
-									<PathIcon Width="18" Height="18"
+								<PathIcon Grid.Row="1" Grid.Column="0"
+								          Width="13" Height="13" Margin="0 0 3 0"
+								          VerticalAlignment="Center"
+								          Foreground="{DynamicResource TextSecondaryBrush}"
+								          Data="M12 3l4 4h-3v10h3l-4 4-4-4h3V7H8l4-4z"/>
+								<NumericUpDown Grid.Row="1" Grid.Column="1"
+								               Classes="Ribbon" Width="92" Margin="0 0 0 3"
+								               Value="{Binding ImageHeight, Mode=TwoWay}"
+								               Minimum="0.1" Maximum="99999.99"
+								               Increment="1"
+								               FormatString="0.##"
+								               ClipValueToMinMax="True"
+								               behaviours:TooltipBehavior.Tip="Высота картинки в выбранных единицах. В режиме обрезки заблокирована"
+								               behaviours:TooltipBehavior.ShowDelay="700"/>
+
+								<!-- Единицы и пропорции — колонкой справа от полей: единицы у строки -->
+								<!-- ширины, замок у строки высоты.                                   -->
+								<Button Grid.Row="0" Grid.Column="2"
+								        Classes="UnitToggle" Content="{Binding UnitLabel}"
+								        Margin="4 0 0 3" VerticalAlignment="Center"
+								        Command="{Binding ToggleUnitCommand}"
+								        behaviours:TooltipBehavior.Tip="Единицы размеров — миллиметры или пиксели. Нажатие переключает"
+								        behaviours:TooltipBehavior.ShowDelay="700"/>
+
+								<ToggleButton Grid.Row="1" Grid.Column="2"
+								              Classes="SegSmall" Margin="4 0 0 3"
+								              MinWidth="30" MinHeight="24"
+								              VerticalAlignment="Center"
+								              Command="{Binding ToggleAspectCommand}"
+								              IsChecked="{Binding IsAspectLocked, Mode=OneWay}"
+								              behaviours:TooltipBehavior.Tip="Сохранять пропорции при изменении размера"
+								              behaviours:TooltipBehavior.ShowDelay="700">
+									<PathIcon Width="14" Height="14"
 									          Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
-									<TextBlock FontSize="9" Text="Пропорции" HorizontalAlignment="Center"/>
-								</StackPanel>
-							</ToggleButton>
+								</ToggleButton>
+							</Grid>
 
 							<ToggleButton Classes="RibbonToggleLarge"
 							              Command="{Binding ToggleCropModeCommand}"
@@ -393,8 +398,16 @@
 							        behaviours:TooltipBehavior.Tip="Отразить картинку по вертикали"
 							        behaviours:TooltipBehavior.ShowDelay="700">
 								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<!-- Та же фигура, что у «По гориз.», развёрнутая на 90 градусов.      -->
+									<!-- Прежний путь рисовал только уголки и штрихи по периметру, без      -->
+									<!-- сплошной половины, и читался как пунктирная рамка, а не отражение. -->
 									<PathIcon Width="18" Height="18"
-									          Data="M3 15v2h2v-2H3zm12 4v2h2v-2h-2zM5 3H3c0 1.1.9 2 2 2V3zm14 8h2V9h-2v2zM5 21v-2H3c0 1.1.9 2 2 2zM3 11h2V9H3v2zm18 2H1v-2h22v2zm-2 8c1.1 0 2-.9 2-2h-2v2zM19 5c1.1 0 2 .9 2 2h-2V5zm0 0V3c1.1 0 2 .9 2 2h-2zM7 5h2V3H7v2zm0 16h2v-2H7v2zm4-16h2V3h-2v2zm0 16h2v-2h-2v2zm8-6h2v-2h-2v2zm0-8h2V5h-2v2z"/>
+									          RenderTransformOrigin="50%,50%"
+									          Data="M15 21h2v-2h-2v2zm4-12h2V7h-2v2zM3 5v14c0 1.1.9 2 2 2h4v-2H5V5h4V3H5c-1.1 0-2 .9-2 2zm16-2v2h2c0-1.1-.9-2-2-2zM11 23h2V1h-2v22zm8-6h2v-2h-2v2zM15 5h2V3h-2v2zm4 8h2v-2h-2v2zm0 8c1.1 0 2-.9 2-2h-2v2z">
+										<PathIcon.RenderTransform>
+											<RotateTransform Angle="90"/>
+										</PathIcon.RenderTransform>
+									</PathIcon>
 									<TextBlock FontSize="9" Text="По верт." HorizontalAlignment="Center"/>
 								</StackPanel>
 							</Button>
@@ -406,19 +419,25 @@
 				<!-- ── Группа: Отступы обтекания ────────────────────────────── -->
 				<!-- Активна только в режиме «Обтекание»: в режимах «В тексте» и      -->
 				<!-- «За текстом» отступы ни на что не влияют.                        -->
-				<Border Classes="RibbonGroup"
-				        behaviours:TooltipBehavior.Tip="Отступы работают только в режиме «Обтекание»"
-				        behaviours:TooltipBehavior.ShowDelay="700">
+				<Border Classes="RibbonGroup">
 					<DockPanel>
 						<Grid DockPanel.Dock="Bottom" Classes="RibbonGroupLabelGrid">
-							<TextBlock Classes="RibbonGroupLabel" Text="Отступы обтекания"/>
+							<!-- Подсказка висит на заголовке, а не на Border группы: на Border она -->
+							<!-- срабатывала одновременно с подсказками полей внутри, и две всплывающие -->
+							<!-- панели накладывались друг на друга, закрывая текст обеих.               -->
+							<TextBlock Classes="RibbonGroupLabel" Text="Отступы обтекания"
+							           behaviours:TooltipBehavior.Tip="Отступы работают только в режиме «Обтекание»"
+							           behaviours:TooltipBehavior.ShowDelay="700"/>
 						</Grid>
 						<StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"
 						            IsEnabled="{Binding IsWrapPaddingEnabled}"
 						            Opacity="{Binding WrapPaddingOpacity}">
 
-							<!-- 4 стороны: верх/низ, лево/право -->
-							<Grid ColumnDefinitions="Auto Auto" RowDefinitions="Auto Auto">
+							<!-- 4 стороны: верх/низ, лево/право. Между ними — замок связи: -->
+							<!-- при нажатом состоянии правка одной стороны раскладывается на  -->
+							<!-- остальные три, и отдельный список готовых значений не нужен.  -->
+							<Grid ColumnDefinitions="Auto Auto Auto" RowDefinitions="Auto Auto"
+							      VerticalAlignment="Center">
 								<StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="2" Margin="0 0 4 2">
 									<TextBlock Text="↑" FontSize="12" VerticalAlignment="Center"
 									           Foreground="{DynamicResource TextSecondaryBrush}"/>
@@ -429,6 +448,29 @@
 									               behaviours:TooltipBehavior.Tip="Отступ текста от картинки сверху"
 									               behaviours:TooltipBehavior.ShowDelay="700"/>
 								</StackPanel>
+								<!-- Единицы над замком, обе кнопки — колонкой справа от полей.
+								     Размеры не задаются: их держит общий стиль, и любое местное
+								     сужение делало кнопку мельче такой же в других группах. -->
+								<Button Grid.Row="0" Grid.Column="2"
+								        Classes="UnitToggle" Content="{Binding PadUnitLabel}"
+								        Margin="6 0 0 2"
+								        VerticalAlignment="Center"
+								        Command="{Binding TogglePadUnitCommand}"
+								        behaviours:TooltipBehavior.Tip="Единицы отступов — миллиметры или пиксели. Нажатие переключает"
+								        behaviours:TooltipBehavior.ShowDelay="700"/>
+
+								<ToggleButton Grid.Row="1" Grid.Column="2"
+								              Classes="SegSmall" Margin="6 0 0 0"
+								              MinWidth="30" MinHeight="24"
+								              VerticalAlignment="Center"
+								              Command="{Binding ToggleWrapPadLinkCommand}"
+								              IsChecked="{Binding IsWrapPadLinked, Mode=OneWay}"
+								              behaviours:TooltipBehavior.Tip="Связать стороны — правка одного отступа применяется ко всем четырём"
+								              behaviours:TooltipBehavior.ShowDelay="700">
+									<PathIcon Width="13" Height="13"
+									          Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+								</ToggleButton>
+
 								<StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="2" Margin="0 0 0 2">
 									<TextBlock Text="↓" FontSize="12" VerticalAlignment="Center"
 									           Foreground="{DynamicResource TextSecondaryBrush}"/>
@@ -460,27 +502,6 @@
 									               behaviours:TooltipBehavior.ShowDelay="700"/>
 								</StackPanel>
 							</Grid>
-
-							<!-- Пресеты + единицы (по умолчанию см) -->
-							<StackPanel Spacing="3" VerticalAlignment="Center">
-								<ComboBox Width="66" MinHeight="24"
-								          ItemsSource="{Binding WrapPadPresets}"
-								          SelectedItem="{Binding SelectedWrapPadPreset, Mode=TwoWay}"
-								          behaviours:TooltipBehavior.Tip="Готовые значения отступа — применяются ко всем 4 сторонам"
-								          behaviours:TooltipBehavior.ShowDelay="700"/>
-								<StackPanel Orientation="Horizontal" Spacing="2">
-									<ToggleButton Classes="SegSmall" Content="см"
-									              Command="{Binding PadUnitCmCommand}"
-									              IsChecked="{Binding PadUnitIsCm, Mode=OneWay}"
-									              behaviours:TooltipBehavior.Tip="Отступы в сантиметрах"
-									              behaviours:TooltipBehavior.ShowDelay="700"/>
-									<ToggleButton Classes="SegSmall" Content="px"
-									              Command="{Binding PadUnitPxCommand}"
-									              IsChecked="{Binding PadUnitIsPx, Mode=OneWay}"
-									              behaviours:TooltipBehavior.Tip="Отступы в пикселях (96 DPI)"
-									              behaviours:TooltipBehavior.ShowDelay="700"/>
-								</StackPanel>
-							</StackPanel>
 
 						</StackPanel>
 					</DockPanel>

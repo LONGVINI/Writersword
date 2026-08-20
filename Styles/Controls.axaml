@@ -17,6 +17,8 @@
 	<StyleInclude Source="avares://Writersword/Styles/Controls/ToggleSwitch.axaml"/>
 	<StyleInclude Source="avares://Writersword/Styles/Controls/DocumentTextBox.axaml"/>
 	<StyleInclude Source="avares://Writersword/Styles/Controls/RibbonScrollArrow.axaml"/>
+	<StyleInclude Source="avares://Writersword/Styles/Controls/Flyout.axaml"/>
+	<StyleInclude Source="avares://Writersword/Styles/Controls/UnitToggle.axaml"/>
 
 	<!-- Скролл: тонкий, скруглённый бегунок, без стрелок, подсветка при наведении. -->
 	<Style Selector="ScrollBar:vertical">

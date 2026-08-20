@@ -1605,16 +1605,21 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (host is not null)
             {
-                // Место в потоке переезжает на страницу, где картинка видна, поэтому
-                // и смещения отсчитываются от неё — обе величины описывают одну страницу.
-                var page = _pages[entry.PageIndex];
-                image.OffsetXPt = entry.XPt - (page.PadLeftPt + page.MarginLeftPt);
-                image.OffsetYPt = entry.Ypt - (page.Ypt + page.PadTopPt);
-
+                // Сначала переносим место в потоке, и только потом считаем смещения:
+                // отсчитывать их нужно от страницы, на которой поток РЕАЛЬНО дойдёт до
+                // нового места картинки, а это не всегда та страница, где она видна.
+                // Абзац-хозяин может начинаться раньше и тянуться дальше — тогда поток
+                // доходит до вставленной за ним картинки только после его окончания,
+                // и смещения, посчитанные от видимой страницы, уносили картинку на
+                // столько листов, сколько занимает хвост абзаца.
                 section.Blocks.Remove(image);
                 int hostIdx = section.Blocks.IndexOf(host);
                 if (hostIdx < 0) section.Blocks.Add(image);
                 else section.Blocks.Insert(hostIdx + 1, image);
+
+                var page = _pages[ResolveFlowPageIndex(image, section)];
+                image.OffsetXPt = entry.XPt - (page.PadLeftPt + page.MarginLeftPt);
+                image.OffsetYPt = entry.Ypt - (page.Ypt + page.PadTopPt);
                 return;
             }
 
@@ -2783,6 +2788,9 @@ namespace Writersword.Modules.TextEditor.Document
         /// переведённые в координаты текстовой области параграфа.
         /// null — обтекаемых объектов рядом нет.
         /// </summary>
+        // Последняя напечатанная диагностика зоны по каждой картинке. Временная.
+        private readonly Dictionary<ImageBlock, string> _imgZoneDiagLast = new();
+
         private List<SKWrapZone>? ComputeWrapZones(
             List<ImageEntry> images, float paraTopPt, float textXPt, float textWidthPt,
             List<PageRect>? pages = null, int? pageIndex = null)
@@ -2864,6 +2872,30 @@ namespace Writersword.Modules.TextEditor.Document
 
                 left = Math.Max(left, 0f);
                 right = Math.Min(right, textWidthPt);
+
+                // Диагностика: габарит картинки против получившейся зоны, в абсолютных
+                // координатах. Печатается только при изменении, одна строка на картинку.
+                string imgSig = string.Format(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    "{0:F1}|{1:F1}|{2:F1}|{3:F1}|{4:F1}|{5:F1}|{6:F1}|{7:F1}|{8:F1}|{9}",
+                    ie.XPt, ie.Ypt, ie.WidthPt, ie.HeightPt, ie.Block.RotationDeg,
+                    top, bottom, left + textXPt, right + textXPt, ie.PageIndex);
+                if (!_imgZoneDiagLast.TryGetValue(ie.Block, out var imgPrev)
+                    || !string.Equals(imgPrev, imgSig, StringComparison.Ordinal))
+                {
+                    if (_imgZoneDiagLast.Count > 64) _imgZoneDiagLast.Clear();
+                    _imgZoneDiagLast[ie.Block] = imgSig;
+
+                    _logger.Warning(
+                        "[ZONE] картинка X={IX:F1} Y={IY:F1} Ш={IW:F1} В={IH:F1} угол={Deg:F1} стр={Pg} "
+                        + "| габарит {BoxW:F1}x{BoxH:F1} | поля Т={PT:F1} Н={PB:F1} Л={PL:F1} П={PR:F1} "
+                        + "| зона верх={ZT:F1} низ={ZB:F1} лев={ZL:F1} прав={ZR:F1} высота={ZH:F1}",
+                        ie.XPt, ie.Ypt, ie.WidthPt, ie.HeightPt, ie.Block.RotationDeg, ie.PageIndex,
+                        boxW, boxH,
+                        ie.Block.WrapPadTopPt, ie.Block.WrapPadBottomPt,
+                        ie.Block.WrapPadLeftPt, ie.Block.WrapPadRightPt,
+                        top, bottom, left + textXPt, right + textXPt, bottom - top);
+                }
 
                 zones ??= new List<SKWrapZone>();
                 zones.Add(new SKWrapZone(
@@ -3170,6 +3202,98 @@ namespace Writersword.Modules.TextEditor.Document
                 // Ушли за нижнюю границу листа — дальше решает перенос на страницу.
                 if (nextYPt >= pageBottomPt) return;
             }
+        }
+
+        /// <summary>
+        /// Опускает верх таблицы под обтекаемые картинки, чьи зоны перекрывают её по
+        /// горизонтали.
+        ///
+        /// Таблица, в отличие от текста и картинки в потоке, встать сбоку от объекта не
+        /// может: её ширина и левый край заданы самой таблицей, сузить колонки под остаток
+        /// свободной полосы нельзя. Поэтому единственный способ не пересечься — сдвинуть
+        /// таблицу целиком под нижнюю границу мешающих зон.
+        ///
+        /// Проверка идёт по полной высоте таблицы, а не по первой строке: картинка,
+        /// накрывающая её середину, обязана отодвинуть таблицу так же, как накрывающая верх.
+        /// </summary>
+        private void ResolveTableTop(
+            List<ImageEntry> zoneSource,
+            ref float contentYPt,
+            float tableXPt,
+            float tableWidthPt,
+            float tableHeightPt,
+            float textXPt,
+            float textWidthPt,
+            float pageBottomPt,
+            List<PageRect>? pages = null,
+            int? pageIndex = null)
+        {
+            if (DocVm?.ViewMode != EditorViewMode.Page) return;
+            if (tableWidthPt <= 0f || tableHeightPt <= 0f) return;
+
+            // Зоны приходят в координатах: X отсчитывается от textXPt, Y — от того верха,
+            // который передан в ComputeWrapZones.
+            float tableLeftPt = tableXPt - textXPt;
+            float tableRightPt = tableLeftPt + tableWidthPt;
+
+            // Опустившись под одну картинку, таблица может упереться в следующую, поэтому
+            // проверка повторяется. Потолок итераций защищает от зацикливания.
+            for (int guard = 0; guard < 8; guard++)
+            {
+                var zones = ComputeWrapZones(
+                    zoneSource, contentYPt, textXPt, textWidthPt, pages, pageIndex);
+                if (zones is null || zones.Count == 0) return;
+
+                bool blocked = false;
+                float lowestBottomPt = 0f;
+
+                foreach (var zone in zones)
+                {
+                    // Зона кончается выше таблицы или начинается ниже её низа — не мешает.
+                    if (zone.BottomPt <= 0f || zone.TopPt >= tableHeightPt) continue;
+
+                    // Зона целиком левее или правее таблицы — не мешает.
+                    if (zone.RightPt <= tableLeftPt || zone.LeftPt >= tableRightPt) continue;
+
+                    if (!blocked || zone.BottomPt > lowestBottomPt)
+                        lowestBottomPt = zone.BottomPt;
+                    blocked = true;
+                }
+
+                if (!blocked) return;
+
+                float nextYPt = contentYPt + lowestBottomPt + WrapThrowGapPt;
+                if (nextYPt <= contentYPt + 0.5f) return;
+
+                contentYPt = nextYPt;
+
+                // Ушли за нижний край листа — дальше решает перенос строк на страницу.
+                if (nextYPt >= pageBottomPt) return;
+            }
+        }
+
+        /// <summary>
+        /// Высота ещё не размещённой части таблицы: строки начиная с rowFrom и до конца,
+        /// за вычетом уже показанной сверху части первой из них.
+        ///
+        /// Нужна при переносе таблицы на новую страницу: проверять обтекание там следует
+        /// по габариту остатка, а не по полной высоте — размещённые слайсы остались выше
+        /// и к новой позиции отношения не имеют.
+        /// </summary>
+        private static float RemainingTableHeightPt(
+            SKTableLayout tableLayout, int rowFrom, float firstRowOffsetPt)
+        {
+            if (tableLayout is null) return 0f;
+
+            float heightPt = 0f;
+            for (int i = rowFrom; i < tableLayout.Rows.Count; i++)
+            {
+                if (i < 0) continue;
+                heightPt += tableLayout.Rows[i].HeightPt;
+            }
+
+            heightPt -= firstRowOffsetPt;
+            return heightPt > 0f ? heightPt : 0f;
         }
 
         /// <summary>

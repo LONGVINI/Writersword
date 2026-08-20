@@ -620,13 +620,13 @@ namespace Writersword.Modules.TextEditor.Document
                 if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
                 {
                     _imageRotating = false;
-                    if (_imageOverflowPreviewMode)
-                    {
-                        _imageOverflowPreviewMode = false;
-                        RebuildLayouts();
-                        InvalidateMeasure();
-                        InvalidateFull();
-                    }
+
+                    // Кнопку отпустили вне канваса — жест завершён здесь, и раскладке
+                    // нужен тот же финальный сходящийся пересбор, что и в обычном месте.
+                    _imageOverflowPreviewMode = false;
+                    RebuildLayouts();
+                    InvalidateMeasure();
+                    InvalidateFull();
                     return;
                 }
                 float pointerDeg = (float)(Math.Atan2(yPt - _imgRotCenterYPt, xPt - _imgRotCenterXPt) * 180.0 / Math.PI);
@@ -661,13 +661,13 @@ namespace Writersword.Modules.TextEditor.Document
                     _imageResizing = false;
                     _imageCropDragging = false;
                     _imageResizeCorner = -1;
-                    if (_imageOverflowPreviewMode)
-                    {
-                        _imageOverflowPreviewMode = false;
-                        RebuildLayouts();
-                        InvalidateMeasure();
-                        InvalidateFull();
-                    }
+
+                    // Кнопку отпустили вне канваса — жест завершён здесь, и раскладке
+                    // нужен тот же финальный сходящийся пересбор, что и в обычном месте.
+                    _imageOverflowPreviewMode = false;
+                    RebuildLayouts();
+                    InvalidateMeasure();
+                    InvalidateFull();
                     return;
                 }
                 if (_imageCropDragging) ApplyImageCrop(xPt, yPt);
@@ -722,23 +722,31 @@ namespace Writersword.Modules.TextEditor.Document
                 if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
                 {
                     _imageDragging = false;
+                    StopAutoScroll();
                     return;
                 }
                 _imageDragMoved = true;
                 // Кламп смещений. По горизонтали — в пределах страницы с запасом.
-                // По вертикали разрешаем перенос на ЛЮБУЮ страницу документа: верхняя
-                // граница — полная высота всех страниц, поэтому картинку можно утащить
-                // хоть на последний лист (в обычном и многостраничном виде — координаты
-                // уже переведены в логические через VisualToLogicalPt). Нижняя граница
-                // (-pgH) и общий потолок спасают от потери картинки «в пустоте».
+                //
+                // По вертикали предел одинаков в обе стороны и равен высоте всего
+                // документа: смещение отсчитывается от якоря картинки в потоке, и
+                // чем ниже стоит якорь, тем более отрицательным должно быть смещение,
+                // чтобы поднять картинку к началу. Прежняя верхняя граница в одну
+                // страницу (-pgH) упиралась именно в это: картинку с якорем на второй
+                // странице поднять выше уже было нечем, хотя место на листе оставалось.
                 float pgW = GetPageWidthPt();
                 float pgH = GetPageHeightPt();
-                float docDownPt = Math.Max(pgH * 2.0f,
+                float docSpanPt = Math.Max(pgH * 2.0f,
                     Math.Max(1, _pages.Count) * (pgH + PageGapPt));
                 _selectedImage.OffsetXPt = Math.Clamp(
                     _imgDragStartOffX + (xPt - _imgDragStartXPt), -pgW, pgW * 2.0);
                 _selectedImage.OffsetYPt = Math.Clamp(
-                    _imgDragStartOffY + (yPt - _imgDragStartYPt), -pgH, docDownPt);
+                    _imgDragStartOffY + (yPt - _imgDragStartYPt), -docSpanPt, docSpanPt);
+
+                // У края вьюпорта документ должен подъезжать сам — иначе картинку
+                // нельзя утащить за пределы видимой области, не отпуская кнопку.
+                UpdateAutoScroll(rawPt);
+
                 RebuildLayouts();
                 InvalidateFull();
                 return;
@@ -1053,7 +1061,12 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void OnAutoScrollTick(object? sender, EventArgs e)
         {
-            if (!_isSelecting || _parentScrollViewer is not { } sv
+            // Автоскролл обслуживает два жеста: протяжку выделения и перетаскивание
+            // плавающей картинки. Раньше тик признавал только первый и на картинке
+            // немедленно выключал таймер.
+            bool dragImage = _imageDragging && _selectedImage is not null;
+
+            if ((!_isSelecting && !dragImage) || _parentScrollViewer is not { } sv
                 || Math.Abs(_autoScrollVelocity) < 0.01)
             {
                 StopAutoScroll();
@@ -1062,10 +1075,29 @@ namespace Writersword.Modules.TextEditor.Document
 
             double maxOff = Math.Max(0, sv.Extent.Height - sv.Viewport.Height);
             double newY = Math.Clamp(sv.Offset.Y + _autoScrollVelocity, 0, maxOff);
-            if (Math.Abs(newY - sv.Offset.Y) < 0.01)
-                return; // у края — прокручивать некуда, но выделение продолжаем держать
+            double deltaPx = newY - sv.Offset.Y;
+            if (Math.Abs(deltaPx) < 0.01)
+                return; // у края — прокручивать некуда, но жест продолжаем держать
 
             sv.Offset = new Avalonia.Vector(sv.Offset.X, newY);
+
+            if (dragImage)
+            {
+                // Указатель стоит на месте, а документ уехал — значит картинка обязана
+                // сместиться в координатах документа ровно на величину прокрутки, чтобы
+                // остаться под курсором.
+                float deltaPt = (float)(deltaPx / Zoom * PxToPt);
+                float pgH = GetPageHeightPt();
+                float docSpanPt = Math.Max(pgH * 2.0f,
+                    Math.Max(1, _pages.Count) * (pgH + PageGapPt));
+
+                _selectedImage!.OffsetYPt = Math.Clamp(
+                    _selectedImage.OffsetYPt + deltaPt, -docSpanPt, docSpanPt);
+
+                RebuildLayouts();
+                InvalidateFull();
+                return;
+            }
 
             // Указатель физически не двигался — его позиция в канвасе пересчитывается из
             // сохранённой вьюпорт-позиции и нового offset, и по ней продолжаем выделение.
@@ -1095,15 +1127,17 @@ namespace Writersword.Modules.TextEditor.Document
                 _imageResizeCorner = -1;
                 e.Pointer.Capture(null);
                 Cursor = new Cursor(StandardCursorType.Ibeam);
-                // Выходим из предпросмотра переполнения: финальный пересбор выполняет
-                // реальный перенос картинки на следующую страницу, если она не влезла.
-                if (_imageOverflowPreviewMode)
-                {
-                    _imageOverflowPreviewMode = false;
-                    RebuildLayouts();
-                    InvalidateMeasure();
-                    InvalidateFull();
-                }
+
+                // Финальная пересборка нужна всегда, а не только при выходе из
+                // предпросмотра переполнения. Во время жеста обтекание считается одним
+                // проходом вместо четырёх, чтобы картинка не дёргалась под курсором, и
+                // последняя раскладка остаётся несошедшейся: строки разрезаны полосами
+                // под габарит, который был до правки размера. Заодно этот же пересбор
+                // выполняет перенос картинки на следующую страницу, если она не влезла.
+                _imageOverflowPreviewMode = false;
+                RebuildLayouts();
+                InvalidateMeasure();
+                InvalidateFull();
                 e.Handled = true;
                 return;
             }
@@ -1117,15 +1151,14 @@ namespace Writersword.Modules.TextEditor.Document
                 _imageRotateMoved = false;
                 e.Pointer.Capture(null);
                 Cursor = new Cursor(StandardCursorType.Ibeam);
-                // Выходим из предпросмотра переполнения: финальный пересбор выполняет
-                // реальный перенос картинки на следующую страницу, если она не влезла.
-                if (_imageOverflowPreviewMode)
-                {
-                    _imageOverflowPreviewMode = false;
-                    RebuildLayouts();
-                    InvalidateMeasure();
-                    InvalidateFull();
-                }
+
+                // Как и после изменения размера: во время поворота обтекание считается
+                // одним проходом, и без финальной пересборки текст остаётся свёрстанным
+                // по габариту прежнего угла.
+                _imageOverflowPreviewMode = false;
+                RebuildLayouts();
+                InvalidateMeasure();
+                InvalidateFull();
                 // Синхронизируем поле градусов на контекстной вкладке «Формат».
                 ImageSelectionChanged?.Invoke(true);
                 e.Handled = true;
@@ -1155,8 +1188,20 @@ namespace Writersword.Modules.TextEditor.Document
                 // Фиксируем перемещение в Undo только если картинку реально двигали.
                 if (_imageDragMoved) CommitImageEdit();
                 else CancelImageEdit();
+                bool needsFinalPass = _imageDragMoved;
                 _imageDragging = false;
                 _imageDragMoved = false;
+                StopAutoScroll();
+
+                // Во время перетаскивания обтекание считается одним проходом, поэтому
+                // после отпускания раскладку нужно досчитать до сходимости — иначе текст
+                // останется свёрстанным по зонам того места, где картинка была раньше.
+                if (needsFinalPass)
+                {
+                    RebuildLayouts();
+                    InvalidateMeasure();
+                    InvalidateFull();
+                }
             }
 
             if (_tableDragMode != TableDragMode.None)
@@ -1469,20 +1514,6 @@ namespace Writersword.Modules.TextEditor.Document
             if (string.IsNullOrEmpty(e.Text)) return;
             if (IsEditingBlocked) { e.Handled = true; return; }
 
-            // Управляющие символы во вводе. Интересует прежде всего BEL (0x07): попав в
-            // документ, он вместе с текстом уходит в лог, а консоль на нём пищит через
-            // драйвер системного динамика — мимо микшера и звуковой схемы. Это объясняло бы
-            // звонок при выключенных звуках Windows. Табуляцию, перевод строки и возврат
-            // каретки пропускаем: они законные.
-            foreach (char ch in e.Text)
-            {
-                if (ch >= ' ' || ch == '\t' || ch == '\n' || ch == '\r') continue;
-                _logger.Warning(
-                    "[INPUT] управляющий символ во вводе: код=0x{Code:X2} длинаТекста={Len}",
-                    (int)ch, e.Text.Length);
-                break;
-            }
-
             _caretLineHint = -1;
 
             if (_isCellRangeSelecting)
@@ -1719,6 +1750,7 @@ namespace Writersword.Modules.TextEditor.Document
                     vm.TableGetLineToolDelegate = QueryTableLineTool;
                     vm.TableMergeCellsDelegate = ExecuteTableMergeCells;
                     vm.TableSplitCellDelegate = ExecuteTableSplitCell;
+                    vm.TableDivideCellDelegate = ExecuteTableDivideCell;
                     vm.TableSetCellAlignDelegate = ExecuteTableSetCellAlign;
                     vm.TableGetCellVAlignDelegate = QueryTableCellVAlign;
                     vm.TableGetCellHAlignDelegate = QueryTableCellHAlign;
@@ -1766,6 +1798,7 @@ namespace Writersword.Modules.TextEditor.Document
                 vm.TableGetLineToolDelegate = null;
                 vm.TableMergeCellsDelegate = null;
                 vm.TableSplitCellDelegate = null;
+                vm.TableDivideCellDelegate = null;
                 vm.TableSetCellAlignDelegate = null;
                 vm.TableGetCellVAlignDelegate = null;
                 vm.TableGetCellHAlignDelegate = null;

@@ -151,6 +151,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // ── Делегаты: оформление / структура ─────────────────────────────
         public Action? TableMergeCellsDelegate { get; set; }
         public Action? TableSplitCellDelegate { get; set; }
+
+        // Деление обычной ячейки пополам: true — вертикальной чертой, false — горизонтальной.
+        public Action<bool>? TableDivideCellDelegate { get; set; }
         public Action<Writersword.Modules.TextEditor.Models.Styles.TextAlignment>? TableSetCellHAlignDelegate { get; set; }
 
         /// <summary>
@@ -1998,6 +2001,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableMergeCells() { if (IsReadOnly) return; TableMergeCellsDelegate?.Invoke(); }
         public void TableSplitCell() { if (IsReadOnly) return; TableSplitCellDelegate?.Invoke(); }
+        public void TableDivideCell(bool vertical) { if (IsReadOnly) return; TableDivideCellDelegate?.Invoke(vertical); }
         public void TableSetCellHAlign(Writersword.Modules.TextEditor.Models.Styles.TextAlignment align)
         { if (IsReadOnly) return; TableSetCellHAlignDelegate?.Invoke(align); }
         public void TableSetCellVAlign(int vAlign) { if (IsReadOnly) return; TableSetCellVAlignDelegate?.Invoke(vAlign); }

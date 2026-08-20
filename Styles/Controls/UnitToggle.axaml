@@ -1,0 +1,46 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+	<!-- Кнопка переключения единиц измерения — один контрол на всю ленту.
+	     Надпись показывает текущую единицу, нажатие меняет её.
+
+	     Стиль перенесён из вкладки картинки без изменений: там он был объявлен
+	     локально и другим вкладкам не доставался, из-за чего одинаковые по смыслу
+	     переключатели в таблице и в картинке выглядели по-разному.
+
+	     Выравнивание задаётся пресентеру напрямую: собственный Padding кнопки
+	     смещает короткую надпись от центра, и «мм» встаёт не по середине. -->
+	<Style Selector="Button.UnitToggle">
+		<Setter Property="Background"                 Value="{DynamicResource AccentSubtleBrush}"/>
+		<Setter Property="BorderBrush"                Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="BorderThickness"            Value="1"/>
+		<Setter Property="CornerRadius"               Value="3"/>
+		<Setter Property="Padding"                    Value="5 0"/>
+		<Setter Property="MinWidth"                   Value="30"/>
+		<Setter Property="MinHeight"                  Value="20"/>
+		<Setter Property="FontSize"                   Value="10"/>
+		<Setter Property="HorizontalContentAlignment" Value="Center"/>
+		<Setter Property="VerticalContentAlignment"   Value="Center"/>
+		<Setter Property="Foreground"                 Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="Cursor"                     Value="Hand"/>
+	</Style>
+	<Style Selector="Button.UnitToggle /template/ ContentPresenter">
+		<Setter Property="Background"                 Value="{DynamicResource AccentSubtleBrush}"/>
+		<Setter Property="BorderBrush"                Value="{DynamicResource AccentDefaultBrush}"/>
+		<Setter Property="BorderThickness"            Value="1"/>
+		<Setter Property="CornerRadius"               Value="3"/>
+		<Setter Property="HorizontalContentAlignment" Value="Center"/>
+		<Setter Property="VerticalContentAlignment"   Value="Center"/>
+		<Setter Property="Padding"                    Value="0"/>
+	</Style>
+	<Style Selector="Button.UnitToggle:pointerover /template/ ContentPresenter">
+		<Setter Property="Background"             Value="{DynamicResource BgHoverBrush}"/>
+		<Setter Property="BorderBrush"            Value="{DynamicResource AccentHoverBrush}"/>
+		<Setter Property="TextElement.Foreground" Value="{DynamicResource AccentHoverBrush}"/>
+	</Style>
+	<Style Selector="Button.UnitToggle:pressed /template/ ContentPresenter">
+		<Setter Property="Background"             Value="{DynamicResource AccentPressedBrush}"/>
+		<Setter Property="TextElement.Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+	</Style>
+
+</Styles>

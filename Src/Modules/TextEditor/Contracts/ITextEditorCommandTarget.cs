@@ -197,6 +197,11 @@ namespace Writersword.Modules.TextEditor.Contracts
         void TableMergeCells();
         /// <summary>Разбить текущую объединённую ячейку на исходные.</summary>
         void TableSplitCell();
+        /// <summary>
+        /// Разделить текущую ячейку пополам: vertical = true — вертикальной чертой
+        /// (два столбца), false — горизонтальной (две строки).
+        /// </summary>
+        void TableDivideCell(bool vertical);
 
         // ── Выравнивание содержимого ячейки ──────────────────────────────
         /// <summary>Выравнивание по горизонтали внутри ячейки.</summary>

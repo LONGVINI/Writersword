@@ -325,6 +325,63 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private decimal _columnWidthMm = 40m;
         private decimal _rowHeightPt = 20m;
 
+        // Единица, в которой поля показываются пользователю. Внутри ширина всегда
+        // хранится в миллиметрах, высота — в пунктах: это то, что принимает документ.
+        // Переключатель меняет только представление.
+        private bool _tableUnitIsMm = true;
+
+        /// <summary>Подпись на кнопке единиц размеров таблицы.</summary>
+        public string TableUnitLabel => _tableUnitIsMm ? "мм" : "px";
+
+        /// <summary>Единицы размеров таблицы: true — миллиметры, false — пиксели (96 DPI).</summary>
+        public bool TableUnitIsMm
+        {
+            get => _tableUnitIsMm;
+            private set
+            {
+                if (_tableUnitIsMm == value) return;
+                _tableUnitIsMm = value;
+                this.RaisePropertyChanged(nameof(TableUnitIsMm));
+                this.RaisePropertyChanged(nameof(TableUnitLabel));
+                this.RaisePropertyChanged(nameof(ColumnWidth));
+                this.RaisePropertyChanged(nameof(RowHeight));
+            }
+        }
+
+        /// <summary>
+        /// Ширина столбца в выбранных единицах. Модель принимает миллиметры,
+        /// поэтому пиксели переводятся при чтении и записи.
+        /// </summary>
+        public decimal ColumnWidth
+        {
+            get => _tableUnitIsMm
+                ? _columnWidthMm
+                : decimal.Round(_columnWidthMm * 96m / 25.4m, 2);
+            set
+            {
+                decimal mm = _tableUnitIsMm ? value : value * 25.4m / 96m;
+                ColumnWidthMm = mm;
+                this.RaisePropertyChanged(nameof(ColumnWidth));
+            }
+        }
+
+        /// <summary>
+        /// Высота строки в выбранных единицах. Модель принимает пункты — перевод
+        /// в миллиметры и пиксели идёт здесь же.
+        /// </summary>
+        public decimal RowHeight
+        {
+            get => _tableUnitIsMm
+                ? decimal.Round(_rowHeightPt * 25.4m / 72m, 2)
+                : decimal.Round(_rowHeightPt * 96m / 72m, 2);
+            set
+            {
+                decimal pt = _tableUnitIsMm ? value * 72m / 25.4m : value * 72m / 96m;
+                RowHeightPt = pt;
+                this.RaisePropertyChanged(nameof(RowHeight));
+            }
+        }
+
         /// <summary>
         /// Ширина столбца под кареткой, мм. Применяется сразу при изменении — так же,
         /// как размеры картинки на вкладке «Формат». Отдельной кнопки применения нет.
@@ -343,6 +400,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 // Уведомляем всегда: если введено значение вне диапазона, контрол
                 // должен вернуться к обрезанному.
                 this.RaisePropertyChanged(nameof(ColumnWidthMm));
+                this.RaisePropertyChanged(nameof(ColumnWidth));
             }
         }
 
@@ -359,6 +417,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                     _target.TableSetRowHeight((double)clamped);
                 }
                 this.RaisePropertyChanged(nameof(RowHeightPt));
+                this.RaisePropertyChanged(nameof(RowHeight));
             }
         }
 
@@ -381,6 +440,11 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         // ── Объединение / разбиение ───────────────────────────────────────
         public ICommand MergeCellsCommand { get; }
         public ICommand SplitCellCommand { get; }
+        public ICommand DivideCellVerticalCommand { get; }
+        public ICommand DivideCellHorizontalCommand { get; }
+
+        // ── Единицы размеров таблицы ──────────────────────────────────────
+        public ICommand ToggleTableUnitCommand { get; }
 
         // ── Выравнивание текста ───────────────────────────────────────────
         public ICommand AlignTopLeftCommand { get; }
@@ -473,6 +537,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             // Объединение / разбиение
             MergeCellsCommand = ReactiveCommand.Create(() => _target.TableMergeCells());
             SplitCellCommand = ReactiveCommand.Create(() => _target.TableSplitCell());
+            DivideCellVerticalCommand = ReactiveCommand.Create(() => _target.TableDivideCell(vertical: true));
+            DivideCellHorizontalCommand = ReactiveCommand.Create(() => _target.TableDivideCell(vertical: false));
+
+            ToggleTableUnitCommand = ReactiveCommand.Create(() => { TableUnitIsMm = !TableUnitIsMm; });
 
             // Выравнивание — vAlign 0=Top 1=Middle 2=Bottom.
             // После применения состояние перечитывается: подсветка обязана

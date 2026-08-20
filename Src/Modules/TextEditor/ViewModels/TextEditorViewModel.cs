@@ -333,9 +333,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // раскладка сделала по-своему — ограничитель первой строки, перенос текста
             // списка на вторую строку, поля и рамку ячейки, — пришлось бы повторять
             // расчётом. Ровно на этом стрелки и расходились с текстом.
-            if (Ruler.DraggingIndentMarker is null)
-                LogRulerState("курсор", RulerIndentMarkerType.ListMarker,
-                    ctx.LeftIndentPt * (25.4 / 72.0));
         }
 
         // ── Линейка ───────────────────────────────────────────────────────
@@ -413,6 +410,11 @@ namespace Writersword.Modules.TextEditor.ViewModels
         // при снятии выделения картинки.
         private int _tabIndexBeforeImage = -1;
 
+        // Была ли видна «Работа с таблицами» до выделения картинки. Клик по картинке
+        // каретку из таблицы не выводит, поэтому табличная вкладка сама не гасла и
+        // висела рядом с «Форматом» — обе с акцентным заголовком, будто активны обе.
+        private bool _tableTabBeforeImage;
+
         /// <summary>
         /// Показывает/скрывает контекстную вкладку «Формат» (работа с картинкой)
         /// при выделении/снятии выделения изображения на канвасе.
@@ -426,6 +428,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 if (!Ribbon.IsImageTabVisible)
                 {
                     _tabIndexBeforeImage = Ribbon.SelectedTabIndex;
+                    _tableTabBeforeImage = Ribbon.IsTableTabVisible;
+                    Ribbon.IsTableTabVisible = false;
                     Ribbon.IsImageTabVisible = true;
                     Ribbon.SelectedTabIndex = ImageTabIndex;
                 }
@@ -435,6 +439,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             {
                 bool wasOnImageTab = Ribbon.SelectedTabIndex == ImageTabIndex;
                 Ribbon.IsImageTabVisible = false;
+                Ribbon.IsTableTabVisible = _tableTabBeforeImage;
                 if (wasOnImageTab)
                 {
                     Ribbon.SelectedTabIndex =
@@ -443,6 +448,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
                             : 0;
                 }
                 _tabIndexBeforeImage = -1;
+                _tableTabBeforeImage = false;
             }
         }
 
@@ -459,7 +465,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // видна в первом столбце: там смещение равно нулю. В любом следующем в LeftIndent
             // уходило значение шире самой ячейки, текстовая зона схлопывалась, и текст
             // переставал переноситься.
-            LogRulerState("до", markerType, valueMm);
 
             double valuePt = valueMm * 72.0 / 25.4;
 
@@ -583,52 +588,6 @@ namespace Writersword.Modules.TextEditor.ViewModels
                     }
             }
 
-            // Второй снимок — уже после записи в модель и подстановки стрелок.
-            // Разница со снимком «до» показывает, что именно поменял этот кадр жеста
-            // и не переписал ли кто-то стрелку следом за нами.
-            LogRulerState("после", markerType, valueMm);
-        }
-
-        /// <summary>
-        /// Полный снимок состояния линейки и модели вокруг перетаскивания маркера.
-        /// Пишет всё разом: какой маркер тянут, какое значение пришло, где сейчас
-        /// стоят все четыре стрелки на линейке и какие величины лежат в абзаце.
-        /// По расхождению «линейка против модели» сразу видно, кто кого перетирает
-        /// и в какой системе отсчёта считает.
-        /// </summary>
-        private void LogRulerState(string stage, RulerIndentMarkerType markerType, double valueMm)
-        {
-            var lp = DocumentViewModel?.GetActiveListProperties();
-
-            // Где раскладка фактически начинает текст первой строки, мм от начала зоны.
-            // Это и есть точка, на которую обязана указывать абзацная стрелка: расхождение
-            // с «линейка: перв» сразу показывает, что стрелка живёт своей жизнью.
-            const double PtToMm = 25.4 / 72.0;
-            double textStartMm = lp is null
-                ? 0.0
-                : ((lp.TextIndentPt ?? 0.0) + lp.ComputedFirstLineOffsetPt) * PtToMm;
-
-            _logger.Debug(
-                "[RULER {Stage}] тянут={Type} value={Value:F2}мм | режим={Mode} смещЯчейки={CellLeft:F2}мм "
-                + "ячейка=[{CellL:F2}..{CellR:F2}] | линейка: лев={ML:F2} перв={MF:F2} прав={MR:F2} метка={MK:F2} "
-                + "показМетку={Show} | модель: метка={LpMarker} текст={LpText} ширЦифры={LpW:F2} зазор={LpGap:F2} "
-                + "сдвиг1йСтроки={LpOffset:F2} началоТекста={TextStart:F2}мм",
-                stage, markerType, valueMm,
-                Ruler.Mode,
-                Ruler.UnitsToMm(Ruler.ActiveCellLeftUnits),
-                Ruler.UnitsToMm(Ruler.ActiveCellLeftUnits),
-                Ruler.UnitsToMm(Ruler.ActiveCellRightUnits),
-                Ruler.UnitsToMm(Ruler.GetIndentMarkerPosition(RulerIndentMarkerType.LeftIndent)),
-                Ruler.UnitsToMm(Ruler.GetIndentMarkerPosition(RulerIndentMarkerType.FirstLineIndent)),
-                Ruler.UnitsToMm(Ruler.GetIndentMarkerPosition(RulerIndentMarkerType.RightIndent)),
-                Ruler.UnitsToMm(Ruler.GetIndentMarkerPosition(RulerIndentMarkerType.ListMarker)),
-                Ruler.ShowListMarker,
-                lp?.MarkerIndentPt?.ToString("F2") ?? "нет",
-                lp?.TextIndentPt?.ToString("F2") ?? "нет",
-                lp?.ComputedMarkerWidthPt ?? 0.0,
-                lp?.MarkerTextMinGapPt ?? 0.0,
-                lp?.ComputedFirstLineOffsetPt ?? 0.0,
-                textStartMm);
         }
 
         // Начало перетаскивания поля — делаем снапшот документа, чтобы Ctrl+Z вернул поля.
@@ -917,6 +876,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
         public void TableMergeCells() => DocumentViewModel?.TableMergeCells();
         public void TableSplitCell() => DocumentViewModel?.TableSplitCell();
+        public void TableDivideCell(bool vertical) => DocumentViewModel?.TableDivideCell(vertical);
         public void TableSetCellHAlign(Writersword.Modules.TextEditor.Models.Styles.TextAlignment align)
             => DocumentViewModel?.TableSetCellHAlign(align);
         public void TableSetCellVAlign(int vAlign) => DocumentViewModel?.TableSetCellVAlign(vAlign);

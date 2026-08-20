@@ -470,6 +470,117 @@ namespace Writersword.Modules.TextEditor.Document
             InvalidateFull();
         }
 
+        // Деление обычной ячейки пополам: vertical = true — вертикальной чертой
+        // (получаются два столбца), false — горизонтальной (две строки).
+        //
+        // От ExecuteTableSplitCell отличается предметом: тот лишь снимает ранее
+        // сделанное объединение и обратно ячейку не делит.
+        //
+        // Сценария два. Если ячейка уже растянута на несколько столбцов (строк),
+        // новая граница проходит внутри её собственного диапазона и сетка таблицы
+        // не меняется вовсе. Если ячейка занимает ровно одну клетку, в таблицу
+        // добавляется столбец (строка) — делить иначе нечего. Прочие ячейки при
+        // этом сохраняют прежний вид: накрывающие место вставки расширяются на
+        // единицу, стоящие дальше сдвигаются.
+        private void ExecuteTableDivideCell(bool vertical)
+        {
+            if (_activeTableBlock is not { } table) return;
+
+            var cell = table.GetCell(_activeCellRow, _activeCellCol);
+            if (cell is null) return;
+
+            BeginTableEdit(table, vertical ? "Divide cell vertically" : "Divide cell horizontally");
+
+            if (vertical)
+            {
+                if (cell.ColSpan >= 2)
+                {
+                    int leftSpan = cell.ColSpan / 2;
+                    var right = CreateCellLike(cell, cell.Row, cell.Column + leftSpan);
+                    right.RowSpan = cell.RowSpan;
+                    right.ColSpan = cell.ColSpan - leftSpan;
+                    table.Cells.Add(right);
+                    cell.ColSpan = leftSpan;
+                }
+                else
+                {
+                    int insertCol = cell.Column + 1;
+
+                    foreach (var other in table.Cells)
+                    {
+                        if (ReferenceEquals(other, cell)) continue;
+
+                        if (other.Column >= insertCol) other.Column++;
+                        else if (other.Column + other.ColSpan > insertCol) other.ColSpan++;
+                    }
+
+                    // Ширина исходного столбца делится пополам, иначе таблица уехала бы
+                    // вправо на целый столбец. Автоширину делить нечего — пересчитается.
+                    var inserted = new Models.Document.TableColumnDefinition
+                    {
+                        WidthType = Models.Document.TableColumnWidthType.Auto
+                    };
+                    if (cell.Column < table.Columns.Count)
+                    {
+                        var source = table.Columns[cell.Column];
+                        if (source.WidthType == Models.Document.TableColumnWidthType.Fixed)
+                        {
+                            double half = source.WidthValue / 2.0;
+                            source.WidthValue = half;
+                            inserted.WidthType = Models.Document.TableColumnWidthType.Fixed;
+                            inserted.WidthValue = half;
+                        }
+                    }
+                    table.Columns.Insert(insertCol, inserted);
+                    table.ColumnCount++;
+
+                    var added = CreateCellLike(cell, cell.Row, insertCol);
+                    added.RowSpan = cell.RowSpan;
+                    added.ColSpan = 1;
+                    table.Cells.Add(added);
+                }
+            }
+            else
+            {
+                if (cell.RowSpan >= 2)
+                {
+                    int topSpan = cell.RowSpan / 2;
+                    var bottom = CreateCellLike(cell, cell.Row + topSpan, cell.Column);
+                    bottom.RowSpan = cell.RowSpan - topSpan;
+                    bottom.ColSpan = cell.ColSpan;
+                    table.Cells.Add(bottom);
+                    cell.RowSpan = topSpan;
+                }
+                else
+                {
+                    int insertRow = cell.Row + 1;
+
+                    foreach (var other in table.Cells)
+                    {
+                        if (ReferenceEquals(other, cell)) continue;
+
+                        if (other.Row >= insertRow) other.Row++;
+                        else if (other.Row + other.RowSpan > insertRow) other.RowSpan++;
+                    }
+
+                    table.InsertRowMinHeight(insertRow);
+                    table.RowCount++;
+
+                    var added = CreateCellLike(cell, insertRow, cell.Column);
+                    added.RowSpan = 1;
+                    added.ColSpan = cell.ColSpan;
+                    table.Cells.Add(added);
+                }
+            }
+
+            CommitTableEdit();
+
+            InvalidateCellLayoutCaches();
+            RebuildLayouts();
+            NotifyCaretEnteredTableCallback();
+            InvalidateFull();
+        }
+
         // Новая пустая ячейка с оформлением образца: рамки, заливка, отступы и
         // выравнивание. Без этого разбитая ячейка теряла бы вид соседей.
         private static Models.Document.TableCell CreateCellLike(

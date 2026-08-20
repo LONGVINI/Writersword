@@ -16,12 +16,6 @@ namespace Writersword.Modules.TextEditor.Document
 {
     public sealed partial class DocumentCanvas
     {
-        // Последняя напечатанная диагностика маркера по каждому абзацу.
-        // Диагностика идёт из Render, то есть на каждый кадр отрисовки; при работе
-        // со списками это сотни строк в секунду, консоль на таком потоке блокирует
-        // UI-поток. Печатаем только когда набор величин изменился.
-        private readonly Dictionary<ParagraphBlock, string> _markerDiagLast = new();
-
         // ── Render ────────────────────────────────────────────────────────
         public override void Render(DrawingContext ctx)
         {
@@ -1473,76 +1467,6 @@ namespace Writersword.Modules.TextEditor.Document
             string? markerText = null;
             float markerHanging = 0f;
             float markerMinGap = 0f;
-
-            // Диагностика пропавшего маркера у пустого элемента списка. Строка печатается
-            // только когда её содержимое изменилось: Render вызывается на каждый кадр, и
-            // безусловная печать давала сотни строк в секунду.
-            //
-            // Текст маркера показывается с длиной: у проблемного абзаца он приходит не null,
-            // а пустой строкой, и в логе это неотличимо от отсутствия. Вместе с ним печатаем
-            // тип маркера и заданную последовательность — пустую строку способен вернуть
-            // только путь CustomSequence.
-            if (string.IsNullOrEmpty(pl.Vm.PlainText)
-                && pl.Vm.Model?.ListProperties is { } dbgLp
-                && dbgLp.MarkerType != ListMarkerType.None)
-            {
-                float dbgBaseline = renderLayout.Lines.Count > 0 ? renderLayout.Lines[0].Baseline : -1f;
-                float dbgHeight = renderLayout.Lines.Count > 0 ? renderLayout.Lines[0].Height : -1f;
-                float dbgLineY = renderLayout.Lines.Count > 0 ? renderLayout.Lines[0].Y : -1f;
-
-                bool dbgHasMarker = pl.Marker.HasValue;
-                string? dbgMarkerText = pl.Marker?.Text;
-                string dbgSeq = dbgLp.CustomSequence is null
-                    ? "нет"
-                    : "[" + string.Join("|", dbgLp.CustomSequence) + "]";
-
-                // Куда именно уйдёт DrawListMarker: X = absX + ComputedMarkerIndentPt,
-                // базовая линия = absY + (Lines[0].Y - yBase) + Baseline, где yBase = Lines[0].Y.
-                string dbgSignature = string.Format(
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    "{0}|{1}|{2}|{3}|{4:F2}|{5:F2}|{6:F2}|{7:F2}|{8:F2}|{9:F2}|{10:F2}|{11}|{12}|{13}|{14}|{15}",
-                    dbgHasMarker, dbgMarkerText ?? "<null>", dbgLp.MarkerType, dbgSeq,
-                    absX, absY, renderLayout.LeftIndentPt, dbgLp.ComputedMarkerIndentPt,
-                    dbgLineY, dbgBaseline, dbgHeight,
-                    pl.PageIndex, pageClip, renderLayout.Lines.Count,
-                    dbgLp.Level, dbgLp.StartAt);
-
-                if (pl.Vm.Model is { } dbgBlock
-                    && (!_markerDiagLast.TryGetValue(dbgBlock, out var dbgPrev)
-                        || !string.Equals(dbgPrev, dbgSignature, StringComparison.Ordinal)))
-                {
-                    // Удалённые абзацы из словаря не вычищаются, поэтому он сбрасывается
-                    // целиком по достижении потолка: диагностика не должна удерживать
-                    // ссылки на блоки, которых в документе уже нет.
-                    if (_markerDiagLast.Count > 512) _markerDiagLast.Clear();
-
-                    _markerDiagLast[dbgBlock] = dbgSignature;
-
-                    _logger.Debug(
-                        "[MARKER] пустойПункт: слайсЕстьМаркер={HasMarker} текстМаркера='{MarkerText}' "
-                        + "длина={MarkerLen} тип={MarkerType} уровень={Level} старт={StartAt} "
-                        + "последовательность={Seq} строк={LineCount} "
-                        + "| absX={AbsX:F2} absY={AbsY:F2} левОтступ={Left:F2} позМаркера={MarkerPos:F2} → X={X:F2} "
-                        + "| строкаY={LineY:F2} база={Base:F2} высота={H:F2} → baseY={BaseY:F2} "
-                        + "| страница={Page} видимо={Visible}",
-                        dbgHasMarker,
-                        dbgMarkerText ?? "<null>",
-                        dbgMarkerText?.Length ?? -1,
-                        dbgLp.MarkerType,
-                        dbgLp.Level,
-                        dbgLp.StartAt,
-                        dbgSeq,
-                        renderLayout.Lines.Count,
-                        absX, absY,
-                        renderLayout.LeftIndentPt,
-                        dbgLp.ComputedMarkerIndentPt,
-                        absX + dbgLp.ComputedMarkerIndentPt,
-                        dbgLineY, dbgBaseline, dbgHeight,
-                        absY + dbgBaseline,
-                        pl.PageIndex,
-                        pageClip);
-                }
-            }
 
             if (pl.Marker is Rendering.ListMarkerInfo mi
                 && pl.Vm.Model?.ListProperties is { } lp

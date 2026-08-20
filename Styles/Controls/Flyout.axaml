@@ -1,0 +1,33 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+	<!-- Всплывающие панели (Flyout) во всём приложении.
+	     Без этих стилей FlyoutPresenter берёт оформление из FluentTheme и рисуется
+	     чужими цветами: панель полей ячейки в ленте таблицы выпадала из темы
+	     целиком. Тема приложения меняет только кисти по ключам, а сам пресентер
+	     к ним не привязан, поэтому фон, рамка и текст задаются здесь. -->
+	<Style Selector="FlyoutPresenter">
+		<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="CornerRadius" Value="6"/>
+		<Setter Property="Padding" Value="10"/>
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+	</Style>
+
+	<!-- Меню-всплывашки: то же оформление, отступы задаёт список пунктов. -->
+	<Style Selector="MenuFlyoutPresenter">
+		<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+		<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		<Setter Property="BorderThickness" Value="1"/>
+		<Setter Property="CornerRadius" Value="6"/>
+		<Setter Property="Padding" Value="2"/>
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+	</Style>
+
+	<!-- Пункт меню внутри всплывашки. -->
+	<Style Selector="MenuFlyoutPresenter MenuItem">
+		<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+	</Style>
+
+</Styles>

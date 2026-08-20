@@ -33,7 +33,8 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         private decimal _padBottom;
         private decimal _padLeft;
         private decimal _padRight;
-        private bool _padUnitIsCm = true;   // по умолчанию сантиметры
+        private bool _padUnitIsMm = true;   // по умолчанию миллиметры
+        private bool _wrapPadLinked = true; // замок сторон включён по умолчанию
         private decimal? _selectedPadPreset;
 
         private double UnitToPt(decimal value)
@@ -44,10 +45,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         // Единицы отступов обтекания: см ↔ пункты и px ↔ пункты (px при 96 DPI).
         private double PadUnitToPt(decimal value)
-            => _padUnitIsCm ? (double)value * 72.0 / 2.54 : (double)value * 0.75;
+            => _padUnitIsMm ? (double)value * 72.0 / 25.4 : (double)value * 0.75;
 
         private decimal PtToPadUnit(double pt)
-            => (decimal)System.Math.Round(_padUnitIsCm ? pt * 2.54 / 72.0 : pt * 96.0 / 72.0, 2);
+            => (decimal)System.Math.Round(_padUnitIsMm ? pt * 25.4 / 72.0 : pt * 96.0 / 72.0, 2);
 
         /// <summary>Текущее выравнивание картинки в колонке (для подсветки кнопок).</summary>
         public TextAlignment CurrentAlignment
@@ -218,11 +219,19 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 _unitIsMm = value;
                 this.RaisePropertyChanged(nameof(UnitIsMm));
                 this.RaisePropertyChanged(nameof(UnitIsPx));
+                this.RaisePropertyChanged(nameof(UnitLabel));
                 SyncFromTarget();
             }
         }
 
         public bool UnitIsPx => !_unitIsMm;
+
+        /// <summary>
+        /// Подпись на кнопке единиц размера. Пара кнопок «мм»/«px» заменена одной
+        /// переключающей: в ленте она занимает вдвое меньше места, а состояние
+        /// читается прямо с надписи.
+        /// </summary>
+        public string UnitLabel => _unitIsMm ? "мм" : "px";
 
         /// <summary>Непрозрачность картинки в процентах (0 — невидима, 100 — полностью видна).</summary>
         public decimal OpacityPercent
@@ -305,53 +314,101 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         }
 
         // ── Отступы обтекания ─────────────────────────────────────────────
-        /// <summary>Отступ обтекания сверху в текущих единицах отступов (см/px).</summary>
+
+        /// <summary>
+        /// Связывает четыре стороны: при включённом замке правка любого поля
+        /// раскладывается на остальные три. Заменяет прежний список готовых
+        /// значений — он умел только применять одно число ко всем сторонам сразу.
+        /// </summary>
+        public bool IsWrapPadLinked
+        {
+            get => _wrapPadLinked;
+            private set
+            {
+                if (_wrapPadLinked == value) return;
+                _wrapPadLinked = value;
+                this.RaisePropertyChanged(nameof(IsWrapPadLinked));
+            }
+        }
+
+        /// <summary>
+        /// Раскладывает значение на все четыре стороны, когда включён замок.
+        /// Возвращает true, если сторонами занялся этот метод и вызывающему
+        /// остаётся только поднять уведомление по своему свойству.
+        /// </summary>
+        private bool SpreadWrapPad(decimal value)
+        {
+            if (!_wrapPadLinked || _syncing) return false;
+
+            _padTop = value;
+            _padBottom = value;
+            _padLeft = value;
+            _padRight = value;
+
+            this.RaisePropertyChanged(nameof(WrapPadTop));
+            this.RaisePropertyChanged(nameof(WrapPadBottom));
+            this.RaisePropertyChanged(nameof(WrapPadLeft));
+            this.RaisePropertyChanged(nameof(WrapPadRight));
+
+            ApplyWrapPadding();
+            return true;
+        }
+
+        /// <summary>Отступ обтекания сверху в текущих единицах отступов (мм/px).</summary>
         public decimal WrapPadTop
         {
             get => _padTop;
-            set { if (_padTop != value) { _padTop = value; if (!_syncing) ApplyWrapPadding(); } this.RaisePropertyChanged(nameof(WrapPadTop)); }
+            set { if (_padTop != value) { if (!SpreadWrapPad(value)) { _padTop = value; if (!_syncing) ApplyWrapPadding(); } } this.RaisePropertyChanged(nameof(WrapPadTop)); }
         }
 
-        /// <summary>Отступ обтекания снизу в текущих единицах отступов (см/px).</summary>
+        /// <summary>Отступ обтекания снизу в текущих единицах отступов (мм/px).</summary>
         public decimal WrapPadBottom
         {
             get => _padBottom;
-            set { if (_padBottom != value) { _padBottom = value; if (!_syncing) ApplyWrapPadding(); } this.RaisePropertyChanged(nameof(WrapPadBottom)); }
+            set { if (_padBottom != value) { if (!SpreadWrapPad(value)) { _padBottom = value; if (!_syncing) ApplyWrapPadding(); } } this.RaisePropertyChanged(nameof(WrapPadBottom)); }
         }
 
-        /// <summary>Отступ обтекания слева в текущих единицах отступов (см/px).</summary>
+        /// <summary>Отступ обтекания слева в текущих единицах отступов (мм/px).</summary>
         public decimal WrapPadLeft
         {
             get => _padLeft;
-            set { if (_padLeft != value) { _padLeft = value; if (!_syncing) ApplyWrapPadding(); } this.RaisePropertyChanged(nameof(WrapPadLeft)); }
+            set { if (_padLeft != value) { if (!SpreadWrapPad(value)) { _padLeft = value; if (!_syncing) ApplyWrapPadding(); } } this.RaisePropertyChanged(nameof(WrapPadLeft)); }
         }
 
-        /// <summary>Отступ обтекания справа в текущих единицах отступов (см/px).</summary>
+        /// <summary>Отступ обтекания справа в текущих единицах отступов (мм/px).</summary>
         public decimal WrapPadRight
         {
             get => _padRight;
-            set { if (_padRight != value) { _padRight = value; if (!_syncing) ApplyWrapPadding(); } this.RaisePropertyChanged(nameof(WrapPadRight)); }
+            set { if (_padRight != value) { if (!SpreadWrapPad(value)) { _padRight = value; if (!_syncing) ApplyWrapPadding(); } } this.RaisePropertyChanged(nameof(WrapPadRight)); }
         }
 
-        /// <summary>Единицы отступов обтекания: true — сантиметры (по умолчанию), false — пиксели.</summary>
-        public bool PadUnitIsCm
+        /// <summary>Единицы отступов обтекания: true — миллиметры (по умолчанию), false — пиксели.</summary>
+        public bool PadUnitIsMm
         {
-            get => _padUnitIsCm;
+            get => _padUnitIsMm;
             private set
             {
-                if (_padUnitIsCm == value) return;
-                _padUnitIsCm = value;
-                this.RaisePropertyChanged(nameof(PadUnitIsCm));
+                if (_padUnitIsMm == value) return;
+                _padUnitIsMm = value;
+                this.RaisePropertyChanged(nameof(PadUnitIsMm));
                 this.RaisePropertyChanged(nameof(PadUnitIsPx));
+                this.RaisePropertyChanged(nameof(PadUnitLabel));
                 SyncFromTarget();
             }
         }
 
-        public bool PadUnitIsPx => !_padUnitIsCm;
+        public bool PadUnitIsPx => !_padUnitIsMm;
 
-        /// <summary>Быстрые значения отступа (в текущих единицах) для выпадающего списка.</summary>
+        /// <summary>Подпись на кнопке единиц отступов обтекания.</summary>
+        public string PadUnitLabel => _padUnitIsMm ? "мм" : "px";
+
+        /// <summary>
+        /// Быстрые значения отступа для выпадающего списка, в миллиметрах.
+        /// Прежний набор был в сантиметрах (0,1 … 1,0) и после перевода единиц
+        /// давал бы отступы в десять раз меньше подписанных.
+        /// </summary>
         public System.Collections.Generic.IReadOnlyList<decimal> WrapPadPresets { get; }
-            = new decimal[] { 0m, 0.1m, 0.2m, 0.3m, 0.5m, 1.0m };
+            = new decimal[] { 0m, 1m, 2m, 3m, 5m, 10m };
 
         /// <summary>Выбранный пресет: применяется сразу ко всем 4 сторонам одной операцией.</summary>
         public decimal? SelectedWrapPadPreset
@@ -404,12 +461,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         public ICommand RotateRight90Command { get; }
 
         // ── Единицы размеров ──────────────────────────────────────────────
-        public ICommand UnitMmCommand { get; }
-        public ICommand UnitPxCommand { get; }
+        public ICommand ToggleUnitCommand { get; }
 
         // ── Единицы отступов обтекания ────────────────────────────────────
-        public ICommand PadUnitCmCommand { get; }
-        public ICommand PadUnitPxCommand { get; }
+        public ICommand TogglePadUnitCommand { get; }
+
+        // ── Связь сторон отступа ──────────────────────────────────────────
+        public ICommand ToggleWrapPadLinkCommand { get; }
 
         // ── Обрезка и отражение ───────────────────────────────────────────
         public ICommand ToggleCropModeCommand { get; }
@@ -463,11 +521,19 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             RotateRight90Command = ReactiveCommand.Create(() =>
                 { RotationDegrees = _rotationDegrees + 90m; });
 
-            UnitMmCommand = ReactiveCommand.Create(() => { UnitIsMm = true; });
-            UnitPxCommand = ReactiveCommand.Create(() => { UnitIsMm = false; });
+            ToggleUnitCommand = ReactiveCommand.Create(() => { UnitIsMm = !UnitIsMm; });
 
-            PadUnitCmCommand = ReactiveCommand.Create(() => { PadUnitIsCm = true; });
-            PadUnitPxCommand = ReactiveCommand.Create(() => { PadUnitIsCm = false; });
+            TogglePadUnitCommand = ReactiveCommand.Create(() => { PadUnitIsMm = !PadUnitIsMm; });
+
+            ToggleWrapPadLinkCommand = ReactiveCommand.Create(() =>
+            {
+                IsWrapPadLinked = !IsWrapPadLinked;
+
+                // Включение замка при разных сторонах сразу приводит их к общему
+                // значению — иначе связь висела бы включённой, но ни на что не влияла
+                // до первой правки поля.
+                if (IsWrapPadLinked) SpreadWrapPad(_padTop);
+            });
 
             ToggleCropModeCommand = ReactiveCommand.Create(() =>
                 { _target.SetImageCropMode(!_isCropMode); SyncFromTarget(); });

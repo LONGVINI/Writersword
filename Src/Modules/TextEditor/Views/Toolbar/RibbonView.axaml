@@ -73,8 +73,11 @@
 				</Style>
 
 				<!-- Контекстная вкладка «Таблица» — акцентный заголовок, как у «Формат» -->
+				<!-- Акцентом горит только выбранная контекстная вкладка. Раньше заголовок -->
+				<!-- красился всегда, и когда рядом оказывались обе — таблица и картинка — -->
+				<!-- обе читались как включённые, хотя выбрана была одна.                   -->
 				<Style Selector="TabItem.TableContextTab > TextBlock">
-					<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+					<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
 					<Setter Property="FontWeight" Value="Medium"/>
 				</Style>
 				<Style Selector="TabItem.TableContextTab:selected">
@@ -89,7 +92,7 @@
 
 				<!-- Контекстная вкладка «Формат» (картинка) — заголовок оранжевый -->
 				<Style Selector="TabItem.ImageContextTab > TextBlock">
-					<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+					<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
 					<Setter Property="FontWeight" Value="Medium"/>
 				</Style>
 				<Style Selector="TabItem.ImageContextTab:selected">
