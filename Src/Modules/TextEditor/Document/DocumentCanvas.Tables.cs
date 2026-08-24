@@ -44,6 +44,34 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         // ── Таблица — структурные операции ────────────────────────────────
+
+        /// <summary>
+        /// Ставит каретку в активную ячейку после структурной правки таблицы и
+        /// возвращает клавиатурный фокус канвасу.
+        /// Голого RebuildLayouts здесь мало: строки и столбцы сдвинулись, раскладка
+        /// пересобрана заново, и прежний индекс слайса (_caretPara) указывает уже не
+        /// на тот абзац, а то и за пределы списка — каретка пропадает. Фокус же
+        /// уходит на кнопку ленты, с которой пришла команда, а горячие клавиши
+        /// редактора разбирает только OnKeyDown канваса: без возврата фокуса ни
+        /// Ctrl+Z, ни любое другое сочетание до редактора не доходит.
+        /// </summary>
+        private void RestoreCaretAfterTableStructure()
+        {
+            var cell = _activeTableBlock?.GetCell(_activeCellRow, _activeCellCol);
+            ParagraphBlock? target = cell is not null && cell.Paragraphs.Count > 0
+                ? cell.Paragraphs[0]
+                : null;
+
+            _caretChar = target is null
+                ? 0
+                : Clamp(_caretChar, 0, target.GetPlainText().Length);
+
+            RebuildAfterCellEdit(target);
+            InvalidateFull();
+
+            if (!IsFocused) Focus();
+        }
+
         private void ExecuteTableAddRow(bool above)
         {
             if (_activeTableBlock is null) return;
@@ -59,9 +87,7 @@ namespace Writersword.Modules.TextEditor.Document
             _activeTableBlock.RowCount++;
             if (above) _activeCellRow++;
             CommitTableEdit();
-            InvalidateCellLayoutCaches();
-            RebuildLayouts();
-            InvalidateFull();
+            RestoreCaretAfterTableStructure();
         }
 
         // Цвет фона ячеек. Применяется к выделенному диапазону ячеек (_tableSelections), а если
@@ -428,10 +454,8 @@ namespace Writersword.Modules.TextEditor.Document
             _activeCellRow = r1;
             _activeCellCol = c1;
 
-            InvalidateCellLayoutCaches();
-            RebuildLayouts();
+            RestoreCaretAfterTableStructure();
             NotifyCaretEnteredTableCallback();
-            InvalidateFull();
         }
 
         // Разбиение объединённой ячейки обратно на одиночные. Содержимое остаётся
@@ -464,10 +488,8 @@ namespace Writersword.Modules.TextEditor.Document
 
             CommitTableEdit();
 
-            InvalidateCellLayoutCaches();
-            RebuildLayouts();
+            RestoreCaretAfterTableStructure();
             NotifyCaretEnteredTableCallback();
-            InvalidateFull();
         }
 
         // Деление обычной ячейки пополам: vertical = true — вертикальной чертой
@@ -575,10 +597,8 @@ namespace Writersword.Modules.TextEditor.Document
 
             CommitTableEdit();
 
-            InvalidateCellLayoutCaches();
-            RebuildLayouts();
+            RestoreCaretAfterTableStructure();
             NotifyCaretEnteredTableCallback();
-            InvalidateFull();
         }
 
         // Новая пустая ячейка с оформлением образца: рамки, заливка, отступы и
@@ -708,9 +728,7 @@ namespace Writersword.Modules.TextEditor.Document
             CommitEdit();
             if (_activeTableBlock.RowCount <= 0) { ExecuteTableDelete(); return; }
             _activeCellRow = Clamp(_activeCellRow, 0, _activeTableBlock.RowCount - 1);
-            InvalidateCellLayoutCaches();
-            RebuildLayouts();
-            InvalidateFull();
+            RestoreCaretAfterTableStructure();
         }
 
         private void ExecuteTableAddColumn(bool left)
@@ -730,9 +748,7 @@ namespace Writersword.Modules.TextEditor.Document
             _activeTableBlock.ColumnCount++;
             if (left) _activeCellCol++;
             CommitTableEdit();
-            InvalidateCellLayoutCaches();
-            RebuildLayouts();
-            InvalidateFull();
+            RestoreCaretAfterTableStructure();
         }
 
         private void ExecuteTableDeleteColumn()
@@ -749,9 +765,7 @@ namespace Writersword.Modules.TextEditor.Document
             CommitEdit();
             if (_activeTableBlock.ColumnCount <= 0) { ExecuteTableDelete(); return; }
             _activeCellCol = Clamp(_activeCellCol, 0, _activeTableBlock.ColumnCount - 1);
-            InvalidateCellLayoutCaches();
-            RebuildLayouts();
-            InvalidateFull();
+            RestoreCaretAfterTableStructure();
         }
 
         private void ExecuteTableDelete()
@@ -768,6 +782,8 @@ namespace Writersword.Modules.TextEditor.Document
             _caretChar = 0;
             RebuildLayouts();
             InvalidateFull();
+
+            if (!IsFocused) Focus();
         }
 
         // ── Вертикальная навигация ────────────────────────────────────────

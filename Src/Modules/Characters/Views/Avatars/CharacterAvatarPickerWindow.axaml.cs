@@ -74,11 +74,18 @@ namespace Writersword.Modules.Characters.Views.Avatars
             var managerVm = new CharacterAvatarPackManagerViewModel(_avatarService!);
             managerVm.CloseRequested += CloseManager;
 
-            var overlay = new CharacterAvatarPackManagerOverlay { DataContext = managerVm };
-
-            // Подключаем диалоги файлов к менеджеру
-            var managerCodeBehind = overlay;
-            // DataContextChanged в code-behind CharacterAvatarPackManagerOverlay сам настроит пикеры.
+            // Видимость снимается и с самого контрола: в разметке менеджер
+            // объявлен скрытым, потому что в модуле он живёт постоянным
+            // элементом и показывается по требованию. Здесь же он создаётся
+            // на месте, и включить один слот мало — контрол остался бы скрыт.
+            //
+            // Диалоги выбора файлов менеджер подключает себе сам, в своём
+            // обработчике DataContextChanged.
+            var overlay = new CharacterAvatarPackManagerOverlay
+            {
+                DataContext = managerVm,
+                IsVisible = true
+            };
 
             slot.Content = overlay;
             slot.IsVisible = true;

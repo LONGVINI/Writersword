@@ -2,168 +2,679 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Avatars"
              xmlns:loc="using:Writersword.Src.Modules.Characters.Resources"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              x:Class="Writersword.Modules.Characters.Views.Avatars.CharacterAvatarPackManagerOverlay"
-             x:DataType="vm:CharacterAvatarPackManagerViewModel">
+             x:DataType="vm:CharacterAvatarPackManagerViewModel"
+             IsVisible="False">
 
-	<Grid>
-		<!-- Затемнение -->
-		<Border Background="Black" Opacity="0.55" IsHitTestVisible="True"/>
+	<!-- Папки с аватарками.
+	     Устройство окна повторяет редактор цвета: непрозрачный скрим, тень
+	     отдельной подложкой, размеры панели ограничиваются в code-behind под
+	     размер модуля. Полупрозрачных заливок нет ни одной.
 
-		<!-- Окно менеджера -->
-		<Border MaxWidth="700" MaxHeight="500"
-                Margin="40"
-                CornerRadius="12"
-                Background="{DynamicResource BgBaseBrush}"
-                BoxShadow="0 8 32 0 #88000000">
-			<Grid RowDefinitions="Auto,*,Auto">
+	     Порядок сверху вниз: сначала действия (завести папку, принять ZIP),
+	     затем сами папки, затем содержимое выбранной. Раньше список папок
+	     стоял отдельной колонкой слева, и кнопки под ним терялись.
 
-				<!-- Заголовок -->
-				<Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="16,14,16,10">
-					<TextBlock Text="{x:Static loc:CharactersStrings.AvatarPackManager_Title}"
-                               FontSize="15" FontWeight="SemiBold"
-                               VerticalAlignment="Center"/>
-					<Button Grid.Column="1"
-                            Content="✕"
-                            Command="{Binding CloseCommand}"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            Padding="8,2"/>
-				</Grid>
+	     Деление на локальные и глобальные — то же, что у палитр цветов, и
+	     переключается тем же сегментированным переключателем. -->
 
-				<!-- Основное содержимое -->
-				<Grid Grid.Row="1" ColumnDefinitions="200,*">
+	<UserControl.Resources>
+		<!-- Прозрачный фон и трек скроллбара — тема Fluent иначе подкладывает
+		     под него серую полосу вдоль всего списка. -->
+		<SolidColorBrush x:Key="ScrollBarBackground" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarBackgroundPointerOver" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarBackgroundDisabled" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarTrackFill" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarPanningBackground" Color="Transparent"/>
+	</UserControl.Resources>
 
-					<!-- Левая панель: список паков -->
-					<Border BorderBrush="{DynamicResource BorderDefaultBrush}"
-                            BorderThickness="0,1,1,0">
-						<Grid RowDefinitions="*,Auto">
+	<UserControl.Styles>
 
-							<ScrollViewer Grid.Row="0">
-								<ItemsControl ItemsSource="{Binding Packs}">
-									<ItemsControl.ItemTemplate>
-										<DataTemplate DataType="vm:CharacterAvatarPackManagerPackViewModel">
-											<Border Margin="4,2" Padding="10,6" CornerRadius="6"
-                                                    Cursor="Hand">
-												<Border.Styles>
-													<Style Selector="Border.pack-selected">
-														<Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
-													</Style>
-													<Style Selector="Border.pack-normal">
-														<Setter Property="Background" Value="{DynamicResource BgPanelBrush}"/>
-													</Style>
-													<Style Selector="Border.pack-normal:pointerover">
-														<Setter Property="Opacity" Value="0.85"/>
-													</Style>
-												</Border.Styles>
-												<StackPanel>
-													<TextBlock Text="{Binding DisplayName}" FontSize="12"/>
-													<TextBlock Text="{x:Static loc:CharactersStrings.AvatarPackManager_BuiltInBadge}"
-                                                               FontSize="10"
-                                                               Foreground="{DynamicResource TextSecondaryBrush}"
-                                                               IsVisible="{Binding IsBuiltIn}"/>
+		<!-- Сегментированный переключатель области — как у палитр. -->
+		<Style Selector="Border.scopeTrack">
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="Padding" Value="2"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.scope">
+			<Setter Property="Padding" Value="14,4"/>
+			<Setter Property="MinWidth" Value="60"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="Button.scope /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<BrushTransition Property="Background" Duration="0:0:0.15"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Button.scope:not(.active):pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Button.scope.local.active">
+			<Setter Property="Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+		</Style>
+		<Style Selector="Button.scope.local.active /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
+		</Style>
+		<Style Selector="Button.scope.global.active">
+			<Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+		</Style>
+		<Style Selector="Button.scope.global.active /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
+		</Style>
+
+		<!-- Круглая кнопка-иконка. Тот же размер и обводка, что у «плюса»
+		     в редакторе палитры. -->
+		<Style Selector="Button.iconBtn">
+			<Setter Property="Width" Value="28"/>
+			<Setter Property="Height" Value="28"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.iconBtn /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1.5"/>
+			<Setter Property="CornerRadius" Value="999"/>
+		</Style>
+		<Style Selector="Button.iconBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.iconBtn:disabled /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+		</Style>
+		<Style Selector="Button.iconBtn:disabled">
+			<Setter Property="Foreground" Value="{DynamicResource TextDisabledBrush}"/>
+		</Style>
+		<Style Selector="Button.iconBtn.accent /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.iconBtn.accent">
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<!-- Разрушающее действие. Отдельной кисти «опасно» в теме нет; критический
+		     красный один на всё приложение и лежит под именем конфликта горячих
+		     клавиш — берём его, чтобы не заводить четвёртый оттенок красного. -->
+		<Style Selector="Button.iconBtn.danger:pointerover">
+			<Setter Property="Foreground" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+		<Style Selector="Button.iconBtn.danger:pointerover /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+
+		<!-- Кнопка приёма ZIP: она же зона, на которую можно бросить архив.
+		     Пунктирная обводка появляется, когда над ней тянут файл. -->
+		<Style Selector="Button.iconBtn.dropArmed /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+
+		<!-- Чип папки в ленте. -->
+		<Style Selector="Button.packChip">
+			<Setter Property="Padding" Value="10,5"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="CornerRadius" Value="8"/>
+			<Setter Property="HorizontalContentAlignment" Value="Left"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+		</Style>
+		<Style Selector="Button.packChip /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="8"/>
+		</Style>
+		<Style Selector="Button.packChip:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.packChip.active /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1.5"/>
+		</Style>
+
+		<Style Selector="Border.scopeChip">
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="Padding" Value="7,1"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="TextElement.Foreground" Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+		<Style Selector="Border.scopeChip.local">
+			<Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
+			<Setter Property="TextElement.Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
+		</Style>
+		<Style Selector="Border.scopeChip.global">
+			<Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
+			<Setter Property="TextElement.Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.scopeChipText">
+			<Setter Property="FontSize" Value="10"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+		</Style>
+
+		<!-- Плитка картинки: одинаковая коробка у всех, круг по центру,
+		     подпись в одну строку. Так ряды выстраиваются ровно, какой бы
+		     длины ни оказались имена файлов. -->
+		<Style Selector="Panel.packItem StackPanel.itemTools">
+			<Setter Property="Opacity" Value="0"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Panel.packItem:pointerover StackPanel.itemTools">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<Style Selector="Button.itemBtn">
+			<Setter Property="Width" Value="18"/>
+			<Setter Property="Height" Value="18"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="CornerRadius" Value="9"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.itemBtn /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="9"/>
+		</Style>
+		<Style Selector="Button.itemBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.itemBtn.danger:pointerover">
+			<Setter Property="Foreground" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+		<Style Selector="Button.itemBtn.danger:pointerover /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+
+		<Style Selector="Button.confirmYes">
+			<Setter Property="FontSize" Value="10"/>
+			<Setter Property="Padding" Value="8,1"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="Foreground" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+		<Style Selector="Button.confirmYes /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+		<Style Selector="Button.confirmNo">
+			<Setter Property="FontSize" Value="10"/>
+			<Setter Property="Padding" Value="8,1"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="CornerRadius" Value="4"/>
+		</Style>
+
+		<Style Selector="ScrollBar">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="ScrollBar /template/ Border">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="ScrollBar /template/ Grid">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid x:Name="ManagerRoot"
+	      DragDrop.AllowDrop="True"
+	      DragDrop.DragEnter="OnManagerDragOver"
+	      DragDrop.DragOver="OnManagerDragOver"
+	      DragDrop.DragLeave="OnManagerDragLeave"
+	      DragDrop.Drop="OnManagerDrop">
+
+		<!-- Скрим: полностью непрозрачный. -->
+		<Border Background="#F2000000" PointerPressed="OnScrimPressed"/>
+
+		<!-- Тень — отдельная статичная подложка, без интерактивного содержимого. -->
+		<Border HorizontalAlignment="Center" VerticalAlignment="Center"
+		        Margin="24"
+		        Width="{Binding Bounds.Width, ElementName=ManagerPanel}"
+		        Height="{Binding Bounds.Height, ElementName=ManagerPanel}"
+		        Background="{DynamicResource BgBaseBrush}"
+		        CornerRadius="16"
+		        IsHitTestVisible="False">
+			<Border.Effect>
+				<DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.55" Color="#000000"/>
+			</Border.Effect>
+		</Border>
+
+		<Border x:Name="ManagerPanel"
+		        HorizontalAlignment="Center" VerticalAlignment="Center"
+		        Margin="24"
+		        MinWidth="0" Width="720"
+		        Background="{DynamicResource BgBaseBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="1"
+		        CornerRadius="16"
+		        ClipToBounds="True">
+			<Panel>
+				<Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
+
+					<!-- Заголовок -->
+					<Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="20,16,12,0">
+						<TextBlock Text="{x:Static loc:CharactersStrings.AvatarPackManager_Title}"
+                                   FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   VerticalAlignment="Center"/>
+						<Button Grid.Column="1" Content="✕"
+                                Command="{Binding CloseCommand}"
+                                Classes="ghost"
+                                Padding="8,2" FontSize="15"
+                                Foreground="{DynamicResource TextSecondaryBrush}"
+                                behaviours:TooltipBehavior.Tip="Закрыть"
+                                behaviours:TooltipBehavior.Description="Вернуться к выбору аватарки"/>
+					</Grid>
+
+					<!-- Создание папки и приём архива. Стоит над лентой папок:
+					     сначала действие, потом его результат. -->
+					<Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto"
+					      Margin="20,14,20,0" ColumnSpacing="8">
+
+						<TextBox Grid.Column="0"
+						         Text="{Binding NewPackName}"
+                                 PlaceholderText="{x:Static loc:CharactersStrings.AvatarPackManager_NewPackPlaceholder}"
+                                 FontSize="12" Padding="8,5"
+						         VerticalAlignment="Center"/>
+
+						<Border Grid.Column="1" Classes="scopeTrack">
+							<StackPanel Orientation="Horizontal" Spacing="2">
+								<Button Classes="scope global"
+								        Classes.active="{Binding NewPackIsGlobal}"
+								        Command="{Binding SetNewPackGlobalCommand}"
+								        Content="Глобальная"
+								        behaviours:TooltipBehavior.Tip="Глобальная папка"
+								        behaviours:TooltipBehavior.Description="Лежит в данных приложения и видна во всех проектах. Вместе с проектом другому человеку не уедет"/>
+								<Button Classes="scope local"
+								        Classes.active="{Binding NewPackIsLocal}"
+								        Command="{Binding SetNewPackLocalCommand}"
+								        Content="В проекте"
+								        behaviours:TooltipBehavior.Tip="Папка внутри проекта"
+								        behaviours:TooltipBehavior.Description="Лежит в файле проекта и уедет вместе с ним. Нужен открытый проект"/>
+							</StackPanel>
+						</Border>
+
+						<Button Grid.Column="2" Classes="iconBtn accent"
+						        Command="{Binding CreatePackCommand}"
+                                behaviours:TooltipBehavior.Tip="Завести папку"
+                                behaviours:TooltipBehavior.Description="Создаёт папку с именем из поля слева, в выбранной области">
+							<PathIcon Width="13" Height="13"
+							          Data="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/>
+						</Button>
+
+						<Button Grid.Column="3" x:Name="ImportZipButton" Classes="iconBtn"
+						        Command="{Binding ImportPackCommand}"
+						        DragDrop.AllowDrop="True"
+						        DragDrop.DragEnter="OnZipDragOver"
+						        DragDrop.DragOver="OnZipDragOver"
+						        DragDrop.DragLeave="OnZipDragLeave"
+						        DragDrop.Drop="OnZipDrop"
+                                behaviours:TooltipBehavior.Tip="Взять папку из ZIP"
+                                behaviours:TooltipBehavior.Description="Выбрать архив на диске. Архив можно и просто бросить на эту кнопку — папка появится среди глобальных">
+							<PathIcon Width="14" Height="14"
+							          Data="M3 4h18v4H3V4zm1 5h16v11H4V9zm6 2h4v2h-4v-2zm0 3h4v2h-4v-2zm0 3h4v3h-4v-3z"/>
+						</Button>
+					</Grid>
+
+					<!-- Лента папок -->
+					<ScrollViewer Grid.Row="2" Margin="20,12,20,0"
+					              MaxHeight="120"
+					              Background="Transparent"
+					              HorizontalScrollBarVisibility="Disabled"
+					              VerticalScrollBarVisibility="Auto">
+						<ItemsControl ItemsSource="{Binding Packs}">
+							<ItemsControl.ItemsPanel>
+								<ItemsPanelTemplate>
+									<WrapPanel Orientation="Horizontal"/>
+								</ItemsPanelTemplate>
+							</ItemsControl.ItemsPanel>
+							<ItemsControl.ItemTemplate>
+								<DataTemplate x:DataType="vm:CharacterAvatarPackManagerPackViewModel">
+									<Button Classes="packChip"
+									        Classes.active="{Binding IsSelected}"
+									        Margin="0,0,6,6"
+									        Command="{ReflectionBinding $parent[UserControl].DataContext.SelectPackCommand}"
+									        CommandParameter="{Binding PackId}"
+									        behaviours:TooltipBehavior.Tip="{Binding DisplayName}"
+									        behaviours:TooltipBehavior.Description="{Binding ChipDescription}"
+									        behaviours:TooltipBehavior.ShowDelay="400">
+										<StackPanel Orientation="Horizontal" Spacing="8">
+											<TextBlock Text="{Binding DisplayName}"
+											           FontSize="12"
+											           VerticalAlignment="Center"
+											           MaxWidth="180"
+											           TextTrimming="CharacterEllipsis"/>
+											<Border Classes="scopeChip"
+											        Classes.local="{Binding IsLocal}"
+											        Classes.global="{Binding IsGlobalUser}">
+												<TextBlock Classes="scopeChipText" Text="{Binding ScopeLabel}"/>
+											</Border>
+											<TextBlock Text="{Binding ItemCount}"
+											           FontSize="11"
+											           VerticalAlignment="Center"
+											           Foreground="{DynamicResource TextMutedBrush}"/>
+										</StackPanel>
+									</Button>
+								</DataTemplate>
+							</ItemsControl.ItemTemplate>
+						</ItemsControl>
+					</ScrollViewer>
+
+					<!-- Действия выбранной папки -->
+					<Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto"
+					      Margin="20,10,20,0" ColumnSpacing="8"
+					      IsVisible="{Binding HasSelectedPack}">
+
+						<TextBox Grid.Column="0"
+						         Text="{Binding SelectedPackName}"
+						         IsEnabled="{Binding CanEditPack}"
+						         FontSize="12" Padding="8,5"
+						         VerticalAlignment="Center"
+						         behaviours:TooltipBehavior.Tip="Имя папки"
+						         behaviours:TooltipBehavior.Description="Правится прямо здесь. Новое имя запоминается, как только вы уходите из поля или нажимаете Enter"/>
+
+						<Border Grid.Column="1" Classes="scopeTrack"
+						        IsVisible="{Binding CanMoveScope}">
+							<StackPanel Orientation="Horizontal" Spacing="2">
+								<Button Classes="scope global"
+								        Classes.active="{Binding SelectedIsGlobal}"
+								        Command="{Binding MakeGlobalCommand}"
+								        IsEnabled="{Binding CanMakeGlobal}"
+								        Content="Глобальная"
+								        behaviours:TooltipBehavior.Tip="Перенести в приложение"
+								        behaviours:TooltipBehavior.Description="Папка со всем содержимым переедет в данные приложения и станет видна во всех проектах"/>
+								<Button Classes="scope local"
+								        Classes.active="{Binding SelectedIsLocal}"
+								        Command="{Binding MakeLocalCommand}"
+								        IsEnabled="{Binding CanMakeLocal}"
+								        Content="В проекте"
+								        behaviours:TooltipBehavior.Tip="Перенести в проект"
+								        behaviours:TooltipBehavior.Description="Папка со всем содержимым переедет в файл проекта и уедет вместе с ним"/>
+							</StackPanel>
+						</Border>
+
+						<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"
+						            VerticalAlignment="Center">
+
+							<Button Classes="iconBtn"
+							        Command="{Binding AddImagesCommand}"
+							        IsEnabled="{Binding CanEditPack}"
+							        behaviours:TooltipBehavior.Tip="Добавить картинки"
+							        behaviours:TooltipBehavior.Description="Выбрать файлы на диске. Их можно и просто бросить в это окно — лягут в выбранную папку">
+								<PathIcon Width="14" Height="14"
+								          Data="M20 4H4v16h16V4zM6 18l3.5-4.5 2.5 3.01L15.5 12l3.5 6H6z"/>
+							</Button>
+
+							<Button Classes="iconBtn"
+							        Command="{Binding ResetCoverCommand}"
+							        IsEnabled="{Binding CanResetCover}"
+							        behaviours:TooltipBehavior.Tip="Сбросить обложку"
+							        behaviours:TooltipBehavior.Description="Папка снова будет показывать первую свою картинку. Сами картинки не трогаются">
+								<PathIcon Width="14" Height="14"
+								          Data="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+							</Button>
+
+							<Button Classes="iconBtn"
+							        Command="{Binding ExportPackCommand}"
+							        IsEnabled="{Binding CanEditPack}"
+							        behaviours:TooltipBehavior.Tip="Сохранить как ZIP"
+							        behaviours:TooltipBehavior.Description="Выгрузить папку архивом — чтобы перенести на другую машину или отдать соавтору">
+								<PathIcon Width="14" Height="14"
+								          Data="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/>
+							</Button>
+
+							<Button Classes="iconBtn danger"
+							        Command="{Binding RequestDeletePackCommand}"
+							        IsEnabled="{Binding CanEditPack}"
+							        IsVisible="{Binding IsNotConfirmingPackDelete}"
+							        behaviours:TooltipBehavior.Tip="Удалить папку"
+							        behaviours:TooltipBehavior.Description="Папка удалится вместе со всеми своими картинками. Аватарки персонажей, взятые отсюда, станут заглушками">
+								<PathIcon Width="14" Height="14"
+								          Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+							</Button>
+
+							<StackPanel Orientation="Horizontal" Spacing="4"
+							            VerticalAlignment="Center"
+							            IsVisible="{Binding IsConfirmingPackDelete}">
+								<TextBlock Text="Удалить папку?" FontSize="11"
+								           VerticalAlignment="Center"
+								           Foreground="{DynamicResource TextPrimaryBrush}"/>
+								<Button Content="Да" Classes="confirmYes"
+								        Command="{Binding ConfirmDeletePackCommand}"/>
+								<Button Content="Нет" Classes="confirmNo"
+								        Command="{Binding CancelDeletePackCommand}"/>
+							</StackPanel>
+						</StackPanel>
+					</Grid>
+
+					<!-- Содержимое выбранной папки -->
+					<ScrollViewer Grid.Row="4" Margin="14,10,14,0"
+					              Background="Transparent"
+					              HorizontalScrollBarVisibility="Disabled"
+					              VerticalScrollBarVisibility="Auto">
+						<Panel>
+							<TextBlock Text="{x:Static loc:CharactersStrings.AvatarPackManager_SelectPackHint}"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Margin="0,40"
+                                       IsVisible="{Binding SelectedPack,
+                                           Converter={x:Static ObjectConverters.IsNull}}"/>
+
+							<TextBlock Text="В этой папке пока пусто. Бросьте сюда картинку или нажмите кнопку с картинкой выше."
+							           FontSize="12"
+							           TextWrapping="Wrap"
+							           MaxWidth="360"
+							           Foreground="{DynamicResource TextSecondaryBrush}"
+							           HorizontalAlignment="Center"
+							           VerticalAlignment="Center"
+							           Margin="0,40"
+							           IsVisible="{Binding SelectedPackIsEmpty}"/>
+
+							<ItemsControl ItemsSource="{Binding SelectedPack.Items}"
+                                          IsVisible="{Binding HasSelectedPack}"
+                                          Margin="4">
+								<ItemsControl.ItemsPanel>
+									<ItemsPanelTemplate>
+										<WrapPanel Orientation="Horizontal"/>
+									</ItemsPanelTemplate>
+								</ItemsControl.ItemsPanel>
+								<ItemsControl.ItemTemplate>
+									<DataTemplate x:DataType="vm:CharacterAvatarPackManagerItemViewModel">
+										<Panel Classes="packItem" Margin="4" Background="Transparent"
+										       Width="76" Height="94">
+
+											<Border CornerRadius="8"
+                                                    Background="{DynamicResource BgSurfaceBrush}"
+                                                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                                    BorderThickness="1"
+													behaviours:TooltipBehavior.Tip="{Binding ToolTip}"
+													behaviours:TooltipBehavior.Description="{Binding FileName}"
+													behaviours:TooltipBehavior.ShowDelay="500">
+												<StackPanel Spacing="5" Margin="4,7,4,5"
+                                                            VerticalAlignment="Center">
+													<Border Width="52" Height="52" CornerRadius="26"
+                                                            ClipToBounds="True"
+                                                            HorizontalAlignment="Center"
+													        Background="{DynamicResource BgBaseBrush}">
+														<Image Source="{Binding Thumbnail}"
+                                                               Stretch="UniformToFill"/>
+													</Border>
+													<TextBlock Text="{Binding ToolTip}"
+                                                               FontSize="9"
+                                                               HorizontalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               TextWrapping="NoWrap"
+                                                               MaxWidth="64"/>
 												</StackPanel>
 											</Border>
-										</DataTemplate>
-									</ItemsControl.ItemTemplate>
-								</ItemsControl>
-							</ScrollViewer>
 
-							<!-- Создать / импортировать -->
-							<StackPanel Grid.Row="1" Margin="4" Spacing="4">
-								<TextBox Text="{Binding NewPackName}"
-                                         PlaceholderText="{x:Static loc:CharactersStrings.AvatarPackManager_NewPackPlaceholder}"
-                                         FontSize="11" Padding="6,4"/>
-								<Button Content="{x:Static loc:CharactersStrings.AvatarPackManager_CreatePack}"
-                                        Command="{Binding CreatePackCommand}"
-                                        HorizontalAlignment="Stretch"
-                                        Padding="6,4" FontSize="11"/>
-								<Button Content="{x:Static loc:CharactersStrings.AvatarPackManager_ImportZip}"
-                                        Command="{Binding ImportPackCommand}"
-                                        HorizontalAlignment="Stretch"
-                                        Padding="6,4" FontSize="11"/>
-							</StackPanel>
-						</Grid>
-					</Border>
+											<!-- Обложка папки: отметка стоит на той картинке,
+											     которая показывает папку в списке. -->
+											<Border IsVisible="{Binding IsCover}"
+											        IsHitTestVisible="False"
+											        HorizontalAlignment="Left" VerticalAlignment="Top"
+											        Margin="2,2,0,0"
+											        CornerRadius="999"
+											        Width="16" Height="16"
+											        Background="{DynamicResource BgBaseBrush}"
+											        BorderBrush="{DynamicResource AccentDefaultBrush}"
+											        BorderThickness="1">
+												<PathIcon Width="9" Height="9"
+												          Foreground="{DynamicResource AccentDefaultBrush}"
+												          Data="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+											</Border>
 
-					<!-- Правая панель: аватарки -->
-					<Border Grid.Column="1"
-                            BorderBrush="{DynamicResource BorderDefaultBrush}"
-                            BorderThickness="0,1,0,0">
-						<Grid RowDefinitions="*,Auto">
+											<!-- Действия картинки: обложка, переложить, удалить -->
+											<StackPanel Classes="itemTools"
+											            Orientation="Horizontal" Spacing="2"
+											            HorizontalAlignment="Right"
+											            VerticalAlignment="Top"
+											            Margin="0,2,2,0"
+											            IsVisible="{Binding IsNotConfirmingDelete}">
 
-							<ScrollViewer Grid.Row="0">
-								<Panel>
-									<TextBlock Text="{x:Static loc:CharactersStrings.AvatarPackManager_SelectPackHint}"
-                                               FontSize="12"
-                                               Foreground="{DynamicResource TextSecondaryBrush}"
-                                               HorizontalAlignment="Center"
-                                               VerticalAlignment="Center"
-                                               Margin="0,40"
-                                               IsVisible="{Binding SelectedPack,
-                                                   Converter={x:Static ObjectConverters.IsNull}}"/>
+												<Button Classes="itemBtn"
+												        Command="{Binding SetAsCoverCommand}"
+												        IsVisible="{Binding CanModify}"
+												        behaviours:TooltipBehavior.Tip="Сделать обложкой"
+												        behaviours:TooltipBehavior.Description="Этой картинкой папка будет показываться в списках">
+													<PathIcon Width="10" Height="10"
+													          Data="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+												</Button>
 
-									<ItemsControl ItemsSource="{Binding SelectedPack.Items}"
-                                                  IsVisible="{Binding HasSelectedPack}"
-                                                  Margin="8">
-										<ItemsControl.ItemsPanel>
-											<ItemsPanelTemplate>
-												<WrapPanel Orientation="Horizontal"/>
-											</ItemsPanelTemplate>
-										</ItemsControl.ItemsPanel>
-										<ItemsControl.ItemTemplate>
-											<DataTemplate DataType="vm:CharacterAvatarPackManagerItemViewModel">
-												<Border Width="70" Height="82" Margin="4"
-                                                        CornerRadius="8"
-                                                        Background="{DynamicResource BgPanelBrush}"
-                                                        ToolTip.Tip="{Binding ToolTip}">
-													<StackPanel Spacing="4" Margin="4"
-                                                                VerticalAlignment="Center">
-														<Border Width="52" Height="52" CornerRadius="26"
-                                                                ClipToBounds="True"
-                                                                HorizontalAlignment="Center">
-															<Image Source="{Binding Thumbnail}"
-                                                                   Stretch="UniformToFill"/>
-														</Border>
-														<TextBlock Text="{Binding FileName}"
-                                                                   FontSize="9"
-                                                                   HorizontalAlignment="Center"
-                                                                   TextTrimming="CharacterEllipsis"
-                                                                   MaxWidth="62"/>
+												<Button Classes="itemBtn"
+												        IsVisible="{Binding HasMoveTargets}"
+												        behaviours:TooltipBehavior.Tip="Переложить"
+												        behaviours:TooltipBehavior.Description="Перенести картинку в другую папку. Ссылка на неё сменится вместе с папкой">
+													<Button.Flyout>
+														<Flyout Placement="Bottom">
+															<ItemsControl ItemsSource="{Binding MoveTargets}"
+															              MinWidth="170">
+																<ItemsControl.ItemTemplate>
+																	<DataTemplate x:DataType="vm:CharacterAvatarPackMoveTargetViewModel">
+																		<Button Command="{Binding MoveCommand}"
+																		        HorizontalAlignment="Stretch"
+																		        HorizontalContentAlignment="Left"
+																		        Padding="8,4" Margin="0,1">
+																			<StackPanel Orientation="Horizontal" Spacing="6">
+																				<TextBlock Text="{Binding DisplayName}"
+																				           FontSize="11"
+																				           VerticalAlignment="Center"/>
+																				<Border Classes="scopeChip"
+																				        Classes.local="{Binding IsLocal}"
+																				        Classes.global="{Binding IsGlobal}">
+																					<TextBlock Classes="scopeChipText"
+																					           Text="{Binding ScopeLabel}"/>
+																				</Border>
+																			</StackPanel>
+																		</Button>
+																	</DataTemplate>
+																</ItemsControl.ItemTemplate>
+															</ItemsControl>
+														</Flyout>
+													</Button.Flyout>
+													<PathIcon Width="10" Height="10"
+													          Data="M4 6h6l2 2h8v10H4V6zm8 4v2H9v2h3v2l3-3-3-3z"/>
+												</Button>
+
+												<Button Classes="itemBtn danger"
+												        Command="{Binding RequestDeleteCommand}"
+												        IsVisible="{Binding CanModify}"
+												        behaviours:TooltipBehavior.Tip="Удалить картинку"
+												        behaviours:TooltipBehavior.Description="Файл удаляется насовсем. Персонажи с этой аватаркой вернутся к заглушке">
+													<PathIcon Width="10" Height="10"
+													          Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+												</Button>
+											</StackPanel>
+
+											<!-- Переспрос перед удалением файла -->
+											<Border IsVisible="{Binding IsConfirmingDelete}"
+											        CornerRadius="8"
+											        Background="{DynamicResource BgBaseBrush}"
+											        BorderBrush="{DynamicResource HotKeyConflictCriticalBrush}"
+											        BorderThickness="1">
+												<StackPanel VerticalAlignment="Center" Spacing="4">
+													<TextBlock Text="Удалить?"
+													           FontSize="10"
+													           HorizontalAlignment="Center"
+													           Foreground="{DynamicResource TextPrimaryBrush}"/>
+													<StackPanel Orientation="Horizontal" Spacing="4"
+													            HorizontalAlignment="Center">
+														<Button Content="Да" Classes="confirmYes"
+														        Command="{Binding ConfirmDeleteCommand}"/>
+														<Button Content="Нет" Classes="confirmNo"
+														        Command="{Binding CancelDeleteCommand}"/>
 													</StackPanel>
-												</Border>
-											</DataTemplate>
-										</ItemsControl.ItemTemplate>
-									</ItemsControl>
-								</Panel>
-							</ScrollViewer>
+												</StackPanel>
+											</Border>
+										</Panel>
+									</DataTemplate>
+								</ItemsControl.ItemTemplate>
+							</ItemsControl>
+						</Panel>
+					</ScrollViewer>
 
-							<!-- Кнопки пака -->
-							<StackPanel Grid.Row="1" Orientation="Horizontal"
-                                        Spacing="6" Margin="8,6"
-                                        IsVisible="{Binding CanEditPack}">
-								<Button Content="{x:Static loc:CharactersStrings.AvatarPackManager_ExportZip}"
-                                        Command="{Binding ExportPackCommand}"
-                                        Padding="8,4" FontSize="11"/>
-								<Button Content="{x:Static loc:CharactersStrings.AvatarPackManager_DeletePack}"
-                                        Command="{Binding DeletePackCommand}"
-                                        Padding="8,4" FontSize="11"
-                                        Foreground="OrangeRed"/>
-							</StackPanel>
-						</Grid>
+					<!-- Статус и подсказка -->
+					<Border Grid.Row="5" Padding="20,10,20,14"
+                            BorderBrush="{DynamicResource BorderSubtleBrush}"
+                            BorderThickness="0,1,0,0">
+						<StackPanel Spacing="3">
+							<TextBlock Text="{Binding StatusMessage}"
+							           FontSize="11"
+							           TextWrapping="Wrap"
+							           Foreground="{DynamicResource AccentDefaultBrush}"
+							           IsVisible="{Binding StatusMessage,
+							               Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+							<TextBlock FontSize="10"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       TextWrapping="Wrap"
+                                       Text="{x:Static loc:CharactersStrings.AvatarPackManager_BuiltInHint}"/>
+						</StackPanel>
 					</Border>
 				</Grid>
 
-				<!-- Подсказка -->
-				<Border Grid.Row="2"
-                        Padding="16,8"
-                        BorderBrush="{DynamicResource BorderDefaultBrush}"
-                        BorderThickness="0,1,0,0">
-					<TextBlock FontSize="10"
-                               Foreground="{DynamicResource TextSecondaryBrush}"
-                               TextWrapping="Wrap"
-                               Text="{x:Static loc:CharactersStrings.AvatarPackManager_BuiltInHint}"/>
-				</Border>
-			</Grid>
+				<!-- Подсветка приёма файла: только рамка, без заливки. -->
+				<Border IsVisible="{Binding IsDropTarget}"
+				        IsHitTestVisible="False"
+				        CornerRadius="16"
+				        BorderThickness="2"
+				        BorderBrush="{DynamicResource AccentDefaultBrush}"/>
+			</Panel>
 		</Border>
 	</Grid>
 </UserControl>

@@ -1,8 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
+using Serilog;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform.Storage;
+using Writersword.Modules.Characters.Models;
 using Writersword.Modules.Characters.Interfaces;
 using Writersword.Modules.Characters.ViewModels;
 using Writersword.Modules.Characters.Views;
@@ -21,6 +27,18 @@ namespace Writersword.Modules.Characters.Views.Tabs
     public partial class CharactersListView : UserControl
     {
         private const double DragThreshold = 8.0;
+
+        // Карточка, по которой нажали, и точка нажатия — для выбора, а не для
+        // перетаскивания. Держатся отдельно от _dragCandidate потому, что тот
+        // обнуляется в OnGlobalPointerMoved при любом сдвиге раньше паузы
+        // удержания: обычный клик почти всегда дёргает мышь на пару точек, и
+        // выбор по нему не срабатывал вовсе.
+        private CharacterListItemViewModel? _clickCandidate;
+        private Point _clickStartPoint;
+
+        // Насколько далеко можно увести указатель, чтобы отпускание всё ещё
+        // считалось кликом по карточке.
+        private const double ClickSlack = 6.0;
         // Пауза удержания перед стартом перетаскивания. Быстрый клик уходит кнопкам
         // карточки, перетаскивание начинается только после зажатия и последующего движения.
         private const long DragHoldDelayMs = 90;
@@ -86,6 +104,50 @@ namespace Writersword.Modules.Characters.Views.Tabs
             AddHandler(InputElement.LostFocusEvent, OnCardTextBoxLostFocus, RoutingStrategies.Bubble);
         }
 
+        // ── Разделитель боковой панели ────────────────────────────────────
+        //
+        // Только ширина. Выключателя у панели нет вовсе: её открывает щелчок
+        // по карточке и закрывает крестик в её углу или повторный щелчок по
+        // той же карточке. Разделитель показывается вместе с панелью, поэтому
+        // при закрытой панели у правого края списка не остаётся ничего.
+
+        private bool _splitDragging;
+        private Point _splitPressPoint;
+        private double _splitStartWidth;
+
+        private void OnInspectorSplitPressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (sender is not Border split) return;
+            if (DataContext is not CharactersViewModel vm) return;
+            if (!e.GetCurrentPoint(split).Properties.IsLeftButtonPressed) return;
+
+            _splitDragging = true;
+            _splitPressPoint = e.GetPosition(this);
+            _splitStartWidth = vm.InspectorWidth;
+
+            e.Pointer.Capture(split);
+            e.Handled = true;
+        }
+
+        private void OnInspectorSplitMoved(object? sender, PointerEventArgs e)
+        {
+            if (!_splitDragging) return;
+            if (DataContext is not CharactersViewModel vm) return;
+
+            // Тянут влево — панель шире, вправо — уже.
+            vm.InspectorWidth = _splitStartWidth + (_splitPressPoint.X - e.GetPosition(this).X);
+            e.Handled = true;
+        }
+
+        private void OnInspectorSplitReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            if (!_splitDragging) return;
+
+            _splitDragging = false;
+            e.Pointer.Capture(null);
+            e.Handled = true;
+        }
+
         public void PerformUndo()
         {
             if (DataContext is CharactersViewModel vm && !vm.IsReadOnly && vm.CanUndo) vm.Undo();
@@ -116,17 +178,6 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 .ToList();
 
             overlay.ShowFor(characters);
-        }
-
-        // Открывает окно настроек карточки по центру модуля (CardSettingsOverlay
-        // хостится в CharactersModuleView поверх содержимого, со скримом).
-        private void OnCardSettingsClick(object? sender, RoutedEventArgs e)
-        {
-            if (sender is not Control c || c.DataContext is not CharacterListItemViewModel item) return;
-            var host = this.FindAncestorOfType<CharactersModuleView>();
-            var overlay = host?.FindControl<CardSettingsOverlay>("CardSettingsOverlayControl");
-            overlay?.ShowFor(item, DataContext as CharactersViewModel);
-            e.Handled = true;
         }
 
         // Ступень важности папки по кругу: нет, I, II, III. Событие гасится —
@@ -486,7 +537,20 @@ namespace Writersword.Modules.Characters.Views.Tabs
 
             if (e.Key is not (Key.Return or Key.Enter or Key.Escape)) return;
             var charVm = FindCharacterItemVm(e.Source as Visual);
-            if (charVm is null) return;
+
+            // Escape вне карточки снимает выделение и убирает панель. Внутри
+            // карточки он раньше отменял ввод имени, и это важнее: тот случай
+            // разбирается ниже и до сюда не доходит.
+            if (charVm is null)
+            {
+                if (e.Key == Key.Escape && DataContext is CharactersViewModel vmEscape
+                    && vmEscape.HasSelection)
+                {
+                    vmEscape.ClearSelection();
+                    e.Handled = true;
+                }
+                return;
+            }
             if (e.Key is Key.Return or Key.Enter)
             {
                 if (charVm.IsBeingNamed)
@@ -519,6 +583,8 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             {
                 _dragCandidate = charVm;
+                _clickCandidate = charVm;
+                _clickStartPoint = e.GetPosition(this);
                 _dragStartPoint = e.GetPosition(this);
                 _pressTick = Environment.TickCount64;
                 _isDragging = false;
@@ -539,6 +605,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
             {
                 ClearPicked();
                 _dragCandidate = null;
+                _clickCandidate = null;
                 _isDragging = false;
                 _hasPointerCapture = false;
             }
@@ -1123,12 +1190,21 @@ namespace Writersword.Modules.Characters.Views.Tabs
             {
                 if (_avatarService == null) return null;
 
+                // Удаление аватара показывается кнопкой в нижней панели пикера,
+                // а не отдельным меню на карточке: клик по аватарке сразу ведёт
+                // к выбору фото. Действие передаётся только когда удалять есть
+                // что — при пустом аватаре кнопка в пикере не появляется.
+                Action? deleteAvatarAction = string.IsNullOrEmpty(item.AvatarPath)
+                    ? null
+                    : item.RemoveAvatar;
+
                 // Выбор аватара — оверлей по центру модуля (как редактор цвета),
                 // а не отдельное системное окно.
                 var host = this.FindAncestorOfType<CharactersModuleView>();
                 var overlay = host?.FindControl<CharacterAvatarPickerOverlay>("AvatarPickerOverlayControl");
                 if (overlay != null)
-                    return await overlay.ShowAsync(_avatarService, item.Id);
+                    return await overlay.ShowAsync(
+                        _avatarService, item.Id, deleteAvatarAction, item.AvatarPath, item);
 
                 // Запасной путь, если вью показана вне модуля: прежнее окно.
                 var window = TopLevel.GetTopLevel(this) as Window;
@@ -1145,6 +1221,153 @@ namespace Writersword.Modules.Characters.Views.Tabs
                 character.AvatarPath = avatarRef;
                 vm.CharacterService.Update(character);
             };
+        }
+
+        // ── Приём картинки, брошенной на карточку ─────────────────────────
+        //
+        // Файл, отпущенный на карточку, становится аватаром её персонажа.
+        // Порядок шагов тот же, что и в пикере: сначала поиск уже сохранённой
+        // копии (одна фотография не должна лечь в проект дважды), затем
+        // обрезка, и только потом сохранение — отменённая обрезка не оставляет
+        // за собой файла.
+
+        private static readonly ILogger _dropLogger = Log.ForContext<CharactersListView>();
+
+        private static CharacterListItemViewModel? CardItemOf(object? sender) =>
+            (sender as Control)?.DataContext as CharacterListItemViewModel;
+
+        private static void SetCardDropTarget(CharacterListItemViewModel? item, bool value)
+        {
+            if (item != null) item.IsImageDropTarget = value;
+        }
+
+        private void OnCardImageDragOver(object? sender, DragEventArgs e)
+        {
+            var item = CardItemOf(sender);
+            var accepts = item != null && e.DataTransfer.Contains(DataFormat.File);
+
+            e.DragEffects = accepts ? DragDropEffects.Copy : DragDropEffects.None;
+            SetCardDropTarget(item, accepts);
+            e.Handled = true;
+        }
+
+        private void OnCardImageDragLeave(object? sender, DragEventArgs e)
+        {
+            SetCardDropTarget(CardItemOf(sender), false);
+            e.Handled = true;
+        }
+
+        private async void OnCardImageDrop(object? sender, DragEventArgs e)
+        {
+            e.Handled = true;
+
+            var item = CardItemOf(sender);
+            SetCardDropTarget(item, false);
+            if (item == null || _avatarService == null) return;
+
+            var files = e.DataTransfer.TryGetFiles();
+            if (files == null) return;
+
+            // Аватар у персонажа один, поэтому из брошенной пачки берётся
+            // первая пригодная картинка. Остальные молча пропускаются: открыть
+            // подряд пять окон обрезки ради одного аватара — не помощь.
+            foreach (var file in files)
+            {
+                if (file is not IStorageFile storageFile) continue;
+                if (!CharacterAvatarPickerOverlay.IsDroppableImage(storageFile.Name)) continue;
+
+                try
+                {
+                    byte[] bytes;
+                    await using (var stream = await storageFile.OpenReadAsync())
+                    using (var buffer = new MemoryStream())
+                    {
+                        await stream.CopyToAsync(buffer);
+                        bytes = buffer.ToArray();
+                    }
+
+                    await ApplyDroppedAvatarAsync(item, bytes, storageFile.Name);
+                }
+                catch (Exception ex)
+                {
+                    // Бросить могут что угодно — папку, ярлык, недоступный файл.
+                    _dropLogger.Error(ex, "Card avatar drop failed: {Name}", storageFile.Name);
+                }
+
+                return;
+            }
+        }
+
+        /// <summary>
+        /// Поставить брошенную картинку аватаркой персонажа. Открыт наружу
+        /// ради боковой панели: она принимает файл так же, как карточка, а
+        /// повторять здесь весь порядок — поиск уже сохранённой копии,
+        /// обрезку, сохранение — значило бы завести второй такой же порядок,
+        /// который разойдётся с этим при первой же правке.
+        /// </summary>
+        public async Task ApplyDroppedAvatarAsync(
+            CharacterListItemViewModel item, byte[] bytes, string fileName)
+        {
+            if (_avatarService == null || bytes.Length == 0) return;
+
+            string? baseRef;
+            try { baseRef = _avatarService.FindStoredByContent(bytes); }
+            catch (Exception ex)
+            {
+                _dropLogger.Error(ex, "FindStoredByContent failed");
+                baseRef = null;
+            }
+
+            var reused = baseRef != null;
+
+            var crops = await ShowCropForDroppedBytesAsync(bytes, item);
+            if (crops == null) return;
+
+            if (!reused)
+            {
+                baseRef = await _avatarService.SaveToProjectAsync(bytes, fileName);
+                if (baseRef == null) return;
+            }
+
+            var combined = CharacterAvatarRef.Combine(baseRef, crops.Circle, crops.Strip);
+            if (combined == null) return;
+
+            // ApplyAvatarRef сообщает о смене наружу — карточка и модель
+            // персонажа расходиться не должны.
+            item.ApplyAvatarRef(combined);
+            _avatarService.AddRecentAvatar(combined);
+        }
+
+        /// <summary>
+        /// Показать обрезку для ещё не сохранённой картинки. Если окна обрезки
+        /// в разметке нет, картинка берётся целиком: остаться без аватарки
+        /// из-за неподключённого окна хуже, чем взять её неподрезанной.
+        /// </summary>
+        private async Task<CharacterAvatarCropPair?> ShowCropForDroppedBytesAsync(
+            byte[] bytes, CharacterListItemViewModel item)
+        {
+            var host = this.FindAncestorOfType<CharactersModuleView>();
+            var overlay = host?.FindControl<CharacterAvatarCropOverlay>("AvatarCropOverlayControl");
+            if (overlay == null) return new CharacterAvatarCropPair(CharacterAvatarCrop.Full, null);
+
+            Bitmap? bitmap = null;
+            try
+            {
+                using var ms = new MemoryStream(bytes);
+                bitmap = new Bitmap(ms);
+                // Карточка показана полоской — открываем сразу на её кадре:
+                // человек бросил картинку на то, что видит, и правит он то же.
+                return await overlay.ShowAsync(bitmap, null, null, item, null, item.AvatarStrip);
+            }
+            catch (Exception ex)
+            {
+                _dropLogger.Error(ex, "Crop for dropped avatar failed");
+                return new CharacterAvatarCropPair(CharacterAvatarCrop.Full, null);
+            }
+            finally
+            {
+                bitmap?.Dispose();
+            }
         }
 
         private void ClearDragCaches()
@@ -1193,9 +1416,29 @@ namespace Writersword.Modules.Characters.Views.Tabs
                     e.Pointer.Capture(null);
                     _hasPointerCapture = false;
                 }
+
+                // Нажали на карточку и отпустили, не уведя указатель — это
+                // выбор. Место выбрано именно здесь, а не в нажатии: в нажатии
+                // ещё не известно, клик это или начало перетаскивания, и
+                // выделение прыгало бы на каждую попытку что-нибудь потащить.
+                var clicked = _isDragging ? null : _clickCandidate;
+                if (clicked is not null)
+                {
+                    var travel = e.GetPosition(this) - _clickStartPoint;
+                    if (Math.Abs(travel.X) > ClickSlack || Math.Abs(travel.Y) > ClickSlack)
+                        clicked = null;
+                }
+
                 ClearPicked();
                 _dragCandidate = null;
+                _clickCandidate = null;
                 _isDragging = false;
+
+                if (clicked is not null && DataContext is CharactersViewModel vmSelect)
+                {
+                    var additive = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Shift)) != 0;
+                    vmSelect.SelectCard(clicked, additive);
+                }
                 return;
             }
 
@@ -1206,6 +1449,7 @@ namespace Writersword.Modules.Characters.Views.Tabs
             }
 
             ClearDragVisuals();
+            _clickCandidate = null;
 
             if (DataContext is CharactersViewModel vm)
             {

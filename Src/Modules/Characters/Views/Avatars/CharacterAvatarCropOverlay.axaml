@@ -1,0 +1,556 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:colorControls="using:Writersword.Styles.UserControls"
+             xmlns:controls="using:Writersword.Modules.Characters.Controls"
+             xmlns:models="using:Writersword.Modules.Characters.Models"
+             xmlns:icv="using:Writersword.Infrastructure.Converters"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             x:Class="Writersword.Modules.Characters.Views.Avatars.CharacterAvatarCropOverlay"
+             IsVisible="False">
+
+	<!-- Обрезка аватарки: оформление то же, что у выбора аватарки и настроек
+	     карточки — скрим на модуль (клик не закрывает), центральная панель
+	     BgBase со скруглением 16 и тенью.
+
+	     Кадр в окне неподвижен, а картинка ездит и масштабируется под ним.
+	     Обратный порядок — подвижная рамка поверх неподвижной картинки —
+	     требует восьми ручек по краям и отдельного разбора, за какую из них
+	     тянут; здесь то же самое делают перетаскивание и колесо.
+
+	     Итог правки — кадр в долях исходной картинки: он уходит в ссылку
+	     персонажа, а файл в проекте остаётся один. Поэтому одну фотографию
+	     можно поставить двум карточкам, вырезав из неё разных людей.
+
+	     Справа стоит не голая вырезка, а карточка целиком — с рамкой в цвете
+	     персонажа, кольцом вокруг аватарки и подписью имени. Кадр выбирают не
+	     сам по себе, а под то место, где он будет жить. Цветопикер там же и
+	     тот же самый, что на карточке: цвет и кольцо уезжают персонажу сразу,
+	     как при нажатии на самой карточке. -->
+
+	<UserControl.Resources>
+		<!-- Прозрачный фон и трек скроллбара: серая подложка Fluent спорит с
+		     фоном панели. Ключи переопределены на уровне окна и за его
+		     пределы не выходят. -->
+		<SolidColorBrush x:Key="ScrollBarBackground" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarBackgroundPointerOver" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarBackgroundDisabled" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarTrackFill" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarPanningBackground" Color="Transparent"/>
+	</UserControl.Resources>
+
+	<UserControl.Styles>
+		<!-- Переключатель кадра: свой кружку, свой полоске. Та же дорожка,
+		     что у областей папок аватарок. -->
+		<Style Selector="Border.segTrack">
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="Padding" Value="2"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.seg">
+			<Setter Property="Padding" Value="14,4"/>
+			<Setter Property="MinWidth" Value="86"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="Button.seg /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<BrushTransition Property="Background" Duration="0:0:0.15"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Button.seg:not(.active):pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Button.seg.active">
+			<Setter Property="Foreground" Value="White"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+		</Style>
+		<Style Selector="Button.seg.active /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Подпись над коробкой превью. -->
+		<Style Selector="TextBlock.previewCaption">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid>
+		<!-- Скрим: затемняет и блокирует модуль. Клик НЕ закрывает. Лёгкая
+		     прозрачность оставлена намеренно — под окном видно, из какого
+		     места модуля его открыли. -->
+		<Border Background="#F2000000" PointerPressed="OnScrimPressed"/>
+
+		<!-- Тень висит на отдельной неподвижной подложке, а не на самой
+		     панели: эффект на панели заставляет перерисовывать её содержимое
+		     целиком при каждом движении кадра. Подложка повторяет размер
+		     панели по её Bounds — так же, как в редакторе цвета. -->
+		<Border x:Name="PanelShadow"
+		        HorizontalAlignment="Center" VerticalAlignment="Center"
+		        CornerRadius="16"
+		        Background="{DynamicResource BgBaseBrush}"
+		        IsHitTestVisible="False">
+			<Border.Effect>
+				<DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.55" Color="#000000"/>
+			</Border.Effect>
+		</Border>
+
+		<Border x:Name="CropPanel"
+		        HorizontalAlignment="Center" VerticalAlignment="Center"
+		        Margin="24"
+		        Background="{DynamicResource BgBaseBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="1"
+		        CornerRadius="16"
+		        ClipToBounds="True">
+
+			<Grid RowDefinitions="Auto,*,Auto">
+
+				<!-- Заголовок + крестик -->
+				<Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="16,14,12,0">
+					<TextBlock Grid.Column="0" x:Name="TitleText"
+					           Text="Обрезка аватарки"
+					           FontSize="16" FontWeight="SemiBold"
+					           Foreground="{DynamicResource TextPrimaryBrush}"
+					           VerticalAlignment="Center"/>
+					<Button Grid.Column="1" Content="✕"
+					        Click="OnCancelClick"
+					        Background="Transparent" BorderThickness="0"
+					        Foreground="{DynamicResource TextSecondaryBrush}"
+					        FontSize="14" Padding="6,2"
+					        behaviours:TooltipBehavior.Tip="Закрыть"
+					        behaviours:TooltipBehavior.Description="Кадр не сохранится"/>
+				</Grid>
+
+				<!-- Рабочая область: слева кадр, справа карточка. Полотно
+				     кадра фиксированное, поэтому при узком модуле середина
+				     окна прокручивается, а кнопки внизу остаются на месте. -->
+				<ScrollViewer Grid.Row="1"
+				              HorizontalScrollBarVisibility="Auto"
+				              VerticalScrollBarVisibility="Auto"
+				              Margin="16,12,16,0">
+					<Grid ColumnDefinitions="Auto,Auto">
+
+						<StackPanel Grid.Column="0" Spacing="12">
+
+						<!-- Кадров два: свой кружку, свой полоске. Кружку нужен
+						     квадрат вокруг лица, полоске — широкая полоса, и
+						     один кадр на оба вида означал бы, что один из них
+						     всегда обрезан не туда. Правится тот, что выбран
+						     здесь; второй всё это время виден в превью справа. -->
+						<Border Classes="segTrack" HorizontalAlignment="Center">
+							<StackPanel Orientation="Horizontal" Spacing="2">
+								<Button x:Name="ModeCircleButton" Classes="seg"
+								        Content="Кадр кружка"
+								        Click="OnModeCircleClick"
+								        behaviours:TooltipBehavior.Tip="Кадр для кружка"
+								        behaviours:TooltipBehavior.Description="Квадрат. Из него берут картинку кружок на карточке и мелкая плитка в списках"/>
+								<Button x:Name="ModeStripButton" Classes="seg"
+								        Content="Кадр полоски"
+								        Click="OnModeStripClick"
+								        behaviours:TooltipBehavior.Tip="Кадр для полоски"
+								        behaviours:TooltipBehavior.Description="Широкая полоса по пропорциям цветной зоны карточки. Пока свой кадр не задан, полоска берёт кадр кружка"/>
+							</StackPanel>
+						</Border>
+
+						<!-- Полотно кадра. Размер постоянный: вся геометрия
+						     кадра считается в его координатах, и зависеть от
+						     прохода раскладки ей незачем.
+
+						     Скругление у полотна раньше срезало углы белой
+						     рамки кадра: рамка доходила до самого края и
+						     обрывалась, а углы выглядели загнутыми. Теперь
+						     рамка отступает от края полотна на FrameInset и в
+						     скругление не попадает вовсе, поэтому полотну
+						     скругление вернулось. -->
+						<Border Width="420" Height="420"
+						        CornerRadius="10"
+						        ClipToBounds="True"
+						        Background="{DynamicResource BgSurfaceBrush}"
+						        BorderBrush="{DynamicResource BorderDefaultBrush}"
+						        BorderThickness="1">
+							<Panel x:Name="Viewport"
+							       Background="Transparent"
+							       PointerPressed="OnViewportPointerPressed"
+							       PointerMoved="OnViewportPointerMoved"
+							       PointerReleased="OnViewportPointerReleased"
+							       PointerWheelChanged="OnViewportWheel">
+
+								<Canvas x:Name="ImageCanvas" ClipToBounds="True">
+									<Image x:Name="SourceImage" IsHitTestVisible="False"/>
+								</Canvas>
+
+								<!-- Затемнение вне кадра: четыре полосы вокруг
+								     рамки. Одним прямоугольником с дыркой это
+								     не выразить без геометрии, а полосы точно
+								     повторяют любую форму кадра. -->
+								<Canvas x:Name="ShadeCanvas" IsHitTestVisible="False">
+									<Border x:Name="ShadeTop" Background="#99000000"/>
+									<Border x:Name="ShadeBottom" Background="#99000000"/>
+									<Border x:Name="ShadeLeft" Background="#99000000"/>
+									<Border x:Name="ShadeRight" Background="#99000000"/>
+								</Canvas>
+
+								<Canvas x:Name="FrameCanvas" IsHitTestVisible="False">
+									<!-- Вторая тонкая линия снаружи белой рамки,
+									     через промежуток в три точки. Идёт по
+									     затемнению вне кадра, поэтому взята
+									     приглушённо-белой: тёмная линия по
+									     тёмному фону не читалась бы вовсе.
+									     Объявлена раньше белой рамки: на канве
+									     позже объявленное рисуется поверх. -->
+									<Border x:Name="FrameOuter"
+									        BorderBrush="#59FFFFFF"
+									        BorderThickness="1"
+									        CornerRadius="10"
+									        Background="Transparent"/>
+									<Border x:Name="FrameBorder"
+									        BorderBrush="#FFFFFFFF"
+									        BorderThickness="2"
+									        CornerRadius="8"
+									        Background="Transparent"/>
+									<Border x:Name="FrameCircleHint"
+									        BorderBrush="#FFFFFFFF"
+									        BorderThickness="1"
+									        CornerRadius="999"
+									        Background="Transparent"/>
+								</Canvas>
+							</Panel>
+						</Border>
+
+						<!-- Масштаб. Стоит под самой фотографией и по её
+						     середине: тянут кадр здесь же, и уводить рычаг
+						     масштаба на другой край окна незачем.
+
+						     Кнопок формы кадра рядом больше нет. Рамка всегда
+						     квадратная — и кружок карточки, и мелкая плитка
+						     квадратные, а полоска в любом случае режет кадр
+						     по-своему. Кнопка «вся картинка» же формой кадра и
+						     не была: она означала «не выбираю, пусть карточка
+						     берёт середину сама», то есть отказ от обрезки в
+						     окне обрезки. -->
+						<StackPanel Orientation="Horizontal" Spacing="8"
+						            Width="420"
+						            HorizontalAlignment="Center">
+							<TextBlock Text="Масштаб" FontSize="11"
+							           VerticalAlignment="Center"
+							           Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<Slider x:Name="ZoomSlider"
+							        Minimum="1" Maximum="6" Value="1"
+							        Width="200" VerticalAlignment="Center"
+							        ValueChanged="OnZoomSliderChanged"/>
+							<Button Content="Сбросить" Click="OnResetClick"
+							        Padding="10,5" FontSize="11"
+							        VerticalAlignment="Center"
+							        behaviours:TooltipBehavior.Tip="Вернуть кадр"
+							        behaviours:TooltipBehavior.Description="Масштаб становится наименьшим, кадр встаёт по центру картинки"/>
+						</StackPanel>
+
+						</StackPanel>
+
+						<!-- Превью: карточка целиком, как она встанет в списке.
+						     Контекст данных ставит код — это тот же
+						     CharacterListItemViewModel, что у настоящей
+						     карточки, поэтому цвет, кольцо и имя здесь живые,
+						     а не срисованные. -->
+						<StackPanel x:Name="CardPreviewHost"
+						            Grid.Column="1" Margin="16,0,0,0" Spacing="12" Width="164">
+
+							<TextBlock Text="Как встанет в карточку"
+							           FontSize="11" FontWeight="SemiBold"
+							           Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+							<!-- Плитка. Разметка повторяет настоящую карточку:
+							     корень со скруглением 10 и рамкой в цвете
+							     персонажа толщиной CardBorderThickness, поверх
+							     закладка группы, внутри цветная зона с кружком,
+							     кольцом и метками по дуге, снизу подпись имени.
+
+							     Размеры взяты не с потолка, а те, что считает
+							     CharactersViewModel при карточке по умолчанию:
+							     верхняя зона 60, аватарка 60-12=48, кольцо
+							     48+8=56, значок метки max(12, 48*0.3)=14.4,
+							     радиус дуги 48/2+14.4*0.15=26.16, подпись 40.
+							     Оттого превью и мелкое: ровно такой карточка и
+							     будет.
+
+							     Обрезки по корню нет — она была на нём и
+							     срезала подпись по прямому углу поверх рамки.
+							     Режут теперь сами зоны, как в карточке. -->
+							<StackPanel Spacing="6">
+								<TextBlock Classes="previewCaption" Text="Плитка"/>
+								<Border Width="152"
+								        CornerRadius="10"
+								        ClipToBounds="False"
+								        HorizontalAlignment="Left"
+								        Background="{DynamicResource BgPanelBrush}"
+								        BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+								        BorderThickness="{Binding CardBorderThickness}">
+									<Panel>
+										<Path IsVisible="{Binding ShowGroupBookmark}"
+										      IsHitTestVisible="False"
+										      ZIndex="6"
+										      HorizontalAlignment="Right"
+										      VerticalAlignment="Top"
+										      Margin="0,-1,12,0"
+										      Data="M0,0 H14 V20 L7,14 L0,20 Z"
+										      Fill="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
+
+										<DockPanel>
+											<Panel DockPanel.Dock="Top" Height="60" ZIndex="1">
+
+												<Panel HorizontalAlignment="Center"
+												       VerticalAlignment="Center"
+												       ZIndex="2">
+													<Ellipse Width="48" Height="48"
+													         Fill="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
+													<Border Width="48" Height="48" CornerRadius="24"
+													        ClipToBounds="True">
+														<Canvas x:Name="PreviewCircleCanvas" ClipToBounds="True">
+															<Image x:Name="PreviewCircleImage" IsHitTestVisible="False"/>
+														</Canvas>
+													</Border>
+													<Border CornerRadius="999"
+													        BorderThickness="2"
+													        IsHitTestVisible="False"
+													        IsVisible="{Binding AvatarRing}"
+													        BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+													        Width="56" Height="56"
+													        HorizontalAlignment="Center"
+													        VerticalAlignment="Center"/>
+												</Panel>
+
+												<ItemsControl ItemsSource="{Binding CardLabels}"
+												              ZIndex="3"
+												              ClipToBounds="False">
+													<ItemsControl.ItemsPanel>
+														<ItemsPanelTemplate>
+															<controls:LabelArcPanel ItemSize="14.4"
+															                        ArcRadius="26.16"
+															                        Straight="False"/>
+														</ItemsPanelTemplate>
+													</ItemsControl.ItemsPanel>
+													<ItemsControl.ItemTemplate>
+														<DataTemplate x:DataType="models:CharacterLabel">
+															<controls:CharacterLabelIcon
+																Label="{Binding}"
+																IconSize="14.4"
+																RimBrush="{DynamicResource BgPanelBrush}"
+																RimThickness="1"/>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+
+												<ItemsControl ItemsSource="{Binding DeadLabels}"
+												              ZIndex="3"
+												              ClipToBounds="False"
+												              HorizontalAlignment="Right"
+												              VerticalAlignment="Top"
+												              Margin="0,4,4,0">
+													<ItemsControl.ItemTemplate>
+														<DataTemplate x:DataType="models:CharacterLabel">
+															<controls:CharacterLabelIcon
+																Label="{Binding}"
+																IconSize="14.4"
+																RimBrush="{DynamicResource BgPanelBrush}"
+																RimThickness="1"/>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+											</Panel>
+
+											<Panel Height="40">
+												<TextBlock Text="{Binding Name}"
+												           FontSize="12" FontWeight="Medium"
+												           TextWrapping="NoWrap"
+												           TextTrimming="CharacterEllipsis"
+												           TextAlignment="Center"
+												           Margin="8,0"
+												           VerticalAlignment="Center"
+												           Foreground="{DynamicResource TextPrimaryBrush}"/>
+											</Panel>
+										</DockPanel>
+									</Panel>
+								</Border>
+							</StackPanel>
+
+							<!-- Полоска. Та же карточка, но цветная зона занята
+							     картинкой целиком, а метки идут не по дуге, а
+							     строкой — Straight, как и в настоящей карточке
+							     при виде аватара «полоска». Скругление зоны
+							     8,8,0,0 — то самое CardZoneCornerRadius для
+							     плиточной раскладки.
+
+							     Размер картинки в зоне считает код по её
+							     настоящим границам, а не по числу в разметке:
+							     ширина зоны зависит от толщины рамки карточки,
+							     а она у персонажа своя. -->
+							<StackPanel Spacing="6">
+								<TextBlock Classes="previewCaption" Text="Полоска"/>
+								<Border Width="152"
+								        CornerRadius="10"
+								        ClipToBounds="False"
+								        HorizontalAlignment="Left"
+								        Background="{DynamicResource BgPanelBrush}"
+								        BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+								        BorderThickness="{Binding CardBorderThickness}">
+									<Panel>
+										<Path IsVisible="{Binding ShowGroupBookmark}"
+										      IsHitTestVisible="False"
+										      ZIndex="6"
+										      HorizontalAlignment="Right"
+										      VerticalAlignment="Top"
+										      Margin="0,-1,12,0"
+										      Data="M0,0 H14 V20 L7,14 L0,20 Z"
+										      Fill="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
+
+										<DockPanel>
+											<Panel DockPanel.Dock="Top" Height="60" ZIndex="1">
+												<Border x:Name="PreviewStripBox"
+												        CornerRadius="8,8,0,0"
+												        ClipToBounds="True"
+												        ZIndex="2">
+													<Panel>
+														<Border Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
+														<Canvas x:Name="PreviewStripCanvas" ClipToBounds="True">
+															<Image x:Name="PreviewStripImage" IsHitTestVisible="False"/>
+														</Canvas>
+													</Panel>
+												</Border>
+
+												<ItemsControl ItemsSource="{Binding CardLabels}"
+												              ZIndex="3"
+												              ClipToBounds="False">
+													<ItemsControl.ItemsPanel>
+														<ItemsPanelTemplate>
+															<controls:LabelArcPanel ItemSize="14.4"
+															                        ArcRadius="26.16"
+															                        Straight="True"/>
+														</ItemsPanelTemplate>
+													</ItemsControl.ItemsPanel>
+													<ItemsControl.ItemTemplate>
+														<DataTemplate x:DataType="models:CharacterLabel">
+															<controls:CharacterLabelIcon
+																Label="{Binding}"
+																IconSize="14.4"
+																RimBrush="{DynamicResource BgPanelBrush}"
+																RimThickness="1"/>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+
+												<ItemsControl ItemsSource="{Binding DeadLabels}"
+												              ZIndex="3"
+												              ClipToBounds="False"
+												              HorizontalAlignment="Right"
+												              VerticalAlignment="Top"
+												              Margin="0,4,4,0">
+													<ItemsControl.ItemTemplate>
+														<DataTemplate x:DataType="models:CharacterLabel">
+															<controls:CharacterLabelIcon
+																Label="{Binding}"
+																IconSize="14.4"
+																RimBrush="{DynamicResource BgPanelBrush}"
+																RimThickness="1"/>
+														</DataTemplate>
+													</ItemsControl.ItemTemplate>
+												</ItemsControl>
+											</Panel>
+
+											<Panel Height="40">
+												<TextBlock Text="{Binding Name}"
+												           FontSize="12" FontWeight="Medium"
+												           TextWrapping="NoWrap"
+												           TextTrimming="CharacterEllipsis"
+												           TextAlignment="Center"
+												           Margin="8,0"
+												           VerticalAlignment="Center"
+												           Foreground="{DynamicResource TextPrimaryBrush}"/>
+											</Panel>
+										</DockPanel>
+									</Panel>
+								</Border>
+							</StackPanel>
+
+							<!-- Мелкая плитка: как аватарка выглядит в списках
+							     и подсказках, где карточки нет вовсе. -->
+							<StackPanel Spacing="6" Orientation="Horizontal">
+								<Border Width="44" Height="44" CornerRadius="22"
+								        ClipToBounds="True"
+								        VerticalAlignment="Center"
+								        Background="{DynamicResource BgSurfaceBrush}">
+									<Canvas x:Name="PreviewTinyCanvas" ClipToBounds="True">
+										<Image x:Name="PreviewTinyImage" IsHitTestVisible="False"/>
+									</Canvas>
+								</Border>
+								<TextBlock Classes="previewCaption"
+								           Text="Мелкая плитка"
+								           TextWrapping="Wrap" Width="90"
+								           VerticalAlignment="Center" Margin="6,0,0,0"/>
+							</StackPanel>
+
+							<Border Height="1" Margin="0,2,0,0"
+							        Background="{DynamicResource BorderSubtleBrush}"/>
+
+							<!-- Цвет карточки и кольцо. Кнопка та же, что стоит
+							     на самой карточке, со своей палитрой, кольцом,
+							     закладкой и переходом в полный редактор — не
+							     копия разметки, а тот же контрол. Правка уходит
+							     персонажу сразу: HexColor и RingEnabled связаны
+							     с карточкой в обе стороны. -->
+							<Grid x:Name="CardColorRow" ColumnDefinitions="Auto,*" ColumnSpacing="8">
+								<colorControls:ColorPickerButton
+									Grid.Column="0"
+									ShowCardPreview="True"
+									HexColor="{Binding Color, Mode=TwoWay}"
+									PreviewImage="{Binding AvatarBitmap}"
+									PreviewName="{Binding Name}"
+									PreviewFallback="{Binding FallbackIcon}"
+									RingEnabled="{Binding AvatarRing, Mode=TwoWay}"
+									PreviewIsGroup="{Binding IsCollective}"
+									BookmarkEnabled="{Binding GroupBookmark, Mode=TwoWay}"
+									ApplyRingToAllCommand="{Binding ApplyRingToAllCommand}"
+									Width="22" Height="22"
+									VerticalAlignment="Center"/>
+								<TextBlock Grid.Column="1"
+								           Text="Цвет карточки и кольцо"
+								           FontSize="11"
+								           TextWrapping="Wrap"
+								           VerticalAlignment="Center"
+								           Foreground="{DynamicResource TextSecondaryBrush}"/>
+							</Grid>
+
+						</StackPanel>
+					</Grid>
+				</ScrollViewer>
+
+				<!-- Нижняя панель -->
+				<Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto"
+				      Margin="16,14,16,16" ColumnSpacing="8">
+					<TextBlock Grid.Column="0" x:Name="HintText"
+					           Text="Тяните картинку мышью, колесо меняет масштаб"
+					           FontSize="11" VerticalAlignment="Center"
+					           Foreground="{DynamicResource TextSecondaryBrush}"/>
+					<Button Grid.Column="1" Content="Отмена"
+					        Click="OnCancelClick" Padding="14,6"/>
+					<Button Grid.Column="2" Content="Готово"
+					        Click="OnApplyClick" Padding="14,6"
+					        Background="{DynamicResource AccentDefaultBrush}"
+					        Foreground="White"/>
+				</Grid>
+
+			</Grid>
+		</Border>
+	</Grid>
+</UserControl>

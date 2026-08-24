@@ -1,4 +1,4 @@
-using Writersword.Core.Services;
+﻿using Writersword.Core.Services;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
@@ -892,6 +892,7 @@ namespace Writersword.Modules.TextEditor
             double zoom = dvm.Zoom;
             string viewMode = dvm.ViewMode.ToString();
             int pagesPerRow = dvm.PagesPerRow;
+            var reading = dvm.Reading;
 
             try
             {
@@ -913,7 +914,8 @@ namespace Writersword.Modules.TextEditor
                     scroll,
                     zoom,
                     viewMode,
-                    pagesPerRow
+                    pagesPerRow,
+                    reading
                 });
             }
             catch (Exception ex)
@@ -960,6 +962,25 @@ namespace Writersword.Modules.TextEditor
                     pagesPerRow = pprProp.GetInt32();
                 }
 
+                // Настройки чтения: тема бумаги, приближение книги, формат листа.
+                // Хранятся в сессии проекта — выбранный вид переживает перезапуск, но
+                // в сам документ не попадает и на печать не влияет. Отсутствие поля —
+                // данные прежних версий, там останутся значения по умолчанию.
+                Models.Settings.ReadingSettings? reading = null;
+                if (root.TryGetProperty("reading", out var readingProp)
+                    && readingProp.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    try
+                    {
+                        reading = System.Text.Json.JsonSerializer
+                            .Deserialize<Models.Settings.ReadingSettings>(readingProp.GetRawText());
+                    }
+                    catch (Exception rex)
+                    {
+                        _logger.Warning(rex, "Настройки чтения из сессии не разобраны");
+                    }
+                }
+
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                 {
                     // Масштаб — часть состояния вида (SessionData), а не содержимого документа.
@@ -971,12 +992,16 @@ namespace Writersword.Modules.TextEditor
 
                     // Режим и число страниц применяются тоже до каретки и скролла: они меняют
                     // пагинацию, а значит и координату, на которую встанет скролл.
+                    if (reading is not null && _viewModel is { } readVm)
+                        readVm.ApplyRestoredReadingSettings(reading);
+
                     if ((viewMode is not null || pagesPerRow is not null) && _viewModel is { } vm)
                     {
                         vm.ApplyRestoredViewState(
                             viewMode ?? vm.DocumentViewModel?.ViewMode ?? EditorViewMode.Page,
                             pagesPerRow ?? vm.DocumentViewModel?.PagesPerRow ?? 1);
                     }
+
 
                     var canvas = _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
                     canvas?.RestoreCaretState(docParaIdx, charIdx);
@@ -1013,7 +1038,8 @@ namespace Writersword.Modules.TextEditor
                 scroll = scrollY,
                 zoom = zoom,
                 viewMode = (dvm?.ViewMode ?? EditorViewMode.Page).ToString(),
-                pagesPerRow = dvm?.PagesPerRow ?? 1
+                pagesPerRow = dvm?.PagesPerRow ?? 1,
+                reading = dvm?.Reading
             });
         }
 
@@ -1446,8 +1472,29 @@ namespace Writersword.Modules.TextEditor
         {
             var vm = new TextEditorViewModel();
             vm.PrintRequested += OnPrintRequested;
+            vm.GlobalSettingsChanged = SaveGlobalSettings;
             vm.LoadNewDocument(_localSettings);
             return vm;
+        }
+
+        /// <summary>
+        /// Сохраняет общие настройки модуля. Нужно видам чтения: вид, помеченный
+        /// как общий для всех проектов, обязан пережить закрытие программы, а куда
+        /// его писать, знает модуль — вью-модель про хранилище настроек не знает.
+        /// </summary>
+        private void SaveGlobalSettings(TextEditorSettings settings)
+        {
+            try
+            {
+                _globalSettings = settings;
+                _localSettings = settings;
+                _settingsService.SaveModuleSettings(moduleType, settings);
+                _settingsService.Save();
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Общие настройки модуля сохранить не удалось");
+            }
         }
     }
 }

@@ -93,6 +93,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.StatusBar
                     this.RaisePropertyChanged(nameof(IsReadingMode));
                     this.RaisePropertyChanged(nameof(IsSinglePageMode));
                     this.RaisePropertyChanged(nameof(IsTwoPagesMode));
+                    this.RaisePropertyChanged(nameof(IsAutoPagesMode));
                     ViewModeChanged?.Invoke(value);
                 }
                 finally

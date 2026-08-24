@@ -12,6 +12,7 @@
             BorderThickness="1.5"
             BorderBrush="{DynamicResource BorderSubtleBrush}"
             Background="{Binding HexColor, ElementName=Root, Converter={x:Static conv:ColorCodeToBrushConverter.Instance}}"
+            Tag="{Binding HexColor, ElementName=Root}"
             VerticalAlignment="Stretch"
             HorizontalAlignment="Stretch">
 		<Button.Styles>
@@ -27,11 +28,36 @@
 			<Style Selector="Button#TriggerButton">
 				<Setter Property="Template">
 					<ControlTemplate>
-						<Border Name="RoundRoot"
-                                CornerRadius="999"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"/>
+						<Panel>
+							<Border Name="RoundRoot"
+                                    CornerRadius="999"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"/>
+							<!-- Отсутствие цвета — прозрачная заливка, и пустой кружок ничем не
+							     отличается от белого или от подложки под ним. Поверх ложится тот
+							     же значок, что и в самой палитре: белый круг с красным крестом.
+							     Код цвета берётся из Tag: внутри шаблона у кнопки своя область
+							     имён, и до HexColor на UserControl отсюда не дотянуться. -->
+							<Panel Name="NoColorMark" IsHitTestVisible="False"
+							       IsVisible="{TemplateBinding Tag, Converter={x:Static conv:IsNoColorCodeConverter.Instance}}">
+								<Ellipse Width="17" Height="17" Fill="White"
+								         HorizontalAlignment="Center" VerticalAlignment="Center"/>
+								<!-- Крест собран из двух повёрнутых полосок, а не из Line: у Line
+								     точки заданы в абсолютных координатах, размер фигуры берётся по
+								     границам этой геометрии, и раскладка ставит фигуру по своему
+								     выравниванию — нарисованное уезжает от центра кружка.
+								     Прямоугольник с заданными сторонами центрируется раскладкой, а
+								     поворот идёт вокруг его середины (RenderTransformOrigin по
+								     умолчанию — центр), поэтому крест стоит ровно. -->
+								<Rectangle Width="12" Height="1.6" Fill="#E53935"
+								           HorizontalAlignment="Center" VerticalAlignment="Center"
+								           RenderTransform="rotate(45deg)"/>
+								<Rectangle Width="12" Height="1.6" Fill="#E53935"
+								           HorizontalAlignment="Center" VerticalAlignment="Center"
+								           RenderTransform="rotate(-45deg)"/>
+							</Panel>
+						</Panel>
 					</ControlTemplate>
 				</Setter>
 			</Style>

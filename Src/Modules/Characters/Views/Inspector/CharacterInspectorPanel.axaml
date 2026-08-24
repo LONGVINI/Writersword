@@ -1,0 +1,454 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Inspector"
+             xmlns:controls="using:Writersword.Modules.Characters.Controls"
+             xmlns:models="using:Writersword.Modules.Characters.Models"
+             xmlns:colorControls="using:Writersword.Styles.UserControls"
+             xmlns:conv="using:Writersword.Modules.Characters.Converters"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             x:Class="Writersword.Modules.Characters.Views.Inspector.CharacterInspectorPanel"
+             x:DataType="vm:CharacterInspectorViewModel">
+
+	<!-- Оформление выбранных карточек. Стоит рядом со списком, а не поверх
+	     него: карточка, которую правят, обязана быть видна — иначе панели
+	     пришлось бы, как прежним окнам, отращивать собственное превью, и
+	     превью разошлось бы с настоящей карточкой.
+
+	     Ничего не подтверждается. Каждая правка уходит персонажу сразу и
+	     откатывается через Ctrl+Z. Исключение одно — ползунок толщины: пока
+	     его тянут, карточки перерисовываются предпросмотром, а запись и шаг
+	     истории случаются один раз, когда его отпустили. -->
+
+	<UserControl.Resources>
+		<!-- Серая подложка скроллбара Fluent спорит с фоном панели. -->
+		<SolidColorBrush x:Key="ScrollBarBackground" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarBackgroundPointerOver" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarBackgroundDisabled" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarTrackFill" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarPanningBackground" Color="Transparent"/>
+	</UserControl.Resources>
+
+	<UserControl.Styles>
+		<!-- Заголовок сворачиваемой секции. -->
+		<Style Selector="Button.sect">
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Left"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="12,9"/>
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+		<Style Selector="Button.sect:pointerover">
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="Button.sect /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button.sect:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+
+		<!-- Стрелка секции: вправо — свёрнута, вниз — раскрыта. -->
+		<Style Selector="Path.chev">
+			<Setter Property="Stroke" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="StrokeThickness" Value="1.4"/>
+			<Setter Property="Width" Value="8"/>
+			<Setter Property="Height" Value="8"/>
+			<Setter Property="Stretch" Value="None"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+
+		<!-- Переключатель вида аватара — та же дорожка, что у областей папок. -->
+		<Style Selector="Border.segTrack">
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="Padding" Value="2"/>
+			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
+		</Style>
+		<Style Selector="Button.seg">
+			<Setter Property="Padding" Value="10,4"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="Button.seg /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<BrushTransition Property="Background" Duration="0:0:0.15"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Button.seg:not(.active):pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Button.seg.active">
+			<Setter Property="Foreground" Value="White"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+		</Style>
+		<Style Selector="Button.seg.active /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Кнопка ступени важности. Скопирована из стилей списка один в
+		     один: стили UserControl за его границы не выходят, а значок обязан
+		     выглядеть одинаково и у папки, и здесь. -->
+		<Style Selector="Button.folder-hdr-btn">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+		</Style>
+		<Style Selector="Button.folder-hdr-btn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="#1FFFFFFF"/>
+		</Style>
+		<Style Selector="Button.folder-hdr-btn:pressed /template/ ContentPresenter">
+			<Setter Property="Background" Value="#33FFFFFF"/>
+		</Style>
+
+		<Style Selector="TextBlock.rowLabel">
+			<Setter Property="FontSize" Value="12"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Border Background="{DynamicResource BgSurfaceBrush}"
+	        BorderBrush="{DynamicResource BorderSubtleBrush}"
+	        BorderThickness="1,0,0,0"
+	        DragDrop.AllowDrop="True"
+	        DragDrop.DragEnter="OnPanelDragOver"
+	        DragDrop.DragOver="OnPanelDragOver"
+	        DragDrop.DragLeave="OnPanelDragLeave"
+	        DragDrop.Drop="OnPanelDrop">
+
+		<Grid RowDefinitions="Auto,*">
+
+			<!-- Шапка: имя правится прямо здесь, чтобы не гоняться за
+			     подписью на самой карточке. При нескольких выбранных поле
+			     гаснет — общего имени у них нет. -->
+			<Grid Grid.Row="0"
+			      ColumnDefinitions="*,Auto"
+			      Margin="12,10"
+			      IsVisible="{Binding HasSelection}">
+				<StackPanel Grid.Column="0" Spacing="7">
+				<TextBox x:Name="NameBox"
+				         Text="{Binding Name, Mode=TwoWay}"
+				         IsEnabled="{Binding IsSingle}"
+				         PlaceholderText="Несколько карточек"
+				         FontSize="14" FontWeight="Medium"
+				         Padding="8,6"
+				         CornerRadius="4"
+				         Background="{DynamicResource BgPanelBrush}"
+				         BorderThickness="1"
+				         BorderBrush="Transparent"
+				         Foreground="{DynamicResource TextPrimaryBrush}"
+				         LostFocus="OnNameLostFocus"
+				         KeyDown="OnNameKeyDown"/>
+				<TextBlock Text="{Binding SelectionCaption}"
+				           FontSize="10.5"
+				           Foreground="{DynamicResource TextMutedBrush}"/>
+				</StackPanel>
+
+				<!-- Единственный способ закрыть панель, кроме повторного щелчка
+				     по той же карточке. Выключателя у края списка нет: пока
+				     панель закрыта, там не остаётся ни кнопки, ни поля. -->
+				<Button Grid.Column="1"
+				        Content="✕"
+				        Command="{Binding CloseCommand}"
+				        Background="Transparent"
+				        BorderThickness="0"
+				        Foreground="{DynamicResource TextSecondaryBrush}"
+				        FontSize="13"
+				        Padding="7,3"
+				        MinWidth="0" MinHeight="0"
+				        VerticalAlignment="Top"
+				        Margin="6,0,0,0"
+				        behaviours:TooltipBehavior.Tip="Закрыть панель"
+				        behaviours:TooltipBehavior.Description="Снимает выбор с карточек. Правки уже записаны — закрытие ничего не отменяет"/>
+			</Grid>
+
+			<ScrollViewer Grid.Row="1"
+			              HorizontalScrollBarVisibility="Disabled"
+			              VerticalScrollBarVisibility="Auto"
+			              IsVisible="{Binding HasSelection}">
+				<StackPanel>
+
+					<!-- ══ Аватарка ══════════════════════════════════════ -->
+					<Border BorderBrush="{DynamicResource BorderSubtleBrush}"
+					        BorderThickness="0,1,0,0">
+						<StackPanel>
+							<Button Classes="sect" Click="OnToggleSection" Tag="Avatar">
+								<StackPanel Orientation="Horizontal" Spacing="7">
+									<Path x:Name="AvatarChev" Classes="chev" Data="M2.5,1 L5.5,4 L2.5,7"/>
+									<TextBlock Text="АВАТАРКА" VerticalAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
+							<StackPanel x:Name="AvatarBody" Margin="12,0,12,12" Spacing="10">
+								<Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+									<Border Grid.Column="0"
+									        Width="56" Height="56" CornerRadius="28"
+									        ClipToBounds="True"
+									        Background="{DynamicResource BgPanelBrush}">
+										<Panel>
+											<TextBlock Text="{Binding FallbackIcon}"
+											           FontSize="24"
+											           Foreground="{DynamicResource TextMutedBrush}"
+											           HorizontalAlignment="Center"
+											           VerticalAlignment="Center"/>
+											<Image Source="{Binding AvatarBitmap}" Stretch="UniformToFill"/>
+										</Panel>
+									</Border>
+
+									<StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+										<Button Content="Выбрать аватарку…"
+										        Command="{Binding ChooseAvatarCommand}"
+										        IsEnabled="{Binding CanChooseAvatar}"
+										        HorizontalAlignment="Stretch"
+										        HorizontalContentAlignment="Center"
+										        FontSize="11.5" Padding="8,6" CornerRadius="4"
+										        behaviours:TooltipBehavior.Tip="Окно выбора аватарки"
+										        behaviours:TooltipBehavior.Description="Недавние, аватарки проекта, папки, загрузка файла и обрезка — всё там же, где было"/>
+										<TextBlock Text="Или бросьте картинку на карточку или сюда."
+										           FontSize="10.5"
+										           TextWrapping="Wrap"
+										           Foreground="{DynamicResource TextMutedBrush}"/>
+									</StackPanel>
+								</Grid>
+							</StackPanel>
+						</StackPanel>
+					</Border>
+
+					<!-- ══ Персонаж: важность и группа ═══════════════════ -->
+					<Border BorderBrush="{DynamicResource BorderSubtleBrush}"
+					        BorderThickness="0,1,0,0">
+						<StackPanel>
+							<Button Classes="sect" Click="OnToggleSection" Tag="Person">
+								<StackPanel Orientation="Horizontal" Spacing="7">
+									<Path x:Name="PersonChev" Classes="chev" Data="M2.5,1 L5.5,4 L2.5,7"/>
+									<TextBlock Text="ПЕРСОНАЖ" VerticalAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
+							<StackPanel x:Name="PersonBody" Margin="12,0,12,12" Spacing="10">
+								<Grid ColumnDefinitions="*,Auto">
+									<TextBlock Grid.Column="0" Classes="rowLabel" Text="Важность"/>
+									<!-- Кнопка та же, что у ступени важности папки:
+									     тот же класс, те же поля, тот же Georgia и
+									     та же прозрачность от ступени. Второй вид
+									     у одного и того же значка означал бы, что
+									     римские цифры в списке и в панели читаются
+									     как разные вещи. -->
+									<Button Grid.Column="1"
+									        Classes="folder-hdr-btn"
+									        Command="{Binding CycleImportanceCommand}"
+									        Padding="6,2"
+									        behaviours:TooltipBehavior.Tip="Ступень важности"
+									        behaviours:TooltipBehavior.Description="I — главный, II — второстепенный, III — эпизодический. Щелчок переводит на следующую ступень по кругу">
+										<TextBlock Text="{Binding ImportanceMark}"
+										           FontFamily="Georgia, Times New Roman, serif"
+										           FontSize="12"
+										           MinWidth="14"
+										           TextAlignment="Center"
+										           VerticalAlignment="Center"
+										           Foreground="{DynamicResource TextPrimaryBrush}"
+										           Opacity="{Binding ImportanceLevel,
+										               Converter={x:Static conv:ImportanceToOpacityConverter.Instance}}"/>
+									</Button>
+								</Grid>
+
+							</StackPanel>
+						</StackPanel>
+					</Border>
+
+					<!-- ══ Цвет ══════════════════════════════════════════ -->
+					<Border BorderBrush="{DynamicResource BorderSubtleBrush}"
+					        BorderThickness="0,1,0,0">
+						<StackPanel>
+							<Button Classes="sect" Click="OnToggleSection" Tag="Color">
+								<StackPanel Orientation="Horizontal" Spacing="7">
+									<Path x:Name="ColorChev" Classes="chev" Data="M2.5,1 L5.5,4 L2.5,7"/>
+									<TextBlock Text="ЦВЕТ" VerticalAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
+							<StackPanel x:Name="ColorBody" Margin="12,0,12,12" Spacing="10">
+								<Grid ColumnDefinitions="*,Auto">
+									<TextBlock Grid.Column="0" Classes="rowLabel" Text="Цвет карточки"/>
+									<colorControls:ColorPickerButton
+										Grid.Column="1"
+										ShowCardPreview="True"
+										HexColor="{Binding Color, Mode=TwoWay}"
+										PreviewImage="{Binding AvatarBitmap}"
+										PreviewName="{Binding Name}"
+										PreviewFallback="{Binding FallbackIcon}"
+										RingEnabled="{Binding Ring, Mode=TwoWay}"
+										PreviewIsGroup="{Binding IsCollective}"
+										BookmarkEnabled="{Binding Bookmark, Mode=TwoWay}"
+										ApplyRingToAllCommand="{Binding ApplyRingToAllCommand}"
+										Width="24" Height="24"
+										VerticalAlignment="Center"/>
+								</Grid>
+
+								<CheckBox IsChecked="{Binding Ring, Mode=TwoWay}"
+								          IsVisible="{Binding ShowRingRow}"
+								          FontSize="12"
+								          Foreground="{DynamicResource TextSecondaryBrush}"
+								          Content="Кольцо вокруг аватарки"
+								          behaviours:TooltipBehavior.Tip="Кольцо цветом персонажа"
+								          behaviours:TooltipBehavior.Description="Рисуется снаружи кружка. У полоски кольца нет — там цвет уже занимает всю зону"/>
+
+							</StackPanel>
+						</StackPanel>
+					</Border>
+
+					<!-- ══ Контур и вид ══════════════════════════════════ -->
+					<Border BorderBrush="{DynamicResource BorderSubtleBrush}"
+					        BorderThickness="0,1,0,0">
+						<StackPanel>
+							<Button Classes="sect" Click="OnToggleSection" Tag="Outline">
+								<StackPanel Orientation="Horizontal" Spacing="7">
+									<Path x:Name="OutlineChev" Classes="chev" Data="M2.5,1 L5.5,4 L2.5,7"/>
+									<TextBlock Text="КОНТУР И ВИД" VerticalAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
+							<StackPanel x:Name="OutlineBody" Margin="12,0,12,12" Spacing="10">
+								<TextBlock Classes="rowLabel" Text="Вид аватара"/>
+								<Border Classes="segTrack">
+									<Grid ColumnDefinitions="*,*" ColumnSpacing="2">
+										<Button Grid.Column="0" Classes="seg"
+										        Classes.active="{Binding AvatarCircle}"
+										        Command="{Binding SetAvatarCircleCommand}"
+										        Content="Кружок"
+										        behaviours:TooltipBehavior.Tip="Аватарка кружком"
+										        behaviours:TooltipBehavior.Description="Круглая картинка по центру цветной зоны, вокруг неё идут метки"/>
+										<Button Grid.Column="1" Classes="seg"
+										        Classes.active="{Binding AvatarStrip}"
+										        Command="{Binding SetAvatarStripCommand}"
+										        Content="Полоска"
+										        behaviours:TooltipBehavior.Tip="Аватарка полоской"
+										        behaviours:TooltipBehavior.Description="Картинка занимает верхнюю зону карточки целиком, метки выстраиваются строкой"/>
+									</Grid>
+								</Border>
+
+								<Grid ColumnDefinitions="*,Auto">
+									<TextBlock Grid.Column="0" Classes="rowLabel" Text="Толщина рамки"/>
+									<TextBlock Grid.Column="1"
+									           Text="{Binding ThicknessText}"
+									           FontSize="12"
+									           VerticalAlignment="Center"
+									           Foreground="{DynamicResource TextMutedBrush}"/>
+								</Grid>
+								<Slider x:Name="ThicknessSlider"
+								        Minimum="1" Maximum="6"
+								        TickFrequency="1" IsSnapToTickEnabled="True"
+								        Value="{Binding Thickness, Mode=TwoWay}"
+								        PointerCaptureLost="OnThicknessCaptureLost"
+								        PointerReleased="OnThicknessPointerReleased"
+								        KeyUp="OnThicknessKeyUp"/>
+							</StackPanel>
+						</StackPanel>
+					</Border>
+
+					<!-- ══ Метки ═════════════════════════════════════════ -->
+					<Border BorderBrush="{DynamicResource BorderSubtleBrush}"
+					        BorderThickness="0,1,0,1">
+						<StackPanel>
+							<Button Classes="sect" Click="OnToggleSection" Tag="Labels">
+								<StackPanel Orientation="Horizontal" Spacing="7">
+									<Path x:Name="LabelsChev" Classes="chev" Data="M2.5,1 L5.5,4 L2.5,7"/>
+									<TextBlock Text="МЕТКИ" VerticalAlignment="Center"/>
+								</StackPanel>
+							</Button>
+
+							<StackPanel x:Name="LabelsBody" Margin="12,0,12,12" Spacing="10">
+								<ItemsControl ItemsSource="{Binding Labels}"
+								              IsVisible="{Binding HasLabels}">
+									<ItemsControl.ItemsPanel>
+										<ItemsPanelTemplate>
+											<WrapPanel Orientation="Horizontal"/>
+										</ItemsPanelTemplate>
+									</ItemsControl.ItemsPanel>
+									<ItemsControl.ItemTemplate>
+										<DataTemplate x:DataType="models:CharacterLabel">
+											<Border Margin="0,0,6,6"
+											        Padding="5,3,9,3"
+											        CornerRadius="999"
+											        Background="{DynamicResource BgPanelBrush}">
+												<StackPanel Orientation="Horizontal" Spacing="5">
+													<controls:CharacterLabelIcon
+														Label="{Binding}"
+														IconSize="13"
+														RimBrush="{DynamicResource BgPanelBrush}"
+														RimThickness="1"
+														VerticalAlignment="Center"/>
+													<TextBlock Text="{Binding Name}"
+													           FontSize="11"
+													           VerticalAlignment="Center"
+													           Foreground="{DynamicResource TextSecondaryBrush}"/>
+												</StackPanel>
+											</Border>
+										</DataTemplate>
+									</ItemsControl.ItemTemplate>
+								</ItemsControl>
+
+								<TextBlock Text="У этого персонажа меток нет."
+								           FontSize="11.5"
+								           TextWrapping="Wrap"
+								           IsVisible="{Binding !HasLabels}"
+								           Foreground="{DynamicResource TextMutedBrush}"/>
+							</StackPanel>
+						</StackPanel>
+					</Border>
+
+				</StackPanel>
+			</ScrollViewer>
+
+			<!-- Панель принимает брошенную картинку так же, как карточка:
+			     тянуть файл к маленькому кружку аватарки неудобно, а мимо
+			     панели промахнуться трудно. -->
+			<Border Grid.Row="0" Grid.RowSpan="2"
+			        x:Name="PanelDropHint"
+			        IsVisible="False"
+			        IsHitTestVisible="False"
+			        Background="#33C8863C"
+			        BorderBrush="{DynamicResource AccentDefaultBrush}"
+			        BorderThickness="2"
+			        ZIndex="20">
+				<TextBlock Text="Отпустите — станет аватаркой"
+				           FontSize="12"
+				           TextWrapping="Wrap"
+				           TextAlignment="Center"
+				           Margin="16"
+				           HorizontalAlignment="Center"
+				           VerticalAlignment="Center"
+				           Foreground="{DynamicResource TextPrimaryBrush}"/>
+			</Border>
+
+			<!-- Пусто: выбора нет. Панель в этом состоянии не показывается,
+			     но подпись остаётся на случай, если её открыли с краю. -->
+			<TextBlock Grid.Row="1"
+			           Text="Выберите карточку в списке."
+			           IsVisible="{Binding !HasSelection}"
+			           FontSize="12"
+			           TextWrapping="Wrap"
+			           TextAlignment="Center"
+			           Margin="20,40"
+			           VerticalAlignment="Top"
+			           Foreground="{DynamicResource TextMutedBrush}"/>
+		</Grid>
+	</Border>
+</UserControl>

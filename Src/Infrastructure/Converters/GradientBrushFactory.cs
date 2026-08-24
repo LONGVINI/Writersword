@@ -106,4 +106,32 @@ namespace Writersword.Infrastructure.Converters
         public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
             => throw new NotImplementedException();
     }
+
+    /// <summary>
+    /// Код цвета означает «без цвета»: пустая строка или полностью прозрачный цвет.
+    /// Нужен кнопке пикера — прозрачную заливку на кружке не отличить от «ничего
+    /// не выбрано», и поверх неё рисуется перечёркивание.
+    /// </summary>
+    public sealed class IsNoColorCodeConverter : IValueConverter
+    {
+        public static readonly IsNoColorCodeConverter Instance = new();
+
+        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            var code = value as string;
+            if (string.IsNullOrWhiteSpace(code)) return true;
+
+            code = code.Trim();
+
+            // #00000000 и любой другой код с нулевой альфой: первые два разряда после
+            // решётки — прозрачность, и ноль в них означает полностью прозрачный цвет.
+            if (code.Length == 9 && code[0] == '#')
+                return code[1] == '0' && code[2] == '0';
+
+            return false;
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+            => throw new NotImplementedException();
+    }
 }

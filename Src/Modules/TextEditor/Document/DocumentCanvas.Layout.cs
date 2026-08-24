@@ -1,4 +1,4 @@
-using Serilog;
+﻿using Serilog;
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
@@ -487,6 +487,18 @@ namespace Writersword.Modules.TextEditor.Document
         private float GetCurrentTextWidthPt()
         {
             if (DocVm is null) return 400f;
+
+            // Книжный разворот верстается страницами, а не потоком: ширина текста
+            // берётся с виртуального листа. Без этой ветки прогрев кеша шейпил абзацы
+            // под колонку чтения, пересчёт просил другую ширину, кеш никогда не
+            // сходился — и полный проход раскладки не выполнялся вовсе.
+            if (DocVm.IsSpreadReading)
+            {
+                float spreadW = GetPageWidthPt();
+                var (sl, _, sr, _) = GetPagePaddingPt();
+                return Math.Max(spreadW - sl - sr, 1f);
+            }
+
             switch (DocVm.ViewMode)
             {
                 case EditorViewMode.Page:
@@ -521,125 +533,6 @@ namespace Writersword.Modules.TextEditor.Document
         //   Out — позиции первых строк, замеренные текущим проходом; вход для следующего.
         private Dictionary<ParagraphBlock, float> _wrapAnchorIn = new();
         private Dictionary<ParagraphBlock, float> _wrapAnchorOut = new();
-
-        // Диагностика обтекания: печатается только для абзацев, которым достались зоны,
-        // и только когда набор величин изменился. Уровень Warning выбран намеренно —
-        // остальные источники в конфиге подняты до Warning, и в логе остаётся один этот
-        // поток. Временная, снимается сразу после разбора.
-        private readonly Dictionary<ParagraphBlock, string> _wrapDiagLast = new();
-
-        private void LogWrapDiag(
-            ParagraphBlock block, ParagraphViewModel pvm,
-            float contentYPt, float paraStartYPt,
-            List<SKWrapZone>? zones, SKTextLayout layout)
-        {
-            if (zones is null || zones.Count == 0) return;
-
-            // Печатаем только абзацы, которых зона реально накрывает по вертикали.
-            // Зоны раздаются всем подряд в радиусе 3000 пунктов, и без этого фильтра
-            // в лог сыпались абзацы, от которых объект отстоит на две страницы.
-            float paraHeightPt = layout.TotalHeightPt > 0f ? layout.TotalHeightPt : 20f;
-            bool touched = false;
-            foreach (var z in zones)
-                if (z.BottomPt > 0f && z.TopPt < paraHeightPt) { touched = true; break; }
-            if (!touched) return;
-
-            var zoneParts = new List<string>(zones.Count);
-            foreach (var z in zones)
-                zoneParts.Add(string.Format(
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    "(в={0:F1} н={1:F1} л={2:F1} п={3:F1})",
-                    z.TopPt, z.BottomPt, z.LeftPt, z.RightPt));
-            string zoneDump = string.Join(" ", zoneParts);
-
-            // Полоса, назначенная первой строке: если она сузилась, строка обтекает объект.
-            float line0Y = layout.Lines.Count > 0 ? layout.Lines[0].Y : -1f;
-            float line0Extra = layout.Lines.Count > 0 ? layout.Lines[0].WrapExtraTopPt : -1f;
-            float line0Left = layout.Lines.Count > 0 ? layout.Lines[0].WrapLeftPt : -1f;
-            float line0Width = layout.Lines.Count > 0 ? layout.Lines[0].WrapAreaWidthPt : -1f;
-
-            // Строки, которым досталась суженная полоса, — то есть те, что считают себя
-            // обтекающими объект. Их локальный Y показывает, на какой вертикали рендерер
-            // применил зону; сравнение с границами зоны и выявляет расхождение.
-            float fullWidthPt = layout.TextAreaWidthPt;
-            int firstWrapped = -1, lastWrapped = -1;
-            float firstWrappedY = 0f, lastWrappedY = 0f;
-            int wrappedCount = 0;
-            for (int i = 0; i < layout.Lines.Count; i++)
-            {
-                var ln = layout.Lines[i];
-                if (ln.WrapAreaWidthPt <= 0f || ln.WrapAreaWidthPt >= fullWidthPt - 0.5f) continue;
-
-                if (firstWrapped < 0) { firstWrapped = i; firstWrappedY = ln.Y; }
-                lastWrapped = i; lastWrappedY = ln.Y;
-                wrappedCount++;
-            }
-
-            string text = pvm.PlainText ?? string.Empty;
-            if (text.Length > 18) text = text.Substring(0, 18);
-
-            string signature = string.Format(
-                System.Globalization.CultureInfo.InvariantCulture,
-                "{0:F1}|{1:F1}|{2}|{3:F1}|{4:F1}|{5:F1}|{6:F1}|{7}|{8}|{9}|{10}|{11:F1}|{12:F1}",
-                contentYPt, paraStartYPt, layout.WrapPushedDown,
-                line0Y, line0Extra, line0Left, line0Width,
-                layout.Lines.Count, zoneDump,
-                firstWrapped, lastWrapped, firstWrappedY, lastWrappedY);
-
-            if (_wrapDiagLast.TryGetValue(block, out var prev)
-                && string.Equals(prev, signature, StringComparison.Ordinal)) return;
-
-            if (_wrapDiagLast.Count > 256) _wrapDiagLast.Clear();
-            _wrapDiagLast[block] = signature;
-
-            _logger.Warning(
-                "[WRAP] «{Text}» потокY={ContentY:F1} зоныОт={ParaStartY:F1} вытеснен={Pushed} "
-                + "| строк={Lines} обтекают={WrappedCount} с №{FirstIdx} (Y={FirstY:F1}) "
-                + "по №{LastIdx} (Y={LastY:F1}) | зоны={Zones}",
-                text, contentYPt, paraStartYPt, layout.WrapPushedDown,
-                layout.Lines.Count, wrappedCount,
-                firstWrapped, firstWrappedY, lastWrapped, lastWrappedY, zoneDump);
-        }
-
-        // Фактическая укладка обтекающих строк против границ зоны — обе величины
-        // в документных координатах. Расхождение означает, что строки помечены
-        // обтекающими правильно, но нарисованы не на той вертикали. Временная.
-        private readonly Dictionary<ParagraphBlock, string> _wrapPlaceDiagLast = new();
-
-        private void LogWrapPlacement(
-            ParagraphBlock block, float paraStartYPt,
-            List<SKWrapZone> zones, float firstDocY, float lastDocY,
-            float extraBeforeWrapPt, float extraSumPt, int pageBreaks)
-        {
-            float zoneTopDoc = float.MaxValue, zoneBottomDoc = float.MinValue;
-            foreach (var z in zones)
-            {
-                float t = paraStartYPt + z.TopPt;
-                float b = paraStartYPt + z.BottomPt;
-                if (t < zoneTopDoc) zoneTopDoc = t;
-                if (b > zoneBottomDoc) zoneBottomDoc = b;
-            }
-
-            string sig = string.Format(
-                System.Globalization.CultureInfo.InvariantCulture,
-                "{0:F1}|{1:F1}|{2:F1}|{3:F1}|{4:F1}|{5:F1}|{6}",
-                firstDocY, lastDocY, zoneTopDoc, zoneBottomDoc,
-                extraBeforeWrapPt, extraSumPt, pageBreaks);
-
-            if (_wrapPlaceDiagLast.TryGetValue(block, out var prev)
-                && string.Equals(prev, sig, StringComparison.Ordinal)) return;
-
-            if (_wrapPlaceDiagLast.Count > 128) _wrapPlaceDiagLast.Clear();
-            _wrapPlaceDiagLast[block] = sig;
-
-            _logger.Warning(
-                "[PLACE] обтекающие строки лежат {FirstY:F1}…{LastY:F1} "
-                + "| зона в документе {ZTop:F1}…{ZBottom:F1} | расхождение верх={DTop:F1} низ={DBottom:F1} "
-                + "| вытеснение доОбтекания={ExtraBefore:F1} всего={ExtraSum:F1} разрывов={Breaks}",
-                firstDocY, lastDocY, zoneTopDoc, zoneBottomDoc,
-                firstDocY - zoneTopDoc, lastDocY - zoneBottomDoc,
-                extraBeforeWrapPt, extraSumPt, pageBreaks);
-        }
 
         private void RebuildPageMode()
         {
@@ -1096,8 +989,9 @@ namespace Writersword.Modules.TextEditor.Document
 
                 if (block is ImageBlock imageBlock)
                 {
-                    float imgWpt = (float)imageBlock.WidthPt;
-                    float imgHpt = (float)imageBlock.HeightPt;
+                    // Габарит берётся через общий пересчёт чтения: лист чтения меньше
+                    // печатного, и картинка в исходном размере вылезала бы за колонку.
+                    var (imgWpt, imgHpt) = ReadingImageSize(imageBlock);
                     if (imgWpt > 0f && imgHpt > 0f)
                     {
                         if (imageBlock.WrapMode == WrapMode.Inline)
@@ -1235,7 +1129,8 @@ namespace Writersword.Modules.TextEditor.Document
                                 // а текст сдвигает на другой — ровно то, чего быть не должно.
                                 newImages.Add(new ImageEntry(
                                     imageBlock, fy, fx, imgWpt, imgHpt,
-                                    ResolveFloatingImagePage(imageBlock, fy, imgWpt, imgHpt, newPages, pageIdx)));
+                                    ResolveFloatingImagePage(
+                                        imageBlock, fx, fy, imgWpt, imgHpt, newPages, pageIdx)));
                             }
                         }
                     }
@@ -1335,8 +1230,6 @@ namespace Writersword.Modules.TextEditor.Document
                     ? probeLayout
                     : BuildWrappedLayout(pvm, textWidthPt, wrapZones, wrapPages);
 
-                LogWrapDiag(paraBlock, pvm, contentYPt, paraStartYPt, wrapZones, layout);
-
                 // Якорь перед таблицей: пустой параграф, следующий блок — таблица.
                 // Но если предыдущий блок тоже таблица, это разделитель между двумя
                 // таблицами, и он идёт ветке ниже — якорем ПОСЛЕ верхней. Разница в том,
@@ -1400,16 +1293,6 @@ namespace Writersword.Modules.TextEditor.Document
                 // конце цикла относится к последнему куску разрезанного абзаца и не годится.
                 float firstLineTopPt = float.NaN;
 
-                // Диагностика: документная вертикаль первой и последней строк, которым
-                // досталась суженная полоса. Сравнивается с границами зоны — если
-                // разойдётся, строки помечены обтекающими, но уложены не там.
-                float diagWrapFirstDocY = float.NaN;
-                float diagWrapLastDocY = float.NaN;
-                float diagFullWidthPt = layout.TextAreaWidthPt;
-                float diagExtraSumPt = 0f;        // суммарное вытеснение строк вниз
-                float diagExtraBeforeWrapPt = 0f; // из него — накопленное до первой обтекающей
-                int diagPageBreaks = 0;           // разрывов страницы внутри абзаца
-
                 for (int li = 0; li < layout.Lines.Count; li++)
                 {
                     var line = layout.Lines[li];
@@ -1422,19 +1305,6 @@ namespace Writersword.Modules.TextEditor.Document
                     contentYPt += line.WrapExtraTopPt;
                     if (li == lineFrom) lineGroupYPt = contentYPt;
                     if (li == 0) firstLineTopPt = contentYPt - line.WrapExtraTopPt;
-
-                    diagExtraSumPt += line.WrapExtraTopPt;
-
-                    if (line.WrapAreaWidthPt > 0f
-                        && line.WrapAreaWidthPt < diagFullWidthPt - 0.5f)
-                    {
-                        if (float.IsNaN(diagWrapFirstDocY))
-                        {
-                            diagWrapFirstDocY = contentYPt;
-                            diagExtraBeforeWrapPt = diagExtraSumPt;
-                        }
-                        diagWrapLastDocY = contentYPt;
-                    }
 
                     if (contentYPt + line.Height > pageBottomPt
                         && contentYPt > pageYPt + mt)
@@ -1552,7 +1422,6 @@ namespace Writersword.Modules.TextEditor.Document
                                 pageBottomPt = pageYPt + pageHeightPt - mb;
                                 contentYPt = pageYPt + mt + PageContinuationTopPadPt;
                                 pageIdx++;
-                                diagPageBreaks++;
                                 newPages.Add(new PageRect(pageYPt, pageWidthPt, pageHeightPt, pageXPt, mt, ml, mb));
                             }
 
@@ -1569,11 +1438,6 @@ namespace Writersword.Modules.TextEditor.Document
                 // сходимости зон. Только для обтекаемых абзацев: остальным якорь не нужен.
                 if (wrapZones is not null && !float.IsNaN(firstLineTopPt))
                     _wrapAnchorOut[paraBlock] = firstLineTopPt;
-
-                if (wrapZones is not null && !float.IsNaN(diagWrapFirstDocY))
-                    LogWrapPlacement(paraBlock, paraStartYPt, wrapZones,
-                        diagWrapFirstDocY, diagWrapLastDocY,
-                        diagExtraBeforeWrapPt, diagExtraSumPt, diagPageBreaks);
 
                 newLayouts.Add(new ParaLayout(
                     pvm, layout, lineGroupYPt,
@@ -1605,8 +1469,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (pinnedIdx >= newPages.Count) continue;
 
                 var pinnedPage = newPages[pinnedIdx];
-                float pinnedW = (float)pinned.WidthPt;
-                float pinnedH = (float)pinned.HeightPt;
+                var (pinnedW, pinnedH) = ReadingImageSize(pinned);
                 if (pinnedW <= 0f || pinnedH <= 0f) continue;
 
                 newImages.Add(new ImageEntry(
@@ -1659,7 +1522,7 @@ namespace Writersword.Modules.TextEditor.Document
                 // для картинок, которым на тот момент не хватало страниц (документ вырос
                 // по ходу прохода). Правило то же: страница по верхнему краю габарита.
                 int resolvedPage = ResolveFloatingImagePage(
-                    ie.Block, ie.Ypt, ie.WidthPt, ie.HeightPt, newPages, ie.PageIndex);
+                    ie.Block, ie.XPt, ie.Ypt, ie.WidthPt, ie.HeightPt, newPages, ie.PageIndex);
 
                 if (resolvedPage != ie.PageIndex)
                     newImages[ii] = ie with { PageIndex = resolvedPage };
@@ -1720,36 +1583,6 @@ namespace Writersword.Modules.TextEditor.Document
                 _inlineTransferredImages = _passInlineTransferred;
                 _canvasHeightPt = _passCanvasHeightPt;
                 _canvasHeight = _passCanvasHeightPt * PtToPx;
-            }
-
-            LogFinalImages();
-        }
-
-        // Диагностика: позиция картинки, по которой она будет НАРИСОВАНА. Сравнивается
-        // со строкой [ZONE], где печатается позиция из источника зон обтекания. Если
-        // они разойдутся, текст обходит одно место, а картинка стоит в другом.
-        private readonly Dictionary<ImageBlock, string> _imgFinalDiagLast = new();
-
-        private void LogFinalImages()
-        {
-            foreach (var ie in _images)
-            {
-                if (ie.InLine || ie.Block.WrapMode == WrapMode.Inline) continue;
-
-                string sig = string.Format(
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    "{0:F1}|{1:F1}|{2:F1}|{3:F1}|{4}",
-                    ie.XPt, ie.Ypt, ie.WidthPt, ie.HeightPt, ie.PageIndex);
-
-                if (_imgFinalDiagLast.TryGetValue(ie.Block, out var prev)
-                    && string.Equals(prev, sig, StringComparison.Ordinal)) continue;
-
-                if (_imgFinalDiagLast.Count > 64) _imgFinalDiagLast.Clear();
-                _imgFinalDiagLast[ie.Block] = sig;
-
-                _logger.Warning(
-                    "[DRAW] картинка X={IX:F1} Y={IY:F1} Ш={IW:F1} В={IH:F1} стр={Pg}",
-                    ie.XPt, ie.Ypt, ie.WidthPt, ie.HeightPt, ie.PageIndex);
             }
         }
 
@@ -1812,8 +1645,7 @@ namespace Writersword.Modules.TextEditor.Document
                                 // центрирована в нём (так же считает DrawInlineImageSegment).
                                 float boxW = seg.ObjectWidthPt;
                                 float boxH = seg.ObjectHeightPt;
-                                float imgW = (float)block.WidthPt;
-                                float imgH = (float)block.HeightPt;
+                                var (imgW, imgH) = ReadingImageSize(block);
 
                                 target.Add(new ImageEntry(
                                     block,
@@ -1844,30 +1676,53 @@ namespace Writersword.Modules.TextEditor.Document
         /// обязаны видеть у картинки ОДНУ И ТУ ЖЕ страницу.
         /// </summary>
         private static int ResolveFloatingImagePage(
-            ImageBlock block, float imgYPt, float imgWpt, float imgHpt,
+            ImageBlock block, float imgXPt, float imgYPt, float imgWpt, float imgHpt,
             List<PageRect> pages, int fallbackPage)
         {
             if (pages.Count == 0) return fallbackPage;
 
             double rotRad = block.RotationDeg * Math.PI / 180.0;
-            float boxH = imgWpt * (float)Math.Abs(Math.Sin(rotRad))
-                       + imgHpt * (float)Math.Abs(Math.Cos(rotRad));
-            float topPt = imgYPt + imgHpt / 2f - boxH / 2f;
+            float absCos = (float)Math.Abs(Math.Cos(rotRad));
+            float absSin = (float)Math.Abs(Math.Sin(rotRad));
+            float boxH = imgWpt * absSin + imgHpt * absCos;
+            float boxW = imgWpt * absCos + imgHpt * absSin;
 
-            int resolved = fallbackPage;
+            float topPt = imgYPt + imgHpt / 2f - boxH / 2f;
+            float cxPt = imgXPt + imgWpt / 2f;
+
+            // Горизонталь обязательна: при нескольких страницах в ряду соседние листы
+            // имеют ОДИН И ТОТ ЖЕ диапазон Y, и по вертикали они неразличимы. Прежний
+            // расчёт возвращал первый лист ряда, картинку приписывало чужой странице,
+            // клипало по ней и она пропадала с экрана.
+            int nearest = -1;
+            float nearestDist = float.MaxValue;
+
             for (int p = 0; p < pages.Count; p++)
             {
-                float pageTop = pages[p].Ypt;
-                float pageBottom = pageTop + pages[p].HeightPt;
+                var pg = pages[p];
+                float left = pg.PadLeftPt;
+                float right = left + pg.WidthPt;
+                float top = pg.Ypt;
+                float bottom = top + pg.HeightPt;
 
-                // Верх выше этой страницы (в зазоре или над первым листом) либо
-                // в её пределах — картинка принадлежит ей.
-                if (topPt < pageTop || topPt <= pageBottom) return p;
+                if (cxPt >= left && cxPt <= right && topPt >= top && topPt <= bottom)
+                    return p;
 
-                // Верх ниже — картинка на одной из следующих страниц.
-                resolved = p;
+                // Расстояние от точки привязки до листа: ноль по той оси, вдоль которой
+                // точка уже внутри его границ. Так выбирается лист, к которому картинка
+                // ближе всего, когда её верх попал в межстраничный зазор или за край.
+                float dx = cxPt < left ? left - cxPt : (cxPt > right ? cxPt - right : 0f);
+                float dy = topPt < top ? top - topPt : (topPt > bottom ? topPt - bottom : 0f);
+                float dist = dx * dx + dy * dy;
+
+                if (dist < nearestDist) { nearestDist = dist; nearest = p; }
             }
-            return resolved;
+
+            // Габарит по горизонтали в расчёте не участвует, но пусть остаётся видимым:
+            // страница определяется точкой привязки, а не перекрытием площадей.
+            _ = boxW;
+
+            return nearest >= 0 ? nearest : fallbackPage;
         }
 
         private void RebuildFlowMode(float maxWidthPt, float padHPt, float padWPt)
@@ -1898,6 +1753,10 @@ namespace Writersword.Modules.TextEditor.Document
             foreach (var p in DocVm.Paragraphs)
                 if (p.Model is not null) pvmByBlock[p.Model] = p;
 
+            // Картинки-блоки, встающие в поток. Собираются отдельно от встроенных в
+            // строку: те рисует рендер текста на их месте в строке.
+            var newFlowBlockImages = new List<ImageEntry>();
+
             for (int bi = 0; bi < blocks.Count; bi++)
             {
                 var block = blocks[bi];
@@ -1914,6 +1773,59 @@ namespace Writersword.Modules.TextEditor.Document
                     lastTableRightPt = tableXPt + tableLayout.TotalWidthPt;
                     lastTableBotPt = yPt + tableLayout.TotalHeightPt;
                     yPt += tableLayout.TotalHeightPt;
+                    continue;
+                }
+
+                // Картинка в потоке. Раньше её здесь просто не было: поток верстал
+                // только текст, и всякая картинка-блок в «Ленте» и в черновике
+                // пропадала — объект в документе есть, а на экране его нет.
+                //
+                // Обтекания в потоке быть не может: колонка одна, страниц нет, и
+                // привязывать картинку не к чему. Поэтому любая — плавающая,
+                // привязанная к странице, обтекаемая — встаёт в поток на месте своего
+                // блока и занимает свою высоту. Ровно так поступают читалки с
+                // перевёрстываемым текстом.
+                if (block is ImageBlock flowImage)
+                {
+                    var (fiW, fiH) = ReadingImageSize(flowImage);
+                    if (fiW <= 0f || fiH <= 0f) continue;
+
+                    // Картинка шире колонки ужимается по ширине: колонка в потоке
+                    // задаётся окном, и вылезшая за неё картинка попала бы под обрез.
+                    if (fiW > textWidthPt)
+                    {
+                        float k = textWidthPt / fiW;
+                        fiW = textWidthPt;
+                        fiH *= k;
+                    }
+
+                    double fiRad = flowImage.RotationDeg * Math.PI / 180.0;
+                    float fiBoxW = fiW * (float)Math.Abs(Math.Cos(fiRad))
+                                 + fiH * (float)Math.Abs(Math.Sin(fiRad));
+                    float fiBoxH = fiW * (float)Math.Abs(Math.Sin(fiRad))
+                                 + fiH * (float)Math.Abs(Math.Cos(fiRad));
+
+                    float fiSlack = textWidthPt - fiBoxW;
+                    float fiBoxX = padWPt;
+                    if (fiSlack > 0f)
+                    {
+                        fiBoxX += flowImage.Alignment switch
+                        {
+                            Models.Styles.TextAlignment.Center => fiSlack / 2f,
+                            Models.Styles.TextAlignment.Right => fiSlack,
+                            _ => 0f
+                        };
+                    }
+
+                    // ImageEntry хранит неповёрнутый прямоугольник, центрированный в
+                    // габарите: рендер поворачивает его вокруг центра.
+                    newFlowBlockImages.Add(new ImageEntry(
+                        flowImage,
+                        yPt + (fiBoxH - fiH) / 2f,
+                        fiBoxX + (fiBoxW - fiW) / 2f,
+                        fiW, fiH, 0));
+
+                    yPt += fiBoxH;
                     continue;
                 }
 
@@ -1975,9 +1887,8 @@ namespace Writersword.Modules.TextEditor.Document
 
             float newCanvasH = yPt + padHPt;
 
-            // В потоковом режиме картинки-блоки не верстаются, но встроенные в строку
-            // рисуются и здесь — их записи нужны для выделения и маркеров.
-            var newFlowImages = new List<ImageEntry>();
+            // Картинки потока: собранные выше блоки плюс встроенные в строку.
+            var newFlowImages = new List<ImageEntry>(newFlowBlockImages);
             CollectInlineImageEntries(newLayouts, newFlowImages);
 
             lock (_renderLock)

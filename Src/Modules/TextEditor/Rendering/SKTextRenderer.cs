@@ -135,8 +135,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                 string markerText = listProps.ComputedMarkerText ?? string.Empty;
                 if (markerText.Length > 0)
                 {
-                    var mtf = GetOrCreateTypeface(styles.ResolveFontFamily(styleName), false, false);
-                    var mfont = GetOrCreateFont(mtf, styles.ResolveFontSize(styleName));
+                    var mtf = GetOrCreateTypeface(
+                        ResolveReadingFamily(styles.ResolveFontFamily(styleName)), false, false);
+                    var mfont = GetOrCreateFont(mtf, ScaleReadingFont(styles.ResolveFontSize(styleName)));
                     float markerW = mfont.MeasureText(markerText);
                     // Текст ПЕРВОЙ строки идёт сразу после номера: номер + ширина + зазор.
                     // Позиция абсолютна (от поля) и от левого края строк 2+ НЕ зависит —
@@ -279,10 +280,13 @@ namespace Writersword.Modules.TextEditor.Rendering
                     for (int c = col; c < col + cell.ColSpan && c < colCount; c++)
                         cellWidthPt += colWidthsPt[c];
 
-                    float padTopPt = (float)cell.PaddingTopPt;
-                    float padBottomPt = (float)cell.PaddingBottomPt;
-                    float padLeftPt = (float)cell.PaddingLeftPt;
-                    float padRightPt = (float)cell.PaddingRightPt;
+                    // Отступы внутри ячейки ужимаются вместе с колонками: иначе на
+                    // уменьшенной таблице поля остаются печатными и съедают текст.
+                    float contentScale = ReadingContentScale;
+                    float padTopPt = (float)cell.PaddingTopPt * contentScale;
+                    float padBottomPt = (float)cell.PaddingBottomPt * contentScale;
+                    float padLeftPt = (float)cell.PaddingLeftPt * contentScale;
+                    float padRightPt = (float)cell.PaddingRightPt * contentScale;
 
                     float leftBorderW = cell.Borders.Left != BorderStyle.None ? (float)cell.Borders.ThicknessPt : 0f;
                     float rightBorderW = cell.Borders.Right != BorderStyle.None ? (float)cell.Borders.ThicknessPt : 0f;
@@ -990,7 +994,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                     }
 
                     // Цвет либо градиент букв. Для одноцвета путь прежний — без шейдера.
-                    SKColor textColor = seg.Color;
+                    // Краска приводится к чтению здесь, в момент отрисовки: в раскладке
+                    // она запеклась бы в кэш и правка цвета до текста не доходила бы.
+                    SKColor textColor = ApplyReadingInk(seg.Color);
                     SKShader? textShader = null;
                     if (IsGradientCode(seg.ColorCode))
                     {
@@ -1046,6 +1052,52 @@ namespace Writersword.Modules.TextEditor.Rendering
         private static bool IsGradientCode(string? code)
             => code != null && code.StartsWith("grad|", StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Градиент ли это, а не обычный цвет. Наружу — чтобы всё, что умеет красить
+        /// цветом, тем же значением умело красить и градиентом: они хранятся одной
+        /// строкой и приходят из одного и того же выбора цвета.
+        /// </summary>
+        public static bool IsGradient(string? code) => IsGradientCode(code);
+
+        /// <summary>
+        /// Сплошной цвет градиента: им заливают там, где шейдер не нужен или не
+        /// получился. Для обычного цвета возвращает его самого.
+        /// </summary>
+        public static SKColor GradientSolidColor(string? code, SKColor fallback)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return fallback;
+
+            if (!IsGradientCode(code))
+                return SKColor.TryParse(code, out var plain) ? plain : fallback;
+
+            try
+            {
+                return GradientShaderFactory.SolidColor(GradientSpec.Parse(code));
+            }
+            catch
+            {
+                return fallback;
+            }
+        }
+
+        /// <summary>
+        /// Шейдер градиента, растянутый на заданный прямоугольник. null — значение
+        /// градиентом не является или разобрать его не удалось.
+        /// </summary>
+        public static SKShader? BuildGradientShader(string? code, SKRect rect)
+        {
+            if (!IsGradientCode(code)) return null;
+
+            try
+            {
+                return GradientShaderFactory.BuildShader(GradientSpec.Parse(code), rect);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         // ── Сборка токенов ────────────────────────────────────────────────
 
         /// <summary>
@@ -1082,8 +1134,8 @@ namespace Writersword.Modules.TextEditor.Rendering
 
                         var objectFormat = new SKRunSegment
                         {
-                            FontFamily = styleFontFamily,
-                            FontSizePt = styleFontSize,
+                            FontFamily = ResolveReadingFamily(styleFontFamily),
+                            FontSizePt = ScaleReadingFont(styleFontSize),
                             Color = ParseColor(run.Properties?.TextColor),
                             GlobalCharOffset = globalIndex,
                             InlineImageId = inlineId,
@@ -1102,6 +1154,13 @@ namespace Writersword.Modules.TextEditor.Rendering
                         ? p!.FontFamily : styleFontFamily;
                     float resolvedSize = p?.FontSize.HasValue == true
                         ? (float)p.FontSize.Value : styleFontSize;
+
+                    // Подмена чтения. Стоит именно здесь, после разбора собственных
+                    // свойств run-а: читатель просит показать ему всю книгу одним
+                    // шрифтом, включая абзацы со своим начертанием, а в самой рукописи
+                    // при этом не меняется ничего.
+                    resolvedFamily = ResolveReadingFamily(resolvedFamily);
+                    resolvedSize = ScaleReadingFont(resolvedSize);
                     bool resolvedBold = p?.IsBold ?? styleBold;
                     bool resolvedItalic = p?.IsItalic ?? styleItalic;
 
@@ -2224,7 +2283,10 @@ namespace Writersword.Modules.TextEditor.Rendering
                 switch (col.WidthType)
                 {
                     case TableColumnWidthType.Fixed:
-                        widths[i] = MmToPt(col.WidthValue);
+                        // Ужатие под лист чтения. Печатный лист шире экранного, и
+                        // таблица с фиксированными колонками уезжает за его край;
+                        // здесь она уменьшается в той же пропорции, что и сам лист.
+                        widths[i] = MmToPt(col.WidthValue) * ReadingContentScale;
                         usedFixedPt += widths[i];
                         break;
                     case TableColumnWidthType.Percent:
@@ -2292,6 +2354,18 @@ namespace Writersword.Modules.TextEditor.Rendering
                 cellX + cell.WidthPt, cellY + visibleH, canvasScale);
         }
 
+        /// <summary>
+        /// Нейтральные ли это чернила: чёрный, около-чёрный или серый без явного
+        /// оттенка. Только такую рамку чтение перекрашивает под свою бумагу — цвет,
+        /// выбранный автором сознательно, остаётся авторским.
+        /// </summary>
+        private static bool IsNeutralInk(SKColor c)
+        {
+            int max = Math.Max(c.Red, Math.Max(c.Green, c.Blue));
+            int min = Math.Min(c.Red, Math.Min(c.Green, c.Blue));
+            return max - min <= 12 && max <= 140;
+        }
+
         private static void DrawBorderLine(
             SKCanvas canvas,
             SKTableBorderLineLayout border,
@@ -2301,7 +2375,9 @@ namespace Writersword.Modules.TextEditor.Rendering
             if (border.Style == 3) return; // None
 
             if (!SKColor.TryParse(border.Color, out var color))
-                color = SKColors.Black;
+                color = ReadingBorderColorOverride ?? SKColors.Black;
+            else if (ReadingBorderColorOverride is { } readingBorder && IsNeutralInk(color))
+                color = readingBorder;
 
             float minWidthPt = canvasScale > 0f ? 1f / canvasScale : 0.75f;
             float strokeWidth = Math.Max(minWidthPt, border.WidthPt > 0f ? border.WidthPt : minWidthPt);
@@ -2506,11 +2582,116 @@ namespace Writersword.Modules.TextEditor.Rendering
                 || familyName.IndexOf("Emoji", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        /// <summary>
+        /// Цвет текста, у которого нет собственного. Ставится режимом чтения, чтобы
+        /// тема бумаги меняла и написанное на ней. Текст, которому цвет задан вручную,
+        /// остаётся своим: тема меняет вид документа, а не его содержание.
+        /// null — обычное поведение, чёрный.
+        /// </summary>
+        public static SKColor? DefaultTextColorOverride { get; set; }
+
+        /// <summary>
+        /// Шрифт, которым читатель просит показывать текст. null — как в документе.
+        /// Ставится режимом чтения перед проходом отрисовки и меняет исключительно
+        /// вёрстку на экране: в модели документа шрифт остаётся авторским.
+        /// </summary>
+        public static string? ReadingFontFamilyOverride { get; set; }
+
+        /// <summary>
+        /// Множитель кегля для чтения. 1 — как в документе. Тоже только вёрстка:
+        /// размер шрифта в рукописи не меняется ни на пункт.
+        /// </summary>
+        public static float ReadingFontScale { get; set; } = 1f;
+
+        /// <summary>
+        /// Цвет маркера списка в чтении. Маркер своего цвета не имеет и рисуется
+        /// чёрным; на тёмной бумаге это чёрное по тёмному, и точки списка пропадают.
+        /// null — обычное поведение.
+        /// </summary>
+        public static SKColor? ReadingMarkerColorOverride { get; set; }
+
+        /// <summary>
+        /// Цвет линий таблицы в чтении. По той же причине, что и маркер: чёрная
+        /// рамка на тёмной бумаге превращает таблицу в дыру. null — как задано.
+        /// </summary>
+        public static SKColor? ReadingBorderColorOverride { get; set; }
+
+        /// <summary>
+        /// Во сколько раз ужимается содержимое, размер которого задан в документе:
+        /// ширины колонок таблиц и отступы ячеек. Лист чтения меньше печатного, и
+        /// таблица в исходных величинах уезжает за его край. 1 — не ужимать.
+        /// </summary>
+        public static float ReadingContentScale { get; set; } = 1f;
+
+        /// <summary>Кегль с поправкой на ступень размера чтения.</summary>
+        private static float ScaleReadingFont(float sizePt)
+        {
+            float k = ReadingFontScale;
+            if (k <= 0f || Math.Abs(k - 1f) < 0.0005f) return sizePt;
+            return sizePt * k;
+        }
+
+        /// <summary>Семейство шрифта с поправкой на подмену чтения.</summary>
+        private static string ResolveReadingFamily(string family)
+            => string.IsNullOrWhiteSpace(ReadingFontFamilyOverride) ? family : ReadingFontFamilyOverride!;
+
+        /// <summary>
+        /// Цвет краски документа как он записан. Подмена чтения СЮДА не лезет
+        /// намеренно: разбор идёт при сборке раскладки, а раскладка кэшируется, и
+        /// подменённый здесь цвет запекался бы в кэш. Из-за этого правка цвета и
+        /// контраста не доходила до основного текста — она видна только там, где
+        /// цвет берётся в момент отрисовки. Подмена и делается в момент отрисовки:
+        /// см. <see cref="ApplyReadingInk"/>.
+        /// </summary>
         private static SKColor ParseColor(string? hex)
         {
             if (string.IsNullOrWhiteSpace(hex)) return SKColors.Black;
             return SKColor.TryParse(hex, out var c) ? c : SKColors.Black;
         }
+
+        /// <summary>
+        /// Цвет бумаги чтения. Нужен затем, чтобы разводить с ним документную краску:
+        /// серый текст обязан остаться светлее основного и на светлой бумаге, и на
+        /// тёмной. null — обычное поведение.
+        /// </summary>
+        public static SKColor? ReadingPaperColorOverride { get; set; }
+
+        /// <summary>
+        /// Приводит документную краску к чтению.
+        ///
+        /// Чёрный и серый без оттенка — это не выбор автора, а цвет по умолчанию:
+        /// им набрана почти вся рукопись, и записан он в неё явно. Пока чтение
+        /// подменяло цвет только там, где его нет вовсе, ни контраст, ни цвет текста,
+        /// ни тёмная бумага до обычного текста не доходили — а именно ради него всё
+        /// это и делалось.
+        ///
+        /// Цвет с оттенком автор задал сознательно и остаётся авторским: тема меняет
+        /// вид документа, а не его содержание.
+        /// </summary>
+        private static SKColor ApplyReadingInk(SKColor c)
+        {
+            if (DefaultTextColorOverride is not { } ink) return c;
+            if (c.Alpha == 0) return c;
+            if (!IsNeutralInk(c)) return c;
+
+            // Насколько документная краска светлее чёрного. Серый текст (сноски,
+            // служебные пометки) обязан остаться светлее основного, иначе чтение
+            // стирает разницу между ним и обычным текстом.
+            float grey = Math.Max(c.Red, Math.Max(c.Green, c.Blue)) / 140f;
+            if (grey <= 0.02f) return ink.WithAlpha(c.Alpha);
+
+            var paper = ReadingPaperColorOverride ?? SKColors.White;
+            float k = Math.Clamp(grey * 0.6f, 0f, 0.6f);
+
+            return new SKColor(
+                MixChannel(ink.Red, paper.Red, k),
+                MixChannel(ink.Green, paper.Green, k),
+                MixChannel(ink.Blue, paper.Blue, k),
+                c.Alpha);
+        }
+
+        private static byte MixChannel(byte from, byte to, float k)
+            => (byte)Math.Clamp(from + (to - from) * k, 0f, 255f);
 
         private static SKColor ParseHighlight(string? hex)
         {
@@ -2651,7 +2832,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                     }
 
                     // Цвет либо градиент букв. Для одноцвета путь прежний — без шейдера.
-                    SKColor textColor = seg.Color;
+                    // Краска приводится к чтению здесь, в момент отрисовки: в раскладке
+                    // она запеклась бы в кэш и правка цвета до текста не доходила бы.
+                    SKColor textColor = ApplyReadingInk(seg.Color);
                     SKShader? textShader = null;
                     if (IsGradientCode(seg.ColorCode))
                     {
@@ -2768,7 +2951,9 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             using var paint = new SKPaint
             {
-                Color = markerColor == default ? SKColors.Black : markerColor,
+                Color = markerColor != default
+                    ? markerColor
+                    : (ReadingMarkerColorOverride ?? SKColors.Black),
                 IsAntialias = true
             };
             canvas.DrawText(markerText, markerX, baseY, font, paint);

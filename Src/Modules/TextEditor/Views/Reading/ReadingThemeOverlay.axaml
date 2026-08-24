@@ -1,0 +1,563 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:Writersword.Styles.UserControls"
+             xmlns:infra="using:Writersword.Infrastructure.Controls"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
+             x:Class="Writersword.Modules.TextEditor.Views.Reading.ReadingThemeOverlay">
+
+	<UserControl.Styles>
+
+		<Style Selector="Border.card">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="CornerRadius"    Value="10"/>
+			<Setter Property="Padding"         Value="12"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+		</Style>
+
+		<Style Selector="TextBlock.cardTitle">
+			<Setter Property="FontSize"          Value="12"/>
+			<Setter Property="FontWeight"        Value="SemiBold"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+
+		<Style Selector="TextBlock.FieldLabel">
+			<Setter Property="FontSize"          Value="12"/>
+			<Setter Property="Foreground"        Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+
+		<Style Selector="TextBlock.Hint">
+			<Setter Property="FontSize"     Value="11"/>
+			<Setter Property="Foreground"   Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="TextWrapping" Value="Wrap"/>
+		</Style>
+
+		<Style Selector="TextBox.Field">
+			<Setter Property="Background"      Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="6"/>
+			<Setter Property="MinHeight"       Value="28"/>
+			<Setter Property="Padding"         Value="10 3"/>
+			<Setter Property="FontSize"        Value="12"/>
+		</Style>
+
+		<Style Selector="ComboBox.Field">
+			<Setter Property="Background"          Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="BorderBrush"         Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness"     Value="1"/>
+			<Setter Property="CornerRadius"        Value="6"/>
+			<Setter Property="MinHeight"           Value="28"/>
+			<Setter Property="Padding"             Value="10 0"/>
+			<Setter Property="FontSize"            Value="12"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+		</Style>
+
+		<Style Selector="Button.mini">
+			<Setter Property="Padding"         Value="12 5"/>
+			<Setter Property="CornerRadius"    Value="6"/>
+			<Setter Property="FontSize"        Value="11"/>
+			<Setter Property="Background"      Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+		</Style>
+		<Style Selector="Button.mini:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="Button.IconClose">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Width"           Value="28"/>
+			<Setter Property="Height"          Value="28"/>
+			<Setter Property="CornerRadius"    Value="999"/>
+			<Setter Property="Padding"         Value="0"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment"   Value="Center"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+		</Style>
+		<Style Selector="Button.IconClose:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+
+		<Style Selector="Button.Dialog">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="8"/>
+			<Setter Property="Padding"         Value="18 8"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+		</Style>
+		<Style Selector="Button.Dialog:pointerover /template/ ContentPresenter">
+			<Setter Property="Background"  Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="Button.DialogAccent">
+			<Setter Property="Background"      Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="CornerRadius"    Value="8"/>
+			<Setter Property="Padding"         Value="20 8"/>
+			<Setter Property="Foreground"      Value="White"/>
+			<Setter Property="FontWeight"      Value="SemiBold"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+		</Style>
+
+		<!-- Сегментированный переключатель области — форма из палитр. Здесь оба
+		     сегмента могут гореть сразу: вид умеет лежать и в документе, и везде. -->
+		<Style Selector="Border.scopeTrack">
+			<Setter Property="CornerRadius"      Value="999"/>
+			<Setter Property="Padding"           Value="2"/>
+			<Setter Property="Background"        Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="ToggleButton.scope">
+			<Setter Property="Padding"            Value="14 5"/>
+			<Setter Property="MinWidth"           Value="96"/>
+			<Setter Property="CornerRadius"       Value="999"/>
+			<Setter Property="BorderThickness"    Value="0"/>
+			<Setter Property="FontSize"           Value="11"/>
+			<Setter Property="Cursor"             Value="Hand"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="Foreground"         Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.scope /template/ ContentPresenter">
+			<Setter Property="Background"   Value="Transparent"/>
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<BrushTransition Property="Background" Duration="0:0:0.15"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="ToggleButton.scope:not(:checked):pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.scope.local:checked">
+			<Setter Property="Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+		</Style>
+		<Style Selector="ToggleButton.scope.local:checked /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
+		</Style>
+		<Style Selector="ToggleButton.scope.global:checked">
+			<Setter Property="Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+		</Style>
+		<Style Selector="ToggleButton.scope.global:checked /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
+		</Style>
+
+		<!-- Строка вида в списке. -->
+		<Style Selector="Border.themeRow">
+			<Setter Property="Background"      Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="CornerRadius"    Value="8"/>
+			<Setter Property="Padding"         Value="8"/>
+			<Setter Property="Margin"          Value="0 2"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="BorderBrush"     Value="Transparent"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+		</Style>
+		<Style Selector="Border.themeRow:pointerover">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Border.themeRow.active">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Background"  Value="{DynamicResource BgSurfaceBrush}"/>
+		</Style>
+
+		<Style Selector="Border.scopeBadge">
+			<Setter Property="CornerRadius"      Value="999"/>
+			<Setter Property="Padding"           Value="7 1"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+
+		<Style Selector="Slider.Neat">
+			<Setter Property="MinHeight"         Value="0"/>
+			<Setter Property="Height"            Value="18"/>
+			<Setter Property="Padding"           Value="0"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Template">
+				<ControlTemplate>
+					<Grid Margin="7 0">
+						<Border Height="4" CornerRadius="2" VerticalAlignment="Center"
+						        Background="{DynamicResource BorderDefaultBrush}"/>
+						<Track Name="PART_Track"
+						       Orientation="Horizontal"
+						       Minimum="{TemplateBinding Minimum}"
+						       Maximum="{TemplateBinding Maximum}"
+						       Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+							<Track.DecreaseButton>
+								<RepeatButton Name="PART_DecreaseButton" Focusable="False"
+								              Height="4" VerticalAlignment="Center">
+									<RepeatButton.Template>
+										<ControlTemplate>
+											<Border Height="4" CornerRadius="2" VerticalAlignment="Center"
+											        Background="{DynamicResource AccentDefaultBrush}"/>
+										</ControlTemplate>
+									</RepeatButton.Template>
+								</RepeatButton>
+							</Track.DecreaseButton>
+							<Track.IncreaseButton>
+								<RepeatButton Name="PART_IncreaseButton" Focusable="False"
+								              Height="4" VerticalAlignment="Center">
+									<RepeatButton.Template>
+										<ControlTemplate><Border Background="Transparent"/></ControlTemplate>
+									</RepeatButton.Template>
+								</RepeatButton>
+							</Track.IncreaseButton>
+							<Thumb Name="thumb" Width="14" Height="14">
+								<Thumb.Template>
+									<ControlTemplate>
+										<Border Width="14" Height="14" CornerRadius="7"
+										        Background="{DynamicResource AccentDefaultBrush}"
+										        BorderBrush="{DynamicResource BgSurfaceBrush}"
+										        BorderThickness="2"/>
+									</ControlTemplate>
+								</Thumb.Template>
+							</Thumb>
+						</Track>
+					</Grid>
+				</ControlTemplate>
+			</Setter>
+		</Style>
+
+	</UserControl.Styles>
+
+	<Grid>
+		<!-- Затемнение плотное: под окном лежит книга, и просвечивающий сквозь
+		     настройку текст мешает разглядеть то, что настраиваешь. -->
+		<Border x:Name="Scrim" Background="#E0000000"/>
+
+		<!-- Окно непрозрачно целиком: фон берётся у темы сплошным цветом. -->
+		<Border HorizontalAlignment="Center" VerticalAlignment="Center"
+		        Margin="24" Width="760" MaxHeight="640"
+		        Background="{DynamicResource BgAppBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="1" CornerRadius="14" Padding="18">
+
+			<DockPanel>
+
+				<!-- Шапка -->
+				<Grid DockPanel.Dock="Top" ColumnDefinitions="Auto Auto * Auto" Margin="0 0 0 12">
+					<TextBlock Grid.Column="0" Text="Виды чтения"
+					           FontSize="16" FontWeight="SemiBold"
+					           VerticalAlignment="Center"
+					           Foreground="{DynamicResource TextPrimaryBrush}"/>
+					<infra:HintMark Grid.Column="1" Margin="8 0 0 0"
+					                VerticalAlignment="Center"
+					                behaviours:TooltipBehavior.Tip="Что такое вид чтения"
+					                behaviours:TooltipBehavior.Description="Собственное оформление книги под своим именем: цвет листа и текста, картинка бумаги, шрифт и свет. На печать, экспорт и содержание рукописи вид не влияет никогда."/>
+					<Button Grid.Column="3" x:Name="CloseBtn" Classes="IconClose">
+						<PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+						          Width="14" Height="14"/>
+					</Button>
+				</Grid>
+
+				<!-- Низ -->
+				<Grid DockPanel.Dock="Bottom" ColumnDefinitions="* Auto Auto" ColumnSpacing="8" Margin="0 14 0 0">
+					<TextBlock Grid.Column="0" x:Name="FooterHint" Classes="Hint"
+					           VerticalAlignment="Center"
+					           Text="Изменения применяются к книге сразу; сохранятся при нажатии «Готово»."/>
+					<Button Grid.Column="1" x:Name="CancelBtn" Classes="Dialog" Content="Отмена"/>
+					<Button Grid.Column="2" x:Name="OkBtn" Classes="DialogAccent" Content="Готово"/>
+				</Grid>
+
+				<Grid ColumnDefinitions="248 14 *">
+
+					<!-- ── Список видов ─────────────────────────────────── -->
+					<Border Grid.Column="0" Classes="card" Padding="8">
+						<DockPanel>
+							<Grid DockPanel.Dock="Top" ColumnDefinitions="* Auto" Margin="4 2 4 8">
+								<TextBlock Grid.Column="0" Classes="cardTitle" Text="Виды"/>
+								<Button Grid.Column="1" x:Name="AddBtn" Classes="mini" Padding="8 3"
+								        behaviours:TooltipBehavior.Tip="Создать вид"
+								        behaviours:TooltipBehavior.Description="Новый вид создаётся копией выбранного — от знакомой точки настраивать проще, чем от белого листа.">
+									<StackPanel Orientation="Horizontal" Spacing="4">
+										<PathIcon Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" Width="12" Height="12"/>
+										<TextBlock Text="Создать" FontSize="11"/>
+									</StackPanel>
+								</Button>
+							</Grid>
+
+							<ScrollViewer VerticalScrollBarVisibility="Auto"
+							              HorizontalScrollBarVisibility="Disabled">
+								<ItemsControl x:Name="ThemeList">
+									<ItemsControl.ItemTemplate>
+										<DataTemplate>
+											<Border Classes="themeRow"
+											        Classes.active="{Binding IsSelected}"
+											        PointerPressed="OnThemeRowPressed"
+											        Tag="{Binding}">
+												<Grid ColumnDefinitions="Auto * Auto" ColumnSpacing="8">
+													<!-- Кружок с цветами вида: лист и буква на нём -->
+													<Border Grid.Column="0"
+													        Width="26" Height="26"
+													        CornerRadius="999"
+													        Background="{Binding SheetBrush}"
+													        BorderBrush="{DynamicResource BorderDefaultBrush}"
+													        BorderThickness="1">
+														<TextBlock Text="A" FontSize="12" FontWeight="SemiBold"
+														           HorizontalAlignment="Center"
+														           VerticalAlignment="Center"
+														           Foreground="{Binding InkBrush}"/>
+													</Border>
+
+													<StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+														<TextBlock Text="{Binding Name}" FontSize="12"
+														           Foreground="{DynamicResource TextPrimaryBrush}"
+														           TextTrimming="CharacterEllipsis"/>
+														<TextBlock Text="{Binding ScopeText}" FontSize="10"
+														           Foreground="{DynamicResource TextMutedBrush}"/>
+													</StackPanel>
+
+													<Border Grid.Column="2" Classes="scopeBadge"
+													        IsVisible="{Binding IsBuiltIn}"
+													        Background="{DynamicResource BgSurfaceBrush}">
+														<TextBlock Text="встроенный" FontSize="9"
+														           Foreground="{DynamicResource TextMutedBrush}"/>
+													</Border>
+												</Grid>
+											</Border>
+										</DataTemplate>
+									</ItemsControl.ItemTemplate>
+								</ItemsControl>
+							</ScrollViewer>
+						</DockPanel>
+					</Border>
+
+					<!-- ── Правка выбранного вида ───────────────────────── -->
+					<ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto"
+					              HorizontalScrollBarVisibility="Disabled">
+						<StackPanel Spacing="10">
+
+							<!-- Имя и область -->
+							<Border Classes="card">
+								<StackPanel Spacing="10">
+									<Grid ColumnDefinitions="Auto Auto *" ColumnSpacing="6">
+										<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Название"/>
+										<infra:HintMark Grid.Column="1" VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Название вида"
+										                behaviours:TooltipBehavior.Description="Своё имя — по нему вид находится в ленте. Встроенные виды переименовать нельзя, но их можно скопировать кнопкой «Создать»."/>
+									</Grid>
+									<TextBox x:Name="NameBox" Classes="Field" PlaceholderText="Например: Ночная тёплая"/>
+
+									<Border Height="1" Background="{DynamicResource BorderSubtleBrush}"/>
+
+									<Grid ColumnDefinitions="Auto Auto *" ColumnSpacing="6">
+										<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Где хранить"/>
+										<infra:HintMark Grid.Column="1" VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Где хранить вид"
+										                behaviours:TooltipBehavior.Description="«В документе» — вид уезжает вместе с рукописью: открывший её увидит книгу такой же. «Везде» — вид лежит в настройках программы и доступен во всех проектах. Можно включить обе области сразу."/>
+									</Grid>
+									<Border Classes="scopeTrack" HorizontalAlignment="Left">
+										<StackPanel Orientation="Horizontal" Spacing="2">
+											<ToggleButton x:Name="ScopeDocBtn" Classes="scope local" Content="В документе"/>
+											<ToggleButton x:Name="ScopeGlobalBtn" Classes="scope global" Content="Везде"/>
+										</StackPanel>
+									</Border>
+									<TextBlock x:Name="ScopeHint" Classes="Hint"
+									           Text="Вид нигде не сохранён — включите хотя бы одну область."/>
+								</StackPanel>
+							</Border>
+
+							<!-- Цвета -->
+							<Border Classes="card">
+								<StackPanel Spacing="10">
+									<StackPanel Orientation="Horizontal" Spacing="6">
+										<TextBlock Classes="cardTitle" Text="Цвета"/>
+										<infra:HintMark VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Цвета вида"
+										                behaviours:TooltipBehavior.Description="Лист — чем заливается страница. Текст — цвет для тех слов, которым цвет не задан в самом документе: авторский цвет остаётся авторским."/>
+									</StackPanel>
+
+									<Grid ColumnDefinitions="Auto Auto Auto * Auto Auto Auto"
+									      RowDefinitions="Auto"
+									      ColumnSpacing="8" RowSpacing="10">
+										<TextBlock Grid.Row="0" Grid.Column="0" Classes="FieldLabel" Text="Лист"/>
+										<ui:ColorPickerButton Grid.Row="0" Grid.Column="1" x:Name="SheetColorBtn"
+										                      Width="26" Height="26"
+										                      VerticalAlignment="Center"/>
+										<infra:HintMark Grid.Row="0" Grid.Column="2" VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Цвет листа"
+										                behaviours:TooltipBehavior.Description="Тёмный лист сам по себе включает чтение в темноте — тогда цвет текста подберите светлым."/>
+
+										<TextBlock Grid.Row="0" Grid.Column="4" Classes="FieldLabel" Text="Текст"/>
+										<ui:ColorPickerButton Grid.Row="0" Grid.Column="5" x:Name="InkColorBtn"
+										                      Width="26" Height="26"
+										                      VerticalAlignment="Center"/>
+										<infra:HintMark Grid.Row="0" Grid.Column="6" VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Цвет текста"
+										                behaviours:TooltipBehavior.Description="Действует на текст без собственного цвета. Чёрный и серый в документе — это цвет по умолчанию, и вид вправе заменить его своим; цветной текст остаётся авторским. Контрастность разводит текст с бумагой сильнее или слабее."/>
+
+									</Grid>
+								</StackPanel>
+							</Border>
+
+							<!-- Шрифт и свет -->
+							<Border Classes="card">
+								<StackPanel Spacing="10">
+									<StackPanel Orientation="Horizontal" Spacing="6">
+										<TextBlock Classes="cardTitle" Text="Шрифт и свет"/>
+										<infra:HintMark VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Шрифт и свет"
+										                behaviours:TooltipBehavior.Description="Шрифт задавать не обязательно: вид может менять только цвета, а начертание оставлять авторским. Свет — то же, что ползунки в ленте, но запомненное в самом виде."/>
+									</StackPanel>
+
+									<Grid ColumnDefinitions="Auto *" ColumnSpacing="8">
+										<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Шрифт"/>
+										<ComboBox Grid.Column="1" x:Name="FontCombo" Classes="Field"/>
+									</Grid>
+
+									<Grid ColumnDefinitions="Auto Auto * Auto" ColumnSpacing="8" RowDefinitions="Auto Auto Auto" RowSpacing="6">
+										<TextBlock Grid.Row="0" Grid.Column="0" Classes="FieldLabel" Text="Яркость"/>
+										<infra:HintMark Grid.Row="0" Grid.Column="1" VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Яркость"
+										                behaviours:TooltipBehavior.Description="Приглушает свет над страницей, не трогая цвета документа."/>
+										<Slider Grid.Row="0" Grid.Column="2" x:Name="BrightnessSlider" Classes="Neat"
+										        Minimum="35" Maximum="100"/>
+										<TextBlock Grid.Row="0" Grid.Column="3" x:Name="BrightnessValue"
+										           Classes="FieldLabel" Width="42" TextAlignment="Right"/>
+
+										<TextBlock Grid.Row="1" Grid.Column="0" Classes="FieldLabel" Text="Контраст"/>
+										<infra:HintMark Grid.Row="1" Grid.Column="1" VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Контраст"
+										                behaviours:TooltipBehavior.Description="Разводит текст и бумагу. Меньше — буквы мягче, больше — резче. Работает и на тёмной бумаге."/>
+										<Slider Grid.Row="1" Grid.Column="2" x:Name="ContrastSlider" Classes="Neat"
+										        Minimum="60" Maximum="160"/>
+										<TextBlock Grid.Row="1" Grid.Column="3" x:Name="ContrastValue"
+										           Classes="FieldLabel" Width="42" TextAlignment="Right"/>
+
+										<TextBlock Grid.Row="2" Grid.Column="0" Classes="FieldLabel" Text="Тёплота"/>
+										<infra:HintMark Grid.Row="2" Grid.Column="1" VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Тёплота"
+										                behaviours:TooltipBehavior.Description="Убирает синеву, как ночной режим экрана. Помогает читать перед сном."/>
+										<Slider Grid.Row="2" Grid.Column="2" x:Name="WarmthSlider" Classes="Neat"
+										        Minimum="0" Maximum="100"/>
+										<TextBlock Grid.Row="2" Grid.Column="3" x:Name="WarmthValue"
+										           Classes="FieldLabel" Width="42" TextAlignment="Right"/>
+									</Grid>
+								</StackPanel>
+							</Border>
+
+							<!-- Поле вокруг книги.
+
+							     Отдельной подсекцией: у поля своя заливка и своя картинка,
+							     и в карточке цветов это была бы строка из шести полей.
+
+							     Своих видов заливки нет намеренно: градиенты уже есть у
+							     цветов, и поле принимает выбранное значение как есть. -->
+							<Border Classes="card">
+								<StackPanel Spacing="10">
+									<StackPanel Orientation="Horizontal" Spacing="6">
+										<TextBlock Classes="cardTitle" Text="Фон вокруг книги"/>
+										<infra:HintMark VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Поле вокруг книги"
+										                behaviours:TooltipBehavior.Description="То, на чём лежит лист. Занимает больше места на экране, чем сама книга, и от него зависит, устают ли глаза. Пока заливка не выбрана, поле выводится из бумаги: под светлой книгой темнее, под тёмной чуть светлее."/>
+									</StackPanel>
+
+									<Grid ColumnDefinitions="Auto Auto Auto * Auto" ColumnSpacing="8">
+										<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Заливка"/>
+										<ui:ColorPickerButton Grid.Column="1" x:Name="BackColorBtn"
+										                      Width="26" Height="26"
+										                      VerticalAlignment="Center"/>
+										<infra:HintMark Grid.Column="2" VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Заливка поля"
+										                behaviours:TooltipBehavior.Description="Цвет или градиент — тот же выбор, что и у любого другого цвета в программе."/>
+										<Button Grid.Column="4" x:Name="BackResetBtn" Classes="mini"
+										        Content="От бумаги"/>
+									</Grid>
+
+									<StackPanel Orientation="Horizontal" Spacing="6">
+										<CheckBox x:Name="BackUseImageCheck" FontSize="12"
+										          Content="Использовать картинку"/>
+										<infra:HintMark VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Картинка поля"
+										                behaviours:TooltipBehavior.Description="Картинка ложится поверх заливки. Там, где она прозрачна или не закрывает поле целиком, остаётся заливка."/>
+									</StackPanel>
+
+									<Grid ColumnDefinitions="* Auto Auto" ColumnSpacing="6">
+										<TextBox Grid.Column="0" x:Name="BackImagePathBox" Classes="Field"
+										         PlaceholderText="картинка фона не выбрана"/>
+										<Button Grid.Column="1" x:Name="BackBrowseBtn" Classes="mini" Content="Выбрать…"/>
+										<Button Grid.Column="2" x:Name="BackClearImageBtn" Classes="mini" Content="Убрать"/>
+									</Grid>
+
+									<Grid ColumnDefinitions="Auto Auto Auto * Auto" ColumnSpacing="8">
+										<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Как лечь"/>
+										<ComboBox Grid.Column="1" x:Name="BackFitCombo"
+										          MinWidth="130" FontSize="12"/>
+										<TextBlock Grid.Column="2" Classes="FieldLabel" Text="Плотность"/>
+										<Slider Grid.Column="3" x:Name="BackOpacitySlider" Classes="Neat"
+										        Minimum="0" Maximum="100"/>
+										<TextBlock Grid.Column="4" x:Name="BackOpacityValue" Classes="FieldLabel"
+										           Width="42" TextAlignment="Right"/>
+									</Grid>
+								</StackPanel>
+							</Border>
+
+							<!-- Картинка бумаги -->
+							<Border Classes="card">
+								<StackPanel Spacing="10">
+									<StackPanel Orientation="Horizontal" Spacing="6">
+										<TextBlock Classes="cardTitle" Text="Картинка бумаги"/>
+										<infra:HintMark VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Картинка бумаги"
+										                behaviours:TooltipBehavior.Description="Своя текстура поверх цвета листа. Мелкую лучше замостить, крупную — растянуть. Размеры выбранного файла показаны ниже."/>
+									</StackPanel>
+
+									<Grid ColumnDefinitions="* Auto Auto" ColumnSpacing="6">
+										<TextBox Grid.Column="0" x:Name="ImagePathBox" Classes="Field"
+										         PlaceholderText="файл не выбран"/>
+										<Button Grid.Column="1" x:Name="BrowseBtn" Classes="mini" Content="Выбрать…"/>
+										<Button Grid.Column="2" x:Name="ClearImageBtn" Classes="mini" Content="Убрать"/>
+									</Grid>
+
+									<TextBlock x:Name="ImageInfoText" Classes="Hint"
+									           Text="Размеры картинки появятся здесь после выбора файла."/>
+
+									<Grid ColumnDefinitions="Auto Auto * Auto" ColumnSpacing="8">
+										<TextBlock Grid.Column="0" Classes="FieldLabel" Text="Плотность"/>
+										<infra:HintMark Grid.Column="1" VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Плотность картинки"
+										                behaviours:TooltipBehavior.Description="Насколько картинка перекрывает цвет листа. Для текстуры бумаги обычно хватает трети — иначе она спорит с текстом."/>
+										<Slider Grid.Column="2" x:Name="OpacitySlider" Classes="Neat"
+										        Minimum="0" Maximum="100"/>
+										<TextBlock Grid.Column="3" x:Name="OpacityValue" Classes="FieldLabel"
+										           Width="42" TextAlignment="Right"/>
+									</Grid>
+
+									<StackPanel Orientation="Horizontal" Spacing="6">
+										<CheckBox x:Name="TileCheck" FontSize="12"
+										          Content="Замостить вместо растягивания"/>
+										<infra:HintMark VerticalAlignment="Center"
+										                behaviours:TooltipBehavior.Tip="Замостить"
+										                behaviours:TooltipBehavior.Description="Картинка повторяется в своём размере вместо растягивания на весь лист. Для мелкой текстуры — единственный годный способ: растянутая мелкая картинка превращается в мыло."/>
+									</StackPanel>
+								</StackPanel>
+							</Border>
+
+							<!-- Действия над видом -->
+							<Grid ColumnDefinitions="Auto Auto * Auto" ColumnSpacing="8">
+								<Button Grid.Column="0" x:Name="DuplicateBtn" Classes="mini" Content="Дублировать"
+								        behaviours:TooltipBehavior.Tip="Дублировать вид"
+								        behaviours:TooltipBehavior.Description="Копия под новым именем. Встроенный вид иначе не изменить — его копию править можно."/>
+								<Button Grid.Column="3" x:Name="DeleteBtn" Classes="mini" Content="Удалить"
+								        behaviours:TooltipBehavior.Tip="Удалить вид"
+								        behaviours:TooltipBehavior.Description="Убирает вид из обеих областей. Встроенные виды удалить нельзя."/>
+							</Grid>
+
+						</StackPanel>
+					</ScrollViewer>
+				</Grid>
+			</DockPanel>
+		</Border>
+	</Grid>
+</UserControl>

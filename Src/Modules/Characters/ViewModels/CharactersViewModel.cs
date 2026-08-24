@@ -15,6 +15,7 @@ using Writersword.Modules.Characters.Interfaces;
 using Writersword.Modules.Characters.Models;
 using Writersword.Modules.Characters.Models.Enums;
 using Writersword.Modules.Characters.Services;
+using Writersword.Modules.Characters.ViewModels.Inspector;
 using Writersword.Modules.Characters.ViewModels.Onboarding;
 using Writersword.Modules.Characters.ViewModels.Templates;
 using Writersword.Modules.Common;
@@ -140,6 +141,172 @@ namespace Writersword.Modules.Characters.ViewModels
         public ObservableCollection<string> ActiveTemplateIds { get; } = new();
         public ObservableCollection<CharacterListItemViewModel> FilteredCharacters { get; } = new();
         public ObservableCollection<CharacterFolderViewModel> Folders { get; } = new();
+        // ── Выделение карточек и боковая панель оформления ─────────────────
+        //
+        // Выделение живёт только в представлении: в модель персонажа оно не
+        // попадает и проект им не пачкается. Панель правит всё выделенное
+        // разом — потому в ней и нет переключателей «применить ко всем»,
+        // которые были нужны окну настроек одной карточки.
+
+        public ObservableCollection<CharacterListItemViewModel> SelectedCards { get; } = new();
+
+        // Панель создаётся при первом обращении, а не в конструкторе: до
+        // первого выделения она не нужна, а конструктор модуля и так тяжёлый.
+        private CharacterInspectorViewModel? _inspector;
+        public CharacterInspectorViewModel Inspector =>
+            _inspector ??= new CharacterInspectorViewModel(this);
+
+        public bool HasSelection => SelectedCards.Count > 0;
+
+        private bool _isInspectorOpen;
+        public bool IsInspectorOpen
+        {
+            get => _isInspectorOpen;
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _isInspectorOpen, value);
+            }
+        }
+
+        // Ширина панели, которую человек тянет полоской на краю. Живёт в
+        // модуле, а не в самой панели: панель прячется вместе со своей шириной,
+        // а вернуться она должна той же, какой её оставили.
+        private double _inspectorWidth = 268.0;
+        public double InspectorWidth
+        {
+            get => _inspectorWidth;
+            set
+            {
+                var clamped = Math.Max(InspectorMinWidth, Math.Min(InspectorMaxWidth, value));
+                this.RaiseAndSetIfChanged(ref _inspectorWidth, clamped);
+            }
+        }
+
+        public const double InspectorMinWidth = 210.0;
+        public const double InspectorMaxWidth = 520.0;
+
+        /// <summary>
+        /// Выбрать карточку. additive — добавить к уже выбранным (Ctrl или
+        /// Shift), иначе выбор заменяется целиком. Повторный additive-клик по
+        /// уже выбранной снимает с неё выделение.
+        /// </summary>
+        public void SelectCard(CharacterListItemViewModel item, bool additive)
+        {
+            if (item is null) return;
+
+            // Повторный щелчок по единственной выбранной карточке закрывает
+            // панель и снимает выбор. Выключателя у панели нет: открыть её
+            // можно только щелчком по карточке, закрыть — крестиком в её углу
+            // или вот этим повторным щелчком, и оба пути обязаны оставлять
+            // список в одном и том же состоянии.
+            if (!additive && SelectedCards.Count == 1 && ReferenceEquals(SelectedCards[0], item))
+            {
+                ClearSelection();
+                return;
+            }
+
+            if (additive)
+            {
+                if (SelectedCards.Contains(item))
+                {
+                    item.IsCardSelected = false;
+                    SelectedCards.Remove(item);
+                }
+                else
+                {
+                    item.IsCardSelected = true;
+                    SelectedCards.Add(item);
+                }
+            }
+            else
+            {
+                foreach (var previous in SelectedCards) previous.IsCardSelected = false;
+                SelectedCards.Clear();
+                item.IsCardSelected = true;
+                SelectedCards.Add(item);
+            }
+
+            if (SelectedCards.Count > 0) IsInspectorOpen = true;
+            RaiseSelectionChanged();
+        }
+
+        /// <summary>
+        /// Папка, в которой сейчас лежит персонаж. Панель показывает её в
+        /// списке групп; сама принадлежность хранится не у персонажа, а
+        /// списком идентификаторов у папки, поэтому искать приходится обходом.
+        /// </summary>
+        public string? FindFolderIdOf(string characterId)
+        {
+            foreach (var folder in Folders)
+                foreach (var card in folder.Characters)
+                    if (card.Id == characterId) return folder.FolderId;
+            return null;
+        }
+
+        /// <summary>Снять выделение со всех карточек и закрыть панель.</summary>
+        public void ClearSelection()
+        {
+            if (SelectedCards.Count == 0)
+            {
+                IsInspectorOpen = false;
+                return;
+            }
+
+            foreach (var previous in SelectedCards) previous.IsCardSelected = false;
+            SelectedCards.Clear();
+            IsInspectorOpen = false;
+            RaiseSelectionChanged();
+        }
+
+        /// <summary>
+        /// Пересобрать выделение после пересборки списка. Фильтры создают
+        /// вью-модели карточек заново, и выделение осталось бы держать
+        /// объекты, которых на экране больше нет.
+        ///
+        /// Карточки ищутся по идентификатору персонажа, а не по ссылке:
+        /// переименование само зовёт ApplyFilters, и без этого поиска панель
+        /// закрывалась бы от каждой правки имени в ней же.
+        /// </summary>
+        public void PruneSelection()
+        {
+            if (SelectedCards.Count == 0) return;
+
+            var alive = new Dictionary<string, CharacterListItemViewModel>();
+            foreach (var folder in Folders)
+                foreach (var card in folder.Characters)
+                    alive[card.Id] = card;
+
+            var changed = false;
+            for (var i = SelectedCards.Count - 1; i >= 0; i--)
+            {
+                var card = SelectedCards[i];
+                if (alive.TryGetValue(card.Id, out var fresh))
+                {
+                    if (ReferenceEquals(fresh, card)) continue;
+                    card.IsCardSelected = false;
+                    fresh.IsCardSelected = true;
+                    SelectedCards[i] = fresh;
+                    changed = true;
+                }
+                else
+                {
+                    card.IsCardSelected = false;
+                    SelectedCards.RemoveAt(i);
+                    changed = true;
+                }
+            }
+
+            if (!changed) return;
+            if (SelectedCards.Count == 0) IsInspectorOpen = false;
+            RaiseSelectionChanged();
+        }
+
+        private void RaiseSelectionChanged()
+        {
+            this.RaisePropertyChanged(nameof(HasSelection));
+            _inspector?.OnSelectionChanged();
+        }
+
         public ObservableCollection<string> AvailableTags { get; } = new();
         public ObservableCollection<string> ActiveTagFilters { get; } = new();
 
@@ -391,10 +558,32 @@ namespace Writersword.Modules.Characters.ViewModels
         public double CardColorButtonSize => CardActionIconSize + 8;
 
         // Отступ значка «Мёртв» от правого края: он встаёт слева от кнопок
-        // правки, а не под ними. Ширина пары кнопок плюс просвет между ними,
-        // поле самих кнопок и зазор до значка.
-        public Avalonia.Thickness CardDeadBadgeMargin =>
-            new(0, 4, CardColorButtonSize * 2 + 2 + 4 + 4, 0);
+        // правки, а не под ними.
+        //
+        // Занятое кнопками место зависит от раскладки. В строке списка
+        // CardControlsOrientation горизонтальная: кнопки стоят парой — две
+        // ширины плюс просвет между ними, а поле панели равно правой части
+        // CardEditBtnsMargin. В плитке раскладка вертикальная: кнопки сложены
+        // столбиком и занимают ширину одной, поле панели — четыре точки со
+        // всех сторон. Раньше обе раскладки считались по паре, и в плитке
+        // значок отходил от кнопок к середине карточки на лишнюю кнопку.
+        //
+        // Ширину кнопки даёт CardColorButtonSize — она выведена из размера
+        // кнопок правки и растёт вместе с шириной карточки, поэтому отступ сам
+        // подстраивается под размер плитки. Зазор до значка масштабируется тем
+        // же порядком, с нижним пределом: на мелких карточках он не должен
+        // схлопываться в ноль и слипать значок с кнопкой.
+        public Avalonia.Thickness CardDeadBadgeMargin
+        {
+            get
+            {
+                var gap = Math.Max(3.0, Math.Round(CardActionIconSize * 0.3));
+                var buttons = UseListRowLayout
+                    ? CardColorButtonSize * 2 + 2 + 10
+                    : CardColorButtonSize + 4;
+                return new Avalonia.Thickness(0, 4, buttons + gap, 0);
+            }
+        }
 
         // Количество колонок — используется для расчётов drag.
         public int CardsPerRow => _cardsPerRow;
@@ -1980,6 +2169,11 @@ namespace Writersword.Modules.Characters.ViewModels
                         IsLoading = false;
                 }
             }
+
+            // Список пересобран — вью-модели карточек другие. Выделение надо
+            // переложить на новые объекты, иначе боковая панель осталась бы
+            // править карточки, которых на экране уже нет.
+            PruneSelection();
         }
 
         private void BindCharacterItemCallbacks(CharacterListItemViewModel item)
@@ -2048,32 +2242,114 @@ namespace Writersword.Modules.Characters.ViewModels
             {
                 var character = _characterService.GetById(id);
                 if (character is null || character.AvatarRing == on) return;
+                var wasOn = character.AvatarRing;
                 character.AvatarRing = on;
                 _characterService.Update(character);
+
+                // Возврат идёт сначала в модель, потом в карточку. Присваивание
+                // карточке снова позовёт этот же колбэк, но модель к тому
+                // времени уже несёт новое значение, и он выйдет по проверке
+                // выше — без второго шага в истории.
+                PushCommand(new Actions.ChangeAvatarRingCommand(id, character.Name, wasOn, on, (cid, value) =>
+                {
+                    var ch = _characterService.GetById(cid);
+                    if (ch is null) return;
+                    ch.AvatarRing = value;
+                    _characterService.Update(ch);
+                    foreach (var folder in Folders)
+                    {
+                        var vm = folder.Characters.FirstOrDefault(x => x.Id == cid);
+                        if (vm is not null) { vm.AvatarRing = value; break; }
+                    }
+                }));
             };
 
             item.OnGroupBookmarkChanged = (id, on) =>
             {
                 var character = _characterService.GetById(id);
                 if (character is null || character.GroupBookmark == on) return;
+                var wasOn = character.GroupBookmark;
                 character.GroupBookmark = on;
                 _characterService.Update(character);
+
+                PushCommand(new Actions.ChangeGroupBookmarkCommand(id, character.Name, wasOn, on, (cid, value) =>
+                {
+                    var ch = _characterService.GetById(cid);
+                    if (ch is null) return;
+                    ch.GroupBookmark = value;
+                    _characterService.Update(ch);
+                    foreach (var folder in Folders)
+                    {
+                        var vm = folder.Characters.FirstOrDefault(x => x.Id == cid);
+                        if (vm is not null) { vm.GroupBookmark = value; break; }
+                    }
+                }));
             };
 
             item.OnFrameThicknessChanged = (id, v) =>
             {
                 var character = _characterService.GetById(id);
                 if (character is null || Math.Abs(character.FrameThickness - v) < 0.01) return;
+                var wasValue = character.FrameThickness;
                 character.FrameThickness = v;
                 _characterService.Update(character);
+
+                PushCommand(new Actions.ChangeFrameThicknessCommand(id, character.Name, wasValue, v, (cid, value) =>
+                {
+                    var ch = _characterService.GetById(cid);
+                    if (ch is null) return;
+                    ch.FrameThickness = value;
+                    _characterService.Update(ch);
+                    foreach (var folder in Folders)
+                    {
+                        var vm = folder.Characters.FirstOrDefault(x => x.Id == cid);
+                        if (vm is not null) { vm.FrameThickness = value; break; }
+                    }
+                }));
             };
 
             item.OnAvatarStripChanged = (id, on) =>
             {
                 var character = _characterService.GetById(id);
                 if (character is null || character.AvatarStrip == on) return;
+                var wasOn = character.AvatarStrip;
                 character.AvatarStrip = on;
                 _characterService.Update(character);
+
+                PushCommand(new Actions.ChangeAvatarStripCommand(id, character.Name, wasOn, on, (cid, value) =>
+                {
+                    var ch = _characterService.GetById(cid);
+                    if (ch is null) return;
+                    ch.AvatarStrip = value;
+                    _characterService.Update(ch);
+                    foreach (var folder in Folders)
+                    {
+                        var vm = folder.Characters.FirstOrDefault(x => x.Id == cid);
+                        if (vm is not null) { vm.AvatarStrip = value; break; }
+                    }
+                }));
+            };
+
+            item.OnImportanceChanged = (id, level) =>
+            {
+                var character = _characterService.GetById(id);
+                if (character is null || character.ImportanceLevel == level) return;
+                var wasLevel = character.ImportanceLevel;
+                character.ImportanceLevel = level;
+                _characterService.Update(character);
+
+                PushCommand(new Actions.ChangeImportanceCommand(id, character.Name, wasLevel, level, (cid, value) =>
+                {
+                    var ch = _characterService.GetById(cid);
+                    if (ch is null) return;
+                    ch.ImportanceLevel = value;
+                    _characterService.Update(ch);
+                    foreach (var folder in Folders)
+                    {
+                        var vm = folder.Characters.FirstOrDefault(x => x.Id == cid);
+                        if (vm is not null) { vm.ImportanceLevel = value; break; }
+                    }
+                }));
             };
 
             item.OnApplyRingToAll = ApplyRingToAllCharacters;

@@ -231,6 +231,88 @@ namespace Writersword.Modules.Characters.ViewModels
 
         public Avalonia.Thickness CardBorderThickness => new(_frameThickness);
 
+        // Ступень важности персонажа. Правится из боковой панели тем же
+        // способом, что у папки: одна кнопка гоняет I → II → III по кругу.
+        // Отдельного выпадающего списка ради трёх значений заводить незачем.
+        private Models.Enums.CharacterImportanceLevel _importanceLevel =
+            Models.Enums.CharacterImportanceLevel.Secondary;
+
+        public Models.Enums.CharacterImportanceLevel ImportanceLevel
+        {
+            get => _importanceLevel;
+            set
+            {
+                if (_importanceLevel == value) return;
+                this.RaiseAndSetIfChanged(ref _importanceLevel, value);
+                this.RaisePropertyChanged(nameof(ImportanceMark));
+                OnImportanceChanged?.Invoke(Id, value);
+            }
+        }
+
+        /// <summary>Римская цифра ступени — как у значка на заголовке папки.</summary>
+        public string ImportanceMark => _importanceLevel switch
+        {
+            Models.Enums.CharacterImportanceLevel.Primary => "I",
+            Models.Enums.CharacterImportanceLevel.Secondary => "II",
+            Models.Enums.CharacterImportanceLevel.Tertiary => "III",
+            _ => "?"
+        };
+
+        /// <summary>
+        /// Следующая ступень по кругу: I → II → III → I. Свою ступень
+        /// «Custom» круг не трогает — в неё персонажа заводят не отсюда, и
+        /// перещёлкивать её на римскую цифру было бы потерей значения.
+        /// </summary>
+        public void CycleImportance()
+        {
+            ImportanceLevel = _importanceLevel switch
+            {
+                Models.Enums.CharacterImportanceLevel.Primary => Models.Enums.CharacterImportanceLevel.Secondary,
+                Models.Enums.CharacterImportanceLevel.Secondary => Models.Enums.CharacterImportanceLevel.Tertiary,
+                Models.Enums.CharacterImportanceLevel.Tertiary => Models.Enums.CharacterImportanceLevel.Primary,
+                _ => Models.Enums.CharacterImportanceLevel.Primary
+            };
+        }
+
+        /// <summary>
+        /// Показать толщину, не записывая её. Нужно ползунку в боковой панели:
+        /// пока его тянут, карточка обязана перерисовываться на каждое
+        /// движение, но запись в проект и шаг в истории отмены на каждое
+        /// движение смыли бы историю и упёрлись бы в диск. Обычный сеттер
+        /// FrameThickness остаётся как был — он и есть запись.
+        /// </summary>
+        public void SetFrameThicknessPreview(double value)
+        {
+            if (Math.Abs(_frameThickness - value) < 0.0001) return;
+            _frameThickness = value;
+            this.RaisePropertyChanged(nameof(FrameThickness));
+            this.RaisePropertyChanged(nameof(CardBorderThickness));
+        }
+
+        /// <summary>
+        /// Зафиксировать толщину, показанную предпросмотром: один вызов
+        /// колбэка — одна запись в проект и один шаг в истории.
+        /// </summary>
+        public void CommitFrameThickness()
+        {
+            OnFrameThicknessChanged?.Invoke(Id, _frameThickness);
+        }
+
+        // Карточка выбрана в списке для правки боковой панелью. Выделение
+        // живёт только в представлении: в модель персонажа оно не попадает и
+        // проект им не пачкается.
+        //
+        // Имя своё, а не IsSelected: то занято под другой смысл — им
+        // отмечается персонаж, открытый во вкладке «Редактор» (см.
+        // CharactersViewModel.SelectCharacter). Два разных признака выбора на
+        // одном свойстве неизбежно затирали бы друг друга.
+        private bool _isCardSelected;
+        public bool IsCardSelected
+        {
+            get => _isCardSelected;
+            set => this.RaiseAndSetIfChanged(ref _isCardSelected, value);
+        }
+
         // Вид аватара: кружок (по умолчанию) или «полоска» — картинка/заливка
         // на всю верхнюю зону карточки. Видимость вариантов — через Show*-свойства,
         // чтобы разметка не собирала условия из нескольких биндингов.
@@ -241,6 +323,13 @@ namespace Writersword.Modules.Characters.ViewModels
             set
             {
                 this.RaiseAndSetIfChanged(ref _avatarStrip, value);
+
+                // Кадр у кружка и у полоски свой, значит и картинка своя:
+                // прежняя обрезана под другой вид и показала бы не то.
+                _avatarBitmap = null;
+                _bitmapLoaded = false;
+                this.RaisePropertyChanged(nameof(AvatarBitmap));
+
                 RaiseAvatarViewProps();
                 OnAvatarStripChanged?.Invoke(Id, value);
             }
@@ -273,7 +362,7 @@ namespace Writersword.Modules.Characters.ViewModels
                 {
                     _bitmapLoaded = true;
                     if (!string.IsNullOrEmpty(_avatarPath) && _avatarService != null)
-                        try { _avatarBitmap = _avatarService.LoadBitmap(_avatarPath, CardAvatarDecodeSize); }
+                        try { _avatarBitmap = _avatarService.LoadBitmap(_avatarPath, CardAvatarDecodeSize, _avatarStrip); }
                         catch { }
                 }
                 return _avatarBitmap;
@@ -348,6 +437,16 @@ namespace Writersword.Modules.Characters.ViewModels
 
         public double DragOpacity => _isPlaceholder ? 0.35 : 1.0;
 
+        // Над карточкой тянут файл с картинкой. Признак живёт у карточки, а не
+        // у списка: подсвечивается ровно та карточка, на которую попадёт файл,
+        // и во время перетаскивания их может быть несколько подряд.
+        private bool _isImageDropTarget;
+        public bool IsImageDropTarget
+        {
+            get => _isImageDropTarget;
+            set => this.RaiseAndSetIfChanged(ref _isImageDropTarget, value);
+        }
+
         // true êîãäà íå â ðåæèìå ââîäà/ïåðåèìåíîâàíèÿ  ïîêàçûâàåò íîðìàëüíîå îòîáðàæåíèå
         public bool IsShowingNameDisplay => !_isBeingNamed && !_isRenaming;
 
@@ -360,6 +459,7 @@ namespace Writersword.Modules.Characters.ViewModels
         public Action<string, bool>? OnGroupBookmarkChanged { get; set; } // (id, bookmarkEnabled)
         public Action<string, double>? OnFrameThicknessChanged { get; set; } // (id, толщина рамки)
         public Action<string, bool>? OnAvatarStripChanged { get; set; } // (id, полоска вместо кружка)
+        public Action<string, Models.Enums.CharacterImportanceLevel>? OnImportanceChanged { get; set; } // (id, ступень)
         public Action<bool>? OnApplyRingToAll { get; set; }            // (ringEnabled — ко всем персонажам)
 
         // êîìàíäû  âûïîëíÿþòñÿ èç AXAML íàïðÿìóþ ÷åðåç {Binding}
@@ -434,11 +534,18 @@ namespace Writersword.Modules.Characters.ViewModels
         });
 
         private ReactiveCommand<Unit, Unit>? _removeAvatarCommand;
-        public ReactiveCommand<Unit, Unit> RemoveAvatarCommand => _removeAvatarCommand ??= ReactiveCommand.Create(() =>
+        public ReactiveCommand<Unit, Unit> RemoveAvatarCommand =>
+            _removeAvatarCommand ??= ReactiveCommand.Create(RemoveAvatar);
+
+        // Удаление текущего аватара вынесено из команды отдельным методом.
+        // То же действие уходит в пикер аватаров как deleteAvatarAction, а он
+        // принимает обычный Action, не команду: кнопка удаления живёт в нижней
+        // панели пикера, и промежуточное меню на карточке для неё не нужно.
+        public void RemoveAvatar()
         {
             _avatarService?.DeleteAvatar(_avatarPath);
             SetAvatarRef(null);
-        });
+        }
 
         public CharacterListItemViewModel(
             Models.Character character,
@@ -455,6 +562,7 @@ namespace Writersword.Modules.Characters.ViewModels
             _frameThickness = character.FrameThickness;
             _avatarStrip = character.AvatarStrip;
             _fallbackIcon = character.FallbackIcon;
+            _importanceLevel = character.ImportanceLevel;
             _isCollective = character.IsCollective;
             RelationshipsCount = relationshipsCount;
             IsNewlyCreated = isNewlyCreated;

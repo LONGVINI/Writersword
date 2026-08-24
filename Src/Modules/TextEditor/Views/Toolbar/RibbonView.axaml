@@ -6,6 +6,30 @@
              x:Class="Writersword.Modules.TextEditor.Views.Toolbar.RibbonView"
              x:DataType="vm:RibbonViewModel">
 
+	<UserControl.Styles>
+		<!-- Кнопки ленты не забирают клавиатурный фокус. Горячие клавиши редактора
+		     разбирает OnKeyDown канваса документа, и другого пути у них нет: стоит
+		     фокусу уйти на кнопку, как Ctrl+Z и всё остальное перестают доходить до
+		     редактора, а каретка пропадает с листа. Так же ведут себя панели Word:
+		     нажатие кнопки выполняет команду, но точка ввода остаётся в тексте.
+		     Поля ввода и списки не затронуты — им фокус нужен для набора значения. -->
+		<Style Selector="Button">
+			<Setter Property="Focusable" Value="False"/>
+		</Style>
+		<Style Selector="ToggleButton">
+			<Setter Property="Focusable" Value="False"/>
+		</Style>
+		<Style Selector="RepeatButton">
+			<Setter Property="Focusable" Value="False"/>
+		</Style>
+		<Style Selector="SplitButton">
+			<Setter Property="Focusable" Value="False"/>
+		</Style>
+		<Style Selector="DropDownButton">
+			<Setter Property="Focusable" Value="False"/>
+		</Style>
+	</UserControl.Styles>
+
 	<UserControl.Resources>
 		<!-- Высота тела ленты — одна на все вкладки. Подгонка вкладок друг под
 		     друга по содержимому не работает: высоту набирают ещё и метрики

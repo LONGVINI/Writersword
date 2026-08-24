@@ -202,6 +202,162 @@ namespace Writersword.Modules.Characters.Actions
         }
     }
 
+    // Толщина цветной рамки карточки. Правится ползунком, поэтому команда
+    // кладётся в историю не на каждое движение, а один раз — когда ползунок
+    // отпустили. Пока его тянут, карточка перерисовывается предпросмотром,
+    // который в проект не пишет.
+    public class ChangeFrameThicknessCommand : IUndoableCommand
+    {
+        private readonly string _characterId;
+        private readonly string _characterName;
+        private readonly double _oldValue;
+        private readonly double _newValue;
+        private readonly Action<string, double> _applyThickness; // (id, толщина)
+
+        public string Description => $"толщина рамки «{_characterName}»";
+
+        public ChangeFrameThicknessCommand(
+            string characterId,
+            string characterName,
+            double oldValue,
+            double newValue,
+            Action<string, double> applyThickness)
+        {
+            _characterId = characterId;
+            _characterName = characterName;
+            _oldValue = oldValue;
+            _newValue = newValue;
+            _applyThickness = applyThickness;
+        }
+
+        public void Execute() => _applyThickness(_characterId, _newValue);
+        public void Undo() => _applyThickness(_characterId, _oldValue);
+    }
+
+    // Ступень важности персонажа: I, II или III.
+    public class ChangeImportanceCommand : IUndoableCommand
+    {
+        private readonly string _characterId;
+        private readonly string _characterName;
+        private readonly Models.Enums.CharacterImportanceLevel _oldValue;
+        private readonly Models.Enums.CharacterImportanceLevel _newValue;
+        private readonly Action<string, Models.Enums.CharacterImportanceLevel> _applyLevel;
+
+        public string Description => $"важность «{_characterName}»";
+
+        public ChangeImportanceCommand(
+            string characterId,
+            string characterName,
+            Models.Enums.CharacterImportanceLevel oldValue,
+            Models.Enums.CharacterImportanceLevel newValue,
+            Action<string, Models.Enums.CharacterImportanceLevel> applyLevel)
+        {
+            _characterId = characterId;
+            _characterName = characterName;
+            _oldValue = oldValue;
+            _newValue = newValue;
+            _applyLevel = applyLevel;
+        }
+
+        public void Execute() => _applyLevel(_characterId, _newValue);
+        public void Undo() => _applyLevel(_characterId, _oldValue);
+    }
+
+    // Кольцо вокруг аватарки у одного персонажа. Массовое переключение
+    // живёт отдельно, в ApplyAvatarRingToAllCommand: у него своё описание и
+    // свой снимок прежних значений.
+    public class ChangeAvatarRingCommand : IUndoableCommand
+    {
+        private readonly string _characterId;
+        private readonly string _characterName;
+        private readonly bool _oldValue;
+        private readonly bool _newValue;
+        private readonly Action<string, bool> _applyRing; // (id, кольцо)
+
+        public string Description => _newValue
+            ? $"кольцо у «{_characterName}»"
+            : $"убрать кольцо у «{_characterName}»";
+
+        public ChangeAvatarRingCommand(
+            string characterId,
+            string characterName,
+            bool oldValue,
+            bool newValue,
+            Action<string, bool> applyRing)
+        {
+            _characterId = characterId;
+            _characterName = characterName;
+            _oldValue = oldValue;
+            _newValue = newValue;
+            _applyRing = applyRing;
+        }
+
+        public void Execute() => _applyRing(_characterId, _newValue);
+        public void Undo() => _applyRing(_characterId, _oldValue);
+    }
+
+    // Вид аватара: кружок или полоска на всю верхнюю зону карточки.
+    public class ChangeAvatarStripCommand : IUndoableCommand
+    {
+        private readonly string _characterId;
+        private readonly string _characterName;
+        private readonly bool _oldValue;
+        private readonly bool _newValue;
+        private readonly Action<string, bool> _applyStrip; // (id, полоска)
+
+        public string Description => _newValue
+            ? $"аватар полоской у «{_characterName}»"
+            : $"аватар кружком у «{_characterName}»";
+
+        public ChangeAvatarStripCommand(
+            string characterId,
+            string characterName,
+            bool oldValue,
+            bool newValue,
+            Action<string, bool> applyStrip)
+        {
+            _characterId = characterId;
+            _characterName = characterName;
+            _oldValue = oldValue;
+            _newValue = newValue;
+            _applyStrip = applyStrip;
+        }
+
+        public void Execute() => _applyStrip(_characterId, _newValue);
+        public void Undo() => _applyStrip(_characterId, _oldValue);
+    }
+
+    // Закладка-ленточка на карточке группы.
+    public class ChangeGroupBookmarkCommand : IUndoableCommand
+    {
+        private readonly string _characterId;
+        private readonly string _characterName;
+        private readonly bool _oldValue;
+        private readonly bool _newValue;
+        private readonly Action<string, bool> _applyBookmark; // (id, закладка)
+
+        public string Description => _newValue
+            ? $"закладка у «{_characterName}»"
+            : $"убрать закладку у «{_characterName}»";
+
+        public ChangeGroupBookmarkCommand(
+            string characterId,
+            string characterName,
+            bool oldValue,
+            bool newValue,
+            Action<string, bool> applyBookmark)
+        {
+            _characterId = characterId;
+            _characterName = characterName;
+            _oldValue = oldValue;
+            _newValue = newValue;
+            _applyBookmark = applyBookmark;
+        }
+
+        public void Execute() => _applyBookmark(_characterId, _newValue);
+        public void Undo() => _applyBookmark(_characterId, _oldValue);
+    }
+
     // Создание папки — Undo удаляет, Redo пересоздаёт с тем же id
     public class CreateFolderCommand : IUndoableCommand
     {

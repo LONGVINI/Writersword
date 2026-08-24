@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.TextEditor.ViewModels"
              xmlns:toolbar="using:Writersword.Modules.TextEditor.Views.Toolbar"
+             xmlns:reading="using:Writersword.Modules.TextEditor.Views.Reading"
              xmlns:statusbar="using:Writersword.Modules.TextEditor.Views.StatusBar"
              xmlns:doc="using:Writersword.Modules.TextEditor.Document"
              xmlns:converters="using:Writersword.Modules.TextEditor.Converters"
@@ -33,21 +34,51 @@
 		                       Grid.Row="0" Grid.RowSpan="3"
 		                       ZIndex="212"/>
 
-		<!-- Строка 0: Ribbon -->
-		<toolbar:RibbonView Grid.Row="0"
-                            DataContext="{Binding Ribbon}"/>
+		<!-- Оверлей видов чтения — поверх всего модуля -->
+		<reading:ReadingThemeOverlay x:Name="ThemeOverlay"
+		                             Grid.Row="0" Grid.RowSpan="3"
+		                             ZIndex="213"/>
 
-		<!-- Строка 1: Рабочая область — 2×2 сетка как в Word -->
+		<!-- Строка 0: ленты. Их две, и одновременно видна ровно одна: правка
+		     рукописи и чтение — разные занятия, и держать на экране инструменты
+		     обоих значит не дать сосредоточиться ни на одном.
+		     Видимость висит на обёртках, а не на самих лентах: у тех свой
+		     DataContext, и привязка искала бы свойство в модели ленты. -->
+		<ContentControl Grid.Row="0" IsVisible="{Binding !IsReadingMode}">
+			<toolbar:RibbonView DataContext="{Binding Ribbon}"/>
+		</ContentControl>
+
+		<!-- Высота ленты чтения задана явно, как и у ленты редактора: иначе она
+		     меняется от появления собственной полосы прокрутки, а вместе с её
+		     высотой меняется и высота книги — то есть вся раскладка чтения.
+		     Она же и уводит ленту: сворачиваясь, высота идёт к нулю переходом, и
+		     лента уезжает под верхний край, а не пропадает рывком. -->
+		<ContentControl x:Name="ReadingRibbonHost"
+		                Grid.Row="0"
+		                Height="104"
+		                ClipToBounds="True"
+		                IsVisible="False">
+			<ContentControl.Transitions>
+				<Transitions>
+					<DoubleTransition Property="Height" Duration="0:0:0.22" Easing="CubicEaseOut"/>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+				</Transitions>
+			</ContentControl.Transitions>
+			<reading:ReadingRibbonView DataContext="{Binding ReadingRibbon}"/>
+		</ContentControl>
+
+		<!-- Строка 1: Рабочая область — 2×2 сетка как в Word, плюс колонка
+		     справа под вертикальную ленту чтения. -->
 		<Grid Grid.Row="1"
               RowDefinitions="Auto *"
-              ColumnDefinitions="Auto *"
+              ColumnDefinitions="Auto * Auto"
               ClipToBounds="True">
 
-			<!-- [0,0] Кнопка snap-to-grid (магнитик) -->
 			<!-- [0,0] Кнопка snap-to-grid (магнитик) -->
 			<ToggleButton Grid.Row="0" Grid.Column="0"
 						  Width="24" Height="24"
 						  Padding="0"
+						  IsVisible="{Binding Ruler.IsVisible}"
 						  IsChecked="{Binding Ruler.IsSnapEnabled, Mode=TwoWay}"
 						  ToolTip.Tip="Привязка к сетке"
 						  Background="Transparent"
@@ -105,7 +136,7 @@
 					</Viewbox>
 				</Border>
 			</ToggleButton>
-			
+
 			<!-- [0,1] Горизонтальная линейка — точно над ScrollViewer -->
 			<doc:HorizontalRulerControl
                     Grid.Row="0" Grid.Column="1"
@@ -113,13 +144,16 @@
                     IsVisible="{Binding IsVisible}"
                     ClipToBounds="True"/>
 
-			<!-- [1,0] Вертикальная линейка — точно слева от ScrollViewer -->
-			<doc:VerticalRulerControl
-                    x:Name="VerticalRuler"
-                    Grid.Row="1" Grid.Column="0"
-                    DataContext="{Binding Ruler}"
-                    IsVisible="{Binding IsVisible}"
-                    ClipToBounds="True"/>
+			<!-- [1,0] Вертикальная линейка — точно слева от ScrollViewer.
+			     Видимость висит на обёртке: у самой линейки DataContext — модель
+			     линейки, а решение принимается по режиму редактора. -->
+			<ContentControl Grid.Row="1" Grid.Column="0"
+			                IsVisible="{Binding IsVerticalRulerVisible}">
+				<doc:VerticalRulerControl
+                        x:Name="VerticalRuler"
+                        DataContext="{Binding Ruler}"
+                        ClipToBounds="True"/>
+			</ContentControl>
 
 			<!-- [1,1] ScrollViewer с канвасом -->
 			<ScrollViewer Name="DocumentScrollViewer"
@@ -129,24 +163,70 @@
                           AllowAutoHide="False"
                           Background="#E8E8E8">
 
-				<ScrollViewer.Styles>
-					<!-- Ползунок виден всегда, а не только при наведении -->
-					<Style Selector="ScrollBar /template/ Thumb">
-						<Setter Property="Background" Value="#8C8C8C"/>
-					</Style>
-					<Style Selector="ScrollBar:pointerover /template/ Thumb">
-						<Setter Property="Background" Value="#5A5A5A"/>
-					</Style>
-					<Style Selector="ScrollBar:vertical">
-						<Setter Property="MinWidth" Value="12"/>
-					</Style>
-				</ScrollViewer.Styles>
+				<!-- Своих стилей у полос прокрутки здесь нет намеренно: тонкий
+				     скруглённый бегунок без стрелок задан один раз в
+				     Styles/Controls.axaml и одинаков во всей программе.
+				     Прежние правки цвета и ширины расходились с ним, и полосы
+				     стояли то шире дорожки, то со смещением. -->
 
 				<doc:DocumentCanvas x:Name="PageCanvas"
                                     HorizontalAlignment="Stretch"
                                     DataContext="{Binding DocumentViewModel}"/>
 
 			</ScrollViewer>
+
+			<!-- [0..1, 2] Вертикальная лента чтения. Появляется, когда по ширине
+			     на книгу почти ничего не остаётся: горизонтальная полоса в узком
+			     окне отбирает у чтения больше, чем стоит. -->
+			<ContentControl x:Name="ReadingRibbonSideHost"
+			                Grid.Row="0" Grid.RowSpan="2" Grid.Column="2"
+			                IsVisible="False"
+			                ClipToBounds="True"
+			                Width="182">
+				<ContentControl.Transitions>
+					<Transitions>
+						<DoubleTransition Property="Width" Duration="0:0:0.22" Easing="CubicEaseOut"/>
+						<DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+					</Transitions>
+				</ContentControl.Transitions>
+			</ContentControl>
+
+			<!-- Язычок ленты чтения. Висит у правого верхнего угла — там же, где
+			     кончается сама лента: тянуться за ней в середину экрана незачем,
+			     а внизу и слева лежит книга. Свёрнутая лента оставляет на виду
+			     только его. Форму язычок меняет вместе с лентой: полукруг снизу
+			     у горизонтальной, полукруг слева у вертикальной. -->
+			<Button x:Name="ReadingRibbonTab"
+			        Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+			        IsVisible="False"
+			        ZIndex="170"
+			        Click="OnReadingRibbonTabClick"
+			        Width="46" Height="20"
+			        Padding="0"
+			        Margin="0 0 18 0"
+			        HorizontalAlignment="Right"
+			        VerticalAlignment="Top"
+			        Background="#E61E1E1E"
+			        BorderBrush="#33FFFFFF"
+			        BorderThickness="1 0 1 1"
+			        CornerRadius="0 0 22 22"
+			        Focusable="False"
+			        Cursor="Hand"
+			        ToolTip.Tip="Лента чтения">
+				<Path x:Name="ReadingRibbonTabArrow"
+				      Data="M 0,0 L 5,5 L 10,0"
+				      Stroke="#CFCFCF"
+				      StrokeThickness="1.6"
+				      StrokeLineCap="Round"
+				      HorizontalAlignment="Center"
+				      VerticalAlignment="Center">
+					<Path.Transitions>
+						<Transitions>
+							<TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.28"/>
+						</Transitions>
+					</Path.Transitions>
+				</Path>
+			</Button>
 
 			<!-- Всплывающая подсказка номера страницы при перетаскивании ползунка -->
 			<StackPanel x:Name="PageDragTooltip"
@@ -180,8 +260,9 @@
 		</Grid>
 
 		<!-- Строка 2: Строка состояния -->
-		<statusbar:EditorStatusBarView Grid.Row="2"
-                                       DataContext="{Binding StatusBar}"/>
+		<ContentControl Grid.Row="2" IsVisible="{Binding !IsReadingMode}">
+			<statusbar:EditorStatusBarView DataContext="{Binding StatusBar}"/>
+		</ContentControl>
 
 	</Grid>
 

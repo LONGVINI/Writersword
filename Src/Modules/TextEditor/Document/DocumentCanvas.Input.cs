@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Input;
 using Avalonia.Threading;
 using SkiaSharp;
@@ -113,12 +113,31 @@ namespace Writersword.Modules.TextEditor.Document
             // Ctrl + колесо — масштабирование (а не прокрутка). Шаг мультипликативный, чтобы
             // ощущался одинаково на любом масштабе. Меняем DocVm.Zoom: канвас перерисуется, а
             // TextEditorViewModel подхватит изменение и обновит ползунок и линейку.
+            // В книге колесо с Ctrl подводит и отводит саму книгу, а не меняет масштаб
+            // редактора: увеличивать интерфейс во время чтения незачем, а подойти
+            // ближе к странице — обычное желание.
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && SpreadMode)
+            {
+                ChangeBookZoom(e.Delta.Y >= 0 ? 1 : -1);
+                e.Handled = true;
+                return;
+            }
+
             if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && DocVm is not null)
             {
                 double factor = e.Delta.Y >= 0 ? 1.1 : 1.0 / 1.1;
                 double newZoom = Math.Clamp(DocVm.Zoom * factor, 0.25, 5.0);
                 if (Math.Abs(newZoom - DocVm.Zoom) > 0.0001)
                     DocVm.Zoom = newZoom;
+                e.Handled = true;
+                return;
+            }
+
+            // В книге колесо листает страницы: прокручивать нечего, канвас равен окну.
+            if (SpreadMode)
+            {
+                if (_spreadFlipDir == 0)
+                    SpreadTurn(e.Delta.Y > 0 ? -1 : 1);
                 e.Handled = true;
                 return;
             }
@@ -136,6 +155,16 @@ namespace Writersword.Modules.TextEditor.Document
             double zoom = Zoom;
             float xPt = (float)(pt.X / zoom * PxToPt);
             float yPt = (float)(pt.Y / zoom * PxToPt);
+
+            // Книжный разворот: нажатие подхватывает лист, а не ставит каретку.
+            // Редактирования здесь нет, поэтому вся обычная обработка не нужна.
+            if (SpreadMode)
+            {
+                if (SpreadPointerPressed(xPt, yPt))
+                    e.Pointer.Capture(this);
+                e.Handled = true;
+                return;
+            }
             // Страницы рядом: запоминаем страницу жеста и переводим точку указателя
             // в логические координаты раскладки.
             if (_pagesPerRow > 1)
@@ -574,6 +603,20 @@ namespace Writersword.Modules.TextEditor.Document
             var rawPt = e.GetPosition(this);
             float xPt = (float)(rawPt.X / zoom * PxToPt);
             float yPt = (float)(rawPt.Y / zoom * PxToPt);
+
+            if (SpreadMode)
+            {
+                // Приближённая книга больше окна: указатель у края ведёт её сам,
+                // чтобы посреди чтения не приходилось браться за полосы прокрутки.
+                UpdateReadingEdgePan(rawPt);
+
+                // Уголок под указателем приподнимается: так видно, что лист можно
+                // взять и перевернуть рукой.
+                UpdateSpreadCornerHint(rawPt);
+
+                if (SpreadPointerMoved(xPt)) e.Handled = true;
+                return;
+            }
             // Страницы рядом: во время жеста над объектом маппинг идёт через страницу,
             // где жест начался — заход указателя на соседнюю страницу не даёт скачка
             // логических координат. Вне жеста — через ближайшую страницу.
@@ -1111,6 +1154,16 @@ namespace Writersword.Modules.TextEditor.Document
         {
             base.OnPointerReleased(e);
 
+            if (SpreadMode)
+            {
+                if (SpreadPointerReleased())
+                {
+                    e.Pointer.Capture(null);
+                    e.Handled = true;
+                }
+                return;
+            }
+
             if (_imageResizing)
             {
                 // Обрезка не пишется в Undo по каждому маркеру: рамка кадрирования
@@ -1567,6 +1620,14 @@ namespace Writersword.Modules.TextEditor.Document
             // Любой ввод завершает отложенный зум-жест: раскладка пересобирается сразу, поэтому
             // последующие правки/undo обновляют канвас корректно (не упираются в _zooming).
             FinishZoomImmediately();
+
+            // Книга: клавиатура только листает. Правка в этом режиме не предусмотрена,
+            // поэтому дальше нажатие не идёт — ни в горячие клавиши, ни в ввод текста.
+            if (SpreadMode)
+            {
+                if (HandleSpreadKey(e)) e.Handled = true;
+                return;
+            }
 
             // Завершение обрезки с клавиатуры: Enter применяет рамку кадрирования,
             // Esc отбрасывает её и возвращает картинку к прежним границам.

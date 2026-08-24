@@ -2,40 +2,327 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Avatars"
              xmlns:res="using:Writersword.Src.Modules.Characters.Resources"
+             xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              x:Class="Writersword.Modules.Characters.Views.Avatars.CharacterAvatarPickerOverlay"
              x:DataType="vm:CharacterAvatarPickerViewModel"
              IsVisible="False">
 
-	<!-- Выбор аватара: оформление и поведение — как у редактора цвета и окна
-	     настроек карточки: скрим на модуль (клик не закрывает), центральная
-	     панель BgBase со скруглением 16 и тенью. Раньше это было отдельное
-	     системное окно (CharacterAvatarPickerWindow) — теперь оверлей внутри
-	     модуля. Результат выбора отдаётся через ShowAsync (code-behind). -->
+	<!-- Выбор аватара: устройство то же, что у редактора цвета.
+	     Скрим полностью непрозрачный, тень вынесена отдельной подложкой,
+	     размеры панели ограничиваются в code-behind под размер модуля.
 
-	<Grid>
-		<!-- Скрим: затемняет и блокирует модуль. Клик НЕ закрывает. -->
+	     Полупрозрачных заливок в окне нет ни одной. Дело не только во внешнем
+	     виде: за скримом лежит модуль с сотнями карточек, и любая прозрачность
+	     заставляет движок подмешивать их в каждый кадр. Сплошные цвета из темы
+	     выглядят так же, но перекрытое содержимое не перерисовывается.
+
+	     Приёмником брошенных файлов объявлено всё окно: бросают не в
+	     конкретную папку, а «сюда». -->
+
+	<UserControl.Resources>
+		<!-- Прозрачный фон и трек скроллбара: тема Fluent подкладывает под него
+		     свою серую полосу, и без этих ключей она видна вдоль всего списка.
+		     Тот же набор ключей стоит у попапа образцов цвета. -->
+		<SolidColorBrush x:Key="ScrollBarBackground" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarBackgroundPointerOver" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarBackgroundDisabled" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarTrackFill" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="Transparent"/>
+		<SolidColorBrush x:Key="ScrollBarPanningBackground" Color="Transparent"/>
+
+		<!-- Плитка аватарки. Объявлена один раз и используется всеми разделами:
+		     три копии одной разметки разошлись бы при первой же правке. -->
+		<DataTemplate x:Key="AvatarTileTemplate" x:DataType="vm:CharacterAvatarPickerItemViewModel">
+			<Panel Classes="tile" Margin="3" Background="Transparent" Width="64" Height="64">
+
+				<!-- Подсказка плитки — только имя файла. Пояснение «поставить
+				     персонажу» убрано: клик по аватарке в окне выбора аватарки
+				     ничем другим быть не может, и объяснять это на каждой из
+				     сотни плиток незачем. Задержка большая — подпись нужна
+				     тому, кто целенаправленно навёл и ждёт, а не всем подряд,
+				     кто ведёт курсором через сетку. -->
+				<Button Classes="tileFace"
+				        Command="{Binding SelectCommand}"
+				        behaviours:TooltipBehavior.Tip="{Binding ToolTip}"
+				        behaviours:TooltipBehavior.ShowDelay="1500">
+					<Border Width="64" Height="64" CornerRadius="32"
+					        ClipToBounds="True"
+					        Background="{DynamicResource BgSurfaceBrush}">
+						<Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
+					</Border>
+				</Button>
+
+				<Border Classes="tileRing" IsHitTestVisible="False"
+				        CornerRadius="32" BorderThickness="2"
+				        BorderBrush="{DynamicResource AccentDefaultBrush}"/>
+
+				<!-- Кнопки плитки: кадр в левом верхнем углу, удаление в правом.
+				     Обе сидят серединой точно на ободке кружка, под 45 градусов
+				     к вертикали, то есть под прямым углом друг к другу.
+
+				     Кружок радиусом 32 с центром в (32, 32). Точка ободка под
+				     45 градусов отстоит от центра на 32/√2 ≈ 22.6 по каждой
+				     оси, значит лежит в 32 − 22.6 ≈ 9.4 от верхнего края и от
+				     своего бока. Кнопка 18 точек, половина — 9; остаётся 0.4
+				     поля до угла плитки.
+
+				     Раньше обе кнопки стояли в одной панели у правого края и
+				     наезжали друг на друга на мелких плитках.
+
+				     Видны при наведении, чтобы не рябить в сетке из сотни
+				     аватарок. -->
+				<Button Classes="tileBtn"
+				        HorizontalAlignment="Left" VerticalAlignment="Top"
+				        Margin="0"
+				        Command="{Binding CropCommand}"
+				        IsVisible="{Binding IsNotConfirmingDelete}"
+				        behaviours:TooltipBehavior.Tip="Кадрировать"
+				        behaviours:TooltipBehavior.Description="Выбрать свой кадр этой картинки. Файл в проекте остаётся один — кадр запомнится только этому персонажу"
+				        behaviours:TooltipBehavior.ShowDelay="300">
+					<PathIcon Width="10" Height="10"
+					          Data="M1 1H9V5H5V9H1Z M19 19H11V15H15V11H19Z"/>
+				</Button>
+
+				<Button Classes="tileBtn danger"
+				        HorizontalAlignment="Right" VerticalAlignment="Top"
+				        Margin="0"
+				        Command="{Binding RequestDeleteCommand}"
+				        IsVisible="{Binding ShowDeleteButton}"
+				        behaviours:TooltipBehavior.Tip="{Binding DeleteTip}"
+				        behaviours:TooltipBehavior.Description="{Binding DeleteTipDescription}"
+				        behaviours:TooltipBehavior.ShowDelay="300">
+					<PathIcon Width="10" Height="10"
+					          Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+				</Button>
+
+				<!-- Переспрос перед удалением файла. Отменить удаление нечем,
+				     поэтому оно и переспрашивает — в отличие от «Недавних». -->
+				<Border IsVisible="{Binding IsConfirmingDelete}"
+				        CornerRadius="32"
+				        Background="{DynamicResource BgBaseBrush}"
+				        BorderBrush="{DynamicResource BorderDefaultBrush}"
+				        BorderThickness="1">
+					<StackPanel VerticalAlignment="Center" Spacing="4">
+						<TextBlock Text="Удалить?"
+						           FontSize="10"
+						           HorizontalAlignment="Center"
+						           Foreground="{DynamicResource TextPrimaryBrush}"/>
+						<StackPanel Orientation="Horizontal" Spacing="4"
+						            HorizontalAlignment="Center">
+							<Button Content="Да" Classes="confirmYes"
+							        Command="{Binding ConfirmDeleteCommand}"/>
+							<Button Content="Нет" Classes="confirmNo"
+							        Command="{Binding CancelDeleteCommand}"/>
+						</StackPanel>
+					</StackPanel>
+				</Border>
+			</Panel>
+		</DataTemplate>
+
+	</UserControl.Resources>
+
+	<UserControl.Styles>
+		<!-- Кнопки на плитке проявляются при наведении на саму плитку.
+		     Правило висит на самих кнопках: общей панели у них больше нет,
+		     они стоят по разным углам. -->
+		<Style Selector="Panel.tile Button.tileBtn">
+			<Setter Property="Opacity" Value="0"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Panel.tile:pointerover Button.tileBtn">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+
+		<!-- Обводка плитки под курсором — вместо подсветки фона: фон плитки
+		     закрыт самой картинкой, и менять его бессмысленно. -->
+		<Style Selector="Panel.tile Border.tileRing">
+			<Setter Property="Opacity" Value="0"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Panel.tile:pointerover Border.tileRing">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+
+		<Style Selector="Button.tileFace">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="VerticalAlignment" Value="Stretch"/>
+			<Setter Property="Cursor" Value="Hand"/>
+		</Style>
+		<Style Selector="Button.tileFace /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+		</Style>
+		<Style Selector="Button.tileFace:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
+		<Style Selector="Button.tileFace:pressed /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+		</Style>
+
+		<Style Selector="Button.tileBtn">
+			<Setter Property="Width" Value="18"/>
+			<Setter Property="Height" Value="18"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="CornerRadius" Value="9"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.tileBtn /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="9"/>
+		</Style>
+		<Style Selector="Button.tileBtn:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<!-- Разрушающее действие. В теме нет отдельной кисти «опасно»; критический
+		     красный один на всё приложение и лежит под именем конфликта горячих
+		     клавиш — берём его, чтобы не заводить четвёртый оттенок красного. -->
+		<Style Selector="Button.tileBtn.danger:pointerover">
+			<Setter Property="Foreground" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+		<Style Selector="Button.tileBtn.danger:pointerover /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+
+		<Style Selector="Button.confirmYes">
+			<Setter Property="FontSize" Value="10"/>
+			<Setter Property="Padding" Value="8,1"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="Foreground" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+		<Style Selector="Button.confirmYes /template/ ContentPresenter">
+			<Setter Property="BorderBrush" Value="{DynamicResource HotKeyConflictCriticalBrush}"/>
+		</Style>
+		<Style Selector="Button.confirmNo">
+			<Setter Property="FontSize" Value="10"/>
+			<Setter Property="Padding" Value="8,1"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="CornerRadius" Value="4"/>
+		</Style>
+
+		<!-- Приглушённая кнопка нижней панели — как «Отмена» в редакторе цвета. -->
+		<Style Selector="Button.subtleOutline">
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+		</Style>
+
+		<!-- Заголовок раздела: разделительная линия и подпись, без цветной
+		     полосы во всю ширину — она читалась как серый фон списка. -->
+		<Style Selector="Border.sectionHeader">
+			<Setter Property="Padding" Value="17,10,17,4"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="0,1,0,0"/>
+		</Style>
+		<Style Selector="Border.sectionHeader.first">
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="TextBlock.sectionTitle">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+
+		<!-- Значок области: те же цвета, что у локальных и глобальных палитр. -->
+		<Style Selector="Border.scopeChip">
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="Padding" Value="7,1"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="TextElement.Foreground" Value="{DynamicResource TextMutedBrush}"/>
+		</Style>
+		<Style Selector="Border.scopeChip.local">
+			<Setter Property="Background" Value="{DynamicResource SectionProjectBgBrush}"/>
+			<Setter Property="TextElement.Foreground" Value="{DynamicResource SectionProjectFgBrush}"/>
+		</Style>
+		<Style Selector="Border.scopeChip.global">
+			<Setter Property="Background" Value="{DynamicResource SectionGlobalBgBrush}"/>
+			<Setter Property="TextElement.Foreground" Value="{DynamicResource SectionGlobalFgBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.scopeChipText">
+			<Setter Property="FontSize" Value="10"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+		</Style>
+
+		<Style Selector="ScrollBar">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="ScrollBar /template/ Border">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+		<Style Selector="ScrollBar /template/ Grid">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid x:Name="RootGrid"
+	      DragDrop.AllowDrop="True"
+	      DragDrop.DragEnter="OnPickerDragOver"
+	      DragDrop.DragOver="OnPickerDragOver"
+	      DragDrop.DragLeave="OnPickerDragLeave"
+	      DragDrop.Drop="OnPickerDrop">
+
+		<!-- Скрим: затемняет и блокирует модуль. Клик НЕ закрывает.
+		     Полностью непрозрачный — см. пояснение вверху файла. -->
 		<Border Background="#F2000000" PointerPressed="OnScrimPressed"/>
 
-		<!-- Внешний Border несёт тень, внутренний — фон и клип по скруглению:
-		     секционные заголовки и скрим-контент доходят до краёв панели,
-		     ClipToBounds на одном контроле с тенью подрезал бы саму тень. -->
+		<!-- Тень панели — отдельная статичная подложка. Держать DropShadowEffect
+		     на самой панели нельзя: блюр пересчитывается на каждое обновление
+		     внутри неё, а внутри прокручивается список из сотен миниатюр. -->
 		<Border HorizontalAlignment="Center" VerticalAlignment="Center"
-		        Margin="24" Width="560" MaxHeight="640"
-		        CornerRadius="16">
+		        Margin="24"
+		        Width="{Binding Bounds.Width, ElementName=PickerPanel}"
+		        Height="{Binding Bounds.Height, ElementName=PickerPanel}"
+		        Background="{DynamicResource BgBaseBrush}"
+		        CornerRadius="16"
+		        IsHitTestVisible="False">
 			<Border.Effect>
 				<DropShadowEffect BlurRadius="32" OffsetX="0" OffsetY="12" Opacity="0.55" Color="#000000"/>
 			</Border.Effect>
+		</Border>
 
-			<Border Background="{DynamicResource BgBaseBrush}"
-			        BorderBrush="{DynamicResource BorderDefaultBrush}"
-			        BorderThickness="1"
-			        CornerRadius="16"
-			        ClipToBounds="True">
+		<Border x:Name="PickerPanel"
+		        HorizontalAlignment="Center" VerticalAlignment="Center"
+		        Margin="24"
+		        MinWidth="0" Width="600"
+		        Background="{DynamicResource BgBaseBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="1"
+		        CornerRadius="16"
+		        ClipToBounds="True">
 			<Panel>
-				<Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto">
+				<Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
 
 					<!-- Заголовок + крестик -->
-					<Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="16,14,12,0">
+					<Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="20,16,12,0">
 						<TextBlock Grid.Column="0"
 						           Text="{x:Static res:CharactersStrings.AvatarPicker_Title}"
 						           FontSize="16" FontWeight="SemiBold"
@@ -43,117 +330,122 @@
 						           VerticalAlignment="Center"/>
 						<Button Grid.Column="1" Content="✕"
 						        Command="{Binding CancelCommand}"
-						        Background="Transparent" BorderThickness="0"
+						        Classes="ghost"
+						        Padding="8,2" FontSize="15"
 						        Foreground="{DynamicResource TextSecondaryBrush}"
-						        FontSize="14" Padding="6,2"/>
+						        behaviours:TooltipBehavior.Tip="Закрыть"
+						        behaviours:TooltipBehavior.Description="Закрыть окно, оставив аватарку персонажа как есть"/>
 					</Grid>
 
-					<!-- Поиск -->
-					<Border Grid.Row="1" Padding="12,10,12,6">
-						<TextBox Text="{Binding SearchQuery}"
-								 PlaceholderText="{x:Static res:CharactersStrings.AvatarPicker_SearchPlaceholder}"
-								 Padding="8,6"/>
+					<!-- Поиск и переход в папки -->
+					<Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="20,12,20,0" ColumnSpacing="8">
+						<TextBox Grid.Column="0"
+						         Text="{Binding SearchQuery}"
+						         PlaceholderText="{x:Static res:CharactersStrings.AvatarPicker_SearchPlaceholder}"
+						         Padding="8,6"/>
+						<Button Grid.Column="1"
+						        Content="{x:Static res:CharactersStrings.AvatarPicker_ManagePacks}"
+						        Command="{Binding OpenManagerCommand}"
+						        Padding="12,4" FontSize="11"
+						        behaviours:TooltipBehavior.Tip="Папки с аватарками"
+						        behaviours:TooltipBehavior.Description="Завести папку, переложить в неё картинки, перенести папку между проектом и приложением"/>
+					</Grid>
+
+					<!-- Статус -->
+					<Border Grid.Row="2" Margin="20,8,20,0"
+					        IsVisible="{Binding StatusMessage,
+					            Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+						<TextBlock Text="{Binding StatusMessage}"
+						           FontSize="11"
+						           TextWrapping="Wrap"
+						           Foreground="{DynamicResource AccentDefaultBrush}"/>
 					</Border>
 
-					<!-- Статус + кнопка управления -->
-					<Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="12,0,12,6">
-						<TextBlock Text="{Binding StatusMessage}"
-								   VerticalAlignment="Center"
-								   FontSize="11"
-								   Foreground="{DynamicResource AccentBrush}"
-								   IsVisible="{Binding StatusMessage,
-                               Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-						<Button Grid.Column="1"
-								Content="{x:Static res:CharactersStrings.AvatarPicker_ManagePacks}"
-								Command="{Binding OpenManagerCommand}"
-								Padding="8,4" FontSize="11"/>
-					</Grid>
-
 					<!-- Основной контент -->
-					<ScrollViewer Grid.Row="3" x:Name="MainScroll">
+					<ScrollViewer Grid.Row="3" x:Name="MainScroll"
+					              Margin="0,8,0,0"
+					              Background="Transparent"
+					              HorizontalScrollBarVisibility="Disabled"
+					              VerticalScrollBarVisibility="Auto">
 						<StackPanel Spacing="0">
 
-							<!-- Проектные аватарки -->
-							<StackPanel IsVisible="{Binding HasProjectAvatars}" Margin="0,0,0,8">
-								<Border Padding="12,6,12,4" Background="{DynamicResource BgPanelBrush}">
-									<TextBlock Text="{x:Static res:CharactersStrings.AvatarPicker_InProject}"
-											   FontSize="11" FontWeight="SemiBold"
-											   Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<!-- Недавние: список обращений, а не хранилище.
+							     Крестик здесь убирает только запись. -->
+							<StackPanel IsVisible="{Binding HasRecentAvatars}">
+								<Border Classes="sectionHeader first">
+									<Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+										<TextBlock Grid.Column="0" Classes="sectionTitle"
+										           Text="{Binding RecentsTitle}"/>
+										<Button Grid.Column="2"
+										        Content="Очистить"
+										        Command="{Binding ClearRecentsCommand}"
+										        Classes="ghost"
+										        FontSize="10" Padding="6,2" MinHeight="0"
+										        Foreground="{DynamicResource TextSecondaryBrush}"
+										        behaviours:TooltipBehavior.Tip="Очистить недавние"
+										        behaviours:TooltipBehavior.Description="Список забудет порядок обращений. Сами картинки и аватарки персонажей останутся на местах"/>
+									</Grid>
 								</Border>
-								<ItemsControl ItemsSource="{Binding ProjectAvatars}" Margin="8,4">
+								<ItemsControl ItemsSource="{Binding VisibleRecentAvatars}"
+								              ItemTemplate="{StaticResource AvatarTileTemplate}"
+								              Margin="17,4,17,10">
 									<ItemsControl.ItemsPanel>
 										<ItemsPanelTemplate>
 											<WrapPanel Orientation="Horizontal"/>
 										</ItemsPanelTemplate>
 									</ItemsControl.ItemsPanel>
-									<ItemsControl.ItemTemplate>
-										<DataTemplate DataType="vm:CharacterAvatarPickerItemViewModel">
-											<Button Command="{Binding SelectCommand}"
-													Background="Transparent"
-													BorderThickness="0" Padding="0"
-													Margin="4"
-													ToolTip.Tip="{Binding ToolTip}"
-													Cursor="Hand">
-												<Button.Styles>
-													<Style Selector="Button:pointerover /template/ ContentPresenter">
-														<Setter Property="Background" Value="Transparent"/>
-													</Style>
-												</Button.Styles>
-												<Border Width="68" Height="68" CornerRadius="34"
-														ClipToBounds="True"
-														Background="{DynamicResource BgPanelBrush}">
-													<Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
-												</Border>
-											</Button>
-										</DataTemplate>
-									</ItemsControl.ItemTemplate>
 								</ItemsControl>
 							</StackPanel>
 
-							<!-- Паки -->
+							<!-- Аватарки, лежащие в самом проекте -->
+							<StackPanel IsVisible="{Binding HasProjectAvatars}">
+								<Border Classes="sectionHeader">
+									<StackPanel Orientation="Horizontal" Spacing="8">
+										<TextBlock Classes="sectionTitle"
+										           Text="{x:Static res:CharactersStrings.AvatarPicker_InProject}"/>
+										<Border Classes="scopeChip local">
+											<TextBlock Classes="scopeChipText" Text="в проекте"/>
+										</Border>
+									</StackPanel>
+								</Border>
+								<ItemsControl ItemsSource="{Binding VisibleProjectAvatars}"
+								              ItemTemplate="{StaticResource AvatarTileTemplate}"
+								              Margin="17,4,17,10">
+									<ItemsControl.ItemsPanel>
+										<ItemsPanelTemplate>
+											<WrapPanel Orientation="Horizontal"/>
+										</ItemsPanelTemplate>
+									</ItemsControl.ItemsPanel>
+								</ItemsControl>
+							</StackPanel>
+
+							<!-- Папки: локальные, глобальные, встроенные.
+							     Область подписана значком — как у палитр. -->
 							<ItemsControl ItemsSource="{Binding VisiblePacks}">
 								<ItemsControl.ItemTemplate>
-									<DataTemplate DataType="vm:CharacterAvatarPackSectionViewModel">
-										<StackPanel Margin="0,0,0,8">
-											<Border Padding="12,6,12,4"
-													Background="{DynamicResource BgPanelBrush}">
-												<TextBlock Text="{Binding DisplayName}"
-														   FontSize="11" FontWeight="SemiBold"
-														   Foreground="{DynamicResource TextSecondaryBrush}"/>
+									<DataTemplate x:DataType="vm:CharacterAvatarPackSectionViewModel">
+										<StackPanel>
+											<Border Classes="sectionHeader">
+												<StackPanel Orientation="Horizontal" Spacing="8">
+													<TextBlock Classes="sectionTitle"
+													           Text="{Binding DisplayName}"/>
+													<Border Classes="scopeChip"
+													        Classes.local="{Binding IsLocalScope}"
+													        Classes.global="{Binding IsGlobalScope}"
+													        IsVisible="{Binding HasScopeLabel}">
+														<TextBlock Classes="scopeChipText"
+														           Text="{Binding ScopeLabel}"/>
+													</Border>
+												</StackPanel>
 											</Border>
-											<ItemsControl ItemsSource="{Binding Items}" Margin="8,4">
+											<ItemsControl ItemsSource="{Binding Items}"
+											              ItemTemplate="{StaticResource AvatarTileTemplate}"
+											              Margin="17,4,17,10">
 												<ItemsControl.ItemsPanel>
 													<ItemsPanelTemplate>
 														<WrapPanel Orientation="Horizontal"/>
 													</ItemsPanelTemplate>
 												</ItemsControl.ItemsPanel>
-												<ItemsControl.ItemTemplate>
-													<DataTemplate DataType="vm:CharacterAvatarPickerItemViewModel">
-														<Button Command="{Binding SelectCommand}"
-																Background="Transparent"
-																BorderThickness="0" Padding="0"
-																Margin="4"
-																ToolTip.Tip="{Binding ToolTip}"
-																Cursor="Hand">
-															<Button.Styles>
-																<Style Selector="Button:pointerover /template/ ContentPresenter">
-																	<Setter Property="Background" Value="Transparent"/>
-																</Style>
-																<!-- Ободок при наведении -->
-																<Style Selector="Button:pointerover Border.avatar-frame">
-																	<Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-																	<Setter Property="BorderThickness" Value="2"/>
-																</Style>
-															</Button.Styles>
-															<Border Classes="avatar-frame"
-																	Width="68" Height="68" CornerRadius="34"
-																	ClipToBounds="True"
-																	Background="{DynamicResource BgPanelBrush}">
-																<Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
-															</Border>
-														</Button>
-													</DataTemplate>
-												</ItemsControl.ItemTemplate>
 											</ItemsControl>
 										</StackPanel>
 									</DataTemplate>
@@ -163,79 +455,50 @@
 						</StackPanel>
 					</ScrollViewer>
 
-					<!-- Нижняя навигация по пакам -->
-					<Border Grid.Row="4"
-							BorderBrush="{DynamicResource BorderDefaultBrush}"
-							BorderThickness="0,1,0,0"
-							IsVisible="{Binding HasPacks}"
-							Padding="4">
-						<ScrollViewer HorizontalScrollBarVisibility="Auto"
-									  VerticalScrollBarVisibility="Disabled">
-							<ItemsControl ItemsSource="{Binding Packs}">
-								<ItemsControl.ItemsPanel>
-									<ItemsPanelTemplate>
-										<StackPanel Orientation="Horizontal" Spacing="4"/>
-									</ItemsPanelTemplate>
-								</ItemsControl.ItemsPanel>
-								<ItemsControl.ItemTemplate>
-									<DataTemplate DataType="vm:CharacterAvatarPackSectionViewModel">
-										<Button Background="Transparent" BorderThickness="0"
-												Padding="4" ToolTip.Tip="{Binding DisplayName}">
-											<Button.Styles>
-												<Style Selector="Button:pointerover /template/ ContentPresenter">
-													<Setter Property="Background" Value="Transparent"/>
-												</Style>
-											</Button.Styles>
-											<Border Width="36" Height="36" CornerRadius="18"
-													ClipToBounds="True"
-													Background="{DynamicResource BgPanelBrush}">
-												<Panel>
-													<Image Source="{Binding IconBitmap}" Stretch="UniformToFill"
-														   IsVisible="{Binding IconBitmap,
-                                                       Converter={x:Static ObjectConverters.IsNotNull}}"/>
-													<TextBlock Text="{Binding DisplayName[0]}"
-															   HorizontalAlignment="Center"
-															   VerticalAlignment="Center"
-															   FontSize="14" FontWeight="Bold"
-															   Foreground="{DynamicResource TextSecondaryBrush}"
-															   IsVisible="{Binding IconBitmap,
-                                                           Converter={x:Static ObjectConverters.IsNull}}"/>
-												</Panel>
-											</Border>
-										</Button>
-									</DataTemplate>
-								</ItemsControl.ItemTemplate>
-							</ItemsControl>
-						</ScrollViewer>
-					</Border>
-
-					<!-- Нижняя панель. Кнопка удаления аватара показывается, только
-                         когда вызвавшая сторона передала действие удаления
-                         (у персонажа есть аватар) — видимость ставит code-behind. -->
-					<Grid Grid.Row="5" ColumnDefinitions="Auto,Auto,*,Auto"
-						  Margin="12,8,12,12" ColumnSpacing="8">
+					<!-- Нижняя панель. Кнопки «Кадр» и «Снять» показываются только
+					     когда у персонажа уже стоит аватарка — видимость ставит
+					     code-behind по данным вызвавшей стороны. -->
+					<Grid Grid.Row="4" ColumnDefinitions="Auto,Auto,Auto,*,Auto"
+						  Margin="20,12,20,16" ColumnSpacing="8">
 						<Button Grid.Column="0"
 								Content="{x:Static res:CharactersStrings.Button_UploadAvatar}"
 								Command="{Binding UploadCommand}"
-								Padding="12,6"/>
-						<Button Grid.Column="1" x:Name="DeleteAvatarButton"
+								Padding="14,6"
+								behaviours:TooltipBehavior.Tip="Загрузить файл"
+								behaviours:TooltipBehavior.Description="Выбрать картинку на диске. Её можно и просто перетащить в это окно"/>
+						<Button Grid.Column="1" x:Name="RecropButton"
+								Content="Кадр"
+								Click="OnRecropCurrentClick"
+								IsVisible="False"
+								Padding="14,6"
+								behaviours:TooltipBehavior.Tip="Кадр текущей аватарки"
+								behaviours:TooltipBehavior.Description="Переснять кадр той картинки, что стоит сейчас. Файл общий, кадр запомнится только этому персонажу"/>
+						<Button Grid.Column="2" x:Name="DeleteAvatarButton"
 								Content="{x:Static res:CharactersStrings.Button_DeleteAvatar}"
 								Click="OnDeleteAvatarClick"
 								IsVisible="False"
-								Padding="12,6"/>
-						<Button Grid.Column="3"
+								Padding="14,6"
+								Foreground="{DynamicResource HotKeyConflictCriticalBrush}"
+								behaviours:TooltipBehavior.Tip="Снять аватарку"
+								behaviours:TooltipBehavior.Description="Персонаж вернётся к заглушке, а файл картинки будет удалён из проекта"/>
+						<Button Grid.Column="4"
 								Content="{x:Static res:CharactersStrings.AvatarPicker_Cancel}"
 								Command="{Binding CancelCommand}"
-								Padding="12,6"/>
+								Classes="subtleOutline"
+								Padding="14,6"/>
 					</Grid>
 
 				</Grid>
 
-				<!-- Слот оверлея менеджера паков -->
-				<ContentControl x:Name="OverlaySlot" IsVisible="False"/>
+				<!-- Подсветка приёма файла: только рамка, без заливки. Заливка
+				     здесь была бы полупрозрачной, а прозрачности в окне нет. -->
+				<Border IsVisible="{Binding IsDropTarget}"
+				        IsHitTestVisible="False"
+				        CornerRadius="16"
+				        BorderThickness="2"
+				        BorderBrush="{DynamicResource AccentDefaultBrush}"/>
 
 			</Panel>
-			</Border>
 		</Border>
 	</Grid>
 </UserControl>

@@ -367,8 +367,72 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public EditorViewMode ViewMode
         {
             get => _viewMode;
-            set => this.RaiseAndSetIfChanged(ref _viewMode, value);
+            set
+            {
+                this.RaiseAndSetIfChanged(ref _viewMode, value);
+                this.RaisePropertyChanged(nameof(IsSpreadReading));
+                this.RaisePropertyChanged(nameof(IsColumnReading));
+            }
         }
+
+        /// <summary>
+        /// Настройки чтения: подача, бумага, свет, шрифт чтения, приближение книги.
+        /// Объект живой — его правит лента чтения, а канвас читает при каждой сборке.
+        /// О смене сообщают <see cref="ReadingSettingsChanged"/> (нужна пересборка) и
+        /// <see cref="ReadingVisualChanged"/> (достаточно перерисовки).
+        /// </summary>
+        public Models.Settings.ReadingSettings Reading { get; } = new();
+
+        /// <summary>
+        /// Настройки чтения изменились так, что раскладку нужно пересобрать: другой
+        /// лист, другой шрифт, другая подача, другой масштаб содержимого.
+        /// </summary>
+        public event Action? ReadingSettingsChanged;
+
+        /// <summary>
+        /// Настройки чтения изменились только на вид: свет, цвет бумаги, приближение
+        /// книги, номера страниц. Раскладка остаётся прежней, и полный пересчёт по ней
+        /// не нужен — достаточно перерисовать готовое.
+        /// </summary>
+        public event Action? ReadingVisualChanged;
+
+        /// <summary>Сообщает о правке настроек чтения, требующей пересборки раскладки.</summary>
+        public void RaiseReadingSettingsChanged()
+        {
+            this.RaisePropertyChanged(nameof(IsSpreadReading));
+            this.RaisePropertyChanged(nameof(IsColumnReading));
+            ReadingSettingsChanged?.Invoke();
+        }
+
+        /// <summary>Сообщает о правке, которую достаточно перерисовать.</summary>
+        public void RaiseReadingVisualChanged() => ReadingVisualChanged?.Invoke();
+
+        /// <summary>
+        /// Подача режима чтения: книжный разворот, одиночный лист или сплошная лента.
+        /// Это не отдельный режим, а способ показа того же чтения, поэтому кнопка
+        /// в статус-баре остаётся одна.
+        /// </summary>
+        public Models.Settings.ReadingFlow ReadingFlow
+        {
+            get => Reading.Flow;
+            set
+            {
+                if (Reading.Flow == value) return;
+                Reading.Flow = value;
+                this.RaisePropertyChanged();
+                this.RaisePropertyChanged(nameof(IsSpreadReading));
+                this.RaisePropertyChanged(nameof(IsColumnReading));
+            }
+        }
+
+        /// <summary>
+        /// Чтение страницами: разворот или одиночный лист. Отсюда канвас узнаёт, что
+        /// верстать нужно листами и рисовать книгой, а не сплошной колонкой.
+        /// </summary>
+        public bool IsSpreadReading => _viewMode == EditorViewMode.Reading && Reading.IsPaged;
+
+        /// <summary>Чтение сплошной лентой: страниц нет, текст прокручивается.</summary>
+        public bool IsColumnReading => _viewMode == EditorViewMode.Reading && !Reading.IsPaged;
 
         private int _pagesPerRow = 1;
 
@@ -1920,6 +1984,49 @@ namespace Writersword.Modules.TextEditor.ViewModels
             InlineObjectsChanged?.Invoke(para);
         }
 
+        /// <summary>
+        /// Убирает из текста символы-заполнители объекта, за которыми не стоит живой
+        /// картинки. Обратная сторона <see cref="PurgeOrphanInlineObjects"/>: тот чистит
+        /// картинки, потерявшие своё место в тексте, а здесь чистится место, потерявшее
+        /// картинку. Без этого шрифт рисует голый U+FFFC как рамку с надписью OBJ —
+        /// в тексте появляется квадратик, за которым ничего нет и который нельзя ни
+        /// выделить как картинку, ни настроить.
+        ///
+        /// Такой символ остаётся после правок, где ссылка на объект терялась, а текст
+        /// нет: перенос между документами, откат структурной правки, старые файлы.
+        /// Возвращает число удалённых символов.
+        /// </summary>
+        public int PurgeDanglingObjectChars()
+        {
+            int removed = 0;
+
+            foreach (var para in EnumerateAllParagraphs())
+            {
+                var cells = para.ToCharCells();
+                bool changed = false;
+
+                for (int i = cells.Count - 1; i >= 0; i--)
+                {
+                    if (cells[i].Ch != Models.Inline.RunModel.ObjectPlaceholder) continue;
+
+                    // Ссылка есть и картинка на месте — это нормальный объект.
+                    if (cells[i].InlineImageId is Guid id && FindInlineImageById(id) is not null)
+                        continue;
+
+                    cells.RemoveAt(i);
+                    changed = true;
+                    removed++;
+                }
+
+                if (!changed) continue;
+
+                para.RebuildFromCharCells(cells);
+                InlineObjectsChanged?.Invoke(para);
+            }
+
+            return removed;
+        }
+
         private ImageBlock? FindInlineImageById(Guid id)
         {
             foreach (var section in _document.Sections)
@@ -2298,6 +2405,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
             ViewMode = mode;
             _document.ViewMode = mode;
         }
+
+        /// <summary>Ставит подачу чтения: разворот, одиночный лист или сплошная лента.</summary>
+        public void SetReadingFlow(Models.Settings.ReadingFlow flow) => ReadingFlow = flow;
 
         public void ToggleFullscreen() => IsFullscreen = !IsFullscreen;
         public void ToggleFocusMode() => IsFocusMode = !IsFocusMode;

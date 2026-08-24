@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using Writersword.Modules.TextEditor.Models.Inline;
@@ -100,6 +100,16 @@ namespace Writersword.Modules.TextEditor.Models.Document
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<AutoReplaceRule>? DocumentAutoReplaceRules { get; set; }
+
+        /// <summary>
+        /// Виды чтения, приложенные к рукописи. Уезжают вместе с ней: открывший
+        /// документ увидит книгу такой, какой её задумал автор, даже если у него
+        /// самого этого вида не заведено.
+        ///
+        /// На содержание, печать и экспорт не влияют — это оформление чтения.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<Settings.ReadingTheme>? ReadingThemes { get; set; }
 
         /// <summary>
         /// Создаёт новый документ с одним разделом и одним пустым параграфом.

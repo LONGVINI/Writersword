@@ -8,6 +8,7 @@
              xmlns:enums="using:Writersword.Modules.Characters.Models.Enums"
              xmlns:models="using:Writersword.Modules.Characters.Models"
              xmlns:conv="using:Writersword.Modules.Characters.Converters"
+             xmlns:inspector="using:Writersword.Modules.Characters.Views.Inspector"
              xmlns:behaviors="using:Writersword.Infrastructure.Behaviours"
              xmlns:infra="using:Writersword.Infrastructure.Controls"
              xmlns:icv="using:Writersword.Infrastructure.Converters"
@@ -30,10 +31,55 @@
             <Setter Property="BoxShadow" Value="0 0 16 2 #99FFFFFF"/>
             <Setter Property="ZIndex" Value="20"/>
         </Style>
+        <!-- Разделитель между списком и панелью оформления. Появляется
+             только вместе с панелью: пока её нет, у правого края списка не
+             остаётся ни кнопки, ни поля. Панель открывается щелчком по
+             карточке и закрывается крестиком в её углу или повторным щелчком
+             по той же карточке — отдельного выключателя нет.
+
+             Это рамка, а не GridSplitter: ширину панели держит вью-модель
+             (InspectorWidth), а GridSplitter правит ширину колонки сетки, и
+             два хозяина у одного числа спорили бы друг с другом. -->
+        <Style Selector="Border.inspectorSplit">
+            <Setter Property="Width" Value="4"/>
+            <Setter Property="Background" Value="{DynamicResource BorderSubtleBrush}"/>
+            <Setter Property="Cursor" Value="SizeWestEast"/>
+        </Style>
+        <Style Selector="Border.inspectorSplit:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+        </Style>
+
         <!-- При наведении карточка слегка приподнимается — видно, что её можно двигать. -->
         <Style Selector="Border.card-root:pointerover">
             <Setter Property="BoxShadow" Value="0 0 10 1 #55FFFFFF"/>
             <Setter Property="ZIndex" Value="10"/>
+        </Style>
+
+        <!-- Выбранная карточка приподнята: белая окантовка вплотную к рамке и
+             тёмная тень со смещением вниз. Тень — не ореол вокруг, а именно
+             падающая: ореол на светлой рамке (жёлтой, салатовой) сливался с
+             ней и выбор терялся, а тень снизу читается на любом цвете, потому
+             что рисуется по тёмному фону списка, а не по самой карточке.
+
+             Окантовка белая, а не цветом персонажа: у карточки с бледным
+             цветом выбор был бы не виден вовсе.
+
+             BoxShadow идёт списком: первая тень с нулевым размытием и
+             разбуханием 3 рисует окантовку, вторая — падающую тень. Тронуть
+             RenderTransform ради настоящего подъёма нельзя: на нём висит FLIP
+             перетаскивания карточек, и два хозяина у одного преобразования
+             подрались бы.
+
+             Объявлено ПОСЛЕ наведения: в Avalonia при равной силе селекторов
+             побеждает объявленный позже, иначе наведение на выбранную карточку
+             затирало бы её вид своим свечением. -->
+        <Style Selector="Border.card-root.selected">
+            <Setter Property="BoxShadow" Value="0 0 0 3 #FFFFFFFF, 0 7 20 2 #C0000000"/>
+            <Setter Property="ZIndex" Value="15"/>
+        </Style>
+        <Style Selector="Border.card-root.selected:pointerover">
+            <Setter Property="BoxShadow" Value="0 0 0 3 #FFFFFFFF, 0 9 24 3 #CC000000"/>
+            <Setter Property="ZIndex" Value="16"/>
         </Style>
         <!-- Кнопки edit/delete появляются только при наведении. Это освобождает
              пространство в маленьких карточках и улучшает UX. -->
@@ -224,8 +270,14 @@
             </Grid>
         </Border>
 
+        <!-- Список слева, полоска-переключатель и панель оформления справа.
+             Панель стоит рядом со списком, а не поверх него: карточку, которую
+             правят, надо видеть. Раскладку карточек панель пересчитывает как
+             обычное изменение ширины — так же, как перетаскивание сплиттера. -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto">
+
         <!-- список папок и карточек -->
-        <Panel Grid.Row="1">
+        <Panel Grid.Column="0">
             <ScrollViewer Focusable="False"
                           HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Visible">
@@ -410,6 +462,7 @@
 
                                                     <Border x:Name="CardRoot"
                                                             Classes="card-root"
+                                                            Classes.selected="{Binding IsCardSelected}"
                                                             CornerRadius="10"
                                                             Background="{DynamicResource BgPanelBrush}"
                                                             BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
@@ -418,7 +471,12 @@
                                                             Margin="6"
                                                             Cursor="Hand"
                                                             Opacity="{Binding DragOpacity}"
-                                                            IsHitTestVisible="{Binding !IsDragging}">
+                                                            IsHitTestVisible="{Binding !IsDragging}"
+                                                            DragDrop.AllowDrop="True"
+                                                            DragDrop.DragEnter="OnCardImageDragOver"
+                                                            DragDrop.DragOver="OnCardImageDragOver"
+                                                            DragDrop.DragLeave="OnCardImageDragLeave"
+                                                            DragDrop.Drop="OnCardImageDrop">
 
                                                         <!-- Стили hover карточки объявлены на уровне UserControl
                                                              (UserControl.Styles) — один экземпляр на весь список
@@ -476,7 +534,10 @@
                                                                    Height="{Binding $parent[UserControl].DataContext.CardTopHeight, FallbackValue=60}">
 
                                                                 <!-- Полоса-аватар: картинка (или заливка цветом) на всю цветную
-                                                                     зону. Включается настройкой «Вид аватара: полоска». -->
+                                                                     зону. Включается настройкой «Вид аватара: полоска».
+                                                                     Клик открывает выбор фото — так же, как у кружка.
+                                                                     Удаление аватара живёт в нижней панели пикера,
+                                                                     промежуточного меню на карточке нет. -->
                                                                 <Button Classes="flat"
                                                                         Background="Transparent"
                                                                         BorderThickness="0"
@@ -487,24 +548,6 @@
                                                                         VerticalContentAlignment="Stretch"
                                                                         ZIndex="2"
                                                                         IsVisible="{Binding ShowAvatarStrip}">
-                                                                    <Button.Flyout>
-                                                                        <Flyout Placement="Bottom">
-                                                                            <StackPanel Spacing="6" Margin="4" MinWidth="140">
-                                                                                <TextBlock Text="{x:Static res:CharactersStrings.AvatarPickerFlyout_Title}"
-                                                                                           FontSize="11"
-                                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                                                           Margin="0,0,0,2"/>
-                                                                                <Button Content="{x:Static res:CharactersStrings.AvatarPickerFlyout_Upload}"
-                                                                                        Command="{Binding OpenAvatarPickerCommand}"
-                                                                                        HorizontalAlignment="Stretch"
-                                                                                        Padding="8,4"/>
-                                                                                <Button Content="{x:Static res:CharactersStrings.Button_DeleteAvatar}"
-                                                                                        Command="{Binding RemoveAvatarCommand}"
-                                                                                        HorizontalAlignment="Stretch"
-                                                                                        Padding="8,4"/>
-                                                                            </StackPanel>
-                                                                        </Flyout>
-                                                                    </Button.Flyout>
                                                                     <Panel>
                                                                         <!-- Заливка цветом персонажа.
                                                                              Прямоугольник заливки выведен на внешний край
@@ -546,7 +589,6 @@
                                                                     HorizontalAlignment="Center"
                                                                     VerticalAlignment="Center"
                                                                     ZIndex="2"
-                                                                    Command="{Binding OpenAvatarPickerCommand}"
                                                                     IsVisible="{Binding ShowCircleNoPhoto}">
                                                                     <Panel>
                                                                         <Ellipse Width="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
@@ -580,7 +622,7 @@
                                                                     </Panel>
                                                                 </Button>
 
-                                                                <!-- Кружок с аватаркой: клик показывает меню Upload/Delete -->
+                                                                <!-- Кружок с аватаркой: клик сразу открывает выбор фото -->
                                                                 <Button Classes="flat avatar-btn"
                                                                     Background="Transparent"
                                                                     BorderThickness="0"
@@ -590,24 +632,6 @@
                                                                     VerticalAlignment="Center"
                                                                     ZIndex="2"
                                                                     IsVisible="{Binding ShowCirclePhoto}">
-                                                                    <Button.Flyout>
-                                                                        <Flyout Placement="Bottom">
-                                                                            <StackPanel Spacing="6" Margin="4" MinWidth="140">
-                                                                                <TextBlock Text="{x:Static res:CharactersStrings.AvatarPickerFlyout_Title}"
-                                                                                           FontSize="11"
-                                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                                                           Margin="0,0,0,2"/>
-                                                                                <Button Content="{x:Static res:CharactersStrings.AvatarPickerFlyout_Upload}"
-                                                                                        Command="{Binding OpenAvatarPickerCommand}"
-                                                                                        HorizontalAlignment="Stretch"
-                                                                                        Padding="8,4"/>
-                                                                                <Button Content="{x:Static res:CharactersStrings.Button_DeleteAvatar}"
-                                                                                        Command="{Binding RemoveAvatarCommand}"
-                                                                                        HorizontalAlignment="Stretch"
-                                                                                        Padding="8,4"/>
-                                                                            </StackPanel>
-                                                                        </Flyout>
-                                                                    </Button.Flyout>
                                                                     <Panel>
                                                                         <Ellipse Width="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
                                                                                  Height="{Binding $parent[UserControl].DataContext.CardAvatarSize, FallbackValue=48}"
@@ -790,21 +814,6 @@
                                                                 Width="{Binding $parent[UserControl].DataContext.CardColorButtonSize, FallbackValue=20}"
                                                                 Height="{Binding $parent[UserControl].DataContext.CardColorButtonSize, FallbackValue=20}"/>
 
-                                                            <!-- Настройки карточки: открывает окно по центру модуля
-                                                                 (CardSettingsOverlay) — кольцо, закладка, толщина рамки. -->
-                                                            <Button Classes="card-cfg"
-                                                                    Width="{Binding $parent[UserControl].DataContext.CardColorButtonSize, FallbackValue=20}"
-                                                                    Height="{Binding $parent[UserControl].DataContext.CardColorButtonSize, FallbackValue=20}"
-                                                                    Padding="0" CornerRadius="999"
-                                                                    Background="#88000000" BorderThickness="0"
-                                                                    HorizontalContentAlignment="Center"
-                                                                    VerticalContentAlignment="Center"
-                                                                    Click="OnCardSettingsClick">
-                                                                <PathIcon Data="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"
-                                                                          Width="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
-                                                                          Height="{Binding $parent[UserControl].DataContext.CardActionIconSize, FallbackValue=11}"
-                                                                          Foreground="White"/>
-                                                            </Button>
                                                         </StackPanel>
 
                                                         <StackPanel Classes="card-edit-btns"
@@ -841,6 +850,19 @@
                                                             </Button>
                                                         </StackPanel>
 
+                                                        <!-- Подсветка приёма картинки. Лежит поверх всего
+                                                             содержимого карточки и не перехватывает
+                                                             указатель: перетаскивание разбирает сама
+                                                             карточка, а рамка только показывает, куда
+                                                             попадёт файл. -->
+                                                        <Border IsVisible="{Binding IsImageDropTarget}"
+                                                                IsHitTestVisible="False"
+                                                                ZIndex="7"
+                                                                CornerRadius="10"
+                                                                BorderThickness="2"
+                                                                BorderBrush="{DynamicResource AccentDefaultBrush}"
+                                                                Background="#2200A0FF"/>
+
                                                         </Panel>
                                                     </Border>
 
@@ -876,6 +898,26 @@
                 </StackPanel>
             </Border>
         </Panel>
+
+            <Border Grid.Column="1"
+                    x:Name="InspectorSplit"
+                    Classes="inspectorSplit"
+                    IsVisible="{Binding IsInspectorOpen}"
+                    PointerPressed="OnInspectorSplitPressed"
+                    PointerMoved="OnInspectorSplitMoved"
+                    PointerReleased="OnInspectorSplitReleased"
+                    behaviours:TooltipBehavior.Tip="Ширина панели"
+                    behaviours:TooltipBehavior.Description="Потяните, чтобы сделать панель шире или уже"/>
+
+            <!-- Панель просто стоит колонкой. Ширину задаёт разделитель слева
+                 от неё. Никакого выезда: панель либо есть, либо её нет. -->
+            <Panel Grid.Column="2"
+                   IsVisible="{Binding IsInspectorOpen}"
+                   Width="{Binding InspectorWidth}">
+                <inspector:CharacterInspectorPanel DataContext="{Binding Inspector}"/>
+            </Panel>
+
+        </Grid>
 
         <!-- кнопки создания -->
         <Border Grid.Row="2"

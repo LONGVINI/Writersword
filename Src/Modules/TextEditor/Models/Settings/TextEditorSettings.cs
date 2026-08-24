@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Newtonsoft.Json;
 using Writersword.Modules.TextEditor.Models.Document;
 
@@ -45,6 +45,35 @@ namespace Writersword.Modules.TextEditor.Models.Settings
         public List<AutoReplaceRule> AutoReplaceRules { get; set; } = CreateDefaultRules();
 
         // ── Отображение ───────────────────────────────────────────────────
+
+        /// <summary>
+        /// Виды чтения, общие для всех проектов. Тот же вид может лежать и в
+        /// документе — тогда он и уедет с рукописью, и останется под рукой здесь.
+        /// </summary>
+        public List<ReadingTheme> ReadingThemes { get; set; } = new();
+
+        // ── Чтение ────────────────────────────────────────────────────────
+        // Личные предпочтения читателя, а не свойства рукописи. Живут здесь, а не в
+        // сессии проекта: человек, привыкший читать лентой, ждёт ленту в любом
+        // документе и в любом проекте, а не только в том, где её однажды включил.
+
+        /// <summary>Подача: разворот, один лист или лента.</summary>
+        public ReadingFlow ReadingFlow { get; set; } = ReadingFlow.Spread;
+
+        /// <summary>Пропорции листа при чтении.</summary>
+        public ReadingSheetFormat ReadingSheetFormat { get; set; } = ReadingSheetFormat.Document;
+
+        /// <summary>Опознаватель выбранного вида чтения.</summary>
+        public string ReadingThemeId { get; set; } = ReadingTheme.CreamId;
+
+        /// <summary>Рисовать свои номера страниц при чтении.</summary>
+        public bool ReadingShowPageNumbers { get; set; } = true;
+
+        /// <summary>Ужимать картинки и таблицы вместе с листом чтения.</summary>
+        public bool ReadingScaleContent { get; set; } = true;
+
+        /// <summary>Ступень размера текста при чтении.</summary>
+        public int ReadingFontStep { get; set; }
 
         /// <summary>Показывать линейку.</summary>
         public bool ShowRuler { get; set; } = true;
