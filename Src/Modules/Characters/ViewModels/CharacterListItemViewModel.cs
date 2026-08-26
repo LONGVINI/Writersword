@@ -142,6 +142,15 @@ namespace Writersword.Modules.Characters.ViewModels
             _labels.Where(l => l.ShowOnCard && l.Id == Models.CharacterBuiltinLabels.DeadId)
                    .ToList();
 
+        /// <summary>
+        /// Все метки персонажа без фильтра по показу на карточке — снимок
+        /// для чтения. Панель оформления строит по нему список меток и их
+        /// правку: CardLabels/DeadLabels годятся только для отрисовки самой
+        /// карточки, там нарочно вырезаны скрытые метки и «Мёртв» унесён в
+        /// свой список.
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyList<Models.CharacterLabel> AllLabels => _labels;
+
         internal void SetLabels(System.Collections.Generic.List<Models.CharacterLabel> labels)
         {
             _labels = labels ?? new();
@@ -150,6 +159,7 @@ namespace Writersword.Modules.Characters.ViewModels
             this.RaisePropertyChanged(nameof(DeadRowOpacity));
             this.RaisePropertyChanged(nameof(CardLabels));
             this.RaisePropertyChanged(nameof(DeadLabels));
+            this.RaisePropertyChanged(nameof(AllLabels));
         }
 
         public string? AvatarPath => _avatarPath;
@@ -460,6 +470,7 @@ namespace Writersword.Modules.Characters.ViewModels
         public Action<string, double>? OnFrameThicknessChanged { get; set; } // (id, толщина рамки)
         public Action<string, bool>? OnAvatarStripChanged { get; set; } // (id, полоска вместо кружка)
         public Action<string, Models.Enums.CharacterImportanceLevel>? OnImportanceChanged { get; set; } // (id, ступень)
+        public Action<string, System.Collections.Generic.List<Models.CharacterLabel>>? OnLabelsChanged { get; set; } // (id, новый полный список меток)
         public Action<bool>? OnApplyRingToAll { get; set; }            // (ringEnabled — ко всем персонажам)
 
         // êîìàíäû  âûïîëíÿþòñÿ èç AXAML íàïðÿìóþ ÷åðåç {Binding}

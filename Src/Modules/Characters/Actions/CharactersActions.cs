@@ -1,6 +1,7 @@
 ﻿using Writersword.Core.Interfaces.Modules;
 using System;
 using System.Collections.Generic;
+using Writersword.Modules.Characters.Models;
 
 namespace Writersword.Modules.Characters.Actions
 {
@@ -379,5 +380,38 @@ namespace Writersword.Modules.Characters.Actions
 
         public void Execute() => _create(_folderId);
         public void Undo() => _delete(_folderId);
+    }
+
+    // Метки персонажа: добавление, правка и удаление в боковой панели
+    // оформления пишут сюда единым снимком — списком целиком, а не по
+    // одному изменению на метку. Это проще, чем заводить отдельные команды
+    // на каждое действие чипа, а отменяется всё равно один жест за раз:
+    // либо добавили метку, либо убрали, либо поправили в редакторе.
+    public class ChangeLabelsCommand : IUndoableCommand
+    {
+        private readonly string _characterId;
+        private readonly string _characterName;
+        private readonly List<CharacterLabel> _oldValue;
+        private readonly List<CharacterLabel> _newValue;
+        private readonly Action<string, List<CharacterLabel>> _applyLabels; // (id, метки)
+
+        public string Description => $"метки у «{_characterName}»";
+
+        public ChangeLabelsCommand(
+            string characterId,
+            string characterName,
+            List<CharacterLabel> oldValue,
+            List<CharacterLabel> newValue,
+            Action<string, List<CharacterLabel>> applyLabels)
+        {
+            _characterId = characterId;
+            _characterName = characterName;
+            _oldValue = oldValue;
+            _newValue = newValue;
+            _applyLabels = applyLabels;
+        }
+
+        public void Execute() => _applyLabels(_characterId, _newValue);
+        public void Undo() => _applyLabels(_characterId, _oldValue);
     }
 }

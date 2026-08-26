@@ -515,5 +515,97 @@ namespace Writersword.Modules.Characters.Services
             return character;
         }
 
+        // ── Переезд картинок ──────────────────────────────────────────────
+
+        /// <summary>
+        /// Переписать ссылки на картинки: пак уложили в проект, перенесли между
+        /// областями или картинка переехала в другой пак. Ключ карты — прежняя
+        /// ссылка, значение — новая. Возвращает число задетых персонажей.
+        ///
+        /// Без этого переезд картинки означал бы пустой кружок на карточке:
+        /// файл цел и лежит на новом месте, а персонаж продолжает смотреть
+        /// туда, где его уже нет. Разобраться в этом было бы нечем — на вид
+        /// аватарка просто исчезала.
+        ///
+        /// Проходятся все места, где ссылка может лежать: аватар персонажа, его
+        /// галерея и значки меток — как личных, так и в реестре проекта.
+        /// </summary>
+        public int RemapAvatarRefs(IReadOnlyDictionary<string, string> map)
+        {
+            if (IsReadOnly) return 0;
+            if (map == null || map.Count == 0) return 0;
+
+            int touched = 0;
+
+            foreach (var character in _characters)
+            {
+                bool changed = false;
+
+                var avatar = Remapped(character.AvatarPath, map);
+                if (!string.Equals(avatar, character.AvatarPath, StringComparison.Ordinal))
+                {
+                    character.AvatarPath = avatar;
+                    changed = true;
+                }
+
+                for (int i = 0; i < character.Gallery.Count; i++)
+                {
+                    var moved = Remapped(character.Gallery[i], map);
+                    if (string.Equals(moved, character.Gallery[i], StringComparison.Ordinal)) continue;
+                    if (string.IsNullOrEmpty(moved)) continue;
+
+                    character.Gallery[i] = moved!;
+                    changed = true;
+                }
+
+                foreach (var label in character.Labels)
+                    if (RemapLabelIcon(label, map)) changed = true;
+
+                if (!changed) continue;
+
+                character.UpdatedAt = DateTime.UtcNow;
+                touched++;
+            }
+
+            foreach (var label in _labels)
+                RemapLabelIcon(label, map);
+
+            if (touched > 0)
+                _logger.Debug("Avatar refs remapped: {Pairs} pairs, {Characters} characters",
+                    map.Count, touched);
+
+            return touched;
+        }
+
+        private static bool RemapLabelIcon(
+            CharacterLabel label, IReadOnlyDictionary<string, string> map)
+        {
+            if (label is null || string.IsNullOrEmpty(label.IconImage)) return false;
+
+            var moved = Remapped(label.IconImage, map);
+            if (string.Equals(moved, label.IconImage, StringComparison.Ordinal)) return false;
+
+            label.IconImage = moved;
+            return true;
+        }
+
+        /// <summary>
+        /// Ссылка после переезда. Кадр обрезки при этом сохраняется: он
+        /// принадлежит персонажу, а не файлу, и переезд картинки не повод
+        /// показывать её целиком там, где её уже подрезали.
+        /// </summary>
+        private static string? Remapped(string? avatarRef, IReadOnlyDictionary<string, string> map)
+        {
+            var baseRef = CharacterAvatarRef.BaseOf(avatarRef);
+            if (string.IsNullOrEmpty(baseRef)) return avatarRef;
+            if (!map.TryGetValue(baseRef!, out var replacement)) return avatarRef;
+            if (string.IsNullOrEmpty(replacement)) return avatarRef;
+
+            return CharacterAvatarRef.Combine(
+                replacement,
+                CharacterAvatarRef.CropOf(avatarRef),
+                CharacterAvatarRef.StripCropOf(avatarRef));
+        }
+
     }
 }

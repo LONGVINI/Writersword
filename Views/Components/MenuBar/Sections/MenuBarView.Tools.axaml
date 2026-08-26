@@ -15,7 +15,15 @@
 
 	<Separator/>
 
-	<!-- Удаляет из проекта файлы картинок, на которые не осталось ссылок. -->
+	<!-- Находит всё, что лежит вне файла проекта, и укладывает копии внутрь.
+	     Без этого проект уезжает к другому человеку неполным: картинки из
+	     библиотеки и общих папок остаются на машине автора. -->
+	<MenuItem x:Name="HotKey_Tools_PrepareForSharing"
+              Header="Подготовить к передаче…"
+              Command="{Binding PrepareForSharingCommand}"
+              IsEnabled="{Binding HasActiveTab}"/>
+
+	<!-- Удаляет из проекта файлы, на которые не осталось ссылок. -->
 	<MenuItem x:Name="HotKey_Tools_CompactProject"
               Header="Сжать проект"
               Command="{Binding CompactProjectCommand}"

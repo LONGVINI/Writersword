@@ -147,6 +147,44 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             IsGlobal = IsGlobal
         };
 
+        /// <summary>
+        /// Выглядят ли два вида одинаково. Сравнивается всё, что видно на экране, и
+        /// ничего сверх того: имя, опознаватель и область хранения к внешности вида
+        /// отношения не имеют.
+        ///
+        /// По этому и решается, показывать ли в списке имя вида или «Кастомное»:
+        /// рабочая копия правится лентой на ходу, и стоит ей разойтись с сохранённым
+        /// видом — на экране уже не он.
+        /// </summary>
+        public static bool SameLook(ReadingTheme? a, ReadingTheme? b)
+        {
+            if (ReferenceEquals(a, b)) return true;
+            if (a is null || b is null) return false;
+
+            const StringComparison Ci = StringComparison.OrdinalIgnoreCase;
+            const StringComparison Cs = StringComparison.Ordinal;
+
+            static bool Same(string? x, string? y, StringComparison how)
+                => string.Equals(x ?? string.Empty, y ?? string.Empty, how);
+
+            static bool Near(double x, double y) => Math.Abs(x - y) < 0.0005;
+
+            return Same(a.SheetColor, b.SheetColor, Ci)
+                && Same(a.InkColor, b.InkColor, Ci)
+                && Same(a.ImagePath, b.ImagePath, Cs)
+                && Near(a.ImageOpacity, b.ImageOpacity)
+                && a.ImageTile == b.ImageTile
+                && Same(a.BackdropColor, b.BackdropColor, Ci)
+                && a.UseBackdropImage == b.UseBackdropImage
+                && Same(a.BackdropImagePath, b.BackdropImagePath, Cs)
+                && a.BackdropImageFit == b.BackdropImageFit
+                && Near(a.BackdropImageOpacity, b.BackdropImageOpacity)
+                && Same(a.FontFamily, b.FontFamily, Cs)
+                && Near(a.Brightness, b.Brightness)
+                && Near(a.Contrast, b.Contrast)
+                && Near(a.Warmth, b.Warmth);
+        }
+
         /// <summary>Копия под новым именем и с новым опознавателем.</summary>
         public ReadingTheme CopyAs(string name)
         {

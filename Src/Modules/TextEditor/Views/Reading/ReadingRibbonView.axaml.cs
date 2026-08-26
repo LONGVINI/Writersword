@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media.Transformation;
 using Avalonia.Threading;
 
 namespace Writersword.Modules.TextEditor.Views.Reading
@@ -23,6 +24,39 @@ namespace Writersword.Modules.TextEditor.Views.Reading
             if (this.FindControl<TextBox>("PageInputBox") is { } pageBox)
                 pageBox.GotFocus += (_, _) =>
                     Dispatcher.UIThread.Post(() => BeginPageEdit(pageBox), DispatcherPriority.Background);
+
+            WireSheetFormatFlyout();
+        }
+
+        /// <summary>
+        /// Список форм листа появляется плавно: карточки всплывают снизу и проявляются,
+        /// а не выскакивают готовыми.
+        ///
+        /// Делается это кодом, потому что показать переход не на чем: у всплывающего
+        /// окна нет состояния «открывается», и правило разметки зацепить не за что.
+        /// Здесь же начальное состояние выставляется в момент открытия, а конечное —
+        /// следующим тактом диспетчера, чтобы переход увидел смену значения.
+        /// </summary>
+        private void WireSheetFormatFlyout()
+        {
+            if (this.FindControl<Button>("SheetFormatButton")?.Flyout is not Flyout flyout) return;
+
+            flyout.Opened += (_, _) =>
+            {
+                if (flyout.Content is not Border root) return;
+
+                // Именно TransformOperations, а не TranslateTransform: переход в
+                // разметке объявлен как TransformOperationsTransition, и другой тип
+                // трансформации он просто не подхватит.
+                root.Opacity = 0;
+                root.RenderTransform = TransformOperations.Parse("translateY(-6px)");
+
+                Dispatcher.UIThread.Post(() =>
+                {
+                    root.Opacity = 1;
+                    root.RenderTransform = TransformOperations.Parse("translateY(0px)");
+                }, DispatcherPriority.Background);
+            };
         }
 
         private void InitializeComponent() => AvaloniaXamlLoader.Load(this);

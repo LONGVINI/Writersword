@@ -105,7 +105,7 @@ namespace Writersword
             };
 
             var configuration = new ConfigurationBuilder()
-                .SetBasePath(Directory.GetCurrentDirectory())
+                .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
                 .Build();
 
@@ -145,6 +145,12 @@ namespace Writersword
             services.AddSingleton<IDataComparisonService, DataComparisonService>();
             services.AddSingleton<ModuleFactory>();
             services.AddSingleton<IModuleStateCollectorService, ModuleStateCollectorService>();
+
+            // Файлы проекта целиком: картинки, шрифты и всё, что модули держат
+            // рядом с текстом. Нужна затем, что вопрос «уедет ли проект целиком»
+            // не помещается ни в один модуль.
+            services.AddSingleton<IProjectAssetService, ProjectAssetService>();
+
             services.AddSingleton<WorkModeFactory>();
             services.AddSingleton<WorkModeRegistry>();
             services.AddSingleton<ILocalSettingsStorageService, LocalSettingsStorageService>();
@@ -193,14 +199,82 @@ namespace Writersword
             // Assembly.GetExecutingAssembly() возвращает только Writersword.exe и не видит их.
             // Явно загружаем все Writersword*.dll из папки приложения, после чего
             // AppDomain.CurrentDomain.GetAssemblies() включает все нужные сборки.
-            var appDir = AppDomain.CurrentDomain.BaseDirectory;
-            foreach (var dllPath in Directory.GetFiles(appDir, "Writersword*.dll"))
+            var appDir = AppContext.BaseDirectory;
+
+            Log.ForContext<App>().Debug("Module search directory: {AppDir}", appDir);
+
+            var loadedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies())
             {
-                try { Assembly.LoadFrom(dllPath); }
-                catch { }
+                var loadedName = loaded.GetName().Name;
+                if (!string.IsNullOrEmpty(loadedName))
+                    loadedNames.Add(loadedName);
             }
 
-            var moduleTypes = AppDomain.CurrentDomain.GetAssemblies()
+            // Встроенные модули лежат внутри exe и на диске отсутствуют.
+            // Перечислить содержимое бандла нельзя, поэтому имена берутся
+            // из ресурса, сформированного целью WriterswordGenerateModuleList.
+            var builtInNames = ReadBuiltInModuleNames();
+            Log.ForContext<App>().Debug("Built-in module list contains {Count} entries", builtInNames.Count);
+
+            foreach (var moduleName in builtInNames)
+            {
+                if (loadedNames.Contains(moduleName))
+                {
+                    Log.ForContext<App>().Debug("Built-in module already loaded: {Name}", moduleName);
+                    continue;
+                }
+
+                try
+                {
+                    Assembly.Load(new AssemblyName(moduleName));
+                    loadedNames.Add(moduleName);
+                    Log.ForContext<App>().Debug("Built-in module loaded: {Name}", moduleName);
+                }
+                catch (Exception ex)
+                {
+                    Log.ForContext<App>().Error(ex, "Failed to load built-in module: {Name}", moduleName);
+                }
+            }
+
+            // Внешние модули: DLL, положенные рядом с exe после установки.
+            // В обычной публикации здесь же лежат и встроенные — повторная
+            // загрузка отсекается по имени, иначе один тип попадёт в два
+            // контекста загрузки и приведение между ними перестанет работать.
+            var dllFiles = Directory.GetFiles(appDir, "Writersword*.dll");
+            Log.ForContext<App>().Debug("Found {Count} DLL files on disk", dllFiles.Length);
+
+            foreach (var dllPath in dllFiles)
+            {
+                var fileName = Path.GetFileNameWithoutExtension(dllPath);
+
+                if (loadedNames.Contains(fileName))
+                    continue;
+
+                try
+                {
+                    Assembly.LoadFrom(dllPath);
+                    loadedNames.Add(fileName);
+                    Log.ForContext<App>().Debug("External module loaded: {Path}", Path.GetFileName(dllPath));
+                }
+                catch (Exception ex)
+                {
+                    Log.ForContext<App>().Error(ex, "Failed to load external module: {Path}", Path.GetFileName(dllPath));
+                }
+            }
+
+            var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+            var writerswordAssemblies = loadedAssemblies.Where(a => a.GetName().Name?.StartsWith("Writersword") ?? false).ToList();
+
+            Log.ForContext<App>().Debug("Total assemblies loaded: {Total}", loadedAssemblies.Length);
+            Log.ForContext<App>().Debug("Writersword assemblies loaded: {Count}", writerswordAssemblies.Count);
+
+            foreach (var asm in writerswordAssemblies)
+            {
+                Log.ForContext<App>().Debug("  - {AssemblyName}", asm.GetName().Name);
+            }
+
+            var moduleTypes = loadedAssemblies
                 .SelectMany(a =>
                 {
                     try { return a.GetTypes(); }
@@ -208,7 +282,10 @@ namespace Writersword
                     { return ex.Types.Where(t => t != null).Cast<Type>(); }
                     catch { return Array.Empty<Type>(); }
                 })
-                .Where(t => t != null && !t.IsAbstract && baseModuleType.IsAssignableFrom(t));
+                .Where(t => t != null && !t.IsAbstract && baseModuleType.IsAssignableFrom(t))
+                .ToList();
+
+            Log.ForContext<App>().Debug("Found {Count} BaseModule types", moduleTypes.Count);
 
             int registeredModules = 0;
             foreach (var moduleType in moduleTypes)
@@ -239,6 +316,12 @@ namespace Writersword
                     Log.ForContext<App>().Error(ex,
                         "Failed to register module: {Type}", moduleType.Name);
                 }
+            }
+
+            if (registeredModules == 0)
+            {
+                Log.ForContext<App>().Error(
+                    "NO MODULES REGISTERED! Check: 1) DLL files in output, 2) Module references in csproj");
             }
 
             Log.ForContext<App>().Warning("Registered {Count} modules total", registeredModules);
@@ -449,6 +532,38 @@ namespace Writersword
             }
 
             base.OnFrameworkInitializationCompleted();
+        }
+
+        /// <summary>
+        /// Читает список встроенных модулей из ресурса, сформированного при сборке
+        /// целью WriterswordGenerateModuleList. Ресурс содержит имена сборок
+        /// модулей, по одному в строке.
+        /// </summary>
+        private static List<string> ReadBuiltInModuleNames()
+        {
+            var result = new List<string>();
+
+            using var stream = Assembly.GetExecutingAssembly()
+                .GetManifestResourceStream("Writersword.BuiltInModules.txt");
+
+            if (stream == null)
+            {
+                Log.ForContext<App>().Warning(
+                    "Built-in module list resource not found: Writersword.BuiltInModules.txt");
+                return result;
+            }
+
+            using var reader = new StreamReader(stream);
+
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                var name = line.Trim();
+                if (name.Length > 0)
+                    result.Add(name);
+            }
+
+            return result;
         }
 
         public static ILogger<T> GetLogger<T>()

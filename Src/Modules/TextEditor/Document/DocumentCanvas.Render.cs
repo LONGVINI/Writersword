@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Rendering.SceneGraph;
@@ -794,7 +794,17 @@ namespace Writersword.Modules.TextEditor.Document
                 var wm = ie.Block.WrapMode;
                 if (wm == WrapMode.InFront || wm == WrapMode.Square || wm == WrapMode.Tight) continue;
                 var skImg = GetImageBitmap(ie.Block.ImageFileName);
-                if (skImg is null) continue;
+                if (skImg is null)
+                {
+                    // Файла нет — на его месте отметка, а не пустота: страница,
+                    // потерявшая картинку, не должна выглядеть целой.
+                    if (IsImageMissing(ie.Block.ImageFileName))
+                        DrawMissingImage(
+                            canvas,
+                            new SKRect(ie.XPt, ie.Ypt, ie.XPt + ie.WidthPt, ie.Ypt + ie.HeightPt),
+                            ie.Block.ImageFileName);
+                    continue;
+                }
                 // Клип по прямоугольнику своей страницы: часть картинки за пределами
                 // листа (в межстраничном зазоре или за краем) обрезается. Предпросмотр
                 // переполнения не клипуем — серая часть под листом должна быть видна.
@@ -947,7 +957,17 @@ namespace Writersword.Modules.TextEditor.Document
                 var wm = ie.Block.WrapMode;
                 if (wm != WrapMode.InFront && wm != WrapMode.Square && wm != WrapMode.Tight) continue;
                 var skImg = GetImageBitmap(ie.Block.ImageFileName);
-                if (skImg is null) continue;
+                if (skImg is null)
+                {
+                    // Файла нет — на его месте отметка, а не пустота: страница,
+                    // потерявшая картинку, не должна выглядеть целой.
+                    if (IsImageMissing(ie.Block.ImageFileName))
+                        DrawMissingImage(
+                            canvas,
+                            new SKRect(ie.XPt, ie.Ypt, ie.XPt + ie.WidthPt, ie.Ypt + ie.HeightPt),
+                            ie.Block.ImageFileName);
+                    continue;
+                }
                 // Клип по прямоугольнику своей страницы: часть картинки за пределами
                 // листа (в межстраничном зазоре или за краем) обрезается. Предпросмотр
                 // переполнения не клипуем — серая часть под листом должна быть видна.
@@ -1405,6 +1425,89 @@ namespace Writersword.Modules.TextEditor.Document
         // изображение попадает в кеш, после чего запрашивается перерисовка и картинка
         // появляется на следующем кадре. За счёт этого при быстром скролле текст и лист
         // рисуются мгновенно, а изображения подгружаются постепенно.
+        /// <summary>Файл картинки в проекте не нашёлся или не читается.</summary>
+        private bool IsImageMissing(string? fileName)
+        {
+            if (string.IsNullOrEmpty(fileName)) return false;
+            lock (_imageCacheLock) return _imageMissing.Contains(fileName!);
+        }
+
+        /// <summary>
+        /// Рисует отметку на месте картинки, которой в проекте нет.
+        ///
+        /// Пустое место на её месте — худшее из возможного: страница выглядит
+        /// целой, автор ничего не замечает, а разница между «здесь ничего и не
+        /// было» и «картинка потерялась» не видна вовсе. Особенно это важно у
+        /// того, кому проект передали: у него пропасть может половина картинок,
+        /// и узнать об этом ему будет неоткуда.
+        ///
+        /// Отметка нарочно скромная: рамка пунктиром, косой крест и имя файла.
+        /// Она занимает ровно то место, которое занимала картинка, поэтому
+        /// вёрстка не едет, а имя файла сразу говорит, чего именно не хватает.
+        /// </summary>
+        private void DrawMissingImage(SKCanvas canvas, SKRect rect, string? fileName)
+        {
+            if (rect.Width < 2f || rect.Height < 2f) return;
+
+            using var frame = new SKPaint
+            {
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = 1f,
+                Color = new SKColor(0xC0, 0x39, 0x2B, 0xB0),
+                PathEffect = SKPathEffect.CreateDash(new[] { 4f, 3f }, 0f)
+            };
+
+            using var fill = new SKPaint
+            {
+                IsAntialias = true,
+                Style = SKPaintStyle.Fill,
+                Color = new SKColor(0xC0, 0x39, 0x2B, 0x14)
+            };
+
+            canvas.DrawRect(rect, fill);
+            canvas.DrawRect(rect, frame);
+
+            using var cross = new SKPaint
+            {
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = 1f,
+                Color = new SKColor(0xC0, 0x39, 0x2B, 0x60)
+            };
+
+            canvas.DrawLine(rect.Left, rect.Top, rect.Right, rect.Bottom, cross);
+            canvas.DrawLine(rect.Right, rect.Top, rect.Left, rect.Bottom, cross);
+
+            // Подпись помещается не всегда: картинка может быть в сантиметр
+            // размером. Тогда остаётся рамка — она и так сообщает главное.
+            string name = string.IsNullOrEmpty(fileName) ? "картинка не найдена" : fileName!;
+            float sizePt = Math.Clamp(rect.Height * 0.14f, 6f, 10f);
+            if (rect.Height < sizePt * 3f) return;
+
+            using var typeface = SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Normal)
+                ?? SKTypeface.Default;
+            using var font = new SKFont(typeface, sizePt);
+            using var text = new SKPaint
+            {
+                IsAntialias = true,
+                Color = new SKColor(0xC0, 0x39, 0x2B, 0xD0)
+            };
+
+            float width = font.MeasureText(name);
+            if (width > rect.Width - 6f)
+            {
+                // Длинное имя обрезается с головы: конец имени с расширением
+                // говорит о файле больше, чем его начало.
+                while (name.Length > 4 && font.MeasureText("…" + name) > rect.Width - 6f)
+                    name = name[1..];
+                name = "…" + name;
+                width = font.MeasureText(name);
+            }
+
+            canvas.DrawText(name, rect.MidX - width / 2f, rect.MidY + sizePt * 0.35f, font, text);
+        }
+
         private SKImage? GetImageBitmap(string fileName)
         {
             if (string.IsNullOrEmpty(fileName)) return null;
@@ -1412,6 +1515,11 @@ namespace Writersword.Modules.TextEditor.Document
             lock (_imageCacheLock)
             {
                 if (_imageCache.TryGetValue(fileName, out var cached)) return cached;
+
+                // Файла нет — пробовать снова каждый кадр незачем. На его месте
+                // рисуется отметка, и она уже сказала всё, что можно сказать.
+                if (_imageMissing.Contains(fileName)) return null;
+
                 if (_imageLoadsInFlight.Contains(fileName)) return null;
                 _imageLoadsInFlight.Add(fileName);
             }
@@ -1457,6 +1565,11 @@ namespace Writersword.Modules.TextEditor.Document
                 lock (_imageCacheLock)
                 {
                     _imageLoadsInFlight.Remove(fileName);
+
+                    // Не прочиталось — файл заносится в потерянные. Раньше на его
+                    // месте оставалась пустота, и что там вообще что-то было,
+                    // узнать было неоткуда.
+                    if (img is null) _imageMissing.Add(fileName);
 
                     // Кешируем только удачную загрузку: если файл временно отсутствует
                     // (например, во время операции), при следующем кадре попробуем снова.
@@ -1628,7 +1741,15 @@ namespace Writersword.Modules.TextEditor.Document
         private void DrawFlowImage(SKCanvas canvas, ImageEntry ie)
         {
             var skImg = GetImageBitmap(ie.Block.ImageFileName);
-            if (skImg is null) return;
+            if (skImg is null)
+            {
+                if (IsImageMissing(ie.Block.ImageFileName))
+                    DrawMissingImage(
+                        canvas,
+                        new SKRect(ie.XPt, ie.Ypt, ie.XPt + ie.WidthPt, ie.Ypt + ie.HeightPt),
+                        ie.Block.ImageFileName);
+                return;
+            }
 
             float rotDeg = (float)ie.Block.RotationDeg;
             float cx = ie.XPt + ie.WidthPt / 2f;

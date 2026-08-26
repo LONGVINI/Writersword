@@ -401,10 +401,40 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             this.RaisePropertyChanged(nameof(HasPacks));
         }
 
-        private void SelectAvatar(string avatarRef)
+        /// <summary>
+        /// Аватарка выбрана.
+        ///
+        /// Картинка из библиотеки или глобального пака ложится в проект прямо
+        /// здесь, а персонаж получает ссылку на уложенную копию. Иначе проект
+        /// оказывался бы наполовину чужим: на карточке аватарка есть, а лежит
+        /// она в %AppData% автора, и у того, кому проект передали, на её месте
+        /// пустой кружок без единого слова о том, чего не хватает.
+        ///
+        /// Исходник при этом никуда не девается: глобальное хранилище — это
+        /// библиотека, из которой берут, а не место, на которое ссылаются.
+        ///
+        /// В «Недавних» остаётся именно исходная ссылка, а не проектная копия:
+        /// список общий для всех проектов, и запись, ведущая в архив соседнего
+        /// проекта, в этом не поможет никому.
+        /// </summary>
+        private async void SelectAvatar(string avatarRef)
         {
+            var chosen = avatarRef;
+
+            try
+            {
+                chosen = await _avatarService.EnsureInProjectAsync(avatarRef) ?? avatarRef;
+            }
+            catch (Exception ex)
+            {
+                // Уложить не вышло — персонаж получает исходную ссылку. Она
+                // работает у автора, а о том, что картинка осталась снаружи,
+                // скажет проверка перед передачей проекта.
+                _logger.Error(ex, "SelectAvatar: cannot store {Ref} in project", avatarRef);
+            }
+
             _avatarService.AddRecentAvatar(avatarRef);
-            AvatarSelected?.Invoke(avatarRef);
+            AvatarSelected?.Invoke(chosen);
             CloseRequested?.Invoke();
         }
 

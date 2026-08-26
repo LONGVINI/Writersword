@@ -318,6 +318,26 @@ namespace Writersword.Modules.TextEditor.Views
                     sideHost.Content = null;
                     topHost.Content = _readingRibbon;
                 }
+
+                // Лента держит свой полный размер и прижата к тому краю, из-под
+                // которого выезжает; обрезает её хозяин. Иначе она не выезжает, а
+                // сплющивается: содержимое ужимается вместе с хозяином, группы с их
+                // выравниванием по центру ползают внутри, и вместо чистого движения
+                // выходит толчея.
+                if (vertical)
+                {
+                    _readingRibbon.Width = ReadingSideRibbonPx;
+                    _readingRibbon.Height = double.NaN;
+                    _readingRibbon.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right;
+                    _readingRibbon.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch;
+                }
+                else
+                {
+                    _readingRibbon.Height = ReadingRibbonHeightPx;
+                    _readingRibbon.Width = double.NaN;
+                    _readingRibbon.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+                    _readingRibbon.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top;
+                }
             }
 
             // Лента не пропадает рывком, а уезжает: высота (у горизонтальной) и

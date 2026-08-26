@@ -460,35 +460,50 @@ namespace Writersword.Modules.TextEditor.Views.Reading
         /// </summary>
         private void UpdateImageInfo()
         {
-            string? path = _current?.Theme.ImagePath;
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                _imageInfoText.Text = "Размеры картинки появятся здесь после выбора файла.";
-                return;
-            }
+            _imageInfoText.Text = DescribeImage(_current?.Theme.ImagePath);
+        }
 
-            if (!File.Exists(path))
-            {
-                _imageInfoText.Text = "Файл не найден по этому пути.";
-                return;
-            }
+        /// <summary>
+        /// Строка о картинке: размеры, вес и где она лежит.
+        ///
+        /// Место хранения здесь не мелочь. Картинка, оставшаяся путём к файлу на
+        /// диске, работает только на этой машине: перенесли папку — и бумага
+        /// пропала, отдали проект — и у того, кому отдали, её не было никогда.
+        /// Сказать об этом надо там, где картинку выбирают, а не выяснять потом
+        /// по пустому листу.
+        /// </summary>
+        private static string DescribeImage(string? reference)
+        {
+            if (string.IsNullOrWhiteSpace(reference))
+                return "Размеры картинки появятся здесь после выбора файла.";
+
+            var data = Models.Settings.ReadingAssets.Read(reference);
+            if (data is null || data.Length == 0)
+                return Models.Settings.ReadingAssets.IsDiskPath(reference)
+                    ? "Файл не найден по этому пути."
+                    : "Картинка не найдена в хранилище вида.";
 
             try
             {
-                using var stream = File.OpenRead(path);
+                using var stream = new MemoryStream(data);
                 var bitmap = new Bitmap(stream);
                 var size = bitmap.PixelSize;
-                long bytes = new FileInfo(path).Length;
+
+                string place = Models.Settings.ReadingAssets.IsProjectRef(reference)
+                    ? " Лежит в проекте — уедет вместе с ним."
+                    : Models.Settings.ReadingAssets.IsAppRef(reference)
+                        ? " Лежит в программе — доступна во всех проектах."
+                        : " Файл на диске: с проектом не уедет и потеряется при переносе папки.";
 
                 string hint = size.Width < 600 || size.Height < 600
                     ? " Для растягивания на весь лист этого мало — лучше замостить."
                     : string.Empty;
 
-                _imageInfoText.Text = $"{size.Width} × {size.Height} точек, {bytes / 1024} КБ.{hint}";
+                return $"{size.Width} × {size.Height} точек, {data.Length / 1024} КБ.{hint}{place}";
             }
             catch (Exception ex)
             {
-                _imageInfoText.Text = "Картинку прочитать не удалось: " + ex.Message;
+                return "Картинку прочитать не удалось: " + ex.Message;
             }
         }
 
@@ -583,8 +598,28 @@ namespace Writersword.Modules.TextEditor.Views.Reading
             string? path = files[0].TryGetLocalPath();
             if (string.IsNullOrWhiteSpace(path)) return;
 
-            _imagePathBox.Text = path;
+            _imagePathBox.Text = StoreImage(path!);
             OnFieldsChanged();
+        }
+
+        /// <summary>
+        /// Уложить выбранный файл в хранилище вида и вернуть его адрес.
+        ///
+        /// Путь к файлу на диске здесь не годится: вид переживает и переезд
+        /// папки, и передачу проекта другому человеку, а путь — ни того, ни
+        /// другого. Копия ложится в архив проекта, когда он открыт, и в данные
+        /// программы, когда нет; окончательно по областям вида картинки
+        /// разложит сохранение (TextEditorViewModel.SaveReadingThemes).
+        ///
+        /// Не уложилось — остаётся прежний путь: он хотя бы работает здесь и
+        /// сейчас, а о том, что картинка лежит снаружи, скажет проверка проекта.
+        /// </summary>
+        private static string StoreImage(string path)
+        {
+            var stored = Models.Settings.ReadingAssets.EnsureInProject(path);
+            if (Models.Settings.ReadingAssets.IsProjectRef(stored)) return stored!;
+
+            return Models.Settings.ReadingAssets.EnsureInAppStore(path) ?? path;
         }
 
         private void OnClearImage(object? sender, RoutedEventArgs e)
@@ -616,7 +651,7 @@ namespace Writersword.Modules.TextEditor.Views.Reading
             string? path = files[0].TryGetLocalPath();
             if (string.IsNullOrWhiteSpace(path)) return;
 
-            _backImagePathBox.Text = path;
+            _backImagePathBox.Text = StoreImage(path!);
 
             // Выбранный файл сам по себе ничего не покажет, пока картинка не включена:
             // человек выбрал её именно затем, чтобы увидеть.

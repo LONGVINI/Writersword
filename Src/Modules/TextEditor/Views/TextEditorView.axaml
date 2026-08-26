@@ -58,10 +58,16 @@
 		                Height="104"
 		                ClipToBounds="True"
 		                IsVisible="False">
+			<!-- Кривая симметричная, и это не придирка. CubicEaseOut трогается
+			     резко и доезжает медленно: сворачиваясь, лента уходит бодро и
+			     мягко замирает — выглядит хорошо. А разворачиваясь, она за треть
+			     времени выпрыгивает почти на всю высоту и потом еле доползает
+			     последние пиксели — и читается это как «появилась рывком».
+			     CubicEaseInOut одинаково мягок на обоих концах. -->
 			<ContentControl.Transitions>
 				<Transitions>
-					<DoubleTransition Property="Height" Duration="0:0:0.22" Easing="CubicEaseOut"/>
-					<DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+					<DoubleTransition Property="Height" Duration="0:0:0.26" Easing="CubicEaseInOut"/>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.26" Easing="CubicEaseInOut"/>
 				</Transitions>
 			</ContentControl.Transitions>
 			<reading:ReadingRibbonView DataContext="{Binding ReadingRibbon}"/>
@@ -185,8 +191,8 @@
 			                Width="182">
 				<ContentControl.Transitions>
 					<Transitions>
-						<DoubleTransition Property="Width" Duration="0:0:0.22" Easing="CubicEaseOut"/>
-						<DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+						<DoubleTransition Property="Width" Duration="0:0:0.26" Easing="CubicEaseInOut"/>
+						<DoubleTransition Property="Opacity" Duration="0:0:0.26" Easing="CubicEaseInOut"/>
 					</Transitions>
 				</ContentControl.Transitions>
 			</ContentControl>

@@ -237,6 +237,15 @@ namespace Writersword.Modules.Characters.Services
         // ── Поиск дубликата ───────────────────────────────────────────────
 
         public string? FindStoredByContent(byte[] imageData)
+            => FindStoredByContent(imageData, null);
+
+        /// <summary>
+        /// Найти сохранённую картинку с тем же содержимым, ограничив поиск
+        /// нужными адресами. Отбор нужен укладке в проект: там годится только
+        /// то, что уедет вместе с ним, а совпадение в глобальном паке ответом
+        /// на вопрос «лежит ли она уже в проекте» не является.
+        /// </summary>
+        private string? FindStoredByContent(byte[] imageData, Func<string, bool>? where)
         {
             if (imageData == null || imageData.Length == 0) return null;
 
@@ -247,6 +256,8 @@ namespace Writersword.Modules.Characters.Services
             // рассыплется на чужой машине.
             foreach (var candidate in EnumerateStoredRefs())
             {
+                if (where != null && !where(candidate)) continue;
+
                 var hash = GetHashOf(candidate);
                 if (hash != null && string.Equals(hash, wanted, StringComparison.Ordinal))
                     return candidate;
@@ -313,6 +324,135 @@ namespace Writersword.Modules.Characters.Services
         {
             var hash = SHA256.HashData(data);
             return Convert.ToHexString(hash);
+        }
+
+        // ── Где лежит картинка ────────────────────────────────────────────
+        //
+        // Проект должен быть самодостаточен: всё, что видно на его страницах и
+        // карточках, обязано лежать в его архиве. Иначе передача проекта другому
+        // человеку превращается в лотерею — у него нет ни библиотеки, ни паков
+        // отправителя, и половина аватарок оказывается пустыми местами без
+        // единого слова о том, чего не хватает.
+        //
+        // Глобальное хранилище от этого не становится лишним. Оно библиотека, из
+        // которой берут, а не место, на которое ссылаются.
+
+        /// <summary>
+        /// Картинка уедет вместе с проектом: она либо в его архиве, либо в
+        /// ресурсах сборки, которые есть у каждого, кто запустил программу.
+        /// </summary>
+        public static bool TravelsWithProject(string? avatarRef)
+        {
+            var baseRef = CharacterAvatarRef.BaseOf(avatarRef);
+            if (string.IsNullOrEmpty(baseRef)) return true;
+
+            return baseRef!.StartsWith("project:", StringComparison.Ordinal)
+                || baseRef.StartsWith("lpack:", StringComparison.Ordinal)
+                || baseRef.StartsWith("builtin:", StringComparison.Ordinal);
+        }
+
+        /// <summary>Ссылка ведёт в архив проекта.</summary>
+        private static bool IsInProjectArchive(string? avatarRef)
+        {
+            var baseRef = CharacterAvatarRef.BaseOf(avatarRef);
+            return !string.IsNullOrEmpty(baseRef)
+                && (baseRef!.StartsWith("project:", StringComparison.Ordinal)
+                    || baseRef.StartsWith("lpack:", StringComparison.Ordinal));
+        }
+
+        /// <summary>
+        /// Где лежит картинка по этой ссылке. Отвечает на единственный важный
+        /// вопрос: уедет ли она вместе с проектом.
+        ///
+        /// Ссылка, по которой прочитать нечего, объявляется потерянной, даже
+        /// если по виду она проектная: показать по ней всё равно нечего, и
+        /// человеку важнее знать это, чем то, куда она вела.
+        /// </summary>
+        public Core.Models.Project.ProjectAssetPlace PlaceOf(string? avatarRef)
+        {
+            var baseRef = CharacterAvatarRef.BaseOf(avatarRef);
+            if (string.IsNullOrEmpty(baseRef))
+                return Core.Models.Project.ProjectAssetPlace.Missing;
+
+            if (LoadAvatarBytes(baseRef) == null)
+                return Core.Models.Project.ProjectAssetPlace.Missing;
+
+            if (baseRef!.StartsWith("project:", StringComparison.Ordinal)
+                || baseRef.StartsWith("lpack:", StringComparison.Ordinal))
+                return Core.Models.Project.ProjectAssetPlace.InProject;
+
+            if (baseRef.StartsWith("builtin:", StringComparison.Ordinal))
+                return Core.Models.Project.ProjectAssetPlace.BuiltIn;
+
+            // lib: и pack: — библиотека и общие паки в данных программы.
+            return Core.Models.Project.ProjectAssetPlace.InApp;
+        }
+
+        /// <summary>Размер картинки в байтах. 0 — прочитать нечем.</summary>
+        public long SizeOf(string? avatarRef) => LoadAvatarBytes(avatarRef)?.LongLength ?? 0;
+
+        public Task<string?> EnsureInProjectAsync(string? avatarRef)
+            => EnsureInProjectAsync(avatarRef, false);
+
+        /// <summary>
+        /// Уложить картинку в проект и вернуть новую ссылку на неё.
+        ///
+        /// Что уже уезжает с проектом, возвращается как есть. Что лежит в
+        /// библиотеке или глобальном паке — копируется в архив; исходник при
+        /// этом остаётся на месте, потому что он общий для всех проектов и
+        /// забирать его у остальных незачем.
+        ///
+        /// Кадры принадлежат персонажу, а не файлу, и переезжают вместе со
+        /// ссылкой: обрезка, сделанная до укладки, не должна пропадать.
+        ///
+        /// Ссылку, которую прочитать нечем, метод возвращает нетронутой. Молча
+        /// подменять её на пустоту нельзя: файл может быть временно недоступен,
+        /// а испорченная запись уже не расскажет, чего не хватало.
+        /// </summary>
+        public async Task<string?> EnsureInProjectAsync(string? avatarRef, bool iconFormats)
+        {
+            var baseRef = CharacterAvatarRef.BaseOf(avatarRef);
+            if (string.IsNullOrEmpty(baseRef)) return avatarRef;
+            if (TravelsWithProject(baseRef)) return avatarRef;
+            if (_context == null) return avatarRef;
+
+            var bytes = LoadAvatarBytes(baseRef);
+            if (bytes == null || bytes.Length == 0)
+            {
+                _logger.Warning("EnsureInProject: nothing to read at {Ref}", baseRef);
+                return avatarRef;
+            }
+
+            // Та же картинка могла лечь в проект раньше — с другого персонажа
+            // или из другого пака. Второй копии в архиве взяться неоткуда.
+            var stored = FindStoredByContent(bytes, IsInProjectArchive)
+                ?? await SaveToProjectAsync(bytes, ExtractFileName(baseRef),
+                    iconFormats ? AllowedIconExtensions : AllowedExtensions);
+
+            if (string.IsNullOrEmpty(stored)) return avatarRef;
+
+            return CharacterAvatarRef.Combine(
+                stored,
+                CharacterAvatarRef.CropOf(avatarRef),
+                CharacterAvatarRef.StripCropOf(avatarRef));
+        }
+
+        /// <summary>
+        /// Ссылки на картинки сменились: пак уложен в проект или перенесён из
+        /// одной области в другую. Ключ — прежняя ссылка, значение — новая.
+        ///
+        /// Событие, а не возвращаемое значение, потому что переписывать ссылки
+        /// службе картинок нечем и незачем: она знает файлы, но не знает, кто на
+        /// них ссылается. Слушает модуль персонажей — у него есть и персонажи, и
+        /// реестр меток.
+        /// </summary>
+        public event Action<IReadOnlyDictionary<string, string>>? AvatarRefsRemapped;
+
+        private void RaiseRemap(IReadOnlyDictionary<string, string> map)
+        {
+            if (map.Count == 0) return;
+            try { AvatarRefsRemapped?.Invoke(map); }
+            catch (Exception ex) { _logger.Error(ex, "AvatarRefsRemapped handler failed"); }
         }
 
         // ── Загрузка ──────────────────────────────────────────────────────
@@ -909,6 +1049,152 @@ namespace Writersword.Modules.Characters.Services
             catch (Exception ex) { _logger.Error(ex, "DeletePack failed: {Id}", packId); }
         }
 
+        /// <summary>
+        /// Опознаватель копии пака в другой области. Выводится из исходного, а
+        /// не берётся случайным: уложить один и тот же пак в проект дважды —
+        /// обычное дело (добавили картинок и уложили снова), и каждый раз это
+        /// должен быть тот же пак, а не ещё один его близнец рядом.
+        /// </summary>
+        private static string CopyPackId(string sourceId, CharacterAvatarPackScope targetScope)
+        {
+            var clean = sourceId.StartsWith(LocalPackPrefix, StringComparison.Ordinal)
+                ? sourceId[LocalPackPrefix.Length..]
+                : sourceId;
+
+            var sb = new StringBuilder(clean.Length);
+            foreach (var ch in clean)
+                if (char.IsLetterOrDigit(ch) || ch == '-' || ch == '_') sb.Append(ch);
+
+            var id = sb.Length == 0 ? Guid.NewGuid().ToString("N")[..8] : sb.ToString();
+            if (id.Length > 32) id = id[..32];
+
+            return targetScope == CharacterAvatarPackScope.Local ? LocalPackPrefix + id : id;
+        }
+
+        /// <summary>Пак с таким опознавателем уже есть в этой области.</summary>
+        private CharacterAvatarPackInfo? FindPack(string packId, CharacterAvatarPackScope scope)
+            => GetAllPacks().FirstOrDefault(p =>
+                string.Equals(p.Id, packId, StringComparison.Ordinal) && p.Scope == scope);
+
+        /// <summary>
+        /// Завести пак с заданным опознавателем. Уже существующий возвращается
+        /// как есть: повторная укладка дополняет пак, а не заводит второй.
+        /// </summary>
+        private CharacterAvatarPackInfo? EnsurePack(
+            string packId, string name, CharacterAvatarPackScope scope)
+        {
+            var existing = FindPack(packId, scope);
+            if (existing != null) return existing;
+
+            if (scope == CharacterAvatarPackScope.Local)
+            {
+                if (_context == null) return null;
+
+                var local = new CharacterAvatarPackInfo
+                {
+                    Id = packId,
+                    Name = name,
+                    Source = CharacterAvatarPackSource.UserLocal,
+                    FolderPath = $"{ZipPacksFolder}/{packId}"
+                };
+                WriteLocalPackMeta(local);
+                return local;
+            }
+
+            var dir = Path.Combine(UserPacksPath, packId);
+            Directory.CreateDirectory(dir);
+            var pack = new CharacterAvatarPackInfo
+            {
+                Id = packId,
+                Name = name,
+                Source = CharacterAvatarPackSource.UserGlobal,
+                FolderPath = dir
+            };
+            SavePackJson(pack);
+            return pack;
+        }
+
+        /// <summary>
+        /// Положить копию пака в другую область хранения. Исходник остаётся на
+        /// месте — в этом вся разница с переносом.
+        ///
+        /// Это и есть ответ на «хочу отдать проект вместе со своим паком»: пак
+        /// ложится копией в архив, у отправителя он никуда не девается и дальше
+        /// доступен во всех его проектах, а получатель открывает проект и видит
+        /// пак целиком, ничего не устанавливая.
+        ///
+        /// Ссылки персонажей переписываются на копию только при укладке в
+        /// проект. В обратную сторону — когда проектный пак делают общим —
+        /// проект продолжает смотреть в свой архив: он должен оставаться
+        /// самодостаточным независимо от того, что лежит в настройках программы.
+        /// </summary>
+        public async Task<CharacterAvatarPackInfo?> CopyPackToScopeAsync(
+            string packId, CharacterAvatarPackScope targetScope)
+        {
+            if (string.IsNullOrEmpty(packId) || packId == LibraryPackId) return null;
+
+            var source = GetAllPacks().FirstOrDefault(p => p.Id == packId);
+            if (source == null) return null;
+            if (source.Scope == targetScope) return source;
+
+            // Содержимое читается до создания приёмника: если исходный пак
+            // прочитать не удалось, пустой пак на новом месте не появится.
+            var payload = new List<(CharacterAvatarItem Item, byte[] Data)>();
+            foreach (var item in source.Items)
+            {
+                var bytes = LoadAvatarBytes(item.AvatarRef);
+                if (bytes != null) payload.Add((item, bytes));
+            }
+
+            // Пустой пак копируется: у него есть имя и обложка, и завести его на
+            // новом месте — осмысленное действие. А вот пак, у которого файлы
+            // числятся, но ни один не читается, копировать нечем: на новом месте
+            // получилась бы пустая оболочка вместо набора картинок.
+            if (payload.Count == 0 && source.Items.Count > 0)
+            {
+                _logger.Warning("CopyPackToScope: nothing readable in {Id}", packId);
+                return null;
+            }
+
+            var targetId = CopyPackId(packId, targetScope);
+            var target = EnsurePack(targetId, source.Name ?? packId, targetScope);
+            if (target == null) return null;
+
+            // Что уже лежит в приёмнике, второй раз не кладётся: повторная
+            // укладка того же пака должна дополнять его, а не удваивать.
+            var existingByHash = new Dictionary<string, string>(StringComparer.Ordinal);
+            var alreadyThere = FindPack(targetId, targetScope);
+            if (alreadyThere?.Items != null)
+            {
+                foreach (var item in alreadyThere.Items)
+                {
+                    var hash = GetHashOf(item.AvatarRef);
+                    if (hash != null) existingByHash[hash] = item.AvatarRef;
+                }
+            }
+
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var (item, data) in payload)
+            {
+                if (existingByHash.TryGetValue(ComputeHash(data), out var already))
+                {
+                    map[item.AvatarRef] = already;
+                    continue;
+                }
+
+                var copied = await SaveToPackAsync(data, item.FileName, targetId);
+                if (copied != null) map[item.AvatarRef] = copied;
+            }
+
+            // Имя и обложка — часть пака, и без них копия выглядит чужой.
+            UpdatePackMeta(targetId, targetScope, source.Name, source.IconFileName);
+
+            if (targetScope == CharacterAvatarPackScope.Local) RaiseRemap(map);
+
+            _context?.FlushStorage();
+            return FindPack(targetId, targetScope);
+        }
+
         public async Task<CharacterAvatarPackInfo?> MovePackToScopeAsync(
             string packId, CharacterAvatarPackScope targetScope)
         {
@@ -918,30 +1204,58 @@ namespace Writersword.Modules.Characters.Services
             if (source == null || !source.IsEditable) return null;
             if (source.Scope == targetScope) return source;
 
-            // Содержимое читается до создания приёмника: если исходный пак
-            // прочитать не удалось, пустой пак на новом месте не появится.
-            var payload = new List<(string Name, byte[] Data)>();
-            foreach (var item in source.Items)
-            {
-                var bytes = LoadAvatarBytes(item.AvatarRef);
-                if (bytes != null) payload.Add((item.FileName, bytes));
-            }
+            // Перенос — это копия и удаление исходника, и порядок здесь не
+            // косметический: пока копия не легла, удалять нечего.
+            //
+            // Раньше перенос молча стирал аватарки. Пак на новом месте получал
+            // новый опознаватель, старый удалялся, а у персонажей оставались
+            // ссылки на пак, которого больше нет: аватарки гасли все разом, и
+            // вернуть их было неоткуда — исходник уже стёрт. Чинилась при этом
+            // только строка «Недавних», то есть ровно то, что дешевле всего
+            // потерять.
+            var oldRefs = source.Items.Select(i => i.AvatarRef).ToList();
 
-            var created = CreatePack(source.Name ?? packId, targetScope);
-            if (created == null) return null;
+            var copied = await CopyPackToScopeAsync(packId, targetScope);
+            if (copied == null) return null;
 
-            foreach (var (fileName, data) in payload)
-                await SaveToPackAsync(data, fileName, created.Id);
-
+            var map = BuildRemapByContent(oldRefs, copied);
             DeletePack(packId, source.Scope);
 
-            // Ссылки перенесённых картинок сменились вместе с областью, и
-            // старые записи «Недавних» указывают в пустоту — убираем их, чтобы
-            // список не собирал мёртвые строки.
-            foreach (var item in source.Items)
-                RemoveRecentAvatar(item.AvatarRef);
+            // Переписывать ссылки нужно и при переносе из проекта наружу: там
+            // исходника тоже не остаётся, и указывать персонажам некуда.
+            RaiseRemap(map);
 
-            return GetAllPacks().FirstOrDefault(p => p.Id == created.Id);
+            // Старые записи «Недавних» указывают в пустоту — убираем их, чтобы
+            // список не собирал мёртвые строки.
+            foreach (var oldRef in oldRefs)
+                RemoveRecentAvatar(oldRef);
+
+            return GetAllPacks().FirstOrDefault(p => p.Id == copied.Id);
+        }
+
+        /// <summary>
+        /// Сопоставить прежние ссылки пака с новыми по содержимому файлов.
+        /// По именам сопоставлять нельзя: приёмник имеет право переименовать
+        /// файл, если такое имя у него уже занято.
+        /// </summary>
+        private Dictionary<string, string> BuildRemapByContent(
+            IReadOnlyList<string> oldRefs, CharacterAvatarPackInfo target)
+        {
+            var byHash = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var item in target.Items)
+            {
+                var hash = GetHashOf(item.AvatarRef);
+                if (hash != null && !byHash.ContainsKey(hash)) byHash[hash] = item.AvatarRef;
+            }
+
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var oldRef in oldRefs)
+            {
+                var hash = GetHashOf(oldRef);
+                if (hash != null && byHash.TryGetValue(hash, out var newRef))
+                    map[oldRef] = newRef;
+            }
+            return map;
         }
 
         public async Task MoveAvatarToPackAsync(string avatarRef, string targetPackId)
@@ -950,12 +1264,17 @@ namespace Writersword.Modules.Characters.Services
             if (bytes == null) return;
             var fileName = ExtractFileName(avatarRef);
 
+            var oldRef = CharacterAvatarRef.BaseOf(avatarRef);
+
             // Локальный пак и любой пак, кроме библиотеки, обслуживает общий
             // путь сохранения: он сам выбирает архив проекта или %AppData%.
             if (targetPackId != LibraryPackId && IsLocalPackId(targetPackId))
             {
                 var moved = await SaveToPackAsync(bytes, fileName, targetPackId);
-                if (moved != null) DeleteAvatar(avatarRef);
+                if (moved == null) return;
+
+                DeleteAvatar(avatarRef);
+                RemapOne(oldRef, moved);
                 return;
             }
 
@@ -963,8 +1282,34 @@ namespace Writersword.Modules.Characters.Services
                 ? LibraryPath
                 : Path.Combine(UserPacksPath, targetPackId);
             Directory.CreateDirectory(targetDir);
-            await File.WriteAllBytesAsync(Path.Combine(targetDir, fileName), bytes);
+
+            var uniqueName = GetUniqueName(fileName, targetDir);
+            await File.WriteAllBytesAsync(Path.Combine(targetDir, uniqueName), bytes);
+
+            var newRef = targetPackId == LibraryPackId
+                ? $"lib:{uniqueName}"
+                : $"pack:{targetPackId}:{uniqueName}";
+            RememberHash(newRef, bytes);
+
             DeleteAvatar(avatarRef);
+            RemapOne(oldRef, newRef);
+        }
+
+        /// <summary>
+        /// Сообщить о смене одной ссылки. Картинка переехала — всё, что на неё
+        /// смотрело, должно смотреть на новое место, иначе на карточках
+        /// остаются пустые кружки от файла, который никуда не пропадал.
+        /// </summary>
+        private void RemapOne(string? oldRef, string? newRef)
+        {
+            if (string.IsNullOrEmpty(oldRef) || string.IsNullOrEmpty(newRef)) return;
+            if (string.Equals(oldRef, newRef, StringComparison.Ordinal)) return;
+
+            RemoveRecentAvatar(oldRef);
+            RaiseRemap(new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [oldRef!] = newRef!
+            });
         }
 
         public async Task<CharacterAvatarPackInfo?> ImportPackFromZipAsync(string zipPath)

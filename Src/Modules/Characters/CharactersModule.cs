@@ -25,7 +25,7 @@ using Writersword.Modules.Common;
 
 namespace Writersword.Modules.Characters
 {
-    public class CharactersModule : BaseModule, IHotKeyProvider, IPreparedDataModule, IEntityPreviewProvider
+    public class CharactersModule : BaseModule, IHotKeyProvider, IPreparedDataModule, IEntityPreviewProvider, IProjectAssetHolder
     {
         private static readonly ILogger _logger = Log.ForContext<CharactersModule>();
 
@@ -57,6 +57,44 @@ namespace Writersword.Modules.Characters
             // и карточки — загрузчику нужен доступ к хранилищу файлов проекта.
             Services.LabelIconImages.AvatarService = _avatarService;
             Views.LabelEditorOverlay.AvatarService = _avatarService;
+
+            // Картинка переехала — всё, что на неё ссылалось, переезжает следом.
+            // Служба картинок знает файлы, но не знает, кто их держит; знает это
+            // модуль, и связать одно с другим больше некому.
+            _avatarService.AvatarRefsRemapped += OnAvatarRefsRemapped;
+        }
+
+        /// <summary>
+        /// Ссылки на картинки сменились: пак уложили в проект, перенесли между
+        /// областями или картинку переложили в другой пак.
+        ///
+        /// Пока этого не было, укладка пака в проект гасила все аватарки,
+        /// которые из него брали: файлы ложились на новое место, а персонажи
+        /// продолжали смотреть на старое.
+        /// </summary>
+        private void OnAvatarRefsRemapped(IReadOnlyDictionary<string, string> map)
+        {
+            if (map is null || map.Count == 0) return;
+
+            void Apply()
+            {
+                var touched = _characterService.RemapAvatarRefs(map);
+                if (touched == 0) return;
+
+                _viewModel?.RefreshAll();
+
+                // Правка ссылок — такая же правка проекта, как любая другая:
+                // без отметки она не дойдёт до файла и потеряется при закрытии.
+                CoreServices.GetService<Writersword.Core.Interfaces.WorkFlows.ITabCollection>()
+                    ?.ActiveTab?.MarkAsModified();
+
+                _logger.Debug("Avatar refs remapped in {Count} characters", touched);
+            }
+
+            // Укладка пака идёт с фонового потока, а правка коллекций вьюмодели
+            // допустима только на потоке интерфейса.
+            if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess()) Apply();
+            else Avalonia.Threading.Dispatcher.UIThread.Post(Apply);
         }
 
         public override string moduleType => "Characters";
@@ -103,6 +141,152 @@ namespace Writersword.Modules.Characters
 
         public override Control? CreateView() =>
             new CharactersModuleView { DataContext = _viewModel };
+
+        // ── Файлы проекта ─────────────────────────────────────────────────
+
+        /// <summary>
+        /// Картинки, которые держит модуль: аватары персонажей, их галереи,
+        /// значки меток и содержимое папок, лежащих в проекте.
+        ///
+        /// Библиотека и общие папки сюда не попадают целиком — они не часть
+        /// проекта. Но их картинка, поставленная персонажу, попадает: она видна
+        /// в рукописи, а лежит снаружи, и это ровно тот случай, ради которого
+        /// весь разговор и затевался.
+        /// </summary>
+        public IEnumerable<Writersword.Core.Models.Project.ProjectAssetRef> CollectAssetRefs()
+        {
+            foreach (var character in _characterService.GetAll())
+            {
+                foreach (var item in Describe(character.AvatarPath, $"Персонаж «{character.Name}»"))
+                    yield return item;
+
+                foreach (var picture in character.Gallery)
+                    foreach (var item in Describe(picture, $"Галерея «{character.Name}»"))
+                        yield return item;
+
+                foreach (var label in character.Labels)
+                    foreach (var item in Describe(label.IconImage, $"Метка «{label.Name}»"))
+                        yield return item;
+            }
+
+            foreach (var label in _characterService.GetAllLabels())
+                foreach (var item in Describe(label.IconImage, $"Метка «{label.Name}»"))
+                    yield return item;
+
+            // Папки, лежащие в проекте, и картинки, положенные в проект без
+            // папки. Ссылок на них может не быть вовсе — это набор, который
+            // автор собрал для этой рукописи, и мусором он не становится
+            // оттого, что сегодня им никто не пользуется.
+            foreach (var item in _avatarService.GetProjectAvatars())
+                foreach (var described in Describe(
+                             item.AvatarRef, "В проекте",
+                             Writersword.Core.Models.Project.ProjectAssetHold.Stored))
+                    yield return described;
+
+            foreach (var pack in _avatarService.GetAllPacks())
+            {
+                if (pack.Scope != CharacterAvatarPackScope.Local) continue;
+
+                foreach (var item in pack.Items)
+                    foreach (var described in Describe(
+                                 item.AvatarRef, $"Папка «{PackName(pack)}»",
+                                 Writersword.Core.Models.Project.ProjectAssetHold.Stored))
+                        yield return described;
+            }
+        }
+
+        private static string PackName(CharacterAvatarPackInfo pack)
+            => string.IsNullOrWhiteSpace(pack.Name) ? pack.Id : pack.Name!;
+
+        private IEnumerable<Writersword.Core.Models.Project.ProjectAssetRef> Describe(
+            string? avatarRef,
+            string owner,
+            Writersword.Core.Models.Project.ProjectAssetHold hold
+                = Writersword.Core.Models.Project.ProjectAssetHold.Used)
+        {
+            if (string.IsNullOrWhiteSpace(avatarRef)) yield break;
+
+            yield return new Writersword.Core.Models.Project.ProjectAssetRef
+            {
+                Ref = Models.CharacterAvatarRef.BaseOf(avatarRef) ?? avatarRef!,
+                ModuleType = moduleType,
+                Kind = Writersword.Core.Models.Project.ProjectAssetKind.Image,
+                Place = _avatarService.PlaceOf(avatarRef),
+                Hold = hold,
+                DisplayName = FileNameOf(avatarRef!),
+                OwnerName = owner,
+                Bytes = _avatarService.SizeOf(avatarRef)
+            };
+        }
+
+        private static string FileNameOf(string avatarRef)
+        {
+            var baseRef = Models.CharacterAvatarRef.BaseOf(avatarRef) ?? avatarRef;
+            var byColon = baseRef.Split(':')[^1];
+            return byColon.Split('/')[^1];
+        }
+
+        /// <summary>
+        /// Уложить в проект все картинки персонажей, лежащие снаружи, и
+        /// переписать ссылки на уложенные копии.
+        ///
+        /// Исходники в библиотеке и общих папках остаются на местах: они общие
+        /// для всех проектов, и опустошать их ради одного незачем.
+        ///
+        /// Сами общие папки целиком сюда не укладываются. Проекту нужно то, что
+        /// в нём видно, а не вся библиотека автора; папку целиком кладут руками,
+        /// когда именно этого и хотят.
+        /// </summary>
+        public async System.Threading.Tasks.Task<int> EmbedExternalAssetsAsync()
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            // Список снимается целиком до первой укладки: она пишет в архив, а
+            // перечисление картинок проекта читает его же. Перебирать то, что
+            // меняется прямо во время перебора, — верный способ пропустить часть.
+            foreach (var item in CollectAssetRefs().ToList())
+            {
+                if (item.Hold != Writersword.Core.Models.Project.ProjectAssetHold.Used) continue;
+                if (!item.NeedsEmbedding) continue;
+                if (map.ContainsKey(item.Ref)) continue;
+
+                // Значки меток допускают форматы, которых нет у аватаров, —
+                // вектор в том числе. Ошибиться списком форматов значит не
+                // уложить значок вовсе, поэтому у меток свой вызов.
+                bool isIcon = item.OwnerName?.StartsWith("Метка", StringComparison.Ordinal) == true;
+
+                var stored = await _avatarService.EnsureInProjectAsync(item.Ref, isIcon);
+                if (string.IsNullOrEmpty(stored)) continue;
+                if (string.Equals(stored, item.Ref, StringComparison.Ordinal)) continue;
+
+                map[item.Ref] = stored!;
+            }
+
+            if (map.Count == 0) return 0;
+
+            var touched = _characterService.RemapAvatarRefs(map);
+            _viewModel?.RefreshAll();
+
+            _logger.Information("Embedded {Files} external pictures, {Characters} characters updated",
+                map.Count, touched);
+
+            return map.Count;
+        }
+
+        /// <summary>
+        /// Уборки у персонажей нет, и это осознанно.
+        ///
+        /// Всё, что лежит в архиве по части персонажей, видно в окне выбора
+        /// аватарки: и раздел «В проекте», и папки проекта. Картинка, которую
+        /// сегодня никто не носит, завтра достаётся оттуда же, откуда и любая
+        /// другая. Удалить её значит убрать из набора то, что автор туда положил
+        /// сам, — а выглядело бы это как самовольная пропажа картинки.
+        ///
+        /// Лишнее из проекта убирают там же, где выбирают: в окне аватарок у
+        /// каждой картинки есть крестик, и он спрашивает подтверждения.
+        /// </summary>
+        public Writersword.Core.Models.Project.ProjectAssetCleanup CompactUnusedAssets()
+            => Writersword.Core.Models.Project.ProjectAssetCleanup.Nothing;
 
         // ── Горячие клавиши ───────────────────────────────────────────────
 
@@ -390,6 +574,8 @@ namespace Writersword.Modules.Characters
                     locService.LanguageChanged -= _onLanguageChanged;
                 _onLanguageChanged = null;
             }
+
+            _avatarService.AvatarRefsRemapped -= OnAvatarRefsRemapped;
 
             if (_viewModel is System.IDisposable disposableVm)
                 disposableVm.Dispose();

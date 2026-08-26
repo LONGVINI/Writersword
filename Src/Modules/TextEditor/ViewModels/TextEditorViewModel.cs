@@ -286,8 +286,41 @@ namespace Writersword.Modules.TextEditor.ViewModels
             foreach (var theme in themes)
             {
                 if (theme.IsBuiltIn) continue;
-                if (theme.InDocument) forDocument.Add(theme.Clone());
-                if (theme.IsGlobal) forGlobal.Add(theme.Clone());
+
+                // Картинки вида укладываются по своим хранилищам прямо здесь,
+                // и у каждой области своё.
+                //
+                // Вид «в документе» уезжает с рукописью, и его бумага с фоном
+                // обязаны лежать в архиве: путь к файлу на диске автора у
+                // получателя не значит ничего, а книга без бумаги — это другая
+                // книга, о чём ему никто не скажет.
+                //
+                // Вид «везде» живёт в настройках программы и переживает
+                // удаление проекта — его картинке место в данных программы.
+                //
+                // Один вид может числиться в обеих областях: тогда у каждой
+                // копии свой адрес и своя копия файла. Это не расточительство —
+                // копия в проекте единственная доедет до чужой машины, копия в
+                // программе единственная переживёт удаление проекта.
+                if (theme.InDocument)
+                {
+                    var inDocument = theme.Clone();
+                    inDocument.ImagePath =
+                        Models.Settings.ReadingAssets.EnsureInProject(inDocument.ImagePath);
+                    inDocument.BackdropImagePath =
+                        Models.Settings.ReadingAssets.EnsureInProject(inDocument.BackdropImagePath);
+                    forDocument.Add(inDocument);
+                }
+
+                if (theme.IsGlobal)
+                {
+                    var everywhere = theme.Clone();
+                    everywhere.ImagePath =
+                        Models.Settings.ReadingAssets.EnsureInAppStore(everywhere.ImagePath);
+                    everywhere.BackdropImagePath =
+                        Models.Settings.ReadingAssets.EnsureInAppStore(everywhere.BackdropImagePath);
+                    forGlobal.Add(everywhere);
+                }
             }
 
             if (doc is not null)

@@ -1,4 +1,5 @@
 using Avalonia.Media.Imaging;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Writersword.Core.Services;
@@ -109,8 +110,56 @@ namespace Writersword.Modules.Characters.Interfaces
         /// Перенести пак в другую область, сохранив имя и содержимое: то же
         /// действие, что у палитр цветов — «локальная/глобальная». Возвращает
         /// пак на новом месте или null, если перенос не удался.
+        ///
+        /// Ссылки на картинки перенесённого пака меняются, и служба сообщает об
+        /// этом через <see cref="AvatarRefsRemapped"/>: исходника не остаётся, и
+        /// без переписывания ссылок аватарки погасли бы у всех, кто их брал.
         /// </summary>
         Task<CharacterAvatarPackInfo?> MovePackToScopeAsync(string packId, CharacterAvatarPackScope targetScope);
+
+        /// <summary>
+        /// Положить копию пака в другую область, оставив исходник на месте.
+        ///
+        /// Так пак уезжает вместе с проектом: копия ложится в архив, у автора
+        /// пак остаётся общим для всех его проектов, а получатель открывает
+        /// проект и видит пак целиком, ничего не устанавливая.
+        ///
+        /// Повторная укладка того же пака дополняет уже лежащую копию, а не
+        /// заводит рядом вторую.
+        /// </summary>
+        Task<CharacterAvatarPackInfo?> CopyPackToScopeAsync(string packId, CharacterAvatarPackScope targetScope);
+
+        /// <summary>
+        /// Уложить картинку в архив проекта и вернуть ссылку на уложенную. Что
+        /// и так уезжает с проектом, возвращается нетронутым; исходник в
+        /// библиотеке или глобальном паке остаётся на месте.
+        ///
+        /// Кадры обрезки переезжают вместе со ссылкой: они принадлежат
+        /// персонажу, а не файлу.
+        /// </summary>
+        Task<string?> EnsureInProjectAsync(string? avatarRef);
+
+        /// <summary>
+        /// Где лежит картинка по этой ссылке — и, значит, уедет ли она вместе с
+        /// проектом. Ссылка, по которой нечего прочитать, объявляется потерянной.
+        /// </summary>
+        Writersword.Core.Models.Project.ProjectAssetPlace PlaceOf(string? avatarRef);
+
+        /// <summary>Размер картинки в байтах. 0 — прочитать нечем.</summary>
+        long SizeOf(string? avatarRef);
+
+        /// <summary>
+        /// То же, но со списком форматов значков меток: он шире, чем у
+        /// аватаров, и включает вектор, которому в аватарах места нет.
+        /// </summary>
+        Task<string?> EnsureInProjectAsync(string? avatarRef, bool iconFormats);
+
+        /// <summary>
+        /// Ссылки на картинки сменились: пак уложен в проект, перенесён или
+        /// картинка переехала между паками. Ключ — прежняя ссылка, значение —
+        /// новая. Слушатель обязан переписать всё, что на них ссылается.
+        /// </summary>
+        event Action<IReadOnlyDictionary<string, string>>? AvatarRefsRemapped;
 
         Task MoveAvatarToPackAsync(string avatarRef, string targetPackId);
         Task<CharacterAvatarPackInfo?> ImportPackFromZipAsync(string zipPath);

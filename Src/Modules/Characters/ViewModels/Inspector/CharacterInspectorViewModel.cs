@@ -1,11 +1,13 @@
 using ReactiveUI;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Writersword.Modules.Characters.Models;
+using Writersword.Src.Modules.Characters.Resources;
 
 namespace Writersword.Modules.Characters.ViewModels.Inspector
 {
@@ -32,6 +34,8 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
         {
             _owner = owner;
 
+            QuickAvatars = new CharacterQuickAvatarsViewModel(PickQuickAvatar);
+
             CloseCommand = ReactiveCommand.Create(() => { _owner.ClearSelection(); });
 
             CycleImportanceCommand = ReactiveCommand.Create(() =>
@@ -50,6 +54,42 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             });
             SetAvatarCircleCommand = ReactiveCommand.Create(() => { AvatarStrip = false; });
             SetAvatarStripCommand = ReactiveCommand.Create(() => { AvatarStrip = true; });
+
+            // Быстрое добавление метки по имени — тот же ход, что и в
+            // автодополнении на вкладке «Основное»: совпадение с уже
+            // известной проекту меткой подхватывает её целиком (значок,
+            // цвет, эффект), иначе заводится новая с настройками по
+            // умолчанию через тот же UpsertLabel, что и у полного редактора.
+            AddLabelCommand = ReactiveCommand.Create<string>(name =>
+            {
+                if (!CanEditLabels) return;
+                var trimmed = name?.Trim();
+                if (string.IsNullOrEmpty(trimmed)) return;
+                if (Labels.Any(l => string.Equals(l.Name, trimmed, StringComparison.CurrentCultureIgnoreCase))) return;
+
+                var known = _owner.CharacterService.GetAllLabels()
+                    .FirstOrDefault(l => string.Equals(l.Name, trimmed, StringComparison.CurrentCultureIgnoreCase));
+
+                var label = known != null
+                    ? new CharacterLabel
+                    {
+                        Id = known.Id,
+                        Name = known.Name,
+                        Icon = known.Icon,
+                        IconImage = known.IconImage,
+                        Color = known.Color,
+                        IconColor = known.IconColor,
+                        ShowBackdrop = known.ShowBackdrop,
+                        Effect = known.Effect,
+                        ShowOnCard = known.ShowOnCard,
+                        Description = known.Description,
+                        Order = Labels.Count
+                    }
+                    : new CharacterLabel { Name = trimmed, Order = Labels.Count };
+
+                UpsertLabel(label, applyToAll: false);
+                ReloadKnownLabels();
+            });
         }
 
         // ── Выбранные карточки ─────────────────────────────────────────────
@@ -123,10 +163,23 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             this.RaisePropertyChanged(nameof(ApplyRingToAllCommand));
             this.RaisePropertyChanged(nameof(Labels));
             this.RaisePropertyChanged(nameof(HasLabels));
+            this.RaisePropertyChanged(nameof(CanEditLabels));
+            this.RaisePropertyChanged(nameof(IsDead));
+            this.RaisePropertyChanged(nameof(CanMarkDead));
             this.RaisePropertyChanged(nameof(ImportanceMark));
             this.RaisePropertyChanged(nameof(ImportanceLevel));
             this.RaisePropertyChanged(nameof(CanChooseAvatar));
             this.RaisePropertyChanged(nameof(DropTarget));
+            this.RaisePropertyChanged(nameof(QuickAvatars));
+
+            // Ленту перечитываем на каждой смене выделения: недавние меняются
+            // от каждой поставленной аватарки, в том числе поставленной не
+            // отсюда — броском на карточку или из окна выбора.
+            QuickAvatars.Reload(_owner.AvatarService);
+
+            // Подсказки меток — из общего реестра проекта плюс метки самой
+            // карточки: удалил по ошибке — вернёшь вводом имени.
+            ReloadKnownLabels();
         }
 
         // ── Имя ────────────────────────────────────────────────────────────
@@ -241,6 +294,32 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
 
         public bool CanChooseAvatar => IsSingle;
 
+        /// <summary>
+        /// Быстрая лента: папки снизу, картинки сверху, щелчок ставит аватарку
+        /// немедленно. Полное окно выбора остаётся для того, что ленте не по
+        /// силам, — загрузки файла, обрезки, правки папок.
+        /// </summary>
+        public CharacterQuickAvatarsViewModel QuickAvatars { get; }
+
+        /// <summary>
+        /// Поставить аватарку всем выбранным карточкам. Кадр берётся из самой
+        /// ссылки: у картинки из папки его нет, и она встаёт целиком, а у
+        /// недавней он уже выбран прошлым разом.
+        /// </summary>
+        private void PickQuickAvatar(string avatarRef)
+        {
+            if (string.IsNullOrEmpty(avatarRef)) return;
+
+            foreach (var card in Targets.ToList())
+                card.ApplyAvatarRef(avatarRef);
+
+            this.RaisePropertyChanged(nameof(AvatarBitmap));
+
+            // Список недавних только что пополнился — лента обязана это
+            // показать, иначе только что поставленной картинки в ней не будет.
+            QuickAvatars.Reload(_owner.AvatarService);
+        }
+
         // ── Ступень важности ───────────────────────────────────────────────
 
         /// <summary>Римская цифра ступени первой выбранной карточки.</summary>
@@ -297,13 +376,168 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
 
         // ── Метки ──────────────────────────────────────────────────────────
         //
-        // Метки показываются от первой выбранной: это снимок для чтения, а не
-        // редактор. Сам редактор остаётся отдельным окном — он про определения
-        // меток целиком, а не про одного персонажа.
+        // Показываются от первой выбранной карточки и правятся только у неё:
+        // общего набора меток у нескольких персонажей нет, как и у имени.
+        //
+        // Список — все метки персонажа (AllLabels), а не только те, что видны
+        // на карточке (CardLabels): здесь их правят, а не просто показывают,
+        // и скрытая от карточки метка не должна из-за этого стать недоступна.
+        //
+        // Правка идёт тем же редактором, что и на вкладке «Основное» —
+        // LabelEditorOverlay, хостится в CharactersModuleView. Чип зовёт его
+        // на правку существующей метки, кнопка «+» — на создание новой; сама
+        // панель только знает, куда деть результат (UpsertLabel/RemoveLabel).
+        // Запись немедленная, с шагом в историю — как и всё остальное здесь,
+        // через OnLabelsChanged персонажа и ChangeLabelsCommand.
 
         public IReadOnlyList<CharacterLabel> Labels =>
-            Primary?.CardLabels ?? Array.Empty<CharacterLabel>();
+            Primary?.AllLabels ?? Array.Empty<CharacterLabel>();
 
         public bool HasLabels => Labels.Count > 0;
+
+        /// <summary>Метки правятся только у одной карточки — как и имя.</summary>
+        public bool CanEditLabels => IsSingle;
+
+        /// <summary>
+        /// Встроенная метка «Мёртв»: кнопка-ярлык добавляет/убирает её тем же
+        /// путём, что и обычную метку (UpsertLabel/RemoveLabel), — отдельного
+        /// органа состояния нет, чип «Мёртв» и есть источник истины.
+        /// </summary>
+        public bool IsDead
+        {
+            get => Labels.Any(l => l.Id == CharacterBuiltinLabels.DeadId);
+            set
+            {
+                if (!CanEditLabels) return;
+                var existing = Labels.FirstOrDefault(l => l.Id == CharacterBuiltinLabels.DeadId);
+                if (value && existing == null)
+                    UpsertLabel(CharacterBuiltinLabels.CreateDead(CharactersStrings.Label_Dead), applyToAll: false);
+                else if (!value && existing != null)
+                    RemoveLabel(existing.Id);
+            }
+        }
+
+        /// <summary>Кнопка-ярлык «Мёртв» показывается только там, где вообще
+        /// можно править метки (одна выбранная карточка) и метка ещё не
+        /// стоит.</summary>
+        public bool CanMarkDead => CanEditLabels && !IsDead;
+
+        /// <summary>
+        /// Подсказки для быстрого добавления метки по имени: все метки
+        /// проекта плюс метки самой карточки (удалил по ошибке — вернёшь
+        /// вводом имени, а не заведением похожей).
+        /// </summary>
+        public ObservableCollection<string> KnownLabelNames { get; } = new();
+
+        public void ReloadKnownLabels()
+        {
+            var known = _owner.CharacterService.GetAllLabels()
+                .Select(l => l.Name)
+                .Concat(Labels.Select(l => l.Name))
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.CurrentCultureIgnoreCase)
+                .OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+
+            KnownLabelNames.Clear();
+            foreach (var name in known) KnownLabelNames.Add(name);
+        }
+
+        /// <summary>Добавить метку по введённому имени — используется полем
+        /// быстрого ввода со списком подсказок (см. AddLabelCommand в
+        /// конструкторе).</summary>
+        public ReactiveCommand<string, Unit> AddLabelCommand { get; }
+
+        /// <summary>
+        /// Применить метку из редактора: правка существующей (Id сохраняется,
+        /// порядок остаётся её собственным) или создание новой (добавляется
+        /// в конец). applyToAll — сделать вид общим для всех персонажей с
+        /// этой же меткой, как в полном редакторе персонажа.
+        /// </summary>
+        public void UpsertLabel(CharacterLabel label, bool applyToAll)
+        {
+            var target = Primary;
+            if (target is null || !IsSingle || label is null) return;
+
+            var current = target.AllLabels.ToList();
+            var index = current.FindIndex(l => l.Id == label.Id);
+            if (index >= 0) current[index] = label;
+            else current.Add(label);
+
+            var renumbered = Renumbered(current);
+
+            // Тот же реестр меток проекта, что и у полного редактора: метка,
+            // которой там ещё нет, вносится в любом случае — иначе её не
+            // предложат другому персонажу. Личная правка уже known-метки в
+            // реестр не уходит без явного applyToAll.
+            var isKnown = _owner.CharacterService.GetAllLabels().Any(l => l.Id == label.Id);
+            if (!isKnown)
+            {
+                _owner.CharacterService.SaveGlobalLabel(label);
+            }
+            else if (applyToAll)
+            {
+                _owner.CharacterService.SaveGlobalLabel(label);
+                _owner.CharacterService.ApplyLabelToAll(label);
+
+                // Applied ко всем персонажам проекта, не только к текущему —
+                // карточки в списке обязаны это подхватить, иначе показывали
+                // бы прежний вид метки до перезагрузки проекта.
+                _owner.RefreshLabelsFromModel();
+            }
+
+            target.OnLabelsChanged?.Invoke(target.Id, renumbered);
+            this.RaisePropertyChanged(nameof(Labels));
+            this.RaisePropertyChanged(nameof(HasLabels));
+            this.RaisePropertyChanged(nameof(IsDead));
+            this.RaisePropertyChanged(nameof(CanMarkDead));
+        }
+
+        /// <summary>Убрать метку у текущего персонажа. Из реестра проекта
+        /// метка не удаляется — она остаётся доступна для других.</summary>
+        public void RemoveLabel(string labelId)
+        {
+            var target = Primary;
+            if (target is null || !IsSingle || string.IsNullOrEmpty(labelId)) return;
+
+            var current = target.AllLabels.Where(l => l.Id != labelId).ToList();
+            var renumbered = Renumbered(current);
+
+            target.OnLabelsChanged?.Invoke(target.Id, renumbered);
+            this.RaisePropertyChanged(nameof(Labels));
+            this.RaisePropertyChanged(nameof(HasLabels));
+            this.RaisePropertyChanged(nameof(IsDead));
+            this.RaisePropertyChanged(nameof(CanMarkDead));
+        }
+
+        /// <summary>
+        /// Пересчитать Order по позиции в списке — копиями, а не правкой
+        /// объектов на месте. Те же экземпляры могут лежать в снимке более
+        /// раннего шага истории (ChangeLabelsCommand хранит списки меток
+        /// целиком), и правка Order на месте задним числом попортила бы
+        /// прежний снимок — Ctrl+Z вернул бы не тот порядок, что был.
+        /// </summary>
+        private static List<CharacterLabel> Renumbered(List<CharacterLabel> labels)
+        {
+            var result = new List<CharacterLabel>(labels.Count);
+            for (var i = 0; i < labels.Count; i++)
+                result.Add(CloneWithOrder(labels[i], i));
+            return result;
+        }
+
+        private static CharacterLabel CloneWithOrder(CharacterLabel source, int order) => new()
+        {
+            Id = source.Id,
+            Name = source.Name,
+            Icon = source.Icon,
+            IconImage = source.IconImage,
+            Color = source.Color,
+            IconColor = source.IconColor,
+            ShowBackdrop = source.ShowBackdrop,
+            Effect = source.Effect,
+            ShowOnCard = source.ShowOnCard,
+            Order = order,
+            Description = source.Description
+        };
     }
 }

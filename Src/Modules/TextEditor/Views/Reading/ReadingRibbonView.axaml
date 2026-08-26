@@ -234,6 +234,52 @@
 			<Setter Property="Foreground"        Value="{DynamicResource TextMutedBrush}"/>
 		</Style>
 
+		<!-- Плитка во всю высоту группы: значок сверху, подпись снизу. Та же форма,
+		     что у кнопок подачи, — иначе лента распадается на разнородные куски. -->
+		<Style Selector="Button.TileBtn">
+			<Setter Property="MinWidth"  Value="58"/>
+			<Setter Property="MinHeight" Value="52"/>
+			<Setter Property="Padding"   Value="4 3"/>
+		</Style>
+
+		<!-- Карточка в списке форм листа: слева лист в нужных пропорциях, справа
+		     подпись. Список идёт столбцом, и держать подпись под предпросмотром
+		     значило бы растянуть его вдвое по высоте без всякой пользы. -->
+		<Style Selector="Button.SheetCard">
+			<Setter Property="MinWidth"                   Value="0"/>
+			<Setter Property="MinHeight"                  Value="0"/>
+			<Setter Property="Padding"                    Value="7 5"/>
+			<Setter Property="HorizontalAlignment"        Value="Stretch"/>
+			<Setter Property="HorizontalContentAlignment" Value="Left"/>
+		</Style>
+
+		<!-- Место под предпросмотр. Ширина и высота одни на все формы: иначе
+		     подписи встают лесенкой вслед за пропорциями листа. -->
+		<Style Selector="Panel.SheetPreviewCell">
+			<Setter Property="Width"             Value="32"/>
+			<Setter Property="Height"            Value="30"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+
+		<!-- Сам предпросмотр: лист бумаги в нужных пропорциях. Показывать его
+		     значком нельзя — значок один на все формы, а разница именно в форме. -->
+		<Style Selector="Border.SheetPreview">
+			<Setter Property="Background"          Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="BorderBrush"         Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness"     Value="1"/>
+			<Setter Property="CornerRadius"        Value="1"/>
+			<Setter Property="HorizontalAlignment" Value="Center"/>
+			<Setter Property="VerticalAlignment"   Value="Center"/>
+		</Style>
+
+		<Style Selector="TextBlock.SheetCardLabel">
+			<Setter Property="FontSize"            Value="10"/>
+			<Setter Property="TextAlignment"       Value="Left"/>
+			<Setter Property="HorizontalAlignment" Value="Left"/>
+			<Setter Property="VerticalAlignment"   Value="Center"/>
+			<Setter Property="Foreground"          Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+
 		<!-- Поле номера страницы. Единственное место ленты, которое берёт фокус. -->
 		<Style Selector="TextBox.RibbonBox">
 			<Setter Property="MinHeight"                  Value="0"/>
@@ -341,12 +387,12 @@
 									     только номер, и щелчок по полю сразу выделяет его. -->
 									<TextBox Classes="RibbonBox"
 									         x:Name="PageInputBox"
-									         Width="82"
+									         Width="96"
 									         Text="{Binding PageInput, Mode=TwoWay}"
 									         KeyDown="OnPageInputKeyDown"
 									         LostFocus="OnPageInputLostFocus"
 									         behaviours:TooltipBehavior.Tip="Номер страницы"
-									         behaviours:TooltipBehavior.Description="Щелчок выделяет номер — наберите свой и нажмите Enter, книга перелистнётся на эту страницу с обычной анимацией."
+									         behaviours:TooltipBehavior.Description="Щелчок выделяет номер — наберите свой и нажмите Enter, книга перелистнётся туда с обычной анимацией. В развороте открывается пара, которой эта страница принадлежит."
 									         behaviours:TooltipBehavior.ShowDelay="700"/>
 
 									<Button Classes="RibbonBtn" MinHeight="24"
@@ -363,11 +409,16 @@
 									</Button>
 								</StackPanel>
 
+								<!-- Шаг ползунка равен шагу листания: в развороте книга открывается
+								     парами, и остановка ползунка между страницами одной пары никуда
+								     не ведёт — бегунок просто отскакивал бы назад. -->
 								<Slider Classes="RibbonSlider"
 								        Width="200"
 								        HorizontalAlignment="Center"
 								        Minimum="1"
 								        Maximum="{Binding PageMax}"
+								        TickFrequency="{Binding PageStep}"
+								        IsSnapToTickEnabled="True"
 								        Value="{Binding PagePosition, Mode=TwoWay}"
 								        behaviours:TooltipBehavior.Tip="Место в книге"
 								        behaviours:TooltipBehavior.Description="Перемотка по всей рукописи. Страница меняется сразу, без перелистывания: ползунок тащат, и анимировать каждое его положение значит превратить перемотку в кашу."
@@ -390,32 +441,133 @@
 				</Border>
 
 				<!-- ═══ ВИД ЧТЕНИЯ ══════════════════════════════════════════
-				     Каждое поле подписано и со значком. Без подписи в списке
-				     видно только значение — «Белая», «Как в документе», — и что
-				     именно им задаётся, приходилось узнавать наведением. -->
+				     Вид, форма листа, заливка поля и картинка — это всё одно и
+				     то же: как выглядит книга. Держать их в двух группах значило
+				     делать вид, будто фон живёт отдельно от вида, — а он его
+				     часть и меняется вместе с ним.
+
+				     По краям — две плитки во всю высоту группы: форма листа и
+				     картинка фона. Между ними два списка. Плитка отдаётся тому,
+				     что выбирают глазами, список — тому, у чего важно имя. -->
 				<Border Classes="RibbonGroup">
 					<DockPanel>
 						<TextBlock DockPanel.Dock="Bottom"
 						           Classes="RibbonGroupLabel"
 						           Text="Вид чтения"/>
 						<StackPanel Orientation="{Binding GroupOrientation}"
-						            Spacing="4"
+						            Spacing="6"
 						            Classes="GroupBody">
+
+							<!-- Форма листа. Плитка со стрелкой во всю ширину: за ней
+							     список, а не действие, и это должно быть видно до нажатия. -->
+							<Button x:Name="SheetFormatButton"
+							        Classes="RibbonBtn TileBtn"
+							        IsVisible="{Binding IsPaged}"
+							        behaviours:TooltipBehavior.Tip="Пропорции листа"
+							        behaviours:TooltipBehavior.Description="Форма страницы при чтении. На печать и на сам документ не влияет."
+							        behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="1" HorizontalAlignment="Stretch">
+									<PathIcon Width="22" Height="22"
+									          HorizontalAlignment="Center"
+									          Data="{Binding SelectedFormatGlyph}"/>
+									<TextBlock Text="Лист" FontSize="9" TextAlignment="Center"/>
+									<!-- Стрелка цветом ленты, а не подписи: это единственная плитка
+									     со списком за ней, и отличать её от прочих должно быть видно
+									     сразу, без наведения. -->
+									<Path Data="M 0,0 L 5,4 L 10,0"
+									      Stroke="{DynamicResource AccentDefaultBrush}"
+									      StrokeThickness="2"
+									      StrokeLineCap="Round"
+									      StrokeJoin="Round"
+									      Stretch="Fill"
+									      Height="5"
+									      Width="34"
+									      Margin="0 1 0 0"
+									      HorizontalAlignment="Center"/>
+								</StackPanel>
+								<Button.Flyout>
+									<Flyout Placement="BottomEdgeAlignedLeft">
+										<Border x:Name="SheetFormatFlyoutRoot"
+										        Background="Transparent"
+										        Padding="2"
+										        RenderTransform="translateY(0px)">
+											<Border.Transitions>
+												<Transitions>
+													<DoubleTransition Property="Opacity" Duration="0:0:0.16" Easing="CubicEaseOut"/>
+													<TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.16" Easing="CubicEaseOut"/>
+												</Transitions>
+											</Border.Transitions>
+
+											<StackPanel Orientation="Vertical" Spacing="2" MinWidth="150">
+												<Button Classes="RibbonBtn SheetCard"
+												        Command="{Binding SetFormatCommand}"
+												        CommandParameter="Document"
+												        behaviours:TooltipBehavior.Tip="Как в документе"
+												        behaviours:TooltipBehavior.Description="Те же пропорции, что при печати.">
+													<StackPanel Orientation="Horizontal" Spacing="8">
+														<Panel Classes="SheetPreviewCell">
+															<Border Classes="SheetPreview" Width="20" Height="28"/>
+														</Panel>
+														<TextBlock Text="Как в документе" Classes="SheetCardLabel"/>
+													</StackPanel>
+												</Button>
+												<Button Classes="RibbonBtn SheetCard"
+												        Command="{Binding SetFormatCommand}"
+												        CommandParameter="Pocket"
+												        behaviours:TooltipBehavior.Tip="Карманный"
+												        behaviours:TooltipBehavior.Description="Узкий и высокий, как у бумажной книги.">
+													<StackPanel Orientation="Horizontal" Spacing="8">
+														<Panel Classes="SheetPreviewCell">
+															<Border Classes="SheetPreview" Width="17" Height="28"/>
+														</Panel>
+														<TextBlock Text="Карманный" Classes="SheetCardLabel"/>
+													</StackPanel>
+												</Button>
+												<Button Classes="RibbonBtn SheetCard"
+												        Command="{Binding SetFormatCommand}"
+												        CommandParameter="Square"
+												        behaviours:TooltipBehavior.Tip="Квадратный"
+												        behaviours:TooltipBehavior.Description="Альбомная подача, поля одинаковы со всех сторон.">
+													<StackPanel Orientation="Horizontal" Spacing="8">
+														<Panel Classes="SheetPreviewCell">
+															<Border Classes="SheetPreview" Width="25" Height="25"/>
+														</Panel>
+														<TextBlock Text="Квадратный" Classes="SheetCardLabel"/>
+													</StackPanel>
+												</Button>
+												<Button Classes="RibbonBtn SheetCard"
+												        Command="{Binding SetFormatCommand}"
+												        CommandParameter="Wide"
+												        behaviours:TooltipBehavior.Tip="Широкий"
+												        behaviours:TooltipBehavior.Description="Под экран: минимум полей по бокам.">
+													<StackPanel Orientation="Horizontal" Spacing="8">
+														<Panel Classes="SheetPreviewCell">
+															<Border Classes="SheetPreview" Width="29" Height="23"/>
+														</Panel>
+														<TextBlock Text="Широкий" Classes="SheetCardLabel"/>
+													</StackPanel>
+												</Button>
+											</StackPanel>
+										</Border>
+									</Flyout>
+								</Button.Flyout>
+							</Button>
+
 							<StackPanel Spacing="3" VerticalAlignment="Center">
 
 								<!-- Виды чтения. Последним пунктом идёт «Настроить виды…»
 								     со значком шестерни: выбор вида и его правка живут в
-								     одном месте, и тянуться за ними в разные концы ленты
-								     не приходится. -->
+								     одном месте. Первым пунктом появляется «Кастомное» —
+								     как только правка на ходу разошлась с сохранённым видом. -->
 								<StackPanel Orientation="Horizontal" Spacing="4"
 								            behaviours:TooltipBehavior.Tip="Вид чтения"
-								            behaviours:TooltipBehavior.Description="Оформление книги под своим именем: цвета, шрифт и свет. Свой вид можно создать в «Настроить виды…» и приложить к документу или сделать общим для всех проектов."
+								            behaviours:TooltipBehavior.Description="Оформление книги под своим именем: цвета, шрифт, свет и фон. Правка на ходу превращает его в «Кастомное» — сохранить её под именем можно в «Настроить виды…»."
 								            behaviours:TooltipBehavior.ShowDelay="700">
 									<PathIcon Classes="FieldGlyph"
 									          Data="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
-									<TextBlock Classes="FieldCaption" Text="Вид"/>
+									<TextBlock Classes="FieldCaption" Text="Вид" Width="52"/>
 									<ComboBox Classes="RibbonCombo"
-									          Width="140"
+									          Width="152"
 									          ItemsSource="{Binding ThemeItems}"
 									          SelectedItem="{Binding SelectedThemeItem, Mode=TwoWay}">
 										<ComboBox.ItemTemplate>
@@ -425,6 +577,10 @@
 													          Width="12" Height="12"
 													          VerticalAlignment="Center"
 													          Data="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+													<PathIcon IsVisible="{Binding IsCustom}"
+													          Width="12" Height="12"
+													          VerticalAlignment="Center"
+													          Data="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75z"/>
 													<TextBlock Text="{Binding Label}" VerticalAlignment="Center"/>
 												</StackPanel>
 											</DataTemplate>
@@ -432,51 +588,17 @@
 									</ComboBox>
 								</StackPanel>
 
-								<StackPanel Orientation="Horizontal" Spacing="4"
-								            IsVisible="{Binding IsPaged}"
-								            behaviours:TooltipBehavior.Tip="Пропорции листа"
-								            behaviours:TooltipBehavior.Description="Форма страницы при чтении. На печать и на сам документ не влияет."
-								            behaviours:TooltipBehavior.ShowDelay="700">
-									<PathIcon Classes="FieldGlyph"
-									          Data="M6 2h9l5 5v15H6z M8 4v16h10V8h-4V4z M15 4.6V7h2.4z M9.6 11h6.8v1.4H9.6z M9.6 14h6.8v1.4H9.6z M9.6 17h4.4v1.4H9.6z"/>
-									<TextBlock Classes="FieldCaption" Text="Лист"/>
-									<ComboBox Classes="RibbonCombo"
-									          Width="140"
-									          ItemsSource="{Binding FormatOptions}"
-									          SelectedItem="{Binding SelectedFormat, Mode=TwoWay}"/>
-								</StackPanel>
-
-							</StackPanel>
-						</StackPanel>
-					</DockPanel>
-				</Border>
-
-				<!-- ═══ ФОН ═════════════════════════════════════════════════
-				     Поле вокруг книги занимает больше места на экране, чем сама
-				     книга, и от него зависит, устают ли от чтения глаза.
-
-				     Своих видов заливки здесь нет намеренно: градиенты уже есть
-				     у цветов, и поле принимает выбранное значение как есть —
-				     цвет так цвет, градиент так градиент. -->
-				<Border Classes="RibbonGroup">
-					<DockPanel>
-						<TextBlock DockPanel.Dock="Bottom"
-						           Classes="RibbonGroupLabel"
-						           Text="Фон"/>
-						<StackPanel Orientation="{Binding GroupOrientation}"
-						            Spacing="4"
-						            Classes="GroupBody">
-							<StackPanel Spacing="3" VerticalAlignment="Center">
+								<!-- Поле вокруг книги. Занимает больше места на экране, чем
+								     сама книга, и от него зависит, устают ли от чтения глаза. -->
 								<StackPanel Orientation="Horizontal" Spacing="4">
 									<PathIcon Classes="FieldGlyph"
 									          Data="M12 22C6.49 22 2 17.51 2 12S6.49 2 12 2s10 4.04 10 9c0 3.31-2.69 6-6 6h-1.77c-.28 0-.5.22-.5.5 0 .12.05.23.13.33.41.47.64 1.06.64 1.67 0 1.38-1.12 2.5-2.5 2.5zm0-18c-4.41 0-8 3.59-8 8s3.59 8 8 8c.28 0 .5-.22.5-.5 0-.16-.08-.28-.14-.35-.41-.46-.63-1.05-.63-1.65 0-1.38 1.12-2.5 2.5-2.5H16c2.21 0 4-1.79 4-4 0-3.86-3.59-7-8-7z"/>
-									<TextBlock Classes="FieldCaption" Text="Заливка"
-									           Width="46"/>
+									<TextBlock Classes="FieldCaption" Text="Заливка" Width="52"/>
 									<controls:ColorPickerButton Width="20" Height="20"
 									                            VerticalAlignment="Center"
 									                            ToolTip.Tip="{x:Null}"
 									                            HexColor="{Binding BackdropColorHex, Mode=TwoWay}"
-									                            behaviours:TooltipBehavior.Tip="Заливка поля"
+									                            behaviours:TooltipBehavior.Tip="Заливка поля вокруг книги"
 									                            behaviours:TooltipBehavior.Description="Цвет или градиент — тот же выбор, что и у любого другого цвета в программе. Пока своего нет, поле выводится из бумаги: под светлой книгой темнее, под тёмной чуть светлее."
 									                            behaviours:TooltipBehavior.ShowDelay="700"/>
 									<Button Classes="RibbonBtn" MinHeight="20" MinWidth="20"
@@ -487,25 +609,23 @@
 										          Data="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9z"/>
 									</Button>
 								</StackPanel>
-
-								<ToggleButton Classes="RibbonToggle"
-								              HorizontalAlignment="Left"
-								              MinHeight="24"
-								              IsChecked="{Binding UseBackdropImage, Mode=TwoWay}"
-								              behaviours:TooltipBehavior.Tip="Использовать картинку"
-								              behaviours:TooltipBehavior.Description="Класть на поле картинку поверх заливки. Сам файл выбирается в «Настроить виды…» — там же, где всё остальное про вид."
-								              behaviours:TooltipBehavior.ShowDelay="700">
-									<StackPanel Orientation="Horizontal" Spacing="5">
-										<PathIcon Width="14" Height="14"
-										          Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
-										<TextBlock Text="Использовать картинку" FontSize="11" VerticalAlignment="Center"/>
-									</StackPanel>
-								</ToggleButton>
 							</StackPanel>
+
+							<!-- Картинка фона. Плитка той же формы, что и у листа: обе
+							     про то, как выглядит книга, и стоять им вразнобой незачем. -->
+							<ToggleButton Classes="RibbonToggle FlowBtn"
+							              IsChecked="{Binding UseBackdropImage, Mode=TwoWay}"
+							              behaviours:TooltipBehavior.Tip="Использовать картинку"
+							              behaviours:TooltipBehavior.Description="Класть на поле картинку поверх заливки. Сам файл выбирается в «Настроить виды…» — там же, где всё остальное про вид."
+							              behaviours:TooltipBehavior.ShowDelay="700">
+								<StackPanel Spacing="2" HorizontalAlignment="Center">
+									<PathIcon Data="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+									<TextBlock Text="Картинка" FontSize="9" TextAlignment="Center"/>
+								</StackPanel>
+							</ToggleButton>
 						</StackPanel>
 					</DockPanel>
 				</Border>
-
 				<!-- ═══ ТЕКСТ ═══════════════════════════════════════════════
 				     Всё в этой группе живёт только на экране. Ни размер, ни шрифт,
 				     ни цвет отсюда не доходят до рукописи: она остаётся такой,

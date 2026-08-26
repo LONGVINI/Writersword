@@ -563,6 +563,18 @@ namespace Writersword.Modules.TextEditor.Document
         // файл не ставился в очередь на каждом кадре, пока предыдущая загрузка не завершилась.
         private readonly HashSet<string> _imageLoadsInFlight = new();
 
+        // Имена файлов, которых в проекте не нашлось или которые не читаются.
+        //
+        // Нужны для двух вещей сразу. Во-первых, на месте такой картинки рисуется
+        // видимая отметка вместо пустоты: раньше документ, приехавший без файла,
+        // просто показывал дырку — ни имени, ни намёка на то, что там что-то было.
+        // Во-вторых, повторные попытки прекращаются: без этого списка каждый кадр
+        // заводил новую фоновую задачу на файл, которого нет, — шестьдесят задач
+        // в секунду на одну ненайденную картинку.
+        //
+        // Список сбрасывается при смене документа: файл мог появиться.
+        private readonly HashSet<string> _imageMissing = new(StringComparer.OrdinalIgnoreCase);
+
         // Синхронизирует доступ к _imageCache и _imageLoadsInFlight между render-потоком
         // (чтение) и фоновыми задачами декодирования (запись).
         private readonly object _imageCacheLock = new();
@@ -1538,6 +1550,10 @@ namespace Writersword.Modules.TextEditor.Document
             _cellVmCache.Clear();
             InvalidateCellLayoutCaches();
             ResetUndoOrder();
+
+            // Другой документ — другой архив: картинка, которой не было там,
+            // здесь может лежать на месте. Список потерянных начинается заново.
+            lock (_imageCacheLock) _imageMissing.Clear();
 
             if (DocVm is not null)
             {

@@ -324,6 +324,7 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             this.RaisePropertyChanged(nameof(CanMoveScope));
             this.RaisePropertyChanged(nameof(CanMakeLocal));
             this.RaisePropertyChanged(nameof(CanMakeGlobal));
+            this.RaisePropertyChanged(nameof(CanCopyToProject));
             this.RaisePropertyChanged(nameof(SelectedIsLocal));
             this.RaisePropertyChanged(nameof(SelectedIsGlobal));
             this.RaisePropertyChanged(nameof(CanResetCover));
@@ -340,6 +341,12 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
         public bool SelectedIsGlobal => CanEditPack && SelectedPack?.Scope == CharacterAvatarPackScope.Global;
         public bool CanMakeLocal => CanMoveScope && SelectedPack?.Scope == CharacterAvatarPackScope.Global;
         public bool CanMakeGlobal => CanMoveScope && SelectedPack?.Scope == CharacterAvatarPackScope.Local;
+
+        /// <summary>
+        /// Общую папку можно положить копией в проект. У папки, которая уже в
+        /// проекте, копировать нечего — она там и лежит.
+        /// </summary>
+        public bool CanCopyToProject => CanMakeLocal;
 
         /// <summary>Обложка задана вручную — есть что сбрасывать.</summary>
         public bool CanResetCover => CanEditPack && !string.IsNullOrEmpty(SelectedPack?.IconFileName);
@@ -426,6 +433,7 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
         public ReactiveCommand<Unit, Unit> ExportPackCommand { get; }
         public ReactiveCommand<Unit, Unit> MakeLocalCommand { get; }
         public ReactiveCommand<Unit, Unit> MakeGlobalCommand { get; }
+        public ReactiveCommand<Unit, Unit> CopyToProjectCommand { get; }
         public ReactiveCommand<Unit, Unit> SetNewPackLocalCommand { get; }
         public ReactiveCommand<Unit, Unit> SetNewPackGlobalCommand { get; }
         public ReactiveCommand<Unit, Unit> AddImagesCommand { get; }
@@ -490,6 +498,7 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
             ExportPackCommand = ReactiveCommand.CreateFromTask(ExportAsync);
             MakeLocalCommand = ReactiveCommand.CreateFromTask(() => MoveScopeAsync(CharacterAvatarPackScope.Local));
             MakeGlobalCommand = ReactiveCommand.CreateFromTask(() => MoveScopeAsync(CharacterAvatarPackScope.Global));
+            CopyToProjectCommand = ReactiveCommand.CreateFromTask(CopyToProjectAsync);
 
             SetNewPackLocalCommand = ReactiveCommand.Create(() => { NewPackIsGlobal = false; });
             SetNewPackGlobalCommand = ReactiveCommand.Create(() => { NewPackIsGlobal = true; });
@@ -735,6 +744,34 @@ namespace Writersword.Modules.Characters.ViewModels.Avatars
 
             StatusMessage = string.Empty;
             Refresh(moved.Id);
+        }
+
+        /// <summary>
+        /// Положить копию общей папки в проект, оставив её и в общих.
+        ///
+        /// Это то, что нужно при передаче проекта другому человеку: у него нет
+        /// ни ваших папок, ни библиотеки, и аватарки из них у него не покажутся.
+        /// Копия в архиве проекта уезжает вместе с ним, а исходник продолжает
+        /// работать во всех остальных ваших проектах — в отличие от переноса,
+        /// после которого в общих папки не остаётся.
+        /// </summary>
+        private async Task CopyToProjectAsync()
+        {
+            var pack = SelectedPack;
+            if (pack?.IsUserPack != true || pack.IsLibrary) return;
+            if (pack.Scope == CharacterAvatarPackScope.Local) return;
+
+            var copied = await _avatarService.CopyPackToScopeAsync(
+                pack.PackId, CharacterAvatarPackScope.Local);
+
+            if (copied == null)
+            {
+                StatusMessage = "Положить копию в проект не удалось. Нужен открытый проект.";
+                return;
+            }
+
+            StatusMessage = "Копия папки лежит в проекте — она уедет вместе с ним.";
+            Refresh(copied.Id);
         }
 
         private async Task ImportAsync()

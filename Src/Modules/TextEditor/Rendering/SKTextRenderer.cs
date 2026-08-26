@@ -2490,9 +2490,6 @@ namespace Writersword.Modules.TextEditor.Rendering
         {
             var key = (family, bold, italic);
 
-            if (_typefaceCache.TryGetValue(key, out var cached))
-                return cached;
-
             var style = (bold, italic) switch
             {
                 (true, true) => SKFontStyle.BoldItalic,
@@ -2500,6 +2497,23 @@ namespace Writersword.Modules.TextEditor.Rendering
                 (false, true) => SKFontStyle.Italic,
                 _ => SKFontStyle.Normal
             };
+
+            // Шрифт, уложенный в проект, идёт впереди системного: он и есть тот
+            // самый, которым набрана рукопись, а системный с тем же именем может
+            // оказаться другой версией или вовсе другим шрифтом.
+            //
+            // В общий кеш такая гарнитура не кладётся: она принадлежит хранилищу
+            // шрифтов проекта и живёт до его смены, а кеш свои гарнитуры
+            // освобождает. Освободить чужую значит уронить отрисовку в нативном
+            // коде — без стека и без объяснений.
+            if (Services.ProjectFonts.HasAny)
+            {
+                var embedded = Services.ProjectFonts.Match(family, style);
+                if (embedded is not null) return embedded;
+            }
+
+            if (_typefaceCache.TryGetValue(key, out var cached))
+                return cached;
 
             var typeface = SKTypeface.FromFamilyName(family, style)
                 ?? SKTypeface.FromFamilyName(StyleResolver.FallbackFontFamily, style)

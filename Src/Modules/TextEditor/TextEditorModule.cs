@@ -36,7 +36,7 @@ namespace Writersword.Modules.TextEditor
         public string Description => TextEditorStrings.Description;
     }
 
-    public sealed class TextEditorModule : BaseModule, IConfigurableModule, IUndoableModule, IHotKeyProvider, IStateSnapshotModule, IPreparedDataModule
+    public sealed class TextEditorModule : BaseModule, IConfigurableModule, IUndoableModule, IHotKeyProvider, IStateSnapshotModule, IPreparedDataModule, IProjectAssetHolder
     {
         private static readonly ILogger _logger = Log.ForContext<TextEditorModule>();
 
@@ -214,6 +214,11 @@ namespace Writersword.Modules.TextEditor
         /// </summary>
         protected override void OnContextChanged(DocumentContext? context)
         {
+            // Шрифты, уложенные в прежний проект, к новому отношения не имеют:
+            // забыть их надо до первой отрисовки, иначе новая рукопись покажется
+            // чужим шрифтом с тем же именем семейства.
+            Services.ProjectFonts.Invalidate();
+
             ApplyReadOnlyFromContext();
         }
 
@@ -633,6 +638,354 @@ namespace Writersword.Modules.TextEditor
                     missing.Add(name);
 
             return missing;
+        }
+
+        // ── Файлы проекта ─────────────────────────────────────────────────
+
+        /// <summary>
+        /// Файлы, которые держит редактор: картинки документа и картинки видов
+        /// чтения — бумага и поле вокруг книги.
+        ///
+        /// Картинки документа лежат в архиве с самого начала, и здесь они
+        /// перечисляются не ради укладки, а ради второго вопроса: на месте ли
+        /// они. Ссылка на страницу, файла которой в архиве нет, — это дырка в
+        /// рукописи, и увидеть её нужно списком, а не пустым местом на листе.
+        /// </summary>
+        public IEnumerable<Writersword.Core.Models.Project.ProjectAssetRef> CollectAssetRefs()
+        {
+            var ctx = CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context;
+
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            CollectImageNames(_viewModel?.DocumentViewModel?.Document, names);
+
+            foreach (var name in names)
+            {
+                var path = $"TextEditor/Images/{name}";
+                var bytes = ctx?.ReadFile(path);
+
+                yield return new Writersword.Core.Models.Project.ProjectAssetRef
+                {
+                    Ref = path,
+                    ModuleType = moduleType,
+                    Kind = Writersword.Core.Models.Project.ProjectAssetKind.Image,
+                    Place = bytes is { Length: > 0 }
+                        ? Writersword.Core.Models.Project.ProjectAssetPlace.InProject
+                        : Writersword.Core.Models.Project.ProjectAssetPlace.Missing,
+                    Hold = Writersword.Core.Models.Project.ProjectAssetHold.Used,
+                    DisplayName = name,
+                    OwnerName = "Картинка в тексте",
+                    Bytes = bytes?.LongLength ?? 0
+                };
+            }
+
+            foreach (var theme in ReadingThemesInPlay())
+            {
+                foreach (var item in ThemeAssets(theme))
+                    yield return item;
+            }
+
+            foreach (var item in FontAssets())
+                yield return item;
+        }
+
+        // ── Шрифты ────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Шрифты, которыми набрана рукопись, и то, что о них известно.
+        ///
+        /// Шрифт хранится именем семейства, и у того, кому проект передали, это
+        /// имя может не значить ничего: Скиа молча подставит похожий, и книга
+        /// откроется другой — другие пропорции, другие переносы, другое число
+        /// страниц. Поэтому шрифт перечисляется наравне с картинками.
+        /// </summary>
+        private IEnumerable<Writersword.Core.Models.Project.ProjectAssetRef> FontAssets()
+        {
+            foreach (var (family, owner) in UsedFontFamilies())
+            {
+                bool embedded = Services.ProjectFonts.IsEmbedded(family);
+                bool installed = Services.ProjectFonts.IsInstalled(family);
+
+                var place = embedded
+                    ? Writersword.Core.Models.Project.ProjectAssetPlace.InProject
+                    : installed
+                        // Шрифт есть в системе автора, но не в проекте: у другого
+                        // человека его может не оказаться, и уложить его надо.
+                        ? Writersword.Core.Models.Project.ProjectAssetPlace.OnDisk
+                        // Шрифта нет ни в проекте, ни в системе: текст уже сейчас
+                        // показывается подменой, и уложить нечего.
+                        : Writersword.Core.Models.Project.ProjectAssetPlace.Missing;
+
+                yield return new Writersword.Core.Models.Project.ProjectAssetRef
+                {
+                    Ref = "font:" + family,
+                    ModuleType = moduleType,
+                    Kind = Writersword.Core.Models.Project.ProjectAssetKind.Font,
+                    Place = place,
+                    Hold = Writersword.Core.Models.Project.ProjectAssetHold.Used,
+                    DisplayName = family,
+                    OwnerName = owner,
+                    Bytes = embedded ? Services.ProjectFonts.BytesOf(family) : 0
+                };
+            }
+        }
+
+        /// <summary>
+        /// Семейства шрифтов, встречающиеся в рукописи, и где именно. Стили
+        /// документа, отдельные куски текста, ячейки таблиц, надписи и шрифт
+        /// вида чтения — всё, что доходит до отрисовки.
+        /// </summary>
+        private IEnumerable<(string Family, string Owner)> UsedFontFamilies()
+        {
+            var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            void Note(string? family, string owner)
+            {
+                if (string.IsNullOrWhiteSpace(family)) return;
+                if (seen.ContainsKey(family!)) return;
+                seen[family!] = owner;
+            }
+
+            var document = _viewModel?.DocumentViewModel?.Document;
+            if (document is not null)
+            {
+                foreach (var style in document.Styles)
+                    Note(style.RunProperties?.FontFamily, $"Стиль «{style.Name}»");
+
+                foreach (var section in document.Sections)
+                {
+                    WalkFonts(section.Blocks, Note);
+                    WalkFonts(section.FloatingObjects, Note);
+                    WalkFonts(section.InlineObjects, Note);
+                }
+            }
+
+            foreach (var theme in ReadingThemesInPlay())
+                Note(theme.FontFamily, $"Вид чтения «{theme.Name}»");
+
+            foreach (var pair in seen)
+                yield return (pair.Key, pair.Value);
+        }
+
+        private static void WalkFonts(
+            IEnumerable<Models.Document.BlockModel> blocks,
+            Action<string?, string> note)
+        {
+            foreach (var block in blocks)
+            {
+                switch (block)
+                {
+                    case Models.Document.ParagraphBlock paragraph:
+                        foreach (var chunk in paragraph.Chunks)
+                            foreach (var run in chunk.Runs)
+                                note(run.Properties?.FontFamily, "Текст рукописи");
+                        break;
+
+                    case Models.Document.TableBlock table:
+                        foreach (var cell in table.Cells)
+                            WalkFonts(cell.Paragraphs, note);
+                        break;
+
+                    case Models.Document.FloatingTextBlock floatingText:
+                        WalkFonts(floatingText.Paragraphs, note);
+                        break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Начертания, которые нужно уложить вместе с семейством. Кладутся все
+        /// четыре: полужирный и курсив встречаются в рукописи повсеместно, а
+        /// разбирать по кускам, какое именно начертание где использовано, значит
+        /// однажды не доложить одно из них и получить подмену ровно в том
+        /// абзаце, где её меньше всего ждут.
+        /// </summary>
+        private static readonly SkiaSharp.SKFontStyle[] EmbeddedFontStyles =
+        {
+            SkiaSharp.SKFontStyle.Normal,
+            SkiaSharp.SKFontStyle.Bold,
+            SkiaSharp.SKFontStyle.Italic,
+            SkiaSharp.SKFontStyle.BoldItalic
+        };
+
+        /// <summary>
+        /// Виды чтения, картинки которых должны уехать с проектом: приложенные к
+        /// документу и тот, которым книга открыта сейчас.
+        ///
+        /// Виды из настроек программы сюда не попадают намеренно. Они не часть
+        /// проекта: их не отдают вместе с рукописью, и укладывать их картинки в
+        /// архив значило бы возить с каждым проектом чужое оформление.
+        /// </summary>
+        private IEnumerable<ReadingTheme> ReadingThemesInPlay()
+        {
+            var document = _viewModel?.DocumentViewModel?.Document;
+            if (document?.ReadingThemes is { } themes)
+                foreach (var theme in themes)
+                    if (theme != null) yield return theme;
+
+            if (_viewModel?.DocumentViewModel?.Reading.Active is { } active)
+                yield return active;
+        }
+
+        private IEnumerable<Writersword.Core.Models.Project.ProjectAssetRef> ThemeAssets(
+            ReadingTheme theme)
+        {
+            foreach (var (reference, what) in new[]
+                     {
+                         (theme.ImagePath, "бумага"),
+                         (theme.BackdropImagePath, "фон")
+                     })
+            {
+                if (string.IsNullOrWhiteSpace(reference)) continue;
+
+                var bytes = ReadingAssets.Read(reference);
+
+                var place = bytes is null || bytes.Length == 0
+                    ? Writersword.Core.Models.Project.ProjectAssetPlace.Missing
+                    : ReadingAssets.IsProjectRef(reference)
+                        ? Writersword.Core.Models.Project.ProjectAssetPlace.InProject
+                        : ReadingAssets.IsAppRef(reference)
+                            ? Writersword.Core.Models.Project.ProjectAssetPlace.InApp
+                            : Writersword.Core.Models.Project.ProjectAssetPlace.OnDisk;
+
+                yield return new Writersword.Core.Models.Project.ProjectAssetRef
+                {
+                    Ref = reference!,
+                    ModuleType = moduleType,
+                    Kind = Writersword.Core.Models.Project.ProjectAssetKind.Image,
+                    Place = place,
+                    Hold = Writersword.Core.Models.Project.ProjectAssetHold.Used,
+                    DisplayName = System.IO.Path.GetFileName(reference!),
+                    OwnerName = $"Вид чтения «{theme.Name}», {what}",
+                    Bytes = bytes?.LongLength ?? 0
+                };
+            }
+        }
+
+        /// <summary>
+        /// Уложить в архив картинки видов чтения, лежащие снаружи.
+        ///
+        /// Картинки документа здесь не трогаются: они и так в архиве — другого
+        /// места для них никогда и не было.
+        /// </summary>
+        public System.Threading.Tasks.Task<int> EmbedExternalAssetsAsync()
+        {
+            int embedded = 0;
+
+            foreach (var theme in ReadingThemesInPlay())
+            {
+                var paper = ReadingAssets.EnsureInProject(theme.ImagePath);
+                if (!string.Equals(paper, theme.ImagePath, StringComparison.Ordinal))
+                {
+                    theme.ImagePath = paper;
+                    embedded++;
+                }
+
+                var backdrop = ReadingAssets.EnsureInProject(theme.BackdropImagePath);
+                if (!string.Equals(backdrop, theme.BackdropImagePath, StringComparison.Ordinal))
+                {
+                    theme.BackdropImagePath = backdrop;
+                    embedded++;
+                }
+            }
+
+            if (embedded > 0)
+            {
+                _viewModel?.DocumentViewModel?.RaiseReadingSettingsChanged();
+                _logger.Information("Reading images embedded into the project: {Count}", embedded);
+            }
+
+            // Шрифты: укладывается только то, что есть в системе. Семейство,
+            // которого нет и здесь, взять неоткуда — о нём говорит отчёт, а
+            // выдумывать вместо него подмену и класть её в проект нельзя.
+            int fonts = 0;
+            foreach (var (family, _) in UsedFontFamilies())
+            {
+                if (Services.ProjectFonts.IsEmbedded(family)) continue;
+                if (!Services.ProjectFonts.IsInstalled(family)) continue;
+
+                fonts += Services.ProjectFonts.Embed(family, EmbeddedFontStyles);
+            }
+
+            if (fonts > 0)
+                _logger.Information("Font files embedded into the project: {Count}", fonts);
+
+            return System.Threading.Tasks.Task.FromResult(embedded + fonts);
+        }
+
+        /// <summary>
+        /// Уборка: картинки документа, на которые не осталось ссылок, и картинки
+        /// видов, которыми ни один вид больше не пользуется.
+        ///
+        /// Живыми считаются не только ссылки текущего состояния: картинку ещё
+        /// можно вернуть из истории отмены, из версии восстановления и из буфера
+        /// обмена. Именно на этом обожглась прежняя уборка по таймеру — она
+        /// удаляла файл, который возвращался по Ctrl+Z.
+        /// </summary>
+        public Writersword.Core.Models.Project.ProjectAssetCleanup CompactUnusedAssets()
+        {
+            var projectPath = CoreServices.GetService<ITabCollection>()?.ActiveTab?.FilePath;
+
+            // Шрифты уборка не трогает намеренно. Живых ссылок на них у истории
+            // отмены нет — она помнит картинки, но не гарнитуры, — а значит
+            // отличить «шрифт больше не нужен» от «шрифт вернётся следующим
+            // Ctrl+Z» здесь нечем. Убирать наугад то, что весит мегабайты и
+            // молча меняет вид всей рукописи, нельзя.
+            var (removed, freed) = CompactUnusedImages(projectPath);
+            var reading = CompactUnusedReadingImages();
+
+            return new Writersword.Core.Models.Project.ProjectAssetCleanup
+            {
+                Removed = removed + reading.Removed,
+                FreedBytes = freed + reading.FreedBytes
+            };
+        }
+
+        /// <summary>
+        /// Убирает из архива картинки видов чтения, на которые не ссылается ни
+        /// один вид документа и ни рабочая копия.
+        ///
+        /// Виды из настроек программы здесь не спрашиваются: их картинки лежат в
+        /// данных программы, а не в архиве, и на содержимое архива они не
+        /// влияют.
+        /// </summary>
+        private Writersword.Core.Models.Project.ProjectAssetCleanup CompactUnusedReadingImages()
+        {
+            var ctx = CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context;
+            if (ctx is null) return Writersword.Core.Models.Project.ProjectAssetCleanup.Nothing;
+
+            var live = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var theme in ReadingThemesInPlay())
+            {
+                if (ReadingAssets.IsProjectRef(theme.ImagePath))
+                    live.Add(System.IO.Path.GetFileName(theme.ImagePath!));
+                if (ReadingAssets.IsProjectRef(theme.BackdropImagePath))
+                    live.Add(System.IO.Path.GetFileName(theme.BackdropImagePath!));
+            }
+
+            int removed = 0;
+            long freed = 0;
+
+            foreach (var path in ctx.GetFiles("TextEditor/Reading").ToList())
+            {
+                string name = path.Substring(path.LastIndexOf('/') + 1);
+                if (string.IsNullOrEmpty(name)) continue;
+                if (live.Contains(name)) continue;
+
+                long size = ctx.ReadFile(path)?.LongLength ?? 0;
+                ctx.DeleteFile(path);
+                removed++;
+                freed += size;
+
+                _logger.Debug("Unused reading image removed: {Name} ({Size} bytes)", name, size);
+            }
+
+            if (removed > 0) ctx.FlushStorage();
+
+            return new Writersword.Core.Models.Project.ProjectAssetCleanup
+            {
+                Removed = removed,
+                FreedBytes = freed
+            };
         }
 
         public override void SetCustomData(object? data)

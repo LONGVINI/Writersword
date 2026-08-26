@@ -165,13 +165,21 @@ namespace Writersword.Modules.Characters.ViewModels
             set
             {
                 this.RaiseAndSetIfChanged(ref _isInspectorOpen, value);
+                this.RaisePropertyChanged(nameof(EffectiveInspectorWidth));
             }
         }
 
         // Ширина панели, которую человек тянет полоской на краю. Живёт в
         // модуле, а не в самой панели: панель прячется вместе со своей шириной,
         // а вернуться она должна той же, какой её оставили.
-        private double _inspectorWidth = 268.0;
+        //
+        // Стартовое значение поднято с прежних 268 — на нём поля панели
+        // (особенно превью карточки в цветопикере и лента быстрых аватарок)
+        // ощутимо теснее, чем нужно по умолчанию. Подгонка под фактическую
+        // ширину модуля (в нём может стоять не один документ рядом) — отдельная
+        // задача поверх этой правки: она нужна не всегда, а тянуть панель
+        // по-прежнему можно вручную полоской.
+        private double _inspectorWidth = 300.0;
         public double InspectorWidth
         {
             get => _inspectorWidth;
@@ -179,11 +187,22 @@ namespace Writersword.Modules.Characters.ViewModels
             {
                 var clamped = Math.Max(InspectorMinWidth, Math.Min(InspectorMaxWidth, value));
                 this.RaiseAndSetIfChanged(ref _inspectorWidth, clamped);
+                this.RaisePropertyChanged(nameof(EffectiveInspectorWidth));
             }
         }
 
         public const double InspectorMinWidth = 210.0;
         public const double InspectorMaxWidth = 520.0;
+
+        /// <summary>
+        /// Ширина, которую фактически получает колонка панели: сама
+        /// InspectorWidth, пока панель открыта, и ноль, когда закрыта.
+        /// Через это свойство (а не через IsVisible) панель выезжает и
+        /// уезжает плавно — колонка остаётся в раскладке всё время, а
+        /// анимируется только её ширина. См. Transitions на панели в
+        /// CharactersListView.axaml.
+        /// </summary>
+        public double EffectiveInspectorWidth => IsInspectorOpen ? InspectorWidth : 0.0;
 
         /// <summary>
         /// Выбрать карточку. additive — добавить к уже выбранным (Ctrl или
@@ -2326,6 +2345,33 @@ namespace Writersword.Modules.Characters.ViewModels
                     {
                         var vm = folder.Characters.FirstOrDefault(x => x.Id == cid);
                         if (vm is not null) { vm.AvatarStrip = value; break; }
+                    }
+                }));
+            };
+
+            // Метки: панель оформления пишет их полным снимком (список
+            // целиком), а не по одному изменению за раз — она либо
+            // добавляет метку, либо снимает её, либо правит через тот же
+            // редактор, что и вкладка «Основное», и каждое такое действие —
+            // один шаг истории.
+            item.OnLabelsChanged = (id, labels) =>
+            {
+                var character = _characterService.GetById(id);
+                if (character is null) return;
+                var wasLabels = character.Labels?.ToList() ?? new List<Models.CharacterLabel>();
+                character.Labels = labels;
+                _characterService.Update(character);
+
+                PushCommand(new Actions.ChangeLabelsCommand(id, character.Name, wasLabels, labels, (cid, value) =>
+                {
+                    var ch = _characterService.GetById(cid);
+                    if (ch is null) return;
+                    ch.Labels = value;
+                    _characterService.Update(ch);
+                    foreach (var folder in Folders)
+                    {
+                        var vm = folder.Characters.FirstOrDefault(x => x.Id == cid);
+                        if (vm is not null) { vm.SetLabels(value.ToList()); break; }
                     }
                 }));
             };

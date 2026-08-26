@@ -640,6 +640,22 @@ namespace Writersword.Modules.TextEditor.Document
             int last = Math.Max(0, _pages.Count - 1);
             int target = SpreadLeftOf(Math.Clamp(pageIdx, 0, last));
 
+            // Просьба открыть то, что уже открыто, ничего не делает.
+            //
+            // Такая просьба приходит чаще, чем кажется: в развороте страницы идут
+            // парами, и вторая страница пары — это тот же разворот, что и первая.
+            // Раньше здесь всё равно шёл полный перерисов книги с пересбором кадра, и
+            // на экране это выглядело как вспышка на месте перехода, которого не было.
+            // Место в книге при этом сообщается наружу: лента могла показать номер,
+            // которого книга не приняла, и вернуть её к правде больше некому.
+            if (target == _spreadLeftPage && _singleSlideDir == 0 && _spreadFlipDir == 0)
+            {
+                _spreadLabelPage = _spreadLeftPage;
+                _spreadLabelCount = _pages.Count;
+                SpreadPageChanged?.Invoke();
+                return;
+            }
+
             if (animate && target != _spreadLeftPage && _singleSlideDir == 0 && _spreadFlipDir == 0)
             {
                 if (SpreadSinglePage)
@@ -1167,6 +1183,36 @@ namespace Writersword.Modules.TextEditor.Document
         /// Сглаживание остаётся только у крайних полос — от них силуэт листа, и
         /// лесенка по наклонному краю видна.
         /// </summary>
+        /// <summary>
+        /// Вуаль изнанки и затемнение одной полосой листа — как фильтр цвета для
+        /// её картинки.
+        ///
+        /// Оба слоя кладутся поверх точек картинки в том же порядке, в каком они
+        /// рисовались прямоугольниками: сначала бумага изнанки, потом свет. null —
+        /// накладывать нечего, полоса рисуется как есть.
+        /// </summary>
+        private static SKColorFilter? LeafTint(SKColor paper, byte back, byte shade)
+        {
+            SKColorFilter? wash = back > 2
+                ? SKColorFilter.CreateBlendMode(paper.WithAlpha(back), SKBlendMode.SrcOver)
+                : null;
+
+            SKColorFilter? light = shade > 2
+                ? SKColorFilter.CreateBlendMode(
+                    new SKColor(0x1B, 0x14, 0x0D, shade), SKBlendMode.SrcOver)
+                : null;
+
+            if (wash is null) return light;
+            if (light is null) return wash;
+
+            // Внешний фильтр применяется после внутреннего: свет ложится на уже
+            // забелённую изнанку, а не наоборот.
+            var composed = SKColorFilter.CreateCompose(light, wash);
+            wash.Dispose();
+            light.Dispose();
+            return composed;
+        }
+
         private void DrawLeafStrips(
             SKCanvas canvas, SKImage? frontImg, SKImage? backImg, int n,
             float widthPt, float heightPt,
@@ -1249,12 +1295,47 @@ namespace Writersword.Modules.TextEditor.Document
                 float sxA = spineOnLeftOfImage ? u0 * sc : (widthPt - u1) * sc;
                 float sxB = spineOnLeftOfImage ? u1 * sc : (widthPt - u0) * sc;
 
-                // Крайние полосы держат силуэт листа — им сглаживание нужно.
-                // Внутренним оно и давало швы.
+                // Сглаживание нужно всем полосам, а не только крайним.
+                //
+                // Верхняя и нижняя кромки листа складываются из отрезков между
+                // соседними полосами, и без сглаживания вся кромка идёт лесенкой:
+                // изгиб гнёт лист по всей высоте, а каждая полоса обрезается по
+                // целым точкам экрана. Лесенка тем заметнее, чем круче изгиб.
+                //
+                // Раньше сглаживание держали только на крайних полосах, потому что
+                // на внутренних оно давало швы. Швы шли не от него: картинка
+                // рисовалась сглаженной, а тень ложилась поверх неё отдельным
+                // жёстким прямоугольником, и на их стыке оставался незатенённый
+                // столбец. Теперь тень едет фильтром внутри того же вызова, край у
+                // полосы один, и держать её жёсткой больше незачем.
+                //
+                // Фон сквозь стык не просвечивает: полосы перекрываются на grow, и
+                // сглаженный край новой полосы ложится не на фон, а на непрозрачную
+                // соседку, нарисованную до неё.
                 bool edge = i == 0 || j == n;
-                imgPaint.IsAntialias = edge;
+                imgPaint.IsAntialias = true;
 
-                var dst = new SKRect(0f, 0f, band + grow, heightPt);
+                // Перекрытие прячет шов с соседней полосой. Крайней полосе оно ни к
+                // чему: соседа с этой стороны у неё нет, а натянутая на пустое место
+                // текстура делает край листа шире, чем он есть, и слегка растягивает
+                // на нём буквы.
+                //
+                // С какой стороны идёт перекрытие, решает не номер полосы, а то, где
+                // у снимка корешок: при зеркальном порядке углов ширина
+                // прямоугольника растёт в сторону меньших номеров, а не больших.
+                bool overHasNeighbour = spineOnLeftOfImage ? j < n : i > 0;
+                float over = overHasNeighbour ? grow : 0f;
+
+                var dst = new SKRect(0f, 0f, band + over, heightPt);
+
+                // Изнанка без своего снимка: бумага непрозрачна, лицевая сторона
+                // сквозь неё едва проступает — как настоящий лист на просвет.
+                byte back = washPaper
+                    ? (byte)Math.Clamp(-facing * 236f * leafAlpha, 0f, 236f)
+                    : (byte)0;
+
+                // Свет: чем ближе бумага к ребру, тем меньше его на неё попадает.
+                byte shade = (byte)Math.Clamp((1f - MathF.Abs(facing)) * 104f * leafAlpha, 0f, 104f);
 
                 canvas.Save();
                 canvas.SetMatrix(MultiplyMatrix(baseMatrix, m));
@@ -1265,37 +1346,57 @@ namespace Writersword.Modules.TextEditor.Document
                     var src = new SKRect(
                         Math.Clamp(sxA, 0f, imgW),
                         0f,
-                        Math.Clamp(sxB + grow * sc, 0f, imgW),
+                        Math.Clamp(sxB + over * sc, 0f, imgW),
                         img.Height);
 
                     if (src.Width > 0.5f)
+                    {
+                        // Вуаль и затемнение накладываются на саму картинку, а не
+                        // рисуются поверх неё отдельными прямоугольниками.
+                        //
+                        // Отдельными они и давали разрыв. У крайних полос картинка
+                        // рисуется со сглаживанием — иначе силуэт листа выходит
+                        // ступенькой, — а прямоугольник тени клался жёстким краем.
+                        // Сглаженный край занимает пиксель наполовину, жёсткий берёт
+                        // его целиком или не берёт вовсе, и на их стыке оставался
+                        // столбец, куда бумага легла, а тень нет. Соседние столбцы
+                        // затемнены, этот нет — на светлой бумаге он читается как
+                        // разрыв листа, и виден тем лучше, чем ближе к краю.
+                        //
+                        // Фильтр цвета правит уже отобранные точки, и покрытие
+                        // накладывается на результат один раз. Разойтись нечему.
+                        var tint = LeafTint(paper, back, shade);
+                        imgPaint.ColorFilter = tint;
+
                         canvas.DrawImage(img, src, dst, sampling, imgPaint);
+
+                        imgPaint.ColorFilter = null;
+                        tint?.Dispose();
+                    }
                 }
                 else
                 {
                     // Снимок не получился — бумага всё равно должна лететь, иначе
                     // переворот выглядит как исчезновение страницы.
+                    //
+                    // Здесь вуаль и тень остаются отдельными прямоугольниками:
+                    // накладывать их не на что, а рисуются они по тому же
+                    // прямоугольнику и с тем же сглаживанием, что и заливка.
                     canvas.DrawRect(dst, PagePaint());
-                }
 
-                if (washPaper)
-                {
-                    // Изнанка без своего снимка: бумага непрозрачна, лицевая сторона
-                    // сквозь неё едва проступает — как настоящий лист на просвет.
-                    byte back = (byte)Math.Clamp(-facing * 236f * leafAlpha, 0f, 236f);
                     if (back > 2)
                     {
+                        backPaint.IsAntialias = edge;
                         backPaint.Color = paper.WithAlpha(back);
                         canvas.DrawRect(dst, backPaint);
                     }
-                }
 
-                // Свет: чем ближе бумага к ребру, тем меньше его на неё попадает.
-                byte shade = (byte)Math.Clamp((1f - MathF.Abs(facing)) * 104f * leafAlpha, 0f, 104f);
-                if (shade > 2)
-                {
-                    shadePaint.Color = new SKColor(0x1B, 0x14, 0x0D, shade);
-                    canvas.DrawRect(dst, shadePaint);
+                    if (shade > 2)
+                    {
+                        shadePaint.IsAntialias = edge;
+                        shadePaint.Color = new SKColor(0x1B, 0x14, 0x0D, shade);
+                        canvas.DrawRect(dst, shadePaint);
+                    }
                 }
 
                 canvas.Restore();

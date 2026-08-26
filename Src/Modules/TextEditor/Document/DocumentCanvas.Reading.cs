@@ -156,7 +156,17 @@ namespace Writersword.Modules.TextEditor.Document
             // Градиент берётся тот же самый, что и у всякого другого цвета в программе:
             // своих видов заливки у поля нет, оно принимает выбранное как есть.
             var rect = new SKRect(0, 0, widthPt, heightPt);
-            using (var shader = SKTextRenderer.BuildGradientShader(t.BackdropColor, rect))
+
+            // Строится он по КВАДРАТУ, а не по всему полю. Направление в коде градиента
+            // задано в долях прямоугольника: на широком поле те же доли дают совсем
+            // другой наклон, и заливка ложится не так, как показывал образец в кружке.
+            // Квадрат сохраняет угол, а поле просто вырезает из него свою часть.
+            float side = MathF.Max(widthPt, heightPt);
+            var gradientRect = new SKRect(
+                (widthPt - side) / 2f, (heightPt - side) / 2f,
+                (widthPt + side) / 2f, (heightPt + side) / 2f);
+
+            using (var shader = SKTextRenderer.BuildGradientShader(t.BackdropColor, gradientRect))
             {
                 if (shader is not null)
                 {
@@ -187,13 +197,16 @@ namespace Writersword.Modules.TextEditor.Document
 
             try
             {
-                if (!File.Exists(path)) return null;
+                // Адрес разбирается хранилищем вида: он может вести в архив
+                // проекта, в данные программы или, у старых видов, прямо на диск.
+                var data = Models.Settings.ReadingAssets.Read(path);
+                if (data is null || data.Length == 0) return null;
 
                 // Раскодировать сразу в пиксели, а не оставлять ленивый образ:
                 // страницы книги снимаются в растровую поверхность, и образ,
                 // привязавшийся к ускорителю при первой отрисовке в окно, туда
                 // молча не попадает.
-                using var bmp = SKBitmap.Decode(path);
+                using var bmp = SKBitmap.Decode(data);
                 if (bmp is null) return null;
                 _readingBackdropImage = SKImage.FromBitmap(bmp);
                 _readingBackdropImagePath = path;
@@ -418,11 +431,15 @@ namespace Writersword.Modules.TextEditor.Document
 
             try
             {
-                if (!File.Exists(path)) return null;
+                // Картинка берётся из хранилища вида, а не с диска напрямую: в
+                // архиве проекта, в данных программы или по прежнему пути к
+                // файлу — разбирается адрес там же, где он и заводится.
+                var data = Models.Settings.ReadingAssets.Read(path);
+                if (data is null || data.Length == 0) return null;
 
                 // Раскодировать сразу в пиксели — по той же причине, что и у картинки
                 // поля: ленивый образ не рисуется в растровый снимок страницы.
-                using var bmp = SKBitmap.Decode(path);
+                using var bmp = SKBitmap.Decode(data);
                 if (bmp is null) return null;
                 _readingPaperImage = SKImage.FromBitmap(bmp);
                 _readingPaperImagePath = path;
@@ -690,6 +707,17 @@ namespace Writersword.Modules.TextEditor.Document
         private float _readingPanXPt;
         private float _readingPanYPt;
 
+        // Куда книгу зовёт указатель. Сама она идёт туда не мгновенно, а догоняя:
+        // события мыши приходят неровно, и книга, повторяющая их один в один, дёргается
+        // даже при спокойном движении руки. Тот же приём, что и у листа под рукой.
+        private float _readingPanAimXPt;
+        private float _readingPanAimYPt;
+
+        private DispatcherTimer? _readingPanTimer;
+
+        // Какую долю оставшегося пути книга проходит за такт. Меньше — мягче и дольше.
+        private const float ReadingPanFollow = 0.22f;
+
         // Мёртвая зона по центру: пока указатель в ней, книга стоит. Без неё она
         // ползла бы от любого движения мыши над текстом.
         private const double ReadingPanDeadZone = 0.18;
@@ -739,8 +767,56 @@ namespace Writersword.Modules.TextEditor.Document
         /// <summary>Ставит книгу по центру. Зовётся при смене приближения и подачи.</summary>
         private void ResetReadingPan()
         {
+            StopReadingPanTimer();
             _readingPanXPt = 0f;
             _readingPanYPt = 0f;
+            _readingPanAimXPt = 0f;
+            _readingPanAimYPt = 0f;
+        }
+
+        private void StartReadingPanTimer()
+        {
+            if (_readingPanTimer is null)
+            {
+                _readingPanTimer = new DispatcherTimer(DispatcherPriority.Render)
+                {
+                    Interval = TimeSpan.FromMilliseconds(1000.0 / 60.0)
+                };
+                _readingPanTimer.Tick += OnReadingPanTick;
+            }
+            if (!_readingPanTimer.IsEnabled) _readingPanTimer.Start();
+        }
+
+        private void StopReadingPanTimer()
+        {
+            if (_readingPanTimer is { IsEnabled: true }) _readingPanTimer.Stop();
+        }
+
+        /// <summary>
+        /// Такт подвода: книга проходит долю оставшегося до цели пути. Шаг
+        /// пропорционален расстоянию, поэтому книга трогается мягко и мягко встаёт.
+        /// </summary>
+        private void OnReadingPanTick(object? sender, EventArgs e)
+        {
+            if (!SpreadMode) { StopReadingPanTimer(); return; }
+
+            float dx = _readingPanAimXPt - _readingPanXPt;
+            float dy = _readingPanAimYPt - _readingPanYPt;
+
+            if (MathF.Abs(dx) < 0.2f && MathF.Abs(dy) < 0.2f)
+            {
+                bool moved = dx != 0f || dy != 0f;
+                _readingPanXPt = _readingPanAimXPt;
+                _readingPanYPt = _readingPanAimYPt;
+                StopReadingPanTimer();
+                if (moved) { ClampReadingPan(); InvalidateFull(); }
+                return;
+            }
+
+            _readingPanXPt += dx * ReadingPanFollow;
+            _readingPanYPt += dy * ReadingPanFollow;
+            ClampReadingPan();
+            InvalidateFull();
         }
 
         /// <summary>
@@ -770,15 +846,15 @@ namespace Writersword.Modules.TextEditor.Document
             float targetX = freeX > 0f ? (float)(-freeX * AxisAim(pointerPx.X / w)) : 0f;
             float targetY = freeY > 0f ? (float)(-freeY * AxisAim(pointerPx.Y / h)) : 0f;
 
-            // Малые шевеления не перерисовывают книгу: полный кадр чтения — это весь
-            // текст разворота, и гнать его от дрожания руки нельзя.
-            if (Math.Abs(targetX - _readingPanXPt) < 0.75f
-                && Math.Abs(targetY - _readingPanYPt) < 0.75f) return;
+            // Малые шевеления цель не двигают: полный кадр чтения — это весь текст
+            // разворота, и гнать его от дрожания руки нельзя.
+            if (Math.Abs(targetX - _readingPanAimXPt) < 0.75f
+                && Math.Abs(targetY - _readingPanAimYPt) < 0.75f) return;
 
-            _readingPanXPt = targetX;
-            _readingPanYPt = targetY;
-            ClampReadingPan();
-            InvalidateFull();
+            // Указатель задаёт только цель. Саму книгу подтягивает такт таймера.
+            _readingPanAimXPt = targetX;
+            _readingPanAimYPt = targetY;
+            StartReadingPanTimer();
         }
 
         /// <summary>
@@ -990,22 +1066,21 @@ namespace Writersword.Modules.TextEditor.Document
         public Action? ReadingFullscreenTogglePressed { get; set; }
 
         /// <summary>
-        /// Указатель ушёл с канваса. Подвод книги при этом обязан остановиться:
-        /// иначе она продолжала бы ехать, пока курсор стоит где-нибудь в ленте.
+        /// Указатель ушёл с канваса — на ленту сверху, за нижний край, куда угодно.
+        ///
+        /// Книга при этом остаётся там, куда её довели. Раньше она возвращалась на
+        /// середину, и выходило нелепо: читатель ведёт курсор к верхнему краю книги,
+        /// доводит до самого верха, курсор переходит на ленту — и книга рывком
+        /// прыгает обратно в центр, показав ровно не то, к чему её вели. То же самое
+        /// у нижнего края. Указатель у края потому там и оказался, что человек
+        /// смотрит на край: держать край — единственное разумное поведение.
+        ///
+        /// Ведение возобновляется само, как только курсор возвращается на книгу.
         /// </summary>
         protected override void OnPointerExited(PointerEventArgs e)
         {
             base.OnPointerExited(e);
-
             ClearSpreadCornerHint();
-
-            // Указатель ушёл — книга возвращается на середину. Оставлять её сдвинутой
-            // некуда: вернуть край без курсора над книгой уже нечем.
-            if (SpreadMode && (_readingPanXPt != 0f || _readingPanYPt != 0f))
-            {
-                ResetReadingPan();
-                InvalidateFull();
-            }
         }
 
         /// <summary>
@@ -1014,6 +1089,7 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private void ReleaseReadingResources()
         {
+            StopReadingPanTimer();
             ResetReadingPan();
             _spreadCornerHint = 0f;
             _spreadCornerCursor = false;

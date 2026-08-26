@@ -316,4 +316,30 @@
 		</VisualStudio>
 	</ProjectExtensions>
 
+	<!-- ========================================
+       СПИСОК ВСТРОЕННЫХ МОДУЛЕЙ
+       При публикации в один файл сборки модулей лежат внутри бандла,
+       на диске их нет, и перечислить содержимое бандла нельзя.
+       Имена берутся из ProjectReference на этапе сборки и вшиваются
+       ресурсом, откуда их читает App.ReadBuiltInModuleNames.
+       ======================================== -->
+	<Target Name="WriterswordGenerateModuleList" BeforeTargets="PrepareForBuild">
+		<ItemGroup>
+			<WriterswordModuleProject Include="@(ProjectReference)"
+				Condition="$([System.String]::Copy('%(Identity)').Contains('Src\Modules\'))" />
+		</ItemGroup>
+		<PropertyGroup>
+			<WriterswordModuleListFile>$(IntermediateOutputPath)BuiltInModules.txt</WriterswordModuleListFile>
+		</PropertyGroup>
+		<WriteLinesToFile File="$(WriterswordModuleListFile)"
+			Lines="@(WriterswordModuleProject->'%(Filename)')"
+			Overwrite="true" WriteOnlyWhenDifferent="true" />
+		<ItemGroup>
+			<EmbeddedResource Include="$(WriterswordModuleListFile)"
+				LogicalName="Writersword.BuiltInModules.txt" />
+		</ItemGroup>
+		<Message Importance="high"
+			Text="Built-in modules: @(WriterswordModuleProject->'%(Filename)', ', ')" />
+	</Target>
+
 </Project>

@@ -1,12 +1,15 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Characters.ViewModels.Inspector"
+             xmlns:quick="using:Writersword.Modules.Characters.ViewModels.Inspector"
              xmlns:controls="using:Writersword.Modules.Characters.Controls"
              xmlns:models="using:Writersword.Modules.Characters.Models"
              xmlns:colorControls="using:Writersword.Styles.UserControls"
              xmlns:conv="using:Writersword.Modules.Characters.Converters"
+             xmlns:icv="using:Writersword.Infrastructure.Converters"
              xmlns:behaviours="using:Writersword.Infrastructure.Behaviours"
              x:Class="Writersword.Modules.Characters.Views.Inspector.CharacterInspectorPanel"
+             x:Name="PanelRoot"
              x:DataType="vm:CharacterInspectorViewModel">
 
 	<!-- Оформление выбранных карточек. Стоит рядом со списком, а не поверх
@@ -37,6 +40,9 @@
 			<Setter Property="Background" Value="Transparent"/>
 			<Setter Property="BorderThickness" Value="0"/>
 			<Setter Property="Padding" Value="12,9"/>
+			<Setter Property="Margin" Value="4,3"/>
+			<Setter Property="CornerRadius" Value="6"/>
+			<Setter Property="Cursor" Value="Hand"/>
 			<Setter Property="FontSize" Value="11"/>
 			<Setter Property="FontWeight" Value="SemiBold"/>
 			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
@@ -46,6 +52,7 @@
 		</Style>
 		<Style Selector="Button.sect /template/ ContentPresenter">
 			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="CornerRadius" Value="6"/>
 		</Style>
 		<Style Selector="Button.sect:pointerover /template/ ContentPresenter">
 			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
@@ -61,11 +68,24 @@
 			<Setter Property="VerticalAlignment" Value="Center"/>
 		</Style>
 
-		<!-- Переключатель вида аватара — та же дорожка, что у областей папок. -->
+		<!-- Переключатель вида аватара — та же дорожка, что у областей папок.
+		     Плашка под текущим выбором — SegIndicator — одна на двоих: она
+		     скользит между «Кружок» и «Полоска», а не перекрашивается сама
+		     кнопка, отсюда и плавность (п.6). Кнопки поверх остаются
+		     прозрачными всегда — цвет даёт только плашка под ними. -->
 		<Style Selector="Border.segTrack">
 			<Setter Property="CornerRadius" Value="999"/>
 			<Setter Property="Padding" Value="2"/>
 			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
+		</Style>
+		<Style Selector="Border.segIndicator">
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<ThicknessTransition Property="Margin" Duration="0:0:0.22" Easing="CubicEaseInOut"/>
+				</Transitions>
+			</Setter>
 		</Style>
 		<Style Selector="Button.seg">
 			<Setter Property="Padding" Value="10,4"/>
@@ -77,26 +97,21 @@
 			<Setter Property="HorizontalAlignment" Value="Stretch"/>
 			<Setter Property="HorizontalContentAlignment" Value="Center"/>
 			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="ZIndex" Value="1"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<BrushTransition Property="Foreground" Duration="0:0:0.15"/>
+				</Transitions>
+			</Setter>
 		</Style>
 		<Style Selector="Button.seg /template/ ContentPresenter">
 			<Setter Property="Background" Value="Transparent"/>
 			<Setter Property="BorderThickness" Value="0"/>
 			<Setter Property="CornerRadius" Value="999"/>
-			<Setter Property="Transitions">
-				<Transitions>
-					<BrushTransition Property="Background" Duration="0:0:0.15"/>
-				</Transitions>
-			</Setter>
-		</Style>
-		<Style Selector="Button.seg:not(.active):pointerover /template/ ContentPresenter">
-			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
 		</Style>
 		<Style Selector="Button.seg.active">
 			<Setter Property="Foreground" Value="White"/>
 			<Setter Property="FontWeight" Value="SemiBold"/>
-		</Style>
-		<Style Selector="Button.seg.active /template/ ContentPresenter">
-			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
 		<!-- Кнопка ступени важности. Скопирована из стилей списка один в
@@ -117,10 +132,254 @@
 			<Setter Property="Background" Value="#33FFFFFF"/>
 		</Style>
 
+		<!-- Быстрая лента аватарок (внутри флаута) — сетка (WrapPanel), как в
+		     стикерпикере Telegram, а не одна строка: план на одну строку не
+		     годился, места под всю папку не хватало. Подписи под плитками нет —
+		     это шум для картинок, которые и так узнаются по превью; имя
+		     остаётся в подсказке. Плитка — тот же приём, что в полном окне
+		     выбора (AvatarTileTemplate, CharacterAvatarPickerOverlay): Panel с
+		     лицевой кнопкой (щелчок ставит аватарку) и маленькой кнопкой-кадром
+		     поверх, видной только при наведении. -->
+		<Style Selector="Panel.qTile">
+			<Setter Property="Width" Value="52"/>
+			<Setter Property="Height" Value="52"/>
+			<Setter Property="Margin" Value="0,0,8,8"/>
+		</Style>
+		<Style Selector="Button.qTileFace">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="HorizontalAlignment" Value="Stretch"/>
+			<Setter Property="VerticalAlignment" Value="Stretch"/>
+			<Setter Property="CornerRadius" Value="26"/>
+		</Style>
+		<Style Selector="Button.qTileFace /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="CornerRadius" Value="26"/>
+		</Style>
+		<Style Selector="Border.qTileRing">
+			<Setter Property="Opacity" Value="0"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Panel.qTile:pointerover Border.qTileRing">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<Style Selector="Button.qTileCrop">
+			<Setter Property="Width" Value="18"/>
+			<Setter Property="Height" Value="18"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="CornerRadius" Value="9"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="Opacity" Value="0"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Panel.qTile:pointerover Button.qTileCrop">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<Style Selector="Button.qTileCrop /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="9"/>
+		</Style>
+		<Style Selector="Button.qTileCrop:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Кольцо-подсказка вокруг самой аватарки: без него круглая
+		     картинка ничем не намекала бы, что по ней можно щёлкнуть и
+		     открыть быструю ленту (п.3 по духу — узнаваемость кликабельного). -->
+		<Style Selector="Button#AvatarFlyoutTrigger:pointerover Border#AvatarHoverRing">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button#AvatarFlyoutTrigger:flyout-open Border#AvatarHoverRing">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<!-- Чип папки в флауте ленты: невысокая пилюля по ширине текста (с
+		     потолком), а не квадратный блок фиксированного размера — прежний
+		     44×30 выглядел крупнее, чем сама надпись внутри него. Имя всё
+		     равно обрезается многоточием при необходимости, полное — в
+		     подсказке. -->
+		<Style Selector="Button.quickFolderTab">
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="MaxWidth" Value="88"/>
+			<Setter Property="Padding" Value="8,3"/>
+			<Setter Property="Margin" Value="0,0,6,0"/>
+			<Setter Property="CornerRadius" Value="10"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="FontSize" Value="10"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.quickFolderTab /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgBaseBrush}"/>
+			<Setter Property="BorderBrush" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="10"/>
+		</Style>
+		<Style Selector="Button.quickFolderTab:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="Button.quickFolderTab.active">
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="FontWeight" Value="SemiBold"/>
+		</Style>
+		<Style Selector="Button.quickFolderTab.active /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
 		<Style Selector="TextBlock.rowLabel">
 			<Setter Property="FontSize" Value="12"/>
 			<Setter Property="VerticalAlignment" Value="Center"/>
 			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+
+		<!-- Компактный ползунок толщины рамки: свой шаблон вместо стандартного
+		     Fluent-слайдера, у которого только сама дорожка отъедала под сорок
+		     точек высоты вместе с запасом под касание пальцем (п.7). Здесь
+		     нужна точность мышью, а не палец, — дорожка в три точки и
+		     маленький кружок вместо этого вполне читаются и не разбухают
+		     секцию. Тиков не рисуем: прилипание к целым значениям (IsSnapToTick
+		     Enabled) не завязано на отрисованный TickBar и работает без него. -->
+		<Style Selector="Slider.compact">
+			<Setter Property="Height" Value="20"/>
+			<Setter Property="MinHeight" Value="20"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Template">
+				<ControlTemplate>
+					<Grid VerticalAlignment="Center">
+						<!-- Дорожка нарисована здесь статично, во всю ширину, и лежит
+						     первым слоем — так делают все остальные компактные слайдеры
+						     в программе (ReadingRibbonView, ColorEditorOverlay,
+						     RibbonImageTab): кнопки Track рисуют только заполненную
+						     часть и прозрачны там, где им нечего закрашивать, а не
+						     наоборот — иначе на границах (минимум, максимум) дорожке
+						     нечем становиться видимой. -->
+						<Border Height="3" CornerRadius="1.5"
+						        VerticalAlignment="Center"
+						        Background="{DynamicResource BgBaseBrush}"/>
+						<Track x:Name="PART_Track"
+						       Minimum="{TemplateBinding Minimum}"
+						       Maximum="{TemplateBinding Maximum}"
+						       Value="{TemplateBinding Value, Mode=TwoWay}"
+						       Orientation="Horizontal">
+							<Track.DecreaseButton>
+								<RepeatButton Classes="sliderFill" Height="3" Focusable="False"/>
+							</Track.DecreaseButton>
+							<Track.IncreaseButton>
+								<RepeatButton Focusable="False" Height="3">
+									<RepeatButton.Template>
+										<ControlTemplate>
+											<Border Background="Transparent"/>
+										</ControlTemplate>
+									</RepeatButton.Template>
+								</RepeatButton>
+							</Track.IncreaseButton>
+							<Thumb Classes="sliderThumb"/>
+						</Track>
+					</Grid>
+				</ControlTemplate>
+			</Setter>
+		</Style>
+		<Style Selector="Slider.compact RepeatButton.sliderFill">
+			<Setter Property="Template">
+				<ControlTemplate>
+					<Border Height="3" CornerRadius="1.5"
+					        VerticalAlignment="Center"
+					        Background="{DynamicResource AccentDefaultBrush}"/>
+				</ControlTemplate>
+			</Setter>
+		</Style>
+		<Style Selector="Slider.compact Thumb">
+			<Setter Property="Width" Value="13"/>
+			<Setter Property="Height" Value="13"/>
+			<Setter Property="Template">
+				<ControlTemplate>
+					<Border CornerRadius="999"
+					        Background="{DynamicResource AccentDefaultBrush}"
+					        BorderBrush="{DynamicResource BgSurfaceBrush}"
+					        BorderThickness="2"/>
+				</ControlTemplate>
+			</Setter>
+		</Style>
+		<Style Selector="Slider.compact Thumb:pointerover /template/ Border">
+			<Setter Property="Background" Value="{DynamicResource AccentHoverBrush}"/>
+		</Style>
+
+		<!-- Крестик убрать метку у чипа: отдельная маленькая кнопка, а не тот
+		     же клик, что открывает редактор, — иначе «поправить» и «убрать»
+		     было бы одним и тем же жестом. -->
+		<Style Selector="Button.labelRemove">
+			<Setter Property="Width" Value="14"/>
+			<Setter Property="Height" Value="14"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="FontSize" Value="8"/>
+			<Setter Property="CornerRadius" Value="7"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.labelRemove /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="CornerRadius" Value="7"/>
+		</Style>
+		<Style Selector="Button.labelRemove:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="#E6C0392B"/>
+		</Style>
+		<Style Selector="Button.labelRemove:pointerover">
+			<Setter Property="Foreground" Value="White"/>
+		</Style>
+
+		<!-- Кнопка правки чипа метки: сама иконка+имя, прозрачная. -->
+		<Style Selector="Button.labelEdit">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+		</Style>
+		<Style Selector="Button.labelEdit /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+
+		<!-- Круглая кнопка-иконка «закрыть панель» и «добавить метку»: та же
+		     призрачная подложка, что и у ghost-кнопок в целом по программе
+		     (Styles/Controls/Button.axaml), только круглая и без текста. -->
+		<Style Selector="Button.roundGhost">
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="CornerRadius" Value="999"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+		</Style>
+		<Style Selector="Button.roundGhost /template/ ContentPresenter">
+			<Setter Property="CornerRadius" Value="999"/>
 		</Style>
 	</UserControl.Styles>
 
@@ -137,46 +396,58 @@
 
 			<!-- Шапка: имя правится прямо здесь, чтобы не гоняться за
 			     подписью на самой карточке. При нескольких выбранных поле
-			     гаснет — общего имени у них нет. -->
+			     гаснет — общего имени у них нет.
+
+			     Поле имени больше не переопределяет фон/рамку локально —
+			     оно берёт их из общего стиля TextBox (Styles/Controls/
+			     TextBox.axaml) и получает вместе с ним подсветку рамки на
+			     наведении и на фокусе, которой раньше здесь не было (п.1).
+
+			     Подпись «один персонаж» показывается, только когда выбрано
+			     несколько карточек и подпись действительно что-то сообщает
+			     («выбрано карточек: N») — на одной карточке она была чистым
+			     шумом (п.2).
+
+			     Крестик закрытия — круглая иконка-кнопка в углу, а не
+			     текстовый «✕» вплотную к полю: раньше он читался как кнопка
+			     очистки самого поля, а не как закрытие панели (п.9). -->
 			<Grid Grid.Row="0"
 			      ColumnDefinitions="*,Auto"
 			      Margin="12,10"
 			      IsVisible="{Binding HasSelection}">
-				<StackPanel Grid.Column="0" Spacing="7">
-				<TextBox x:Name="NameBox"
-				         Text="{Binding Name, Mode=TwoWay}"
-				         IsEnabled="{Binding IsSingle}"
-				         PlaceholderText="Несколько карточек"
-				         FontSize="14" FontWeight="Medium"
-				         Padding="8,6"
-				         CornerRadius="4"
-				         Background="{DynamicResource BgPanelBrush}"
-				         BorderThickness="1"
-				         BorderBrush="Transparent"
-				         Foreground="{DynamicResource TextPrimaryBrush}"
-				         LostFocus="OnNameLostFocus"
-				         KeyDown="OnNameKeyDown"/>
-				<TextBlock Text="{Binding SelectionCaption}"
-				           FontSize="10.5"
-				           Foreground="{DynamicResource TextMutedBrush}"/>
+				<StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center">
+					<TextBox x:Name="NameBox"
+					         Text="{Binding Name, Mode=TwoWay}"
+					         IsEnabled="{Binding IsSingle}"
+					         PlaceholderText="Несколько карточек"
+					         FontSize="14" FontWeight="Medium"
+					         Padding="8,6"
+					         LostFocus="OnNameLostFocus"
+					         KeyDown="OnNameKeyDown"/>
+					<TextBlock Text="{Binding SelectionCaption}"
+					           FontSize="10.5"
+					           IsVisible="{Binding IsMultiple}"
+					           Foreground="{DynamicResource TextMutedBrush}"/>
 				</StackPanel>
 
 				<!-- Единственный способ закрыть панель, кроме повторного щелчка
 				     по той же карточке. Выключателя у края списка нет: пока
 				     панель закрыта, там не остаётся ни кнопки, ни поля. -->
 				<Button Grid.Column="1"
-				        Content="✕"
+				        Classes="ghost roundGhost"
 				        Command="{Binding CloseCommand}"
-				        Background="Transparent"
-				        BorderThickness="0"
-				        Foreground="{DynamicResource TextSecondaryBrush}"
-				        FontSize="13"
-				        Padding="7,3"
-				        MinWidth="0" MinHeight="0"
+				        Width="26" Height="26"
 				        VerticalAlignment="Top"
-				        Margin="6,0,0,0"
+				        Margin="8,1,0,0"
 				        behaviours:TooltipBehavior.Tip="Закрыть панель"
-				        behaviours:TooltipBehavior.Description="Снимает выбор с карточек. Правки уже записаны — закрытие ничего не отменяет"/>
+				        behaviours:TooltipBehavior.Description="Снимает выбор с карточек. Правки уже записаны — закрытие ничего не отменяет">
+					<Path Data="M2,2 L10,10 M10,2 L2,10"
+					      Stroke="{DynamicResource TextSecondaryBrush}"
+					      StrokeThickness="1.6"
+					      StrokeLineCap="Round"
+					      Width="10" Height="10"
+					      Stretch="Uniform"/>
+				</Button>
 			</Grid>
 
 			<ScrollViewer Grid.Row="1"
@@ -196,29 +467,229 @@
 								</StackPanel>
 							</Button>
 
-							<StackPanel x:Name="AvatarBody" Margin="12,0,12,12" Spacing="10">
+							<StackPanel x:Name="AvatarBody" Margin="12,4,12,12" Spacing="10">
 								<Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-									<Border Grid.Column="0"
-									        Width="56" Height="56" CornerRadius="28"
-									        ClipToBounds="True"
-									        Background="{DynamicResource BgPanelBrush}">
+
+									<!-- Сама аватарка теперь и есть кнопка быстрой
+									     ленты: щелчок открывает всплывающее
+									     окошко (Flyout), а не разворачивает ленту
+									     прямо в теле панели. Раньше лента стояла
+									     тут постоянно, в узкой полосе высотой 52
+									     точки — картинкам 44×44 в ней едва
+									     хватало места, и собственная горизонтальная
+									     прокрутка резалась о нижний край, из-за
+									     чего казалось, что аватарки обрезаются
+									     полосой прокрутки (п.4). Окошко ничем не
+									     ограничено по высоте так жёстко и ведёт
+									     себя как попап цветового кружка — то же
+									     самое человек уже видел там. -->
+									<Button x:Name="AvatarFlyoutTrigger"
+									        Grid.Column="0"
+									        Classes="ghost roundGhost"
+									        Width="56" Height="56"
+									        behaviours:TooltipBehavior.Tip="Быстрый выбор аватарки"
+									        behaviours:TooltipBehavior.Description="Недавние, аватарки проекта и папки — щелчком, тут же. Загрузка файла и обрезка остаются в окне «Выбрать аватарку»">
 										<Panel>
-											<TextBlock Text="{Binding FallbackIcon}"
-											           FontSize="24"
-											           Foreground="{DynamicResource TextMutedBrush}"
-											           HorizontalAlignment="Center"
-											           VerticalAlignment="Center"/>
-											<Image Source="{Binding AvatarBitmap}" Stretch="UniformToFill"/>
+											<!-- Фон кружка — цвет персонажа (тот же, что и «Цвет
+											     карточки» ниже), а не нейтральный серый: так уже
+											     сделано на самой карточке в списке (CharacterEditView.
+											     axaml) — заглушка не бывает бесцветной. -->
+											<Border Width="56" Height="56" CornerRadius="28"
+											        ClipToBounds="True"
+											        Background="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}">
+												<Panel>
+													<!-- Буква-заглушка гаснет, как только есть картинка —
+													     раньше оба элемента лежали друг на друге всегда,
+													     и буква проступала из-под фото. Тот же приём, что
+													     и на самой карточке (CharacterEditView.axaml). -->
+													<TextBlock Text="{Binding FallbackIcon}"
+													           FontSize="24"
+													           Foreground="White"
+													           HorizontalAlignment="Center"
+													           VerticalAlignment="Center"
+													           IsVisible="{Binding AvatarBitmap, Converter={x:Static ObjectConverters.IsNull}}"/>
+													<Image Source="{Binding AvatarBitmap}" Stretch="UniformToFill"
+													       IsVisible="{Binding AvatarBitmap, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+												</Panel>
+											</Border>
+											<Border x:Name="AvatarHoverRing"
+											        Width="56" Height="56" CornerRadius="28"
+											        BorderThickness="2"
+											        BorderBrush="Transparent"
+											        IsHitTestVisible="False"/>
 										</Panel>
-									</Border>
+
+										<Button.Flyout>
+											<Flyout Placement="BottomEdgeAlignedLeft" ShowMode="Standard">
+												<Flyout.FlyoutPresenterTheme>
+													<ControlTheme TargetType="FlyoutPresenter">
+														<Setter Property="Padding" Value="0"/>
+														<Setter Property="Background" Value="Transparent"/>
+														<Setter Property="BorderThickness" Value="0"/>
+														<Setter Property="CornerRadius" Value="8"/>
+													</ControlTheme>
+												</Flyout.FlyoutPresenterTheme>
+
+												<!-- Bindings идут через #PanelRoot.DataContext, а не напрямую:
+												     содержимое Flyout всплывает отдельным попапом, и в этом
+												     проекте для попапов уже заведено явное обращение к
+												     DataContext хозяина через ElementName (см. ColorPickerButton.
+												     axaml) — так это гарантированно работает, а не просто
+												     обычно работает. -->
+												<Border Background="{DynamicResource BgPanelBrush}"
+												        BorderBrush="{DynamicResource BorderDefaultBrush}"
+												        BorderThickness="1" CornerRadius="8" Padding="10">
+													<Border.Resources>
+														<SolidColorBrush x:Key="ScrollBarBackground" Color="Transparent"/>
+														<SolidColorBrush x:Key="ScrollBarBackgroundPointerOver" Color="Transparent"/>
+														<SolidColorBrush x:Key="ScrollBarBackgroundDisabled" Color="Transparent"/>
+														<SolidColorBrush x:Key="ScrollBarTrackFill" Color="Transparent"/>
+														<SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="Transparent"/>
+														<SolidColorBrush x:Key="ScrollBarPanningBackground" Color="Transparent"/>
+													</Border.Resources>
+
+													<Grid Width="320" RowDefinitions="Auto,Auto,Auto">
+
+														<!-- Единый список аватарок: все папки видны сразу и прокручиваются одним
+														     списком, каждая со своим заголовком (как в телеграме) — полоска папок
+														     ниже не фильтрует, а быстро долистывает сюда до нужного раздела.
+														     Картинки по-прежнему грузятся по одной, лениво, при первом показе
+														     плитки. -->
+														<ScrollViewer Grid.Row="0"
+															Margin="0,0,0,8"
+															MaxHeight="360"
+															HorizontalScrollBarVisibility="Disabled"
+															VerticalScrollBarVisibility="Auto"
+															AllowAutoHide="False">
+															<ItemsControl x:Name="QuickSectionsList" ItemsSource="{ReflectionBinding #PanelRoot.DataContext.QuickAvatars.Folders}">
+																<ItemsControl.ItemsPanel>
+																	<ItemsPanelTemplate>
+																		<StackPanel Orientation="Vertical"/>
+																	</ItemsPanelTemplate>
+																</ItemsControl.ItemsPanel>
+																<ItemsControl.ItemTemplate>
+																	<DataTemplate x:DataType="quick:CharacterQuickAvatarFolder">
+																		<StackPanel Orientation="Vertical" Margin="0,0,0,10">
+																			<TextBlock Text="{Binding Title}"
+																				FontSize="11.5"
+																				FontWeight="SemiBold"
+																				Margin="2,0,2,6"
+																				Foreground="{DynamicResource TextMutedBrush}"/>
+																			<ItemsControl ItemsSource="{Binding Tiles}">
+																				<ItemsControl.ItemsPanel>
+																					<ItemsPanelTemplate>
+																						<WrapPanel Orientation="Horizontal"/>
+																					</ItemsPanelTemplate>
+																				</ItemsControl.ItemsPanel>
+																				<ItemsControl.ItemTemplate>
+																					<DataTemplate x:DataType="quick:CharacterQuickAvatarTile">
+																						<Panel Classes="qTile">
+																							<Button Classes="qTileFace"
+																								Command="{Binding PickCommand}"
+																								Click="OnQuickAvatarTileClick"
+																								behaviours:TooltipBehavior.Tip="{Binding ToolTip}"
+																								behaviours:TooltipBehavior.ShowDelay="1200">
+																								<Border Width="52" Height="52" CornerRadius="26"
+																									ClipToBounds="True"
+																									Background="{DynamicResource BgBaseBrush}">
+																									<Image Source="{Binding Thumbnail}" Stretch="UniformToFill"/>
+																								</Border>
+																							</Button>
+
+																							<Border Classes="qTileRing" IsHitTestVisible="False"
+																								Width="52" Height="52" CornerRadius="26"
+																								BorderThickness="2"
+																								BorderBrush="{DynamicResource AccentDefaultBrush}"/>
+
+																							<!-- Кнопка-кадр: отдельно от щелчка по самой картинке, видна
+																							     только при наведении — тот же приём, что и в полном окне
+																							     выбора аватарки (AvatarTileTemplate). -->
+																							<Button Classes="qTileCrop"
+																								HorizontalAlignment="Left" VerticalAlignment="Top"
+																								Command="{Binding CropCommand}"
+																								behaviours:TooltipBehavior.Tip="Кадрировать"
+																								behaviours:TooltipBehavior.Description="Выбрать свой кадр этой картинки для этого персонажа"
+																								behaviours:TooltipBehavior.ShowDelay="300">
+																								<PathIcon Width="9" Height="9" Data="M1 1H9V5H5V9H1Z M19 19H11V15H15V11H19Z"/>
+																							</Button>
+																						</Panel>
+																					</DataTemplate>
+																				</ItemsControl.ItemTemplate>
+																			</ItemsControl>
+																		</StackPanel>
+																	</DataTemplate>
+																</ItemsControl.ItemTemplate>
+															</ItemsControl>
+														</ScrollViewer>
+
+														<TextBlock Grid.Row="0"
+															Text="В папках проекта пока нет аватарок — заведите их через «Управление папками» ниже."
+															FontSize="11.5"
+															TextWrapping="Wrap"
+															IsVisible="{ReflectionBinding #PanelRoot.DataContext.QuickAvatars.HasNoFolders}"
+															Foreground="{DynamicResource TextMutedBrush}"
+															Margin="2,4,2,10"/>
+
+														<!-- Полоска папок — быстрая навигация по единому списку выше: клик
+														     прокручивает список до нужного раздела, а не фильтрует картинки. -->
+														<ScrollViewer Grid.Row="1"
+															Margin="0,0,0,8"
+															HorizontalScrollBarVisibility="Auto"
+															VerticalScrollBarVisibility="Disabled"
+															IsVisible="{ReflectionBinding #PanelRoot.DataContext.QuickAvatars.HasFolders}">
+															<ItemsControl ItemsSource="{ReflectionBinding #PanelRoot.DataContext.QuickAvatars.Folders}">
+																<ItemsControl.ItemsPanel>
+																	<ItemsPanelTemplate>
+																		<StackPanel Orientation="Horizontal"/>
+																	</ItemsPanelTemplate>
+																</ItemsControl.ItemsPanel>
+																<ItemsControl.ItemTemplate>
+																	<DataTemplate x:DataType="quick:CharacterQuickAvatarFolder">
+																		<Button Classes="quickFolderTab"
+																			Click="OnQuickFolderClick"
+																			behaviours:TooltipBehavior.Tip="{Binding Title}">
+																			<TextBlock Text="{Binding Title}"
+																				TextAlignment="Center"
+																				TextWrapping="NoWrap"
+																				TextTrimming="CharacterEllipsis"/>
+																		</Button>
+																	</DataTemplate>
+																</ItemsControl.ItemTemplate>
+															</ItemsControl>
+														</ScrollViewer>
+
+
+														<!-- Тот же переход, что и «Настроить…» у цветового
+														     кружка (ColorPickerButton): акцентная кнопка на всю
+														     ширину внизу попапа, тем же shared-классом Button.
+														     primary, а не своим фоном/цветом на месте. -->
+														<Button Grid.Row="2"
+														        Classes="primary"
+														        Content="Управление папками…"
+														        HorizontalAlignment="Stretch"
+														        HorizontalContentAlignment="Center"
+														        FontSize="11" Padding="8,6"
+														        Margin="0,4,0,0"
+														        Click="OnOpenAvatarManagerFromFlyoutClick"/>
+													</Grid>
+												</Border>
+											</Flyout>
+										</Button.Flyout>
+									</Button>
 
 									<StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+										<!-- Единственная кнопка секции, которая не прозрачная и не
+										     призрачная: главное действие раздела обязано выглядеть
+										     как кнопка, а не как подпись (п.3). Тот же shared-класс
+										     primary, что и у «Управление папками» и «Настроить…» в
+										     цветовом попапе — не свой фон на месте. -->
 										<Button Content="Выбрать аватарку…"
+										        Classes="primary"
 										        Command="{Binding ChooseAvatarCommand}"
 										        IsEnabled="{Binding CanChooseAvatar}"
 										        HorizontalAlignment="Stretch"
 										        HorizontalContentAlignment="Center"
-										        FontSize="11.5" Padding="8,6" CornerRadius="4"
+										        FontSize="11.5" Padding="8,6"
 										        behaviours:TooltipBehavior.Tip="Окно выбора аватарки"
 										        behaviours:TooltipBehavior.Description="Недавние, аватарки проекта, папки, загрузка файла и обрезка — всё там же, где было"/>
 										<TextBlock Text="Или бросьте картинку на карточку или сюда."
@@ -242,7 +713,7 @@
 								</StackPanel>
 							</Button>
 
-							<StackPanel x:Name="PersonBody" Margin="12,0,12,12" Spacing="10">
+							<StackPanel x:Name="PersonBody" Margin="12,4,12,12" Spacing="10">
 								<Grid ColumnDefinitions="*,Auto">
 									<TextBlock Grid.Column="0" Classes="rowLabel" Text="Важность"/>
 									<!-- Кнопка та же, что у ступени важности папки:
@@ -284,7 +755,7 @@
 								</StackPanel>
 							</Button>
 
-							<StackPanel x:Name="ColorBody" Margin="12,0,12,12" Spacing="10">
+							<StackPanel x:Name="ColorBody" Margin="12,4,12,12" Spacing="10">
 								<Grid ColumnDefinitions="*,Auto">
 									<TextBlock Grid.Column="0" Classes="rowLabel" Text="Цвет карточки"/>
 									<colorControls:ColorPickerButton
@@ -325,10 +796,30 @@
 								</StackPanel>
 							</Button>
 
-							<StackPanel x:Name="OutlineBody" Margin="12,0,12,12" Spacing="10">
+							<StackPanel x:Name="OutlineBody" Margin="12,4,12,12" Spacing="10">
 								<TextBlock Classes="rowLabel" Text="Вид аватара"/>
 								<Border Classes="segTrack">
-									<Grid ColumnDefinitions="*,*" ColumnSpacing="2">
+									<Grid x:Name="SegTrack" ColumnDefinitions="*,*">
+										<!-- Скользящая плашка: лежит первой, поэтому кнопки
+										     поверх неё рисуются позже и остаются кликабельными
+										     (ZIndex на кнопках — на всякий случай, а не по
+										     необходимости). Ширина — ровно половина дорожки,
+										     отступ слева — 0 либо половина дорожки, оба через
+										     Bounds.Width самой дорожки, поэтому плашка попадает
+										     в размер при любой ширине панели, а не только при
+										     269 точках, на которые её пришлось бы подгонять
+										     руками. -->
+										<Border Classes="segIndicator"
+										        Grid.Column="0" Grid.ColumnSpan="2"
+										        HorizontalAlignment="Left"
+										        Width="{Binding #SegTrack.Bounds.Width, Converter={x:Static conv:HalfWidthConverter.Instance}}">
+											<Border.Margin>
+												<MultiBinding Converter="{x:Static conv:SegmentIndicatorMarginConverter.Instance}">
+													<Binding Path="Bounds.Width" ElementName="SegTrack"/>
+													<Binding Path="AvatarStrip"/>
+												</MultiBinding>
+											</Border.Margin>
+										</Border>
 										<Button Grid.Column="0" Classes="seg"
 										        Classes.active="{Binding AvatarCircle}"
 										        Command="{Binding SetAvatarCircleCommand}"
@@ -353,6 +844,7 @@
 									           Foreground="{DynamicResource TextMutedBrush}"/>
 								</Grid>
 								<Slider x:Name="ThicknessSlider"
+								        Classes="compact"
 								        Minimum="1" Maximum="6"
 								        TickFrequency="1" IsSnapToTickEnabled="True"
 								        Value="{Binding Thickness, Mode=TwoWay}"
@@ -367,14 +859,58 @@
 					<Border BorderBrush="{DynamicResource BorderSubtleBrush}"
 					        BorderThickness="0,1,0,1">
 						<StackPanel>
-							<Button Classes="sect" Click="OnToggleSection" Tag="Labels">
-								<StackPanel Orientation="Horizontal" Spacing="7">
-									<Path x:Name="LabelsChev" Classes="chev" Data="M2.5,1 L5.5,4 L2.5,7"/>
-									<TextBlock Text="МЕТКИ" VerticalAlignment="Center"/>
-								</StackPanel>
-							</Button>
+							<Grid ColumnDefinitions="*,Auto">
+								<Button Grid.Column="0"
+								        Classes="sect"
+								        Click="OnToggleSection" Tag="Labels">
+									<StackPanel Orientation="Horizontal" Spacing="7">
+										<Path x:Name="LabelsChev" Classes="chev" Data="M2.5,1 L5.5,4 L2.5,7"/>
+										<TextBlock Text="МЕТКИ" VerticalAlignment="Center"/>
+									</StackPanel>
+								</Button>
 
-							<StackPanel x:Name="LabelsBody" Margin="12,0,12,12" Spacing="10">
+								<!-- Тот же редактор, что и на вкладке «Основное»
+								     (LabelEditorOverlay) — механизм меток уже
+								     есть в программе, здесь он просто получил
+								     вход и с этой стороны (п.11). Правка — только
+								     у одной выбранной карточки, как и имя. -->
+								<Button Grid.Column="1"
+								        Classes="ghost roundGhost"
+								        Content="+"
+								        FontSize="14"
+								        Width="24" Height="24"
+								        VerticalAlignment="Center"
+								        Margin="0,0,10,0"
+								        IsVisible="{Binding CanEditLabels}"
+								        Click="OnAddLabelClick"
+								        behaviours:TooltipBehavior.Tip="Добавить метку"
+								        behaviours:TooltipBehavior.Description="Новую или уже известную проекту — тот же редактор, что и в карточке персонажа"/>
+							</Grid>
+
+							<StackPanel x:Name="LabelsBody" Margin="12,4,12,12" Spacing="10">
+
+								<!-- Быстрая отметка «Мёртв»: та же встроенная метка, что и
+								     на вкладке «Основное» — кнопка исчезает сама, как только
+								     метка появилась, и дальше персонажа показывает её чип. -->
+								<Button Click="OnMarkDeadClick"
+								        IsVisible="{Binding CanMarkDead}"
+								        Background="Transparent"
+								        BorderBrush="{DynamicResource BorderDefaultBrush}"
+								        BorderThickness="1"
+								        CornerRadius="12"
+								        Padding="10,3"
+								        FontSize="11"
+								        HorizontalAlignment="Left"
+								        Foreground="{DynamicResource TextSecondaryBrush}">
+									<StackPanel Orientation="Horizontal" Spacing="6">
+										<Border Width="14" Height="14" CornerRadius="7" Background="#B71C1C">
+											<Path Data="M12,2C7.03,2 3,6.03 3,11c0,2.85 1.34,5.38 3.42,7.02V21c0,0.55 0.45,1 1,1h1.5v-2h2v2h2v-2h2v2H16c0.55,0 1,-0.45 1,-1v-2.98C19.66,16.38 21,13.85 21,11C21,6.03 16.97,2 12,2zM8.5,13C7.67,13 7,12.33 7,11.5C7,10.67 7.67,10 8.5,10s1.5,0.67 1.5,1.5C10,12.33 9.33,13 8.5,13zM15.5,13c-0.83,0 -1.5,-0.67 -1.5,-1.5c0,-0.83 0.67,-1.5 1.5,-1.5s1.5,0.67 1.5,1.5C17,12.33 16.33,13 15.5,13z"
+											      Fill="White" Stretch="Uniform" Margin="2"/>
+										</Border>
+										<TextBlock Text="Мёртв" VerticalAlignment="Center"/>
+									</StackPanel>
+								</Button>
+
 								<ItemsControl ItemsSource="{Binding Labels}"
 								              IsVisible="{Binding HasLabels}">
 									<ItemsControl.ItemsPanel>
@@ -385,20 +921,33 @@
 									<ItemsControl.ItemTemplate>
 										<DataTemplate x:DataType="models:CharacterLabel">
 											<Border Margin="0,0,6,6"
-											        Padding="5,3,9,3"
-											        CornerRadius="999"
-											        Background="{DynamicResource BgPanelBrush}">
-												<StackPanel Orientation="Horizontal" Spacing="5">
-													<controls:CharacterLabelIcon
-														Label="{Binding}"
-														IconSize="13"
-														RimBrush="{DynamicResource BgPanelBrush}"
-														RimThickness="1"
-														VerticalAlignment="Center"/>
-													<TextBlock Text="{Binding Name}"
-													           FontSize="11"
-													           VerticalAlignment="Center"
-													           Foreground="{DynamicResource TextSecondaryBrush}"/>
+											        Padding="6,4"
+											        CornerRadius="12"
+											        Background="{DynamicResource BgSurfaceBrush}"
+											        BorderBrush="{DynamicResource BorderDefaultBrush}"
+											        BorderThickness="1">
+												<StackPanel Orientation="Horizontal" Spacing="6">
+													<Button Classes="labelEdit"
+													        Click="OnLabelChipClick"
+													        behaviours:TooltipBehavior.Tip="Править метку"
+													        behaviours:TooltipBehavior.Description="Значок, цвет и имя — в том же окне, что и на вкладке «Основное»">
+														<StackPanel Orientation="Horizontal" Spacing="6">
+															<controls:CharacterLabelIcon
+																Label="{Binding}"
+																IconSize="16"
+																RimBrush="{DynamicResource BgSurfaceBrush}"
+																RimThickness="1"
+																VerticalAlignment="Center"/>
+															<TextBlock Text="{Binding Name}"
+															           FontSize="11"
+															           VerticalAlignment="Center"
+															           Foreground="{DynamicResource TextPrimaryBrush}"/>
+														</StackPanel>
+													</Button>
+													<Button Classes="labelRemove"
+													        Content="✕"
+													        Click="OnLabelRemoveClick"
+													        behaviours:TooltipBehavior.Tip="Убрать метку у персонажа"/>
 												</StackPanel>
 											</Border>
 										</DataTemplate>
@@ -410,6 +959,36 @@
 								           TextWrapping="Wrap"
 								           IsVisible="{Binding !HasLabels}"
 								           Foreground="{DynamicResource TextMutedBrush}"/>
+
+								<!-- Быстрое добавление по имени: совпадение с уже известной
+								     проекту меткой (из AutoCompleteBox) подхватывает её значок
+								     и цвет целиком — тот же ход, что и в автодополнении вкладки
+								     «Основное», а не свой заново придуманный (п.5, «стандартные
+								     метки»). -->
+								<Grid ColumnDefinitions="*,Auto" IsVisible="{Binding CanEditLabels}">
+									<AutoCompleteBox x:Name="NewLabelBox"
+									                 Grid.Column="0"
+									                 ItemsSource="{Binding KnownLabelNames}"
+									                 FilterMode="ContainsOrdinal"
+									                 MinimumPrefixLength="1"
+									                 MaxDropDownHeight="160"
+									                 PlaceholderText="Новая метка… (Enter)"
+									                 KeyDown="OnNewLabelKeyDown"
+									                 FontSize="11.5"
+									                 Background="{DynamicResource BgSurfaceBrush}"
+									                 Foreground="{DynamicResource TextPrimaryBrush}"
+									                 BorderBrush="{DynamicResource BorderDefaultBrush}"
+									                 BorderThickness="1"
+									                 CornerRadius="4"
+									                 Padding="8,5"/>
+									<Button Grid.Column="1"
+									        Content="Добавить"
+									        Click="OnAddKnownLabelClick"
+									        Margin="6,0,0,0"
+									        FontSize="11"
+									        Padding="10,5"
+									        CornerRadius="4"/>
+								</Grid>
 							</StackPanel>
 						</StackPanel>
 					</Border>

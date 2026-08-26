@@ -68,6 +68,16 @@ namespace Writersword.Modules.Characters.Interfaces
         void LoadModuleData(CharactersModuleData data);
         void SetContext(object? context);
         Character CreateWithId(Character character);
+
+        /// <summary>
+        /// Переписать ссылки на картинки после их переезда: ключ — прежняя
+        /// ссылка, значение — новая. Возвращает число задетых персонажей.
+        ///
+        /// Зовётся, когда пак укладывают в проект или переносят между
+        /// областями. Файл при этом цел, но лежит на новом месте, и персонаж,
+        /// смотрящий по старому адресу, показывает пустой кружок.
+        /// </summary>
+        int RemapAvatarRefs(IReadOnlyDictionary<string, string> map);
     }
 
     public interface IRelationshipService

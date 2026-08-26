@@ -416,14 +416,14 @@
 								        IsEnabled="{Binding CanMakeGlobal}"
 								        Content="Глобальная"
 								        behaviours:TooltipBehavior.Tip="Перенести в приложение"
-								        behaviours:TooltipBehavior.Description="Папка со всем содержимым переедет в данные приложения и станет видна во всех проектах"/>
+								        behaviours:TooltipBehavior.Description="Папка со всем содержимым переедет в данные приложения и станет видна во всех проектах. В файле проекта её не останется: аватарки персонажей переключатся на новое место и у того, кому проект передадут, уже не покажутся"/>
 								<Button Classes="scope local"
 								        Classes.active="{Binding SelectedIsLocal}"
 								        Command="{Binding MakeLocalCommand}"
 								        IsEnabled="{Binding CanMakeLocal}"
 								        Content="В проекте"
 								        behaviours:TooltipBehavior.Tip="Перенести в проект"
-								        behaviours:TooltipBehavior.Description="Папка со всем содержимым переедет в файл проекта и уедет вместе с ним"/>
+								        behaviours:TooltipBehavior.Description="Папка со всем содержимым переедет в файл проекта и уедет вместе с ним. В общих её не останется — если она нужна и в других проектах, кладите копию соседней кнопкой"/>
 							</StackPanel>
 						</Border>
 
@@ -446,6 +446,19 @@
 							        behaviours:TooltipBehavior.Description="Папка снова будет показывать первую свою картинку. Сами картинки не трогаются">
 								<PathIcon Width="14" Height="14"
 								          Data="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+							</Button>
+
+							<!-- Копия в проект, а не перенос: исходная папка остаётся общей
+							     для всех проектов, а её копия уезжает вместе с этим. Именно
+							     это нужно, когда проект отдают другому человеку. -->
+							<Button Classes="iconBtn"
+							        Command="{Binding CopyToProjectCommand}"
+							        IsEnabled="{Binding CanCopyToProject}"
+							        IsVisible="{Binding CanCopyToProject}"
+							        behaviours:TooltipBehavior.Tip="Положить копию в проект"
+							        behaviours:TooltipBehavior.Description="Копия папки ляжет в файл проекта и уедет вместе с ним, а исходная останется общей для всех ваших проектов. Своих папок у того, кому проект передали, нет — без копии аватарки отсюда у него не покажутся">
+								<PathIcon Width="14" Height="14"
+								          Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
 							</Button>
 
 							<Button Classes="iconBtn"

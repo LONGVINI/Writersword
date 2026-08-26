@@ -72,6 +72,13 @@ namespace Writersword.ViewModels.Components.MenuBar
 
         public ReactiveCommand<Unit, Unit> CompactProjectCommand { get; }
 
+        /// <summary>
+        /// Проверить, что весь проект лежит внутри своего файла, и уложить в
+        /// него то, что осталось снаружи. Нужна перед передачей проекта другому
+        /// человеку: у него нет ни вашей библиотеки, ни ваших общих папок.
+        /// </summary>
+        public ReactiveCommand<Unit, Unit> PrepareForSharingCommand { get; }
+
         // ── Команды: View ──────────────────────────────────────────────────────
 
         public ReactiveCommand<Unit, Unit> ToggleFullscreenCommand { get; }
@@ -116,6 +123,7 @@ namespace Writersword.ViewModels.Components.MenuBar
             OpenSettingsCommand = ReactiveCommand.CreateFromTask(OpenSettings);
             ExitCommand = ReactiveCommand.Create(Exit);
             CompactProjectCommand = ReactiveCommand.CreateFromTask(CompactProject);
+            PrepareForSharingCommand = ReactiveCommand.CreateFromTask(PrepareProjectForSharing);
             ToggleFullscreenCommand = ReactiveCommand.Create(ToggleFullscreen);
             SaveWorkspaceGlobalCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceGlobal);
             ResetWorkspaceToGlobalCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToGlobal);

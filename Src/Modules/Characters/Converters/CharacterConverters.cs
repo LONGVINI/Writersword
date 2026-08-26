@@ -218,4 +218,52 @@ namespace Writersword.Modules.Characters.Converters
         public object? ConvertBack(object? value, Type t, object? p, CultureInfo c) => throw new NotImplementedException();
     }
 
+    /// <summary>
+    /// Открыта ли панель оформления → ширина разделителя (4 точки открытой
+    /// панели, 0 — закрытой). Тот же приём, что и у самой панели: колонка
+    /// остаётся в раскладке всегда, меняется только ширина, и Transitions
+    /// на Border.inspectorSplit анимирует переход вместо мигания.
+    /// </summary>
+    public class BoolToSplitWidthConverter : IValueConverter
+    {
+        public static readonly BoolToSplitWidthConverter Instance = new();
+        public object? Convert(object? value, Type t, object? p, CultureInfo c)
+            => value is bool b && b ? 4.0 : 0.0;
+        public object? ConvertBack(object? value, Type t, object? p, CultureInfo c) => throw new NotImplementedException();
+    }
+
+    /// <summary>
+    /// Половина ширины дорожки переключателя «Кружок / Полоска» — ширина
+    /// скользящей плашки под текущим выбором. Дорожка держит два равных
+    /// столбца, и плашка обязана быть ровно вполовину её ширины при любом
+    /// размере панели, отсюда конвертер, а не число в разметке.
+    /// </summary>
+    public class HalfWidthConverter : IValueConverter
+    {
+        public static readonly HalfWidthConverter Instance = new();
+        public object? Convert(object? value, Type t, object? p, CultureInfo c)
+            => value is double d ? Math.Max(0, d / 2.0) : 0.0;
+        public object? ConvertBack(object? value, Type t, object? p, CultureInfo c) => throw new NotImplementedException();
+    }
+
+    /// <summary>
+    /// Ширина дорожки + признак «Полоска» → отступ слева у скользящей
+    /// плашки переключателя вида аватара. Слева — 0 (плашка под «Кружок»),
+    /// справа — половина ширины дорожки (плашка под «Полоска»).
+    /// ThicknessTransition на самой плашке превращает смену отступа в
+    /// плавное скольжение.
+    /// </summary>
+    public class SegmentIndicatorMarginConverter : IMultiValueConverter
+    {
+        public static readonly SegmentIndicatorMarginConverter Instance = new();
+
+        public object? Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
+        {
+            var width = values.Count > 0 && values[0] is double w ? w : 0.0;
+            var isStrip = values.Count > 1 && values[1] is bool b && b;
+            var half = Math.Max(0, width / 2.0);
+            return new Avalonia.Thickness(isStrip ? half : 0, 0, 0, 0);
+        }
+    }
+
 }

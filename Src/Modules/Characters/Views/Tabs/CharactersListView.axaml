@@ -39,11 +39,21 @@
 
              Это рамка, а не GridSplitter: ширину панели держит вью-модель
              (InspectorWidth), а GridSplitter правит ширину колонки сетки, и
-             два хозяина у одного числа спорили бы друг с другом. -->
+             два хозяина у одного числа спорили бы друг с другом.
+
+             И разделитель, и сама панель больше не прячутся через IsVisible:
+             оба остаются в раскладке всегда, а ширина каждого анимируется
+             Transitions'ом (0 при закрытой панели, полный размер при
+             открытой) — тем же приёмом, что и раскрытие секции в
+             ColorPickerButton (тянется MaxHeight, а не мигает видимость). -->
         <Style Selector="Border.inspectorSplit">
-            <Setter Property="Width" Value="4"/>
             <Setter Property="Background" Value="{DynamicResource BorderSubtleBrush}"/>
             <Setter Property="Cursor" Value="SizeWestEast"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Width" Duration="0:0:0.2" Easing="CubicEaseInOut"/>
+                </Transitions>
+            </Setter>
         </Style>
         <Style Selector="Border.inspectorSplit:pointerover">
             <Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
@@ -902,18 +912,30 @@
             <Border Grid.Column="1"
                     x:Name="InspectorSplit"
                     Classes="inspectorSplit"
-                    IsVisible="{Binding IsInspectorOpen}"
+                    Width="{Binding IsInspectorOpen, Converter={x:Static conv:BoolToSplitWidthConverter.Instance}}"
                     PointerPressed="OnInspectorSplitPressed"
                     PointerMoved="OnInspectorSplitMoved"
                     PointerReleased="OnInspectorSplitReleased"
                     behaviours:TooltipBehavior.Tip="Ширина панели"
                     behaviours:TooltipBehavior.Description="Потяните, чтобы сделать панель шире или уже"/>
 
-            <!-- Панель просто стоит колонкой. Ширину задаёт разделитель слева
-                 от неё. Никакого выезда: панель либо есть, либо её нет. -->
+            <!-- Панель стоит колонкой всегда — и открытая, и закрытая:
+                 закрытая занимает нулевую ширину. Открытие и закрытие не
+                 переключают видимость, а меняют EffectiveInspectorWidth
+                 (0 ⇄ InspectorWidth), и колонка плавно выезжает или
+                 уезжает вместо того, чтобы мигать. Список карточек слева
+                 при этом смещается тем же кадром, что и сама панель — он
+                 стоит в звёздной колонке и просто занимает освободившееся
+                 место. ClipToBounds обязателен: без него содержимое панели
+                 на середине анимации вылезает за её сжатую границу. -->
             <Panel Grid.Column="2"
-                   IsVisible="{Binding IsInspectorOpen}"
-                   Width="{Binding InspectorWidth}">
+                   ClipToBounds="True"
+                   Width="{Binding EffectiveInspectorWidth}">
+                <Panel.Transitions>
+                    <Transitions>
+                        <DoubleTransition Property="Width" Duration="0:0:0.2" Easing="CubicEaseInOut"/>
+                    </Transitions>
+                </Panel.Transitions>
                 <inspector:CharacterInspectorPanel DataContext="{Binding Inspector}"/>
             </Panel>
 

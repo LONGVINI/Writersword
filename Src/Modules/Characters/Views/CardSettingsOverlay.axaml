@@ -113,23 +113,30 @@
 									           HorizontalAlignment="Center" VerticalAlignment="Center"
 									           IsVisible="{Binding AvatarBitmap, Converter={x:Static ObjectConverters.IsNull}}"/>
 								</Panel>
-								<!-- Вид «кружок» -->
+								<!-- Вид «кружок». Аватар и кольцо вокруг него рисуются формой
+								     Ellipse, а не имитацией круга через Border с CornerRadius="999":
+								     на некоторых компьютерах такая имитация рендерится неровно,
+								     «кривым» кругом. Тот же приём с Ellipse уже используется для
+								     аватарки в списке персонажей (CharactersListView), и там такой
+								     проблемы нет. -->
 								<Panel Width="44" Height="44" IsVisible="{Binding !AvatarStrip}"
 								       HorizontalAlignment="Center" VerticalAlignment="Center">
 									<Ellipse Width="44" Height="44"
 									         Fill="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"/>
-									<Border Width="44" Height="44" CornerRadius="999" ClipToBounds="True"
-									        IsVisible="{Binding AvatarBitmap, Converter={x:Static ObjectConverters.IsNotNull}}">
-										<Image Source="{Binding AvatarBitmap}" Stretch="UniformToFill"/>
-									</Border>
+									<Ellipse Width="44" Height="44"
+									         IsVisible="{Binding AvatarBitmap, Converter={x:Static ObjectConverters.IsNotNull}}">
+										<Ellipse.Fill>
+											<ImageBrush Source="{Binding AvatarBitmap}" Stretch="UniformToFill"/>
+										</Ellipse.Fill>
+									</Ellipse>
 									<TextBlock Text="{Binding FallbackIcon}" Foreground="White" FontSize="20"
 									           HorizontalAlignment="Center" VerticalAlignment="Center"
 									           IsVisible="{Binding AvatarBitmap, Converter={x:Static ObjectConverters.IsNull}}"/>
 								</Panel>
-								<Border Width="52" Height="52" CornerRadius="999" BorderThickness="2"
-								        IsVisible="{Binding ShowRing}" IsHitTestVisible="False"
-								        BorderBrush="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
-								        HorizontalAlignment="Center" VerticalAlignment="Center"/>
+								<Ellipse Width="52" Height="52" StrokeThickness="2"
+								         IsVisible="{Binding ShowRing}" IsHitTestVisible="False"
+								         Stroke="{Binding Color, Converter={x:Static icv:ColorCodeToBrushConverter.Instance}}"
+								         HorizontalAlignment="Center" VerticalAlignment="Center"/>
 							</Panel>
 							<Border Height="34">
 								<TextBlock Text="{Binding Name}"

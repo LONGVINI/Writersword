@@ -196,7 +196,15 @@ namespace Writersword.Modules.Characters.Views
             CharacterLabelIcons.Skull,
             CharacterLabelIcons.Drop,
             CharacterLabelIcons.Star,
-            CharacterLabelIcons.Crown
+            CharacterLabelIcons.Crown,
+            CharacterLabelIcons.Heart,
+            CharacterLabelIcons.Flag,
+            CharacterLabelIcons.Lock,
+            CharacterLabelIcons.Bolt,
+            CharacterLabelIcons.Eye,
+            CharacterLabelIcons.Shield,
+            CharacterLabelIcons.Moon,
+            CharacterLabelIcons.Check
         };
 
         // Растровые форматы плюс вектор. Вектор перекрашивается в цвет метки,

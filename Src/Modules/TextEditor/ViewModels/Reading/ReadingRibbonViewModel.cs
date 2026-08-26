@@ -71,11 +71,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
     /// </summary>
     public sealed class ReadingThemeItem
     {
-        public ReadingThemeItem(ReadingTheme? theme, string label, bool isCommand = false)
+        public ReadingThemeItem(ReadingTheme? theme, string label,
+                                bool isCommand = false, bool isCustom = false)
         {
             Theme = theme;
             Label = label;
             IsCommand = isCommand;
+            IsCustom = isCustom;
         }
 
         public ReadingTheme? Theme { get; }
@@ -83,6 +85,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
 
         /// <summary>Пункт-действие, а не вид: открывает окно настройки.</summary>
         public bool IsCommand { get; }
+
+        /// <summary>
+        /// Не сохранённый вид, а то, что получилось из него правкой на ходу. Живёт
+        /// в списке только пока правка не совпадает ни с одним сохранённым видом.
+        /// </summary>
+        public bool IsCustom { get; }
 
         /// <summary>Значок шестерни виден только у пункта-действия.</summary>
         public bool ShowGear => IsCommand;
@@ -93,14 +101,18 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
     /// <summary>Пункт выпадающего списка ленты: подпись и значение.</summary>
     public sealed class ReadingOption<T>
     {
-        public ReadingOption(T value, string label)
+        public ReadingOption(T value, string label, string? glyph = null)
         {
             Value = value;
             Label = label;
+            Glyph = glyph is null ? null : Avalonia.Media.Geometry.Parse(glyph);
         }
 
         public T Value { get; }
         public string Label { get; }
+
+        /// <summary>Значок пункта. Геометрия, а не строка: привязка к Data строку не берёт.</summary>
+        public Avalonia.Media.Geometry? Glyph { get; }
 
         public override string ToString() => Label;
     }
@@ -118,12 +130,18 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         {
             _host = host ?? throw new ArgumentNullException(nameof(host));
 
+            // Значок показывает пропорции листа прямо формой рамки — по нему выбор
+            // читается быстрее, чем по названию.
             FormatOptions = new[]
             {
-                new ReadingOption<ReadingSheetFormat>(ReadingSheetFormat.Document, "Как в документе"),
-                new ReadingOption<ReadingSheetFormat>(ReadingSheetFormat.Pocket,   "Карманный"),
-                new ReadingOption<ReadingSheetFormat>(ReadingSheetFormat.Square,   "Квадратный"),
-                new ReadingOption<ReadingSheetFormat>(ReadingSheetFormat.Wide,     "Широкий")
+                new ReadingOption<ReadingSheetFormat>(ReadingSheetFormat.Document, "Как в документе",
+                    "M6 2h9l5 5v15H6z M8 4v16h10V8h-4V4z M15 4.6V7h2.4z"),
+                new ReadingOption<ReadingSheetFormat>(ReadingSheetFormat.Pocket, "Карманный",
+                    "M8 2h8v20H8z M10 4v16h4V4z"),
+                new ReadingOption<ReadingSheetFormat>(ReadingSheetFormat.Square, "Квадратный",
+                    "M3 4h18v16H3z M5 6v12h14V6z"),
+                new ReadingOption<ReadingSheetFormat>(ReadingSheetFormat.Wide, "Широкий",
+                    "M2 6h20v12H2z M4 8v8h16V8z")
             };
 
             AvailableFonts = LoadFontList();
@@ -147,6 +165,21 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             ZoomOutCommand = ReactiveCommand.Create(() => Zoom = Zoom / 1.12);
             ZoomResetCommand = ReactiveCommand.Create(() => Zoom = 1.0);
 
+            // Параметр приходит из разметки строкой — там имя значения перечисления
+            // читается куда лучше, чем сконструированный объект.
+            SetFormatCommand = ReactiveCommand.Create<object?>(p =>
+            {
+                ReadingSheetFormat? picked = p switch
+                {
+                    ReadingSheetFormat f => f,
+                    string name when Enum.TryParse<ReadingSheetFormat>(name, true, out var parsed) => parsed,
+                    _ => null
+                };
+
+                if (picked is { } value)
+                    SelectedFormat = FormatOptions.FirstOrDefault(o => o.Value == value);
+            });
+
             ResetLightCommand = ReactiveCommand.Create(ResetLight);
             ResetBackdropCommand = ReactiveCommand.Create(ResetBackdrop);
             ExitCommand = ReactiveCommand.Create(() => _host.ExitReading());
@@ -161,6 +194,78 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         public ObservableCollection<ReadingThemeItem> ThemeItems { get; } = new();
 
         public const string ThemeSettingsLabel = "Настроить виды…";
+
+        public const string CustomThemeLabel = "Кастомное";
+
+        /// <summary>
+        /// Разошлась ли рабочая копия вида с тем, что сохранено под его именем.
+        ///
+        /// Лента правит именно копию — яркость, контраст, тёплоту, цвета, шрифт,
+        /// заливку поля, картинку. Пока правок нет, на экране сохранённый вид и в
+        /// списке стоит его имя. Стоит хоть чему-то разойтись — на экране уже не он,
+        /// и называть его прежним именем значит врать.
+        /// </summary>
+        private bool IsThemeCustom()
+        {
+            if (S is not { } s || s.Active is not { } active) return false;
+
+            var source = _host.ReadingThemes()
+                .FirstOrDefault(t => string.Equals(t.Id, s.ThemeId, StringComparison.Ordinal));
+
+            // Вида под таким опознавателем больше нет — его удалили или переименовали.
+            // То, что на экране, тогда и правда ничьё.
+            if (source is null) return true;
+
+            return !ReadingTheme.SameLook(source, active);
+        }
+
+        /// <summary>
+        /// Держит пункт «Кастомное» в согласии с тем, что на экране: добавляет его при
+        /// первой же правке и убирает, когда вид снова совпал с сохранённым.
+        /// </summary>
+        private void SyncCustomThemeItem()
+        {
+            bool custom = IsThemeCustom();
+            var existing = ThemeItems.FirstOrDefault(i => i.IsCustom);
+
+            _suppressThemeSelection = true;
+            try
+            {
+                if (custom)
+                {
+                    if (existing is null)
+                    {
+                        existing = new ReadingThemeItem(T, CustomThemeLabel, isCustom: true);
+                        ThemeItems.Insert(0, existing);
+                    }
+                    _selectedThemeItem = existing;
+                }
+                else
+                {
+                    if (existing is not null) ThemeItems.Remove(existing);
+
+                    _selectedThemeItem = ThemeItems.FirstOrDefault(
+                        i => i.Theme is { } t && string.Equals(t.Id, S?.ThemeId, StringComparison.Ordinal))
+                        ?? ThemeItems.FirstOrDefault(i => !i.IsCommand && !i.IsCustom);
+                }
+            }
+            finally
+            {
+                _suppressThemeSelection = false;
+            }
+
+            this.RaisePropertyChanged(nameof(SelectedThemeItem));
+        }
+
+        /// <summary>
+        /// Правка вида на ходу: книга перерисовывается, а список видов пересматривает
+        /// своё имя. Зовётся отовсюду, где меняется рабочая копия.
+        /// </summary>
+        private void TouchTheme()
+        {
+            _host.ApplyReadingVisual();
+            SyncCustomThemeItem();
+        }
 
         /// <summary>Пересобирает список: виды могли добавиться, уехать или сменить имя.</summary>
         public void RebuildThemeItems()
@@ -186,6 +291,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             }
 
             this.RaisePropertyChanged(nameof(SelectedThemeItem));
+            SyncCustomThemeItem();
         }
 
         private ReadingThemeItem? _selectedThemeItem;
@@ -202,6 +308,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             {
                 if (_suppressThemeSelection) return;
                 if (value is null) return;
+
+                // «Кастомное» — не вид, а состояние: выбрать его нечем, оно и так уже
+                // на экране. Список просто остаётся на нём.
+                if (value.IsCustom) return;
 
                 if (value.IsCommand)
                 {
@@ -226,6 +336,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                     // перерисовка: другой шрифт — другие переносы строк.
                     _host.ApplyReadingLayout();
                     _host.PersistReadingPreferences();
+                    SyncCustomThemeItem();
                 }
             }
         }
@@ -299,6 +410,12 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             this.RaisePropertyChanged(nameof(IsFlowSingle));
             this.RaisePropertyChanged(nameof(IsFlowColumn));
             this.RaisePropertyChanged(nameof(IsPaged));
+            this.RaisePropertyChanged(nameof(PageStep));
+
+            // Шаг листания сменился вместе с подачей: то, что в развороте было
+            // парой, в одиночном листе становится страницей, и поле с ползунком
+            // должны показать это сразу, а не после первого перехода.
+            SetPageState(_pageNumber, _pageCount);
         }
 
         public ReadingOption<ReadingSheetFormat>? SelectedFormat
@@ -309,10 +426,18 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                 if (value is null || S is not { } s || s.Format == value.Value) return;
                 s.Format = value.Value;
                 this.RaisePropertyChanged();
+                this.RaisePropertyChanged(nameof(SelectedFormatLabel));
+                this.RaisePropertyChanged(nameof(SelectedFormatGlyph));
                 _host.ApplyReadingLayout();
                 _host.PersistReadingPreferences();
             }
         }
+
+        /// <summary>Подпись выбранной формы листа — на кнопке со списком.</summary>
+        public string SelectedFormatLabel => SelectedFormat?.Label ?? string.Empty;
+
+        /// <summary>Значок выбранной формы листа.</summary>
+        public Avalonia.Media.Geometry? SelectedFormatGlyph => SelectedFormat?.Glyph;
 
         // ── Страницы ──────────────────────────────────────────────────────
 
@@ -343,7 +468,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             try
             {
                 _pageCount = Math.Max(1, count);
-                _pageNumber = Math.Clamp(number, 1, _pageCount);
+                _pageNumber = AlignPage(number);
                 _pageInput = FormatPageInput();
             }
             finally
@@ -355,14 +480,49 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             this.RaisePropertyChanged(nameof(PageMax));
             this.RaisePropertyChanged(nameof(PagePosition));
             this.RaisePropertyChanged(nameof(PageInput));
+            this.RaisePropertyChanged(nameof(PageNumberText));
         }
 
         /// <summary>
-        /// Строка поля: «3 из 8». Номер и общее число живут в одном поле, а не в двух
-        /// подряд — два поля рядом читаются как две отдельные величины, а это одна.
+        /// Сколько страниц уходит за один переход: в развороте книга открывается
+        /// парами — 1–2, 3–4, 5–6, — и середины у пары нет.
+        ///
+        /// Это не украшение подписи. Ползунок и поле ввода отправляют книгу на
+        /// страницу, а книга открывает разворот, которому та принадлежит, и
+        /// возвращает его первую страницу. Пока лента считала шагом единицу, просьба
+        /// открыть вторую страницу возвращалась первой: номер в поле успевал
+        /// смениться и тут же откатывался, а бегунок отскакивал назад. Со стороны
+        /// это выглядело как мерцание вместо перехода.
+        /// </summary>
+        public int PageStep => Flow == ReadingFlow.Spread ? 2 : 1;
+
+        /// <summary>
+        /// Первая страница той пары, которой принадлежит страница. В одиночном листе
+        /// и в ленте выравнивать нечего — страница сама себе разворот.
+        /// </summary>
+        private int AlignPage(int number)
+        {
+            int n = Math.Clamp(number, 1, Math.Max(1, _pageCount));
+            int step = PageStep;
+            return step <= 1 ? n : n - ((n - 1) % step);
+        }
+
+        /// <summary>
+        /// Строка поля: «3 из 8», а в развороте — «3–4 из 8». Номер и общее число
+        /// живут в одном поле, а не в двух подряд: два поля рядом читаются как две
+        /// отдельные величины, а это одна.
         /// </summary>
         private string FormatPageInput()
-            => $"{_pageNumber.ToString(System.Globalization.CultureInfo.CurrentCulture)} из {_pageCount.ToString(System.Globalization.CultureInfo.CurrentCulture)}";
+        {
+            var ci = System.Globalization.CultureInfo.CurrentCulture;
+            string total = _pageCount.ToString(ci);
+
+            int second = _pageNumber + PageStep - 1;
+            if (second > _pageNumber && second <= _pageCount)
+                return $"{_pageNumber.ToString(ci)}–{second.ToString(ci)} из {total}";
+
+            return $"{_pageNumber.ToString(ci)} из {total}";
+        }
 
         public int PageCount => _pageCount;
 
@@ -380,13 +540,24 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             {
                 if (_suppressPageNav) return;
 
-                int v = Math.Clamp((int)Math.Round(value), 1, _pageCount);
-                if (v == _pageNumber) return;
+                // Бегунок останавливается на развороте, а не между его страницами:
+                // книга всё равно откроет пару целиком, и разойтись им нельзя.
+                int v = AlignPage((int)Math.Round(value));
+                if (v == _pageNumber)
+                {
+                    // Бегунок мог уехать внутрь той же пары. Своего значения он не
+                    // отдаст обратно сам — его нужно вернуть на место, иначе он
+                    // останется стоять там, куда книга не пошла.
+                    if (Math.Abs(value - _pageNumber) > 0.001)
+                        this.RaisePropertyChanged();
+                    return;
+                }
 
                 _pageNumber = v;
                 _pageInput = FormatPageInput();
                 this.RaisePropertyChanged();
                 this.RaisePropertyChanged(nameof(PageInput));
+                this.RaisePropertyChanged(nameof(PageNumberText));
                 _host.GoReadingPage(v - 1, animate: false);
             }
         }
@@ -441,13 +612,18 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                 return;
             }
 
-            bool moved = n != _pageNumber;
+            // Названа страница, открывается пара, которой она принадлежит: набрав
+            // четвёртую при открытых третьей и четвёртой, читатель просит остаться
+            // на месте, а не перелистнуть на полстраницы вперёд.
+            int target = AlignPage(n);
+            bool moved = target != _pageNumber;
 
-            _pageNumber = n;
+            _pageNumber = target;
             PageInput = FormatPageInput();
             this.RaisePropertyChanged(nameof(PagePosition));
+            this.RaisePropertyChanged(nameof(PageNumberText));
 
-            _host.GoReadingPage(n - 1, animate: moved);
+            _host.GoReadingPage(target - 1, animate: moved);
         }
 
         /// <summary>
@@ -480,7 +656,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                 if (Math.Abs(v - t.Brightness) < 0.001) return;
                 t.Brightness = v;
                 this.RaisePropertyChanged();
-                _host.ApplyReadingVisual();
+                TouchTheme();
             }
         }
 
@@ -495,7 +671,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                 if (Math.Abs(v - t.Contrast) < 0.001) return;
                 t.Contrast = v;
                 this.RaisePropertyChanged();
-                _host.ApplyReadingVisual();
+                TouchTheme();
             }
         }
 
@@ -510,7 +686,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                 if (Math.Abs(v - t.Warmth) < 0.001) return;
                 t.Warmth = v;
                 this.RaisePropertyChanged();
-                _host.ApplyReadingVisual();
+                TouchTheme();
             }
         }
 
@@ -529,7 +705,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             this.RaisePropertyChanged(nameof(Brightness));
             this.RaisePropertyChanged(nameof(Contrast));
             this.RaisePropertyChanged(nameof(Warmth));
-            _host.ApplyReadingVisual();
+            TouchTheme();
         }
 
         // ── Текст ─────────────────────────────────────────────────────────
@@ -553,6 +729,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                 t.FontFamily = v;
                 this.RaisePropertyChanged();
                 _host.ApplyReadingLayout();
+                SyncCustomThemeItem();
             }
         }
 
@@ -570,7 +747,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                 if (string.Equals(value, t.InkColor, StringComparison.OrdinalIgnoreCase)) return;
                 t.InkColor = value;
                 this.RaisePropertyChanged();
-                _host.ApplyReadingVisual();
+                TouchTheme();
             }
         }
 
@@ -635,7 +812,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
 
                 t.BackdropColor = value;
                 this.RaisePropertyChanged();
-                _host.ApplyReadingVisual();
+                TouchTheme();
             }
         }
 
@@ -651,7 +828,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
                 if (T is not { } t || t.UseBackdropImage == value) return;
                 t.UseBackdropImage = value;
                 this.RaisePropertyChanged();
-                _host.ApplyReadingVisual();
+                TouchTheme();
             }
         }
 
@@ -686,7 +863,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
 
             this.RaisePropertyChanged(nameof(BackdropColorHex));
             this.RaisePropertyChanged(nameof(UseBackdropImage));
-            _host.ApplyReadingVisual();
+            TouchTheme();
         }
 
         /// <summary>Возвращает текст к тому, что задано выбранным видом.</summary>
@@ -706,6 +883,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             this.RaisePropertyChanged(nameof(FontStep));
             this.RaisePropertyChanged(nameof(FontStepLabel));
             _host.ApplyReadingLayout();
+            SyncCustomThemeItem();
         }
 
         // ── Показ ─────────────────────────────────────────────────────────
@@ -833,6 +1011,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         public ICommand ZoomOutCommand { get; }
         public ICommand ZoomResetCommand { get; }
 
+        public ICommand SetFormatCommand { get; }
         public ICommand ResetLightCommand { get; }
         public ICommand ResetBackdropCommand { get; }
         public ICommand ExitCommand { get; }
@@ -860,6 +1039,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             this.RaisePropertyChanged(nameof(ShowPageNumbers));
             this.RaisePropertyChanged(nameof(Fullscreen));
             this.RaisePropertyChanged(nameof(RibbonExpanded));
+            this.RaisePropertyChanged(nameof(SelectedFormatLabel));
+            this.RaisePropertyChanged(nameof(SelectedFormatGlyph));
+            SyncCustomThemeItem();
         }
     }
 }
