@@ -1,7 +1,7 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<!-- ========================================
-       НАСТРОЙКИ ПРОЕКТА
+       РќРђРЎРўР РћР™РљР РџР РћР•РљРўРђ
        ======================================== -->
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
@@ -13,21 +13,21 @@
 		<Version>1.0.0</Version>
 		<Product>Writersword</Product>
 		<Company>Writersword Team</Company>
-		<Copyright>Copyright © 2025</Copyright>
+		<Copyright>Copyright В© 2025</Copyright>
 		<Description>Multi-modal writing application for writers, poets, screenwriters, and game developers</Description>
 		<ApplicationIcon>Resources\\Images\\icon.ico</ApplicationIcon>
 
-		<!-- Отключаем скомпилированные привязки по умолчанию
-		КРАЙНЕ ОПАСНО! ЭТО РЕФЛЕКСИВНЫЕ БИНДИНГИ ПРИ КАЖДОМ ОБНОВЛЕНИИ UI И ЯВЛЯЕТСЯ НЕ ОЧЕНЬ ХОРОШИМ РЕШЕНИЕМ!!!
+		<!-- РћС‚РєР»СЋС‡Р°РµРј СЃРєРѕРјРїРёР»РёСЂРѕРІР°РЅРЅС‹Рµ РїСЂРёРІСЏР·РєРё РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ
+		РљР РђР™РќР• РћРџРђРЎРќРћ! Р­РўРћ Р Р•Р¤Р›Р•РљРЎРР’РќР«Р• Р‘РРќР”РРќР“Р РџР Р РљРђР–Р”РћРњ РћР‘РќРћР’Р›Р•РќРР UI Р РЇР’Р›РЇР•РўРЎРЇ РќР• РћР§Р•РќР¬ РҐРћР РћРЁРРњ Р Р•РЁР•РќРР•Рњ!!!
 		-->
 		<AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
 
-		<!-- Отключаем автоматическое включение .resx (управляем вручную) -->
+		<!-- РћС‚РєР»СЋС‡Р°РµРј Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРѕРµ РІРєР»СЋС‡РµРЅРёРµ .resx (СѓРїСЂР°РІР»СЏРµРј РІСЂСѓС‡РЅСѓСЋ) -->
 		<EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
 	</PropertyGroup>
 
 	<!-- ========================================
-       КОНФИГУРАЦИОННЫЕ ФАЙЛЫ
+       РљРћРќР¤РР“РЈР РђР¦РРћРќРќР«Р• Р¤РђР™Р›Р«
        ======================================== -->
 	<ItemGroup>
 		<None Update="appsettings.json">
@@ -36,28 +36,28 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       AVALONIA UI + DOCK СИСТЕМА
+       AVALONIA UI + DOCK РЎРРЎРўР•РњРђ
        ======================================== -->
 	<ItemGroup>
 		<PackageReference Include="AnimatedImage.Avalonia" Version="2.1.4" />
-		<PackageReference Include="Avalonia" Version="12.0.3" />
+		<PackageReference Include="Avalonia" Version="12.1.1" />
 		<PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
-		<PackageReference Include="Avalonia.Controls.ColorPicker" Version="12.0.3" />
+		<PackageReference Include="Avalonia.Controls.ColorPicker" Version="12.1.1" />
 		<PackageReference Include="Avalonia.Controls.ItemsRepeater" Version="12.0.0" />
-		<PackageReference Include="Avalonia.Desktop" Version="12.0.3" />
+		<PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
 		<PackageReference Include="Avalonia.Svg.Skia" Version="11.3.0" />
-		<PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.3" />
-		<PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.3" />
-		<PackageReference Include="Dock.Avalonia" Version="12.0.0.2" />
-		<PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="12.0.0.2" />
-		<PackageReference Include="Dock.Model" Version="12.0.0.2" />
-		<PackageReference Include="Dock.Model.Avalonia" Version="12.0.0.2" />
-		<PackageReference Include="Dock.Serializer.Newtonsoft" Version="12.0.0.2" />
-		<PackageReference Include="Dock.Settings" Version="12.0.0.2" />
-		<!-- HotAvalonia подключается централизованно в Directory.Build.props.
-		     Avalonia.Markup.Xaml.Loader нужен явно: HotAvalonia несёт старую
-		     версию загрузчика, несовместимую с Avalonia 12. -->
-		<PackageReference Include="Avalonia.Markup.Xaml.Loader" Version="12.0.3" PrivateAssets="All" Publish="True" />
+		<PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+		<PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1" />
+		<PackageReference Include="Dock.Avalonia" Version="12.1.0.4" />
+		<PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="12.1.0.4" />
+		<PackageReference Include="Dock.Model" Version="12.1.0.4" />
+		<PackageReference Include="Dock.Model.Avalonia" Version="12.1.0.4" />
+		<PackageReference Include="Dock.Serializer.Newtonsoft" Version="12.1.0.4" />
+		<PackageReference Include="Dock.Settings" Version="12.1.0.4" />
+		<!-- HotAvalonia РїРѕРґРєР»СЋС‡Р°РµС‚СЃСЏ С†РµРЅС‚СЂР°Р»РёР·РѕРІР°РЅРЅРѕ РІ Directory.Build.props.
+		     Avalonia.Markup.Xaml.Loader РЅСѓР¶РµРЅ СЏРІРЅРѕ: HotAvalonia РЅРµСЃС‘С‚ СЃС‚Р°СЂСѓСЋ
+		     РІРµСЂСЃРёСЋ Р·Р°РіСЂСѓР·С‡РёРєР°, РЅРµСЃРѕРІРјРµСЃС‚РёРјСѓСЋ СЃ Avalonia 12. -->
+		<PackageReference Include="Avalonia.Markup.Xaml.Loader" Version="12.1.1" PrivateAssets="All" Publish="True" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="11.0.0-preview.3.26207.106" />
 		<PackageReference Include="MonoMod.RuntimeDetour" Version="25.3.6" PrivateAssets="All" />
 		<PackageReference Include="ProDiagnostics" Version="12.0.0" />
@@ -79,24 +79,23 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       ЛОКАЛИЗАЦИЯ + JSON
+       Р›РћРљРђР›РР—РђР¦РРЇ + JSON
        ======================================== -->
 	<ItemGroup>
 		<PackageReference Include="System.Resources.Extensions" Version="11.0.0-preview.3.26207.106" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.5-beta1" />
-		<PackageReference Include="Tmds.DBus.Protocol" Version="0.92.0" />
 	</ItemGroup>
 
 	<!-- ========================================
-       РЕСУРСЫ (картинки)
+       Р Р•РЎРЈР РЎР« (РєР°СЂС‚РёРЅРєРё)
        ======================================== -->
 	<ItemGroup>
 		<AvaloniaResource Include="Resources\**" Exclude="Resources\Localization\**" />
 	</ItemGroup>
 
 	<!-- ========================================
-       СТИЛИ И ТЕМЫ
-       Файлы прописаны явно — исключены из неявного glob через AvaloniaXaml Remove
+       РЎРўРР›Р Р РўР•РњР«
+       Р¤Р°Р№Р»С‹ РїСЂРѕРїРёСЃР°РЅС‹ СЏРІРЅРѕ вЂ” РёСЃРєР»СЋС‡РµРЅС‹ РёР· РЅРµСЏРІРЅРѕРіРѕ glob С‡РµСЂРµР· AvaloniaXaml Remove
        ======================================== -->
 	<ItemGroup>
 		<AvaloniaResource Include="Styles\DockStyles.axaml">
@@ -110,7 +109,7 @@
 		<AvaloniaResource Include="Styles\Themes\SepiaTheme.axaml" />
 	</ItemGroup>
 
-	<!-- Убираем явно прописанные стили из неявного glob чтобы не было дублирования -->
+	<!-- РЈР±РёСЂР°РµРј СЏРІРЅРѕ РїСЂРѕРїРёСЃР°РЅРЅС‹Рµ СЃС‚РёР»Рё РёР· РЅРµСЏРІРЅРѕРіРѕ glob С‡С‚РѕР±С‹ РЅРµ Р±С‹Р»Рѕ РґСѓР±Р»РёСЂРѕРІР°РЅРёСЏ -->
 	<ItemGroup>
 		<AvaloniaXaml Remove="Styles\DockStyles.axaml" />
 		<AvaloniaXaml Remove="Styles\Base\Colors.axaml" />
@@ -122,10 +121,10 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       ЛОКАЛИЗАЦИЯ (resx файлы)
+       Р›РћРљРђР›РР—РђР¦РРЇ (resx С„Р°Р№Р»С‹)
        ======================================== -->
 	<ItemGroup>
-		<!-- Основная локализация приложения -->
+		<!-- РћСЃРЅРѕРІРЅР°СЏ Р»РѕРєР°Р»РёР·Р°С†РёСЏ РїСЂРёР»РѕР¶РµРЅРёСЏ -->
 		<EmbeddedResource Include="Resources\Localization\Strings.resx">
 			<Generator>PublicResXFileCodeGenerator</Generator>
 			<LastGenOutput>Strings.Designer.cs</LastGenOutput>
@@ -134,7 +133,7 @@
 			<DependentUpon>Strings.resx</DependentUpon>
 		</EmbeddedResource>
 
-		<!-- Локализация типов проектов -->
+		<!-- Р›РѕРєР°Р»РёР·Р°С†РёСЏ С‚РёРїРѕРІ РїСЂРѕРµРєС‚РѕРІ -->
 		<EmbeddedResource Include="Src\ProjectTypes\**\*.resx" />
 
 		<Compile Update="Resources\Localization\Strings.Designer.cs">
@@ -145,16 +144,16 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       ИСКЛЮЧЕНИЯ — ВЫНЕСЕННЫЕ В ОТДЕЛЬНЫЕ ПРОЕКТЫ
+       РРЎРљР›Р®Р§Р•РќРРЇ вЂ” Р’Р«РќР•РЎР•РќРќР«Р• Р’ РћРўР”Р•Р›Р¬РќР«Р• РџР РћР•РљРўР«
        ======================================== -->
 	<ItemGroup>
-		<!-- Core, Shared, Common — в Writersword.Core.csproj -->
+		<!-- Core, Shared, Common вЂ” РІ Writersword.Core.csproj -->
 		<Compile Remove="Src\obj\**\*.cs" />
 		<Compile Remove="Src\Core\**\*.cs" />
 		<Compile Remove="Src\Shared\**\*.cs" />
 		<Compile Remove="Src\Modules\Common\**\*.cs" />
 
-		<!-- Модули — каждый в своём .csproj -->
+		<!-- РњРѕРґСѓР»Рё вЂ” РєР°Р¶РґС‹Р№ РІ СЃРІРѕС‘Рј .csproj -->
 		<Compile Remove="Src\Modules\Characters\**\*.cs" />
 		<Compile Remove="Src\Modules\TextEditor\**\*.cs" />
 		<Compile Remove="Src\Modules\Notes\**\*.cs" />
@@ -191,7 +190,7 @@
 		<EmbeddedResource Remove="Src\Modules\Music\Resources\*.resx" />
 		<EmbeddedResource Remove="Src\Modules\Timeline\Resources\*.resx" />
 
-		<!-- Файлы вынесенные в Writersword.UI.Shared.csproj -->
+		<!-- Р¤Р°Р№Р»С‹ РІС‹РЅРµСЃРµРЅРЅС‹Рµ РІ Writersword.UI.Shared.csproj -->
 		<Compile Remove="Src\Infrastructure\Behaviours\ClickOutsideBehavior.cs" />
 		<Compile Remove="Src\Infrastructure\Behaviours\FocusOnVisibleBehavior.cs" />
 		<Compile Remove="Src\Infrastructure\Behaviours\TooltipBehavior.cs" />
@@ -223,7 +222,7 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       ПРОЧИЕ ИСКЛЮЧЕНИЯ
+       РџР РћР§РР• РРЎРљР›Р®Р§Р•РќРРЇ
        ======================================== -->
 	<ItemGroup>
 		<AvaloniaXaml Remove="Docs\AI_GUIDE V2.0\**" />
@@ -241,14 +240,14 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       ПРОЧИЕ ФАЙЛЫ
+       РџР РћР§РР• Р¤РђР™Р›Р«
        ======================================== -->
 	<ItemGroup>
 		<Content Include="Docs\AI_GUIDE V3.0\Configuration_text.txt" />
 	</ItemGroup>
 
 	<!-- ========================================
-       ПУСТЫЕ ПАПКИ (для структуры проекта)
+       РџРЈРЎРўР«Р• РџРђРџРљР (РґР»СЏ СЃС‚СЂСѓРєС‚СѓСЂС‹ РїСЂРѕРµРєС‚Р°)
        ======================================== -->
 	<ItemGroup>
 		<Folder Include="Docs\Architecture\" />
@@ -292,7 +291,7 @@
 	</ItemGroup>
 
 	<!-- ========================================
-       ССЫЛКИ НА ПРОЕКТЫ МОДУЛЕЙ
+       РЎРЎР«Р›РљР РќРђ РџР РћР•РљРўР« РњРћР”РЈР›Р•Р™
        ======================================== -->
 	<ItemGroup>
 		<ProjectReference Include="Src\Writersword.Core.csproj" />
@@ -317,29 +316,24 @@
 	</ProjectExtensions>
 
 	<!-- ========================================
-       СПИСОК ВСТРОЕННЫХ МОДУЛЕЙ
-       При публикации в один файл сборки модулей лежат внутри бандла,
-       на диске их нет, и перечислить содержимое бандла нельзя.
-       Имена берутся из ProjectReference на этапе сборки и вшиваются
-       ресурсом, откуда их читает App.ReadBuiltInModuleNames.
+       РЎРџРРЎРћРљ Р’РЎРўР РћР•РќРќР«РҐ РњРћР”РЈР›Р•Р™
+       РџСЂРё РїСѓР±Р»РёРєР°С†РёРё РІ РѕРґРёРЅ С„Р°Р№Р» СЃР±РѕСЂРєРё РјРѕРґСѓР»РµР№ Р»РµР¶Р°С‚ РІРЅСѓС‚СЂРё Р±Р°РЅРґР»Р°,
+       РЅР° РґРёСЃРєРµ РёС… РЅРµС‚, Рё РїРµСЂРµС‡РёСЃР»РёС‚СЊ СЃРѕРґРµСЂР¶РёРјРѕРµ Р±Р°РЅРґР»Р° РЅРµР»СЊР·СЏ.
+       РРјРµРЅР° Р±РµСЂСѓС‚СЃСЏ РёР· ProjectReference РЅР° СЌС‚Р°РїРµ СЃР±РѕСЂРєРё Рё РІС€РёРІР°СЋС‚СЃСЏ
+       СЂРµСЃСѓСЂСЃРѕРј, РѕС‚РєСѓРґР° РёС… С‡РёС‚Р°РµС‚ App.ReadBuiltInModuleNames.
        ======================================== -->
 	<Target Name="WriterswordGenerateModuleList" BeforeTargets="PrepareForBuild">
 		<ItemGroup>
-			<WriterswordModuleProject Include="@(ProjectReference)"
-				Condition="$([System.String]::Copy('%(Identity)').Contains('Src\Modules\'))" />
+			<WriterswordModuleProject Include="@(ProjectReference)" Condition="$([System.String]::Copy('%(Identity)').Contains('Src\Modules\'))" />
 		</ItemGroup>
 		<PropertyGroup>
 			<WriterswordModuleListFile>$(IntermediateOutputPath)BuiltInModules.txt</WriterswordModuleListFile>
 		</PropertyGroup>
-		<WriteLinesToFile File="$(WriterswordModuleListFile)"
-			Lines="@(WriterswordModuleProject->'%(Filename)')"
-			Overwrite="true" WriteOnlyWhenDifferent="true" />
+		<WriteLinesToFile File="$(WriterswordModuleListFile)" Lines="@(WriterswordModuleProject->'%(Filename)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
 		<ItemGroup>
-			<EmbeddedResource Include="$(WriterswordModuleListFile)"
-				LogicalName="Writersword.BuiltInModules.txt" />
+			<EmbeddedResource Include="$(WriterswordModuleListFile)" LogicalName="Writersword.BuiltInModules.txt" />
 		</ItemGroup>
-		<Message Importance="high"
-			Text="Built-in modules: @(WriterswordModuleProject->'%(Filename)', ', ')" />
+		<Message Importance="high" Text="Built-in modules: @(WriterswordModuleProject->'%(Filename)', ', ')" />
 	</Target>
 
 </Project>

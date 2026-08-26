@@ -1,27 +1,27 @@
-﻿using Avalonia.Controls;
+using Avalonia.Controls;
+using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
-using ReactiveUI;
 using System;
-using System.Reactive.Linq;
-using Writersword.Core.Enums;
+using System.Collections.Generic;
+using System.Linq;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Models;
-using Writersword.Modules.Common;
-using Writersword.Modules.Notes.ViewModels;
 using Writersword.Core.Services;
+using Writersword.Modules.Common;
+using Writersword.Modules.Notes.Models;
 using Writersword.Modules.Notes.Resources;
+using Writersword.Modules.Notes.ViewModels;
 
 namespace Writersword.Modules.Notes
 {
-    public class NotesModule : BaseModule
+    public sealed class NotesModule : BaseModule, IStateSnapshotModule
     {
         private readonly ILogger<NotesModule> _logger;
         private NotesViewModel? _viewModel;
-        private IDisposable? _notesSubscription;
 
-        public NotesModule() : base()
+        public NotesModule()
         {
             _logger = CoreServices.GetService<ILogger<NotesModule>>()!;
         }
@@ -29,88 +29,154 @@ namespace Writersword.Modules.Notes
         public override string moduleType => "Notes";
         public override string Title { get; set; } = "Notes";
         public override object? ViewModel => _viewModel;
-        public override IModuleMetadata Metadata => new NotesMetadata();
+        public override IModuleMetadata Metadata { get; } = new NotesMetadata();
 
         public override void Initialize()
         {
-            _logger.LogDebug("Initialize START (moduleType: {moduleType})", moduleType);
+            base.Initialize();
             _viewModel = new NotesViewModel();
-            CreateSubscription();
-            _logger.LogDebug("Initialized (moduleType: {moduleType})", moduleType);
-        }
-
-        private void CreateSubscription()
-        {
-            _notesSubscription?.Dispose();
-            _notesSubscription = _viewModel.WhenAnyValue(x => x.NoteText)
-                .Throttle(TimeSpan.FromSeconds(0.5))
-                .Subscribe(text =>
-                {
-                    _logger.LogDebug("Notes updated: {Length} chars", text?.Length ?? 0);
-                });
+            _viewModel.IsReadOnly = Context?.IsInCompareMode == true;
+            _logger.LogDebug("Notes module initialized");
         }
 
         protected override void OnContextChanged(DocumentContext? context)
         {
-            _logger.LogDebug("Context changed - notes remain editable");
+            if (_viewModel != null)
+                _viewModel.IsReadOnly = context?.IsInCompareMode == true;
         }
 
         public override object? GetCustomData()
         {
-            var text = _viewModel?.NoteText ?? "";
-            return string.IsNullOrWhiteSpace(text) ? null : text;
+            var snapshot = TakeStateSnapshot();
+            return snapshot == null ? null : SerializeStateSnapshot(snapshot);
         }
+
+        public object? TakeStateSnapshot()
+        {
+            if (_viewModel == null)
+                return null;
+
+            NotesData Snapshot() => _viewModel.CreateSnapshot();
+            var data = Dispatcher.UIThread.CheckAccess()
+                ? Snapshot()
+                : Dispatcher.UIThread.InvokeAsync(Snapshot).GetAwaiter().GetResult();
+
+            // Одна исходная пустая страница не несёт пользовательских данных.
+            return HasMeaningfulData(data) ? data : null;
+        }
+
+        public object? SerializeStateSnapshot(object snapshot) => snapshot as NotesData;
 
         public override object? GetSessionData()
         {
-            return new { scrollPosition = 0 };
+            if (_viewModel == null)
+                return null;
+
+            NotesSessionData Snapshot() => _viewModel.CreateSessionSnapshot();
+            return Dispatcher.UIThread.CheckAccess()
+                ? Snapshot()
+                : Dispatcher.UIThread.InvokeAsync(Snapshot).GetAwaiter().GetResult();
         }
 
         public override void SetCustomData(object? data)
         {
             if (_viewModel == null)
-            {
-                _logger.LogWarning("SetCustomData called but ViewModel is null");
                 return;
-            }
 
-            _notesSubscription?.Dispose();
-
-            string text = data switch
+            try
             {
-                string str => str,
-                JValue jValue => jValue.Value?.ToString() ?? "",
-                not null => data.ToString() ?? "",
-                _ => ""
-            };
-
-            _viewModel.LoadNotes(text);
-            _logger.LogDebug("Loaded {Length} chars", text.Length);
-
-            CreateSubscription();
+                _viewModel.LoadData(ConvertCustomData(data));
+            }
+            catch (Exception ex)
+            {
+                // При неизвестном или повреждённом формате текущая модель не
+                // затирается: CustomData содержит критичные пользовательские данные.
+                _logger.LogError(ex, "Failed to load Notes custom data");
+            }
         }
 
         public override void SetSessionData(object? data)
         {
-            _logger.LogDebug("SessionData set");
+            if (_viewModel == null || data == null)
+                return;
+
+            try
+            {
+                var session = data switch
+                {
+                    NotesSessionData typed => typed,
+                    JToken token => token.ToObject<NotesSessionData>(),
+                    _ => JToken.FromObject(data).ToObject<NotesSessionData>()
+                };
+                _viewModel.RestoreSession(session);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to restore Notes session data");
+            }
         }
+
+        public override Control? CreateView() => new Views.NotesView { DataContext = _viewModel };
 
         public override void Dispose()
         {
-            _notesSubscription?.Dispose();
-            _notesSubscription = null;
             _viewModel = null;
             base.Dispose();
-            _logger.LogDebug("Disposed (moduleType: {moduleType})", moduleType);
+            _logger.LogDebug("Notes module disposed");
         }
 
-        public override Control? CreateView()
+        private static NotesData ConvertCustomData(object? data)
         {
-            return new Views.NotesView { DataContext = ViewModel };
+            if (data == null)
+                return new NotesData();
+
+            // До блочного редактора Notes хранил весь текст одной строкой.
+            // Миграция сохраняет порядок абзацев и не меняет исходный текст строк.
+            if (data is string legacyText)
+                return CreateLegacyData(legacyText);
+            if (data is JValue value && value.Type == JTokenType.String)
+                return CreateLegacyData(value.Value<string>() ?? string.Empty);
+
+            var result = data switch
+            {
+                NotesData typed => typed,
+                JToken token => token.ToObject<NotesData>(),
+                _ => JToken.FromObject(data).ToObject<NotesData>()
+            };
+            return result ?? throw new InvalidOperationException("Notes data is empty after deserialization");
+        }
+
+        private static NotesData CreateLegacyData(string text)
+        {
+            var blocks = text.Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Split('\n')
+                .Select(line => new NoteBlock { Text = line })
+                .ToList();
+            if (blocks.Count == 0)
+                blocks.Add(new NoteBlock());
+
+            return new NotesData
+            {
+                Pages = new List<NotePage>
+                {
+                    new() { Title = "Заметки", Blocks = blocks }
+                }
+            };
+        }
+
+        private static bool HasMeaningfulData(NotesData data)
+        {
+            if (data.Pages.Count != 1)
+                return data.Pages.Count > 0;
+            var page = data.Pages[0];
+            return page.Title != "Заметки" || page.Blocks.Any(block =>
+                !string.IsNullOrEmpty(block.Text) ||
+                block.Type != NoteBlockType.Paragraph ||
+                block.IsChecked || block.IsHighlighted || block.IsStruckThrough);
         }
     }
 
-    internal class NotesMetadata : IModuleMetadata
+    internal sealed class NotesMetadata : IModuleMetadata
     {
         public string ModuleType => "Notes";
         public string DisplayName => NotesStrings.DisplayName;

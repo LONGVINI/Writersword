@@ -1,25 +1,302 @@
-﻿<UserControl xmlns="https://github.com/avaloniaui"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Writersword.Modules.Notes.ViewModels"
-             xmlns:loc="using:Writersword.Modules.Notes.Resources"
              x:Class="Writersword.Modules.Notes.Views.NotesView"
              x:DataType="vm:NotesViewModel"
+             Background="{DynamicResource BgSurfaceBrush}"
              Tag="Notes">
-	<Border Padding="10"
-            Background="{DynamicResource BgSurfaceBrush}">
-		<StackPanel Spacing="5">
-			<TextBlock Text="{x:Static loc:NotesStrings.Title}"
-                       FontSize="12"
-                       FontWeight="Bold"
-                       Foreground="{DynamicResource TextPrimaryBrush}"/>
-			<TextBox Text="{Binding NoteText}"
-                     AcceptsReturn="True"
-                     TextWrapping="Wrap"
-                     Height="80"
-                     Background="{DynamicResource BgPanelBrush}"
-                     Foreground="{DynamicResource TextPrimaryBrush}"
-                     BorderBrush="{DynamicResource AccentDefaultBrush}"
-                     BorderThickness="1"/>
-		</StackPanel>
-	</Border>
+    <UserControl.Styles>
+        <!-- Специализированное поле блока: оформление обычных полей остаётся
+             глобальным, а текст заметки не получает рамку вокруг каждой строки. -->
+        <Style Selector="TextBox.noteEditor">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Padding" Value="4,3" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="TextBox.noteEditor /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="TextBox.noteEditor:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="TextBox.noteEditor:focus /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="TextBox.noteEditor.heading">
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBox.noteEditor.struck">
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+        </Style>
+
+        <!-- У ToggleButton нет общего проектного класса активного состояния.
+             Здесь задаётся только checked-состояние, остальные метрики и цвета
+             приходят из стандартной темы и локальных параметров панели. -->
+        <Style Selector="ToggleButton.notesToggle:checked">
+            <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}" />
+        </Style>
+        <Style Selector="ToggleButton.notesToggle:checked /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource AccentDefaultBrush}" />
+        </Style>
+
+        <Style Selector="Border.noteBlock.highlighted">
+            <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- Обычная панель модуля по образцу Characters: стандартная поверхность,
+             нижняя граница и штатные контролы без отдельной дизайн-системы. -->
+        <Border Grid.Row="0"
+                Background="{DynamicResource BgPanelBrush}"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="8,6">
+            <WrapPanel Orientation="Horizontal">
+                <Button Width="30"
+                        Height="28"
+                        Padding="6"
+                        Margin="0,0,4,0"
+                        Background="{DynamicResource BgSurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Focusable="False"
+                        ToolTip.Tip="Показать или скрыть страницы"
+                        Click="OnTogglePagesClick">
+                    <PathIcon Width="14" Height="14"
+                              Data="M3 3h6v18H3V3zm8 0h10v18H11V3zM5 5v14h2V5H5zm8 0v14h6V5h-6z" />
+                </Button>
+
+                <Button Height="28"
+                        Padding="8,4"
+                        Margin="0,0,8,0"
+                        Background="{DynamicResource BgSurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Focusable="False"
+                        ToolTip.Tip="Добавить страницу"
+                        IsEnabled="{Binding !IsReadOnly}"
+                        Click="OnAddPageClick">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <PathIcon Width="14" Height="14"
+                                  Data="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm1 2.5L17.5 7H15V4.5zM11 10h2v3h3v2h-3v3h-2v-3H8v-2h3v-3z" />
+                        <TextBlock Text="Новая страница"
+                                   FontSize="{DynamicResource FontSizeS}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <ComboBox Width="150"
+                          Height="28"
+                          Margin="0,0,8,0"
+                          Padding="8,3"
+                          IsVisible="{Binding IsCompactHeaderVisible}"
+                          ItemsSource="{Binding Pages}"
+                          SelectedItem="{Binding SelectedPage, Mode=TwoWay}"
+                          DisplayMemberBinding="{Binding Title}" />
+
+                <ComboBox Width="142"
+                          Height="28"
+                          Margin="0,0,4,0"
+                          Padding="8,3"
+                          SelectedIndex="{Binding SelectedBlockTypeIndex, Mode=TwoWay}"
+                          IsEnabled="{Binding !IsReadOnly}">
+                    <ComboBoxItem Content="Обычный текст" />
+                    <ComboBoxItem Content="Заголовок 1" />
+                    <ComboBoxItem Content="Заголовок 2" />
+                    <ComboBoxItem Content="Заголовок 3" />
+                    <ComboBoxItem Content="Список" />
+                    <ComboBoxItem Content="Список задач" />
+                    <ComboBoxItem Content="Цитата" />
+                </ComboBox>
+
+                <Button Width="30"
+                        Height="28"
+                        Padding="6"
+                        Margin="0,0,4,0"
+                        Background="{DynamicResource BgSurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Focusable="False"
+                        Tag="Divider"
+                        ToolTip.Tip="Разделитель"
+                        IsEnabled="{Binding !IsReadOnly}"
+                        Click="OnBlockTypeClick">
+                    <PathIcon Width="14" Height="14" Data="M3 11h18v2H3z" />
+                </Button>
+
+                <ToggleButton Classes="notesToggle"
+                              Width="30"
+                              Height="28"
+                              Padding="6"
+                              Margin="0,0,4,0"
+                              Background="{DynamicResource BgSurfaceBrush}"
+                              BorderBrush="{DynamicResource BorderDefaultBrush}"
+                              BorderThickness="1"
+                              CornerRadius="6"
+                              Focusable="False"
+                              IsChecked="{Binding IsStrikeSelected, Mode=OneWay}"
+                              ToolTip.Tip="Зачеркнуть блок"
+                              IsEnabled="{Binding !IsReadOnly}"
+                              Click="OnStrikeClick">
+                    <Grid Width="14" Height="14">
+                        <TextBlock Text="S"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                        <Border Height="1"
+                                VerticalAlignment="Center"
+                                Background="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                    </Grid>
+                </ToggleButton>
+
+                <ToggleButton Classes="notesToggle"
+                              Width="30"
+                              Height="28"
+                              Padding="6"
+                              Background="{DynamicResource BgSurfaceBrush}"
+                              BorderBrush="{DynamicResource BorderDefaultBrush}"
+                              BorderThickness="1"
+                              CornerRadius="6"
+                              Focusable="False"
+                              IsChecked="{Binding IsHighlightSelected, Mode=OneWay}"
+                              ToolTip.Tip="Выделить блок"
+                              IsEnabled="{Binding !IsReadOnly}"
+                              Click="OnHighlightClick">
+                    <PathIcon Width="14" Height="14"
+                              Data="M17.75 7L14 3.25 4 13.25V17h3.75L17.75 7zM3 19h18v2H3v-2zm12.9-13.9l1-1a1 1 0 0 1 1.4 0l1.6 1.6a1 1 0 0 1 0 1.4l-1 1-4-4z" />
+                </ToggleButton>
+            </WrapPanel>
+        </Border>
+
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*">
+            <Border Grid.Column="0"
+                    Width="220"
+                    IsVisible="{Binding IsWidePagePanelVisible}"
+                    Background="{DynamicResource BgPanelBrush}"
+                    BorderBrush="{DynamicResource BorderDefaultBrush}"
+                    BorderThickness="0,0,1,0"
+                    Padding="8">
+                <Grid RowDefinitions="Auto,*">
+                    <TextBlock Margin="6,4,6,8"
+                               Text="Страницы"
+                               FontSize="{DynamicResource FontSizeS}"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                    <ListBox Grid.Row="1"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             ItemsSource="{Binding Pages}"
+                             SelectedItem="{Binding SelectedPage, Mode=TwoWay}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:NotePageViewModel">
+                                <Grid ColumnDefinitions="Auto,*" Margin="2">
+                                    <PathIcon Width="13"
+                                              Height="13"
+                                              Margin="0,0,7,0"
+                                              VerticalAlignment="Center"
+                                              Foreground="{DynamicResource TextMutedBrush}"
+                                              Data="M6 2h8l6 6v14H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 2H6v16h12V9h-5V4zm2 1.5V7h1.5L15 5.5z" />
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding Title}"
+                                               FontSize="{DynamicResource FontSizeS}"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+
+            <ScrollViewer Grid.Column="1"
+                          Background="{DynamicResource BgSurfaceBrush}"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <Grid MaxWidth="900"
+                      Margin="32,28,32,60"
+                      HorizontalAlignment="Stretch"
+                      RowDefinitions="Auto,Auto,*"
+                      IsEnabled="{Binding !IsReadOnly}">
+                    <TextBox Text="{Binding SelectedPage.Title, Mode=TwoWay}"
+                             PlaceholderText="Название страницы"
+                             FontSize="{DynamicResource FontSizeXXL}"
+                             FontWeight="SemiBold"
+                             Padding="4,0,4,10"
+                             Background="Transparent"
+                             BorderThickness="0" />
+                    <Border Grid.Row="1"
+                            Height="1"
+                            Margin="4,0,4,12"
+                            Background="{DynamicResource BorderSubtleBrush}" />
+
+                    <ItemsControl Grid.Row="2" ItemsSource="{Binding SelectedPage.Blocks}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:NoteBlockViewModel">
+                                <Border Classes.noteBlock="True"
+                                        Classes.highlighted="{Binding IsHighlighted}"
+                                        CornerRadius="3"
+                                        PointerPressed="OnBlockPointerPressed">
+                                    <Grid ColumnDefinitions="Auto,Auto,*">
+                                        <CheckBox Grid.Column="0"
+                                                  Margin="2,5,6,0"
+                                                  VerticalAlignment="Top"
+                                                  IsVisible="{Binding IsChecklist}"
+                                                  IsChecked="{Binding IsChecked, Mode=TwoWay}" />
+                                        <TextBlock Grid.Column="1"
+                                                   Width="18"
+                                                   Margin="0,5,2,0"
+                                                   VerticalAlignment="Top"
+                                                   Text="{Binding Prefix}"
+                                                   IsVisible="{Binding HasPrefix}"
+                                                   Foreground="{DynamicResource TextMutedBrush}" />
+                                        <TextBox Grid.Column="2"
+                                                 Classes="noteEditor"
+                                                 Classes.heading="{Binding IsHeading}"
+                                                 Classes.struck="{Binding IsVisuallyStruck}"
+                                                 IsVisible="{Binding IsEditor}"
+                                                 Text="{Binding Text, Mode=TwoWay}"
+                                                 FontSize="{Binding EditorFontSize}"
+                                                 PlaceholderText="Введите текст"
+                                                 AcceptsReturn="False"
+                                                 Tag="{Binding Id}"
+                                                 GotFocus="OnEditorGotFocus"
+                                                 KeyDown="OnEditorKeyDown" />
+                                        <Border Grid.Column="2"
+                                                Height="1"
+                                                Margin="4,0"
+                                                VerticalAlignment="Center"
+                                                IsHitTestVisible="False"
+                                                IsVisible="{Binding IsVisuallyStruck}"
+                                                Background="{DynamicResource TextMutedBrush}" />
+                                        <Border Grid.Column="0"
+                                                Grid.ColumnSpan="3"
+                                                Height="1"
+                                                Margin="4,13"
+                                                IsVisible="{Binding IsDivider}"
+                                                Background="{DynamicResource BorderDefaultBrush}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
 </UserControl>

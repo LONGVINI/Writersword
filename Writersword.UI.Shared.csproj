@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
@@ -10,12 +10,12 @@
 		<AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
 	</PropertyGroup>
 
-	<!-- Убираем все AXAML что SDK мог подхватить автоматически -->
+	<!-- РЈР±РёСЂР°РµРј РІСЃРµ AXAML С‡С‚Рѕ SDK РјРѕРі РїРѕРґС…РІР°С‚РёС‚СЊ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё -->
 	<ItemGroup>
 		<AvaloniaXaml Remove="**\*.axaml" />
 	</ItemGroup>
 
-	<!-- Infrastructure/Behaviours и Controls -->
+	<!-- Infrastructure/Behaviours Рё Controls -->
 	<ItemGroup>
 		<Compile Include="Src\Infrastructure\Behaviours\ClickOutsideBehavior.cs" />
 		<Compile Include="Src\Infrastructure\Behaviours\FocusOnVisibleBehavior.cs" />
@@ -26,7 +26,7 @@
 		<Compile Include="Src\Infrastructure\Converters\EnumToBooleanConverter.cs" />
 	</ItemGroup>
 
-	<!-- UserControls — явно после Remove выше -->
+	<!-- UserControls вЂ” СЏРІРЅРѕ РїРѕСЃР»Рµ Remove РІС‹С€Рµ -->
 	<ItemGroup>
 		<Compile Include="Styles\UserControls\ColorPickerButton.axaml.cs" />
 		<AvaloniaXaml Include="Styles\UserControls\ColorPickerButton.axaml" />
@@ -48,7 +48,7 @@
 		<AvaloniaXaml Include="Styles\UserControls\TooltipView.axaml" />
 	</ItemGroup>
 
-	<!-- Локализация общих контролов -->
+	<!-- Р›РѕРєР°Р»РёР·Р°С†РёСЏ РѕР±С‰РёС… РєРѕРЅС‚СЂРѕР»РѕРІ -->
 	<ItemGroup>
 		<Compile Include="Styles\UserControls\SharedStrings.Designer.cs" />
 		<EmbeddedResource Include="Styles\UserControls\SharedStrings.resx" />
@@ -64,9 +64,9 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Avalonia" Version="12.0.3" />
-		<PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.3" />
-		<PackageReference Include="Avalonia.Controls.ColorPicker" Version="12.0.3" />
+		<PackageReference Include="Avalonia" Version="12.1.1" />
+		<PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+		<PackageReference Include="Avalonia.Controls.ColorPicker" Version="12.1.1" />
 		<PackageReference Include="AnimatedImage.Avalonia" Version="2.1.4" />
 		<PackageReference Include="ReactiveUI.Avalonia" Version="12.0.1" />
 		<PackageReference Include="Serilog" Version="4.3.2-dev-02419" />

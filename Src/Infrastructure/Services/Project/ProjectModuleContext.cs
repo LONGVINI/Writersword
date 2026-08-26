@@ -108,7 +108,41 @@ namespace Writersword.Core.Services
 
                 _modules.Remove(moduleType);
 
-                _logger.LogDebug("Module removed: {moduleType}", moduleType);
+                // Со стеком вызова: снос модуля означает потерю его данных до
+                // следующей загрузки, и когда модуль потом поднимается пустым,
+                // единственный нужный ответ — кто его снёс. Путей сюда несколько:
+                // крестик на вкладке, смена рабочего режима, уборка модулей не из
+                // нового режима. По имени метода они не различаются.
+                _logger.LogDebug("Module removed: {moduleType}\nПуть вызова:\n{Stack}",
+                    moduleType, ShortStack());
+            }
+        }
+
+        /// <summary>
+        /// Несколько верхних кадров стека, только свои. Полный стек здесь не нужен:
+        /// интересны ближайшие вызывающие, а сотня строк в журнале лишь прячет
+        /// соседние записи.
+        /// </summary>
+        private static string ShortStack()
+        {
+            try
+            {
+                var kept = new List<string>();
+
+                foreach (var line in Environment.StackTrace.Split('\n'))
+                {
+                    if (line.Contains("ShortStack", StringComparison.Ordinal)) continue;
+                    if (!line.Contains("Writersword", StringComparison.Ordinal)) continue;
+
+                    kept.Add(line.TrimEnd());
+                    if (kept.Count >= 8) break;
+                }
+
+                return kept.Count > 0 ? string.Join("\n", kept) : "(своих кадров не найдено)";
+            }
+            catch
+            {
+                return "(стек прочитать не удалось)";
             }
         }
 

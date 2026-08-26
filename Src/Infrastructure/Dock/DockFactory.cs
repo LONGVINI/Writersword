@@ -1,11 +1,19 @@
-﻿// TODO: Dock.Avalonia 12.x не имеет CacheDocumentTabContent (есть только в 11.3.x под Avalonia 11).
-// Когда выйдет стабильный Dock.Avalonia 12.x с этой фичей:
-//   1. Обновить все Dock.* пакеты в Writersword.csproj до новой версии
-//   2. В App.axaml заменить StyleInclude на:
-//      <dockFluent:DockFluentTheme CacheDocumentTabContent="True" />
-//   3. Удалить GetOrCreateView() и RecreateDocumentViews() — они больше не нужны
-//   4. Удалить RequestProgressiveRefreshAsync() вызов из CharactersModuleView.OnLoaded
-// Следить за релизами: https://github.com/wieslawsoltes/Dock/releases
+// Обходные пути под Dock 12.0. Два первых пункта прежнего списка выполнены:
+// пакеты подняты до 12.1.0.4, а CacheDocumentTabContent стоит в App.axaml —
+// вью документов держатся живыми при переключении вкладок.
+//
+// Осталось снять то, что было написано в обход поведения 12.0:
+//   1. RecreateDocumentViews() — пересоздание вью оставшихся модулей. После
+//      закрытия отключено (см. RecreateViewsAfterClose), после перетаскивания
+//      пока работает: сценарии разные, проверять их надо порознь.
+//   2. GetOrCreateView() в BaseModule — восстановление DataContext у кэшированной
+//      вью. Снимать только после того, как подтвердится, что Dock 12.1 его больше
+//      не обнуляет.
+//   3. RequestProgressiveRefreshAsync() в CharactersModuleView.OnLoaded.
+//
+// Каждый пункт снимается отдельно и проверяется своим сценарием: они писались
+// под разные поломки, и одно исправление в библиотеке не обязано закрывать все.
+// Релизы: https://github.com/wieslawsoltes/Dock/releases
 
 using Dock.Model.Avalonia;
 using Dock.Model.Avalonia.Controls;
@@ -45,6 +53,50 @@ namespace Writersword.Infrastructure.Dock
         private bool _isMoving = false;
         private bool _isRerendering = false;
         private IDockSerializer? _dockSerializer;
+
+        /// <summary>
+        /// Типы модулей, которые уже поднимались за эту сессию.
+        ///
+        /// Нужен для одного вопроса: собирают модуль первый раз или заново. Первое
+        /// — обычное открытие, второе — то самое «моргание», когда живой экземпляр
+        /// куда-то делся и его строят повторно. По логу эти два случая иначе не
+        /// различить, а лечатся они по-разному.
+        /// </summary>
+        private readonly HashSet<string> _materializedOnce = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Пересоздавать вью оставшихся модулей после закрытия одного из них.
+        ///
+        /// Нужно было Dock 12.0: он перестраивал визуальное дерево, оставшиеся
+        /// модули теряли свои ContentPresenter и показывались пустыми. С 12.1.0.2
+        /// это чинится в самой библиотеке — отслеживание активного больше не
+        /// удерживает закрытое, и поправлено закрытие во вложенном доке.
+        ///
+        /// Обход при этом остался вредным сам по себе: он рвёт и собирает заново
+        /// живые панели, и на экране это видно как мерцание при каждом закрытии.
+        ///
+        /// Вернуть true, если после закрытия модуля оставшиеся панели пустеют.
+        /// </summary>
+        private static readonly bool RecreateViewsAfterClose = false;
+
+        /// <summary>
+        /// Убирать пустые контейнеры из раскладки своими руками.
+        ///
+        /// Писалось под Dock 12.0, который опустевшие DocumentDock и
+        /// ProportionalDock не убирал: они оставались с нулевым содержимым и
+        /// занимали место, не давая соседям растянуться. С 12.1 эту работу делает
+        /// сам Dock через CollapseDock — то есть наша уборка теперь дублирует его.
+        ///
+        /// И не просто дублирует, а падает. Удаление из VisibleDockables у живой,
+        /// прицепленной раскладки синхронно разбирает контейнер, разбор гасит
+        /// DataContext, и вкладочная полоса переустанавливает выделение по уже
+        /// опустевшему списку — то же самое исключение, что ловилось на закрытии
+        /// и на перетаскивании, только прилетевшее из нашего кода.
+        ///
+        /// Вернуть true, если после закрытия модуля на его месте остаётся пустая
+        /// панель и соседи не растягиваются.
+        /// </summary>
+        private static readonly bool CleanupEmptyContainers = false;
 
         /// <summary>
         /// Callback вызывается когда пользователь закрывает модуль через крестик в Dock
@@ -99,8 +151,12 @@ namespace Writersword.Infrastructure.Dock
         /// <summary>
         /// Перехват реального закрытия модуля пользователем через крестик
         /// При drag этот метод НЕ вызывается — только при реальном Close
+        ///
+        /// Параметр объявлен допускающим null вслед за базовым методом Dock.
+        /// Разбор по образцу ниже пустое значение отсеивает сам: null не Document,
+        /// и вызов уходит в базовую реализацию, которая его и ждёт.
         /// </summary>
-        public override void CloseDockable(IDockable dockable)
+        public override void CloseDockable(IDockable? dockable)
         {
             if (dockable is Document doc && doc.Id?.StartsWith("Module_") == true)
             {
@@ -133,9 +189,9 @@ namespace Writersword.Infrastructure.Dock
                 base.CloseDockable(dockable);
                 OnModuleClosed?.Invoke(moduleType);
 
-                // После закрытия Dock 12 перестраивает визуальное дерево —
-                // оставшиеся модули теряют ContentPresenter. Пересоздаём View-шки.
-                if (_currentRootDock != null)
+                // После закрытия Dock 12.0 перестраивал визуальное дерево —
+                // оставшиеся модули теряли ContentPresenter. Пересоздаём View-шки.
+                if (RecreateViewsAfterClose && _currentRootDock != null)
                 {
                     var root = _currentRootDock;
                     Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -152,6 +208,60 @@ namespace Writersword.Infrastructure.Dock
                 base.CloseDockable(dockable);
             }
         }
+
+        /// <summary>
+        /// Схлопнуть опустевший док — но не сейчас, а следующим тактом диспетчера.
+        ///
+        /// Штатный путь Dock делает удаление и схлопывание одним заходом: убирает
+        /// докабл, видит, что док опустел, и тут же удаляет сам док из родителя.
+        /// Второе удаление происходит прямо внутри уведомления об изменении
+        /// коллекции от первого. Avalonia в этот момент разбирает контейнер,
+        /// разбор гасит DataContext, тот протекает вниз по дереву и доходит до
+        /// вкладочной полосы дока. Полоса — это SelectingItemsControl: на смену
+        /// DataContext она переустанавливает выделение и читает ItemsSourceView по
+        /// индексу, а у того счётчик ещё прежний, тогда как список уже опустел.
+        /// Индекс за границей, исключение на UI-потоке, приложение падает.
+        ///
+        /// Схлопывание перехвачено здесь, а не на путях закрытия и перетаскивания
+        /// по отдельности, потому что поломка одна на всех: сначала она вылезла на
+        /// закрытии вкладки, после починки закрытия — на перетаскивании, и оба
+        /// раза стек упирался в CollapseDock внутри RemoveDockable. Место, где
+        /// сходятся все пути, ровно одно, и чинить надо его.
+        ///
+        /// Схлопывание не выбрасывается, а откладывается: пустой док в раскладке
+        /// оставлять нельзя, иначе на месте закрытого модуля остаётся пустая
+        /// панель. Один такт с пустым доком на экране незаметен.
+        ///
+        /// Перед схлопыванием состояние проверяется заново: за прошедший такт док
+        /// могли и наполнить — при перетаскивании докабл как раз переезжает в
+        /// соседний док, и порядок событий тут не гарантирован.
+        /// </summary>
+        public override void CollapseDock(IDock dock)
+        {
+            if (dock is null) return;
+
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                try
+                {
+                    if (dock.VisibleDockables is { Count: 0 })
+                        CollapseNow(dock);
+                }
+                catch (Exception ex)
+                {
+                    // Схлопывание — уборка раскладки, а не полезное действие само
+                    // по себе. Докабл уже удалён или переехал, и падать здесь
+                    // означало бы уронить программу на косметике.
+                    _logger.LogError(ex, "Deferred collapse failed for dock {DockId}", dock.Id);
+                }
+            }, Avalonia.Threading.DispatcherPriority.Background);
+        }
+
+        /// <summary>
+        /// Настоящее схлопывание. Отдельным методом, чтобы вызов базовой
+        /// реализации не оказался внутри лямбды.
+        /// </summary>
+        private void CollapseNow(IDock dock) => base.CollapseDock(dock);
 
         public override void MoveDockable(IDock sourceOwner, IDock targetOwner, IDockable sourceDockable, IDockable? targetDockable)
         {
@@ -1140,6 +1250,12 @@ namespace Writersword.Infrastructure.Dock
         /// </summary>
         public void CleanupEmptyContainersInLayout(IRootDock rootDock)
         {
+            if (!CleanupEmptyContainers)
+            {
+                _logger.LogDebug("Empty containers cleanup skipped — Dock collapses them itself");
+                return;
+            }
+
             var topProportional = FindTopLevelProportionalDock(rootDock);
             if (topProportional == null)
                 return;
@@ -1680,12 +1796,30 @@ namespace Writersword.Infrastructure.Dock
         {
             var existing = tab.ModuleContext.GetModule(moduleType);
             if (existing?.ViewModel != null)
+            {
+                _logger.LogDebug("Materialize [{ModuleType}]: instance already alive — reusing view", moduleType);
                 return existing.GetOrCreateView();
+            }
+
+            // Повторная материализация того же модуля за сессию — это и есть
+            // «моргание»: экземпляр был, его не стало, и он собирается заново.
+            // Первый раз за сессию — норма, второй и далее — повод смотреть, кто
+            // его снёс.
+            bool firstTime = _materializedOnce.Add(moduleType);
+            if (!firstTime)
+                _logger.LogWarning(
+                    "Materialize [{ModuleType}]: REBUILDING — instance existed earlier this session and is gone",
+                    moduleType);
 
             var project = tab.GetProject();
 
             object? customDataToRestore = null;
             object? sessionDataToRestore = null;
+
+            // Откуда пришли данные — единственное, что объясняет пустой модуль,
+            // поэтому источник и его содержимое пишутся подробно.
+            string source = "none";
+            string cacheState;
 
             // У несохранённого проекта нет пути к файлу — кеш не читается,
             // данные берутся из project.ModulesData. Без этой проверки чтение
@@ -1701,20 +1835,46 @@ namespace Writersword.Infrastructure.Dock
                 {
                     cacheResult.Value.CustomData.TryGetValue(moduleType, out customDataToRestore);
                     cacheResult.Value.SessionData.TryGetValue(moduleType, out sessionDataToRestore);
+
+                    cacheState = $"read, keys=[{string.Join(", ", cacheResult.Value.CustomData.Keys)}]";
+
                     if (customDataToRestore != null)
+                    {
+                        source = "cache";
                         _logger.LogDebug("Using cache data for: {ModuleType}", moduleType);
+                    }
                 }
+                else
+                {
+                    cacheState = "no cache file";
+                }
+            }
+            else
+            {
+                cacheState = "project not saved yet — cache skipped";
             }
 
             if (customDataToRestore == null
                 && project.ModulesData.TryGetValue(moduleType, out var fileData))
             {
                 customDataToRestore = fileData;
+                source = "project file";
                 _logger.LogDebug("Using project file data for: {ModuleType}", moduleType);
             }
 
+            _logger.LogDebug(
+                "Materialize [{ModuleType}]: source={Source}, cache={CacheState}, "
+                + "projectModulesData=[{ProjectKeys}], projectId={ProjectId}, file={File}",
+                moduleType, source, cacheState,
+                string.Join(", ", project.ModulesData.Keys),
+                project.Id,
+                string.IsNullOrEmpty(filePath) ? "<none>" : System.IO.Path.GetFileName(filePath));
+
             if (customDataToRestore == null)
-                _logger.LogWarning("No data found for module: {ModuleType} — will load empty", moduleType);
+                _logger.LogWarning(
+                    "No data found for module: {ModuleType} — will load empty "
+                    + "(cache: {CacheState}; project file keys: [{ProjectKeys}])",
+                    moduleType, cacheState, string.Join(", ", project.ModulesData.Keys));
 
             var module = tab.ModuleContext.CreateModule(moduleType);
             if (module?.ViewModel == null)
