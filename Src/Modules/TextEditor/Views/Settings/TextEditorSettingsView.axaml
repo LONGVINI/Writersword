@@ -13,6 +13,12 @@
 			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
 			<Setter Property="Margin" Value="0,0,0,4"/>
 		</Style>
+		<Style Selector="TextBlock.FieldHint">
+			<Setter Property="FontSize" Value="11"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="TextWrapping" Value="Wrap"/>
+			<Setter Property="Margin" Value="0,4,0,0"/>
+		</Style>
 		<Style Selector="NumericUpDown">
 			<Setter Property="VerticalAlignment" Value="Center"/>
 			<Setter Property="ButtonSpinnerLocation" Value="Right"/>
@@ -242,13 +248,51 @@
                            TextWrapping="Wrap"/>
 			</StackPanel>
 
-			<!-- Секция: Шрифты по языкам -->
+			<!-- Секция: недостающие знаки -->
 			<StackPanel Spacing="12">
+				<TextBlock Text="{x:Static loc:TextEditorStrings.Settings_SubstituteGroup}"
+                           FontWeight="SemiBold" FontSize="13"/>
+				<Separator/>
+
+				<StackPanel Spacing="0">
+					<Grid ColumnDefinitions="*,Auto">
+						<CheckBox Grid.Column="0"
+                                  IsChecked="{Binding SubstituteMissingGlyphs.Value}"
+                                  Content="{x:Static loc:TextEditorStrings.Settings_SubstituteMissingGlyphs}"/>
+						<sf:SettingButtons Grid.Column="1"
+                                           Setting="{Binding SubstituteMissingGlyphs}"
+                                           Context="{Binding Context}"/>
+					</Grid>
+					<TextBlock Classes="FieldHint"
+                               Text="{x:Static loc:TextEditorStrings.Settings_SubstituteMissingGlyphsHint}"/>
+				</StackPanel>
+
+				<StackPanel Spacing="0">
+					<TextBlock Classes="FieldLabel"
+                               Text="{x:Static loc:TextEditorStrings.Settings_SubstituteFontFamily}"/>
+					<Grid ColumnDefinitions="*,Auto">
+						<ComboBox Grid.Column="0"
+                                  ItemsSource="{Binding SubstituteFontChoices}"
+                                  SelectedItem="{Binding SubstituteFontFamily.Value}"
+                                  IsEnabled="{Binding SubstituteMissingGlyphs.Value}"
+                                  HorizontalAlignment="Stretch"
+                                  MaxDropDownHeight="320"/>
+						<sf:SettingButtons Grid.Column="1"
+                                           Setting="{Binding SubstituteFontFamily}"
+                                           Context="{Binding Context}"/>
+					</Grid>
+					<TextBlock Classes="FieldHint"
+                               Text="{x:Static loc:TextEditorStrings.Settings_SubstituteFontFamilyHint}"/>
+				</StackPanel>
+			</StackPanel>
+
+			<!-- Секция: Шрифты по языкам -->
+			<StackPanel Spacing="12" IsEnabled="{Binding SubstituteMissingGlyphs.Value}">
 				<TextBlock Text="Шрифты по языковым скриптам"
                            FontWeight="SemiBold" FontSize="13"/>
 				<Separator/>
 
-				<TextBlock Text="Выбранный шрифт используется автоматически когда текущий шрифт документа не поддерживает символы этого скрипта."
+				<TextBlock Text="{x:Static loc:TextEditorStrings.Settings_SubstituteScriptsHint}"
                            FontSize="11"
                            TextWrapping="Wrap"
                            Foreground="{DynamicResource TextSecondaryBrush}"/>

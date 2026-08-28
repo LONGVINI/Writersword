@@ -81,6 +81,8 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
 
                 _fontAutoComplete.PointerReleased -= OnFontAutoCompletePointerReleased;
                 _fontAutoComplete.PointerReleased += OnFontAutoCompletePointerReleased;
+                _fontAutoComplete.LostFocus -= OnFontAutoCompleteLostFocus;
+                _fontAutoComplete.LostFocus += OnFontAutoCompleteLostFocus;
 
                 // При повторном attach (после detach из-за перестроек с таблицей/сменой
                 // документа) шаблон заново не применяется и TemplateApplied не срабатывает —
@@ -101,6 +103,7 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
                 _fontAutoComplete.DropDownOpened -= OnFontDropDownOpened;
                 _fontAutoComplete.DropDownClosed -= OnFontDropDownClosed;
                 _fontAutoComplete.PointerReleased -= OnFontAutoCompletePointerReleased;
+                _fontAutoComplete.LostFocus -= OnFontAutoCompleteLostFocus;
             }
 
             DetachInnerControls();
@@ -205,8 +208,50 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
 
         // ── TextBox события ───────────────────────────────────────────────
 
+        /// <summary>
+        /// Фокус ушёл с поля шрифта — возвращаем то, что было.
+        ///
+        /// Своей страховки тут раньше не было вовсе: восстановление держалось на
+        /// том, что AutoCompleteBox сам закроет список и пришлёт DropDownClosed.
+        /// Цепочка длинная и чужая, а поле к этому моменту уже очищено — если
+        /// событие не придёт, оно так и останется пустым, и пустота уедет во
+        /// вьюмодель через двустороннюю привязку.
+        ///
+        /// Уход фокуса без выбора — это отказ, а не выбор: возвращаем исходную
+        /// гарнитуру и закрываем список сами.
+        /// </summary>
+        private void OnFontAutoCompleteLostFocus(object? sender, RoutedEventArgs e)
+        {
+            if (_fontAutoComplete is null) return;
+
+            // Список ещё открыт — закрываем; DropDownClosed доделает остальное.
+            if (_fontAutoComplete.IsDropDownOpen)
+            {
+                _fontAutoComplete.IsDropDownOpen = false;
+                return;
+            }
+
+            // Список уже закрыт, а поле пустое — значит очистка при открытии не
+            // была отменена. Возвращаем текущую гарнитуру.
+            if (DataContext is not RibbonHomeTabViewModel vm) return;
+
+            string restore = vm.CurrentFontFamily ?? _fontBeforeOpen ?? string.Empty;
+            if (_fontInnerTextBox is not null && _fontInnerTextBox.Text != restore)
+                _fontInnerTextBox.Text = restore;
+        }
+
         private void OnFontAutoCompletePointerReleased(object? sender, PointerReleasedEventArgs e)
         {
+            // Захват, взятый при выборе пункта списка, снимается здесь: отпускание
+            // дошло, состояние указателя закрыто.
+            Serilog.Log.ForContext("SourceContext", "FontDropdown")
+                .Debug("отпускание на поле шрифта, захват был у {Cap}",
+                    e.Pointer.Captured?.GetType().Name ?? "нет");
+
+            if (ReferenceEquals(e.Pointer.Captured, _fontAutoComplete))
+                e.Pointer.Capture(null);
+            _capturedPointer = null;
+
             e.Handled = true;
         }
 
@@ -217,10 +262,10 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
 
             Dispatcher.UIThread.Post(() =>
             {
-                if (DataContext is RibbonHomeTabViewModel vm)
-                    _fontBeforeOpen = vm.CurrentFontFamily;
-                if (_fontInnerTextBox is not null)
-                    _fontInnerTextBox.Text = string.Empty;
+                // Очистка поля живёт в OnFontDropDownOpened — там сходятся все пути
+                // открытия. Здесь её быть не должно: с клавиатуры список открывается
+                // мимо этого метода, и имя гарнитуры оставалось в поле. А оно ещё и
+                // фильтр: FilterMode="Contains" по нему отсекал список до пары пунктов.
                 if (_fontAutoComplete is not null)
                     _fontAutoComplete.IsDropDownOpen = true;
             }, DispatcherPriority.Background);
@@ -232,9 +277,13 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             {
                 case Key.Up:
                 case Key.Down:
+                    // Только показ. Выбор не фиксируем: человек ещё выбирает.
+                    return;
+
                 case Key.Enter:
-                    // Навигация и подтверждение с клавиатуры. Выбор фиксируется в SelectionChanged
-                    // (стрелки меняют SelectedItem), отдельный флаг не нужен.
+                    // Подтверждение с клавиатуры — вот теперь выбор состоялся.
+                    if (_fontInnerList?.SelectedItem is string chosen)
+                        _fontChosen = chosen;
                     return;
                 case Key.Escape:
                     _fontCancelled = true;
@@ -286,22 +335,41 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         {
             // Пропускаем программную прокрутку при открытии дропдауна.
             if (_fontScrolling) return;
+
+            // Стрелки только ПОКАЗЫВАЮТ шрифт, но не выбирают его.
+            //
+            // Раньше здесь выставлялся _fontChosen, и любая смена выделения в списке
+            // считалась выбором. Из-за этого «открыл, поводил стрелками, передумал,
+            // кликнул мимо» применяло шрифт и клало правку в стек отмены. Выбор
+            // фиксируют только Enter и щелчок по пункту — они пишут _fontChosen сами.
             if (_fontInnerList?.SelectedItem is string font)
-            {
-                _fontChosen = font;
                 SchedulePreview(font);
-            }
+        }
+
+        /// <summary>
+        /// Шрифт под указателем — по источнику события, а не хит-тестом.
+        ///
+        /// InputHitTest по списку возвращал null для нажатий по пунктам: список
+        /// живёт в отдельном окне-всплывашке со своей системой координат, и
+        /// пересчёт позиции туда не попадал. Обработчик из-за этого молча выходил,
+        /// нажатие уходило дальше в Dock, тот начинал перетаскивание и накрывал
+        /// окно своей мишенью GlobalDockTarget — ввод переставал доходить куда бы
+        /// то ни было.
+        ///
+        /// e.Source указывает прямо на элемент под указателем, пересчитывать
+        /// ничего не нужно.
+        /// </summary>
+        private static string? FontFromSource(object? source)
+        {
+            if (source is not Control control) return null;
+
+            var item = (control as ListBoxItem) ?? control.FindAncestorOfType<ListBoxItem>();
+            return item?.DataContext as string;
         }
 
         private void OnFontInnerListPointerMoved(object? sender, PointerEventArgs e)
         {
-            if (_fontInnerList is null) return;
-            var pos = e.GetPosition(_fontInnerList);
-            var hit = _fontInnerList.InputHitTest(pos) as Control;
-            if (hit is null) return;
-
-            var lbi = (hit as ListBoxItem) ?? hit.FindAncestorOfType<ListBoxItem>();
-            if (lbi?.DataContext is not string font || font == _fontHovered) return;
+            if (FontFromSource(e.Source) is not string font || font == _fontHovered) return;
 
             _fontHovered = font;
             SchedulePreview(font);
@@ -309,13 +377,45 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
 
         private void OnFontInnerListPointerPressedTunnel(object? sender, PointerPressedEventArgs e)
         {
-            if (_fontInnerList is null) return;
-            var pos = e.GetPosition(_fontInnerList);
-            var hit = _fontInnerList.InputHitTest(pos) as Control;
-            if (hit is null) return;
+            var probe = Serilog.Log.ForContext("SourceContext", "FontDropdown");
 
-            var lbi = (hit as ListBoxItem) ?? hit.FindAncestorOfType<ListBoxItem>();
-            if (lbi?.DataContext is not string font) return;
+            // Указатель захватывается САМЫМ ПЕРВЫМ и всегда — до того, как мы вообще
+            // попытались понять, по какому пункту нажали.
+            //
+            // Захват решает две задачи разом. Первая: отпускание не теряется. Выбор
+            // пункта закрывает список, всплывающее окно вместе с пунктом
+            // уничтожается, и PointerReleased доставлять было бы некому — для
+            // Avalonia кнопка мыши осталась бы нажатой навсегда. Поле шрифта живёт в
+            // ленте и закрытие списка переживает, поэтому отпускание дойдёт до него.
+            //
+            // Вторая: нажатие не уходит в Dock. Иначе тот считает его началом
+            // перетаскивания и накрывает окно мишенью GlobalDockTarget — плоскость
+            // модулей перестаёт принимать ввод при живых меню и кнопках воркмодов,
+            // и в воздухе повисает призрак вкладки.
+            //
+            // Безусловность здесь принципиальна. Источником события приходит и
+            // оторванный от дерева TextBlock — у переработанного пункта списка
+            // предков уже нет, опознать по нему ничего нельзя. Раньше на таком
+            // нажатии обработчик выходил, не взяв захват, и всё ломалось: клик по
+            // такому пункту и был тем самым «сломался как и тогда».
+            if (_fontAutoComplete is not null)
+            {
+                e.Pointer.Capture(_fontAutoComplete);
+                _capturedPointer = e.Pointer;
+            }
+
+            if (FontFromSource(e.Source) is not string font)
+            {
+                // Пункт не опознан — не беда: выбор возьмёт SelectionChanged, когда
+                // список сам выделит элемент. Захват уже взят, ломаться нечему.
+                probe.Debug("нажатие в списке: пункт не опознан, источник {Src}; "
+                    + "захват взят, выбор возьмёт SelectionChanged",
+                    e.Source?.GetType().Name ?? "нет");
+                return;
+            }
+
+            probe.Debug("нажатие в списке: пункт {Font}, захват у {Cap}",
+                font, e.Pointer.Captured?.GetType().Name ?? "нет");
 
             // Нажатие по элементу = выбор. Фиксируем здесь, в tunnel, до того как bubble дойдёт
             // до DockControl и упадёт, потеряв клик. Превью обновляем сразу, чтобы видеть выбор.
@@ -337,22 +437,54 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
         {
             // Запасной захват выбора: там, где Dock не роняет событие, отпускание над элементом
             // тоже фиксирует выбор (основной путь — tunnel-нажатие и SelectionChanged).
-            if (_fontInnerList is null) return;
-            var pos = e.GetPosition(_fontInnerList);
-            var hit = _fontInnerList.InputHitTest(pos) as Control;
-            if (hit is null) return;
-
-            var lbi = (hit as ListBoxItem) ?? hit.FindAncestorOfType<ListBoxItem>();
-            if (lbi?.DataContext is string font)
+            if (FontFromSource(e.Source) is string font)
                 _fontChosen = font;
         }
 
         // ── Дропдаун ─────────────────────────────────────────────────────
 
+        /// <summary>
+        /// Снять захват указателя, если он всё ещё на поле шрифта.
+        ///
+        /// Страховка на случай, когда список закрылся не через отпускание — Esc,
+        /// потеря фокуса, закрытие извне. Без неё захват пережил бы список, и ввод
+        /// снова уходил бы в пустоту.
+        /// </summary>
+        private void ReleaseFontPointerCapture()
+        {
+            var pointer = _capturedPointer;
+            _capturedPointer = null;
+
+            if (pointer is null || _fontAutoComplete is null) return;
+            if (ReferenceEquals(pointer.Captured, _fontAutoComplete))
+                pointer.Capture(null);
+        }
+
+        private IPointer? _capturedPointer;
+
         private void OnFontDropDownOpened(object? sender, EventArgs e)
         {
             if (DataContext is not RibbonHomeTabViewModel vm) return;
             _fontBeforeOpen ??= vm.CurrentFontFamily;
+
+            // Поле очищается при открытии списка, каким бы путём оно ни открылось —
+            // мышью по полю или стрелками с клавиатуры. Раньше очистка стояла в
+            // OnFontInnerPointerReleased, и открытие с клавиатуры проходило мимо неё:
+            // имя гарнитуры оставалось в поле и работало фильтром — FilterMode
+            // "Contains" отсекал список до пары пунктов.
+            //
+            // Набранный текст при этом трогать нельзя. Ввод символа тоже открывает
+            // список, и очистка здесь стёрла бы то, что человек только что напечатал,
+            // сделав поиск по имени невозможным. Отличаем одно от другого по тому,
+            // совпадает ли содержимое поля с нынешней гарнитурой: совпадает — поле не
+            // трогали, чистим; не совпадает — там набор, оставляем как есть.
+            if (_fontInnerTextBox is not null
+                && string.Equals(_fontInnerTextBox.Text ?? string.Empty,
+                                 vm.CurrentFontFamily ?? string.Empty,
+                                 StringComparison.Ordinal))
+            {
+                _fontInnerTextBox.Text = string.Empty;
+            }
             _fontHovered = null;
             _fontChosen = null;
             _fontCancelled = false;
@@ -376,10 +508,42 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             }, DispatcherPriority.Background);
         }
 
+        private bool _dropdownClosePending;
+
+        /// <summary>
+        /// Список закрылся. Само решение — применять выбор или нет — откладывается
+        /// на один оборот очереди.
+        ///
+        /// Причина в порядке событий. Нажатие по пункту и закрытие списка приходят
+        /// не в том порядке, в каком их делает человек: светлое перекрытие главного
+        /// окна (LightDismissOverlayLayer) перехватывает нажатие и гасит список
+        /// раньше, чем событие дойдёт до самого пункта. Тогда _fontChosen на момент
+        /// закрытия ещё пуст, выбор считается несостоявшимся, и шрифт применяется
+        /// через раз — то сработает, то нет.
+        ///
+        /// Порядок при этом плавающий, а не всегда обратный: когда пункт успевает
+        /// захватить указатель первым, всё приходит правильно. Поэтому не
+        /// переставляем обработчики, а просто даём запоздавшему нажатию дойти.
+        /// </summary>
         private void OnFontDropDownClosed(object? sender, EventArgs e)
         {
+            // Таймер превью и захват снимаются сразу: они к решению не относятся,
+            // а висеть лишний оборот им незачем.
             StopPreviewTimer();
+            ReleaseFontPointerCapture();
 
+            if (_dropdownClosePending) return;
+            _dropdownClosePending = true;
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                _dropdownClosePending = false;
+                FinishFontDropdown();
+            }, DispatcherPriority.Background);
+        }
+
+        private void FinishFontDropdown()
+        {
             if (DataContext is not RibbonHomeTabViewModel vm) return;
 
             // Коммитим выбранный шрифт. Клик по элементу съедается доком (bubble pointer-pressed

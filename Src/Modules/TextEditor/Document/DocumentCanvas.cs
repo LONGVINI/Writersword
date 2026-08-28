@@ -837,10 +837,60 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 _scriptFontMap = value;
                 if (DocVm is not null)
-                    _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
+                    _styleResolver = CreateStyleResolver();
             }
         }
         private IReadOnlyDictionary<string, string>? _scriptFontMap;
+
+        /// <summary>
+        /// Подставлять ли шрифт вместо знаков, которых нет в выбранной гарнитуре.
+        /// Обновляется из TextEditorModule при изменении настроек.
+        /// </summary>
+        public bool SubstituteMissingGlyphs
+        {
+            get => _substituteMissingGlyphs;
+            set
+            {
+                _substituteMissingGlyphs = value;
+                if (DocVm is not null)
+                    _styleResolver = CreateStyleResolver();
+            }
+        }
+        private bool _substituteMissingGlyphs;
+
+        /// <summary>
+        /// Шрифт подстановки для знаков, письмо которых в ScriptFontMap не описано.
+        /// Обновляется из TextEditorModule при изменении настроек.
+        /// </summary>
+        public string? SubstituteFontFamily
+        {
+            get => _substituteFontFamily;
+            set
+            {
+                _substituteFontFamily = value;
+                if (DocVm is not null)
+                    _styleResolver = CreateStyleResolver();
+            }
+        }
+        private string? _substituteFontFamily;
+
+        /// <summary>
+        /// Собирает резолвер стилей с текущими настройками шрифтов.
+        ///
+        /// Резолвер пересоздаётся из девяти мест — при смене документа, подачи
+        /// чтения, настроек, при холодном пересчёте раскладки и в превью шрифта.
+        /// Настройки в нём неизменяемы, поэтому каждое такое место обязано
+        /// передать их заново; собраны они здесь, чтобы добавление следующей
+        /// настройки не требовало помнить про все девять.
+        ///
+        /// Вызывается только когда DocVm уже есть — все места это проверяют.
+        /// </summary>
+        private StyleResolver CreateStyleResolver()
+            => new StyleResolver(
+                DocVm!.Document.Styles,
+                _scriptFontMap,
+                _substituteMissingGlyphs,
+                _substituteFontFamily);
 
         // ── Логирование ───────────────────────────────────────────────────
         private static readonly ILogger _logger = Log.ForContext<DocumentCanvas>();
@@ -1557,7 +1607,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             if (DocVm is not null)
             {
-                _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
+                _styleResolver = CreateStyleResolver();
                 _lastZoom = DocVm.Zoom;
                 WireDocVmSubscriptions();
             }
@@ -2465,7 +2515,7 @@ namespace Writersword.Modules.TextEditor.Document
                                or nameof(DocumentViewModel.PageSettings))
             {
                 if (DocVm is not null)
-                    _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
+                    _styleResolver = CreateStyleResolver();
 
                 // Смена подачи чтения меняет размер листа, а значит и всю раскладку:
                 // кэш абзацев считан под прежнюю ширину и целиком недействителен.
@@ -2696,7 +2746,7 @@ namespace Writersword.Modules.TextEditor.Document
             UpdateEffectivePagesPerRow();
 
             if (_styleResolver is null && DocVm is not null)
-                _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
+                _styleResolver = CreateStyleResolver();
 
             // Пересчёт раскладки выполняется только если отпечаток не совпал:
             // measure вызывается при каждом переприкреплении вьюхи (переключение
@@ -3021,7 +3071,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             if (_styleResolver is null)
-                _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
+                _styleResolver = CreateStyleResolver();
 
             float widthPt = GetCurrentTextWidthPt();
             var passStopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -3085,7 +3135,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             if (_styleResolver is null)
-                _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
+                _styleResolver = CreateStyleResolver();
 
             // Ворота холодного пересчёта для ПРЯМЫХ вызовов (смена зума, структуры,
             // подписок во время загрузки документа): при холодном кеше полный проход

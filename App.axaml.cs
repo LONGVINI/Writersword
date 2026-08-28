@@ -71,8 +71,34 @@ namespace Writersword
         /// Основная инициализация приложения.
         /// Здесь настраивается DI, создаётся главное окно, регистрируются модули.
         /// </summary>
+        // РАЗБОР ЗАВИСАНИЯ. Сторож UI-потока: каждые 200 мс с фонового потока
+        // отправляем в очередь пустое задание и меряем, через сколько оно
+        // выполнится. Это и есть время, на которое поток занят чем-то другим.
+        // Держим в поле, иначе таймер соберёт сборщик мусора.
+        private static System.Threading.Timer? _uiStallWatchdog;
+
+        private static void StartUiStallWatchdog()
+        {
+            var log = Log.ForContext("SourceContext", "UiStall");
+            log.Warning("сторож UI-потока запущен");
+
+            _uiStallWatchdog = new System.Threading.Timer(_ =>
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    long ms = sw.ElapsedMilliseconds;
+                    if (ms >= 150)
+                        log.Warning("UI-поток был занят {Ms} мс", ms);
+                }, Avalonia.Threading.DispatcherPriority.Background);
+            }, null, dueTime: 1000, period: 100);
+        }
+
         public override void OnFrameworkInitializationCompleted()
         {
+            StartUiStallWatchdog();
+
             Avalonia.Threading.Dispatcher.UIThread.UnhandledException += (_, e) =>
             {
                 if (e.Exception is ArgumentException { ParamName: "visual" }
@@ -128,6 +154,7 @@ namespace Writersword
             services.AddSingleton<IDialogService, DialogService>();
             services.AddSingleton<IPrintService, PrintService>();
             services.AddSingleton<INotificationService, NotificationService>();
+            services.AddSingleton<IModuleBadgeService, ModuleBadgeService>();
             services.AddSingleton<IProjectService, ProjectService>();
             services.AddSingleton<IBackupService, BackupService>();
             services.AddSingleton<IBackupTimerService, BackupTimerService>();

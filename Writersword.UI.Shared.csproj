@@ -10,12 +10,12 @@
 		<AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
 	</PropertyGroup>
 
-	<!-- РЈР±РёСЂР°РµРј РІСЃРµ AXAML С‡С‚Рѕ SDK РјРѕРі РїРѕРґС…РІР°С‚РёС‚СЊ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё -->
+	<!-- Убираем все AXAML что SDK мог подхватить автоматически -->
 	<ItemGroup>
 		<AvaloniaXaml Remove="**\*.axaml" />
 	</ItemGroup>
 
-	<!-- Infrastructure/Behaviours Рё Controls -->
+	<!-- Infrastructure/Behaviours и Controls -->
 	<ItemGroup>
 		<Compile Include="Src\Infrastructure\Behaviours\ClickOutsideBehavior.cs" />
 		<Compile Include="Src\Infrastructure\Behaviours\FocusOnVisibleBehavior.cs" />
@@ -26,7 +26,7 @@
 		<Compile Include="Src\Infrastructure\Converters\EnumToBooleanConverter.cs" />
 	</ItemGroup>
 
-	<!-- UserControls вЂ” СЏРІРЅРѕ РїРѕСЃР»Рµ Remove РІС‹С€Рµ -->
+	<!-- UserControls — явно после Remove выше -->
 	<ItemGroup>
 		<Compile Include="Styles\UserControls\ColorPickerButton.axaml.cs" />
 		<AvaloniaXaml Include="Styles\UserControls\ColorPickerButton.axaml" />
@@ -42,13 +42,16 @@
 		<AvaloniaXaml Include="Styles\UserControls\GradientStripEditor.axaml" />
 		<Compile Include="Styles\UserControls\AngleDial.cs" />
 		<Compile Include="Styles\UserControls\StandardColors.cs" />
+		<Compile Include="Styles\UserControls\ColorPickerMode.cs" />
+		<Compile Include="Styles\UserControls\HoneycombPicker.cs" />
+		<Compile Include="Styles\UserControls\NoisePicker.cs" />
 		<Compile Include="Styles\UserControls\RibbonScrollContainer.axaml.cs" />
 		<AvaloniaXaml Include="Styles\UserControls\RibbonScrollContainer.axaml" />
 		<Compile Include="Styles\UserControls\TooltipView.axaml.cs" />
 		<AvaloniaXaml Include="Styles\UserControls\TooltipView.axaml" />
 	</ItemGroup>
 
-	<!-- Р›РѕРєР°Р»РёР·Р°С†РёСЏ РѕР±С‰РёС… РєРѕРЅС‚СЂРѕР»РѕРІ -->
+	<!-- Локализация общих контролов -->
 	<ItemGroup>
 		<Compile Include="Styles\UserControls\SharedStrings.Designer.cs" />
 		<EmbeddedResource Include="Styles\UserControls\SharedStrings.resx" />

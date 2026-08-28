@@ -39,9 +39,24 @@ namespace Writersword.Modules.TextEditor.Rendering
         /// </summary>
         public IReadOnlyDictionary<string, string> ScriptFontMap { get; }
 
+        /// <summary>
+        /// Подставлять ли шрифт вместо знаков, которых нет в выбранной гарнитуре.
+        /// Выключено — знак рисуется пустым прямоугольником, как его и отдаёт сама
+        /// гарнитура. Ставится из настроек редактора.
+        /// </summary>
+        public bool SubstituteMissingGlyphs { get; }
+
+        /// <summary>
+        /// Шрифт подстановки для знаков, письмо которых в ScriptFontMap не описано.
+        /// Работает только при включённом SubstituteMissingGlyphs.
+        /// </summary>
+        public string? SubstituteFontFamily { get; }
+
         public StyleResolver(
             IEnumerable<DocumentStyle> styles,
-            IReadOnlyDictionary<string, string>? scriptFontMap = null)
+            IReadOnlyDictionary<string, string>? scriptFontMap = null,
+            bool substituteMissingGlyphs = false,
+            string? substituteFontFamily = null)
         {
             _index = new Dictionary<string, DocumentStyle>(
                 System.StringComparer.OrdinalIgnoreCase);
@@ -52,6 +67,9 @@ namespace Writersword.Modules.TextEditor.Rendering
 
             ScriptFontMap = scriptFontMap
                 ?? new Dictionary<string, string>();
+
+            SubstituteMissingGlyphs = substituteMissingGlyphs;
+            SubstituteFontFamily = substituteFontFamily;
         }
 
         // ── Резолверы шрифта ──────────────────────────────────────────────

@@ -14,6 +14,11 @@
 	</Application.Resources>
 	<Application.Styles>
 		<FluentTheme />
+		<!-- Тема контролов выбора цвета. FluentTheme её не несёт: ColorView,
+		     ColorSpectrum и ColorSlider живут в отдельной сборке со своей
+		     темой, и без этой строки они строятся без шаблона — то есть
+		     занимают ноль места и не видны вовсе. -->
+		<StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml"/>
 		<!-- Fluent тема для Dock. CacheDocumentTabContent держит вьюхи документов
 		     живыми при переключении вкладок — без пересоздания контента. -->
 		<dockFluent:DockFluentTheme CacheDocumentTabContent="True"/>

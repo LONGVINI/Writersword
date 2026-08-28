@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia;
@@ -40,7 +41,6 @@ namespace Writersword.Styles.UserControls
         private readonly IScreenColorPicker _eyedropper = ScreenColorPicker.Create();
         private bool _syncing;
         private bool _ring;
-        private bool _ringsAllState;
         // Редактируется карточка группы: показывается галка закладки-ленточки и
         // сама закладка в превью; состояние возвращается в результате редактора.
         private bool _isGroupCard;
@@ -166,8 +166,7 @@ namespace Writersword.Styles.UserControls
             foreach (var name in new[]
             {
                 "SliderR", "SliderG", "SliderB", "SliderA",
-                "SliderAHoney", "SliderANoise",
-                "SlR", "SlG", "SlB", "SlA",
+                "SlR", "SlG", "SlB",
                 "SlHslH", "SlHslS", "SlHslL",
                 "SlHsvH", "SlHsvS", "SlHsvV"
             })
@@ -232,6 +231,116 @@ namespace Writersword.Styles.UserControls
             base.OnAttachedToVisualTree(e);
             TopLevel.GetTopLevel(this)?.AddHandler(
                 KeyDownEvent, OnEditorKeyDown, RoutingStrategies.Tunnel);
+            EnableSliderJump(this);
+        }
+
+        // Щелчок по полосе ставит бегунок на это место сразу и тут же начинает
+        // перетаскивание: мышь захватывается на ползунок, и значение продолжает
+        // идти за курсором, пока кнопка зажата, — отпускать и заново цеплять
+        // бегунок не нужно. Обработчик свой и висит туннелем на самом ползунке:
+        // у шаблонов Slider.grad и Slider.gradv кнопки трека свои, и штатный
+        // перенос за них не цепляется.
+        private readonly HashSet<Slider> _jumpWired = new();
+        private Slider? _jumpDrag;
+
+        private void EnableSliderJump(Visual root)
+        {
+            foreach (var slider in root.GetVisualDescendants().OfType<Slider>())
+            {
+                if (!_jumpWired.Add(slider)) continue;
+                slider.AddHandler(PointerPressedEvent, OnSliderJumpPressed,
+                    RoutingStrategies.Tunnel);
+                slider.AddHandler(PointerMovedEvent, OnSliderJumpMoved,
+                    RoutingStrategies.Tunnel);
+                slider.AddHandler(PointerReleasedEvent, OnSliderJumpReleased,
+                    RoutingStrategies.Tunnel);
+                slider.AddHandler(PointerCaptureLostEvent, OnSliderJumpCaptureLost,
+                    RoutingStrategies.Tunnel);
+            }
+        }
+
+        private void OnSliderJumpPressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (sender is not Slider slider) return;
+
+            var point = e.GetCurrentPoint(slider);
+            if (!point.Properties.IsLeftButtonPressed) return;
+
+            // Нажатие по самому бегунку оставляем ему: он и так тащится штатно,
+            // а перенос дёрнул бы значение к точке захвата.
+            if (e.Source is Visual source &&
+                source.FindAncestorOfType<Thumb>(includeSelf: true) is not null) return;
+
+            MoveSliderToPoint(slider, point.Position);
+
+            // Захват мыши на сам ползунок — чтобы движение сразу продолжало вести
+            // значение, без отпускания и повторного захвата за бегунок. Событие
+            // помечается разобранным: иначе кнопка трека под курсором перехватит
+            // мышь себе и начнёт подводить значение шагами.
+            _jumpDrag = slider;
+            e.Pointer.Capture(slider);
+            e.Handled = true;
+        }
+
+        private void OnSliderJumpMoved(object? sender, PointerEventArgs e)
+        {
+            if (_jumpDrag is null || !ReferenceEquals(_jumpDrag, sender)) return;
+
+            var point = e.GetCurrentPoint(_jumpDrag);
+            if (!point.Properties.IsLeftButtonPressed)
+            {
+                EndSliderJumpDrag(e.Pointer);
+                return;
+            }
+
+            MoveSliderToPoint(_jumpDrag, point.Position);
+            e.Handled = true;
+        }
+
+        private void OnSliderJumpReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            if (_jumpDrag is null || !ReferenceEquals(_jumpDrag, sender)) return;
+            EndSliderJumpDrag(e.Pointer);
+            e.Handled = true;
+        }
+
+        private void OnSliderJumpCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+        {
+            if (ReferenceEquals(_jumpDrag, sender)) _jumpDrag = null;
+        }
+
+        private void EndSliderJumpDrag(IPointer pointer)
+        {
+            pointer.Capture(null);
+            _jumpDrag = null;
+        }
+
+        /// <summary>Поставить значение ползунка по точке в его собственных координатах.</summary>
+        private static void MoveSliderToPoint(Slider slider, Point position)
+        {
+            var horizontal = slider.Orientation == Avalonia.Layout.Orientation.Horizontal;
+            var length = horizontal ? slider.Bounds.Width : slider.Bounds.Height;
+
+            var thumb = slider.GetVisualDescendants().OfType<Thumb>().FirstOrDefault();
+            var thumbLength = thumb is null
+                ? 14.0
+                : (horizontal ? thumb.Bounds.Width : thumb.Bounds.Height);
+            if (thumbLength <= 0) thumbLength = 14.0;
+
+            var usable = length - thumbLength;
+            if (usable <= 0) return;
+
+            var pos = horizontal ? position.X : position.Y;
+            var t = Math.Clamp((pos - thumbLength / 2) / usable, 0, 1);
+
+            // Тот же разбор направления, что и у самого Slider: вертикальный по
+            // умолчанию идёт снизу вверх, а IsDirectionReversed переворачивает
+            // ход — на нём стоит полоса оттенка, у которой ноль сверху.
+            var flip = horizontal ? slider.IsDirectionReversed : !slider.IsDirectionReversed;
+            if (flip) t = 1 - t;
+
+            slider.SetCurrentValue(RangeBase.ValueProperty,
+                slider.Minimum + t * (slider.Maximum - slider.Minimum));
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -398,7 +507,8 @@ namespace Writersword.Styles.UserControls
         /// </summary>
         public Task<ColorEditResult?> ShowAsync(string hex, bool showPreview,
             Bitmap? image, string? name, string? fallback, bool ringEnabled, bool ringsAllState,
-            bool isGroup = false, bool bookmarkEnabled = true)
+            bool isGroup = false, bool bookmarkEnabled = true,
+            int startTab = 0)
         {
             _tcs?.TrySetResult(null);
             _tcs = new TaskCompletionSource<ColorEditResult?>();
@@ -412,8 +522,6 @@ namespace Writersword.Styles.UserControls
 
             var ringSection = this.FindControl<Control>("RingSection");
             if (ringSection is not null) ringSection.IsVisible = showPreview;
-            var ringConfirm = this.FindControl<Control>("RingConfirmPanel");
-            if (ringConfirm is not null) ringConfirm.IsVisible = false;
 
             var eye = this.FindControl<Button>("EyedropperButton");
             if (eye is not null) eye.IsEnabled = _eyedropper.IsSupported;
@@ -431,7 +539,10 @@ namespace Writersword.Styles.UserControls
             if (nm is not null) nm.Text = string.IsNullOrWhiteSpace(name) ? string.Empty : name;
 
             _ring = ringEnabled;
-            _ringsAllState = ringsAllState;
+            // ringsAllState раньше подписывал кнопку «кольца всем». Кнопки в
+            // редакторе больше нет, а параметр остался: он часть договора с
+            // вызывающей стороной, и убирать его отсюда значило бы править все
+            // места вызова ради ничего.
             _paletteDirty = false;
             var ringCheck = this.FindControl<CheckBox>("RingCheck");
             if (ringCheck is not null) ringCheck.IsChecked = ringEnabled;
@@ -445,17 +556,18 @@ namespace Writersword.Styles.UserControls
                 bookmarkCheck.IsVisible = showPreview && isGroup;
                 bookmarkCheck.IsChecked = bookmarkEnabled;
             }
-            // Подпись кнопки переключателя: если у всех включено — «убрать у всех», иначе «включить у всех».
-            var ringAllBtn = this.FindControl<Button>("RingAllButton");
-            if (ringAllBtn is not null)
-                ringAllBtn.Content = ringsAllState
-                    ? SharedStrings.ColorEditor_RingNone
-                    : SharedStrings.ColorEditor_RingAll;
+            // Кнопки «кольца всем» здесь больше нет: массовое переключение —
+            // дело того места, где видно, к каким карточкам оно применится, а
+            // не окна выбора цвета. Состояние ringsAllState по-прежнему
+            // приходит и уходит в результате, чтобы вызывающая сторона могла
+            // сделать это сама.
 
             BuildHoneycomb();
             BuildWheel();
             LoadPalette();
-            SetTab(0);
+            // Вкладка задаётся снаружи: правая кнопка по образцу цвета выбирает
+            // привычный подборщик, и открываться редактор обязан сразу на нём.
+            SetTab(startTab);
             this.FindControl<PaletteManagerView>("PalettesPanel")?.Refresh();
             SetCollectionTab(_collectionTab);
 
@@ -619,24 +731,19 @@ namespace Writersword.Styles.UserControls
                 var sr = this.FindControl<Slider>("SliderR"); if (sr is not null) sr.Value = c.R;
                 var sg = this.FindControl<Slider>("SliderG"); if (sg is not null) sg.Value = c.G;
                 var sb = this.FindControl<Slider>("SliderB"); if (sb is not null) sb.Value = c.B;
-                var sa = this.FindControl<Slider>("SliderA"); if (sa is not null) sa.Value = c.A;
 
-                // Альфа-ползунки остальных вкладок (Соты / Колесо / Шум); альфа
-                // вкладки «Значения» (SlA) идёт вместе с остальными ползунками
-                // этой вкладки внутри UpdateGradients.
-                var saHoney = this.FindControl<Slider>("SliderAHoney"); if (saHoney is not null) saHoney.Value = c.A;
-                var saWheel = this.FindControl<Slider>("SliderAWheel"); if (saWheel is not null) saWheel.Value = c.A;
-                var saNoise = this.FindControl<Slider>("SliderANoise"); if (saNoise is not null) saNoise.Value = c.A;
+                // Прозрачность одна на всё окно и живёт под содержимым вкладок,
+                // поэтому сводить её больше не с чем: раньше здесь стояло пять
+                // присваиваний в пять разных ползунков.
+                var sa = this.FindControl<Slider>("SliderA"); if (sa is not null) sa.Value = c.A;
 
                 // Градиентные ползунки (значения + цвет треков).
                 UpdateGradients(c);
                 var lr = this.FindControl<TextBlock>("LabelR"); if (lr is not null) lr.Text = c.R.ToString();
                 var lg = this.FindControl<TextBlock>("LabelG"); if (lg is not null) lg.Text = c.G.ToString();
                 var lb = this.FindControl<TextBlock>("LabelB"); if (lb is not null) lb.Text = c.B.ToString();
-                var la = this.FindControl<TextBlock>("LabelA"); if (la is not null) la.Text = c.A.ToString();
-                var laHoney = this.FindControl<TextBlock>("LabelAHoney"); if (laHoney is not null) laHoney.Text = c.A.ToString();
-                var laWheel = this.FindControl<TextBlock>("LabelAWheel"); if (laWheel is not null) laWheel.Text = c.A.ToString();
-                var laNoise = this.FindControl<TextBlock>("LabelANoise"); if (laNoise is not null) laNoise.Text = c.A.ToString();
+                // Число прозрачности показывает поле TxtA общего блока —
+                // оно заполняется ниже вместе с остальными полями.
 
                 // Текстовые поля (вкладка «Значения»)
                 SetText("TxtR", c.R.ToString(CultureInfo.InvariantCulture));
@@ -737,24 +844,6 @@ namespace Writersword.Styles.UserControls
             var prev = this.FindControl<Control>("PreviewPanel");
             if (prev is not null) prev.IsVisible = _showPreview && !_previewCollapsed;
         }
-
-        private void OnRingAllClick(object? sender, RoutedEventArgs e)
-        {
-            var p = this.FindControl<Control>("RingConfirmPanel");
-            if (p is not null) p.IsVisible = true;
-        }
-
-        private void OnRingConfirmCancel(object? sender, RoutedEventArgs e)
-        {
-            var p = this.FindControl<Control>("RingConfirmPanel");
-            if (p is not null) p.IsVisible = false;
-        }
-
-        // Подтверждение: переключает состояние «у всех» (вкл↔выкл) и закрывает редактор.
-        private void OnConfirmRingApply(object? sender, RoutedEventArgs e) => CompleteEditor(!_ringsAllState);
-
-        // Резервный обработчик скрытой кнопки (на случай возврата двухкнопочного режима).
-        private void OnConfirmRingRemove(object? sender, RoutedEventArgs e) => CompleteEditor(false);
 
         private void SelectFromHex(string hex)
         {
@@ -932,9 +1021,49 @@ namespace Writersword.Styles.UserControls
         // видимой сейчас вкладки, а не для всех сразу на каждое движение мыши.
         private int _activeTab;
 
+        /// <summary>
+        /// Галочка «показывать эту вкладку по правой кнопке». Ставит нынешнюю
+        /// вкладку общим подборщиком всех образцов цвета и запоминает его
+        /// между запусками.
+        ///
+        /// Снять её нельзя по смыслу: подборщик на правой кнопке обязан быть
+        /// какой-то. Попытка снять возвращает квадрат — то, чем цвет подбирают
+        /// чаще всего, — и галочка встаёт обратно на его вкладке.
+        ///
+        /// Флаг гасит обратный ход: галочку двигает и сама смена вкладки, и
+        /// без него это читалось бы как выбор человека.
+        /// </summary>
+        private bool _syncingDefaultPicker;
+
+        private void OnDefaultPickerChanged(object? sender, RoutedEventArgs e)
+        {
+            if (_syncingDefaultPicker) return;
+            if (sender is not CheckBox box) return;
+
+            ColorPickerModeStore.Current = box.IsChecked == true
+                ? ColorPickerModeStore.ModeOfTab(_activeTab)
+                : ColorPickerMode.Square;
+
+            ColorPickerModeStore.SaveAsDefault();
+            SyncDefaultPickerCheck();
+        }
+
+        /// <summary>Отметить галочку, если нынешняя вкладка и есть подборщик правой кнопки.</summary>
+        private void SyncDefaultPickerCheck()
+        {
+            var box = this.FindControl<CheckBox>("DefaultPickerCheck");
+            if (box is null) return;
+
+            _syncingDefaultPicker = true;
+            box.IsChecked = ColorPickerModeStore.Current
+                == ColorPickerModeStore.ModeOfTab(_activeTab);
+            _syncingDefaultPicker = false;
+        }
+
         private void SetTab(int index)
         {
             _activeTab = index;
+            EnableSliderJump(this);
 
             ShowPanel("SpectrumPanel", index == 0);
             ShowPanel("HoneycombPanel", index == 1);
@@ -955,6 +1084,10 @@ namespace Writersword.Styles.UserControls
             // UpdateGradients) — при переключении досчитываем их для только что
             // показанной, иначе она осталась бы с состоянием от прошлой вкладки.
             UpdateGradients(_current);
+
+            // Галочка «по умолчанию» относится к вкладке, а не к окну: сменили
+            // вкладку — она обязана показать состояние новой.
+            SyncDefaultPickerCheck();
         }
 
         private void ShowPanel(string name, bool visible)
@@ -1836,13 +1969,17 @@ namespace Writersword.Styles.UserControls
         {
             var (lh, ls, ll) = RgbToHsl(c);
 
-            SetSliderVal("SlR", c.R); SetSliderVal("SlG", c.G); SetSliderVal("SlB", c.B); SetSliderVal("SlA", c.A);
+            SetSliderVal("SlR", c.R); SetSliderVal("SlG", c.G); SetSliderVal("SlB", c.B);
             SetSliderVal("SlHslH", lh); SetSliderVal("SlHslS", ls * 100); SetSliderVal("SlHslL", ll * 100);
             SetSliderVal("SlHsvH", _h); SetSliderVal("SlHsvS", _s * 100); SetSliderVal("SlHsvV", _v * 100);
 
             // Трек альфы: от полностью прозрачного к непрозрачному текущему RGB.
             // Общий для вкладок с альфа-ползунком — ниже красит только свою.
             var aGrad = Grad(Color.FromArgb(0, c.R, c.G, c.B), Color.FromArgb(255, c.R, c.G, c.B));
+
+            // Прозрачность одна на всё окно и видна при любой вкладке, поэтому
+            // её подложка рисуется здесь, а не внутри веток переключателя.
+            SetSliderBg("SliderA", aGrad);
 
             switch (_activeTab)
             {
@@ -1852,13 +1989,11 @@ namespace Writersword.Styles.UserControls
                     var gGrad = Grad(Color.FromRgb(c.R, 0, c.B), Color.FromRgb(c.R, 255, c.B));
                     var bGrad = Grad(Color.FromRgb(c.R, c.G, 0), Color.FromRgb(c.R, c.G, 255));
                     SetSliderBg("SliderR", rGrad); SetSliderBg("SliderG", gGrad); SetSliderBg("SliderB", bGrad);
-                    SetSliderBg("SliderA", aGrad);
                     break;
                 }
-                case 1: // Соты
-                    SetSliderBg("SliderAHoney", aGrad);
+                case 1: // Соты — своих градиентных ползунков нет.
                     break;
-                case 2: // Колесо — альфа там простой вертикальный ползунок без трека-градиента.
+                case 2: // Колесо — своих градиентных ползунков нет.
                     break;
                 case 3: // Значения
                 {
@@ -1866,7 +2001,6 @@ namespace Writersword.Styles.UserControls
                     var gGrad = Grad(Color.FromRgb(c.R, 0, c.B), Color.FromRgb(c.R, 255, c.B));
                     var bGrad = Grad(Color.FromRgb(c.R, c.G, 0), Color.FromRgb(c.R, c.G, 255));
                     SetSliderBg("SlR", rGrad); SetSliderBg("SlG", gGrad); SetSliderBg("SlB", bGrad);
-                    SetSliderBg("SlA", aGrad);
 
                     SetSliderBg("SlHslH", HRainbow());
                     SetSliderBg("SlHslS", Grad(HslToRgb(lh, 0, ll), HslToRgb(lh, 1, ll)));
@@ -1877,8 +2011,7 @@ namespace Writersword.Styles.UserControls
                     SetSliderBg("SlHsvV", Grad(HsvToRgb(_h, _s, 0), HsvToRgb(_h, _s, 1)));
                     break;
                 }
-                case 5: // Шум
-                    SetSliderBg("SliderANoise", aGrad);
+                case 5: // Шум — своих градиентных ползунков нет.
                     break;
             }
         }

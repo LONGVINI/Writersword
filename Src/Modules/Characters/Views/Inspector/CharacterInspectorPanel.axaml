@@ -68,6 +68,19 @@
 			<Setter Property="VerticalAlignment" Value="Center"/>
 		</Style>
 
+		<!-- Плюсик «добавить метку»: тоже путь, а не текстовый глиф "+" —
+		     у глифа в большинстве шрифтов зрительный центр смещён, в маленькой
+		     круглой кнопке это заметно. Тот же приём, что и у стрелки секции
+		     выше. -->
+		<Style Selector="Path.addIcon">
+			<Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}"/>
+			<Setter Property="StrokeThickness" Value="1.6"/>
+			<Setter Property="StrokeLineCap" Value="Round"/>
+			<Setter Property="Width" Value="10"/>
+			<Setter Property="Height" Value="10"/>
+			<Setter Property="Stretch" Value="None"/>
+		</Style>
+
 		<!-- Переключатель вида аватара — та же дорожка, что у областей папок.
 		     Плашка под текущим выбором — SegIndicator — одна на двоих: она
 		     скользит между «Кружок» и «Полоска», а не перекрашивается сама
@@ -365,6 +378,62 @@
 		<Style Selector="Button.labelEdit /template/ ContentPresenter">
 			<Setter Property="Background" Value="Transparent"/>
 			<Setter Property="BorderThickness" Value="0"/>
+		</Style>
+
+		<!-- Кнопка-значок в духе кнопок ленты редактора (ToggleButton.RibbonToggle
+		     в Src/Modules/TextEditor/Views/Toolbar/Tabs/RibbonHomeTab.axaml): рамка
+		     и подложка есть всегда, а во включённом состоянии добавляется акцентная
+		     обводка с подсветкой. Своя копия, а не общий стиль: стили ленты живут в
+		     её собственном UserControl.Styles и сюда не достают.
+
+		     Это Button, а не ToggleButton: щелчок не переключает состояние на месте,
+		     а задаёт вопрос. Включённость приходит снаружи классом .on. -->
+		<Style Selector="Button.iconToggle">
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="3"/>
+			<Setter Property="Padding" Value="4"/>
+			<Setter Property="MinWidth" Value="26"/>
+			<Setter Property="MinHeight" Value="26"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="HorizontalContentAlignment" Value="Center"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="Cursor" Value="Hand"/>
+		</Style>
+		<Style Selector="Button.iconToggle /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius" Value="3"/>
+		</Style>
+		<!-- Порядок объявлений важен: при равной силе селекторов побеждает
+		     последний. Поэтому «включено» стоит после наведения, а нажатие —
+		     после всего: нажатая кнопка выглядит нажатой в любом состоянии. -->
+		<Style Selector="Button.iconToggle.on /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.iconToggle:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.iconToggle.on:pointerover /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.iconToggle:pressed /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentPressedBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<!-- Цвет значка задаётся отдельно: подсветка живёт на ContentPresenter,
+		     а PathIcon берёт свой Foreground сам и о ней не знает. -->
+		<Style Selector="Button.iconToggle PathIcon">
+			<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+		</Style>
+		<Style Selector="Button.iconToggle.on PathIcon">
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
 		</Style>
 
 		<!-- Круглая кнопка-иконка «закрыть панель» и «добавить метку»: та же
@@ -773,13 +842,69 @@
 										VerticalAlignment="Center"/>
 								</Grid>
 
-								<CheckBox IsChecked="{Binding Ring, Mode=TwoWay}"
-								          IsVisible="{Binding ShowRingRow}"
-								          FontSize="12"
-								          Foreground="{DynamicResource TextSecondaryBrush}"
-								          Content="Кольцо вокруг аватарки"
-								          behaviours:TooltipBehavior.Tip="Кольцо цветом персонажа"
-								          behaviours:TooltipBehavior.Description="Рисуется снаружи кружка. У полоски кольца нет — там цвет уже занимает всю зону"/>
+								<Grid ColumnDefinitions="*,Auto" IsVisible="{Binding ShowRingRow}">
+									<CheckBox Grid.Column="0"
+									          IsChecked="{Binding Ring, Mode=TwoWay}"
+									          FontSize="12"
+									          Foreground="{DynamicResource TextSecondaryBrush}"
+									          Content="Кольцо вокруг аватарки"
+									          behaviours:TooltipBehavior.Tip="Кольцо цветом персонажа"
+									          behaviours:TooltipBehavior.Description="Рисуется снаружи кружка. У полоски кольца нет — там цвет уже занимает всю зону"/>
+
+									<!-- Кольцо разом по всему проекту: одна кнопка, которая
+									     раздаёт всем то состояние, что стоит у флажка слева.
+									     Кнопка обычная, с рамкой и подложкой, а не призрачный
+									     значок: операция редкая и тяжёлая, ей полагается
+									     выглядеть кнопкой. Раньше это жило внутри палитры
+									     цветов, где ему было не место: палитра выбирает цвет,
+									     а не раздаёт настройки всем персонажам. -->
+									<Button Grid.Column="1"
+									        Classes="iconToggle"
+									        Classes.on="{Binding Ring}"
+									        Width="26" Height="26"
+									        IsVisible="{Binding IsNotConfirmingRingAll}"
+									        Command="{Binding RequestRingAllCommand}"
+									        behaviours:TooltipBehavior.Tip="Кольцо у всех персонажей"
+									        behaviours:TooltipBehavior.Description="Раздаёт нынешнее состояние флажка всем карточкам проекта. Спросит подтверждение">
+										<PathIcon Width="15" Height="15"
+										          Data="M2,12 A5,5 0 1 1 12,12 A5,5 0 1 1 2,12 Z M4.4,12 A2.6,2.6 0 1 0 9.6,12 A2.6,2.6 0 1 0 4.4,12 Z M12.5,12 A5,5 0 1 1 22.5,12 A5,5 0 1 1 12.5,12 Z M14.9,12 A2.6,2.6 0 1 0 20.1,12 A2.6,2.6 0 1 0 14.9,12 Z"/>
+									</Button>
+								</Grid>
+
+								<!-- Вопрос раскрывается прямо в панели, а не отдельным окном:
+								     действие задевает все карточки проекта, и человек должен
+								     видеть, откуда оно пришло. Текст называет, что именно
+								     произойдёт, — включить или убрать. -->
+								<Border IsVisible="{Binding IsConfirmingRingAll}"
+								        Background="{DynamicResource BgPanelBrush}"
+								        BorderBrush="{DynamicResource BorderSubtleBrush}"
+								        BorderThickness="1"
+								        CornerRadius="6"
+								        Padding="8,7">
+									<StackPanel Spacing="7">
+										<TextBlock Text="{Binding RingAllQuestion}"
+										           FontSize="11"
+										           TextWrapping="Wrap"
+										           Foreground="{DynamicResource TextSecondaryBrush}"/>
+										<Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+											<Button Grid.Column="0"
+											        Classes="primary"
+											        Content="Применить"
+											        FontSize="11"
+											        Padding="6,3"
+											        HorizontalAlignment="Stretch"
+											        HorizontalContentAlignment="Center"
+											        Command="{Binding ConfirmRingAllCommand}"/>
+											<Button Grid.Column="1"
+											        Content="Отмена"
+											        FontSize="11"
+											        Padding="6,3"
+											        HorizontalAlignment="Stretch"
+											        HorizontalContentAlignment="Center"
+											        Command="{Binding CancelRingAllCommand}"/>
+										</Grid>
+									</StackPanel>
+								</Border>
 
 							</StackPanel>
 						</StackPanel>
@@ -876,15 +1001,15 @@
 								     у одной выбранной карточки, как и имя. -->
 								<Button Grid.Column="1"
 								        Classes="ghost roundGhost"
-								        Content="+"
-								        FontSize="14"
 								        Width="24" Height="24"
 								        VerticalAlignment="Center"
 								        Margin="0,0,10,0"
 								        IsVisible="{Binding CanEditLabels}"
 								        Click="OnAddLabelClick"
 								        behaviours:TooltipBehavior.Tip="Добавить метку"
-								        behaviours:TooltipBehavior.Description="Новую или уже известную проекту — тот же редактор, что и в карточке персонажа"/>
+								        behaviours:TooltipBehavior.Description="Создать новую метку или открыть уже существующую в проекте — в том же редакторе, что и на карточке персонажа">
+									<Path Classes="addIcon" Data="M5,0 L5,10 M0,5 L10,5"/>
+								</Button>
 							</Grid>
 
 							<StackPanel x:Name="LabelsBody" Margin="12,4,12,12" Spacing="10">

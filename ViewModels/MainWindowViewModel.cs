@@ -600,22 +600,6 @@ namespace Writersword.ViewModels
         }
 
         /// <summary>
-        /// Инициализировать WorkModes для вкладки (обновляет только UI)
-        /// </summary>
-        public void InitializeWorkModesForTab(DocumentTabViewModel tab)
-        {
-            if (tab.Workspace == null)
-            {
-                _logger.LogWarning("Workspace not initialized for tab: {Title}", tab.Title);
-                return;
-            }
-
-            AllWorkModes.Clear();
-
-            _ = OnTabActivatedAsync(tab, null);
-        }
-
-        /// <summary>
         /// Получить список активных модулей текущей вкладки
         /// </summary>
         public List<IModule> GetActiveModules()

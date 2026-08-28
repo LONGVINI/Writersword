@@ -295,13 +295,24 @@ namespace Writersword.Modules.TextEditor
         }
 
         /// <summary>
-        /// Передаёт текущую карту "скрипт → шрифт" в DocumentCanvas.
+        /// Передаёт в DocumentCanvas настройки замены недостающих знаков: общий
+        /// признак, шрифт подстановки и карту "скрипт → шрифт".
         /// Вызывается при создании View и при изменении настроек.
+        ///
+        /// Настройки берутся локальные, а не глобальные, и это не оплошность:
+        /// вид рукописи задаёт сам проект и уезжает вместе с ним, а не зависит от
+        /// того, на какой машине её открыли.
+        ///
+        /// Порядок присваиваний важен: каждое из трёх свойств пересобирает
+        /// резолвер стилей, поэтому карта ставится последней — к этому моменту
+        /// остальные две уже на месте.
         /// </summary>
         private void ApplyScriptFontMapToCanvas()
         {
             var canvas = _lastCreatedView?.FindControl<DocumentCanvas>("PageCanvas");
             if (canvas is null) return;
+            canvas.SubstituteMissingGlyphs = _localSettings.SubstituteMissingGlyphs;
+            canvas.SubstituteFontFamily = _localSettings.SubstituteFontFamily;
             canvas.ScriptFontMap = _localSettings.ScriptFontMap;
         }
 
@@ -361,7 +372,11 @@ namespace Writersword.Modules.TextEditor
 
             if (!_documentLoadedFromData && !_documentEverHadContent)
             {
-                _logger.Error("TakeStateSnapshot: module never received its data and the document was never " +
+                // Не ошибка: у нового проекта данных для модуля нет и быть не может,
+                // а пустой документ отдавать нельзя — он затрёт сохранённое. На уровне
+                // Error эта строка сыпалась при каждом создании проекта и создавала
+                // ложную тревогу. Сам возврат null остаётся защитой и работает как прежде.
+                _logger.Debug("TakeStateSnapshot: module never received its data and the document was never " +
                     "filled — returning null so the saved version is preserved. Module type: {Type}", moduleType);
                 return null;
             }
@@ -575,6 +590,28 @@ namespace Writersword.Modules.TextEditor
         }
 
         /// <summary>
+        /// Можно ли считать текущее состояние документа полным.
+        ///
+        /// Модуль поднимается раньше, чем к нему приезжают данные: сначала
+        /// Create и Initialize, и только потом, через фоновый поток,
+        /// ApplyPreparedCustomData. Между этими двумя моментами вьюмодель уже
+        /// есть, а документ пуст — и уборка, запущенная в этот промежуток,
+        /// не нашла бы ни одной живой ссылки и стёрла бы все картинки рукописи.
+        ///
+        /// То же состояние остаётся навсегда, если данные модуля не разобрались:
+        /// битый или незнакомый конверт даёт пустой документ при живых файлах
+        /// в архиве.
+        ///
+        /// Признак тот же, что защищает сохранение в TakeStateSnapshot: либо
+        /// данные пришли, либо пользователь сам что-то написал.
+        /// </summary>
+        private bool DocumentStateIsComplete()
+        {
+            if (_viewModel?.DocumentViewModel?.Document is null) return false;
+            return _documentLoadedFromData || _documentEverHadContent;
+        }
+
+        /// <summary>
         /// Удаляет из проекта файлы картинок, на которые не осталось ни одной живой
         /// ссылки. Возвращает число удалённых файлов и освобождённый объём в байтах.
         /// Вызывается только по явной команде пользователя.
@@ -585,6 +622,13 @@ namespace Writersword.Modules.TextEditor
             if (ctx is null)
             {
                 _logger.Warning("CompactUnusedImages: no active document context");
+                return (0, 0);
+            }
+
+            if (!DocumentStateIsComplete())
+            {
+                _logger.Warning("CompactUnusedImages: document state is not complete — " +
+                    "cleanup refused so that live images are not taken for orphans");
                 return (0, 0);
             }
 
@@ -724,7 +768,12 @@ namespace Writersword.Modules.TextEditor
                     Hold = Writersword.Core.Models.Project.ProjectAssetHold.Used,
                     DisplayName = family,
                     OwnerName = owner,
-                    Bytes = embedded ? Services.ProjectFonts.BytesOf(family) : 0
+                    // Размер нужен как раз у неуложенных: из него складывается
+                    // обещание «файл вырастет на N МБ». Прежнее условие считало
+                    // ровно наоборот — у уже уложенных, — и диалог всегда обещал 0.
+                    Bytes = embedded
+                        ? Services.ProjectFonts.BytesOf(family)
+                        : Services.ProjectFonts.InstalledBytesOf(family)
                 };
             }
         }
@@ -941,6 +990,53 @@ namespace Writersword.Modules.TextEditor
         }
 
         /// <summary>
+        /// Складывает в набор имена файлов картинок одного вида чтения.
+        /// </summary>
+        private static void AddReadingRefs(
+            ReadingTheme? theme, HashSet<string> live)
+        {
+            if (theme is null) return;
+
+            if (ReadingAssets.IsProjectRef(theme.ImagePath))
+                live.Add(System.IO.Path.GetFileName(theme.ImagePath!));
+            if (ReadingAssets.IsProjectRef(theme.BackdropImagePath))
+                live.Add(System.IO.Path.GetFileName(theme.BackdropImagePath!));
+        }
+
+        /// <summary>
+        /// Виды чтения из версии, лежащей в кеше восстановления. Пока версия не
+        /// принята и не отклонена, её картинки нужны.
+        ///
+        /// Читается тем же путём, что и картинки текста в
+        /// CollectLiveImageReferences, и так же роняет уборку при неудаче:
+        /// не прочитали — значит не знаем, что живое, и удалять нельзя.
+        /// </summary>
+        private IReadOnlyList<ReadingTheme> CachedReadingThemes()
+        {
+            var projectPath = CoreServices.GetService<ITabCollection>()?.ActiveTab?.FilePath;
+            if (string.IsNullOrEmpty(projectPath))
+                return System.Array.Empty<ReadingTheme>();
+
+            try
+            {
+                var cacheService = CoreServices
+                    .GetService<Writersword.Core.Interfaces.Services.IZipCacheService>();
+                var cached = cacheService?.GetModuleCustomData(projectPath!, moduleType);
+                var document = (PrepareCustomData(cached) as PreparedDocumentData)?.Document;
+
+                return document?.ReadingThemes is { } themes
+                    ? themes.ToList()
+                    : (IReadOnlyList<ReadingTheme>)
+                        System.Array.Empty<ReadingTheme>();
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Failed to read cached reading themes — cleanup aborted for safety");
+                throw;
+            }
+        }
+
+        /// <summary>
         /// Убирает из архива картинки видов чтения, на которые не ссылается ни
         /// один вид документа и ни рабочая копия.
         ///
@@ -953,14 +1049,24 @@ namespace Writersword.Modules.TextEditor
             var ctx = CoreServices.GetService<ITabCollection>()?.ActiveTab?.Context;
             if (ctx is null) return Writersword.Core.Models.Project.ProjectAssetCleanup.Nothing;
 
+            if (!DocumentStateIsComplete())
+            {
+                _logger.Warning("CompactUnusedReadingImages: document state is not complete — " +
+                    "cleanup refused so that live view images are not taken for orphans");
+                return Writersword.Core.Models.Project.ProjectAssetCleanup.Nothing;
+            }
+
             var live = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var theme in ReadingThemesInPlay())
-            {
-                if (ReadingAssets.IsProjectRef(theme.ImagePath))
-                    live.Add(System.IO.Path.GetFileName(theme.ImagePath!));
-                if (ReadingAssets.IsProjectRef(theme.BackdropImagePath))
-                    live.Add(System.IO.Path.GetFileName(theme.BackdropImagePath!));
-            }
+                AddReadingRefs(theme, live);
+
+            // Версия из кеша восстановления держит свои картинки живыми ровно так
+            // же, как и картинки текста: пока пользователь не выбрал версию, её
+            // бумага должна оставаться на месте. Без этого смена бумаги, уборка и
+            // последующий откат давали вид без картинки.
+            var cachedThemes = CachedReadingThemes();
+            foreach (var theme in cachedThemes)
+                AddReadingRefs(theme, live);
 
             int removed = 0;
             long freed = 0;
@@ -1149,6 +1255,7 @@ namespace Writersword.Modules.TextEditor
                 // Отсутствующий файл раньше давал просто пустое место на листе,
                 // и понять, что картинка потеряна, было нельзя.
                 Dispatcher.UIThread.Post(WarnOnMissingImages, DispatcherPriority.Background);
+                Dispatcher.UIThread.Post(WarnOnMissingFonts, DispatcherPriority.Background);
                 return;
             }
 
@@ -1157,6 +1264,75 @@ namespace Writersword.Modules.TextEditor
         }
 
         // Сообщает о картинках, файлы которых не найдены в проекте.
+        /// <summary>
+        /// Сообщает о гарнитурах, которых нет ни в проекте, ни в системе.
+        ///
+        /// Молчать здесь нельзя: текст показывается подменой, разбивка строк и
+        /// число страниц отличаются от авторских, а понять это по экрану
+        /// невозможно — подмена выглядит как обычный текст. Имена гарнитур в
+        /// документе при этом остаются нетронутыми: вернётся шрифт — вернётся и
+        /// вид, ничего восстанавливать не придётся.
+        /// </summary>
+        private void WarnOnMissingFonts()
+        {
+            try
+            {
+                var missing = new SortedSet<string>(StringComparer.CurrentCultureIgnoreCase);
+                foreach (var (family, _) in UsedFontFamilies())
+                    if (Services.ProjectFonts.IsMissing(family)) missing.Add(family);
+
+                // Значок на вкладке модуля выставляется всегда — и когда всё в
+                // порядке, чтобы снять оставшийся от прошлого документа.
+                // Всплывающее сообщение говорит один раз и исчезает, а нехватка
+                // никуда не девается: увидеть её должно быть можно и через час.
+                MarkFontWarning(missing);
+
+                if (missing.Count == 0) return;
+
+                _logger.Warning("Missing font families: {Families}", string.Join(", ", missing));
+
+                CoreServices.GetService<Writersword.Core.Interfaces.Services.UI.INotificationService>()
+                    ?.ShowWarning(missing.Count == 1
+                        ? $"Гарнитура {missing.First()} не установлена — текст показан подменой, "
+                          + "разбивка страниц может отличаться от авторской"
+                        : $"Не установлено гарнитур: {missing.Count} ({string.Join(", ", missing.Take(3))}"
+                          + (missing.Count > 3 ? "…" : "")
+                          + ") — текст показан подменой, разбивка страниц может отличаться");
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Missing font check failed");
+            }
+        }
+
+        /// <summary>
+        /// Красный значок на вкладке модуля и текст подсказки к нему.
+        ///
+        /// Модуль не знает ни про Dock, ни про вкладки — его сборка на сборку
+        /// приложения не ссылается и не должна. Наружу уходит только намерение
+        /// «показать вот это», а куда именно, решает приложение.
+        /// </summary>
+        private void MarkFontWarning(ICollection<string> missing)
+        {
+            try
+            {
+                string? text = missing.Count == 0
+                    ? null
+                    : "Не установлены гарнитуры: " + string.Join(", ", missing)
+                      + ".\nТекст показан подменой — разбивка строк и число страниц "
+                      + "могут отличаться от авторских.\nСами шрифты в документе не "
+                      + "изменены: вернётся гарнитура — вернётся и вид.";
+
+                CoreServices
+                    .GetService<Writersword.Core.Interfaces.Services.UI.IModuleBadgeService>()
+                    ?.SetWarning(moduleType, text);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Font warning mark failed");
+            }
+        }
+
         private void WarnOnMissingImages()
         {
             try
@@ -1636,6 +1812,10 @@ namespace Writersword.Modules.TextEditor
             l.AutoSaveIntervalSeconds.Value = g.AutoSaveIntervalSeconds.Value;
             l.MonitorSizeInches.GlobalValue = g.MonitorSizeInches.Value;
             l.MonitorSizeInches.Value = g.MonitorSizeInches.Value;
+            l.SubstituteMissingGlyphs.GlobalValue = g.SubstituteMissingGlyphs.Value;
+            l.SubstituteMissingGlyphs.Value = g.SubstituteMissingGlyphs.Value;
+            l.SubstituteFontFamily.GlobalValue = g.SubstituteFontFamily.Value;
+            l.SubstituteFontFamily.Value = g.SubstituteFontFamily.Value;
             _logger.Debug("ApplyGlobalToLocal completed");
         }
 
@@ -1658,6 +1838,8 @@ namespace Writersword.Modules.TextEditor
             _localSettingsVm.DefaultZoom.PromoteToGlobal();
             _localSettingsVm.AutoSaveIntervalSeconds.PromoteToGlobal();
             _localSettingsVm.MonitorSizeInches.PromoteToGlobal();
+            _localSettingsVm.SubstituteMissingGlyphs.PromoteToGlobal();
+            _localSettingsVm.SubstituteFontFamily.PromoteToGlobal();
             if (_globalSettingsVm is not null)
             {
                 _globalSettingsVm.FontFamily.Value = settings.FontFamily;
@@ -1672,6 +1854,8 @@ namespace Writersword.Modules.TextEditor
                 _globalSettingsVm.DefaultZoom.Value = settings.DefaultZoom;
                 _globalSettingsVm.AutoSaveIntervalSeconds.Value = settings.AutoSaveIntervalSeconds;
                 _globalSettingsVm.MonitorSizeInches.Value = settings.MonitorSizeInches;
+                _globalSettingsVm.SubstituteMissingGlyphs.Value = settings.SubstituteMissingGlyphs;
+                _globalSettingsVm.SubstituteFontFamily.Value = settings.SubstituteFontFamily;
             }
             _logger.Debug("PromoteLocalToGlobal completed");
         }
@@ -1691,6 +1875,8 @@ namespace Writersword.Modules.TextEditor
             _globalSettingsVm.DefaultZoom.ResetToHardcoded();
             _globalSettingsVm.AutoSaveIntervalSeconds.ResetToHardcoded();
             _globalSettingsVm.MonitorSizeInches.ResetToHardcoded();
+            _globalSettingsVm.SubstituteMissingGlyphs.ResetToHardcoded();
+            _globalSettingsVm.SubstituteFontFamily.ResetToHardcoded();
             _logger.Debug("Global settings reset to hardcoded defaults");
         }
 
@@ -1711,6 +1897,8 @@ namespace Writersword.Modules.TextEditor
                 _localSettingsVm.DefaultZoom.GlobalValue = _globalSettingsVm.DefaultZoom.Value;
                 _localSettingsVm.AutoSaveIntervalSeconds.GlobalValue = _globalSettingsVm.AutoSaveIntervalSeconds.Value;
                 _localSettingsVm.MonitorSizeInches.GlobalValue = _globalSettingsVm.MonitorSizeInches.Value;
+                _localSettingsVm.SubstituteMissingGlyphs.GlobalValue = _globalSettingsVm.SubstituteMissingGlyphs.Value;
+                _localSettingsVm.SubstituteFontFamily.GlobalValue = _globalSettingsVm.SubstituteFontFamily.Value;
             }
             _localSettingsVm.FontFamily.ResetToGlobal();
             _localSettingsVm.FontSize.ResetToGlobal();
@@ -1724,6 +1912,8 @@ namespace Writersword.Modules.TextEditor
             _localSettingsVm.DefaultZoom.ResetToGlobal();
             _localSettingsVm.AutoSaveIntervalSeconds.ResetToGlobal();
             _localSettingsVm.MonitorSizeInches.ResetToGlobal();
+            _localSettingsVm.SubstituteMissingGlyphs.ResetToGlobal();
+            _localSettingsVm.SubstituteFontFamily.ResetToGlobal();
             _logger.Debug("Local settings reset to global values");
         }
 
@@ -1742,6 +1932,8 @@ namespace Writersword.Modules.TextEditor
             _localSettingsVm.DefaultZoom.ResetToHardcoded();
             _localSettingsVm.AutoSaveIntervalSeconds.ResetToHardcoded();
             _localSettingsVm.MonitorSizeInches.ResetToHardcoded();
+            _localSettingsVm.SubstituteMissingGlyphs.ResetToHardcoded();
+            _localSettingsVm.SubstituteFontFamily.ResetToHardcoded();
             _logger.Debug("Local settings reset to hardcoded defaults");
         }
 

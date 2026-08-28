@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:infra="using:Writersword.Infrastructure.Controls"
         xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia">
 
 	<!-- Стиль для DockControl -->
@@ -156,6 +157,24 @@
 	</Style>
 	<Style Selector="ComboBoxItem:selected:pointerover /template/ ContentPresenter">
 		<Setter Property="Background" Value="Transparent"/>
+	</Style>
+
+	<!-- ========================================
+         ВКЛАДКА МОДУЛЯ — значок предупреждения
+         ======================================== -->
+	<!-- Занимается слот иконки, а не заголовка. Заголовок рисует штатный шаблон
+	     Dock, и подменять его нельзя: ошибка в подменённом шаблоне оставляет
+	     модуль вообще без названия. Слот иконки в дереве вкладки есть всегда —
+	     по умолчанию Dock кладёт туда пустой Panel, — и мы просто заменяем
+	     пустой на видимый.
+
+	     Сам шаблон собран кодом, в ModuleWarning.TabIconTemplate. DataTemplate,
+	     объявленный здесь же внутри Setter, отдаёт всем презентерам один и тот
+	     же экземпляр контрола, и второй презентер роняет приложение на попытке
+	     прицепить чужой контрол к своему дереву. FuncDataTemplate с выключенной
+	     переработкой строит новое дерево на каждый вызов. -->
+	<Style Selector="dock|DocumentControl">
+		<Setter Property="IconTemplate" Value="{x:Static infra:ModuleWarning.TabIconTemplate}"/>
 	</Style>
 
 	<!-- ========================================

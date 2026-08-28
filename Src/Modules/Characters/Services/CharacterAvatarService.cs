@@ -156,10 +156,16 @@ namespace Writersword.Modules.Characters.Services
             try
             {
                 var avatarRef = $"project:{uniqueName}";
-                CacheBytes(avatarRef, imageData);
-                RememberHash(avatarRef, imageData);
+
+                // Кеш и хеш заполняются только после удачной записи. Раньше они
+                // заполнялись до неё, и при падении WriteFile кеш подтверждал
+                // существование файла, которого в архиве нет: PlaceOf отвечал
+                // «в проекте», поиск по содержимому выдавал ссылку на пустоту,
+                // и эта мёртвая ссылка уходила в проект.
                 await Task.Run(() =>
                     _context.WriteFile($"{ZipAvatarsFolder}/{uniqueName}", imageData));
+                CacheBytes(avatarRef, imageData);
+                RememberHash(avatarRef, imageData);
                 _logger.Debug("Project avatar saved: {Name}", uniqueName);
                 return avatarRef;
             }
@@ -202,10 +208,13 @@ namespace Writersword.Modules.Characters.Services
                     if (_context == null) return null;
                     var localName = GetUniqueLocalPackName(suggestedName, packId);
                     var localRef = $"lpack:{packId}:{localName}";
-                    CacheBytes(localRef, imageData);
-                    RememberHash(localRef, imageData);
+
+                    // Порядок тот же, что и в SaveToProjectAsync: сначала запись,
+                    // и только потом кеш — иначе кеш подтверждает несуществующий файл.
                     await Task.Run(() =>
                         _context.WriteFile($"{ZipPacksFolder}/{packId}/{localName}", imageData));
+                    CacheBytes(localRef, imageData);
+                    RememberHash(localRef, imageData);
                     return localRef;
                 }
 
@@ -1219,6 +1228,27 @@ namespace Writersword.Modules.Characters.Services
             if (copied == null) return null;
 
             var map = BuildRemapByContent(oldRefs, copied);
+
+            // Исходник удаляется только тогда, когда для каждой его картинки
+            // нашлась пара на новом месте. Проверки «копия вернулась не пустой»
+            // недостаточно: CopyPackToScopeAsync создаёт пак заранее и отдаёт его
+            // даже когда ни один файл не записался — кончилось место, папка занята
+            // антивирусом, каталог недоступен. Раньше в этом случае DeletePack
+            // сносил единственный экземпляр картинок, а пользователю показывался
+            // успешный перенос.
+            //
+            // Неполная копия на новом месте остаётся намеренно: это дубликат, а не
+            // потеря, и удалять её опаснее — в приёмнике мог уже лежать пак с тем
+            // же опознавателем и своим содержимым.
+            var lost = oldRefs.Where(r => !map.ContainsKey(r)).ToList();
+            if (lost.Count > 0)
+            {
+                _logger.Error("MovePackToScope: {Lost} of {Total} images did not reach the target — " +
+                    "source pack {Id} left untouched. Missing: {Missing}",
+                    lost.Count, oldRefs.Count, packId, string.Join(", ", lost));
+                return null;
+            }
+
             DeletePack(packId, source.Scope);
 
             // Переписывать ссылки нужно и при переносе из проекта наружу: там

@@ -212,6 +212,58 @@ namespace Writersword.Infrastructure.Services.Storage
             return value;
         }
 
+        /// <summary>
+        /// Открыть архив проекта на чтение, не мешая уже открытому дескриптору.
+        ///
+        /// ZipFile.OpenRead запрашивает FileShare.Read. В RELEASE-режиме
+        /// ZipFileStorageService держит тот же файл открытым на ReadWrite всю
+        /// сессию, и Windows отвечает нарушением совместного доступа: режим
+        /// шаринга нового запроса не покрывает право записи живого дескриптора.
+        /// Явный FileStream с FileShare.ReadWrite это право разрешает и
+        /// открывается поверх. FileShare.Delete добавлен ради сохранения через
+        /// временный файл с последующей заменой.
+        ///
+        /// Читать под открытым на запись дескриптором безопасно, потому что все
+        /// вызывающие места удерживают ProjectFileLock на время работы с
+        /// архивом: параллельной записи в этот момент нет.
+        /// </summary>
+        private static ZipArchive OpenProjectForRead(string projectPath)
+        {
+            var stream = new FileStream(
+                projectPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+
+            return new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
+        }
+
+        /// <summary>
+        /// Сбросить на диск записи открытого хранилища проекта.
+        ///
+        /// Нужен всем, кто читает .writersword как файл: пока проект открыт,
+        /// ZipArchive в режиме Update копит изменения в памяти и пишет их только
+        /// при закрытии. Если проект не открыт — сбрасывать нечего, и это не
+        /// ошибка.
+        ///
+        /// Метод синхронный и сам берёт ProjectFileLock, поэтому вызывать его
+        /// можно только вне уже взятого шлюза.
+        /// </summary>
+        private void FlushOpenStorage(string projectPath)
+        {
+            try
+            {
+                var workflow = App.Services.GetService<IProjectWorkflow>();
+                workflow?.GetFileStorageForProject(projectPath)?.Flush();
+            }
+            catch (Exception ex)
+            {
+                // Неудачный сброс не повод отменять точку: она просто окажется
+                // на состоянии последней записи на диск, а это лучше, чем ничего.
+                _logger.LogWarning(ex, "Failed to flush open storage before snapshot: {Path}", projectPath);
+            }
+        }
+
         private string? ReadProjectStorageOverrideCore(string projectPath)
         {
             try
@@ -219,7 +271,7 @@ namespace Writersword.Infrastructure.Services.Storage
                 if (!File.Exists(projectPath)) return null;
 
                 using var fileGate = ProjectFileLock.Acquire(projectPath);
-                using var archive = ZipFile.OpenRead(projectPath);
+                using var archive = OpenProjectForRead(projectPath);
 
                 var entry = archive.GetEntry(ProjectOverrideEntry);
                 if (entry == null) return null;
@@ -382,10 +434,22 @@ namespace Writersword.Infrastructure.Services.Storage
                     ProjectTitle = Path.GetFileNameWithoutExtension(projectPath)
                 };
 
+                // Точка снимается с файла на диске, а ZipArchive в режиме Update
+                // держит записи в памяти до закрытия. Всё, что писалось через
+                // IProjectFileStorage без последующего сброса — свежий аватар,
+                // локальный пак — на диск ещё не попало, и без сброса точка
+                // окажется неполной. Особенно это важно перед сжатием проекта и
+                // перед откатом: там точка — единственный способ вернуть удалённое.
+                //
+                // Строго до взятия шлюза ниже: Flush внутри берёт тот же
+                // ProjectFileLock, а он нереентерабельный — вызов под уже взятым
+                // шлюзом даст мёртвую блокировку.
+                FlushOpenStorage(projectPath);
+
                 // Файл проекта читается под общим шлюзом: параллельно его может
                 // перезаписывать сохранение или хешировать кеш-сервис.
                 using (var fileGate = await ProjectFileLock.AcquireAsync(projectPath).ConfigureAwait(false))
-                using (var archive = ZipFile.OpenRead(projectPath))
+                using (var archive = OpenProjectForRead(projectPath))
                 {
                     foreach (var entry in archive.Entries)
                     {
@@ -705,7 +769,7 @@ namespace Writersword.Infrastructure.Services.Storage
                     if (!File.Exists(projectPath)) return result;
 
                     using var fileGate = ProjectFileLock.Acquire(projectPath);
-                    using var archive = ZipFile.OpenRead(projectPath);
+                    using var archive = OpenProjectForRead(projectPath);
 
                     foreach (var entry in archive.Entries)
                     {

@@ -7,6 +7,7 @@ using Writersword.Core.Enums;
 using Writersword.Core.Models.Settings;
 using Writersword.Modules.TextEditor.Models.Document;
 using Writersword.Modules.TextEditor.Models.Settings;
+using Writersword.Modules.TextEditor.Services;
 
 namespace Writersword.Modules.TextEditor.ViewModels
 {
@@ -54,6 +55,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
         public SettingValue<double> DefaultZoom { get; }
         public SettingValue<int> AutoSaveIntervalSeconds { get; }
         public SettingValue<double> MonitorSizeInches { get; }
+        public SettingValue<bool> SubstituteMissingGlyphs { get; }
+        public SettingValue<string> SubstituteFontFamily { get; }
 
         /// <summary>
         /// Реактивная коллекция пар "скрипт → шрифт" для редактирования в UI.
@@ -108,6 +111,17 @@ namespace Writersword.Modules.TextEditor.ViewModels
             EditorViewMode.Draft
         };
 
+        /// <summary>
+        /// Список для выбора шрифта подстановки.
+        ///
+        /// Строится по установленным в системе и вшитым в проект гарнитурам, а не
+        /// по короткому списку AvailableFonts: подставлять предлагается то, что на
+        /// этой машине действительно есть. Нынешнее значение в список кладётся
+        /// всегда, даже если шрифта на машине нет, — иначе ComboBox не нашёл бы
+        /// совпадения и молча стёр бы выбор при открытии настроек.
+        /// </summary>
+        public IReadOnlyList<string> SubstituteFontChoices { get; }
+
         // ── Конструкторы ──────────────────────────────────────────────────
 
         /// <summary>Глобальная вкладка — current == global.</summary>
@@ -129,7 +143,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
             DefaultZoom = new SettingValue<double>(hardcoded.DefaultZoom, global.DefaultZoom);
             AutoSaveIntervalSeconds = new SettingValue<int>(hardcoded.AutoSaveIntervalSeconds, global.AutoSaveIntervalSeconds);
             MonitorSizeInches = new SettingValue<double>(hardcoded.MonitorSizeInches, global.MonitorSizeInches);
+            SubstituteMissingGlyphs = new SettingValue<bool>(hardcoded.SubstituteMissingGlyphs, global.SubstituteMissingGlyphs);
+            SubstituteFontFamily = new SettingValue<string>(hardcoded.SubstituteFontFamily, global.SubstituteFontFamily);
             ScriptFonts = BuildScriptFonts(global.ScriptFontMap);
+            SubstituteFontChoices = ProjectFonts.PickerFamilies(SubstituteFontFamily.Value);
 
             WireProxies();
         }
@@ -154,7 +171,10 @@ namespace Writersword.Modules.TextEditor.ViewModels
             DefaultZoom = new SettingValue<double>(hardcoded.DefaultZoom, global.DefaultZoom, current.DefaultZoom);
             AutoSaveIntervalSeconds = new SettingValue<int>(hardcoded.AutoSaveIntervalSeconds, global.AutoSaveIntervalSeconds, current.AutoSaveIntervalSeconds);
             MonitorSizeInches = new SettingValue<double>(hardcoded.MonitorSizeInches, global.MonitorSizeInches, current.MonitorSizeInches);
+            SubstituteMissingGlyphs = new SettingValue<bool>(hardcoded.SubstituteMissingGlyphs, global.SubstituteMissingGlyphs, current.SubstituteMissingGlyphs);
+            SubstituteFontFamily = new SettingValue<string>(hardcoded.SubstituteFontFamily, global.SubstituteFontFamily, current.SubstituteFontFamily);
             ScriptFonts = BuildScriptFonts(current.ScriptFontMap);
+            SubstituteFontChoices = ProjectFonts.PickerFamilies(SubstituteFontFamily.Value, global.SubstituteFontFamily);
 
             WireProxies();
         }
@@ -225,6 +245,8 @@ namespace Writersword.Modules.TextEditor.ViewModels
             DefaultZoom = DefaultZoom.Value,
             AutoSaveIntervalSeconds = AutoSaveIntervalSeconds.Value,
             MonitorSizeInches = MonitorSizeInches.Value,
+            SubstituteMissingGlyphs = SubstituteMissingGlyphs.Value,
+            SubstituteFontFamily = SubstituteFontFamily.Value,
             ScriptFontMap = ScriptFonts.ToDictionary(e => e.ScriptKey, e => e.FontFamily)
         };
     }

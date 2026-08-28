@@ -40,8 +40,12 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
 
             CycleImportanceCommand = ReactiveCommand.Create(() =>
             {
-                foreach (var card in Targets.ToList())
-                    card.CycleImportance();
+                using (_owner.BeginUndoBatch("важность выбранных карточек"))
+                {
+                    foreach (var card in Targets.ToList())
+                        card.CycleImportance();
+                }
+
                 this.RaisePropertyChanged(nameof(ImportanceMark));
                 this.RaisePropertyChanged(nameof(ImportanceLevel));
             });
@@ -54,6 +58,14 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             });
             SetAvatarCircleCommand = ReactiveCommand.Create(() => { AvatarStrip = false; });
             SetAvatarStripCommand = ReactiveCommand.Create(() => { AvatarStrip = true; });
+
+            // Кольцо разом по всему проекту. Подтверждение не модальным окном, а
+            // раскрытием самой строки в две кнопки — тот же приём, что у
+            // удаления в менеджере наборов аватарок: действие задевает все
+            // карточки, и промах здесь стоит дорого.
+            RequestRingAllCommand = ReactiveCommand.Create(() => { IsConfirmingRingAll = true; });
+            CancelRingAllCommand = ReactiveCommand.Create(() => { IsConfirmingRingAll = false; });
+            ConfirmRingAllCommand = ReactiveCommand.Create(() => ApplyRingToEveryone(Ring));
 
             // Быстрое добавление метки по имени — тот же ход, что и в
             // автодополнении на вкладке «Основное»: совпадение с уже
@@ -136,6 +148,7 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
         public void OnSelectionChanged()
         {
             _thicknessDrag = false;
+            IsConfirmingRingAll = false;
 
             this.RaisePropertyChanged(nameof(HasSelection));
             this.RaisePropertyChanged(nameof(IsSingle));
@@ -152,6 +165,7 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             this.RaisePropertyChanged(nameof(Name));
             this.RaisePropertyChanged(nameof(Color));
             this.RaisePropertyChanged(nameof(Ring));
+            this.RaisePropertyChanged(nameof(RingAllQuestion));
             this.RaisePropertyChanged(nameof(Bookmark));
             this.RaisePropertyChanged(nameof(AvatarStrip));
             this.RaisePropertyChanged(nameof(AvatarCircle));
@@ -224,8 +238,16 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             set
             {
                 if (string.IsNullOrEmpty(value)) return;
-                foreach (var card in Targets.ToList())
-                    card.Color = value;
+
+                // Правка нескольких карточек — один шаг истории, а не по шагу
+                // на карточку: человек сделал одно действие и отменять обязан
+                // тоже одно.
+                using (_owner.BeginUndoBatch("цвет выбранных карточек"))
+                {
+                    foreach (var card in Targets.ToList())
+                        card.Color = value;
+                }
+
                 this.RaisePropertyChanged();
             }
         }
@@ -238,6 +260,50 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
 
         public ReactiveCommand<bool, Unit>? ApplyRingToAllCommand => Primary?.ApplyRingToAllCommand;
 
+        // ── Кольцо у всех персонажей проекта ───────────────────────────────
+
+        private bool _isConfirmingRingAll;
+
+        /// <summary>Строка кольца раскрыта в вопрос «включить / убрать у всех».</summary>
+        public bool IsConfirmingRingAll
+        {
+            get => _isConfirmingRingAll;
+            private set
+            {
+                this.RaiseAndSetIfChanged(ref _isConfirmingRingAll, value);
+                this.RaisePropertyChanged(nameof(IsNotConfirmingRingAll));
+                this.RaisePropertyChanged(nameof(RingAllQuestion));
+            }
+        }
+
+        public bool IsNotConfirmingRingAll => !_isConfirmingRingAll;
+
+        public ReactiveCommand<Unit, Unit> RequestRingAllCommand { get; }
+        public ReactiveCommand<Unit, Unit> CancelRingAllCommand { get; }
+        public ReactiveCommand<Unit, Unit> ConfirmRingAllCommand { get; }
+
+        /// <summary>Вопрос перед раздачей: называет, что именно произойдёт.</summary>
+        public string RingAllQuestion => Ring
+            ? "Включить кольцо у всех персонажей проекта?"
+            : "Убрать кольцо у всех персонажей проекта?";
+
+        /// <summary>
+        /// Поставить или снять кольцо у всех карточек проекта. Обход и запись
+        /// лежат на списке (ApplyRingToAllCharacters): там же снимок прежних
+        /// значений и один шаг в истории отмены на всё действие.
+        /// </summary>
+        private void ApplyRingToEveryone(bool on)
+        {
+            IsConfirmingRingAll = false;
+
+            var target = Primary;
+            if (target is null) return;
+
+            target.ApplyRingToAllCommand.Execute(on).Subscribe();
+            this.RaisePropertyChanged(nameof(Ring));
+            this.RaisePropertyChanged(nameof(RingAllQuestion));
+        }
+
         // ── Кольцо, закладка, вид аватара ──────────────────────────────────
 
         public bool Ring
@@ -245,9 +311,14 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             get => Primary?.AvatarRing ?? false;
             set
             {
-                foreach (var card in Targets.ToList())
-                    card.AvatarRing = value;
+                using (_owner.BeginUndoBatch("кольцо у выбранных карточек"))
+                {
+                    foreach (var card in Targets.ToList())
+                        card.AvatarRing = value;
+                }
+
                 this.RaisePropertyChanged();
+                this.RaisePropertyChanged(nameof(RingAllQuestion));
             }
         }
 
@@ -256,8 +327,12 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             get => Primary?.GroupBookmark ?? false;
             set
             {
-                foreach (var card in Targets.ToList())
-                    card.GroupBookmark = value;
+                using (_owner.BeginUndoBatch("закладка у выбранных карточек"))
+                {
+                    foreach (var card in Targets.ToList())
+                        card.GroupBookmark = value;
+                }
+
                 this.RaisePropertyChanged();
             }
         }
@@ -267,8 +342,11 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             get => Primary?.AvatarStrip ?? false;
             set
             {
-                foreach (var card in Targets.ToList())
-                    card.AvatarStrip = value;
+                using (_owner.BeginUndoBatch("вид аватара у выбранных карточек"))
+                {
+                    foreach (var card in Targets.ToList())
+                        card.AvatarStrip = value;
+                }
 
                 this.RaisePropertyChanged();
                 this.RaisePropertyChanged(nameof(AvatarCircle));
@@ -310,8 +388,11 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
         {
             if (string.IsNullOrEmpty(avatarRef)) return;
 
-            foreach (var card in Targets.ToList())
-                card.ApplyAvatarRef(avatarRef);
+            using (_owner.BeginUndoBatch("аватарка выбранных карточек"))
+            {
+                foreach (var card in Targets.ToList())
+                    card.ApplyAvatarRef(avatarRef);
+            }
 
             this.RaisePropertyChanged(nameof(AvatarBitmap));
 
@@ -370,8 +451,11 @@ namespace Writersword.Modules.Characters.ViewModels.Inspector
             if (!_thicknessDrag) return;
             _thicknessDrag = false;
 
-            foreach (var card in Targets.ToList())
-                card.CommitFrameThickness();
+            using (_owner.BeginUndoBatch("толщина рамки выбранных карточек"))
+            {
+                foreach (var card in Targets.ToList())
+                    card.CommitFrameThickness();
+            }
         }
 
         // ── Метки ──────────────────────────────────────────────────────────

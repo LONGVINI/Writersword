@@ -205,6 +205,59 @@ namespace Writersword.Modules.TextEditor.Services
             return score;
         }
 
+        /// <summary>
+        /// Гарнитуры, которых нет ни в проекте, ни в системе, — их видно
+        /// подменой, и разбивка строк у автора была другой.
+        /// </summary>
+        public static bool IsMissing(string? family)
+        {
+            if (string.IsNullOrWhiteSpace(family)) return false;
+            return !IsEmbedded(family) && !IsInstalled(family);
+        }
+
+        /// <summary>
+        /// Список гарнитур для выпадающих списков: системные, уложенные в
+        /// проект и — обязательно — те, что переданы в <paramref name="keep"/>.
+        ///
+        /// Последнее не удобство, а защита от потери данных. Список для выбора
+        /// раньше строился из одних системных семейств, и значение, которого на
+        /// этой машине нет, в него не попадало. ComboBox, не нашедший своего
+        /// SelectedItem среди Items, схлопывает выбор в null, а двусторонняя
+        /// привязка записывает этот null обратно в модель — гарнитура стиралась
+        /// из проекта от одного показа риббона, без единого действия человека.
+        ///
+        /// Поэтому текущее значение присутствует в списке всегда, даже когда
+        /// шрифта нет нигде: показать его нечем, но сохранить обязано.
+        /// </summary>
+        public static IReadOnlyList<string> PickerFamilies(params string?[] keep)
+        {
+            var names = new SortedSet<string>(StringComparer.CurrentCultureIgnoreCase);
+
+            try
+            {
+                foreach (var installed in SKFontManager.Default.FontFamilies)
+                    if (!string.IsNullOrWhiteSpace(installed)) names.Add(installed);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Список системных шрифтов прочитать не удалось");
+            }
+
+            EnsureLoaded();
+            lock (_lock)
+            {
+                // Имя семейства — это ключ словаря: у Face его нет.
+                foreach (var family in _byFamily.Keys)
+                    if (!string.IsNullOrWhiteSpace(family)) names.Add(family);
+            }
+
+            if (keep != null)
+                foreach (var family in keep)
+                    if (!string.IsNullOrWhiteSpace(family)) names.Add(family!);
+
+            return names.ToList();
+        }
+
         /// <summary>Семейство уложено в проект.</summary>
         public static bool IsEmbedded(string? family)
         {
@@ -252,6 +305,43 @@ namespace Writersword.Modules.TextEditor.Services
                 long sum = 0;
                 foreach (var face in faces) sum += face.Bytes;
                 return sum;
+            }
+        }
+
+        /// <summary>
+        /// Сколько весит системный файл семейства — оценка того, на сколько
+        /// вырастет проект, если этот шрифт в него уложить.
+        ///
+        /// Считается по одному прямому начертанию, а не по всем: обещать точный
+        /// размер всё равно нечем — сколько начертаний реально ляжет, известно
+        /// только при укладке, — а порядок величины эта оценка даёт верный.
+        /// Подмена отсекается сравнением имени, как и при самой укладке: иначе
+        /// у ненайденной гарнитуры «нашёлся» бы вес чужого Segoe UI.
+        /// </summary>
+        public static long InstalledBytesOf(string? family)
+        {
+            if (string.IsNullOrWhiteSpace(family)) return 0;
+
+            SKTypeface? typeface = null;
+            try
+            {
+                typeface = SKTypeface.FromFamilyName(family, SKFontStyle.Normal);
+                if (typeface is null) return 0;
+
+                if (!string.Equals(typeface.FamilyName, family, StringComparison.OrdinalIgnoreCase))
+                    return 0;
+
+                using var stream = typeface.OpenStream(out _);
+                return stream?.Length ?? 0;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Размер системного шрифта {Family} узнать не удалось", family);
+                return 0;
+            }
+            finally
+            {
+                typeface?.Dispose();
             }
         }
 

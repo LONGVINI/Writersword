@@ -344,6 +344,10 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         /// <summary>Сообщает о смене всего, что берётся у вида.</summary>
         private void RaiseThemeDependent()
         {
+            // Список пересобирается первым: у нового вида своя гарнитура, и
+            // комбобокс должен найти её в Items прежде, чем перечитает SelectedFont.
+            RefreshFontList();
+
             this.RaisePropertyChanged(nameof(Brightness));
             this.RaisePropertyChanged(nameof(Contrast));
             this.RaisePropertyChanged(nameof(Warmth));
@@ -361,25 +365,37 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
         /// Шрифты для подмены на время чтения. Первым пунктом идёт «как в документе»:
         /// вернуться к авторскому шрифту должно быть так же просто, как уйти от него.
         /// </summary>
-        public IReadOnlyList<string> AvailableFonts { get; }
+        public IReadOnlyList<string> AvailableFonts
+        {
+            get => _availableFonts;
+            private set => this.RaiseAndSetIfChanged(ref _availableFonts, value);
+        }
+
+        private IReadOnlyList<string> _availableFonts = System.Array.Empty<string>();
 
         public const string FontAsInDocument = "Как в документе";
 
-        private static IReadOnlyList<string> LoadFontList()
+        /// <summary>
+        /// Список гарнитур для выпадающего списка вида чтения.
+        ///
+        /// Строится под текущее значение: если шрифта вида нет на этой машине,
+        /// он всё равно попадает в список. Без этого ComboBox не находил своего
+        /// SelectedItem, схлопывал выбор в null, и двусторонняя привязка
+        /// записывала null в вид — гарнитура стиралась из проекта от одного
+        /// показа риббона.
+        /// </summary>
+        private IReadOnlyList<string> LoadFontList()
         {
             var list = new List<string> { FontAsInDocument };
-            try
-            {
-                list.AddRange(SKFontManager.Default.FontFamilies
-                    .Where(f => !string.IsNullOrWhiteSpace(f))
-                    .OrderBy(f => f, StringComparer.CurrentCultureIgnoreCase));
-            }
-            catch
-            {
-                list.AddRange(new[] { "Arial", "Times New Roman", "Calibri", "Georgia", "Verdana" });
-            }
+            list.AddRange(Services.ProjectFonts.PickerFamilies(T?.FontFamily));
             return list;
         }
+
+        /// <summary>
+        /// Пересобрать список под гарнитуру текущего вида. Зовётся при смене
+        /// вида: у нового вида шрифт свой, и его тоже может не быть в системе.
+        /// </summary>
+        private void RefreshFontList() => AvailableFonts = LoadFontList();
 
         // ── Подача ────────────────────────────────────────────────────────
 
@@ -724,7 +740,18 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             set
             {
                 if (T is not { } t) return;
-                string? v = string.IsNullOrWhiteSpace(value) || value == FontAsInDocument ? null : value;
+
+                // Пустое значение приходит не от человека, а от ComboBox, который
+                // не нашёл текущую гарнитуру среди Items. Сбросить шрифт вида можно
+                // только явным выбором «Как в документе»; молчаливый null означает
+                // потерю данных и в модель не идёт.
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    this.RaisePropertyChanged();
+                    return;
+                }
+
+                string? v = value == FontAsInDocument ? null : value;
                 if (string.Equals(v, t.FontFamily, StringComparison.Ordinal)) return;
                 t.FontFamily = v;
                 this.RaisePropertyChanged();
@@ -878,6 +905,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Reading
             active.InkColor = source?.InkColor ?? "#1A1A1A";
             s.FontStep = 0;
 
+            RefreshFontList();
             this.RaisePropertyChanged(nameof(SelectedFont));
             this.RaisePropertyChanged(nameof(TextColorHex));
             this.RaisePropertyChanged(nameof(FontStep));

@@ -370,7 +370,7 @@ namespace Writersword.Modules.TextEditor.Document
         private void QuickUpdateParagraphLayout(ParagraphViewModel pvm)
         {
             if (_styleResolver is null && DocVm is not null)
-                _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
+                _styleResolver = CreateStyleResolver();
             if (_styleResolver is null) return;
 
             float widthPt = GetCurrentTextWidthPt();

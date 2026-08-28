@@ -1,18 +1,26 @@
-// Обходные пути под Dock 12.0. Два первых пункта прежнего списка выполнены:
-// пакеты подняты до 12.1.0.4, а CacheDocumentTabContent стоит в App.axaml —
-// вью документов держатся живыми при переключении вкладок.
+// Обходные пути под Dock 12.0. Снято: пакеты подняты до 12.1.0.4,
+// CacheDocumentTabContent стоит в App.axaml, пересоздание вью после закрытия
+// модуля убрано вместе с флагом RecreateViewsAfterClose, ручная уборка пустых
+// контейнеров убрана вместе с CleanupEmptyContainers — с 12.1 это делает сам
+// Dock через CollapseDock, а наша уборка ещё и падала.
 //
-// Осталось снять то, что было написано в обход поведения 12.0:
-//   1. RecreateDocumentViews() — пересоздание вью оставшихся модулей. После
-//      закрытия отключено (см. RecreateViewsAfterClose), после перетаскивания
-//      пока работает: сценарии разные, проверять их надо порознь.
-//   2. GetOrCreateView() в BaseModule — восстановление DataContext у кэшированной
-//      вью. Снимать только после того, как подтвердится, что Dock 12.1 его больше
-//      не обнуляет.
-//   3. RequestProgressiveRefreshAsync() в CharactersModuleView.OnLoaded.
+// Осталось, и снимать это порознь:
+//   1. RecreateDocumentViews() после перетаскивания — вызов в MoveDockable.
+//      Держится не багом библиотеки, а нашим OnNeedRerender: он обнуляет и
+//      заново присваивает DockLayout, после чего вью висят на презентерах
+//      старого дерева и их приходится переприцеплять. Снимать надо с
+//      OnNeedRerender, а не с самого RecreateDocumentViews: тот же метод
+//      живёт на пути реактивации вкладки (RecreateAllDocumentViews).
+//   2. GetOrCreateView() в BaseModule — восстановление DataContext у
+//      кэшированной вью. Прежняя формулировка списывала это на Dock, и она
+//      неверна: DataContext гасит наш собственный код — CloseDockable,
+//      DetachViewsRecursive(clearDataContext: true) и SetContentDeferred.
+//      Пока эти строки на месте, восстановление нужно при любой версии Dock.
+//   3. RequestProgressiveRefreshAsync() в CharactersModuleView.OnLoaded — тоже
+//      не про Dock: он гасит фриз ItemsRepeater при повторном attach. Парный
+//      ему PrepareForReattach чистит Folders, так что снимать эти два можно
+//      только вместе, иначе список персонажей окажется пустым.
 //
-// Каждый пункт снимается отдельно и проверяется своим сценарием: они писались
-// под разные поломки, и одно исправление в библиотеке не обязано закрывать все.
 // Релизы: https://github.com/wieslawsoltes/Dock/releases
 
 using Dock.Model.Avalonia;
@@ -63,40 +71,6 @@ namespace Writersword.Infrastructure.Dock
         /// различить, а лечатся они по-разному.
         /// </summary>
         private readonly HashSet<string> _materializedOnce = new(StringComparer.Ordinal);
-
-        /// <summary>
-        /// Пересоздавать вью оставшихся модулей после закрытия одного из них.
-        ///
-        /// Нужно было Dock 12.0: он перестраивал визуальное дерево, оставшиеся
-        /// модули теряли свои ContentPresenter и показывались пустыми. С 12.1.0.2
-        /// это чинится в самой библиотеке — отслеживание активного больше не
-        /// удерживает закрытое, и поправлено закрытие во вложенном доке.
-        ///
-        /// Обход при этом остался вредным сам по себе: он рвёт и собирает заново
-        /// живые панели, и на экране это видно как мерцание при каждом закрытии.
-        ///
-        /// Вернуть true, если после закрытия модуля оставшиеся панели пустеют.
-        /// </summary>
-        private static readonly bool RecreateViewsAfterClose = false;
-
-        /// <summary>
-        /// Убирать пустые контейнеры из раскладки своими руками.
-        ///
-        /// Писалось под Dock 12.0, который опустевшие DocumentDock и
-        /// ProportionalDock не убирал: они оставались с нулевым содержимым и
-        /// занимали место, не давая соседям растянуться. С 12.1 эту работу делает
-        /// сам Dock через CollapseDock — то есть наша уборка теперь дублирует его.
-        ///
-        /// И не просто дублирует, а падает. Удаление из VisibleDockables у живой,
-        /// прицепленной раскладки синхронно разбирает контейнер, разбор гасит
-        /// DataContext, и вкладочная полоса переустанавливает выделение по уже
-        /// опустевшему списку — то же самое исключение, что ловилось на закрытии
-        /// и на перетаскивании, только прилетевшее из нашего кода.
-        ///
-        /// Вернуть true, если после закрытия модуля на его месте остаётся пустая
-        /// панель и соседи не растягиваются.
-        /// </summary>
-        private static readonly bool CleanupEmptyContainers = false;
 
         /// <summary>
         /// Callback вызывается когда пользователь закрывает модуль через крестик в Dock
@@ -188,20 +162,6 @@ namespace Writersword.Infrastructure.Dock
                 doc.Content = null;
                 base.CloseDockable(dockable);
                 OnModuleClosed?.Invoke(moduleType);
-
-                // После закрытия Dock 12.0 перестраивал визуальное дерево —
-                // оставшиеся модули теряли ContentPresenter. Пересоздаём View-шки.
-                if (RecreateViewsAfterClose && _currentRootDock != null)
-                {
-                    var root = _currentRootDock;
-                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                    {
-                        var tab = App.Services.GetRequiredService<ITabCollection>().ActiveTab as DocumentTabViewModel;
-                        if (tab != null)
-                            RecreateDocumentViews(root, tab);
-                    }, Avalonia.Threading.DispatcherPriority.Loaded);
-                }
-
             }
             else
             {
@@ -262,6 +222,163 @@ namespace Writersword.Infrastructure.Dock
         /// реализации не оказался внутри лямбды.
         /// </summary>
         private void CollapseNow(IDock dock) => base.CollapseDock(dock);
+
+        // =====================================================================
+        // РАЗБОР: откуда берётся плавающая подпись модуля
+        // =====================================================================
+        //
+        // На экране остаётся синяя плашка с названием модуля посреди страницы,
+        // хотя сам модуль стоит на своём месте. Такую плашку Dock рисует, когда
+        // докабл закреплён сбоку (Pin) или вынесен в отдельное окно (Float).
+        // Наш код ни того ни другого не запрашивает — значит это делает сам Dock.
+        //
+        // Подписываемся на коллекции, а не переопределяем методы фабрики:
+        // сигнатуры Pin/Float в 12.1 расходятся с интерфейсом по nullable, и
+        // переопределение здесь стоило бы отдельной возни с компилятором. А
+        // коллекция скажет ровно то же самое: кто и когда там появился.
+        //
+        // Блок временный: как только виновник назван, он убирается.
+
+        private readonly HashSet<object> _watchedCollections = new();
+
+        private void WatchLayoutForDiagnostics(IRootDock root)
+        {
+            Watch("закреплено слева", root.LeftPinnedDockables);
+            Watch("закреплено справа", root.RightPinnedDockables);
+            Watch("закреплено сверху", root.TopPinnedDockables);
+            Watch("закреплено снизу", root.BottomPinnedDockables);
+            Watch("плавающие окна", root.Windows);
+
+            void Watch(string what, System.Collections.IEnumerable? collection)
+            {
+                if (collection is not System.Collections.Specialized.INotifyCollectionChanged notify)
+                    return;
+
+                // Раскладка пересоздаётся при каждом переключении вкладки, а
+                // подписка живёт на объекте коллекции: без этой проверки на одну
+                // и ту же коллекцию накопились бы десятки обработчиков.
+                if (!_watchedCollections.Add(collection)) return;
+
+                notify.CollectionChanged += (_, args) =>
+                {
+                    if (args.NewItems is null || args.NewItems.Count == 0) return;
+
+                    foreach (var item in args.NewItems)
+                    {
+                        string title = (item as IDockable)?.Title ?? item?.GetType().Name ?? "?";
+                        string id = (item as IDockable)?.Id ?? string.Empty;
+
+                        _logger.LogWarning("РАСКЛАДКА: в «{What}» добавлено {Title} (id={Id}) ← {Caller}",
+                            what, title, id, ShortStack());
+                    }
+
+                    DumpLayout("после изменения «" + what + "»");
+                };
+            }
+        }
+
+        /// <summary>
+        /// Кто позвал: только кадры Writersword, чужие рамки не нужны.
+        /// Пустой результат означает, что действие пришло изнутри Dock.
+        /// </summary>
+        private static string ShortStack()
+        {
+            try
+            {
+                var frames = new System.Diagnostics.StackTrace(1, false).GetFrames();
+                if (frames is null) return "стек недоступен";
+
+                var parts = new List<string>();
+                foreach (var frame in frames)
+                {
+                    var method = frame.GetMethod();
+                    var type = method?.DeclaringType?.FullName;
+                    if (type is null) continue;
+
+                    if (!type.StartsWith("Writersword", StringComparison.Ordinal))
+                        continue;
+
+                    parts.Add(type.Substring(type.LastIndexOf('.') + 1) + "." + method!.Name);
+                    if (parts.Count >= 8) break;
+                }
+
+                return parts.Count == 0 ? "вне нашего кода — позвал сам Dock" : string.Join(" ← ", parts);
+            }
+            catch
+            {
+                return "стек недоступен";
+            }
+        }
+
+        /// <summary>
+        /// Снимок раскладки: что где лежит, что закреплено, что вынесено в окна.
+        /// По нему видно, чем именно стал модуль с «отвалившейся» подписью.
+        /// </summary>
+        public void DumpLayout(string when)
+        {
+            try
+            {
+                var root = _currentRootDock;
+                if (root is null)
+                {
+                    _logger.LogWarning("Раскладка [{When}]: корня нет", when);
+                    return;
+                }
+
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine();
+                sb.Append("Раскладка [").Append(when).Append(']');
+
+                DumpNode(sb, root, 1);
+
+                Pinned("слева", root.LeftPinnedDockables);
+                Pinned("справа", root.RightPinnedDockables);
+                Pinned("сверху", root.TopPinnedDockables);
+                Pinned("снизу", root.BottomPinnedDockables);
+
+                if (root.Windows is { Count: > 0 })
+                {
+                    sb.AppendLine().Append("  ОКОН: ").Append(root.Windows.Count);
+                    foreach (var window in root.Windows)
+                    {
+                        sb.AppendLine().Append("    окно id=").Append(window?.Id);
+                        if (window?.Layout is { } layout) DumpNode(sb, layout, 3);
+                    }
+                }
+
+                _logger.LogWarning("{Dump}", sb.ToString());
+
+                void Pinned(string name, IList<IDockable>? list)
+                {
+                    if (list is null || list.Count == 0) return;
+
+                    sb.AppendLine().Append("  ЗАКРЕПЛЕНО ").Append(name).Append(':');
+                    foreach (var item in list)
+                        sb.Append(' ').Append(item?.Title).Append(" (id=").Append(item?.Id).Append(')');
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Не удалось снять раскладку [{When}]", when);
+            }
+        }
+
+        private static void DumpNode(System.Text.StringBuilder sb, IDockable node, int depth)
+        {
+            sb.AppendLine().Append(new string(' ', depth * 2))
+              .Append(node.GetType().Name)
+              .Append(" \"").Append(node.Title).Append('"')
+              .Append(" id=").Append(node.Id);
+
+            if (node is not IDock dock) return;
+
+            sb.Append(" видимых=").Append(dock.VisibleDockables?.Count ?? 0);
+
+            if (dock.VisibleDockables is null) return;
+            foreach (var child in dock.VisibleDockables)
+                if (child is not null) DumpNode(sb, child, depth + 1);
+        }
+
 
         public override void MoveDockable(IDock sourceOwner, IDock targetOwner, IDockable sourceDockable, IDockable? targetDockable)
         {
@@ -411,7 +528,7 @@ namespace Writersword.Infrastructure.Dock
                             ValidateAndRemoveDuplicates(restored);
 
                             _logger.LogDebug("Layout restored with {Count} modules", restoredCount);
-                            _currentRootDock = restored;
+                            SetCurrentRoot(restored, "раскладка восстановлена из файла");
                             return restored;
                         }
                     }
@@ -779,7 +896,7 @@ namespace Writersword.Infrastructure.Dock
             ValidateAndRemoveDuplicates(rootDock);
 
             _logger.LogDebug("Layout built manually with {Count} documents", documents.Count);
-            _currentRootDock = rootDock;
+            SetCurrentRoot(rootDock, "раскладка построена заново");
             return rootDock;
         }
 
@@ -1240,109 +1357,6 @@ namespace Writersword.Infrastructure.Dock
         }
 
         // =====================================================================
-        // ОЧИСТКА ПУСТЫХ КОНТЕЙНЕРОВ
-        // =====================================================================
-
-        /// <summary>
-        /// Удалить пустые DocumentDock и ProportionalDock из layout после закрытия модулей
-        /// Dock.Avalonia не убирает контейнеры автоматически — они остаются с нулевым содержимым
-        /// и занимают место, не давая оставшимся модулям растянуться
-        /// </summary>
-        public void CleanupEmptyContainersInLayout(IRootDock rootDock)
-        {
-            if (!CleanupEmptyContainers)
-            {
-                _logger.LogDebug("Empty containers cleanup skipped — Dock collapses them itself");
-                return;
-            }
-
-            var topProportional = FindTopLevelProportionalDock(rootDock);
-            if (topProportional == null)
-                return;
-
-            bool changed = true;
-            while (changed)
-                changed = CleanupProportionalDockRecursive(topProportional);
-
-            _logger.LogDebug("Empty containers cleaned up");
-        }
-
-        /// <summary>
-        /// Рекурсивно очищает ProportionalDock от пустых детей
-        /// Возвращает true если были изменения (нужен повторный проход)
-        /// </summary>
-        private bool CleanupProportionalDockRecursive(ProportionalDock dock)
-        {
-            if (dock.VisibleDockables == null)
-                return false;
-
-            bool changed = false;
-
-            foreach (var child in dock.VisibleDockables.ToList())
-            {
-                if (child is ProportionalDock childProportional)
-                    changed |= CleanupProportionalDockRecursive(childProportional);
-            }
-
-            var toRemove = dock.VisibleDockables
-                .Where(d => IsEmptyContainer(d))
-                .ToList();
-
-            foreach (var empty in toRemove)
-            {
-                dock.VisibleDockables.Remove(empty);
-                _logger.LogDebug("Removed empty container: {Type} ({Id})",
-                    empty.GetType().Name, empty.Id);
-                changed = true;
-            }
-
-            if (changed)
-            {
-                CleanupSplitters(dock);
-                DistributeProportions(dock);
-            }
-
-            return changed;
-        }
-
-        private static bool IsEmptyContainer(IDockable dockable)
-        {
-            if (dockable is DocumentDock docDock)
-                return docDock.VisibleDockables == null || docDock.VisibleDockables.Count == 0;
-
-            if (dockable is ProportionalDock propDock)
-            {
-                if (propDock.VisibleDockables == null || propDock.VisibleDockables.Count == 0)
-                    return true;
-
-                return !propDock.VisibleDockables.Any(d => d is not ProportionalDockSplitter);
-            }
-
-            return false;
-        }
-
-        private static void CleanupSplitters(ProportionalDock dock)
-        {
-            if (dock.VisibleDockables == null)
-                return;
-
-            while (dock.VisibleDockables.Count > 0
-                   && dock.VisibleDockables[0] is ProportionalDockSplitter)
-                dock.VisibleDockables.RemoveAt(0);
-
-            while (dock.VisibleDockables.Count > 0
-                   && dock.VisibleDockables[^1] is ProportionalDockSplitter)
-                dock.VisibleDockables.RemoveAt(dock.VisibleDockables.Count - 1);
-
-            for (int i = dock.VisibleDockables.Count - 1; i > 0; i--)
-            {
-                if (dock.VisibleDockables[i] is ProportionalDockSplitter
-                    && dock.VisibleDockables[i - 1] is ProportionalDockSplitter)
-                    dock.VisibleDockables.RemoveAt(i);
-            }
-        }
-
-        // =====================================================================
         // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
         // =====================================================================
 
@@ -1452,7 +1466,23 @@ namespace Writersword.Infrastructure.Dock
         /// _currentRootDock, и без восстановления перестают работать пересборки
         /// после перемещения панелей (MoveDockable/CloseDockable).
         /// </summary>
-        public void AttachToLayout(IRootDock rootDock) => _currentRootDock = rootDock;
+        public void AttachToLayout(IRootDock rootDock)
+            => SetCurrentRoot(rootDock, "раскладка прикреплена заново");
+
+        /// <summary>
+        /// Единственное место, где выставляется текущий корень.
+        ///
+        /// Раньше присвоение стояло в трёх местах порознь — при восстановлении
+        /// из файла, при построении заново и при мягкой реактивации, — и
+        /// диагностика, повешенная только на последнее, молчала при первых двух:
+        /// при холодном открытии проекта AttachToLayout не зовётся вовсе.
+        /// </summary>
+        private void SetCurrentRoot(IRootDock rootDock, string reason)
+        {
+            _currentRootDock = rootDock;
+            WatchLayoutForDiagnostics(rootDock);
+            DumpLayout(reason);
+        }
 
         /// <summary>
         /// Отложенное прикрепление вьюхи модуля: в Content немедленно ставится лёгкий
@@ -1558,6 +1588,64 @@ namespace Writersword.Infrastructure.Dock
         /// живого презентера актуального layout, и панель оставалась пустой
         /// с вечным плейсхолдером.
         /// </summary>
+        /// <summary>
+        /// Вкладка модуля в текущей раскладке — чтобы модуль мог что-то на ней
+        /// показать: значок предупреждения, изменённый заголовок.
+        ///
+        /// Ищется обходом, без словаря, и это осознанно. Фабрика одна на всё
+        /// приложение, а раскладка своя у каждой вкладки-проекта: словарь по
+        /// одному moduleType путал бы документы разных проектов. Обход идёт по
+        /// текущему корню, то есть по раскладке активной вкладки — ровно того
+        /// модуля, который спрашивает.
+        ///
+        /// Возвращает null, если модуль в раскладке не найден: он мог быть
+        /// закрыт или ещё не прикреплён. Это не ошибка, показывать просто негде.
+        /// </summary>
+        public Document? FindModuleDocument(string moduleType)
+        {
+            if (string.IsNullOrEmpty(moduleType)) return null;
+
+            var root = _currentRootDock;
+            if (root == null) return null;
+
+            var found = FindModuleDocumentRecursive(root, moduleType);
+            if (found != null) return found;
+
+            if (root.Windows != null)
+            {
+                foreach (var wnd in root.Windows)
+                {
+                    if (wnd.Layout == null) continue;
+
+                    found = FindModuleDocumentRecursive(wnd.Layout, moduleType);
+                    if (found != null) return found;
+                }
+            }
+
+            return null;
+        }
+
+        private static Document? FindModuleDocumentRecursive(IDockable current, string moduleType)
+        {
+            // Опознаётся по Context: там лежит ключ модуля. Id тоже подошёл бы,
+            // но он собирается из строки, а Context кладётся напрямую.
+            if (current is Document doc
+                && doc.Context is string context
+                && string.Equals(context, moduleType, StringComparison.Ordinal))
+                return doc;
+
+            if (current is IDock dock && dock.VisibleDockables != null)
+            {
+                foreach (var child in dock.VisibleDockables)
+                {
+                    var found = FindModuleDocumentRecursive(child, moduleType);
+                    if (found != null) return found;
+                }
+            }
+
+            return null;
+        }
+
         private bool IsDocumentInCurrentLayout(Document doc)
         {
             var root = _currentRootDock;

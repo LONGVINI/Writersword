@@ -1,13 +1,18 @@
 ﻿using Avalonia;
+#if DEBUG
+using Avalonia.Diagnostics;
+#endif
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -420,6 +425,22 @@ namespace Writersword.Views
             InitializeComponent();
 
             _focusSink = this.FindControl<Panel>("FocusSink");
+
+#if DEBUG
+            // Инспектор визуального дерева, F12. Нужен, чтобы не гадать по логам,
+            // что за контрол оказался на экране: наводишь — видишь его тип, предков
+            // и привязки.
+            //
+            // Инспектор приезжает пакетом ProDiagnostics — он лежал в зависимостях,
+            // но его никогда не вызывали. Сборка внутри пакета называется
+            // Avalonia.Diagnostics, отсюда и пространство имён; одноимённого пакета
+            // на nuget.org под Avalonia 12 не существует, ставить его не надо.
+            //
+            // Сочетание по умолчанию — F12, задавать отдельно нечего.
+            this.AttachDevTools();
+#endif
+
+            StartPointerProbe();
 
             this.Opened += (s, e) =>
             {
@@ -968,6 +989,85 @@ namespace Writersword.Views
             {
                 desktop.Shutdown(0);
             }
+        }
+
+        // РАЗБОР ЗАЛИПАНИЯ. Плоскость модулей перестаёт принимать ввод, а меню и
+        // кнопки воркмодов продолжают работать. UI-поток при этом жив — значит
+        // дело не в зависании, а в захвате указателя: перетаскивание в Dock
+        // началось и не завершилось, весь ввод уходит захватившему элементу.
+        //
+        // Пишем нажатия, отпускания и потерю захвата на туннельной фазе, до того
+        // как их кто-либо обработает. Нажатие без парного отпускания — и виновник
+        // назван вместе с элементом, который его съел.
+        private void StartPointerProbe()
+        {
+            var log = Serilog.Log.ForContext("SourceContext", "PointerProbe");
+
+            AddHandler(PointerPressedEvent, (_, e) =>
+            {
+                log.Debug("НАЖАТИЕ над {Source}, захват у {Captured}",
+                    Describe(e.Source), Describe(e.Pointer.Captured));
+            }, RoutingStrategies.Tunnel, handledEventsToo: true);
+
+            AddHandler(PointerReleasedEvent, (_, e) =>
+            {
+                log.Debug("ОТПУСКАНИЕ над {Source}, захват у {Captured}",
+                    Describe(e.Source), Describe(e.Pointer.Captured));
+            }, RoutingStrategies.Tunnel, handledEventsToo: true);
+
+            AddHandler(PointerCaptureLostEvent, (_, e) =>
+            {
+                log.Debug("ЗАХВАТ ПОТЕРЯН у {Source}", Describe(e.Source));
+            }, RoutingStrategies.Tunnel, handledEventsToo: true);
+
+            // Раз в секунду — держит ли кто-то захват. Если строка повторяется, а
+            // отпускания не было, значит указатель залип именно там.
+            var timer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            timer.Tick += (_, _) =>
+            {
+                var captured = _probeLastCaptured;
+                if (captured != null)
+                    log.Debug("захват всё ещё удерживает {Captured}", captured);
+            };
+            timer.Start();
+            _probeTimer = timer;
+
+            AddHandler(PointerMovedEvent, (_, e) =>
+            {
+                _probeLastCaptured = e.Pointer.Captured is null ? null : Describe(e.Pointer.Captured);
+            }, RoutingStrategies.Tunnel, handledEventsToo: true);
+        }
+
+        private DispatcherTimer? _probeTimer;
+        private string? _probeLastCaptured;
+
+        private static string Describe(object? o)
+        {
+            if (o is null) return "нет";
+            if (o is not Control c) return o.GetType().Name;
+
+            // Один тип контрола ни о чём не говорит: ContentPresenter в приложении
+            // сотни. Нужна цепочка предков — по ней видно, чей он и в каком окне.
+            var parts = new List<string>();
+            Visual? v = c;
+            for (int i = 0; i < 6 && v is not null; i++)
+            {
+                if (v is Control ctl)
+                    parts.Add(ctl.GetType().Name
+                        + (string.IsNullOrEmpty(ctl.Name) ? "" : " #" + ctl.Name));
+                else
+                    parts.Add(v.GetType().Name);
+
+                v = v.GetVisualParent();
+            }
+
+            // Корень отдельно: всплывающий список живёт в своём окне PopupRoot,
+            // и по нему сразу видно, пришло событие из ленты или из списка.
+            var root = TopLevel.GetTopLevel(c)?.GetType().Name ?? "?";
+            return string.Join(" < ", parts) + "  [корень: " + root + "]";
         }
 
         private void OnKeyDown(object? sender, KeyEventArgs e)

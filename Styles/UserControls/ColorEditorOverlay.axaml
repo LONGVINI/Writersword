@@ -372,6 +372,19 @@
 							</WrapPanel>
 						</Border>
 
+						<!-- Какой подборщик показывает правая кнопка по образцу
+						     цвета. Галочка стоит здесь, а не в меню самой кнопки:
+						     запоминают то, что перед глазами, и видно, какая
+						     вкладка сейчас будет запомнена. -->
+						<CheckBox x:Name="DefaultPickerCheck"
+						          Margin="0,6,0,0"
+						          FontSize="12"
+						          Foreground="{DynamicResource TextSecondaryBrush}"
+						          Content="Показывать эту вкладку по правой кнопке"
+						          IsCheckedChanged="OnDefaultPickerChanged"
+						          behaviours:TooltipBehavior.Tip="Подборщик правой кнопки"
+						          behaviours:TooltipBehavior.Description="Правая кнопка по любому образцу цвета во всём приложении будет показывать эту вкладку прямо во всплывашке, с живым цветом. Левая кнопка при этом остаётся заготовками"/>
+
 						<!-- Содержимое вкладок: высота по содержимому активной вкладки -->
 						<Panel>
 
@@ -430,22 +443,25 @@
 										</Panel>
 									</Border>
 
-									<Button HorizontalAlignment="Center" Padding="12,6"
+									<!-- Сброс наезда: значок вместо подписи. Кнопка стоит
+									     под полем шума, где место считанное, а подпись в
+									     два слова растягивала его на всю ширину. Смысл
+									     ушёл в подсказку — та же строка, что была
+									     подписью. -->
+									<Button HorizontalAlignment="Center"
 									        Classes="accentOutline"
 									        Click="OnNoiseReset"
-									        Content="{x:Static res:SharedStrings.ColorEditor_NoiseZoomOut}"/>
+									        Width="30" Height="30"
+									        MinWidth="0" MinHeight="0"
+									        Padding="0"
+									        CornerRadius="999"
+									        HorizontalContentAlignment="Center"
+									        VerticalContentAlignment="Center"
+									        behaviours:TooltipBehavior.Tip="{x:Static res:SharedStrings.ColorEditor_NoiseZoomOut}">
+										<PathIcon Width="13" Height="13"
+										          Data="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+									</Button>
 
-									<!-- Альфа-канал: 0 — «без цвета», 255 — непрозрачно. -->
-									<Grid Width="220" ColumnDefinitions="18,*,40">
-										<TextBlock Grid.Column="0" Text="A" VerticalAlignment="Center"
-										           Foreground="{DynamicResource TextSecondaryBrush}"/>
-										<Slider Grid.Column="1" x:Name="SliderANoise" Classes="grad"
-										        Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
-										        ValueChanged="OnAlphaSliderChanged"/>
-										<TextBlock Grid.Column="2" x:Name="LabelANoise"
-										           VerticalAlignment="Center" HorizontalAlignment="Right"
-										           Foreground="{DynamicResource TextPrimaryBrush}"/>
-									</Grid>
 								</StackPanel>
 
 							<StackPanel x:Name="SpectrumPanel" Spacing="12">
@@ -513,7 +529,7 @@
 									</StackPanel>
 								</Viewbox>
 
-								<Grid ColumnDefinitions="18,*,40" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="10">
+								<Grid ColumnDefinitions="18,*,40" RowDefinitions="Auto,Auto,Auto" RowSpacing="10" ColumnSpacing="10">
 									<TextBlock Grid.Row="0" Grid.Column="0" Text="R" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextSecondaryBrush}"/>
 									<Slider Grid.Row="0" Grid.Column="1" x:Name="SliderR" Classes="grad"
@@ -541,15 +557,6 @@
                                                VerticalAlignment="Center" HorizontalAlignment="Right"
                                                Foreground="{DynamicResource TextPrimaryBrush}"/>
 
-									<!-- Альфа-канал: 0 — «без цвета», 255 — непрозрачно. -->
-									<TextBlock Grid.Row="3" Grid.Column="0" Text="A" VerticalAlignment="Center"
-                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
-									<Slider Grid.Row="3" Grid.Column="1" x:Name="SliderA" Classes="grad"
-                                            Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
-                                            ValueChanged="OnAlphaSliderChanged"/>
-									<TextBlock Grid.Row="3" Grid.Column="2" x:Name="LabelA"
-                                               VerticalAlignment="Center" HorizontalAlignment="Right"
-                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
 								</Grid>
 							</StackPanel>
 
@@ -564,23 +571,12 @@
 										<Canvas x:Name="HoneycombCanvas"/>
 									</Viewbox>
 
-									<!-- Альфа-канал: 0 — «без цвета», 255 — непрозрачно. -->
-									<Grid ColumnDefinitions="18,*,40">
-										<TextBlock Grid.Column="0" Text="A" VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"/>
-										<Slider Grid.Column="1" x:Name="SliderAHoney" Classes="grad"
-                                                Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
-                                                ValueChanged="OnAlphaSliderChanged"/>
-										<TextBlock Grid.Column="2" x:Name="LabelAHoney"
-                                                   VerticalAlignment="Center" HorizontalAlignment="Right"
-                                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
-									</Grid>
 								</StackPanel>
 							</Border>
 
 							<!-- Колесо (масштабируется), ползунок V справа -->
 							<Grid x:Name="WheelPanel" IsVisible="False"
-                                  ColumnDefinitions="*,Auto,Auto" VerticalAlignment="Center">
+                                  ColumnDefinitions="*,Auto" VerticalAlignment="Center">
 								<Viewbox Grid.Column="0" Stretch="Uniform" StretchDirection="DownOnly"
                                          HorizontalAlignment="Center" MaxHeight="200">
 									<Panel x:Name="Wheel" Width="200" Height="200"
@@ -612,17 +608,6 @@
                                             ValueChanged="OnWheelValueChanged"/>
 								</StackPanel>
 
-								<!-- Альфа-канал: 0 — «без цвета», 255 — непрозрачно. -->
-								<StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center" Margin="12,0,0,0">
-									<TextBlock Text="A" HorizontalAlignment="Center"
-                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
-									<Slider x:Name="SliderAWheel" Orientation="Vertical"
-                                            Minimum="0" Maximum="255" Height="170"
-                                            HorizontalAlignment="Center"
-                                            ValueChanged="OnAlphaSliderChanged"/>
-									<TextBlock x:Name="LabelAWheel" HorizontalAlignment="Center"
-                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
-								</StackPanel>
 							</Grid>
 
 							<!-- Значения: градиентные ползунки + поля (RGB / HSL / HSV). HEX — наверху. -->
@@ -647,12 +632,6 @@
                                                 Minimum="0" Maximum="255" ValueChanged="OnValRgbSlider"/>
 										<TextBox Grid.Row="2" Grid.Column="2" x:Name="TxtB" Classes="valnum"
                                                  KeyDown="OnRgbKey" LostFocus="OnRgbCommit"/>
-										<!-- Альфа-канал: 0 — «без цвета», 255 — непрозрачно. -->
-										<TextBlock Grid.Row="3" Grid.Column="0" Text="A" Classes="fieldLabel"/>
-										<Slider Grid.Row="3" Grid.Column="1" x:Name="SlA" Classes="grad"
-                                                Minimum="0" Maximum="255" ValueChanged="OnAlphaSliderChanged"/>
-										<TextBox Grid.Row="3" Grid.Column="2" x:Name="TxtA" Classes="valnum"
-                                                 KeyDown="OnAlphaKey" LostFocus="OnAlphaCommit"/>
 									</Grid>
 								</StackPanel>
 
@@ -701,6 +680,28 @@
 								</StackPanel>
 							</StackPanel>
 						</Panel>
+
+						<!-- Прозрачность. Одна на всё окно, под содержимым вкладок.
+						     Раньше свой ползунок альфы был у каждой вкладки — пять
+						     штук: под шумом, в блоке RGB спектра, в сотах, сбоку у
+						     колеса и строкой во «Значениях». Значение у них всё
+						     равно было общее, и все пять приходилось сводить
+						     вручную при каждой правке цвета: пять присваиваний в
+						     SyncAlphaUi, три перерисовки подложки в SetSliderBg и
+						     список имён в OnPointerWheel. Один блок снимает и это,
+						     и вопрос «а почему в колесе ползунок вертикальный, а в
+						     сотах горизонтальный».
+
+						     0 — «без цвета», 255 — непрозрачно. -->
+						<Grid ColumnDefinitions="18,*,56" ColumnSpacing="10" Margin="0,10,18,0">
+							<TextBlock Grid.Column="0" Text="A" VerticalAlignment="Center"
+							           Foreground="{DynamicResource TextSecondaryBrush}"/>
+							<Slider Grid.Column="1" x:Name="SliderA" Classes="grad"
+							        Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
+							        ValueChanged="OnAlphaSliderChanged"/>
+							<TextBox Grid.Column="2" x:Name="TxtA" Classes="valnum"
+							         KeyDown="OnAlphaKey" LostFocus="OnAlphaCommit"/>
+						</Grid>
 
 						<!-- Вкладки коллекций: Мои цвета / Стандартные / Палитры -->
 						<Border x:Name="CollTabs" Background="{DynamicResource BgSurfaceBrush}" CornerRadius="8"
@@ -792,35 +793,8 @@
                                           IsVisible="False"
                                           Click="OnBookmarkCheckChanged"
                                           VerticalAlignment="Center" Margin="0,0,12,6"/>
-								<Button x:Name="RingAllButton" Click="OnRingAllClick"
-                                        Padding="12,6" CornerRadius="6" Margin="0,0,0,6"
-                                        VerticalAlignment="Center"
-                                        Background="{DynamicResource BgSurfaceBrush}"
-                                        BorderBrush="{DynamicResource BorderDefaultBrush}"
-                                        BorderThickness="1"/>
 							</WrapPanel>
 
-							<Border x:Name="RingConfirmPanel" IsVisible="False"
-                                    Background="{DynamicResource BgSurfaceBrush}"
-                                    BorderBrush="{DynamicResource BorderDefaultBrush}"
-                                    BorderThickness="1" CornerRadius="8" Padding="10">
-								<WrapPanel Orientation="Horizontal">
-									<TextBlock Text="{x:Static res:SharedStrings.ColorEditor_ConfirmAll}"
-                                               VerticalAlignment="Center" Margin="0,0,12,0"
-                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
-									<Button Content="{x:Static res:SharedStrings.Common_Ok}"
-                                            Click="OnConfirmRingApply"
-                                            Padding="12,4" CornerRadius="6" Margin="0,0,8,0"
-                                            Background="{DynamicResource AccentDefaultBrush}" Foreground="White"/>
-									<Button Content="{x:Static res:SharedStrings.ColorEditor_RingNone}"
-                                            IsVisible="False"
-                                            Click="OnConfirmRingRemove"
-                                            Padding="12,4" CornerRadius="6" Margin="0,0,8,0"/>
-									<Button Content="{x:Static res:SharedStrings.Common_Cancel}"
-                                            Click="OnRingConfirmCancel"
-                                            Padding="12,4" CornerRadius="6"/>
-								</WrapPanel>
-							</Border>
 						</StackPanel>
 
 					<!-- Полоса градиента: последняя часть общей прокрутки левой колонки. -->

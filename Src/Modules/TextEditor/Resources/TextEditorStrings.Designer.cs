@@ -152,6 +152,12 @@ namespace Writersword.Modules.TextEditor.Resources
         public static string Settings_ShowSpellErrors => ResourceManager.GetString("Settings_ShowSpellErrors", _culture)!;
         public static string Settings_SpellCheckEnabled => ResourceManager.GetString("Settings_SpellCheckEnabled", _culture)!;
         public static string Settings_SpellGroup => ResourceManager.GetString("Settings_SpellGroup", _culture)!;
+        public static string Settings_SubstituteFontFamily => ResourceManager.GetString("Settings_SubstituteFontFamily", _culture)!;
+        public static string Settings_SubstituteFontFamilyHint => ResourceManager.GetString("Settings_SubstituteFontFamilyHint", _culture)!;
+        public static string Settings_SubstituteGroup => ResourceManager.GetString("Settings_SubstituteGroup", _culture)!;
+        public static string Settings_SubstituteMissingGlyphs => ResourceManager.GetString("Settings_SubstituteMissingGlyphs", _culture)!;
+        public static string Settings_SubstituteMissingGlyphsHint => ResourceManager.GetString("Settings_SubstituteMissingGlyphsHint", _culture)!;
+        public static string Settings_SubstituteScriptsHint => ResourceManager.GetString("Settings_SubstituteScriptsHint", _culture)!;
         public static string Settings_ViewGroup => ResourceManager.GetString("Settings_ViewGroup", _culture)!;
         public static string Shape_Arrow => ResourceManager.GetString("Shape_Arrow", _culture)!;
         public static string Shape_Callout => ResourceManager.GetString("Shape_Callout", _culture)!;

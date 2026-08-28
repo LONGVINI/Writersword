@@ -181,7 +181,10 @@ namespace Writersword.Modules.Common
                 }
                 else
                 {
-                    _logger.Warning("Module is not IConfigurableModule, skipping: {ModuleType}", moduleType);
+                    // Отсутствие настроек у модуля — не сбой, а его свойство: у Characters,
+                    // Notes и Synonyms настраивать нечего. На Warning эта строка
+                    // печаталась в каждом запуске и создавала ложную тревогу.
+                    _logger.Debug("Module has no settings page, skipping: {ModuleType}", moduleType);
                 }
             }
 

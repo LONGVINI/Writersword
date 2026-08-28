@@ -84,7 +84,65 @@ namespace Writersword.Modules.Characters.ViewModels
         public string? RedoDescription => _undoRedoStack.RedoDescription;
         public void Undo() { if (IsReadOnly) return; _undoRedoStack.Undo(); }
         public void Redo() { if (IsReadOnly) return; _undoRedoStack.Redo(); }
-        public void PushCommand(IUndoableCommand command) => _undoRedoStack.Push(command);
+        public void PushCommand(IUndoableCommand command)
+        {
+            // Идёт сбор пачки — команда ждёт в ней, а не ложится в историю
+            // отдельным шагом.
+            if (_undoBatch is not null) { _undoBatch.Add(command); return; }
+            _undoRedoStack.Push(command);
+        }
+
+        // ── Пачка правок ───────────────────────────────────────────────────
+        //
+        // Боковая панель правит все выбранные карточки разом, и каждая кладёт
+        // свою команду. Без сбора в пачку Ctrl+Z снимал бы правку по одной
+        // карточке за нажатие: выбрал десять, поменял цвет один раз — и жми
+        // десять раз обратно.
+        //
+        // Вложенные пачки не заводятся: сбор уже идёт — значит внешняя пачка
+        // всё и соберёт, а внутренняя только раздробила бы шаг обратно.
+
+        private List<IUndoableCommand>? _undoBatch;
+
+        /// <summary>
+        /// Начать сбор пачки. Возвращённый объект закрывает её при
+        /// освобождении, поэтому вызывать полагается через using.
+        /// </summary>
+        public IDisposable BeginUndoBatch(string description)
+        {
+            if (_undoBatch is not null) return new UndoBatchScope(null);
+
+            _undoBatch = new List<IUndoableCommand>();
+            return new UndoBatchScope(() => EndUndoBatch(description));
+        }
+
+        private void EndUndoBatch(string description)
+        {
+            var batch = _undoBatch;
+            _undoBatch = null;
+
+            if (batch is null || batch.Count == 0) return;
+
+            // Одна команда — она и есть шаг. Заворачивать её в связку значило бы
+            // подменить её собственное описание в подсказке отмены.
+            if (batch.Count == 1) { _undoRedoStack.Push(batch[0]); return; }
+
+            _undoRedoStack.Push(new Actions.BatchCommand(description, batch));
+        }
+
+        private sealed class UndoBatchScope : IDisposable
+        {
+            private Action? _close;
+
+            public UndoBatchScope(Action? close) => _close = close;
+
+            public void Dispose()
+            {
+                var close = _close;
+                _close = null;
+                close?.Invoke();
+            }
+        }
 
         private static readonly IReadOnlyList<KeyGesture> _blockedGestures = new[]
         {

@@ -50,6 +50,69 @@ namespace Writersword.Modules.TextEditor.Document
         // Счётчик поколений: применяется результат только последнего фонового задания.
         private int _previewGeneration;
 
+        // Схлопывание пересчёта раскладки во время превью.
+        //
+        // Тяжёлый Skia уходит на фон, но сам RebuildLayouts остаётся на UI-потоке и
+        // на рукописи в восемь десятков абзацев стоит около двухсот миллисекунд даже
+        // при полностью заполненном кэше. Пока человек идёт стрелками по списку
+        // шрифтов, таких пересчётов набегает под сотню подряд, и поток стоит
+        // секундами. Это не только рывки: события указателя копятся, нажатие
+        // приходит без парного отпускания, и полоса вкладок Dock принимает это за
+        // начало перетаскивания — в воздухе повисает призрак вкладки, а окно
+        // выглядит намертво зависшим.
+        //
+        // Подстановка раскладок в кэш остаётся мгновенной — дёшево и нужно сразу.
+        // Откладывается только пересчёт: пока список листают, он не запускается,
+        // остановился на шрифте — сработал один раз.
+        private DispatcherTimer? _previewRebuildTimer;
+
+        // Задержка подобрана под скорость перебора стрелками: короче — пересчёт
+        // снова начнёт срабатывать на каждый шаг, длиннее — превью ощутимо отстаёт.
+        private static readonly TimeSpan PreviewRebuildDelay = TimeSpan.FromMilliseconds(90);
+
+        /// <summary>
+        /// Запросить пересчёт раскладки превью. Повторные вызовы сдвигают срок,
+        /// поэтому подряд идущие шаги перебора дают один пересчёт, а не десять.
+        /// </summary>
+        private void SchedulePreviewRebuild()
+        {
+            if (_previewRebuildTimer is null)
+            {
+                _previewRebuildTimer = new DispatcherTimer(DispatcherPriority.Render)
+                {
+                    Interval = PreviewRebuildDelay
+                };
+                _previewRebuildTimer.Tick += (_, _) => RunPreviewRebuild();
+            }
+
+            _previewRebuildTimer.Stop();
+            _previewRebuildTimer.Start();
+        }
+
+        private void RunPreviewRebuild()
+        {
+            _previewRebuildTimer?.Stop();
+
+            // Сессия могла закончиться, пока срок ждали: коммит и отмена пересчитывают
+            // раскладку сами, и второй проход здесь только мешал бы.
+            if (!_fontPreviewActive) return;
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            RebuildLayouts();
+            long rebuild = sw.ElapsedMilliseconds;
+
+            SnapCaretToCorrectSlice();
+            long snap = sw.ElapsedMilliseconds - rebuild;
+
+            InvalidateFull();
+
+            _logger.Debug("[FONT] пересчёт: RebuildLayouts={R} мс, SnapCaret={S} мс",
+                rebuild, snap);
+        }
+
+        /// <summary>Снять отложенный пересчёт: сессия закончилась.</summary>
+        private void CancelPreviewRebuild() => _previewRebuildTimer?.Stop();
+
         // ── Точки входа (вызываются делегатами из DocumentViewModel) ───────
 
         private void BeginFontPreviewSession()
@@ -71,13 +134,18 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void PreviewFontFamilySession(string font)
         {
-            _logger.Information("[FONT] Preview: font={F} active={A}", font, _fontPreviewActive);
+            _logger.Debug("[FONT] Preview вход: font={F} active={A}", font, _fontPreviewActive);
+            var swEntry = System.Diagnostics.Stopwatch.StartNew();
             if (!_fontPreviewActive) return;
             if (string.IsNullOrEmpty(font)) return;
             if (_renderer is null) return;
             if (_styleResolver is null && DocVm is not null)
-                _styleResolver = new StyleResolver(DocVm.Document.Styles, _scriptFontMap);
+                _styleResolver = CreateStyleResolver();
             if (_styleResolver is null) return;
+
+            // Тот же шрифт приходит повторно: AutoCompleteBox сообщает и о смене
+            // SelectedItem, и о смене текста. Пересчитывать одно и то же незачем.
+            if (string.Equals(font, _previewFont, StringComparison.Ordinal)) return;
 
             _previewFont = font;
             int gen = ++_previewGeneration;
@@ -102,17 +170,13 @@ namespace Writersword.Modules.TextEditor.Document
                     rangeByVm[t.vm] = (t.start, t.end);
             if (rangeByVm.Count == 0)
             {
-                if (anyCell)
-                {
-                    RebuildLayouts();
-                    SnapCaretToCorrectSlice();
-                    InvalidateFull();
-                }
+                if (anyCell) SchedulePreviewRebuild();
                 return;
             }
 
             // Строим preview-копии для ВИДИМЫХ целей здесь, на UI-потоке (доступ к модели
             // безопасен только отсюда). Тяжёлый Skia BuildLayout уйдёт на фон.
+            var swBuild = System.Diagnostics.Stopwatch.StartNew();
             var jobs = new List<(ParagraphViewModel vm, ParagraphBlock temp)>();
             var queued = new HashSet<ParagraphViewModel>();
             foreach (var pl in _layouts)
@@ -123,7 +187,12 @@ namespace Writersword.Modules.TextEditor.Document
                 if (!queued.Add(vm)) continue;
                 jobs.Add((vm, BuildPreviewBlock(vm.Model, r.start, r.end, font)));
             }
+            _logger.Debug("[FONT] заданий={N}, сборка на UI={Ms} мс, вход занял {Total} мс",
+                jobs.Count, swBuild.ElapsedMilliseconds, swEntry.ElapsedMilliseconds);
+
             if (jobs.Count == 0) return;
+
+            var swBg = System.Diagnostics.Stopwatch.StartNew();
 
             Task.Run(() =>
             {
@@ -133,10 +202,26 @@ namespace Writersword.Modules.TextEditor.Document
                 return built;
             }).ContinueWith(task =>
             {
-                if (!task.IsCompletedSuccessfully) return;
+                if (!task.IsCompletedSuccessfully)
+                {
+                    _logger.Debug("[FONT] фоновая раскладка не удалась: {E}",
+                        task.Exception?.GetBaseException().Message);
+                    return;
+                }
+
+                long bgMs = swBg.ElapsedMilliseconds;
+
                 Dispatcher.UIThread.Post(() =>
                 {
-                    if (gen != _previewGeneration || !_fontPreviewActive) return;
+                    if (gen != _previewGeneration || !_fontPreviewActive)
+                    {
+                        _logger.Debug("[FONT] результат поколения {Gen} отброшен (текущее {Cur})",
+                            gen, _previewGeneration);
+                        return;
+                    }
+
+                    _logger.Debug("[FONT] фон занял {Ms} мс, результатов={N}",
+                        bgMs, task.Result.Count);
 
                     foreach (var (vm, layout) in task.Result)
                     {
@@ -151,9 +236,8 @@ namespace Writersword.Modules.TextEditor.Document
 
                     // Настоящая пагинация: высоты, позиции, страницы пересчитываются с
                     // реальными метриками. Skia не вызывается — все цели уже в кэше.
-                    RebuildLayouts();
-                    SnapCaretToCorrectSlice();
-                    InvalidateFull();
+                    // Сам пересчёт откладывается: подряд идущие шаги перебора дают один.
+                    SchedulePreviewRebuild();
                 });
             });
         }
@@ -501,6 +585,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void ClearPreviewState()
         {
+            CancelPreviewRebuild();
             _cellFontPreview.Clear();
             _fontPreviewActive = false;
             _previewFont = null;

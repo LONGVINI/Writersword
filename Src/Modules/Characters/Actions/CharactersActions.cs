@@ -235,6 +235,39 @@ namespace Writersword.Modules.Characters.Actions
         public void Undo() => _applyThickness(_characterId, _oldValue);
     }
 
+    // Пачка правок, отменяемая целиком.
+    //
+    // Боковая панель правит все выбранные карточки разом, и каждая кладёт в
+    // историю свою команду. Без связки Ctrl+Z снимал бы правку по одной
+    // карточке за нажатие: выбрал десять, поменял цвет один раз — и жми десять
+    // раз обратно. Здесь десять команд становятся одним шагом.
+    //
+    // Отмена идёт с конца: команды могли касаться одного и того же (например,
+    // общий список), и обратный порядок возвращает состояние тем же путём,
+    // каким его меняли.
+    public class BatchCommand : IUndoableCommand
+    {
+        private readonly List<IUndoableCommand> _items;
+
+        public string Description { get; }
+
+        public BatchCommand(string description, List<IUndoableCommand> items)
+        {
+            Description = description;
+            _items = items;
+        }
+
+        public void Execute()
+        {
+            foreach (var item in _items) item.Execute();
+        }
+
+        public void Undo()
+        {
+            for (var i = _items.Count - 1; i >= 0; i--) _items[i].Undo();
+        }
+    }
+
     // Ступень важности персонажа: I, II или III.
     public class ChangeImportanceCommand : IUndoableCommand
     {

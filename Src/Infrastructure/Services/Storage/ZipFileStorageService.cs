@@ -22,13 +22,25 @@ namespace Writersword.Infrastructure.Services.Storage
         private ZipArchive? _archive;
         private bool _isDisposed = false;
 
-#if DEBUG
-        // DEBUG режим: не держим архив открытым
-        private const bool KeepArchiveOpen = false;
-#else
-        // RELEASE режим: держим архив открытым для оптимизации
+        // ВРЕМЕННО: Debug ведёт себя как Release — архив держится открытым.
+        //
+        // Обычно в Debug архив открывается и закрывается на каждую операцию,
+        // и файл никем не удерживается. Из-за этого целый класс ошибок виден
+        // только в релизе: конфликт совместного доступа, когда BackupService
+        // читает .writersword, пока его держит открытым ZipFileStorageService.
+        // Проверять такое, пересобирая релиз, неудобно.
+        //
+        // Чтобы вернуть обычное поведение Debug, раскомментируй нижний блок и
+        // удали верхнюю строку.
         private const bool KeepArchiveOpen = true;
-#endif
+
+//#if DEBUG
+//        // DEBUG режим: не держим архив открытым
+//        private const bool KeepArchiveOpen = false;
+//#else
+//        // RELEASE режим: держим архив открытым для оптимизации
+//        private const bool KeepArchiveOpen = true;
+//#endif
 
 #pragma warning disable CS0162 // Недостижимый код (ожидается в DEBUG/RELEASE режимах)
         public ZipFileStorageService(string zipFilePath)

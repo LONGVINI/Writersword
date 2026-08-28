@@ -198,15 +198,6 @@ namespace Writersword.Modules.Notes.ViewModels
         public bool IsQuoteSelected => SelectedBlock?.Type == NoteBlockType.Quote;
         public bool IsStrikeSelected => SelectedBlock?.IsStruckThrough == true;
         public bool IsHighlightSelected => SelectedBlock?.IsHighlighted == true;
-        public int SelectedBlockTypeIndex
-        {
-            get => SelectedBlock == null ? 0 : (int)SelectedBlock.Type;
-            set
-            {
-                if (value >= (int)NoteBlockType.Paragraph && value <= (int)NoteBlockType.Quote)
-                    SetSelectedBlockType((NoteBlockType)value);
-            }
-        }
 
         public bool IsCompact
         {
@@ -370,7 +361,6 @@ namespace Writersword.Modules.Notes.ViewModels
             this.RaisePropertyChanged(nameof(IsQuoteSelected));
             this.RaisePropertyChanged(nameof(IsStrikeSelected));
             this.RaisePropertyChanged(nameof(IsHighlightSelected));
-            this.RaisePropertyChanged(nameof(SelectedBlockTypeIndex));
         }
     }
 }

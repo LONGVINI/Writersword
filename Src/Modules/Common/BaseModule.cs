@@ -25,6 +25,14 @@ namespace Writersword.Modules.Common
         private DocumentContext? _context;
         private Control? _cachedView;
 
+        // Контекст логгера берётся от фактического типа наследника, поэтому в
+        // журнале виден конкретный модуль, а не BaseModule. Тип фиксирован на
+        // время жизни объекта, так что достаточно вычислить его один раз.
+        private Serilog.ILogger? _baseLogger;
+
+        private Serilog.ILogger BaseLogger =>
+            _baseLogger ??= Serilog.Log.ForContext(GetType());
+
         /// <summary>
         /// Идентификатор типа модуля (строка).
         /// Должен быть уникальным для каждого типа модуля.
@@ -69,7 +77,7 @@ namespace Writersword.Modules.Common
         public void RefreshFromContext()
         {
             OnContextChanged(Context);
-            Console.WriteLine($"[{moduleType}] Context refreshed");
+            BaseLogger.Debug("Context refreshed: {ModuleType}", moduleType);
         }
 
         /// <summary>

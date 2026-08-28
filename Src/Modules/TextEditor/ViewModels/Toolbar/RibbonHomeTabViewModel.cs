@@ -181,6 +181,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             {
                 if (this.RaiseAndSetIfChanged(ref _fontFamily, value) is { } && value is not null)
                 {
+                    EnsureFontListed(value);
                     _fontFamilyText = value;
                     this.RaisePropertyChanged(nameof(CurrentFontFamilyText));
                     // Во время preview навигация стрелками не должна писать в Undo-стек
@@ -358,22 +359,36 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
 
         // --- Доступные значения ---
 
-        public IReadOnlyList<string> AvailableFonts { get; } = LoadSystemFonts();
-
-        private static IReadOnlyList<string> LoadSystemFonts()
+        /// <summary>
+        /// Гарнитуры для выпадающего списка: системные, уложенные в проект и та,
+        /// что стоит под курсором.
+        ///
+        /// Последнее обязательно. AutoCompleteBox не удерживает SelectedItem,
+        /// которого нет среди Items, и отдаёт наружу null. От записи этого null
+        /// в рукопись сейчас спасает единственная проверка в сеттере
+        /// CurrentFontFamily — страховка на одну строку. Держать гарнитуру
+        /// документа в списке надёжнее: комбобоксу есть за что зацепиться, и
+        /// человек видит настоящее имя шрифта, а не подмену, которой его рисуют.
+        /// </summary>
+        public IReadOnlyList<string> AvailableFonts
         {
-            try
-            {
-                var families = SKFontManager.Default.FontFamilies;
-                return families
-                    .Where(f => !string.IsNullOrWhiteSpace(f))
-                    .OrderBy(f => f, StringComparer.CurrentCultureIgnoreCase)
-                    .ToList();
-            }
-            catch
-            {
-                return new[] { "Arial", "Times New Roman", "Calibri", "Georgia", "Verdana" };
-            }
+            get => _availableFonts;
+            private set => this.RaiseAndSetIfChanged(ref _availableFonts, value);
+        }
+
+        private IReadOnlyList<string> _availableFonts =
+            Services.ProjectFonts.PickerFamilies();
+
+        /// <summary>
+        /// Дописать гарнитуру в список, если её там ещё нет. Зовётся при смене
+        /// шрифта под курсором: документ мог прийти с машины, где этот шрифт был.
+        /// </summary>
+        private void EnsureFontListed(string? family)
+        {
+            if (string.IsNullOrWhiteSpace(family)) return;
+            if (_availableFonts.Contains(family!, StringComparer.OrdinalIgnoreCase)) return;
+
+            AvailableFonts = Services.ProjectFonts.PickerFamilies(family);
         }
 
         /// <summary>

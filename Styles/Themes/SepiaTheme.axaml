@@ -6,6 +6,10 @@
 	<SolidColorBrush x:Key="HotKeyConflictCriticalRowBrush">#2A1410</SolidColorBrush>
 	<SolidColorBrush x:Key="HotKeyConflictWarningBrush">#A04000</SolidColorBrush>
 	<SolidColorBrush x:Key="HotKeyConflictWarningRowBrush">#241808</SolidColorBrush>
+	<!-- Значок предупреждения на вкладке модуля: чего-то не хватает,
+	     и модуль показывает не то, что задумал автор. -->
+	<SolidColorBrush x:Key="ModuleWarningBrush">#C4533F</SolidColorBrush>
+
 	<SolidColorBrush x:Key="AccentSubtleBrush">#2E2218</SolidColorBrush>
 
 	<!-- Фоны -->

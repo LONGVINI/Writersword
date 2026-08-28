@@ -593,6 +593,30 @@
     <value>Spell Check</value>
     <comment>Settings group header</comment>
   </data>
+  <data name="Settings_SubstituteFontFamily" xml:space="preserve">
+    <value>Substitution font</value>
+    <comment>Settings field label</comment>
+  </data>
+  <data name="Settings_SubstituteFontFamilyHint" xml:space="preserve">
+    <value>Used when the character's script is not listed below. If this font lacks the character too, nothing is substituted.</value>
+    <comment>Settings hint text</comment>
+  </data>
+  <data name="Settings_SubstituteGroup" xml:space="preserve">
+    <value>Missing characters</value>
+    <comment>Settings group header</comment>
+  </data>
+  <data name="Settings_SubstituteMissingGlyphs" xml:space="preserve">
+    <value>Use a substitution font</value>
+    <comment>Settings checkbox</comment>
+  </data>
+  <data name="Settings_SubstituteMissingGlyphsHint" xml:space="preserve">
+    <value>Off: a character the chosen font does not have is drawn as an empty box, so you can see it at once. On: it is drawn with another font, and the text quietly stops matching the font you picked.</value>
+    <comment>Settings hint text</comment>
+  </data>
+  <data name="Settings_SubstituteScriptsHint" xml:space="preserve">
+    <value>A font chosen here is used when the document's own font has no characters of that script. It takes priority over the substitution font above.</value>
+    <comment>Settings hint text</comment>
+  </data>
   <data name="Settings_ViewGroup" xml:space="preserve">
     <value>Display</value>
     <comment>Settings group header</comment>

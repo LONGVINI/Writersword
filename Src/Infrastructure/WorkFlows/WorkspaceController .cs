@@ -464,7 +464,12 @@ namespace Writersword.Infrastructure.Workspace
             }
 
             _tab.ModuleContext.RemoveModule(moduleType);
-            _dockFactory.CleanupEmptyContainersInLayout(_dockLayout);
+
+            // Пустые DocumentDock и ProportionalDock с 12.1 убирает сам Dock
+            // через CollapseDock. Наша ручная уборка это дублировала и падала:
+            // удаление из VisibleDockables у прицепленной раскладки синхронно
+            // разбирает контейнер, разбор гасит DataContext, и вкладочная полоса
+            // переустанавливает выделение по уже опустевшему списку.
             _needsFullLayoutRefresh = true;
 
             _autoSave.NotifyChange();

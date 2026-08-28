@@ -1,6 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:cp="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.ColorPicker"
+             xmlns:cpp="clr-namespace:Avalonia.Controls.Primitives;assembly=Avalonia.Controls.ColorPicker"
              xmlns:res="using:Writersword.Styles.UserControls"
              xmlns:conv="using:Writersword.Infrastructure.Converters"
              x:Class="Writersword.Styles.UserControls.ColorPickerButton"
@@ -362,10 +362,432 @@
 						<Style Selector="ScrollBar /template/ Grid">
 							<Setter Property="Background" Value="Transparent"/>
 						</Style>
+						<!-- Стили мини-подборщика (ПКМ): свой градиентный ползунок вместо
+						     сломанного встроенного «третьего ползунка» ColorSpectrum, свои
+						     подписи полей, кнопки переключения RGB/HSL/HSV и иконка-кнопка
+						     «пересобрать». Слайдер — тот же шаблон, что и в окне «Настроить
+						     цвет» (Styles/UserControls/ColorEditorOverlay.axaml), просто своя
+						     копия: стили UserControl.Styles во всплывашку флаута не попадают. -->
+						<Style Selector="Slider.grad">
+							<Setter Property="MinHeight" Value="20"/>
+							<Setter Property="Height" Value="20"/>
+							<Setter Property="VerticalAlignment" Value="Center"/>
+							<Setter Property="Template">
+								<ControlTemplate>
+									<Grid VerticalAlignment="Center">
+										<Border Height="7" CornerRadius="3.5" VerticalAlignment="Center"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                                BorderThickness="1"/>
+										<Track Name="PART_Track" Orientation="Horizontal"
+                                               Minimum="{TemplateBinding Minimum}"
+                                               Maximum="{TemplateBinding Maximum}"
+                                               Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+											<Track.DecreaseButton>
+												<RepeatButton Name="PART_DecreaseButton" Focusable="False"
+                                                              Background="Transparent" BorderThickness="0">
+													<RepeatButton.Template>
+														<ControlTemplate><Border Background="Transparent"/></ControlTemplate>
+													</RepeatButton.Template>
+												</RepeatButton>
+											</Track.DecreaseButton>
+											<Track.IncreaseButton>
+												<RepeatButton Name="PART_IncreaseButton" Focusable="False"
+                                                              Background="Transparent" BorderThickness="0">
+													<RepeatButton.Template>
+														<ControlTemplate><Border Background="Transparent"/></ControlTemplate>
+													</RepeatButton.Template>
+												</RepeatButton>
+											</Track.IncreaseButton>
+											<Thumb Width="14" Height="14" Padding="0">
+												<Thumb.Template>
+													<ControlTemplate>
+														<Border Background="White" CornerRadius="7"
+                                                                BorderBrush="#444444" BorderThickness="1">
+															<Border.Effect>
+																<DropShadowEffect BlurRadius="3" OffsetX="0" OffsetY="0"
+                                                                                  Opacity="0.5" Color="#000000"/>
+															</Border.Effect>
+														</Border>
+													</ControlTemplate>
+												</Thumb.Template>
+											</Thumb>
+										</Track>
+									</Grid>
+								</ControlTemplate>
+							</Setter>
+						</Style>
+
+						<!-- Вертикальный вариант того же ползунка: для колеса V
+						     стоит сбоку, а шаблон Slider.grad жёстко горизонтальный —
+						     у него и трек, и высота полосы заданы поперёк.
+						     IsDirectionReversed берётся у самого Slider, а не
+						     проставляется жёстко: Slider считает щелчок и перетаскивание
+						     по своему свойству, и прибитое к треку True переворачивало
+						     ход — вниз тянешь, значение растёт. -->
+						<Style Selector="Slider.gradv">
+							<Setter Property="MinWidth" Value="20"/>
+							<Setter Property="Width" Value="20"/>
+							<Setter Property="MinHeight" Value="0"/>
+							<Setter Property="HorizontalAlignment" Value="Center"/>
+							<Setter Property="VerticalAlignment" Value="Stretch"/>
+							<Setter Property="Template">
+								<ControlTemplate>
+									<Grid HorizontalAlignment="Center">
+										<Border Width="7" CornerRadius="3.5" HorizontalAlignment="Center"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                                                BorderThickness="1"/>
+										<Track Name="PART_Track" Orientation="Vertical"
+                                               IsDirectionReversed="{TemplateBinding IsDirectionReversed}"
+                                               Minimum="{TemplateBinding Minimum}"
+                                               Maximum="{TemplateBinding Maximum}"
+                                               Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+											<Track.DecreaseButton>
+												<RepeatButton Name="PART_DecreaseButton" Focusable="False"
+                                                              Background="Transparent" BorderThickness="0">
+													<RepeatButton.Template>
+														<ControlTemplate><Border Background="Transparent"/></ControlTemplate>
+													</RepeatButton.Template>
+												</RepeatButton>
+											</Track.DecreaseButton>
+											<Track.IncreaseButton>
+												<RepeatButton Name="PART_IncreaseButton" Focusable="False"
+                                                              Background="Transparent" BorderThickness="0">
+													<RepeatButton.Template>
+														<ControlTemplate><Border Background="Transparent"/></ControlTemplate>
+													</RepeatButton.Template>
+												</RepeatButton>
+											</Track.IncreaseButton>
+											<Thumb Width="14" Height="14" Padding="0">
+												<Thumb.Template>
+													<ControlTemplate>
+														<Border Background="White" CornerRadius="7"
+                                                                BorderBrush="#444444" BorderThickness="1">
+															<Border.Effect>
+																<DropShadowEffect BlurRadius="3" OffsetX="0" OffsetY="0"
+                                                                                  Opacity="0.5" Color="#000000"/>
+															</Border.Effect>
+														</Border>
+													</ControlTemplate>
+												</Thumb.Template>
+											</Thumb>
+										</Track>
+									</Grid>
+								</ControlTemplate>
+							</Setter>
+						</Style>
+
+						<Style Selector="TextBlock.miniVLabel">
+							<Setter Property="FontSize" Value="11"/>
+							<Setter Property="HorizontalAlignment" Value="Center"/>
+							<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+						</Style>
+
+						<Style Selector="TextBlock.miniFieldLabel">
+							<Setter Property="Width" Value="14"/>
+							<Setter Property="FontSize" Value="11"/>
+							<Setter Property="VerticalAlignment" Value="Center"/>
+							<Setter Property="HorizontalAlignment" Value="Right"/>
+							<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+						</Style>
+						<Style Selector="TextBlock.miniValNum">
+							<Setter Property="Width" Value="30"/>
+							<Setter Property="FontSize" Value="11"/>
+							<Setter Property="VerticalAlignment" Value="Center"/>
+							<Setter Property="HorizontalAlignment" Value="Right"/>
+							<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+						</Style>
+
+						<!-- Переключатель RGB / HSL / HSV во «Значениях»: три маленькие
+						     кнопки с подписями вместо непонятной кнопки-загадки сверху. -->
+						<Style Selector="Button.valmode">
+							<Setter Property="Padding" Value="0"/>
+							<Setter Property="Margin" Value="0"/>
+							<Setter Property="MinWidth" Value="0"/>
+							<Setter Property="MinHeight" Value="0"/>
+							<Setter Property="Width" Value="60"/>
+							<Setter Property="Height" Value="22"/>
+							<Setter Property="FontSize" Value="11"/>
+							<Setter Property="CornerRadius" Value="6"/>
+							<Setter Property="Background" Value="Transparent"/>
+							<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+							<Setter Property="BorderThickness" Value="1"/>
+							<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+							<Setter Property="HorizontalContentAlignment" Value="Center"/>
+							<Setter Property="VerticalContentAlignment" Value="Center"/>
+						</Style>
+						<Style Selector="Button.valmode.active">
+							<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+							<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+							<Setter Property="Foreground" Value="White"/>
+						</Style>
+
+						<!-- Круглая кнопка-иконка мини-подборщика (пересобрать шум и т.п.) —
+						     тот же приём, что и Button.addtile в окне «Настроить цвет». -->
+						<Style Selector="Button.miniIconBtn">
+							<Setter Property="Width" Value="26"/>
+							<Setter Property="Height" Value="26"/>
+							<Setter Property="MinWidth" Value="0"/>
+							<Setter Property="MinHeight" Value="0"/>
+							<Setter Property="Margin" Value="0"/>
+							<Setter Property="Padding" Value="0"/>
+							<Setter Property="HorizontalContentAlignment" Value="Center"/>
+							<Setter Property="VerticalContentAlignment" Value="Center"/>
+							<Setter Property="CornerRadius" Value="999"/>
+							<Setter Property="Background" Value="Transparent"/>
+							<Setter Property="BorderBrush" Value="{DynamicResource BorderDefaultBrush}"/>
+							<Setter Property="BorderThickness" Value="1.5"/>
+							<Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+						</Style>
 					</Border.Styles>
 
-					<Grid Width="280" RowDefinitions="*,Auto">
-					<ScrollViewer Grid.Row="0" MaxHeight="520" AllowAutoHide="False"
+					<Grid Width="280" RowDefinitions="Auto,*,Auto">
+
+					<!-- Мини-подборщик. Показывается вместо заготовок, когда
+					     правой кнопкой выбран квадрат, колесо, соты, шум или
+					     значения: цвет меняется прямо здесь и уходит наружу на
+					     каждое движение, без открытия большого окна.
+
+					     Спектр здесь — примитив ColorSpectrum, а не целый
+					     ColorView. У ColorView шаблон — это TabControl с
+					     полосой вкладок и жёсткой шириной 350: даже с
+					     погашенными вкладками полоса оставалась висеть над
+					     спектром непонятной плашкой, а сам спектр растягивало
+					     в прямоугольник. Примитиву задаются равные Width и
+					     Height, и он квадратный (в режиме колеса — круглый и
+					     целиком видимый), а третью составляющую даёт свой
+					     ползунок V ниже, с нормальным градиентом на треке. -->
+					<StackPanel Grid.Row="0" x:Name="MiniPickerHost"
+					            IsVisible="False"
+					            Margin="8,4,8,0" Spacing="8">
+						<!-- Квадрат и колесо. Одна и та же поверхность, вид
+						     переключается в коде через Shape. Размер задан
+						     стороной, а не растяжением: у спектра нет своего
+						     желаемого размера, и без явных Width/Height он
+						     занимал бы всю доступную ширину всплывашки. -->
+						<StackPanel x:Name="SpectrumHost" IsVisible="False" Spacing="8">
+							<Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="10"
+							      HorizontalAlignment="Center">
+								<!-- Колесо (HueSaturation) рисуется у Avalonia всегда при
+								     полной яркости: V там жёстко равно единице, и от
+								     ползунка картинка не менялась. Яркость даёт чёрный
+								     слой поверх с прозрачностью 1 - V — ровно так же,
+								     как WheelDim у колеса в окне «Настроить цвет».
+								     Квадрату слой не нужен: у него V — это сама ось. -->
+								<Panel Grid.Column="0" Width="212" Height="212">
+									<cpp:ColorSpectrum x:Name="MiniSpectrum"
+									                   Width="212" Height="212"
+									                   MinWidth="0" MinHeight="0"
+									                   Components="HueSaturation"
+									                   Shape="Box"/>
+									<Ellipse x:Name="SpectrumDimRing" Fill="Black" Opacity="0"
+									         IsVisible="False" IsHitTestVisible="False"/>
+								</Panel>
+
+								<!-- Третья составляющая стоит вплотную сбоку и во всю
+								     высоту спектра. Под спектром эта полоса читалась
+								     как оторванная от него деталь, а места справа всё
+								     равно пусто.
+
+								     У колеса третья составляющая — яркость, у квадрата
+								     (насыщенность × яркость) — оттенок, ровно как в
+								     окне «Настроить цвет»: там рядом с квадратом стоит
+								     радужная полоса HueBar. Полосы две, показывается
+								     та, что подходит виду. -->
+								<Grid x:Name="SpectrumVColumn" Grid.Column="1" IsVisible="False"
+								      RowDefinitions="Auto,*,Auto" RowSpacing="4">
+									<TextBlock Grid.Row="0" Text="V" Classes="miniVLabel"/>
+									<Slider Grid.Row="1" x:Name="MiniSlVv" Classes="gradv"
+									        Orientation="Vertical"
+									        Minimum="0" Maximum="100" SmallChange="1" LargeChange="10"
+									        ValueChanged="OnMiniValueChanged"/>
+									<TextBlock Grid.Row="2" Classes="miniVLabel"
+									           Text="{Binding Value, ElementName=MiniSlVv, StringFormat={}{0:F0}}"/>
+								</Grid>
+
+								<!-- Оттенок: ноль сверху, как у полосы в окне «Настроить
+								     цвет», поэтому ход перевёрнут. Радуга задана прямо
+								     здесь — она не зависит от выбранного цвета и в коде
+								     ей делать нечего. -->
+								<Grid x:Name="SpectrumHColumn" Grid.Column="1" IsVisible="False"
+								      RowDefinitions="Auto,*,Auto" RowSpacing="4">
+									<TextBlock Grid.Row="0" Text="H" Classes="miniVLabel"/>
+									<Slider Grid.Row="1" x:Name="MiniSlH" Classes="gradv"
+									        Orientation="Vertical" IsDirectionReversed="True"
+									        Minimum="0" Maximum="360" SmallChange="1" LargeChange="15"
+									        ValueChanged="OnMiniHueChanged">
+										<Slider.Background>
+											<LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+												<GradientStop Offset="0" Color="#FF0000"/>
+												<GradientStop Offset="0.1667" Color="#FFFF00"/>
+												<GradientStop Offset="0.3333" Color="#00FF00"/>
+												<GradientStop Offset="0.5" Color="#00FFFF"/>
+												<GradientStop Offset="0.6667" Color="#0000FF"/>
+												<GradientStop Offset="0.8333" Color="#FF00FF"/>
+												<GradientStop Offset="1" Color="#FF0000"/>
+											</LinearGradientBrush>
+										</Slider.Background>
+									</Slider>
+									<TextBlock Grid.Row="2" Classes="miniVLabel"
+									           Text="{Binding Value, ElementName=MiniSlH, StringFormat={}{0:F0}}"/>
+								</Grid>
+							</Grid>
+						</StackPanel>
+
+						<!-- Соты: своя сетка, ColorView их не умеет. -->
+						<Border x:Name="HoneycombHost" IsVisible="False"
+						        HorizontalAlignment="Center">
+							<res:HoneycombPicker x:Name="MiniHoneycomb" CellRadius="9"/>
+						</Border>
+
+						<!-- Шум: поле случайных цветов, набор сверху, пересбор
+						     значком. При выборе цвета — приближение к точке клика
+						     (см. Styles/UserControls/NoisePicker.cs), а не
+						     мгновенная отдача цвета: иначе легко промахнуться и
+						     не увидеть, какой цвет вообще был взят. Наезд тот же,
+						     что и в окне «Настроить цвет», и вторым значком поле
+						     возвращается к общему виду. -->
+						<StackPanel x:Name="NoiseHost" IsVisible="False" Spacing="6">
+							<Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+								<ComboBox Grid.Column="0" x:Name="MiniNoisePreset"
+								          HorizontalAlignment="Stretch"
+								          FontSize="11"
+								          SelectedIndex="0"
+								          SelectionChanged="OnMiniNoisePreset">
+									<ComboBoxItem Tag="rainbow" Content="Радуга"/>
+									<ComboBoxItem Tag="skin" Content="Кожа"/>
+									<ComboBoxItem Tag="pastel" Content="Пастель"/>
+									<ComboBoxItem Tag="gray" Content="Серое"/>
+									<ComboBoxItem Tag="neon" Content="Неон"/>
+								</ComboBox>
+								<Button Grid.Column="1" Classes="miniIconBtn" Click="OnMiniNoiseRegen"
+								        ToolTip.Tip="Пересобрать поле">
+									<PathIcon Width="12" Height="12"
+									          Data="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+								</Button>
+								<Button Grid.Column="2" Classes="miniIconBtn" Click="OnMiniNoiseReset"
+								        ToolTip.Tip="Вернуть общий вид поля">
+									<PathIcon Width="12" Height="12"
+									          Data="M15 3l2.3 2.3-2.89 2.87 1.42 1.42L18.7 6.7 21 9V3h-6zM3 9l2.3-2.3 2.87 2.89 1.42-1.42L6.7 5.3 9 3H3v6zm6 12l-2.3-2.3 2.89-2.87-1.42-1.42L5.3 17.3 3 15v6h6zm12-6l-2.3 2.3-2.87-2.89-1.42 1.42 2.89 2.87L15 21h6v-6z"/>
+								</Button>
+							</Grid>
+							<res:NoisePicker x:Name="MiniNoise"
+							                 Width="212" Height="212" Resolution="64"
+							                 CornerRadius="6" ClipToBounds="True"
+							                 HorizontalAlignment="Center"/>
+						</StackPanel>
+
+						<!-- Квадрат / колесо / соты: строки RGB под спектром —
+						     раньше их не было вовсе. -->
+						<ScrollViewer x:Name="RgbRowsHost" IsVisible="False" MaxHeight="110"
+						              HorizontalScrollBarVisibility="Disabled"
+						              VerticalScrollBarVisibility="Auto">
+							<Grid ColumnDefinitions="14,*,30" RowDefinitions="Auto,Auto,Auto"
+							      ColumnSpacing="6" RowSpacing="5">
+								<TextBlock Grid.Row="0" Grid.Column="0" Text="R" Classes="miniFieldLabel"/>
+								<Slider Grid.Row="0" Grid.Column="1" x:Name="MiniSlR" Classes="grad"
+								        Minimum="0" Maximum="255" ValueChanged="OnMiniRgbChanged"/>
+								<TextBlock Grid.Row="0" Grid.Column="2" Classes="miniValNum"
+								           Text="{Binding Value, ElementName=MiniSlR, StringFormat={}{0:F0}}"/>
+								<TextBlock Grid.Row="1" Grid.Column="0" Text="G" Classes="miniFieldLabel"/>
+								<Slider Grid.Row="1" Grid.Column="1" x:Name="MiniSlG" Classes="grad"
+								        Minimum="0" Maximum="255" ValueChanged="OnMiniRgbChanged"/>
+								<TextBlock Grid.Row="1" Grid.Column="2" Classes="miniValNum"
+								           Text="{Binding Value, ElementName=MiniSlG, StringFormat={}{0:F0}}"/>
+								<TextBlock Grid.Row="2" Grid.Column="0" Text="B" Classes="miniFieldLabel"/>
+								<Slider Grid.Row="2" Grid.Column="1" x:Name="MiniSlB" Classes="grad"
+								        Minimum="0" Maximum="255" ValueChanged="OnMiniRgbChanged"/>
+								<TextBlock Grid.Row="2" Grid.Column="2" Classes="miniValNum"
+								           Text="{Binding Value, ElementName=MiniSlB, StringFormat={}{0:F0}}"/>
+							</Grid>
+						</ScrollViewer>
+
+						<!-- Значения: переключатель RGB / HSL / HSV тремя маленькими
+						     подписанными кнопками вместо непонятной кнопки-загадки. -->
+						<StackPanel x:Name="ValuesHost" IsVisible="False" Spacing="6">
+							<StackPanel Orientation="Horizontal" Spacing="4">
+								<Button x:Name="ValModeRgbBtn" Classes="valmode active" Tag="rgb"
+								        Content="RGB" Click="OnValModeClick"/>
+								<Button x:Name="ValModeHslBtn" Classes="valmode" Tag="hsl"
+								        Content="HSL" Click="OnValModeClick"/>
+								<Button x:Name="ValModeHsvBtn" Classes="valmode" Tag="hsv"
+								        Content="HSV" Click="OnValModeClick"/>
+							</StackPanel>
+
+							<Grid x:Name="ValRgbRows" ColumnDefinitions="14,*,30" RowDefinitions="Auto,Auto,Auto"
+							      ColumnSpacing="6" RowSpacing="5">
+								<TextBlock Grid.Row="0" Grid.Column="0" Text="R" Classes="miniFieldLabel"/>
+								<Slider Grid.Row="0" Grid.Column="1" x:Name="ValSlR" Classes="grad"
+								        Minimum="0" Maximum="255" ValueChanged="OnValRgbChanged"/>
+								<TextBlock Grid.Row="0" Grid.Column="2" Classes="miniValNum"
+								           Text="{Binding Value, ElementName=ValSlR, StringFormat={}{0:F0}}"/>
+								<TextBlock Grid.Row="1" Grid.Column="0" Text="G" Classes="miniFieldLabel"/>
+								<Slider Grid.Row="1" Grid.Column="1" x:Name="ValSlG" Classes="grad"
+								        Minimum="0" Maximum="255" ValueChanged="OnValRgbChanged"/>
+								<TextBlock Grid.Row="1" Grid.Column="2" Classes="miniValNum"
+								           Text="{Binding Value, ElementName=ValSlG, StringFormat={}{0:F0}}"/>
+								<TextBlock Grid.Row="2" Grid.Column="0" Text="B" Classes="miniFieldLabel"/>
+								<Slider Grid.Row="2" Grid.Column="1" x:Name="ValSlB" Classes="grad"
+								        Minimum="0" Maximum="255" ValueChanged="OnValRgbChanged"/>
+								<TextBlock Grid.Row="2" Grid.Column="2" Classes="miniValNum"
+								           Text="{Binding Value, ElementName=ValSlB, StringFormat={}{0:F0}}"/>
+							</Grid>
+
+							<Grid x:Name="ValHslRows" IsVisible="False"
+							      ColumnDefinitions="14,*,30" RowDefinitions="Auto,Auto,Auto"
+							      ColumnSpacing="6" RowSpacing="5">
+								<TextBlock Grid.Row="0" Grid.Column="0" Text="H" Classes="miniFieldLabel"/>
+								<Slider Grid.Row="0" Grid.Column="1" x:Name="ValSlHslH" Classes="grad"
+								        Minimum="0" Maximum="360" ValueChanged="OnValHslChanged"/>
+								<TextBlock Grid.Row="0" Grid.Column="2" Classes="miniValNum"
+								           Text="{Binding Value, ElementName=ValSlHslH, StringFormat={}{0:F0}}"/>
+								<TextBlock Grid.Row="1" Grid.Column="0" Text="S" Classes="miniFieldLabel"/>
+								<Slider Grid.Row="1" Grid.Column="1" x:Name="ValSlHslS" Classes="grad"
+								        Minimum="0" Maximum="100" ValueChanged="OnValHslChanged"/>
+								<TextBlock Grid.Row="1" Grid.Column="2" Classes="miniValNum"
+								           Text="{Binding Value, ElementName=ValSlHslS, StringFormat={}{0:F0}}"/>
+								<TextBlock Grid.Row="2" Grid.Column="0" Text="L" Classes="miniFieldLabel"/>
+								<Slider Grid.Row="2" Grid.Column="1" x:Name="ValSlHslL" Classes="grad"
+								        Minimum="0" Maximum="100" ValueChanged="OnValHslChanged"/>
+								<TextBlock Grid.Row="2" Grid.Column="2" Classes="miniValNum"
+								           Text="{Binding Value, ElementName=ValSlHslL, StringFormat={}{0:F0}}"/>
+							</Grid>
+
+							<Grid x:Name="ValHsvRows" IsVisible="False"
+							      ColumnDefinitions="14,*,30" RowDefinitions="Auto,Auto,Auto"
+							      ColumnSpacing="6" RowSpacing="5">
+								<TextBlock Grid.Row="0" Grid.Column="0" Text="H" Classes="miniFieldLabel"/>
+								<Slider Grid.Row="0" Grid.Column="1" x:Name="ValSlHsvH" Classes="grad"
+								        Minimum="0" Maximum="360" ValueChanged="OnValHsvChanged"/>
+								<TextBlock Grid.Row="0" Grid.Column="2" Classes="miniValNum"
+								           Text="{Binding Value, ElementName=ValSlHsvH, StringFormat={}{0:F0}}"/>
+								<TextBlock Grid.Row="1" Grid.Column="0" Text="S" Classes="miniFieldLabel"/>
+								<Slider Grid.Row="1" Grid.Column="1" x:Name="ValSlHsvS" Classes="grad"
+								        Minimum="0" Maximum="100" ValueChanged="OnValHsvChanged"/>
+								<TextBlock Grid.Row="1" Grid.Column="2" Classes="miniValNum"
+								           Text="{Binding Value, ElementName=ValSlHsvS, StringFormat={}{0:F0}}"/>
+								<TextBlock Grid.Row="2" Grid.Column="0" Text="V" Classes="miniFieldLabel"/>
+								<Slider Grid.Row="2" Grid.Column="1" x:Name="ValSlHsvV" Classes="grad"
+								        Minimum="0" Maximum="100" ValueChanged="OnValHsvChanged"/>
+								<TextBlock Grid.Row="2" Grid.Column="2" Classes="miniValNum"
+								           Text="{Binding Value, ElementName=ValSlHsvV, StringFormat={}{0:F0}}"/>
+							</Grid>
+						</StackPanel>
+
+						<!-- Альфа: одна на все виды мини-подборщика, всегда видна —
+						     раньше её не было ни в одном из режимов ПКМ. -->
+						<Grid ColumnDefinitions="14,*,30" ColumnSpacing="6">
+							<TextBlock Grid.Column="0" Text="A" Classes="miniFieldLabel"/>
+							<Slider Grid.Column="1" x:Name="MiniSlA" Classes="grad"
+							        Minimum="0" Maximum="255" SmallChange="1" LargeChange="16"
+							        ValueChanged="OnMiniAlphaChanged"/>
+							<TextBlock Grid.Column="2" Classes="miniValNum"
+							           Text="{Binding Value, ElementName=MiniSlA, StringFormat={}{0:F0}}"/>
+						</Grid>
+					</StackPanel>
+
+					<ScrollViewer Grid.Row="1" x:Name="PresetsScroll" MaxHeight="520" AllowAutoHide="False"
 					              HorizontalScrollBarVisibility="Disabled"
 					              VerticalScrollBarVisibility="Auto">
 					<StackPanel Spacing="6" Margin="8,0,8,0">
@@ -601,7 +1023,7 @@
 						</StackPanel>
 					</ScrollViewer>
 
-					<StackPanel Grid.Row="1" Spacing="6" Margin="8,6,8,0">
+					<StackPanel Grid.Row="2" Spacing="6" Margin="8,6,8,0">
 						<Button Content="{x:Static res:SharedStrings.ColorPicker_Configure}"
                                 HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Center"

@@ -226,19 +226,19 @@ namespace Writersword.Modules.TextEditor.Views.Reading
 
         private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
-        private static IReadOnlyList<string> LoadFontList()
+        /// <summary>
+        /// Список гарнитур для выпадающего списка вида.
+        ///
+        /// Гарнитура вида передаётся отдельным доводом и попадает в список даже
+        /// тогда, когда её нет ни в проекте, ни в системе. Иначе ComboBox не
+        /// находил своего SelectedItem и схлопывал выбор в null, а следующая же
+        /// правка любого другого поля вида — имени, цвета, ползунка — считывала
+        /// этот null и стирала шрифт из проекта.
+        /// </summary>
+        private static IReadOnlyList<string> LoadFontList(string? keep = null)
         {
             var list = new List<string> { FontAsInDocument };
-            try
-            {
-                list.AddRange(SKFontManager.Default.FontFamilies
-                    .Where(f => !string.IsNullOrWhiteSpace(f))
-                    .OrderBy(f => f, StringComparer.CurrentCultureIgnoreCase));
-            }
-            catch
-            {
-                list.AddRange(new[] { "Arial", "Times New Roman", "Calibri", "Georgia", "Verdana" });
-            }
+            list.AddRange(Modules.TextEditor.Services.ProjectFonts.PickerFamilies(keep));
             return list;
         }
 
@@ -327,6 +327,9 @@ namespace Writersword.Modules.TextEditor.Views.Reading
 
                 ApplyBackdropEnablement(editable, theme?.UseBackdropImage == true);
 
+                // Список пересобирается под гарнитуру этого вида: если её нет на
+                // машине, она всё равно должна быть в Items, иначе выбор схлопнется.
+                _fontCombo.ItemsSource = LoadFontList(theme?.FontFamily);
                 _fontCombo.SelectedItem = string.IsNullOrWhiteSpace(theme?.FontFamily)
                     ? FontAsInDocument
                     : theme!.FontFamily;
@@ -407,8 +410,12 @@ namespace Writersword.Modules.TextEditor.Views.Reading
 
             ApplyBackdropEnablement(!theme.IsBuiltIn, theme.UseBackdropImage);
 
+            // Пустой SelectedItem означает, что комбобокс не нашёл своего значения,
+            // а не что человек выбрал «как в документе». Сбрасывать шрифт вида по
+            // такому признаку нельзя — это потеря данных проекта.
             string? font = _fontCombo.SelectedItem as string;
-            theme.FontFamily = string.IsNullOrWhiteSpace(font) || font == FontAsInDocument ? null : font;
+            if (!string.IsNullOrWhiteSpace(font))
+                theme.FontFamily = font == FontAsInDocument ? null : font;
 
             theme.Brightness = Math.Clamp(_brightnessSlider.Value / 100.0, 0.35, 1.0);
             theme.Contrast = Math.Clamp(_contrastSlider.Value / 100.0, 0.6, 1.6);

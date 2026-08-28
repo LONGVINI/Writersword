@@ -474,6 +474,24 @@
   <data name="Settings_SpellGroup" xml:space="preserve">
     <value>Проверка орфографии</value>
   </data>
+  <data name="Settings_SubstituteFontFamily" xml:space="preserve">
+    <value>Стандартный шрифт</value>
+  </data>
+  <data name="Settings_SubstituteFontFamilyHint" xml:space="preserve">
+    <value>Берётся, когда письмо знака не описано ниже. Если и в нём знака нет, подстановки не будет.</value>
+  </data>
+  <data name="Settings_SubstituteGroup" xml:space="preserve">
+    <value>Недостающие знаки</value>
+  </data>
+  <data name="Settings_SubstituteMissingGlyphs" xml:space="preserve">
+    <value>Применять стандартный шрифт</value>
+  </data>
+  <data name="Settings_SubstituteMissingGlyphsHint" xml:space="preserve">
+    <value>Выключено: знак, которого в выбранной гарнитуре нет, рисуется пустым прямоугольником — это видно сразу. Включено: знак дорисовывается другим шрифтом, и текст незаметно перестаёт совпадать с тем, что выбрано в ленте.</value>
+  </data>
+  <data name="Settings_SubstituteScriptsHint" xml:space="preserve">
+    <value>Заданный здесь шрифт берётся, когда в шрифте документа нет знаков этого письма. Он имеет приоритет над стандартным шрифтом выше.</value>
+  </data>
   <data name="Settings_ViewGroup" xml:space="preserve">
     <value>Отображение</value>
   </data>

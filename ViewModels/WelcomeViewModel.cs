@@ -129,7 +129,6 @@ namespace Writersword.ViewModels
             if (string.IsNullOrEmpty(savePath))
                 return;
 
-            var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
             var tabCollection = App.Services.GetRequiredService<ITabCollection>();
 
             var existingTab = tabCollection.FindByPath(savePath);
@@ -150,10 +149,13 @@ namespace Writersword.ViewModels
 
             _projectWorkflow.RegisterStorage(savePath, tabVM);
 
+            // Add активирует первую вкладку сам, а присваивание ActiveTab нужно,
+            // когда вкладки уже открыты: там Add не активирует. Второго вызова
+            // активации здесь быть не должно — он проходил тот же путь целиком
+            // и попутно чистил AllWorkModes, из-за чего меню воркмодов после
+            // создания проекта оставалось пустым до перезапуска.
             tabCollection.Add(tabVM);
             tabCollection.ActiveTab = tabVM;
-
-            mainViewModel.InitializeWorkModesForTab(tabVM);
 
             _settingsService.AddRecentProject(savePath);
 
@@ -172,7 +174,6 @@ namespace Writersword.ViewModels
                 return;
 
             var tabCollection = App.Services.GetRequiredService<ITabCollection>();
-            var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
 
             var existingTab = tabCollection.FindByPath(path);
             if (existingTab != null)
@@ -237,7 +238,6 @@ namespace Writersword.ViewModels
                 }
 
                 var tabCollection = App.Services.GetRequiredService<ITabCollection>();
-                var mainViewModel = App.Services.GetRequiredService<MainWindowViewModel>();
 
                 var existingTab = tabCollection.FindByPath(recent.Path);
                 if (existingTab != null)

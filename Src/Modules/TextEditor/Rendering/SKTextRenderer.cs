@@ -2525,14 +2525,27 @@ namespace Writersword.Modules.TextEditor.Rendering
 
         /// <summary>
         /// Ищет шрифт для символа с указанным кодпоинтом.
-        /// Порядок: пользовательская карта скриптов → системный MatchCharacter → null.
-        /// MatchCharacter кешируется; пользовательская карта проверяется всегда напрямую.
-        /// Декоративные шрифты (Marlett, Wingdings и пр.) исключаются из результата.
+        ///
+        /// По умолчанию не ищет ничего и возвращает null: символ рисуется как
+        /// .notdef — привычный пустой квадрат, ровно как в любом другом редакторе.
+        /// Системный MatchCharacter отсюда убран намеренно. Он молча дорисовывал
+        /// символы, которых в выбранной гарнитуре нет, чужим шрифтом; выглядело
+        /// удобно — берёшь латинскую гарнитуру и пишешь по-русски, — но цена в
+        /// том, что человек не видит, что половина текста набрана не тем, что он
+        /// выбрал, и узнаёт об этом в вёрстке или в печати.
+        ///
+        /// Подстановка включается настройкой SubstituteMissingGlyphs и тогда идёт
+        /// в два шага: сперва карта скриптов — заданное человеком правило
+        /// «кириллицу набирать вот этим», — потом общий шрифт подстановки.
+        ///
+        /// Шрифт, в котором знака тоже нет, не подставляется: квадрат был бы тот
+        /// же самый, а кусок текста молча сменил бы гарнитуру.
         /// </summary>
         private static string? FindFallbackFamily(int codepoint, StyleResolver? styles)
         {
-            // Пользовательская карта скриптов имеет приоритет над системным фолбэком.
-            if (styles is not null && styles.ScriptFontMap.Count > 0)
+            if (styles is null || !styles.SubstituteMissingGlyphs) return null;
+
+            if (styles.ScriptFontMap.Count > 0)
             {
                 string? scriptName = GetScriptName(codepoint);
                 if (scriptName != null && styles.ScriptFontMap.TryGetValue(scriptName, out var preferred)
@@ -2540,25 +2553,11 @@ namespace Writersword.Modules.TextEditor.Rendering
                     return preferred;
             }
 
-            if (_fallbackFamilyCache.TryGetValue(codepoint, out var cached))
-                return cached;
+            string? substitute = styles.SubstituteFontFamily;
+            if (string.IsNullOrEmpty(substitute) || IsDecorationFont(substitute)) return null;
 
-            SKTypeface? fallback = null;
-            try
-            {
-                fallback = SKFontManager.Default.MatchCharacter(codepoint);
-            }
-            catch
-            {
-                // MatchCharacter может бросить исключение на некоторых конфигурациях.
-            }
-
-            string? result = null;
-            if (fallback != null && !IsDecorationFont(fallback.FamilyName))
-                result = fallback.FamilyName;
-
-            _fallbackFamilyCache.TryAdd(codepoint, result);
-            return result;
+            var typeface = GetOrCreateTypeface(substitute, false, false);
+            return typeface.GetGlyph(codepoint) != 0 ? substitute : null;
         }
 
         /// <summary>
@@ -2945,8 +2944,11 @@ namespace Writersword.Modules.TextEditor.Rendering
             {
                 if (!_fallbackFamilyCache.TryGetValue(mcp, out var fb))
                 {
+                    // Декоративные гарнитуры отсеиваются здесь же. Раньше фильтр
+                    // доставался этому месту даром — через общий кеш с
+                    // FindFallbackFamily, — а тот больше системный шрифт не ищет.
                     using var fm = SKFontManager.Default.MatchCharacter(mcp);
-                    fb = fm?.FamilyName;
+                    fb = fm != null && !IsDecorationFont(fm.FamilyName) ? fm.FamilyName : null;
                     _fallbackFamilyCache[mcp] = fb;
                 }
                 if (!string.IsNullOrEmpty(fb))

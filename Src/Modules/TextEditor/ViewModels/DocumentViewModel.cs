@@ -540,17 +540,43 @@ namespace Writersword.Modules.TextEditor.ViewModels
 
             RunProperties? rp = null;
 
+            // Разные гарнитуры внутри выделения. null означает «не одна» —
+            // поле шрифта в ленте показывает пустоту, как в Word. Отличать это от
+            // «шрифт не задан» нужно отдельным признаком: null у самого FontFamily
+            // означает совсем другое — наследование от стиля абзаца.
+            bool fontsDiffer = false;
+            string? firstFont = null;
+
             if (pvm.SelectionEnd > pvm.SelectionStart)
             {
                 int offset = 0;
                 foreach (var chunk in block.Chunks)
+                {
                     foreach (var run in chunk.Runs)
                     {
-                        if (offset + run.Text.Length > pvm.SelectionStart)
-                        { rp = run.Properties; goto foundRun; }
-                        offset += run.Text.Length;
+                        int runStart = offset;
+                        int runEnd = offset + run.Text.Length;
+                        offset = runEnd;
+
+                        // Ран целиком вне выделения — пропускаем.
+                        if (runEnd <= pvm.SelectionStart) continue;
+                        if (runStart >= pvm.SelectionEnd) break;
+
+                        // Первый пересёкшийся ран задаёт остальные свойства ленты:
+                        // жирность, цвет и прочее берутся по нему, как и раньше.
+                        rp ??= run.Properties;
+
+                        string? runFont = run.Properties?.FontFamily
+                            ?? ResolveStyleFontFamily(block.Properties.StyleName);
+
+                        if (firstFont is null && !fontsDiffer)
+                            firstFont = runFont;
+                        else if (!string.Equals(firstFont, runFont, StringComparison.Ordinal))
+                            fontsDiffer = true;
                     }
-                foundRun:;
+
+                    if (offset >= pvm.SelectionEnd) break;
+                }
             }
             else
             {
@@ -571,7 +597,9 @@ namespace Writersword.Modules.TextEditor.ViewModels
                 ctx.IsAllCaps = rp.IsAllCaps;
                 ctx.TextColor = rp.TextColor ?? "#1A1A1A";
                 ctx.HighlightColor = rp.HighlightColor;
-                ctx.FontFamily = rp.FontFamily ?? ResolveStyleFontFamily(block.Properties.StyleName);
+                ctx.FontFamily = fontsDiffer
+                    ? null
+                    : rp.FontFamily ?? ResolveStyleFontFamily(block.Properties.StyleName);
                 ctx.FontSize = rp.FontSize ?? ResolveStyleFontSize(block.Properties.StyleName);
             }
             else

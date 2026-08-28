@@ -18,8 +18,8 @@
 
 	<ItemGroup>
 		<!--
-            ExcludeAssets="build;buildTransitive" вЂ” Р±РµСЂС‘Рј С‚РѕР»СЊРєРѕ С‚РёРїС‹ РёР· Avalonia,
-            Р±РµР· build-С‚Р°СЂРіРµС‚РѕРІ Рё XAML-РіРµРЅРµСЂР°С‚РѕСЂР°. Core вЂ” Р±РёР±Р»РёРѕС‚РµРєР° Р±РµР· AXAML.
+            ExcludeAssets="build;buildTransitive" — берём только типы из Avalonia,
+            без build-таргетов и XAML-генератора. Core — библиотека без AXAML.
         -->
 		<PackageReference Include="Avalonia" Version="12.1.1">
 			<ExcludeAssets>build;buildTransitive</ExcludeAssets>

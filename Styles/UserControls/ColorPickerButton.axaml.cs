@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
 using Avalonia.Data.Converters;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -221,7 +222,7 @@ namespace Writersword.Styles.UserControls
         public ReactiveCommand<Unit, Unit> PinCurrentCommand { get; }
         public ReactiveCommand<Unit, Unit> OpenAdvancedCommand { get; }
 
-        private ColorView? _colorView;
+        private ColorSpectrum? _spectrum;
         private Button? _triggerButton;
         private FlyoutBase? _flyout;
         private bool _syncingColorView;
@@ -260,7 +261,33 @@ namespace Writersword.Styles.UserControls
             PinCurrentCommand = ReactiveCommand.Create(() => AddPinned(HexColor));
 
             OpenAdvancedCommand = ReactiveCommand.CreateFromTask(OpenAdvancedAsync);
+
+            // Правая кнопка по образцу цвета выбирает подборщик. Меню строится
+            // на каждый вызов: режим общий на всё приложение и мог смениться с
+            // другой кнопки, а отметка обязана стоять напротив нынешнего.
+            AddHandler(ContextRequestedEvent, OnColorContextRequested, RoutingStrategies.Tunnel);
         }
+
+        /// <summary>
+        /// Правая кнопка по образцу цвета показывает подборщик — квадрат,
+        /// колесо или значения — прямо во всплывашке, с живым цветом. Левая
+        /// при этом остаётся заготовками: главный способ брать цвет никуда не
+        /// девается.
+        ///
+        /// Какой именно подборщик, задаёт галочка в окне настройки цвета.
+        /// </summary>
+        private void OnColorContextRequested(object? sender, ContextRequestedEventArgs e)
+        {
+            e.Handled = true;
+
+            _openAsMini = true;
+            _flyout?.ShowAt(this);
+        }
+
+        // Всплывашку открыли правой кнопкой: показать подборщик, а не заготовки.
+        // Признак снимается при закрытии — следующее открытие левой кнопкой
+        // обязано снова показать заготовки.
+        private bool _openAsMini;
 
         private async void OnConfigureClick(object? sender, RoutedEventArgs e)
         {
@@ -292,10 +319,14 @@ namespace Writersword.Styles.UserControls
                 _flyout?.Hide();
                 var overlay = FindEditorOverlay();
                 if (overlay is null) return;
+                // Открываем сразу на вкладке выбранного подборщика. У режима
+                // «Заготовки» своей вкладки нет — туда попадают кнопкой
+                // «Настроить», и редактор встаёт на квадрат, как и раньше.
                 var result = await overlay.ShowAsync(
                     HexColor, ShowCardPreview, PreviewImage, PreviewName, PreviewFallback,
                     RingEnabled, CurrentProject?.AvatarRingsAll ?? false,
-                    PreviewIsGroup, BookmarkEnabled);
+                    PreviewIsGroup, BookmarkEnabled,
+                    ColorPickerModeStore.TabOf(ColorPickerModeStore.Current));
                 if (result is null) return;
 
                 // Code несёт полный выбор: код градиента либо обычный hex одноцвета.
@@ -353,7 +384,6 @@ namespace Writersword.Styles.UserControls
         {
             base.OnAttachedToVisualTree(e);
             _triggerButton = this.FindControl<Button>("TriggerButton");
-            _colorView = this.FindControl<ColorView>("ColorViewControl");
 
             _flyout = _triggerButton?.Flyout;
             if (_flyout is not null)
@@ -371,12 +401,6 @@ namespace Writersword.Styles.UserControls
                 _flyout.Closed += OnFlyoutClosed;
             }
 
-            if (_colorView is not null)
-            {
-                SyncColorViewFromHex(HexColor);
-                _colorView.GetObservable(ColorView.ColorProperty)
-                    .Subscribe(OnColorViewColorChanged);
-            }
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -389,7 +413,9 @@ namespace Writersword.Styles.UserControls
                 _flyout.Closed -= OnFlyoutClosed;
             }
             _flyout = null;
-            _colorView = null;
+            _spectrumSubscription?.Dispose();
+            _spectrumSubscription = null;
+            _spectrum = null;
             _triggerButton = null;
         }
 
@@ -410,7 +436,658 @@ namespace Writersword.Styles.UserControls
                 SetCollapseTransitions(root, enable: false);
             ReloadFromProject();
             LoadPalettesAndCollapse();
+            ConfigureMiniPicker();
             SyncColorViewFromHex(HexColor);
+        }
+
+        /// <summary>
+        /// Настроить содержимое всплывашки под выбранный подборщик: заготовки
+        /// или мини-версия квадрата, колеса, сот, шума и значений.
+        ///
+        /// Контролы ищутся здесь, а не при присоединении к дереву: содержимое
+        /// всплывашки до её первого показа в дереве не существует.
+        /// </summary>
+        private void ConfigureMiniPicker()
+        {
+            if (_flyout is not Flyout flyout) return;
+            if (flyout.Content is not Control root) return;
+            _miniRoot = root;
+
+            var host = FindInFlyout<StackPanel>(root, "MiniPickerHost");
+            var presets = FindInFlyout<ScrollViewer>(root, "PresetsScroll");
+            var spectrumHost = FindInFlyout<StackPanel>(root, "SpectrumHost");
+            var spectrum = FindInFlyout<ColorSpectrum>(root, "MiniSpectrum");
+            var honeyHost = FindInFlyout<Border>(root, "HoneycombHost");
+            var honey = FindInFlyout<HoneycombPicker>(root, "MiniHoneycomb");
+            var noiseHost = FindInFlyout<StackPanel>(root, "NoiseHost");
+            var noise = FindInFlyout<NoisePicker>(root, "MiniNoise");
+            var rgbRows = FindInFlyout<ScrollViewer>(root, "RgbRowsHost");
+            var valuesHost = FindInFlyout<StackPanel>(root, "ValuesHost");
+
+            var mini = _openAsMini;
+            var mode = ColorPickerModeStore.Current;
+            var isHoney = mode == ColorPickerMode.Honeycomb;
+            var isNoise = mode == ColorPickerMode.Noise;
+            var isValues = mode == ColorPickerMode.Values;
+            var isWheel = mode == ColorPickerMode.Wheel;
+
+            if (host is not null) host.IsVisible = mini;
+            if (presets is not null) presets.IsVisible = !mini;
+            if (honeyHost is not null) honeyHost.IsVisible = mini && isHoney;
+            if (noiseHost is not null) noiseHost.IsVisible = mini && isNoise;
+            var showSpectrum = mini && !isHoney && !isNoise && !isValues;
+            if (spectrumHost is not null) spectrumHost.IsVisible = showSpectrum;
+            if (rgbRows is not null) rgbRows.IsVisible = showSpectrum;
+
+            // У колеса V стоит сбоку и во всю его высоту, у квадрата — строкой
+            // под ним. Ползунка два, а не один переставляемый: шаблон трека у
+            // Slider.grad задан поперёк и вдоль сразу, и одним контролом обе
+            // раскладки не покрыть.
+            SetMiniVisible("SpectrumVColumn", showSpectrum && isWheel);
+            SetMiniVisible("SpectrumHColumn", showSpectrum && !isWheel);
+            SetMiniVisible("SpectrumDimRing", showSpectrum && isWheel);
+
+            EnableSliderJump(root);
+            if (valuesHost is not null) valuesHost.IsVisible = mini && isValues;
+
+            if (honey is not null && !ReferenceEquals(_honeycomb, honey))
+            {
+                _honeycomb = honey;
+                honey.ColorPicked += OnMiniColorPicked;
+            }
+
+            if (noise is not null && !ReferenceEquals(_noise, noise))
+            {
+                _noise = noise;
+                noise.ColorPicked += OnMiniColorPicked;
+            }
+
+            if (!mini) return;
+
+            if (isHoney && _honeycomb is not null)
+                _honeycomb.SelectedHex = NormalizeHex(HexColor);
+
+            if (isValues)
+                ApplyValMode(_valMode);
+
+            // Спектр остаётся в дереве и при сотах, шуме и значениях: он —
+            // единственная точка, через которую цвет уходит наружу, и строки
+            // RGB/HSL/HSV пишут именно в него. Наружу его прячет SpectrumHost.
+            if (spectrum is not null)
+            {
+                // Колесо крутит оттенок с насыщенностью, яркость уходит на
+                // боковую полосу. Квадрат — насыщенность × яркость при
+                // выбранном оттенке, оттенок уходит на радужную полосу: ровно
+                // тот же разбор, что у вкладки «Квадрат» в окне «Настроить цвет».
+                spectrum.Shape = isWheel ? ColorSpectrumShape.Ring : ColorSpectrumShape.Box;
+                spectrum.Components = isWheel
+                    ? ColorSpectrumComponents.HueSaturation
+                    : ColorSpectrumComponents.SaturationValue;
+
+                // Подписка одна на всё время жизни кнопки: всплывашка открывается
+                // много раз, и каждый показ добавлял бы ещё одного слушателя.
+                if (!ReferenceEquals(_spectrum, spectrum))
+                {
+                    _spectrumSubscription?.Dispose();
+                    _spectrum = spectrum;
+
+                    // GetObservable отдаёт текущее значение сразу при подписке, а
+                    // у только что построенного спектра оно своё, не наше. Без
+                    // этой заслонки первое же открытие всплывашки переписывало бы
+                    // цвет элемента цветом спектра по умолчанию.
+                    _syncingColorView = true;
+                    try
+                    {
+                        _spectrumSubscription = spectrum
+                            .GetObservable(ColorSpectrum.HsvColorProperty)
+                            .Subscribe(OnSpectrumHsvChanged);
+                    }
+                    finally { _syncingColorView = false; }
+                }
+            }
+
+            RefreshMiniStateFromHex();
+        }
+
+        private IDisposable? _spectrumSubscription;
+        private HoneycombPicker? _honeycomb;
+        private NoisePicker? _noise;
+
+        // ── Мини-подборщик: RGB/HSL/HSV-строки и общая альфа ──────────────
+        // Тот же смысл, что был у сломанного встроенного «третьего ползунка»
+        // ColorSpectrum (IsColorSpectrumSliderVisible) — у Avalonia.Controls.
+        // ColorPicker он рисуется без градиента, сплошной акцентной плашкой,
+        // неотличимой от кнопки. Вместо него — свои строки со своим,
+        // проверенным треком (тот же Slider.grad, что и в окне «Настроить
+        // цвет»). Формулы HSV/HSL — оттуда же, своя копия по тому же
+        // принципу, что и у NoisePicker: контрол обязан собираться сам по
+        // себе, без оглядки на то, кто его показывает.
+        //
+        // Альфа здесь одна на все виды подборщика и живёт отдельно от
+        // спектра — то же решение, что и в окне «Настроить цвет»: раньше свой
+        // ползунок альфы был у каждой вкладки, значение у них всё равно было
+        // общее.
+        private Control? _miniRoot;
+        private byte _miniAlpha = 255;
+        private string _valMode = "rgb";
+        private bool _syncingMini;
+
+        /// <summary>Соты и шум отдают готовый код цвета (без альфы) — она добавляется здесь.</summary>
+        private void OnMiniColorPicked(string hex)
+        {
+            if (string.IsNullOrEmpty(hex)) return;
+            var picked = ParseHexColor(hex);
+            HexColor = FormatHex(Color.FromArgb(_miniAlpha, picked.R, picked.G, picked.B));
+            SetMiniSlider("MiniSlA", _miniAlpha,
+                Grad(Color.FromArgb(0, picked.R, picked.G, picked.B), Color.FromArgb(255, picked.R, picked.G, picked.B)));
+        }
+
+        private void OnMiniRgbChanged(object? sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (_syncingMini || _spectrum is null) return;
+            ApplyRgbFromSliders("MiniSlR", "MiniSlG", "MiniSlB");
+        }
+
+        private void OnValRgbChanged(object? sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (_syncingMini || _spectrum is null) return;
+            ApplyRgbFromSliders("ValSlR", "ValSlG", "ValSlB");
+        }
+
+        private void ApplyRgbFromSliders(string rName, string gName, string bName)
+        {
+            var r = (byte)Math.Clamp(Math.Round(ReadMiniSlider(rName)), 0, 255);
+            var g = (byte)Math.Clamp(Math.Round(ReadMiniSlider(gName)), 0, 255);
+            var b = (byte)Math.Clamp(Math.Round(ReadMiniSlider(bName)), 0, 255);
+            PushToSpectrum(Color.FromRgb(r, g, b));
+        }
+
+        private void OnValHslChanged(object? sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (_syncingMini || _spectrum is null) return;
+            var h = ReadMiniSlider("ValSlHslH");
+            var s = ReadMiniSlider("ValSlHslS") / 100.0;
+            var l = ReadMiniSlider("ValSlHslL") / 100.0;
+            PushToSpectrum(HslToRgb(h, s, l));
+        }
+
+        private void OnValHsvChanged(object? sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (_syncingMini || _spectrum is null) return;
+            var h = ReadMiniSlider("ValSlHsvH");
+            var s = ReadMiniSlider("ValSlHsvS") / 100.0;
+            var v = ReadMiniSlider("ValSlHsvV") / 100.0;
+            _spectrum.HsvColor = new HsvColor(1, ((h % 360) + 360) % 360,
+                Math.Clamp(s, 0, 1), Math.Clamp(v, 0, 1));
+        }
+
+        /// <summary>
+        /// Ползунок третьей составляющей квадрата и колеса. Меняется только V,
+        /// тон и насыщенность берутся у спектра: пересчёт через RGB терял бы
+        /// их на чёрном и на серых, и точка на спектре уезжала бы в угол.
+        /// </summary>
+        private void OnMiniValueChanged(object? sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (_syncingMini || _spectrum is null) return;
+            var hsv = _spectrum.HsvColor;
+            _spectrum.HsvColor = new HsvColor(1, hsv.H, hsv.S,
+                Math.Clamp(e.NewValue / 100.0, 0, 1));
+        }
+
+        /// <summary>
+        /// Боковые полосы спектра под текущий цвет: яркость у колеса, оттенок у
+        /// квадрата. Заодно затемнение колеса: спектр Avalonia в режиме
+        /// HueSaturation всегда рисуется при V = 1 и от яркости не зависит — её
+        /// показывает чёрный слой поверх, как WheelDim в окне «Настроить цвет».
+        /// </summary>
+        private void ApplySpectrumBars(HsvColor hsv)
+        {
+            // Заслонка снимается в прежнее положение, а не в false: метод зовут и
+            // изнутри уже закрытого участка, и раньше досрочное открытие пускало
+            // бы обратную волну — ползунок писал бы в спектр, который его и
+            // выставил.
+            var wasSyncing = _syncingMini;
+            _syncingMini = true;
+            try
+            {
+                SetMiniSlider("MiniSlVv", hsv.V * 100,
+                    GradV(HsvToRgb(hsv.H, hsv.S, 0), HsvToRgb(hsv.H, hsv.S, 1)));
+
+                // Радуга полосы оттенка задана в разметке и от цвета не зависит —
+                // здесь только положение бегунка.
+                SetMiniSliderValue("MiniSlH", hsv.H);
+
+                SetMiniOpacity("SpectrumDimRing", Math.Clamp(1 - hsv.V, 0, 1));
+            }
+            finally { _syncingMini = wasSyncing; }
+        }
+
+        private void SetMiniSliderValue(string name, double value)
+        {
+            if (_miniRoot is null) return;
+            var slider = FindInFlyout<Slider>(_miniRoot, name);
+            if (slider is not null) slider.Value = value;
+        }
+
+        private void SetMiniOpacity(string name, double opacity)
+        {
+            if (_miniRoot is null) return;
+            var c = FindInFlyout<Control>(_miniRoot, name);
+            if (c is not null) c.Opacity = opacity;
+        }
+
+        /// <summary>
+        /// Полоса оттенка у квадрата. Меняется только H, насыщенность и яркость
+        /// берутся у спектра: пересчёт через RGB терял бы их на чёрном и на
+        /// серых, и точка на квадрате уезжала бы в угол.
+        /// </summary>
+        private void OnMiniHueChanged(object? sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (_syncingMini || _spectrum is null) return;
+            var hsv = _spectrum.HsvColor;
+            _spectrum.HsvColor = new HsvColor(1, Math.Clamp(e.NewValue, 0, 360), hsv.S, hsv.V);
+        }
+
+        /// <summary>Отдать спектру цвет в RGB — единственная точка, из которой он уходит наружу.</summary>
+        private void PushToSpectrum(Color rgb)
+        {
+            if (_spectrum is null) return;
+            _spectrum.HsvColor = Color.FromRgb(rgb.R, rgb.G, rgb.B).ToHsv();
+        }
+
+        private void OnMiniAlphaChanged(object? sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (_syncingMini) return;
+            _miniAlpha = (byte)Math.Clamp(Math.Round(e.NewValue), 0, 255);
+            var rgb = ParseHexColor(HexColor);
+            HexColor = FormatHex(Color.FromArgb(_miniAlpha, rgb.R, rgb.G, rgb.B));
+        }
+
+        private void OnValModeClick(object? sender, RoutedEventArgs e)
+        {
+            if (sender is not Control c || c.Tag is not string mode) return;
+            ApplyValMode(mode);
+        }
+
+        private void ApplyValMode(string mode)
+        {
+            _valMode = mode;
+            SetMiniVisible("ValRgbRows", mode == "rgb");
+            SetMiniVisible("ValHslRows", mode == "hsl");
+            SetMiniVisible("ValHsvRows", mode == "hsv");
+            SetMiniActive("ValModeRgbBtn", mode == "rgb");
+            SetMiniActive("ValModeHslBtn", mode == "hsl");
+            SetMiniActive("ValModeHsvBtn", mode == "hsv");
+        }
+
+        /// <summary>Пересобрать значения и градиенты-треки RGB/HSL/HSV-строк под цвет.</summary>
+        private void RefreshMiniColorRows(Color rgb)
+        {
+            _syncingMini = true;
+            try
+            {
+                SetMiniSlider("MiniSlR", rgb.R, Grad(Color.FromRgb(0, rgb.G, rgb.B), Color.FromRgb(255, rgb.G, rgb.B)));
+                SetMiniSlider("MiniSlG", rgb.G, Grad(Color.FromRgb(rgb.R, 0, rgb.B), Color.FromRgb(rgb.R, 255, rgb.B)));
+                SetMiniSlider("MiniSlB", rgb.B, Grad(Color.FromRgb(rgb.R, rgb.G, 0), Color.FromRgb(rgb.R, rgb.G, 255)));
+
+                SetMiniSlider("ValSlR", rgb.R, Grad(Color.FromRgb(0, rgb.G, rgb.B), Color.FromRgb(255, rgb.G, rgb.B)));
+                SetMiniSlider("ValSlG", rgb.G, Grad(Color.FromRgb(rgb.R, 0, rgb.B), Color.FromRgb(rgb.R, 255, rgb.B)));
+                SetMiniSlider("ValSlB", rgb.B, Grad(Color.FromRgb(rgb.R, rgb.G, 0), Color.FromRgb(rgb.R, rgb.G, 255)));
+
+                var (h, s, l) = RgbToHsl(rgb);
+                SetMiniSlider("ValSlHslH", h, HRainbow());
+                SetMiniSlider("ValSlHslS", s * 100, Grad(HslToRgb(h, 0, l), HslToRgb(h, 1, l)));
+                SetMiniSlider("ValSlHslL", l * 100, Grad(HslToRgb(h, s, 0), HslToRgb(h, s, 0.5), HslToRgb(h, s, 1)));
+
+                var (hh, ss, vv) = RgbToHsv(rgb);
+                SetMiniSlider("ValSlHsvH", hh, HRainbow());
+                SetMiniSlider("ValSlHsvS", ss * 100, Grad(HsvToRgb(hh, 0, vv), HsvToRgb(hh, 1, vv)));
+                SetMiniSlider("ValSlHsvV", vv * 100, Grad(HsvToRgb(hh, ss, 0), HsvToRgb(hh, ss, 1)));
+            }
+            finally { _syncingMini = false; }
+        }
+
+        /// <summary>Прочитать текущий HexColor и разослать его во все мини-ползунки. Зовётся один раз при открытии.</summary>
+        private void RefreshMiniStateFromHex()
+        {
+            var c = ParseHexColor(HexColor);
+            _miniAlpha = c.A;
+            var rgb = Color.FromRgb(c.R, c.G, c.B);
+            RefreshMiniColorRows(rgb);
+            SetMiniSlider("MiniSlA", _miniAlpha,
+                Grad(Color.FromArgb(0, rgb.R, rgb.G, rgb.B), Color.FromArgb(255, rgb.R, rgb.G, rgb.B)));
+        }
+
+        private void SetMiniSlider(string name, double value, IBrush background)
+        {
+            if (_miniRoot is null) return;
+            var slider = FindInFlyout<Slider>(_miniRoot, name);
+            if (slider is null) return;
+            slider.Value = value;
+            slider.Background = background;
+        }
+
+        private double ReadMiniSlider(string name)
+        {
+            if (_miniRoot is null) return 0;
+            return FindInFlyout<Slider>(_miniRoot, name)?.Value ?? 0;
+        }
+
+        private void SetMiniVisible(string name, bool visible)
+        {
+            if (_miniRoot is null) return;
+            var c = FindInFlyout<Control>(_miniRoot, name);
+            if (c is not null) c.IsVisible = visible;
+        }
+
+        private void SetMiniActive(string name, bool active)
+        {
+            if (_miniRoot is null) return;
+            var b = FindInFlyout<Button>(_miniRoot, name);
+            b?.Classes.Set("active", active);
+        }
+
+        // Щелчок по полосе ставит бегунок на это место сразу и тут же начинает
+        // перетаскивание: мышь захватывается на ползунок, и значение продолжает
+        // идти за курсором, пока кнопка зажата, — отпускать и заново цеплять
+        // бегунок не нужно. Обработчик свой и висит туннелем на самом ползунке:
+        // у шаблонов Slider.grad и Slider.gradv кнопки трека свои, и штатный
+        // перенос за них не цепляется.
+        private readonly HashSet<Slider> _jumpWired = new();
+        private Slider? _jumpDrag;
+
+        private void EnableSliderJump(Visual root)
+        {
+            foreach (var slider in root.GetVisualDescendants().OfType<Slider>())
+            {
+                if (!_jumpWired.Add(slider)) continue;
+                slider.AddHandler(PointerPressedEvent, OnSliderJumpPressed,
+                    RoutingStrategies.Tunnel);
+                slider.AddHandler(PointerMovedEvent, OnSliderJumpMoved,
+                    RoutingStrategies.Tunnel);
+                slider.AddHandler(PointerReleasedEvent, OnSliderJumpReleased,
+                    RoutingStrategies.Tunnel);
+                slider.AddHandler(PointerCaptureLostEvent, OnSliderJumpCaptureLost,
+                    RoutingStrategies.Tunnel);
+            }
+        }
+
+        private void OnSliderJumpPressed(object? sender, PointerPressedEventArgs e)
+        {
+            if (sender is not Slider slider) return;
+
+            var point = e.GetCurrentPoint(slider);
+            if (!point.Properties.IsLeftButtonPressed) return;
+
+            // Нажатие по самому бегунку оставляем ему: он и так тащится штатно,
+            // а перенос дёрнул бы значение к точке захвата.
+            if (e.Source is Visual source &&
+                source.FindAncestorOfType<Thumb>(includeSelf: true) is not null) return;
+
+            MoveSliderToPoint(slider, point.Position);
+
+            // Захват мыши на сам ползунок — чтобы движение сразу продолжало вести
+            // значение, без отпускания и повторного захвата за бегунок. Событие
+            // помечается разобранным: иначе кнопка трека под курсором перехватит
+            // мышь себе и начнёт подводить значение шагами.
+            _jumpDrag = slider;
+            e.Pointer.Capture(slider);
+            e.Handled = true;
+        }
+
+        private void OnSliderJumpMoved(object? sender, PointerEventArgs e)
+        {
+            if (_jumpDrag is null || !ReferenceEquals(_jumpDrag, sender)) return;
+
+            var point = e.GetCurrentPoint(_jumpDrag);
+            if (!point.Properties.IsLeftButtonPressed)
+            {
+                EndSliderJumpDrag(e.Pointer);
+                return;
+            }
+
+            MoveSliderToPoint(_jumpDrag, point.Position);
+            e.Handled = true;
+        }
+
+        private void OnSliderJumpReleased(object? sender, PointerReleasedEventArgs e)
+        {
+            if (_jumpDrag is null || !ReferenceEquals(_jumpDrag, sender)) return;
+            EndSliderJumpDrag(e.Pointer);
+            e.Handled = true;
+        }
+
+        private void OnSliderJumpCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+        {
+            if (ReferenceEquals(_jumpDrag, sender)) _jumpDrag = null;
+        }
+
+        private void EndSliderJumpDrag(IPointer pointer)
+        {
+            pointer.Capture(null);
+            _jumpDrag = null;
+        }
+
+        /// <summary>Поставить значение ползунка по точке в его собственных координатах.</summary>
+        private static void MoveSliderToPoint(Slider slider, Point position)
+        {
+            var horizontal = slider.Orientation == Avalonia.Layout.Orientation.Horizontal;
+            var length = horizontal ? slider.Bounds.Width : slider.Bounds.Height;
+
+            var thumb = slider.GetVisualDescendants().OfType<Thumb>().FirstOrDefault();
+            var thumbLength = thumb is null
+                ? 14.0
+                : (horizontal ? thumb.Bounds.Width : thumb.Bounds.Height);
+            if (thumbLength <= 0) thumbLength = 14.0;
+
+            var usable = length - thumbLength;
+            if (usable <= 0) return;
+
+            var pos = horizontal ? position.X : position.Y;
+            var t = Math.Clamp((pos - thumbLength / 2) / usable, 0, 1);
+
+            // Тот же разбор направления, что и у самого Slider: вертикальный по
+            // умолчанию идёт снизу вверх, а IsDirectionReversed переворачивает
+            // ход — на нём стоит полоса оттенка, у которой ноль сверху.
+            var flip = horizontal ? slider.IsDirectionReversed : !slider.IsDirectionReversed;
+            if (flip) t = 1 - t;
+
+            slider.SetCurrentValue(RangeBase.ValueProperty,
+                slider.Minimum + t * (slider.Maximum - slider.Minimum));
+        }
+
+        private static string FormatHex(Color c) =>
+            c.A == 255
+                ? $"#{c.R:X2}{c.G:X2}{c.B:X2}"
+                : $"#{c.A:X2}{c.R:X2}{c.G:X2}{c.B:X2}";
+
+        private static Color ParseHexColor(string? hex)
+        {
+            try { return Color.Parse(Writersword.Core.Models.Project.GradientSpec.Parse(hex).SolidHex); }
+            catch { return Colors.Black; }
+        }
+
+        private static LinearGradientBrush Grad(params Color[] stops)
+        {
+            var b = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative)
+            };
+            if (stops.Length == 1)
+                b.GradientStops.Add(new GradientStop(stops[0], 0));
+            else
+                for (int i = 0; i < stops.Length; i++)
+                    b.GradientStops.Add(new GradientStop(stops[i], (double)i / (stops.Length - 1)));
+            return b;
+        }
+
+        /// <summary>
+        /// То же, что Grad, но снизу вверх — для вертикального ползунка V у
+        /// колеса: у него ноль внизу, и горизонтальная заливка легла бы поперёк
+        /// хода.
+        /// </summary>
+        private static LinearGradientBrush GradV(params Color[] stops)
+        {
+            var b = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0.5, 1, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(0.5, 0, RelativeUnit.Relative)
+            };
+            if (stops.Length == 1)
+                b.GradientStops.Add(new GradientStop(stops[0], 0));
+            else
+                for (int i = 0; i < stops.Length; i++)
+                    b.GradientStops.Add(new GradientStop(stops[i], (double)i / (stops.Length - 1)));
+            return b;
+        }
+
+        private static LinearGradientBrush HRainbow()
+        {
+            var b = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative)
+            };
+            double[] hs = { 0, 60, 120, 180, 240, 300, 360 };
+            for (int i = 0; i < hs.Length; i++)
+                b.GradientStops.Add(new GradientStop(HsvToRgb(hs[i], 1, 1), (double)i / (hs.Length - 1)));
+            return b;
+        }
+
+        private static (double h, double s, double v) RgbToHsv(Color c)
+        {
+            double r = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0;
+            double max = Math.Max(r, Math.Max(g, b));
+            double min = Math.Min(r, Math.Min(g, b));
+            double d = max - min;
+
+            double h = 0;
+            if (d > 1e-6)
+            {
+                if (max == r) h = 60 * (((g - b) / d) % 6);
+                else if (max == g) h = 60 * (((b - r) / d) + 2);
+                else h = 60 * (((r - g) / d) + 4);
+            }
+            if (h < 0) h += 360;
+
+            double s = max <= 1e-6 ? 0 : d / max;
+            double v = max;
+            return (h, s, v);
+        }
+
+        private static (double h, double s, double l) RgbToHsl(Color c)
+        {
+            double r = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0;
+            double max = Math.Max(r, Math.Max(g, b));
+            double min = Math.Min(r, Math.Min(g, b));
+            double d = max - min;
+            double l = (max + min) / 2;
+
+            double h = 0, s = 0;
+            if (d > 1e-6)
+            {
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                if (max == r) h = 60 * (((g - b) / d) % 6);
+                else if (max == g) h = 60 * (((b - r) / d) + 2);
+                else h = 60 * (((r - g) / d) + 4);
+                if (h < 0) h += 360;
+            }
+            return (h, s, l);
+        }
+
+        private static Color HsvToRgb(double h, double s, double v)
+        {
+            h = ((h % 360) + 360) % 360;
+            double c = v * s;
+            double x = c * (1 - Math.Abs((h / 60.0 % 2) - 1));
+            double m = v - c;
+            double r = 0, g = 0, b = 0;
+            if (h < 60) { r = c; g = x; }
+            else if (h < 120) { r = x; g = c; }
+            else if (h < 180) { g = c; b = x; }
+            else if (h < 240) { g = x; b = c; }
+            else if (h < 300) { r = x; b = c; }
+            else { r = c; b = x; }
+            return Color.FromRgb(
+                (byte)Math.Round((r + m) * 255),
+                (byte)Math.Round((g + m) * 255),
+                (byte)Math.Round((b + m) * 255));
+        }
+
+        private static Color HslToRgb(double h, double s, double l)
+        {
+            h = ((h % 360) + 360) % 360;
+            double c = (1 - Math.Abs(2 * l - 1)) * s;
+            double x = c * (1 - Math.Abs((h / 60.0 % 2) - 1));
+            double m = l - c / 2;
+            double r = 0, g = 0, b = 0;
+            if (h < 60) { r = c; g = x; }
+            else if (h < 120) { r = x; g = c; }
+            else if (h < 180) { g = c; b = x; }
+            else if (h < 240) { g = x; b = c; }
+            else if (h < 300) { r = x; b = c; }
+            else { r = c; b = x; }
+            return Color.FromRgb(
+                (byte)Math.Round((r + m) * 255),
+                (byte)Math.Round((g + m) * 255),
+                (byte)Math.Round((b + m) * 255));
+        }
+
+        private void OnMiniNoisePreset(object? sender, SelectionChangedEventArgs e)
+        {
+            if (_noise is null) return;
+            if (sender is not ComboBox box) return;
+            if (box.SelectedItem is not ComboBoxItem item) return;
+            if (item.Tag is not string preset) return;
+
+            _noise.Preset = preset;
+        }
+
+        private void OnMiniNoiseRegen(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            _noise?.Regenerate();
+        }
+
+        /// <summary>Вернуть поле шума к общему виду после наезда на точку.</summary>
+        private void OnMiniNoiseReset(object? sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            _noise?.ResetView();
+        }
+
+        /// <summary>
+        /// Код цвета в виде #RRGGBB — тот, которым помечены ячейки сот. Из
+        /// ссылки может прийти и восьмизначный код с прозрачностью, и код
+        /// градиента; в обоих случаях подсвечивать в сотах нечего.
+        /// </summary>
+        private static string? NormalizeHex(string? code)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return null;
+
+            var text = code.Trim();
+            if (!text.StartsWith("#", StringComparison.Ordinal)) return null;
+
+            if (text.Length == 7) return text.ToUpperInvariant();
+            if (text.Length == 9) return ("#" + text.Substring(3)).ToUpperInvariant();
+            return null;
+        }
+
+        /// <summary>
+        /// Найти именованный контрол внутри содержимого всплывашки. Сначала по
+        /// области имён, потом обходом дерева: до первого показа область имён
+        /// уже есть, а визуального дерева ещё нет, и наоборот — после показа
+        /// обход надёжнее, если содержимое пересобрали.
+        /// </summary>
+        private static T? FindInFlyout<T>(Control root, string name) where T : Control
+        {
+             var byName = root.FindControl<T>(name);
+            if (byName is not null) return byName;
+
+            return root.GetVisualDescendants()
+                .OfType<T>()
+                .FirstOrDefault(x => x.Name == name);
         }
 
         private void OnFlyoutOpened(object? sender, EventArgs e)
@@ -423,8 +1100,10 @@ namespace Writersword.Styles.UserControls
                 ReloadFromProject();
                 LoadPalettesAndCollapse();
             }
-            // При первом открытии содержимое попапа (включая ColorView) создаётся
-            // только к этому моменту — повторяем синхронизацию по факту показа.
+            // При первом открытии содержимое попапа (включая спектр) создаётся
+            // только к этому моменту — повторяем настройку и синхронизацию по
+            // факту показа.
+            ConfigureMiniPicker();
             SyncColorViewFromHex(HexColor);
 
             // Переходы включаем после первой отрисовки открытого попапа: стартовые
@@ -465,6 +1144,11 @@ namespace Writersword.Styles.UserControls
         private void OnFlyoutClosed(object? sender, EventArgs e)
         {
             IsMenuOpen = false;
+
+            // Признак снимается здесь, а не при открытии: следующее нажатие
+            // левой кнопкой обязано снова показать заготовки.
+            _openAsMini = false;
+
             // Применённый при закрытии цвет уходит в «недавние» проекта.
             AddRecent(HexColor);
         }
@@ -591,12 +1275,15 @@ namespace Writersword.Styles.UserControls
 
         private void SyncColorViewFromHex(string hex)
         {
-            if (_colorView is null) return;
+            if (_spectrum is null) return;
             try
             {
                 _syncingColorView = true;
-                _colorView.Color = Color.Parse(
+                var c = Color.Parse(
                     Writersword.Core.Models.Project.GradientSpec.Parse(hex).SolidHex);
+                var hsv = Color.FromRgb(c.R, c.G, c.B).ToHsv();
+                _spectrum.HsvColor = hsv;
+                ApplySpectrumBars(hsv);
             }
             catch { }
             finally
@@ -605,12 +1292,29 @@ namespace Writersword.Styles.UserControls
             }
         }
 
-        private void OnColorViewColorChanged(Color color)
+        private void OnSpectrumHsvChanged(HsvColor hsv)
         {
             if (_syncingColorView) return;
+
+            var color = hsv.ToRgb();
+
             _syncingColorView = true;
-            HexColor = $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+            HexColor = FormatHex(Color.FromArgb(_miniAlpha, color.R, color.G, color.B));
             _syncingColorView = false;
+
+            RefreshMiniColorRows(Color.FromRgb(color.R, color.G, color.B));
+            SetMiniSlider("MiniSlA", _miniAlpha,
+                Grad(Color.FromArgb(0, color.R, color.G, color.B), Color.FromArgb(255, color.R, color.G, color.B)));
+
+            // Ползунок V ставится по значению самого спектра, а не по пересчёту
+            // из RGB: на чёрном пересчёт отдаёт тон и насыщенность нулями, и
+            // трек ползунка становился серым вместо цветного.
+            _syncingMini = true;
+            try
+            {
+                ApplySpectrumBars(hsv);
+            }
+            finally { _syncingMini = false; }
         }
     }
 
