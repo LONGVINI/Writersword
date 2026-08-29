@@ -1,8 +1,9 @@
-<Solution>
+﻿<Solution>
   <Project Path="Tests/Tests.csproj" Id="aecf4b80-e42c-4829-a3b5-8dbe02208e62" />
   <Project Path="Writersword.csproj" />
   <Project Path="Src/Writersword.Core.csproj" />
   <Project Path="Writersword.UI.Shared.csproj" />
+  <Project Path="Android/Writersword.Android.csproj" />
   <Project Path="Src/Modules/Characters/Writersword.Characters.csproj" />
   <Project Path="Src/Modules/TextEditor/Writersword.TextEditor.csproj" />
   <Project Path="Src/Modules/Notes/Writersword.Notes.csproj" />

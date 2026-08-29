@@ -1,0 +1,15 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Writersword.Mobile.App"
+             RequestedThemeVariant="Light">
+	<!--
+	     Собственный Application, а не общий с десктопом.
+
+	     Десктопный App.axaml тянет темы Dock и стили из сборки Writersword,
+	     которой здесь нет. Когда стили переедут в общую сборку, сюда добавятся
+	     те же ResourceInclude, и оформление станет единым.
+	-->
+	<Application.Styles>
+		<FluentTheme />
+	</Application.Styles>
+</Application>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<!--
+	     Тема обязана происходить от Theme.AppCompat: активность Avalonia
+	     наследуется от AppCompatActivity, а та при создании разметки требует
+	     атрибутов из библиотеки совместимости и падает на системной теме.
+
+	     DayNight — чтобы системные элементы (строка состояния, фон окна до
+	     первой отрисовки) следовали настройке телефона, а не светили белым
+	     в тёмной теме.
+
+	     ActionBar выключен: Avalonia рисует весь интерфейс сама, и штатный
+	     заголовок сверху был бы вторым поверх нарисованного.
+	-->
+	<style name="WriterswordTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+		<item name="windowActionBar">false</item>
+		<item name="windowNoTitle">true</item>
+	</style>
+</resources>

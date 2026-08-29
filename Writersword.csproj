@@ -157,6 +157,13 @@
        ИСКЛЮЧЕНИЯ — ВЫНЕСЕННЫЕ В ОТДЕЛЬНЫЕ ПРОЕКТЫ
        ======================================== -->
 	<ItemGroup>
+		<!-- Мобильная голова собирается своим проектом Android\Writersword.Android.csproj.
+		     Без этих строк её файлы попадут в десктопную сборку через неявный glob
+		     и сломают её: там типы Android SDK, которых под net10.0 нет. -->
+		<Compile Remove="Android\**\*.cs" />
+		<AvaloniaXaml Remove="Android\**\*.axaml" />
+		<None Remove="Android\**" />
+
 		<!-- Core, Shared, Common — в Writersword.Core.csproj -->
 		<Compile Remove="Src\obj\**\*.cs" />
 		<Compile Remove="Src\Core\**\*.cs" />

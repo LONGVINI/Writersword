@@ -1,0 +1,55 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Writersword.Mobile.Views.SyncCheckView">
+
+	<!--
+	     Первый экран мобильной сборки — проверка круга синхронизации.
+
+	     Он проверяет разом всё, что нельзя проверить на компьютере: собирается
+	     ли Core под Android, работает ли HttpClient с TLS на устройстве, живёт
+	     ли AES-GCM на мобильной среде выполнения, и проходит ли файл полный
+	     путь «зашифровать, отправить, забрать, расшифровать, сверить».
+	-->
+	<ScrollViewer>
+		<StackPanel Margin="16" Spacing="12">
+
+			<TextBlock Text="Проверка хранилища"
+			           FontSize="22"
+			           FontWeight="SemiBold"/>
+
+			<TextBlock Text="Адрес WebDAV" FontSize="13" Opacity="0.7"/>
+			<TextBox x:Name="ServerBox"
+			         PlaceholderText="https://cloud.example.org/remote.php/dav/files/user"/>
+
+			<TextBlock Text="Логин" FontSize="13" Opacity="0.7"/>
+			<TextBox x:Name="LoginBox"/>
+
+			<TextBlock Text="Пароль приложения" FontSize="13" Opacity="0.7"/>
+			<TextBox x:Name="PasswordBox" PasswordChar="*"/>
+
+			<TextBlock Text="Папка" FontSize="13" Opacity="0.7"/>
+			<TextBox x:Name="FolderBox" Text="writersword"/>
+
+			<TextBlock Text="Мастер-пароль шифрования" FontSize="13" Opacity="0.7"/>
+			<TextBox x:Name="MasterBox" PasswordChar="*"/>
+
+			<Button x:Name="RunButton"
+			        Content="Проверить"
+			        HorizontalAlignment="Stretch"
+			        HorizontalContentAlignment="Center"
+			        Margin="0,8,0,0"/>
+
+			<Border Background="#11000000"
+			        CornerRadius="6"
+			        Padding="12"
+			        MinHeight="160">
+				<SelectableTextBlock x:Name="LogBlock"
+				                     FontFamily="monospace"
+				                     FontSize="12"
+				                     TextWrapping="Wrap"
+				                     Text="Заполните поля и нажмите «Проверить»."/>
+			</Border>
+
+		</StackPanel>
+	</ScrollViewer>
+</UserControl>

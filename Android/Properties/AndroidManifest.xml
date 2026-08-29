@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+	<!--
+	     Из разрешений нужен только интернет.
+
+	     Доступ к файловому хранилищу телефона не запрашивается сознательно:
+	     проекты живут в песочнице приложения, куда писать можно без всяких
+	     разрешений. Это же снимает будущие вопросы при публикации — разрешение
+	     на чтение чужих файлов магазин требует обосновывать, а здесь его нет.
+	-->
+	<uses-permission android:name="android.permission.INTERNET" />
+
+	<application
+		android:label="Writersword"
+		android:supportsRtl="true"
+		android:allowBackup="false" />
+</manifest>

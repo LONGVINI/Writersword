@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
@@ -20,6 +20,7 @@ using Writersword.Infrastructure.Services.UI;
 using Writersword.Modules.Common;
 using Writersword.Core.Interfaces.Services.Input;
 using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Services.Sync;
 using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Infrastructure.Dock;
 using Writersword.Infrastructure.Services;
@@ -181,6 +182,15 @@ namespace Writersword
             services.AddSingleton<WorkModeFactory>();
             services.AddSingleton<WorkModeRegistry>();
             services.AddSingleton<ILocalSettingsStorageService, LocalSettingsStorageService>();
+
+            // Синхронизация проекта с удалённым хранилищем.
+            // Регистрируется фабрика, а не сам сервис: адрес и учётные данные
+            // пользователь меняет во время работы, а внутри живёт HttpClient,
+            // настроенный один раз при создании. Фабрика владеет текущим
+            // экземпляром и пересоздаёт его при смене настроек.
+            services.AddSingleton<ProjectSyncFactory>(sp => new ProjectSyncFactory(
+                sp.GetRequiredService<ISettingsService>(),
+                Serilog.Log.Logger));
 
             services.AddSingleton<ProjectTypeRegistry>(sp =>
             {
