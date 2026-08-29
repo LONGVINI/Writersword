@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Interfaces.Services.UI;
@@ -21,6 +22,8 @@ using Writersword.Modules.Common;
 using Writersword.Core.Interfaces.Services.Input;
 using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Services.Sync;
+using Writersword.Core.Models.Sync;
+using Avalonia.Threading;
 using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Infrastructure.Dock;
 using Writersword.Infrastructure.Services;
@@ -81,7 +84,7 @@ namespace Writersword
         private static void StartUiStallWatchdog()
         {
             var log = Log.ForContext("SourceContext", "UiStall");
-            log.Warning("сторож UI-потока запущен");
+            log.Warning("UI thread watchdog started");
 
             _uiStallWatchdog = new System.Threading.Timer(_ =>
             {
@@ -91,7 +94,7 @@ namespace Writersword
                 {
                     long ms = sw.ElapsedMilliseconds;
                     if (ms >= 150)
-                        log.Warning("UI-поток был занят {Ms} мс", ms);
+                        log.Warning("UI thread was blocked for {Ms} ms", ms);
                 }, Avalonia.Threading.DispatcherPriority.Background);
             }, null, dueTime: 1000, period: 100);
         }
@@ -191,6 +194,26 @@ namespace Writersword
             services.AddSingleton<ProjectSyncFactory>(sp => new ProjectSyncFactory(
                 sp.GetRequiredService<ISettingsService>(),
                 Serilog.Log.Logger));
+
+            // Мастер-пароль синхронизации в хранилище учётных данных системы.
+            // Без него автоматическая отправка невозможна: каждая попытка
+            // упиралась бы в диалог ввода пароля.
+            services.AddSingleton<ISecretStore, WindowsCredentialStore>();
+
+            // Автоматическая отправка изменённых проектов. Список открытых
+            // проектов берётся у коллекции вкладок через делегат — так
+            // координатор остаётся в Core и пригоден для мобильной сборки,
+            // где никаких вкладок нет.
+            services.AddSingleton<SyncCoordinator>(sp => new SyncCoordinator(
+                sp.GetRequiredService<ProjectSyncFactory>(),
+                sp.GetRequiredService<ISecretStore>(),
+                () => sp.GetRequiredService<ITabCollection>().Tabs?
+                          .Select(tab => tab.FilePath)
+                          .Where(path => !string.IsNullOrEmpty(path))
+                          .Select(path => path!)
+                          .ToList() ?? new List<string>(),
+                Serilog.Log.Logger,
+                sp.GetRequiredService<IBackupService>()));
 
             services.AddSingleton<ProjectTypeRegistry>(sp =>
             {
@@ -448,6 +471,27 @@ namespace Writersword
                         Log.ForContext<App>().Error(ex, "Cache cleanup on shutdown failed");
                     }
 
+                    // Последняя отправка перед выходом: автор мог дописать абзац
+                    // и сразу закрыть программу, не дожидаясь очередного прохода
+                    // координатора. Ожидание ограничено — зависшая сеть не имеет
+                    // права держать закрытие программы.
+                    try
+                    {
+                        var coordinator = Services.GetService<SyncCoordinator>();
+                        if (coordinator is not null)
+                        {
+                            coordinator.Stop();
+
+                            using var flushTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                            Task.Run(() => coordinator.FlushAllAsync(flushTimeout.Token))
+                                .GetAwaiter().GetResult();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.ForContext<App>().Warning(ex, "Final sync flush on shutdown failed");
+                    }
+
                     // Serilog закрываем здесь а не только в Program.finally —
                     // ShutdownRequested гарантированно вызывается до выхода из main loop.
                     Serilog.Log.CloseAndFlush();
@@ -455,6 +499,47 @@ namespace Writersword
 
                 mainWindow.Opened += async (s, e) =>
                 {
+                    // Координатор поднимается здесь, а не при сборке контейнера:
+                    // до открытия окна вкладки ещё не восстановлены, и первый
+                    // проход прошёл бы по пустому списку.
+                    try
+                    {
+                        var coordinator = Services.GetRequiredService<SyncCoordinator>();
+                        var notifications = Services.GetRequiredService<INotificationService>();
+
+                        coordinator.ProjectStateChanged += (_, state) =>
+                        {
+                            // Событие приходит из фонового цикла, а уведомления
+                            // трогают визуальное дерево.
+                            Dispatcher.UIThread.Post(() =>
+                            {
+                                var name = System.IO.Path.GetFileNameWithoutExtension(state.LocalPath);
+
+                                switch (state.State)
+                                {
+                                    case SyncState.Diverged:
+                                        // Обе стороны содержат работу. Автоматика молчит,
+                                        // пока автор не скажет, какая версия верна, — иначе
+                                        // одна из них была бы стёрта без спроса.
+                                        notifications.ShowWarning(
+                                            $"«{name}»: в хранилище другая версия, автоотправка приостановлена");
+                                        break;
+
+                                    case SyncState.RemoteAhead:
+                                        notifications.ShowInfo(
+                                            $"«{name}»: в хранилище более новая версия — Инструменты, Забрать из хранилища");
+                                        break;
+                                }
+                            });
+                        };
+
+                        coordinator.Start();
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.ForContext<App>().Warning(ex, "Failed to start the sync coordinator");
+                    }
+
                     // Настройки производительности применяются при старте.
                     // Раньше они применялись только из сеттеров окна настроек, то
                     // есть автосохранение в файл проекта не включалось вовсе — пока

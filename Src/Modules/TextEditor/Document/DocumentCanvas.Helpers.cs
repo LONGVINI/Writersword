@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Threading;
@@ -39,7 +39,7 @@ namespace Writersword.Modules.TextEditor.Document
             if (_pendingSnapshot is not null)
             {
                 _editDepth++;
-                _logger.Debug("[UNDO] BeginEdit (вложенный, глубина {N}): {D}", _editDepth, description);
+                _logger.Debug("[UNDO] BeginEdit (nested, depth {N}): {D}", _editDepth, description);
                 return;
             }
 
@@ -134,7 +134,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
             else
             {
-                _logger.Debug("[UNDO] CommitTableEdit: '{D}' ничего не изменила", _pendingTableEdit.Description);
+                _logger.Debug("[UNDO] CommitTableEdit: '{D}' changed nothing", _pendingTableEdit.Description);
             }
 
             _tableEditDepth = 0;

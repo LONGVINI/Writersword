@@ -1,4 +1,4 @@
-// Обходные пути под Dock 12.0. Снято: пакеты подняты до 12.1.0.4,
+﻿// Обходные пути под Dock 12.0. Снято: пакеты подняты до 12.1.0.4,
 // CacheDocumentTabContent стоит в App.axaml, пересоздание вью после закрытия
 // модуля убрано вместе с флагом RecreateViewsAfterClose, ручная уборка пустых
 // контейнеров убрана вместе с CleanupEmptyContainers — с 12.1 это делает сам
@@ -268,7 +268,7 @@ namespace Writersword.Infrastructure.Dock
                         string title = (item as IDockable)?.Title ?? item?.GetType().Name ?? "?";
                         string id = (item as IDockable)?.Id ?? string.Empty;
 
-                        _logger.LogWarning("РАСКЛАДКА: в «{What}» добавлено {Title} (id={Id}) ← {Caller}",
+                        _logger.LogWarning("LAYOUT: added {Title} (id={Id}) to {What}, called from {Caller}",
                             what, title, id, ShortStack());
                     }
 
@@ -321,7 +321,7 @@ namespace Writersword.Infrastructure.Dock
                 var root = _currentRootDock;
                 if (root is null)
                 {
-                    _logger.LogWarning("Раскладка [{When}]: корня нет", when);
+                    _logger.LogWarning("Layout [{When}]: no root", when);
                     return;
                 }
 
@@ -359,7 +359,7 @@ namespace Writersword.Infrastructure.Dock
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Не удалось снять раскладку [{When}]", when);
+                _logger.LogError(ex, "Failed to capture layout [{When}]", when);
             }
         }
 

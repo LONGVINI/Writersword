@@ -592,7 +592,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             // которым ничего нет.
             int danglingObjects = docVm.PurgeDanglingObjectChars();
             if (danglingObjects > 0)
-                _logger.Information("Убрано пустых меток объектов в тексте: {N}", danglingObjects);
+                _logger.Information("Removed empty object markers from the text: {N}", danglingObjects);
 
             // Зум может меняться не только ползунком, но и из канваса (Ctrl + колесо). Подписываемся
             // на DocVm.Zoom и подтягиваем ползунок и линейку. Петли нет: если значение уже совпадает,
@@ -705,7 +705,7 @@ namespace Writersword.Modules.TextEditor.ViewModels
             int removed = Services.OffPageImageCleanup.Purge(DocumentViewModel.Document);
             if (removed > 0)
             {
-                _logger.Information("Удалено картинок вне страниц при закрытии: {N}", removed);
+                _logger.Information("Removed off-page images on close: {N}", removed);
                 DocumentViewModel.RaiseStructureChanged();
             }
             return removed;

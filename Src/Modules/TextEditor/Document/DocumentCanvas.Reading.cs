@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Input;
 using Avalonia.Threading;
 using SkiaSharp;
@@ -213,7 +213,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
             catch (Exception ex)
             {
-                _logger.Warning(ex, "Картинку фона прочитать не удалось: {Path}", path);
+                _logger.Warning(ex, "Failed to read the background image: {Path}", path);
                 _readingBackdropImage = null;
                 _readingBackdropImagePath = null;
             }
@@ -446,7 +446,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
             catch (Exception ex)
             {
-                _logger.Warning(ex, "Картинку бумаги прочитать не удалось: {Path}", path);
+                _logger.Warning(ex, "Failed to read the paper image: {Path}", path);
                 _readingPaperImage = null;
                 _readingPaperImagePath = null;
             }

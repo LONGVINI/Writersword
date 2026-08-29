@@ -1,4 +1,4 @@
-using SkiaSharp;
+﻿using SkiaSharp;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -106,7 +106,7 @@ namespace Writersword.Modules.TextEditor.Document
 
             InvalidateFull();
 
-            _logger.Debug("[FONT] пересчёт: RebuildLayouts={R} мс, SnapCaret={S} мс",
+            _logger.Debug("[FONT] recalc: RebuildLayouts={R} ms, SnapCaret={S} ms",
                 rebuild, snap);
         }
 
@@ -134,7 +134,7 @@ namespace Writersword.Modules.TextEditor.Document
 
         private void PreviewFontFamilySession(string font)
         {
-            _logger.Debug("[FONT] Preview вход: font={F} active={A}", font, _fontPreviewActive);
+            _logger.Debug("[FONT] preview enter: font={F} active={A}", font, _fontPreviewActive);
             var swEntry = System.Diagnostics.Stopwatch.StartNew();
             if (!_fontPreviewActive) return;
             if (string.IsNullOrEmpty(font)) return;
@@ -187,7 +187,7 @@ namespace Writersword.Modules.TextEditor.Document
                 if (!queued.Add(vm)) continue;
                 jobs.Add((vm, BuildPreviewBlock(vm.Model, r.start, r.end, font)));
             }
-            _logger.Debug("[FONT] заданий={N}, сборка на UI={Ms} мс, вход занял {Total} мс",
+            _logger.Debug("[FONT] jobs={N}, UI assembly={Ms} ms, enter took {Total} ms",
                 jobs.Count, swBuild.ElapsedMilliseconds, swEntry.ElapsedMilliseconds);
 
             if (jobs.Count == 0) return;
@@ -204,7 +204,7 @@ namespace Writersword.Modules.TextEditor.Document
             {
                 if (!task.IsCompletedSuccessfully)
                 {
-                    _logger.Debug("[FONT] фоновая раскладка не удалась: {E}",
+                    _logger.Debug("[FONT] background layout failed: {E}",
                         task.Exception?.GetBaseException().Message);
                     return;
                 }
@@ -215,12 +215,12 @@ namespace Writersword.Modules.TextEditor.Document
                 {
                     if (gen != _previewGeneration || !_fontPreviewActive)
                     {
-                        _logger.Debug("[FONT] результат поколения {Gen} отброшен (текущее {Cur})",
+                        _logger.Debug("[FONT] discarded result of generation {Gen} (current is {Cur})",
                             gen, _previewGeneration);
                         return;
                     }
 
-                    _logger.Debug("[FONT] фон занял {Ms} мс, результатов={N}",
+                    _logger.Debug("[FONT] background took {Ms} ms, results={N}",
                         bgMs, task.Result.Count);
 
                     foreach (var (vm, layout) in task.Result)

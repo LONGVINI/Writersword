@@ -1,4 +1,4 @@
-using Serilog;
+﻿using Serilog;
 using SkiaSharp;
 using System;
 using System.Collections.Generic;
@@ -124,7 +124,7 @@ namespace Writersword.Modules.TextEditor.Services
                         if (typeface is null)
                         {
                             data.Dispose();
-                            _logger.Warning("Шрифт в проекте прочитать не удалось: {Path}", path);
+                            _logger.Warning("Failed to read a project font: {Path}", path);
                             continue;
                         }
 
@@ -146,11 +146,11 @@ namespace Writersword.Modules.TextEditor.Services
                     }
 
                     if (_byFamily.Count > 0)
-                        _logger.Debug("Шрифтов в проекте: {Count} семейств", _byFamily.Count);
+                        _logger.Debug("Project fonts: {Count} families", _byFamily.Count);
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error(ex, "Не удалось прочитать шрифты проекта");
+                    _logger.Error(ex, "Failed to read the project fonts");
                 }
             }
         }
@@ -240,7 +240,7 @@ namespace Writersword.Modules.TextEditor.Services
             }
             catch (Exception ex)
             {
-                _logger.Warning(ex, "Список системных шрифтов прочитать не удалось");
+                _logger.Warning(ex, "Failed to read the system font list");
             }
 
             EnsureLoaded();
@@ -286,7 +286,7 @@ namespace Writersword.Modules.TextEditor.Services
             }
             catch (Exception ex)
             {
-                _logger.Warning(ex, "Список системных шрифтов прочитать не удалось");
+                _logger.Warning(ex, "Failed to read the system font list");
             }
 
             return false;
@@ -336,7 +336,7 @@ namespace Writersword.Modules.TextEditor.Services
             }
             catch (Exception ex)
             {
-                _logger.Warning(ex, "Размер системного шрифта {Family} узнать не удалось", family);
+                _logger.Warning(ex, "Failed to determine the size of system font {Family}", family);
                 return 0;
             }
             finally
@@ -375,7 +375,7 @@ namespace Writersword.Modules.TextEditor.Services
 
                     if (!string.Equals(typeface.FamilyName, family, StringComparison.OrdinalIgnoreCase))
                     {
-                        _logger.Debug("Шрифт {Family} в системе не найден — уложена была бы подмена",
+                        _logger.Debug("Font {Family} not found in the system - a substitute would have been stored",
                             family);
                         continue;
                     }
@@ -394,12 +394,12 @@ namespace Writersword.Modules.TextEditor.Services
                     context.WriteFile(path, bytes);
                     written++;
 
-                    _logger.Debug("Шрифт уложен в проект: {Family} {Style} ({Size} байт)",
+                    _logger.Debug("Font stored in the project: {Family} {Style} ({Size} bytes)",
                         family, style, bytes.Length);
                 }
                 catch (Exception ex)
                 {
-                    _logger.Warning(ex, "Не удалось уложить шрифт {Family}", family);
+                    _logger.Warning(ex, "Failed to store font {Family}", family);
                 }
                 finally
                 {
@@ -458,7 +458,7 @@ namespace Writersword.Modules.TextEditor.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.Error(ex, "Не удалось сохранить шрифт {Family} на диск", family);
+                    _logger.Error(ex, "Failed to save font {Family} to disk", family);
                     return null;
                 }
             }

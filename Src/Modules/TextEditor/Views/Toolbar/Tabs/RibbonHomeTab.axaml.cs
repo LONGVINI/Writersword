@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -245,7 +245,7 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             // Захват, взятый при выборе пункта списка, снимается здесь: отпускание
             // дошло, состояние указателя закрыто.
             Serilog.Log.ForContext("SourceContext", "FontDropdown")
-                .Debug("отпускание на поле шрифта, захват был у {Cap}",
+                .Debug("released over the font box, capture was held by {Cap}",
                     e.Pointer.Captured?.GetType().Name ?? "нет");
 
             if (ReferenceEquals(e.Pointer.Captured, _fontAutoComplete))
@@ -408,13 +408,13 @@ namespace Writersword.Modules.TextEditor.Views.Toolbar.Tabs
             {
                 // Пункт не опознан — не беда: выбор возьмёт SelectionChanged, когда
                 // список сам выделит элемент. Захват уже взят, ломаться нечему.
-                probe.Debug("нажатие в списке: пункт не опознан, источник {Src}; "
+                probe.Debug("pressed in the list: item not recognized, source {Src}; "
                     + "захват взят, выбор возьмёт SelectionChanged",
                     e.Source?.GetType().Name ?? "нет");
                 return;
             }
 
-            probe.Debug("нажатие в списке: пункт {Font}, захват у {Cap}",
+            probe.Debug("pressed in the list: item {Font}, capture held by {Cap}",
                 font, e.Pointer.Captured?.GetType().Name ?? "нет");
 
             // Нажатие по элементу = выбор. Фиксируем здесь, в tunnel, до того как bubble дойдёт

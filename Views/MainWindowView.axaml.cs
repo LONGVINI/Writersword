@@ -1005,19 +1005,28 @@ namespace Writersword.Views
 
             AddHandler(PointerPressedEvent, (_, e) =>
             {
-                log.Debug("НАЖАТИЕ над {Source}, захват у {Captured}",
+                log.Debug("PRESSED over {Source}, capture held by {Captured}",
                     Describe(e.Source), Describe(e.Pointer.Captured));
+
+                _probeLastCaptured = e.Pointer.Captured is null ? null : Describe(e.Pointer.Captured);
             }, RoutingStrategies.Tunnel, handledEventsToo: true);
 
             AddHandler(PointerReleasedEvent, (_, e) =>
             {
-                log.Debug("ОТПУСКАНИЕ над {Source}, захват у {Captured}",
+                log.Debug("RELEASED over {Source}, capture held by {Captured}",
                     Describe(e.Source), Describe(e.Pointer.Captured));
+
+                // Состояние сбрасывается здесь, а не только в PointerMoved.
+                // Иначе после отпускания в поле остаётся значение с последнего
+                // движения мыши, и таймер до следующего шевеления печатает
+                // залипание там, где захват давно освобождён.
+                _probeLastCaptured = e.Pointer.Captured is null ? null : Describe(e.Pointer.Captured);
             }, RoutingStrategies.Tunnel, handledEventsToo: true);
 
             AddHandler(PointerCaptureLostEvent, (_, e) =>
             {
-                log.Debug("ЗАХВАТ ПОТЕРЯН у {Source}", Describe(e.Source));
+                log.Debug("CAPTURE LOST by {Source}", Describe(e.Source));
+                _probeLastCaptured = null;
             }, RoutingStrategies.Tunnel, handledEventsToo: true);
 
             // Раз в секунду — держит ли кто-то захват. Если строка повторяется, а
@@ -1030,7 +1039,7 @@ namespace Writersword.Views
             {
                 var captured = _probeLastCaptured;
                 if (captured != null)
-                    log.Debug("захват всё ещё удерживает {Captured}", captured);
+                    log.Debug("capture still held by {Captured}", captured);
             };
             timer.Start();
             _probeTimer = timer;
@@ -1046,7 +1055,7 @@ namespace Writersword.Views
 
         private static string Describe(object? o)
         {
-            if (o is null) return "нет";
+            if (o is null) return "none";
             if (o is not Control c) return o.GetType().Name;
 
             // Один тип контрола ни о чём не говорит: ContentPresenter в приложении
@@ -1067,7 +1076,7 @@ namespace Writersword.Views
             // Корень отдельно: всплывающий список живёт в своём окне PopupRoot,
             // и по нему сразу видно, пришло событие из ленты или из списка.
             var root = TopLevel.GetTopLevel(c)?.GetType().Name ?? "?";
-            return string.Join(" < ", parts) + "  [корень: " + root + "]";
+            return string.Join(" < ", parts) + "  [root: " + root + "]";
         }
 
         private void OnKeyDown(object? sender, KeyEventArgs e)

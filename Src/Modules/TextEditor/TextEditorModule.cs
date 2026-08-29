@@ -2038,7 +2038,7 @@ namespace Writersword.Modules.TextEditor
             }
             catch (Exception ex)
             {
-                _logger.Warning(ex, "Общие настройки модуля сохранить не удалось");
+                _logger.Warning(ex, "Failed to save the module shared settings");
             }
         }
     }

@@ -6,12 +6,17 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
-using Serilog;
-using Writersword.Core.Models.Sync;
-using Writersword.Core.Services.Sync;
+using Writersword.Mobile.Services;
 
 namespace Writersword.Mobile.Views
 {
+    /// <summary>
+    /// Настройки подключения и проверка круга.
+    ///
+    /// Настройки хранятся в песочнице приложения и подставляются при открытии:
+    /// вводить пять полей при каждом запуске — верный способ перестать
+    /// пользоваться синхронизацией вообще.
+    /// </summary>
     public partial class SyncCheckView : UserControl
     {
         private readonly StringBuilder _log = new();
@@ -21,7 +26,64 @@ namespace Writersword.Mobile.Views
         public SyncCheckView()
         {
             InitializeComponent();
+
+            ConnectButton.Click += OnConnectClicked;
             RunButton.Click += OnRunClicked;
+
+            LoadSettings();
+        }
+
+        private void LoadSettings()
+        {
+            var stored = MobileSyncSession.Instance.LoadSettings();
+
+            ServerBox.Text = stored.ServerUrl;
+            LoginBox.Text = stored.Login;
+            PasswordBox.Text = stored.Password;
+            FolderBox.Text = string.IsNullOrWhiteSpace(stored.RemoteFolder) ? "writersword" : stored.RemoteFolder;
+            MasterBox.Text = stored.MasterPassword;
+        }
+
+        private MobileSyncSession.StoredSettings CollectSettings() => new()
+        {
+            ServerUrl = ServerBox.Text?.Trim() ?? string.Empty,
+            Login = LoginBox.Text?.Trim() ?? string.Empty,
+            Password = PasswordBox.Text ?? string.Empty,
+            RemoteFolder = string.IsNullOrWhiteSpace(FolderBox.Text) ? "writersword" : FolderBox.Text.Trim(),
+            MasterPassword = MasterBox.Text ?? string.Empty
+        };
+
+        private async void OnConnectClicked(object? sender, RoutedEventArgs e)
+        {
+            if (_running) return;
+
+            _running = true;
+            ConnectButton.IsEnabled = false;
+            _log.Clear();
+
+            try
+            {
+                var settings = CollectSettings();
+                MobileSyncSession.Instance.SaveSettings(settings);
+                Append("Settings saved.");
+
+                Append("Connecting...");
+
+                if (await MobileSyncSession.Instance.ConnectAsync(settings).ConfigureAwait(true))
+                    Append("Connected. Open the Storage tab to see the projects.");
+                else
+                    Append("Failed: server unreachable, credentials rejected or master password does not match.");
+            }
+            catch (Exception ex)
+            {
+                Append($"Failure: {ex.GetType().Name}");
+                Append(ex.Message);
+            }
+            finally
+            {
+                _running = false;
+                ConnectButton.IsEnabled = true;
+            }
         }
 
         private async void OnRunClicked(object? sender, RoutedEventArgs e)
@@ -45,108 +107,98 @@ namespace Writersword.Mobile.Views
             }
             catch (OperationCanceledException)
             {
-                Append("Прервано пользователем.");
+                Append("Cancelled.");
             }
             catch (Exception ex)
             {
-                // Экран диагностический: показывается всё, включая тип
-                // исключения, иначе по одному тексту причину не найти.
-                Append($"Сбой: {ex.GetType().Name}");
+                Append($"Failure: {ex.GetType().Name}");
                 Append(ex.Message);
             }
             finally
             {
                 _running = false;
-                RunButton.Content = "Проверить";
+                RunButton.Content = "Проверить круг";
             }
         }
 
+        /// <summary>
+        /// Полный круг: отправка, удаление локальной копии, загрузка, сверка.
+        ///
+        /// Проверяется именно круг, а не доступность сервера: WebDAV может
+        /// ответить на PROPFIND и при этом не принять PUT, а шифрование —
+        /// оказаться обратимым не полностью. Обе поломки видны только при
+        /// возврате файла обратно.
+        /// </summary>
         private async Task RunCheckAsync(CancellationToken ct)
         {
-            var settings = new SyncSettings
-            {
-                ServerUrl = ServerBox.Text?.Trim() ?? string.Empty,
-                Login = LoginBox.Text?.Trim() ?? string.Empty,
-                Password = PasswordBox.Text ?? string.Empty,
-                RemoteFolder = string.IsNullOrWhiteSpace(FolderBox.Text) ? "writersword" : FolderBox.Text.Trim(),
-                IsEnabled = true
-            };
+            var session = MobileSyncSession.Instance;
+            var settings = CollectSettings();
+            session.SaveSettings(settings);
 
-            var master = MasterBox.Text ?? string.Empty;
-
-            if (!settings.IsConfigured || master.Length == 0)
+            if (!session.IsConnected)
             {
-                Append("Заполните адрес, логин и мастер-пароль.");
-                return;
+                Append("Connecting...");
+
+                if (!await session.ConnectAsync(settings, ct).ConfigureAwait(true))
+                {
+                    Append("Failed: server unreachable or master password does not match.");
+                    return;
+                }
             }
 
-            var logger = new LoggerConfiguration().MinimumLevel.Debug().WriteTo.Console().CreateLogger();
+            Append("Connected, vault descriptor read.");
 
-            using var storage = new WebDavRemoteStorage(settings, logger);
-            var state = new SyncStateStore(logger);
-            using var sync = new ProjectSyncService(storage, state, logger);
-
-            Append("Подключение к хранилищу...");
-
-            if (!await sync.ConnectAsync(master, ct).ConfigureAwait(true))
-            {
-                Append("Не удалось: сервер недоступен или мастер-пароль не подходит.");
-                return;
-            }
-
-            Append("Подключено, описатель хранилища прочитан.");
-
-            // Проверочный проект живёт в песочнице приложения: разрешений на
-            // общее хранилище у приложения нет и не должно быть.
             var localPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "sync-check.writersword");
 
-            var payload = Encoding.UTF8.GetBytes(
-                $"Writersword sync check at {DateTimeOffset.Now:O}");
+            var payload = Encoding.UTF8.GetBytes($"Writersword sync check at {DateTimeOffset.Now:O}");
 
             await File.WriteAllBytesAsync(localPath, payload, ct).ConfigureAwait(true);
-            Append($"Создан проверочный файл, {payload.Length} байт.");
+            Append($"Check file created, {payload.Length} bytes.");
 
-            var push = await sync.PushAsync(localPath, force: true, ct).ConfigureAwait(true);
+            var push = await session.Service!.PushAsync(localPath, force: true, ct).ConfigureAwait(true);
             if (!push.Success)
             {
-                Append($"Отправка не удалась: {push.Error}");
+                Append($"Upload failed: {push.Error}");
                 return;
             }
 
-            Append($"Отправлено, версия на сервере {push.ETag}.");
+            Append($"Uploaded, remote version {push.ETag}.");
 
-            // Локальный файл убирается, чтобы загрузка была настоящей,
-            // а не сверкой файла с самим собой.
             File.Delete(localPath);
-            state.Remove(localPath);
-            Append("Локальная копия удалена.");
+            Append("Local copy removed.");
 
-            var pull = await sync.PullAsync(localPath, ct).ConfigureAwait(true);
+            var pull = await session.Service.PullAsync(localPath, ct).ConfigureAwait(true);
             if (!pull.Success)
             {
-                Append($"Загрузка не удалась: {pull.Error}");
+                Append($"Download failed: {pull.Error}");
                 return;
             }
 
             var restored = await File.ReadAllBytesAsync(localPath, ct).ConfigureAwait(true);
 
             if (restored.Length == payload.Length && restored.AsSpan().SequenceEqual(payload))
-                Append("Круг замкнулся: файл вернулся с сервера без изменений.");
+                Append("Round trip complete: the file came back unchanged.");
             else
-                Append($"Данные разошлись: было {payload.Length} байт, стало {restored.Length}.");
+                Append($"Data mismatch: sent {payload.Length} bytes, got {restored.Length}.");
 
-            Append("Готово.");
+            // Проверочный файл в списке проектов не нужен: он засоряет хранилище
+            // и попадает в указатель наравне с настоящими книгами.
+            try
+            {
+                File.Delete(localPath);
+            }
+            catch (IOException)
+            {
+            }
+
+            Append("Done.");
         }
 
         private void Append(string line)
         {
             _log.AppendLine(line);
-
-            // Проверка выполняется из обработчика на UI-потоке, но продолжения
-            // после await на Android могут прийти и с другого — Post снимает
-            // вопрос целиком.
             Dispatcher.UIThread.Post(() => LogBlock.Text = _log.ToString());
         }
     }

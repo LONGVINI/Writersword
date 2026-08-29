@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Writersword.Core.Models.Sync;
@@ -55,6 +56,34 @@ namespace Writersword.Core.Interfaces.Services.Storage
         /// возвращается в результате.
         /// </summary>
         Task<SyncResult> PullAsync(string localPath, CancellationToken ct = default);
+
+        /// <summary>
+        /// Перечислить проекты, лежащие в хранилище.
+        ///
+        /// Отдельный указатель нужен потому, что имена файлов на сервере
+        /// выведены через HMAC и необратимы: по содержимому папки узнать,
+        /// какие там книги, нельзя — в этом и был смысл.
+        /// </summary>
+        Task<IReadOnlyList<RemoteProjectInfo>> ListProjectsAsync(CancellationToken ct = default);
+
+        /// <summary>
+        /// Забрать проект по имени из указателя в указанный локальный файл.
+        /// Используется на устройстве, где этого проекта ещё нет.
+        /// </summary>
+        Task<SyncResult> FetchProjectAsync(
+            string projectName, string localPath, CancellationToken ct = default);
+
+        /// <summary>
+        /// Отправить историю версий проекта в хранилище.
+        ///
+        /// Склад дедуплицирован и содержательно адресуем: имя записи равно хешу
+        /// её содержимого. Поэтому отправляются только недостающие записи, а
+        /// повторная отправка ничего не стоит.
+        ///
+        /// Возвращает число отправленных записей.
+        /// </summary>
+        Task<int> PushBackupStoreAsync(
+            string storePath, string projectName, CancellationToken ct = default);
 
         /// <summary>
         /// Состояние синхронизации изменилось по итогам фоновой проверки.

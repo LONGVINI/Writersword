@@ -78,6 +78,9 @@ namespace Writersword.ViewModels.Components.MenuBar
         /// человеку: у него нет ни вашей библиотеки, ни ваших общих папок.
         /// </summary>
         public ReactiveCommand<Unit, Unit> PrepareForSharingCommand { get; }
+        public ReactiveCommand<Unit, Unit> OpenSyncSettingsCommand { get; }
+        public ReactiveCommand<Unit, Unit> PushToStorageCommand { get; }
+        public ReactiveCommand<Unit, Unit> PullFromStorageCommand { get; }
 
         // ── Команды: View ──────────────────────────────────────────────────────
 
@@ -124,6 +127,9 @@ namespace Writersword.ViewModels.Components.MenuBar
             ExitCommand = ReactiveCommand.Create(Exit);
             CompactProjectCommand = ReactiveCommand.CreateFromTask(CompactProject);
             PrepareForSharingCommand = ReactiveCommand.CreateFromTask(PrepareProjectForSharing);
+            OpenSyncSettingsCommand = ReactiveCommand.CreateFromTask(OpenSyncSettings);
+            PushToStorageCommand = ReactiveCommand.CreateFromTask(PushToStorage);
+            PullFromStorageCommand = ReactiveCommand.CreateFromTask(PullFromStorage);
             ToggleFullscreenCommand = ReactiveCommand.Create(ToggleFullscreen);
             SaveWorkspaceGlobalCommand = ReactiveCommand.CreateFromTask(SaveWorkspaceGlobal);
             ResetWorkspaceToGlobalCommand = ReactiveCommand.CreateFromTask(ResetWorkspaceToGlobal);

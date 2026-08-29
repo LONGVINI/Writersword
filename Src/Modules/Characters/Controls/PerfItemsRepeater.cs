@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -105,7 +105,7 @@ namespace Writersword.Modules.Characters.Controls
                     {
                         _windowClampLogged = true;
                         _log.Debug(
-                            "[RepeaterProbe] '{Folder}' нулевой ответ при непустой коллекции: режим удержания, высота {H:F0}",
+                            "[RepeaterProbe] '{Folder}' zero measure with a non-empty collection: hold mode, height {H:F0}",
                             FolderName, _lastStableDesired.Height);
                     }
                     _holdActive = true;
@@ -152,7 +152,7 @@ namespace Writersword.Modules.Characters.Controls
             {
                 _windowStackLogged = true;
                 _log.Debug(
-                    "[RepeaterProbe] '{Folder}' 200 перемеров за секунду, стек вызова:\n{Stack}",
+                    "[RepeaterProbe] '{Folder}' 200 measure passes in one second, call stack:\n{Stack}",
                     FolderName, Environment.StackTrace);
             }
 

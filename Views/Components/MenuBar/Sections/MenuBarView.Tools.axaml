@@ -29,4 +29,27 @@
               Command="{Binding CompactProjectCommand}"
               IsEnabled="{Binding HasActiveTab}"/>
 
+	<Separator/>
+
+	<!-- Подключение к удалённому хранилищу: адрес, учётные данные и
+	     мастер-пароль шифрования. Открытый проект не нужен — настройки
+	     общие для всей программы. -->
+	<MenuItem x:Name="HotKey_Tools_Sync"
+              Header="Синхронизация…"
+              Command="{Binding OpenSyncSettingsCommand}"/>
+
+	<!-- Ручная отправка. Обычно не нужна — координатор отправляет сам, —
+	     но пригодится, когда автоматика приостановлена из-за расхождения. -->
+	<MenuItem x:Name="HotKey_Tools_SyncPush"
+              Header="Отправить в хранилище"
+              Command="{Binding PushToStorageCommand}"
+              IsEnabled="{Binding HasActiveTab}"/>
+
+	<!-- Забрать серверную версию. Локальная перед заменой уходит в копию
+	     рядом с проектом — потерять работу этим действием нельзя. -->
+	<MenuItem x:Name="HotKey_Tools_SyncPull"
+              Header="Забрать из хранилища"
+              Command="{Binding PullFromStorageCommand}"
+              IsEnabled="{Binding HasActiveTab}"/>
+
 </MenuItem>

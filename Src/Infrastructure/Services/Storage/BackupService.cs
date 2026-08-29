@@ -1115,12 +1115,16 @@ namespace Writersword.Infrastructure.Services.Storage
         }
 
         /// <summary>
-        /// Идентификатор по времени создания. При совпадении до секунды
-        /// добавляется порядковый суффикс.
+        /// Идентификатор по времени создания и версии программы. При совпадении
+        /// до секунды добавляется порядковый суффикс.
+        ///
+        /// Версия входит в имя затем, что формат проекта со временем меняется:
+        /// по одной дате через год не понять, какой версией снята точка.
         /// </summary>
         private static string BuildSnapshotId(string storePath, DateTimeOffset createdAt)
         {
-            var baseId = createdAt.ToString("yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture);
+            var baseId = createdAt.ToString("yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture)
+                         + "_" + AppConstants.VersionTag;
             var dir = Path.Combine(storePath, SnapshotsDir);
             var candidate = baseId;
             int suffix = 1;

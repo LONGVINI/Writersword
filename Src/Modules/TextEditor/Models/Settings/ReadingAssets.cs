@@ -1,4 +1,4 @@
-using Serilog;
+﻿using Serilog;
 using System;
 using System.Globalization;
 using System.IO;
@@ -113,7 +113,7 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             {
                 // Молча возвращать null нельзя: на экране будет ровный цвет вместо
                 // бумаги, и почему — не скажет ничего и никто.
-                _logger.Warning(ex, "Картинку вида прочитать не удалось: {Ref}", reference);
+                _logger.Warning(ex, "Failed to read the reading theme image: {Ref}", reference);
                 return null;
             }
         }
@@ -135,7 +135,7 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             }
             catch (Exception ex)
             {
-                _logger.Warning(ex, "Проверить картинку вида не удалось: {Ref}", reference);
+                _logger.Warning(ex, "Failed to verify the reading theme image: {Ref}", reference);
                 return false;
             }
         }
@@ -168,7 +168,7 @@ namespace Writersword.Modules.TextEditor.Models.Settings
                 {
                     context.WriteFile(path, bytes);
                     context.FlushStorage();
-                    _logger.Debug("Картинка вида уложена в проект: {Name} ({Size} байт)",
+                    _logger.Debug("Reading theme image stored in the project: {Name} ({Size} bytes)",
                         name, bytes.Length);
                 }
                 return ProjectPrefix + name;
@@ -178,7 +178,7 @@ namespace Writersword.Modules.TextEditor.Models.Settings
                 // Адрес остаётся прежним: он хотя бы работает здесь и сейчас.
                 // О том, что картинка так и лежит снаружи, скажет проверка
                 // проекта перед передачей.
-                _logger.Error(ex, "Не удалось уложить картинку вида в проект: {Ref}", reference);
+                _logger.Error(ex, "Failed to store the reading theme image in the project: {Ref}", reference);
                 return reference;
             }
         }
@@ -205,7 +205,7 @@ namespace Writersword.Modules.TextEditor.Models.Settings
                 if (!File.Exists(path))
                 {
                     File.WriteAllBytes(path, bytes);
-                    _logger.Debug("Картинка вида уложена в данные программы: {Name} ({Size} байт)",
+                    _logger.Debug("Reading theme image stored in application data: {Name} ({Size} bytes)",
                         name, bytes.Length);
                 }
 
@@ -213,7 +213,7 @@ namespace Writersword.Modules.TextEditor.Models.Settings
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "Не удалось уложить картинку вида в данные программы: {Ref}",
+                _logger.Error(ex, "Failed to store the reading theme image in application data: {Ref}",
                     reference);
                 return reference;
             }

@@ -67,6 +67,18 @@ namespace Writersword.Core.Models.Sync
         public static SyncStatus Simple(SyncState state) => new() { State = state };
     }
 
+    /// <summary>Проект, лежащий в удалённом хранилище.</summary>
+    public sealed class RemoteProjectInfo
+    {
+        public required string Name { get; init; }
+
+        /// <summary>Когда проект был отправлен в хранилище в последний раз.</summary>
+        public DateTimeOffset UpdatedAt { get; init; }
+
+        /// <summary>Размер контейнера на сервере. Ноль, если сведений нет.</summary>
+        public long Length { get; init; }
+    }
+
     /// <summary>Что сделать при расхождении версий.</summary>
     public enum SyncResolution
     {

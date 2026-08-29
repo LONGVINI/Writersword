@@ -1,0 +1,146 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Writersword.ViewModels.Sync"
+        x:Class="Writersword.Views.Sync.SyncSettingsView"
+        x:DataType="vm:SyncSettingsViewModel"
+        Title="Синхронизация"
+        Width="620"
+        Height="640"
+        MinWidth="520"
+        MinHeight="560"
+        WindowStartupLocation="CenterOwner"
+        CanResize="True"
+        WindowDecorations="None"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent">
+
+	<Grid>
+
+		<!-- Подложка -->
+		<Border Background="{DynamicResource BgBaseBrush}"
+		        CornerRadius="14"
+		        Margin="2"/>
+
+		<Border Background="{DynamicResource BgAppBrush}"
+		        CornerRadius="12"
+		        Margin="8">
+
+			<Grid RowDefinitions="48,*,Auto">
+
+				<!-- Заголовок -->
+				<Grid Grid.Row="0" Margin="20,0">
+					<TextBlock Text="Синхронизация"
+					           FontSize="16"
+					           FontWeight="SemiBold"
+					           Foreground="{DynamicResource TextPrimaryBrush}"
+					           VerticalAlignment="Center"/>
+					<Button HorizontalAlignment="Right"
+					        VerticalAlignment="Center"
+					        Width="28" Height="28"
+					        Padding="0,4"
+					        Classes="ghost"
+					        Foreground="{DynamicResource TextMutedBrush}"
+					        FontSize="14"
+					        Cursor="Hand"
+					        Click="Close_Click">
+						<TextBlock Text="&#x2715;"
+						           HorizontalAlignment="Center"
+						           VerticalAlignment="Center"/>
+					</Button>
+				</Grid>
+
+				<Border Grid.Row="0"
+				        Height="1"
+				        Background="{DynamicResource BorderSubtleBrush}"
+				        VerticalAlignment="Bottom"/>
+
+				<!-- Форма -->
+				<ScrollViewer Grid.Row="1"
+				              HorizontalScrollBarVisibility="Disabled"
+				              VerticalScrollBarVisibility="Auto">
+					<StackPanel Margin="24,18" Spacing="6">
+
+						<CheckBox Content="Включить синхронизацию"
+						          IsChecked="{Binding IsEnabled}"
+						          Foreground="{DynamicResource TextPrimaryBrush}"
+						          Margin="0,0,0,10"/>
+
+						<TextBlock Text="Адрес WebDAV"
+						           FontSize="12"
+						           Foreground="{DynamicResource TextSecondaryBrush}"/>
+						<TextBox Text="{Binding ServerUrl}"
+						         PlaceholderText="https://app.koofr.net/dav/Koofr"/>
+
+						<TextBlock Text="Логин"
+						           FontSize="12"
+						           Margin="0,8,0,0"
+						           Foreground="{DynamicResource TextSecondaryBrush}"/>
+						<TextBox Text="{Binding Login}"/>
+
+						<TextBlock Text="Пароль приложения"
+						           FontSize="12"
+						           Margin="0,8,0,0"
+						           Foreground="{DynamicResource TextSecondaryBrush}"/>
+						<TextBox Text="{Binding Password}" PasswordChar="*"/>
+
+						<TextBlock Text="Папка в хранилище"
+						           FontSize="12"
+						           Margin="0,8,0,0"
+						           Foreground="{DynamicResource TextSecondaryBrush}"/>
+						<TextBox Text="{Binding RemoteFolder}"/>
+
+						<TextBlock Text="Мастер-пароль шифрования"
+						           FontSize="12"
+						           Margin="0,8,0,0"
+						           Foreground="{DynamicResource TextSecondaryBrush}"/>
+						<TextBox Text="{Binding MasterPassword}" PasswordChar="*"/>
+
+						<!-- Предупреждение стоит рядом с полем, а не в справке:
+						     потеря мастер-пароля необратима, и узнать об этом
+						     нужно до того, как в хранилище появится книга. -->
+						<TextBlock Text="Из мастер-пароля выводятся ключи шифрования. Он не хранится ни на сервере, ни в настройках — восстановить его неоткуда, а без него содержимое хранилища не прочитать."
+						           FontSize="11"
+						           TextWrapping="Wrap"
+						           Margin="0,4,0,0"
+						           Foreground="{DynamicResource TextMutedBrush}"/>
+
+						<Border Background="{DynamicResource BgSurfaceBrush}"
+						        CornerRadius="6"
+						        Padding="12"
+						        MinHeight="120"
+						        Margin="0,14,0,0">
+							<SelectableTextBlock Text="{Binding StatusText}"
+							                     FontFamily="Consolas,monospace"
+							                     FontSize="12"
+							                     TextWrapping="Wrap"
+							                     Foreground="{DynamicResource TextSecondaryBrush}"/>
+						</Border>
+
+					</StackPanel>
+				</ScrollViewer>
+
+				<!-- Кнопки -->
+				<Border Grid.Row="2"
+				        BorderBrush="{DynamicResource BorderSubtleBrush}"
+				        BorderThickness="0,1,0,0"
+				        Padding="24,12">
+					<StackPanel Orientation="Horizontal"
+					            HorizontalAlignment="Right"
+					            Spacing="8">
+						<Button Content="Проверить"
+						        Command="{Binding TestCommand}"
+						        Padding="16,6"/>
+						<Button Content="Сохранить"
+						        Command="{Binding SaveCommand}"
+						        Padding="16,6"/>
+						<Button Content="Закрыть"
+						        Classes="ghost"
+						        Click="Close_Click"
+						        Padding="16,6"/>
+					</StackPanel>
+				</Border>
+
+			</Grid>
+		</Border>
+	</Grid>
+</Window>

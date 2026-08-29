@@ -841,7 +841,7 @@ namespace Writersword.Modules.TextEditor.Document
             }
             catch (Exception ex)
             {
-                _logger.Warning(ex, "Снимок страницы разворота не удался: page={Page}", pageIdx);
+                _logger.Warning(ex, "Failed to capture the spread page snapshot: page={Page}", pageIdx);
             }
             finally
             {

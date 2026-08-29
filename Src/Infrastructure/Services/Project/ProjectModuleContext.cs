@@ -113,7 +113,7 @@ namespace Writersword.Core.Services
                 // единственный нужный ответ — кто его снёс. Путей сюда несколько:
                 // крестик на вкладке, смена рабочего режима, уборка модулей не из
                 // нового режима. По имени метода они не различаются.
-                _logger.LogDebug("Module removed: {moduleType}\nПуть вызова:\n{Stack}",
+                _logger.LogDebug("Module removed: {moduleType}\nCall stack:\n{Stack}",
                     moduleType, ShortStack());
             }
         }

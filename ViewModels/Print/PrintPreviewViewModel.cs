@@ -264,7 +264,7 @@ namespace Writersword.ViewModels.Print
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "Ошибка рендеринга страницы {Index}", _currentPageIndex);
+                _logger.Error(ex, "Failed to render page {Index}", _currentPageIndex);
             }
             finally
             {
@@ -317,7 +317,7 @@ namespace Writersword.ViewModels.Print
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "Ошибка при отправке на печать");
+                _logger.Error(ex, "Failed to send the document to the printer");
             }
         }
 
@@ -340,11 +340,11 @@ namespace Writersword.ViewModels.Print
 
                 await _printService.SavePdfAsync(_document, path);
 
-                _logger.Debug("PDF сохранён: {Path}", path);
+                _logger.Debug("PDF saved: {Path}", path);
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "Ошибка при сохранении PDF");
+                _logger.Error(ex, "Failed to save the PDF");
             }
         }
 

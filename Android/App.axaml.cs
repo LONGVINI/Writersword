@@ -17,7 +17,7 @@ namespace Writersword.Mobile
             // На телефоне окон нет: жизненный цикл отдаёт единственное
             // представление, которое активность показывает целиком.
             if (ApplicationLifetime is ISingleViewApplicationLifetime singleView)
-                singleView.MainView = new SyncCheckView();
+                singleView.MainView = new MainView();
 
             base.OnFrameworkInitializationCompleted();
         }

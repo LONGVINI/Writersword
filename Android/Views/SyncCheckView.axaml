@@ -2,24 +2,16 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Writersword.Mobile.Views.SyncCheckView">
 
-	<!--
-	     Первый экран мобильной сборки — проверка круга синхронизации.
-
-	     Он проверяет разом всё, что нельзя проверить на компьютере: собирается
-	     ли Core под Android, работает ли HttpClient с TLS на устройстве, живёт
-	     ли AES-GCM на мобильной среде выполнения, и проходит ли файл полный
-	     путь «зашифровать, отправить, забрать, расшифровать, сверить».
-	-->
 	<ScrollViewer>
-		<StackPanel Margin="16" Spacing="12">
+		<StackPanel Margin="16" Spacing="10">
 
-			<TextBlock Text="Проверка хранилища"
-			           FontSize="22"
+			<TextBlock Text="Подключение к хранилищу"
+			           FontSize="20"
 			           FontWeight="SemiBold"/>
 
 			<TextBlock Text="Адрес WebDAV" FontSize="13" Opacity="0.7"/>
 			<TextBox x:Name="ServerBox"
-			         PlaceholderText="https://cloud.example.org/remote.php/dav/files/user"/>
+			         PlaceholderText="https://app.koofr.net/dav/Koofr"/>
 
 			<TextBlock Text="Логин" FontSize="13" Opacity="0.7"/>
 			<TextBox x:Name="LoginBox"/>
@@ -33,11 +25,18 @@
 			<TextBlock Text="Мастер-пароль шифрования" FontSize="13" Opacity="0.7"/>
 			<TextBox x:Name="MasterBox" PasswordChar="*"/>
 
-			<Button x:Name="RunButton"
-			        Content="Проверить"
+			<Button x:Name="ConnectButton"
+			        Content="Сохранить и подключиться"
 			        HorizontalAlignment="Stretch"
 			        HorizontalContentAlignment="Center"
 			        Margin="0,8,0,0"/>
+
+			<!-- Проверка круга оставлена отдельной кнопкой: она пишет на сервер
+			     проверочный файл, и делать это при каждом подключении незачем. -->
+			<Button x:Name="RunButton"
+			        Content="Проверить круг"
+			        HorizontalAlignment="Stretch"
+			        HorizontalContentAlignment="Center"/>
 
 			<Border Background="#11000000"
 			        CornerRadius="6"
@@ -47,7 +46,7 @@
 				                     FontFamily="monospace"
 				                     FontSize="12"
 				                     TextWrapping="Wrap"
-				                     Text="Заполните поля и нажмите «Проверить»."/>
+				                     Text="Заполните поля и нажмите «Сохранить и подключиться»."/>
 			</Border>
 
 		</StackPanel>

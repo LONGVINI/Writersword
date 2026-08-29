@@ -79,13 +79,13 @@ namespace Writersword.Infrastructure.Services.UI
                     }
                     catch (Exception ex)
                     {
-                        _logger.Warning(ex, "Не удалось удалить временный PDF: {Path}", tempPath);
+                        _logger.Warning(ex, "Failed to delete the temporary PDF: {Path}", tempPath);
                     }
                 });
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, "Ошибка при подготовке печати");
+                _logger.Error(ex, "Failed to prepare the print job");
 
                 if (File.Exists(tempPath))
                 {

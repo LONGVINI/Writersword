@@ -3017,7 +3017,7 @@ namespace Writersword.Modules.TextEditor.Document
                     if (withProps != cellMap.Count)
                     {
                         _logger.Debug(
-                            "[LIST] cell r{Row}c{Col}: свойства списка у {Props} абзацев, маркеров выдано {Markers}",
+                            "[LIST] cell r{Row}c{Col}: list properties on {Props} paragraphs, {Markers} markers emitted",
                             cell.Row, cell.Column, withProps, cellMap.Count);
                     }
                     foreach (var para in cell.Paragraphs)

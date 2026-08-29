@@ -1,0 +1,17 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:Writersword.Mobile.Views"
+             x:Class="Writersword.Mobile.Views.MainView">
+
+	<TabControl TabStripPlacement="Bottom">
+
+		<TabItem Header="Хранилище">
+			<views:StorageView/>
+		</TabItem>
+
+		<TabItem Header="Подключение">
+			<views:SyncCheckView/>
+		</TabItem>
+
+	</TabControl>
+</UserControl>

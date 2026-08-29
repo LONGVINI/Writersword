@@ -11,12 +11,176 @@ using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Models.Backup;
 using Writersword.Core.Models.Project;
+using Writersword.ViewModels.Sync;
+using Writersword.Views.Sync;
+using Writersword.Core.Models.Sync;
+using Writersword.Core.Services.Sync;
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
 
 namespace Writersword.ViewModels.Components.MenuBar
 {
     public partial class MenuBarViewModel
     {
         // TODO: Statistics
+
+        /// <summary>
+        /// Отправить открытый проект в хранилище вручную.
+        ///
+        /// В обычной работе не нужна — отправкой занимается координатор. Нужна
+        /// тогда, когда он приостановился из-за расхождения версий: автор
+        /// разобрался и говорит, какая версия верна.
+        /// </summary>
+        private async Task PushToStorage()
+        {
+            var path = ActiveProjectPath();
+            if (path is null) return;
+
+            SyncResult result;
+
+            // Исключение, вылетевшее из команды ReactiveUI, ломает её конвейер
+            // и уходит в глобальный обработчик, завершая программу. Действие,
+            // которое всего лишь не смогло отправить файл, не имеет права
+            // закрывать редактор с несохранённой работой.
+            try
+            {
+                var coordinator = App.Services.GetRequiredService<SyncCoordinator>();
+                result = await coordinator.FlushAsync(path);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Push to storage failed");
+                _notificationService.ShowError($"Отправить не удалось: {ex.Message}");
+                return;
+            }
+
+            if (result.Success)
+            {
+                _notificationService.ShowSuccess("Проект отправлен в хранилище");
+                return;
+            }
+
+            // Расхождение — не ошибка сети, и говорить о нём надо иначе:
+            // на сервере лежит чужая работа, и отправка её бы стёрла.
+            if (result.State == SyncState.Diverged)
+            {
+                _notificationService.ShowWarning(
+                    "В хранилище другая версия проекта. Заберите её или отправьте свою поверх через настройки синхронизации");
+                return;
+            }
+
+            _notificationService.ShowWarning($"Отправить не удалось: {result.Error}");
+        }
+
+        /// <summary>
+        /// Забрать версию из хранилища.
+        ///
+        /// Локальная копия перед заменой сохраняется рядом с проектом с меткой
+        /// времени, так что этим действием нельзя потерять работу — только
+        /// отложить её в сторону.
+        /// </summary>
+        private async Task PullFromStorage()
+        {
+            var path = ActiveProjectPath();
+            if (path is null) return;
+
+            var sync = App.Services.GetRequiredService<ProjectSyncFactory>().Current;
+            if (sync is null)
+            {
+                _notificationService.ShowWarning("Синхронизация не настроена");
+                return;
+            }
+
+            var confirm = await _dialogService.ShowMessageAsync(
+                "Забрать из хранилища?",
+                "Проект будет заменён версией из хранилища. Текущая версия сохранится рядом "
+                + "с проектом отдельным файлом с меткой времени.",
+                MessageBoxType.Question, MessageBoxButtons.YesNo);
+
+            if (confirm != MessageBoxResult.Yes) return;
+
+            // Точка восстановления снимается до замены файла. Копия рядом,
+            // которую делает PullAsync, спасает только сам файл; история же
+            // позволяет вернуться к любому прежнему состоянию, а не к одному
+            // последнему. Замена версией с другого устройства — ровно тот
+            // случай, ради которого история и заводилась.
+            try
+            {
+                var backups = App.Services.GetRequiredService<IBackupService>();
+                await backups.CreateSnapshotAsync(path, BackupTrigger.BeforeRestore);
+            }
+            catch (Exception ex)
+            {
+                // Невозможность снять точку не должна отменять действие автора,
+                // но и молчать о ней нельзя: он рассчитывает на историю.
+                _logger.LogWarning(ex, "Failed to create a snapshot before pulling from remote storage");
+                _notificationService.ShowWarning("Точку восстановления снять не удалось");
+            }
+
+            SyncResult result;
+
+            try
+            {
+                result = await sync.PullAsync(path);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Pull from storage failed");
+                _notificationService.ShowError($"Забрать не удалось: {ex.Message}");
+                return;
+            }
+
+            if (!result.Success)
+            {
+                _notificationService.ShowWarning($"Забрать не удалось: {result.Error}");
+                return;
+            }
+
+            var message = result.BackupPath is null
+                ? "Версия из хранилища получена"
+                : $"Версия из хранилища получена, прежняя сохранена: {System.IO.Path.GetFileName(result.BackupPath)}";
+
+            _notificationService.ShowSuccess(message);
+
+            // Файл на диске подменён под открытой вкладкой, и то, что показано
+            // на экране, уже не соответствует проекту. Переоткрытие оставлено
+            // автору: закрывать документ без спроса нельзя, в нём может идти
+            // правка, а предупредить достаточно.
+            _notificationService.ShowInfo("Переоткройте проект, чтобы увидеть полученную версию");
+        }
+
+        /// <summary>Путь к файлу активного проекта или null с уведомлением.</summary>
+        private string? ActiveProjectPath()
+        {
+            var activeTab = _getActiveTab?.Invoke();
+
+            if (activeTab == null || string.IsNullOrEmpty(activeTab.FilePath))
+            {
+                _notificationService.ShowWarning("Нет открытого проекта");
+                return null;
+            }
+
+            return activeTab.FilePath;
+        }
+
+        /// <summary>
+        /// Открывает настройки синхронизации с удалённым хранилищем.
+        ///
+        /// Открытый проект не требуется: адрес, учётные данные и мастер-пароль
+        /// общие для всей программы, а не для отдельной книги.
+        /// </summary>
+        private async Task OpenSyncSettings()
+        {
+            _logger.LogDebug("OpenSyncSettings called");
+
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
+                && desktop.MainWindow != null)
+            {
+                var vm = new SyncSettingsViewModel();
+                var view = new SyncSettingsView { DataContext = vm };
+                await view.ShowDialog(desktop.MainWindow);
+            }
+        }
 
         /// <summary>
         /// Убирает из проекта файлы, на которые не осталось живых ссылок.

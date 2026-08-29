@@ -1,9 +1,12 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using Serilog;
 using Writersword.Core.Exceptions;
 using Writersword.Core.Interfaces.Services.Storage;
@@ -31,12 +34,25 @@ namespace Writersword.Core.Services.Sync
         /// </summary>
         private const string VaultKey = "index.dat";
 
+        /// <summary>
+        /// Указатель проектов. Второй файл на сервере с постоянным именем.
+        /// Внутри — зашифрованный список имён книг: без него устройство,
+        /// на котором проекта ещё нет, не смогло бы даже узнать о его
+        /// существовании, потому что имена файлов необратимы.
+        /// </summary>
+        private const string ProjectIndexKey = "projects.dat";
+
         private readonly IRemoteStorage _storage;
         private readonly SyncStateStore _state;
         private readonly ILogger _log;
 
         private ProjectCrypto? _crypto;
         private bool _disposed;
+
+        // Указатель держится в памяти между отправками: перечитывать его на
+        // каждое сохранение — лишний обход к серверу ради данных, которые
+        // меняются только при появлении новой книги.
+        private ProjectIndex? _projectIndex;
 
         public ProjectSyncService(IRemoteStorage storage, SyncStateStore state, ILogger logger)
         {
@@ -225,7 +241,7 @@ namespace Writersword.Core.Services.Sync
 
             try
             {
-                var plain = await File.ReadAllBytesAsync(localPath, ct).ConfigureAwait(false);
+                var plain = await ReadSharedAsync(localPath, ct).ConfigureAwait(false);
                 var localHash = SyncStateStore.ComputeHash(plain);
                 var container = _crypto.Encrypt(plain);
 
@@ -255,6 +271,7 @@ namespace Writersword.Core.Services.Sync
                 }
 
                 _state.Set(localPath, etag, localHash);
+                await RegisterInIndexAsync(ProjectKeyOf(localPath), ct).ConfigureAwait(false);
 
                 var result = SyncResult.Ok(SyncState.InSync, etag);
                 RaiseStatusChanged(new SyncStatus { State = SyncState.InSync, RemoteETag = etag, KnownETag = etag });
@@ -263,6 +280,11 @@ namespace Writersword.Core.Services.Sync
             catch (RemoteStorageException ex)
             {
                 _log.Warning(ex, "Push failed for {Path}", localPath);
+                return SyncResult.Fail(SyncState.Offline, ex.Message);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _log.Warning(ex, "Push blocked by file access for {Path}", localPath);
                 return SyncResult.Fail(SyncState.Offline, ex.Message);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested
@@ -317,7 +339,19 @@ namespace Writersword.Core.Services.Sync
                         backupPath = CreateBackup(localPath);
                 }
 
-                WriteAtomic(localPath, plain);
+                try
+                {
+                    WriteAtomic(localPath, plain);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Файл держит открытым сама программа: архив проекта служит
+                    // и хранилищем файлов модулей, и закрывается только при
+                    // закрытии проекта. Подменить его под собой нельзя.
+                    return SyncResult.Fail(SyncState.RemoteAhead,
+                        "The project file is open. Close the project and try again.");
+                }
+
                 _state.Set(localPath, remote.ETag, SyncStateStore.ComputeHash(plain));
 
                 _log.Information("Pulled remote version for {Path}", localPath);
@@ -342,6 +376,216 @@ namespace Writersword.Core.Services.Sync
                 _log.Debug(ex, "Pull could not reach the server for {Path}", localPath);
                 return SyncResult.Fail(SyncState.Offline, ex.Message);
             }
+        }
+
+        public async Task<int> PushBackupStoreAsync(
+            string storePath, string projectName, CancellationToken ct = default)
+        {
+            ThrowIfDisposed();
+
+            if (_crypto is null || string.IsNullOrWhiteSpace(storePath))
+                return 0;
+
+            try
+            {
+                var backups = new BackupStoreSync(_storage, _crypto, _log);
+                return await backups.PushAsync(storePath, projectName, ct).ConfigureAwait(false);
+            }
+            catch (RemoteStorageException ex)
+            {
+                _log.Warning(ex, "Backup store push failed for {Project}", projectName);
+                return 0;
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested
+                                       && ex is HttpRequestException or IOException or TaskCanceledException)
+            {
+                _log.Debug(ex, "Backup store push could not reach the server");
+                return 0;
+            }
+        }
+
+        public async Task<IReadOnlyList<RemoteProjectInfo>> ListProjectsAsync(CancellationToken ct = default)
+        {
+            ThrowIfDisposed();
+
+            if (_crypto is null)
+                return Array.Empty<RemoteProjectInfo>();
+
+            try
+            {
+                var index = await LoadIndexAsync(ct).ConfigureAwait(false);
+                var result = new List<RemoteProjectInfo>(index.Projects.Count);
+
+                foreach (var name in index.Projects.Keys)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    // Размер и дата берутся у самого контейнера, а не из
+                    // указателя: указатель мог отстать, а сведения о файле
+                    // на сервере всегда точны.
+                    var entry = await _storage
+                        .GetInfoAsync(_crypto.BuildRemoteKey(name), ct)
+                        .ConfigureAwait(false);
+
+                    result.Add(new RemoteProjectInfo
+                    {
+                        Name = name,
+                        UpdatedAt = entry?.LastModified ?? index.Projects[name],
+                        Length = entry?.Length ?? 0
+                    });
+                }
+
+                return result;
+            }
+            catch (RemoteStorageException ex)
+            {
+                _log.Warning(ex, "Failed to list remote projects");
+                return Array.Empty<RemoteProjectInfo>();
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested
+                                       && ex is HttpRequestException or IOException or TaskCanceledException)
+            {
+                _log.Debug(ex, "Could not reach the server while listing projects");
+                return Array.Empty<RemoteProjectInfo>();
+            }
+        }
+
+        public async Task<SyncResult> FetchProjectAsync(
+            string projectName, string localPath, CancellationToken ct = default)
+        {
+            ThrowIfDisposed();
+
+            if (_crypto is null)
+                return SyncResult.Fail(SyncState.Disabled, "Remote storage is not connected.");
+
+            if (string.IsNullOrWhiteSpace(projectName))
+                return SyncResult.Fail(SyncState.RemoteMissing, "Project name is empty.");
+
+            try
+            {
+                var remote = await _storage
+                    .DownloadAsync(_crypto.BuildRemoteKey(projectName), ct: ct)
+                    .ConfigureAwait(false);
+
+                if (remote is null)
+                    return SyncResult.Fail(SyncState.RemoteMissing, "Project is not present in remote storage.");
+
+                byte[] plain;
+                try
+                {
+                    plain = _crypto.Decrypt(remote.Data);
+                }
+                catch (CryptographicException ex)
+                {
+                    _log.Error(ex, "Failed to decrypt {Project}", projectName);
+                    return SyncResult.Fail(SyncState.Diverged, "Container could not be decrypted.");
+                }
+
+                WriteAtomic(localPath, plain);
+                _state.Set(localPath, remote.ETag, SyncStateStore.ComputeHash(plain));
+
+                _log.Information("Fetched {Project} into {Path}", projectName, localPath);
+                return SyncResult.Ok(SyncState.InSync, remote.ETag);
+            }
+            catch (RemoteStorageException ex)
+            {
+                return SyncResult.Fail(SyncState.Offline, ex.Message);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested
+                                       && ex is HttpRequestException or IOException or TaskCanceledException)
+            {
+                return SyncResult.Fail(SyncState.Offline, ex.Message);
+            }
+        }
+
+        /// <summary>Список книг в хранилище: имя — время последней отправки.</summary>
+        private sealed class ProjectIndex
+        {
+            public Dictionary<string, DateTimeOffset> Projects { get; set; }
+                = new(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private async Task<ProjectIndex> LoadIndexAsync(CancellationToken ct)
+        {
+            if (_projectIndex is not null)
+                return _projectIndex;
+
+            var content = await _storage.DownloadAsync(ProjectIndexKey, ct: ct).ConfigureAwait(false);
+
+            if (content is null)
+                return _projectIndex = new ProjectIndex();
+
+            try
+            {
+                var json = Encoding.UTF8.GetString(_crypto!.Decrypt(content.Data));
+                return _projectIndex = JsonConvert.DeserializeObject<ProjectIndex>(json) ?? new ProjectIndex();
+            }
+            catch (Exception ex) when (ex is CryptographicException or JsonException)
+            {
+                // Испорченный указатель не должен делать хранилище нечитаемым:
+                // сами проекты лежат отдельно и от него не зависят. Он
+                // восстановится сам при следующей отправке.
+                _log.Warning(ex, "Project index unreadable, starting a new one");
+                return _projectIndex = new ProjectIndex();
+            }
+        }
+
+        /// <summary>
+        /// Отметить проект в указателе.
+        ///
+        /// Указатель переписывается только когда книга в нём появляется впервые:
+        /// на каждое сохранение обновлять его незачем, а лишняя запись — это
+        /// лишний обход к серверу в цикле, который идёт каждую минуту.
+        /// </summary>
+        private async Task RegisterInIndexAsync(string projectName, CancellationToken ct)
+        {
+            try
+            {
+                var index = await LoadIndexAsync(ct).ConfigureAwait(false);
+
+                if (index.Projects.ContainsKey(projectName))
+                    return;
+
+                index.Projects[projectName] = DateTimeOffset.UtcNow;
+
+                var json = JsonConvert.SerializeObject(index);
+                await _storage
+                    .UploadAsync(ProjectIndexKey, _crypto!.Encrypt(Encoding.UTF8.GetBytes(json)), ct: ct)
+                    .ConfigureAwait(false);
+
+                _log.Information("Registered {Project} in the remote index", projectName);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                // Сбой указателя не отменяет отправки: книга уже на сервере,
+                // а в списке она появится при следующей попытке.
+                _log.Warning(ex, "Failed to register {Project} in the remote index", projectName);
+                _projectIndex = null;
+            }
+        }
+
+        /// <summary>
+        /// Прочитать файл, не мешая тому, кто его уже открыл.
+        ///
+        /// Программа держит архив проекта открытым всю сессию: он же и хранилище
+        /// файлов модулей, и переоткрывать его на каждую запись дорого. Обычное
+        /// File.ReadAllBytes просит доступ, несовместимый с этим, и падает с
+        /// «файл используется другим процессом» — тем самым, который его и
+        /// читает.
+        ///
+        /// FileShare.ReadWrite снимает вопрос: мы обещаем, что переживём чужую
+        /// запись. Для отправки это верно — читается то состояние, которое уже
+        /// на диске, а следующее сохранение отправится следующим заходом.
+        /// </summary>
+        private static async Task<byte[]> ReadSharedAsync(string path, CancellationToken ct)
+        {
+            await using var stream = new FileStream(
+                path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite,
+                bufferSize: 64 * 1024, useAsync: true);
+
+            var buffer = new byte[stream.Length];
+            await stream.ReadExactlyAsync(buffer, ct).ConfigureAwait(false);
+            return buffer;
         }
 
         /// <summary>
