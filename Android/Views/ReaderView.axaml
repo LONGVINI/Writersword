@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:doc="using:Writersword.Modules.TextEditor.Document"
+             xmlns:views="using:Writersword.Mobile.Views"
+             x:Class="Writersword.Mobile.Views.ReaderView">
+
+	<!-- Книга занимает экран целиком, худ лежит поверх неё в той же ячейке.
+	     Ни один орган управления не отнимает у книги места: по высоте вьюпорта
+	     считается масштаб, которым лист вписывается в экран, и панель, двигающая
+	     границу, двигала бы вместе с ней и буквы. -->
+	<Grid>
+
+		<ScrollViewer x:Name="Scroll"
+		              HorizontalScrollBarVisibility="Auto"
+		              VerticalScrollBarVisibility="Auto">
+			<doc:DocumentCanvas x:Name="PageCanvas" HorizontalAlignment="Stretch"/>
+		</ScrollViewer>
+
+		<TextBlock x:Name="EmptyBlock"
+		           Text="Книга не открыта. Скачайте её на вкладке «Хранилище», потом откройте отсюда."
+		           FontSize="14"
+		           Opacity="0.7"
+		           TextWrapping="Wrap"
+		           TextAlignment="Center"
+		           HorizontalAlignment="Center"
+		           VerticalAlignment="Center"
+		           Margin="32"/>
+
+		<views:ReaderHud x:Name="Hud" ZIndex="10"/>
+
+	</Grid>
+</UserControl>

@@ -1,15 +1,65 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Writersword.Mobile.App"
-             RequestedThemeVariant="Light">
-	<!--
-	     Собственный Application, а не общий с десктопом.
+             RequestedThemeVariant="Dark">
 
-	     Десктопный App.axaml тянет темы Dock и стили из сборки Writersword,
-	     которой здесь нет. Когда стили переедут в общую сборку, сюда добавятся
-	     те же ResourceInclude, и оформление станет единым.
+	<!--
+	     Собственный Application, а не общий с десктопом: тот тянет темы Dock и
+	     стили окон, которым на телефоне делать нечего.
+
+	     Оформление при этом общее. Цвета, кегли, отступы и стили контролов лежат
+	     в Writersword.UI.Shared — сборке, которую видят обе головы. Пока они
+	     лежали в десктопной, телефон рисовал стандартной Fluent, и приложение на
+	     нём не имело с программой ничего общего.
+
+	     Тема выставлена тёмная и жёстко: ThemeService живёт в десктопной
+	     инфраструктуре и сюда не приезжает, а выбор темы на телефоне — отдельный
+	     разговор, до которого ещё не дошли.
 	-->
+	<Application.Resources>
+		<ResourceDictionary>
+			<ResourceDictionary.MergedDictionaries>
+				<ResourceInclude Source="avares://Writersword.UI.Shared/Styles/Themes/DarkTheme.axaml"/>
+				<ResourceInclude Source="avares://Writersword.UI.Shared/Styles/Base/Typography.axaml"/>
+				<ResourceInclude Source="avares://Writersword.UI.Shared/Styles/Base/Spacing.axaml"/>
+			</ResourceDictionary.MergedDictionaries>
+		</ResourceDictionary>
+	</Application.Resources>
+
 	<Application.Styles>
 		<FluentTheme />
+
+		<!-- Стили контролов подключаются поимённо, а не через общий
+		     Styles/Controls.axaml: тот остался в десктопной голове, потому что
+		     правит ещё и поведение окна, которого на телефоне нет. -->
+		<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/Button.axaml"/>
+		<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/TextBox.axaml"/>
+		<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/NumericUpDown.axaml"/>
+		<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/ComboBox.axaml"/>
+		<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/CheckBox.axaml"/>
+		<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/ToggleSwitch.axaml"/>
+		<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/Flyout.axaml"/>
+
+		<!-- Фон приложения и цвет текста: без этого страницы вкладок остаются
+		     прозрачными и под ними видно белую подложку системы. -->
+		<Style Selector="TabControl">
+			<Setter Property="Background" Value="{DynamicResource BgAppBrush}"/>
+		</Style>
+		<Style Selector="TabItem">
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="FontSize"   Value="14"/>
+			<Setter Property="Padding"    Value="14,8"/>
+			<Setter Property="MinHeight"  Value="0"/>
+		</Style>
+		<Style Selector="TabItem:selected">
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="UserControl">
+			<Setter Property="Background" Value="{DynamicResource BgAppBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
+		<Style Selector="TextBlock">
+			<Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+		</Style>
 	</Application.Styles>
 </Application>

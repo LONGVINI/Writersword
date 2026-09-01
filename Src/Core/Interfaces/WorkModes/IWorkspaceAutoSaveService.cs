@@ -20,5 +20,13 @@ namespace Writersword.Core.Interfaces.Services
 
         /// <summary>Принудительно сохранить СЕЙЧАС</summary>
         Task SaveNowAsync();
+
+        /// <summary>
+        /// Дождаться окончания записи, начатой в фоне.
+        /// Нужно перед закрытием хранилища проекта: сохранение берёт ссылку на
+        /// хранилище заранее и продолжает писать в него после того, как вкладка
+        /// решила закрыться.
+        /// </summary>
+        Task WaitForPendingSaveAsync(TimeSpan timeout);
     }
 }

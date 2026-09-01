@@ -5,6 +5,10 @@
 
 	<TabControl TabStripPlacement="Bottom">
 
+		<TabItem Header="Книга">
+			<views:ReaderView/>
+		</TabItem>
+
 		<TabItem Header="Хранилище">
 			<views:StorageView/>
 		</TabItem>

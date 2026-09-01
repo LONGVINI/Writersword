@@ -58,12 +58,12 @@
 		<PackageReference Include="Avalonia.Svg.Skia" Version="11.3.0" />
 		<PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
 		<PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1" />
-		<PackageReference Include="Dock.Avalonia" Version="12.1.0.4" />
-		<PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="12.1.0.4" />
-		<PackageReference Include="Dock.Model" Version="12.1.0.4" />
-		<PackageReference Include="Dock.Model.Avalonia" Version="12.1.0.4" />
-		<PackageReference Include="Dock.Serializer.Newtonsoft" Version="12.1.0.4" />
-		<PackageReference Include="Dock.Settings" Version="12.1.0.4" />
+		<PackageReference Include="Dock.Avalonia" Version="12.1.0.6" />
+		<PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="12.1.0.6" />
+		<PackageReference Include="Dock.Model" Version="12.1.0.6" />
+		<PackageReference Include="Dock.Model.Avalonia" Version="12.1.0.6" />
+		<PackageReference Include="Dock.Serializer.Newtonsoft" Version="12.1.0.6" />
+		<PackageReference Include="Dock.Settings" Version="12.1.0.6" />
 		<!-- HotAvalonia подключается централизованно в Directory.Build.props.
 		     Avalonia.Markup.Xaml.Loader нужен явно: HotAvalonia несёт старую
 		     версию загрузчика, несовместимую с Avalonia 12. -->
@@ -111,17 +111,15 @@
 		<AvaloniaResource Include="Styles\DockStyles.axaml">
 			<SubType>Designer</SubType>
 		</AvaloniaResource>
-		<AvaloniaResource Include="Styles\Base\Colors.axaml" />
-		<AvaloniaResource Include="Styles\Base\Typography.axaml" />
-		<AvaloniaResource Include="Styles\Base\Spacing.axaml" />
-		<AvaloniaResource Include="Styles\Themes\DarkTheme.axaml" />
-		<AvaloniaResource Include="Styles\Themes\LightTheme.axaml" />
-		<AvaloniaResource Include="Styles\Themes\SepiaTheme.axaml" />
+		<!-- Цвета, темы и стили контролов переехали в Writersword.UI.Shared:
+		     их читает и телефонная голова, а она этой сборки не видит.
+		     Здесь остаётся только оформление дока — оно десктопное. -->
 	</ItemGroup>
 
 	<!-- Убираем явно прописанные стили из неявного glob чтобы не было дублирования -->
 	<ItemGroup>
 		<AvaloniaXaml Remove="Styles\DockStyles.axaml" />
+		<AvaloniaXaml Remove="Styles\Controls\*.axaml" />
 		<AvaloniaXaml Remove="Styles\Base\Colors.axaml" />
 		<AvaloniaXaml Remove="Styles\Base\Typography.axaml" />
 		<AvaloniaXaml Remove="Styles\Base\Spacing.axaml" />
@@ -160,6 +158,14 @@
 		<!-- Мобильная голова собирается своим проектом Android\Writersword.Android.csproj.
 		     Без этих строк её файлы попадут в десктопную сборку через неявный glob
 		     и сломают её: там типы Android SDK, которых под net10.0 нет. -->
+		<!-- Поведения, на которые ссылаются стили контролов, переехали в
+		     Writersword.UI.Shared вместе со стилями. Собранные здесь ещё раз, они
+		     дали бы два одноимённых типа в одном пространстве имён, и разметка
+		     перестала бы понимать, о котором из них речь. -->
+		<Compile Remove="Src\Infrastructure\Behaviours\FocusReleaseBehavior.cs" />
+		<Compile Remove="Src\Infrastructure\Behaviours\NoWheelBehavior.cs" />
+		<Compile Remove="Src\Infrastructure\Behaviours\SelectAllBehavior.cs" />
+
 		<Compile Remove="Android\**\*.cs" />
 		<AvaloniaXaml Remove="Android\**\*.axaml" />
 		<None Remove="Android\**" />

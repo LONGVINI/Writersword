@@ -13,12 +13,12 @@ namespace Writersword.Core.Interfaces.Services
         /// Загрузить локальную конфигурацию из workspace.json в ZIP
         /// Возвращает null если файл не найден или ошибка чтения
         /// </summary>
-        WorkspaceLocalConfig? LoadFromZip(IProjectFileStorage fileStorage);
+        WorkspaceLocalConfig? LoadFromStorage(IProjectFileStorage fileStorage);
 
         /// <summary>
         /// Сохранить локальную конфигурацию в workspace.json в ZIP
         /// </summary>
-        bool SaveToZip(IProjectFileStorage fileStorage, WorkspaceLocalConfig config);
+        bool SaveToStorage(IProjectFileStorage fileStorage, WorkspaceLocalConfig config);
 
         /// <summary>
         /// Удалить workspace.json из ZIP

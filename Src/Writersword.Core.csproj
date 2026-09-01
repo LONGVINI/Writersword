@@ -24,7 +24,8 @@
 		<PackageReference Include="Avalonia" Version="12.1.1">
 			<ExcludeAssets>build;buildTransitive</ExcludeAssets>
 		</PackageReference>
-		<PackageReference Include="Dock.Model" Version="12.1.0.4" />
+		<PackageReference Include="Dock.Model" Version="12.1.0.6" />
+		<PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="11.0.0-preview.3.26207.106" />
 		<PackageReference Include="Microsoft.Extensions.Logging" Version="11.0.0-preview.3.26207.106" />
 		<PackageReference Include="ReactiveUI.Avalonia" Version="12.0.1">

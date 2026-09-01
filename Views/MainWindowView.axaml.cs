@@ -1005,7 +1005,7 @@ namespace Writersword.Views
 
             AddHandler(PointerPressedEvent, (_, e) =>
             {
-                log.Debug("PRESSED over {Source}, capture held by {Captured}",
+                log.Verbose("PRESSED over {Source}, capture held by {Captured}",
                     Describe(e.Source), Describe(e.Pointer.Captured));
 
                 _probeLastCaptured = e.Pointer.Captured is null ? null : Describe(e.Pointer.Captured);
@@ -1013,7 +1013,7 @@ namespace Writersword.Views
 
             AddHandler(PointerReleasedEvent, (_, e) =>
             {
-                log.Debug("RELEASED over {Source}, capture held by {Captured}",
+                log.Verbose("RELEASED over {Source}, capture held by {Captured}",
                     Describe(e.Source), Describe(e.Pointer.Captured));
 
                 // Состояние сбрасывается здесь, а не только в PointerMoved.
@@ -1025,7 +1025,7 @@ namespace Writersword.Views
 
             AddHandler(PointerCaptureLostEvent, (_, e) =>
             {
-                log.Debug("CAPTURE LOST by {Source}", Describe(e.Source));
+                log.Verbose("CAPTURE LOST by {Source}", Describe(e.Source));
                 _probeLastCaptured = null;
             }, RoutingStrategies.Tunnel, handledEventsToo: true);
 
@@ -1039,7 +1039,7 @@ namespace Writersword.Views
             {
                 var captured = _probeLastCaptured;
                 if (captured != null)
-                    log.Debug("capture still held by {Captured}", captured);
+                    log.Verbose("capture still held by {Captured}", captured);
             };
             timer.Start();
             _probeTimer = timer;

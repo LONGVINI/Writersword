@@ -41,6 +41,19 @@ namespace Writersword.Core.Services.Sync
         private readonly Dictionary<string, DateTime> _lastSeenWrite = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, SyncState> _states = new(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Когда история версий этого проекта сверялась с хранилищем последний раз.
+        ///
+        /// Раньше сверка шла следом за каждой отправкой проекта, то есть раз в
+        /// две минуты. Смысла в этом ритме нет: точка восстановления возникает
+        /// не чаще раза в час, и двадцать девять заходов из тридцати не находят
+        /// ничего. А цена есть — обращение в сеть на каждое автосохранение.
+        /// </summary>
+        private readonly Dictionary<string, DateTimeOffset> _lastHistorySync = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Минимальный промежуток между сверками истории.</summary>
+        private static readonly TimeSpan HistoryInterval = TimeSpan.FromHours(1);
+
         private CancellationTokenSource? _loop;
         private bool _disposed;
 
@@ -126,6 +139,7 @@ namespace Writersword.Core.Services.Sync
             Stop();
             lock (_states) _states.Clear();
             lock (_lastSeenWrite) _lastSeenWrite.Clear();
+            lock (_lastHistorySync) _lastHistorySync.Clear();
             Start();
         }
 
@@ -184,6 +198,12 @@ namespace Writersword.Core.Services.Sync
             {
                 ct.ThrowIfCancellationRequested();
                 await SyncOneAsync(sync, path, ct).ConfigureAwait(false);
+
+                // История сверяется здесь, а не внутри отправки: восстановить её
+                // нужно и тогда, когда сам проект менять не пришлось — на новой
+                // машине он приходит с сервера один раз, а склад остаётся пустым.
+                if (DueForHistory(path))
+                    await SyncHistoryAsync(sync, path, ct).ConfigureAwait(false);
             }
         }
 
@@ -268,8 +288,6 @@ namespace Writersword.Core.Services.Sync
             {
                 _log.Debug("Auto-pushed {Path}", path);
                 Report(path, SyncState.InSync);
-
-                await PushHistoryAsync(sync, path, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -285,16 +303,38 @@ namespace Writersword.Core.Services.Sync
         }
 
         /// <summary>
-        /// Отправить историю версий следом за проектом.
+        /// Пора ли сверять историю этого проекта.
+        /// </summary>
+        private bool DueForHistory(string path)
+        {
+            var now = DateTimeOffset.UtcNow;
+
+            lock (_lastHistorySync)
+            {
+                if (_lastHistorySync.TryGetValue(path, out var previous) && now - previous < HistoryInterval)
+                    return false;
+
+                _lastHistorySync[path] = now;
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Свести историю версий с хранилищем в обе стороны.
         ///
-        /// Идёт после самого проекта, а не вместо: история ценна только вместе
-        /// с текущей версией, и если связь оборвётся между ними, лучше иметь
-        /// на сервере свежий текст без части точек, чем наоборот.
+        /// Отправка идёт первой. Она же и сносит с сервера прореженное — по
+        /// надгробиям, которые оставило прореживание, а не по отсутствию записи
+        /// на диске: отсутствие означает и удаление, и потерю, а действия в этих
+        /// случаях противоположные.
+        ///
+        /// Восстановление идёт следом и забирает то, чего здесь нет и о чём
+        /// надгробий нет тоже. Молча: случай, ради которого это сделано, —
+        /// умерший диск, и требовать в нём нажатия кнопки бессмысленно.
         ///
         /// Сбой здесь не влияет на состояние синхронизации проекта: отправленный
         /// текст остаётся отправленным, даже если история отстала.
         /// </summary>
-        private async Task PushHistoryAsync(IProjectSyncService sync, string path, CancellationToken ct)
+        private async Task SyncHistoryAsync(IProjectSyncService sync, string path, CancellationToken ct)
         {
             if (_backups is null)
                 return;
@@ -306,14 +346,25 @@ namespace Writersword.Core.Services.Sync
                     return;
 
                 var name = Path.GetFileNameWithoutExtension(path);
-                var sent = await sync.PushBackupStoreAsync(storePath, name, ct).ConfigureAwait(false);
 
+                var sent = await sync.PushBackupStoreAsync(storePath, name, ct).ConfigureAwait(false);
                 if (sent > 0)
                     _log.Debug("Pushed {Count} history entries for {Path}", sent, path);
+
+                var restored = await sync.PullBackupStoreAsync(storePath, name, ct).ConfigureAwait(false);
+                if (restored > 0)
+                    _log.Information("Restored {Count} history entries for {Path}", restored, path);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _log.Debug(ex, "History push failed for {Path}", path);
+                _log.Debug(ex, "History sync failed for {Path}", path);
+
+                // Неудачная сверка не считается состоявшейся: следующий проход
+                // попробует снова, не дожидаясь часа.
+                lock (_lastHistorySync)
+                {
+                    _lastHistorySync.Remove(path);
+                }
             }
         }
 
@@ -338,8 +389,10 @@ namespace Writersword.Core.Services.Sync
                 var result = await sync.PushAsync(path, force: false, ct).ConfigureAwait(false);
                 Report(path, result.Success ? SyncState.InSync : result.State);
 
+                // При закрытии проекта и выходе из программы история сверяется
+                // без оглядки на частоту: другого случая может уже не быть.
                 if (result.Success)
-                    await PushHistoryAsync(sync, path, ct).ConfigureAwait(false);
+                    await SyncHistoryAsync(sync, path, ct).ConfigureAwait(false);
 
                 return result;
             }

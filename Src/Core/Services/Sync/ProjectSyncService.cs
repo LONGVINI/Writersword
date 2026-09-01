@@ -404,6 +404,32 @@ namespace Writersword.Core.Services.Sync
             }
         }
 
+        public async Task<int> PullBackupStoreAsync(
+            string storePath, string projectName, CancellationToken ct = default)
+        {
+            ThrowIfDisposed();
+
+            if (_crypto is null || string.IsNullOrWhiteSpace(storePath))
+                return 0;
+
+            try
+            {
+                var backups = new BackupStoreSync(_storage, _crypto, _log);
+                return await backups.PullAsync(storePath, projectName, ct).ConfigureAwait(false);
+            }
+            catch (RemoteStorageException ex)
+            {
+                _log.Warning(ex, "Backup store restore failed for {Project}", projectName);
+                return 0;
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested
+                                       && ex is HttpRequestException or IOException or TaskCanceledException)
+            {
+                _log.Debug(ex, "Backup store restore could not reach the server");
+                return 0;
+            }
+        }
+
         public async Task<IReadOnlyList<RemoteProjectInfo>> ListProjectsAsync(CancellationToken ct = default)
         {
             ThrowIfDisposed();

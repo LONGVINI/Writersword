@@ -379,27 +379,68 @@ namespace Writersword.Modules.TextEditor.Document
             // Читаем снимок под lock, строим новый список вне lock, меняем под lock.
             List<ParaLayout> current;
             List<ImageEntry> currentImages;
-            lock (_renderLock) { current = _layouts; currentImages = _images; }
+            List<PageRect> currentPages;
+            lock (_renderLock) { current = _layouts; currentImages = _images; currentPages = _pages; }
 
             // Верх и левый край абзаца берём из текущей записи раскладки: по ним
             // считаются зоны обтекания. Без них быстрый путь строил абзац без учёта
             // плавающих картинок — при наборе текст ложился поверх картинки и выходил
             // за полосу обтекания, пока не срабатывал отложенный полный пересбор.
+            // Страница абзаца нужна там же: по ней строится геометрия вытеснения.
             float paraTopPt = 0f;
             float paraLeftPt = 0f;
+            int paraPageIdx = -1;
             bool hasEntry = false;
             for (int i = 0; i < current.Count; i++)
             {
                 if (current[i].Vm != pvm || current[i].Cell is not null) continue;
                 paraTopPt = current[i].Ypt;
                 paraLeftPt = current[i].AbsXPt;
+                paraPageIdx = current[i].PageIndex;
                 hasEntry = true;
                 break;
             }
 
+            // Страницы идут вместе с картинками: по ним габарит обтекаемого объекта
+            // обрезается краями ЕГО страницы. Без них зона жила в координатах документа
+            // и дотягивалась до следующей страницы — текст там обтекал картинку, которой
+            // на листе не видно: строки расходились двумя колонками вокруг пустого
+            // коридора, а низ страницы оставался незаполненным. Полный пересбор страницы
+            // передаёт; быстрый путь, работающий на каждое нажатие клавиши, — не
+            // передавал, поэтому расхождение набегало по ходу набора.
+            // Окно поиска зон — как в полном проходе: высота самого абзаца плюс шаг
+            // страницы. Раздавать зоны абзацу на пол-документа вперёд нельзя: строка,
+            // перешедшая через границу листа, попадала бы в зону чужой страницы.
+            float quickPageStepPt = currentPages.Count > 0
+                ? currentPages[0].HeightPt + PageGapPt
+                : GetPageHeightPt() + PageGapPt;
+            float quickLookAheadPt = GetOrBuildLayout(pvm, widthPt).TotalHeightPt + quickPageStepPt;
+
+            // Страница абзаца здесь известна точно — она записана в раскладке, — поэтому
+            // зоны берутся только со своего листа и следующего.
             var wrapZones = hasEntry && DocVm?.ViewMode == EditorViewMode.Page
-                ? ComputeWrapZones(currentImages, paraTopPt, paraLeftPt, widthPt)
+                ? ComputeWrapZones(currentImages, paraTopPt, paraLeftPt, widthPt, currentPages,
+                    pageIndex: paraPageIdx >= 0 ? paraPageIdx : null,
+                    lookAheadPt: quickLookAheadPt,
+                    maxPageIndex: paraPageIdx >= 0 ? paraPageIdx + 1 : null)
                 : null;
+
+            // Геометрия страницы абзаца: без неё строка, вытесненная под картинку,
+            // переезжала нижний край листа, хотя за ним начинается следующая страница,
+            // картинки этой страницы там уже нет и вытеснять не за чем — перенос делает
+            // пагинация.
+            Rendering.SKTextRenderer.WrapPageContext? wrapPages = null;
+            if (wrapZones is not null && paraPageIdx >= 0 && paraPageIdx < currentPages.Count)
+            {
+                var paraPage = currentPages[paraPageIdx];
+                float pageStepPt = paraPage.HeightPt + PageGapPt;
+                wrapPages = new Rendering.SKTextRenderer.WrapPageContext(
+                    ParaStartYPt: paraTopPt,
+                    PageBottomPt: paraPage.Ypt + paraPage.HeightPt - paraPage.PadBottomPt,
+                    NextPageTopPt: paraPage.Ypt + pageStepPt + paraPage.PadTopPt
+                                 + PageContinuationTopPadPt,
+                    PageStepPt: pageStepPt);
+            }
 
             // Строим layout для одного параграфа.
             // _layoutCache для этого pvm уже был удалён в ScheduleRebuild,
@@ -408,7 +449,7 @@ namespace Writersword.Modules.TextEditor.Document
             // плавающих объектов, а ключ кеша (текст, ширина) их не учитывает.
             var newLayout = wrapZones is null
                 ? GetOrBuildLayout(pvm, widthPt)
-                : BuildWrappedLayout(pvm, widthPt, wrapZones);
+                : BuildWrappedLayout(pvm, widthPt, wrapZones, wrapPages);
 
             float yShift = 0f;
             bool seenPvm = false;
@@ -1184,36 +1225,54 @@ namespace Writersword.Modules.TextEditor.Document
 
                 float pageStepPt = pageHeightPt + PageGapPt;
 
-                // Итеративная сходимость: замер прошлого прохода нужен только чтобы
-                // поймать переход абзаца на другую страницу — именно на стыке страниц
-                // промахивалось локальное предсказание.
-                //
-                // В остальном contentYPt — ТОЧНАЯ позиция абзаца в этом проходе: всё,
-                // что выше, уже разложено, включая вытеснения обтеканием. Якорь же
-                // измерен в предыдущем проходе, когда поток выше был другим, и слепое
-                // доверие ему сдвигало зоны под уже переехавший абзац: картинка
-                // оказывалась «на его вертикали», хотя стоит выше, и первая строка
-                // улетала вниз, оставляя пустой промежуток, в котором ничего нет.
-                //
-                // Поэтому якорь применяется только при расхождении масштаба страницы.
-                if (_wrapAnchorIn.TryGetValue(paraBlock, out float anchoredTopPt)
-                    && Math.Abs(anchoredTopPt - paraStartYPt) > pageStepPt * 0.5f)
+                // Итеративная сходимость: где абзац окажется на самом деле, известно
+                // только из прошлого прохода. Предсказание выше считается по раскладке
+                // БЕЗ зон и про вытеснение обтеканием ничего не знает.
+                if (_wrapAnchorIn.TryGetValue(paraBlock, out float anchoredTopPt))
                 {
+                    // Замер прошлого прохода применяется БЕЗ порогов. Это единственная
+                    // измеренная величина: предсказание считается по раскладке без зон,
+                    // и любое расхождение — хоть в один пункт — уводит границы страниц,
+                    // которые рендерер получает в WrapPageContext. Он тогда считает, что
+                    // строка ещё на своём листе, обтекает по ней картинку, а пагинация
+                    // кладёт эту строку на следующий лист вместе с готовым коридором.
+                    // Пороги здесь и оставляли ту щель, в которую пролезал дефект.
+                    //
+                    // Сходимость это гасит: проходов до четырёх, и как только замер
+                    // совпадает с поданным якорем, раскладка объявляется устоявшейся.
                     paraStartYPt = anchoredTopPt;
-                    float adv = (anchoredTopPt - (pageYPt + mt)) / pageStepPt;
-                    paraPageAdvance = adv <= 0f ? 0 : (int)MathF.Floor(adv + 0.001f);
+                    paraPageAdvance = PageAdvanceOf(anchoredTopPt, pageYPt + mt, pageStepPt);
                 }
 
                 // newPages нужен зонам, чтобы обрезать габарит картинки её собственной
                 // страницей: свисающая за нижний край картинка не должна двигать текст
                 // на следующей странице, где её не видно.
-                // Страницу абзацу здесь не задаём: он может начаться на одной странице
-                // и продолжиться на следующей, и его хвост обязан обтекать картинки ТОЙ
-                // страницы, куда он уехал. Развязку по страницам даёт обрезка зоны краями
-                // своей страницы: зона следующей страницы лежит ниже всех строк текущей,
-                // а зона предыдущей — выше всех строк следующей.
+                //
+                // Окно поиска обтекаемых объектов: собственная высота абзаца плюс шаг
+                // страницы. Больше него абзац занять не может даже когда хвост уезжает
+                // на следующий лист, а зоны, лежащие дальше, ему не принадлежат.
+                float wrapLookAheadPt = probeLayout.TotalHeightPt + pageStepPt;
+
+                // Страницы, чьи картинки этот абзац вправе обтекать: своя и следующая,
+                // на которую может уйти хвост. Своя берётся из ЗАМЕРА прошлого прохода,
+                // если он есть: предсказание считается по раскладке без зон, вытеснения
+                // не знает и у абзаца, уехавшего вниз, показывает лист выше. Именно так
+                // абзац на втором листе получал зону картинки с первого и приходил туда
+                // уже разрезанным полосой — коридор посреди текста, рядом с которым
+                // никакой картинки нет.
+                int paraFirstPage = pageIdx + (_wrapAnchorIn.TryGetValue(paraBlock, out float anchorForPage)
+                    ? PageAdvanceOf(anchorForPage, pageYPt + mt, pageStepPt)
+                    : paraPageAdvance);
+
                 var wrapZones = ComputeWrapZones(
-                    zoneSource, paraStartYPt, textXPt, textWidthPt, newPages);
+                    zoneSource, paraStartYPt, textXPt, textWidthPt, newPages,
+                    pageIndex: paraFirstPage,
+                    lookAheadPt: wrapLookAheadPt,
+                    maxPageIndex: paraFirstPage + 1);
+
+                if (wrapZones is not null)
+                    LogParagraphZones(
+                        paraBlock, pageIdx + paraPageAdvance, paraStartYPt, wrapZones, zoneSource);
 
                 // Геометрия страниц для абзаца: если он не поместится целиком,
                 // строки после разрыва должны сравниваться с зонами от своего
@@ -1546,6 +1605,8 @@ namespace Writersword.Modules.TextEditor.Document
             // копят, наружу уходит последний. Иначе рендер успевает поймать промежуточный
             // кадр — в первом проходе абзац ещё не знает про картинку и верстается во всю
             // ширину, и первая строка мигает полной шириной на каждой пересборке.
+            LogPassGeometry(newPages, newImages, newCanvasH);
+
             _passLayouts = newLayouts;
             _passPages = newPages;
             _passTables = newTables;
@@ -1667,10 +1728,96 @@ namespace Writersword.Modules.TextEditor.Document
             }
         }
 
+        // Геометрия прошлого записанного в журнал прохода: число страниц и высота холста,
+        // огрублённые до пункта. Пересборок много, а меняется геометрия редко.
+        private (int Pages, int CanvasH) _passGeometryLogState = (-1, -1);
+
+        // Сколько страниц дал проход, какой высоты вышел холст и где стоят плавающие
+        // картинки. Нужно для разбора пустоты над первым листом: по этой строке видно,
+        // держит ли лишний лист картинка и совпадает ли высота холста с числом страниц.
+        private void LogPassGeometry(List<PageRect> pages, List<ImageEntry> images, float canvasHPt)
+        {
+            var state = (pages.Count, (int)canvasHPt);
+            if (_passGeometryLogState == state) return;
+            _passGeometryLogState = state;
+
+            var floating = new List<string>();
+            foreach (var ie in images)
+            {
+                if (ie.Block.WrapMode == WrapMode.Inline || ie.InLine) continue;
+                floating.Add($"p{ie.PageIndex}@y{ie.Ypt:0}");
+            }
+
+            _logger.Debug(
+                "[WRAP] Pass geometry: pages={Pages}, canvasH={CanvasH}, "
+                + "first sheet y={FirstY}, last sheet y={LastY}, floating=[{Floating}]",
+                pages.Count, canvasHPt,
+                pages.Count > 0 ? pages[0].Ypt : 0f,
+                pages.Count > 0 ? pages[^1].Ypt : 0f,
+                string.Join(" ", floating));
+        }
+
+        // Последняя записанная в журнал выдача зон абзацу: страница абзаца, его верх и
+        // границы первой зоны, огрублённые до пункта. Абзацев много и пересборок много,
+        // поэтому повтор того же состояния в журнал не идёт.
+        private readonly Dictionary<ParagraphBlock, (int Page, int Top, int Count, int ZoneTop, int ZoneBottom)>
+            _wrapParaLogState = new();
+
+        // Кому и какие зоны выданы. Строка отвечает на главный вопрос разбора: абзац на
+        // какой странице получил полосу и от картинки с какой страницы она построена.
+        // Страница абзаца и страница картинки обязаны совпадать — расхождение и означает
+        // коридор в тексте там, где никакой картинки нет.
+        private void LogParagraphZones(
+            ParagraphBlock block, int paraPage, float paraTopPt,
+            IReadOnlyList<SKWrapZone> zones, List<ImageEntry> source)
+        {
+            if (zones.Count == 0) return;
+
+            var first = zones[0];
+            var state = (paraPage, (int)paraTopPt, zones.Count,
+                (int)(first.TopPt + paraTopPt), (int)(first.BottomPt + paraTopPt));
+
+            if (_wrapParaLogState.TryGetValue(block, out var prev) && prev == state)
+                return;
+
+            if (_wrapParaLogState.Count > 256) _wrapParaLogState.Clear();
+            _wrapParaLogState[block] = state;
+
+            // Страницы картинок, от которых зоны могли быть построены: сами зоны номера
+            // страницы не несут, поэтому в журнал идёт список источников.
+            var pages = new List<int>();
+            foreach (var ie in source)
+            {
+                if (ie.Block.WrapMode is not (WrapMode.Square or WrapMode.Tight)) continue;
+                if (!pages.Contains(ie.PageIndex)) pages.Add(ie.PageIndex);
+            }
+
+            _logger.Debug(
+                "[WRAP] Paragraph on page {ParaPage} (top {Top}) got {Count} zone(s), "
+                + "first y=[{ZoneTop}..{ZoneBottom}] x=[{Left}..{Right}]; wrap images on pages [{Pages}]",
+                paraPage, paraTopPt, zones.Count,
+                first.TopPt + paraTopPt, first.BottomPt + paraTopPt,
+                first.LeftPt, first.RightPt,
+                string.Join(",", pages));
+        }
+
         /// <summary>
-        /// Страница плавающей картинки — та, где находится её ВЕРХНИЙ край. Верх берётся
-        /// у повёрнутого габарита: по нему же строится зона обтекания, и считать страницу
-        /// по неповёрнутому краю значило бы развести две геометрии.
+        /// На сколько страниц координата документа отстоит от листа, с которого идёт
+        /// отсчёт. Листы раздела одного размера и идут с постоянным шагом, поэтому
+        /// номер считается делением, а не поиском по списку.
+        /// </summary>
+        private static int PageAdvanceOf(float yPt, float originPt, float pageStepPt)
+        {
+            if (pageStepPt <= 0f) return 0;
+
+            float advance = (yPt - originPt) / pageStepPt;
+            return advance <= 0f ? 0 : (int)MathF.Floor(advance + 0.001f);
+        }
+
+        /// <summary>
+        /// Страница плавающей картинки — та, где находится её ЦЕНТР. Центр выбран
+        /// потому, что при вращении он неподвижен: край габарита ездит на десятки
+        /// пунктов, и картинка меняла страницу прямо во время поворота.
         ///
         /// Единая точка для всей раскладки: и зоны обтекания по ходу прохода, и отрисовка
         /// обязаны видеть у картинки ОДНУ И ТУ ЖЕ страницу.
@@ -1687,8 +1834,13 @@ namespace Writersword.Modules.TextEditor.Document
             float boxH = imgWpt * absSin + imgHpt * absCos;
             float boxW = imgWpt * absCos + imgHpt * absSin;
 
-            float topPt = imgYPt + imgHpt / 2f - boxH / 2f;
+            // Точка привязки — ЦЕНТР картинки. При вращении он стоит на месте, а верх
+            // повёрнутого габарита ездит на десятки пунктов: у картинки 355×163 поворот
+            // на прямой угол поднимает верх почти на сотню. Стоило ему перескочить край
+            // листа, картинка доставалась соседней странице, клипалась по ней и пропадала
+            // с экрана прямо во время вращения.
             float cxPt = imgXPt + imgWpt / 2f;
+            float cyPt = imgYPt + imgHpt / 2f;
 
             // Горизонталь обязательна: при нескольких страницах в ряду соседние листы
             // имеют ОДИН И ТОТ ЖЕ диапазон Y, и по вертикали они неразличимы. Прежний
@@ -1705,14 +1857,20 @@ namespace Writersword.Modules.TextEditor.Document
                 float top = pg.Ypt;
                 float bottom = top + pg.HeightPt;
 
-                if (cxPt >= left && cxPt <= right && topPt >= top && topPt <= bottom)
+                if (cxPt >= left && cxPt <= right && cyPt >= top && cyPt <= bottom)
+                {
+                    LogFloatingImagePage(
+                        block, p, fallbackPage, "hit", cxPt, cyPt, boxW, boxH,
+                        top, bottom, pages.Count);
+
                     return p;
+                }
 
                 // Расстояние от точки привязки до листа: ноль по той оси, вдоль которой
                 // точка уже внутри его границ. Так выбирается лист, к которому картинка
-                // ближе всего, когда её верх попал в межстраничный зазор или за край.
+                // ближе всего, когда её центр попал в межстраничный зазор или за край.
                 float dx = cxPt < left ? left - cxPt : (cxPt > right ? cxPt - right : 0f);
-                float dy = topPt < top ? top - topPt : (topPt > bottom ? topPt - bottom : 0f);
+                float dy = cyPt < top ? top - cyPt : (cyPt > bottom ? cyPt - bottom : 0f);
                 float dist = dx * dx + dy * dy;
 
                 if (dist < nearestDist) { nearestDist = dist; nearest = p; }
@@ -1722,7 +1880,52 @@ namespace Writersword.Modules.TextEditor.Document
             // страница определяется точкой привязки, а не перекрытием площадей.
             _ = boxW;
 
-            return nearest >= 0 ? nearest : fallbackPage;
+            int resolved = nearest >= 0 ? nearest : fallbackPage;
+
+            // Точка привязки не попала ни в один лист: она в межстраничном зазоре или за
+            // краем, и страница выбрана по близости. Именно здесь картинка, стоящая у
+            // границы, может достаться соседней странице — а вместе со страницей уезжает
+            // и зона обтекания, которую по ней обрезают.
+            float resolvedTop = resolved >= 0 && resolved < pages.Count ? pages[resolved].Ypt : 0f;
+            float resolvedBottom = resolved >= 0 && resolved < pages.Count
+                ? pages[resolved].Ypt + pages[resolved].HeightPt : 0f;
+
+            LogFloatingImagePage(
+                block, resolved, fallbackPage, "distance " + MathF.Sqrt(nearestDist).ToString("0.0"),
+                cxPt, cyPt, boxW, boxH, resolvedTop, resolvedBottom, pages.Count);
+
+            return resolved;
+        }
+
+        // Последняя записанная в журнал привязка картинки к странице: страница и точка
+        // привязки, огрублённые до пункта. Повтор того же состояния не пишется —
+        // иначе перетаскивание и проходы сходимости забивали бы журнал одинаковыми
+        // строками по нескольку раз на кадр.
+        private static readonly Dictionary<ImageBlock, (int Page, int Cx, int Top)>
+            _wrapPageLogState = new();
+
+        private static void LogFloatingImagePage(
+            ImageBlock block, int page, int fallbackPage, string how,
+            float cxPt, float topPt, float boxWpt, float boxHpt,
+            float pageTopPt, float pageBottomPt, int pageCount)
+        {
+            var state = (Page: page, Cx: (int)cxPt, Top: (int)topPt);
+
+            if (_wrapPageLogState.TryGetValue(block, out var prev) && prev == state)
+                return;
+
+            // Словарь держит блоки удалённых картинок; для отладочного счётчика этого
+            // достаточно, но расти бесконечно он не должен.
+            if (_wrapPageLogState.Count > 64) _wrapPageLogState.Clear();
+            _wrapPageLogState[block] = state;
+
+            _logger.Debug(
+                "[WRAP] Image page: {Page} of {PageCount} (flow page {Fallback}) by {How}, "
+                + "anchor=({Cx};{Top}) rot={Rot} box={BoxW}x{BoxH} "
+                + "sheet=[{PageTop}..{PageBottom}]",
+                page, pageCount, fallbackPage, how,
+                cxPt, topPt, block.RotationDeg, boxWpt, boxHpt,
+                pageTopPt, pageBottomPt);
         }
 
         private void RebuildFlowMode(float maxWidthPt, float padHPt, float padWPt)

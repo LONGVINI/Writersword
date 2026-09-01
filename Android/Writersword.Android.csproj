@@ -52,7 +52,12 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<!-- Модуль редактора собран под net10.0, а net10.0-android надстроен над
+		     ним, поэтому ссылка прямая: отдельной мобильной сборки модуля не
+		     нужно. Лента и оверлеи при этом приезжают вместе с ним и на телефоне
+		     не используются — читалке нужны только модель, раскладка и Skia. -->
 		<ProjectReference Include="..\Src\Writersword.Core.csproj" />
+		<ProjectReference Include="..\Src\Modules\TextEditor\Writersword.TextEditor.csproj" />
 	</ItemGroup>
 
 </Project>

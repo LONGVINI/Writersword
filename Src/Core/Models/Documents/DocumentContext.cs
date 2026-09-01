@@ -131,7 +131,7 @@ namespace Writersword.Core.Services
         /// Временно закрыть ZIP для освобождения файла
         /// Используется перед операциями требующими эксклюзивный доступ к файлу (загрузка, сохранение)
         /// </summary>
-        public void CloseZipStorage()
+        public void CloseStorage()
         {
             FileStorage?.Dispose();
             FileStorage = null;
@@ -147,7 +147,7 @@ namespace Writersword.Core.Services
         /// </summary>
         public Func<string, IProjectFileStorage>? StorageFactory { get; set; }
 
-        public void ReopenZipStorage()
+        public void ReopenStorage()
         {
             if (string.IsNullOrEmpty(FilePath) || !File.Exists(FilePath)) return;
             if (StorageFactory == null)

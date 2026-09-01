@@ -1431,6 +1431,37 @@ namespace Writersword.Modules.TextEditor.Rendering
                     return 0f;
                 }
 
+                // Полоса ЛИСТА, на котором стоит эта строка, в координатах абзаца.
+                // Строка обтекает только объекты своего листа: соседний лист — другая
+                // бумага, картинки на ней не видно, и двигать текст там нечем.
+                //
+                // Без этой границы строка, ушедшая на следующую страницу, продолжала
+                // считаться с зонами предыдущей. Ярче всего это после вытеснения: первая
+                // строка не влезает сбоку от объекта (длинные слова), уезжает вниз и
+                // тянет за собой весь хвост абзаца — на чистом листе открывается коридор
+                // вокруг картинки, оставшейся страницей выше.
+                float sheetTopRelPt = float.NegativeInfinity;
+                float sheetBottomRelPt = float.PositiveInfinity;
+
+                // Границы листа пересчитываются каждый раз, когда строка переезжает на
+                // следующую страницу: дальше она живёт уже на другой бумаге.
+                void UpdateSheetBounds()
+                {
+                    if (wrapPages is not { } sheetCtx) return;
+
+                    sheetTopRelPt = pageCrossings > 0
+                        ? sheetCtx.NextPageTopPt
+                            + (pageCrossings - 1) * sheetCtx.PageStepPt
+                            - sheetCtx.ParaStartYPt
+                        : float.NegativeInfinity;
+
+                    sheetBottomRelPt = sheetCtx.PageBottomPt
+                        + pageCrossings * sheetCtx.PageStepPt
+                        - sheetCtx.ParaStartYPt;
+                }
+
+                UpdateSheetBounds();
+
                 float extraTop = 0f;
                 for (int guard = 0; guard < 16; guard++)
                 {
@@ -1447,6 +1478,9 @@ namespace Writersword.Modules.TextEditor.Rendering
                     occupiedSpans.Clear();
                     foreach (var z in wrapZones!)
                     {
+                        // Объект с чужого листа для этой строки не существует.
+                        if (z.BottomPt <= sheetTopRelPt || z.TopPt >= sheetBottomRelPt) continue;
+
                         if (z.BottomPt <= y + 0.5f || z.TopPt >= y + lineHPt) continue;
 
                         // Зоны приходят в координатах колонки, полосы считаются внутри
@@ -1521,16 +1555,40 @@ namespace Writersword.Modules.TextEditor.Rendering
                     float nextExtraTop = pushBottom - yTop + 0.5f;
                     if (nextExtraTop <= extraTop) break;
 
-                    // Но не за границу страницы. Дальше начинается следующая страница,
-                    // объекта этой страницы там уже нет, и опускать строку не за чем:
-                    // перенос сделает пагинация. Иначе вытеснение переживало разрыв
-                    // и превращалось в пустой провал наверху следующей страницы —
-                    // текст отодвигала картинка, которой на этой странице не видно.
+                    // Вытеснение не переходит границу листа. Если под объектом до низа
+                    // страницы места уже нет, строка не остаётся висеть у края, а
+                    // переезжает на верх следующего листа целиком — и с этого момента
+                    // считается его жительницей: объекты прежнего листа для неё и для
+                    // всех строк ниже перестают существовать.
+                    //
+                    // Прежде здесь стоял выход из цикла. Строка оставалась на месте, а
+                    // на следующий лист её уносила уже пагинация — о чём вёрстка не
+                    // знала. Строки ниже продолжали считаться с зонами прежнего листа и
+                    // приходили на чистую бумагу с коридором вокруг картинки, которой
+                    // там нет. Ровно тот случай, когда вытесненная строка уходит на
+                    // следующую страницу: пока она оставалась на своей, всё считалось
+                    // верно.
                     if (wrapPages is { } pageCtx)
                     {
                         float pushedDocYPt = pageCtx.ParaStartYPt + yTop + nextExtraTop;
                         float pageBottomPt = pageCtx.PageBottomPt + pageCrossings * pageCtx.PageStepPt;
-                        if (pushedDocYPt + lineHPt > pageBottomPt) break;
+
+                        if (pushedDocYPt + lineHPt > pageBottomPt)
+                        {
+                            float nextTopPt = pageCtx.NextPageTopPt
+                                + pageCrossings * pageCtx.PageStepPt;
+                            float docYNowPt = pageCtx.ParaStartYPt + yTop;
+                            float toNextSheetPt = nextTopPt - docYNowPt;
+
+                            // Уже ниже верха следующего листа — двигать нечем, иначе
+                            // строка поехала бы вверх.
+                            if (toNextSheetPt <= extraTop) break;
+
+                            extraTop = toNextSheetPt;
+                            pageCrossings++;
+                            UpdateSheetBounds();
+                            continue;
+                        }
                     }
 
                     extraTop = nextExtraTop;

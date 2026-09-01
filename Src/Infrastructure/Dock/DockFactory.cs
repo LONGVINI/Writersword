@@ -327,7 +327,7 @@ namespace Writersword.Infrastructure.Dock
 
                 var sb = new System.Text.StringBuilder();
                 sb.AppendLine();
-                sb.Append("Раскладка [").Append(when).Append(']');
+                sb.Append("Layout [").Append(when).Append(']');
 
                 DumpNode(sb, root, 1);
 
@@ -338,10 +338,10 @@ namespace Writersword.Infrastructure.Dock
 
                 if (root.Windows is { Count: > 0 })
                 {
-                    sb.AppendLine().Append("  ОКОН: ").Append(root.Windows.Count);
+                    sb.AppendLine().Append("  WINDOWS: ").Append(root.Windows.Count);
                     foreach (var window in root.Windows)
                     {
-                        sb.AppendLine().Append("    окно id=").Append(window?.Id);
+                        sb.AppendLine().Append("    window id=").Append(window?.Id);
                         if (window?.Layout is { } layout) DumpNode(sb, layout, 3);
                     }
                 }
@@ -352,7 +352,7 @@ namespace Writersword.Infrastructure.Dock
                 {
                     if (list is null || list.Count == 0) return;
 
-                    sb.AppendLine().Append("  ЗАКРЕПЛЕНО ").Append(name).Append(':');
+                    sb.AppendLine().Append("  PINNED ").Append(name).Append(':');
                     foreach (var item in list)
                         sb.Append(' ').Append(item?.Title).Append(" (id=").Append(item?.Id).Append(')');
                 }
@@ -372,7 +372,7 @@ namespace Writersword.Infrastructure.Dock
 
             if (node is not IDock dock) return;
 
-            sb.Append(" видимых=").Append(dock.VisibleDockables?.Count ?? 0);
+            sb.Append(" visible=").Append(dock.VisibleDockables?.Count ?? 0);
 
             if (dock.VisibleDockables is null) return;
             foreach (var child in dock.VisibleDockables)
@@ -528,7 +528,7 @@ namespace Writersword.Infrastructure.Dock
                             ValidateAndRemoveDuplicates(restored);
 
                             _logger.LogDebug("Layout restored with {Count} modules", restoredCount);
-                            SetCurrentRoot(restored, "раскладка восстановлена из файла");
+                            SetCurrentRoot(restored, "restored from file");
                             return restored;
                         }
                     }
@@ -896,7 +896,7 @@ namespace Writersword.Infrastructure.Dock
             ValidateAndRemoveDuplicates(rootDock);
 
             _logger.LogDebug("Layout built manually with {Count} documents", documents.Count);
-            SetCurrentRoot(rootDock, "раскладка построена заново");
+            SetCurrentRoot(rootDock, "rebuilt");
             return rootDock;
         }
 
@@ -1467,7 +1467,7 @@ namespace Writersword.Infrastructure.Dock
         /// после перемещения панелей (MoveDockable/CloseDockable).
         /// </summary>
         public void AttachToLayout(IRootDock rootDock)
-            => SetCurrentRoot(rootDock, "раскладка прикреплена заново");
+            => SetCurrentRoot(rootDock, "reattached");
 
         /// <summary>
         /// Единственное место, где выставляется текущий корень.

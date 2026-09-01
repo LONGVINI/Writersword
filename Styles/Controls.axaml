@@ -9,16 +9,16 @@
 		<Setter Property="b:FocusReleaseBehavior.Enabled" Value="True"/>
 	</Style>
 
-	<StyleInclude Source="avares://Writersword/Styles/Controls/Button.axaml"/>
-	<StyleInclude Source="avares://Writersword/Styles/Controls/TextBox.axaml"/>
-	<StyleInclude Source="avares://Writersword/Styles/Controls/NumericUpDown.axaml"/>
-	<StyleInclude Source="avares://Writersword/Styles/Controls/ComboBox.axaml"/>
-	<StyleInclude Source="avares://Writersword/Styles/Controls/CheckBox.axaml"/>
-	<StyleInclude Source="avares://Writersword/Styles/Controls/ToggleSwitch.axaml"/>
-	<StyleInclude Source="avares://Writersword/Styles/Controls/DocumentTextBox.axaml"/>
-	<StyleInclude Source="avares://Writersword/Styles/Controls/RibbonScrollArrow.axaml"/>
-	<StyleInclude Source="avares://Writersword/Styles/Controls/Flyout.axaml"/>
-	<StyleInclude Source="avares://Writersword/Styles/Controls/UnitToggle.axaml"/>
+	<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/Button.axaml"/>
+	<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/TextBox.axaml"/>
+	<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/NumericUpDown.axaml"/>
+	<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/ComboBox.axaml"/>
+	<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/CheckBox.axaml"/>
+	<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/ToggleSwitch.axaml"/>
+	<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/DocumentTextBox.axaml"/>
+	<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/RibbonScrollArrow.axaml"/>
+	<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/Flyout.axaml"/>
+	<StyleInclude Source="avares://Writersword.UI.Shared/Styles/Controls/UnitToggle.axaml"/>
 
 	<!-- Скролл: тонкий, скруглённый бегунок, без стрелок, подсветка при наведении. -->
 	<Style Selector="ScrollBar:vertical">

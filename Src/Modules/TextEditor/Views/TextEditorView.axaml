@@ -34,6 +34,13 @@
 		                       Grid.Row="0" Grid.RowSpan="3"
 		                       ZIndex="212"/>
 
+		<!-- Список гарнитур. Он не всплывающее окно, а обычный контрол модуля:
+		     см. пояснение в FontPickerOverlay. Слой выше остальных оверлеев —
+		     список открывается из ленты и не должен уходить под них. -->
+		<dlg:FontPickerOverlay x:Name="FontOverlay"
+		                       Grid.Row="0" Grid.RowSpan="3"
+		                       ZIndex="214"/>
+
 		<!-- Оверлей видов чтения — поверх всего модуля -->
 		<reading:ReadingThemeOverlay x:Name="ThemeOverlay"
 		                             Grid.Row="0" Grid.RowSpan="3"

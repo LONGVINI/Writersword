@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Serilog;
 using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Models.Backup;
 using Writersword.Core.Models.Sync;
 
 namespace Writersword.Core.Services.Sync
@@ -29,15 +30,27 @@ namespace Writersword.Core.Services.Sync
     /// </summary>
     public sealed class BackupStoreSync
     {
-        private const string ObjectsDir = "objects";
-        private const string SnapshotsDir = "snapshots";
-        private const string StoreMetaFile = "store.json";
+        // Имена файлов и папок склада общие со стороной, которая его ведёт:
+        // см. BackupStoreLayout.
+        private const string ObjectsDir = BackupStoreLayout.ObjectsDir;
+        private const string SnapshotsDir = BackupStoreLayout.SnapshotsDir;
+        private const string StoreMetaFile = BackupStoreLayout.StoreMetaFile;
 
         // Один заход не отправляет больше этого числа записей. История за год
         // при первой отправке — это тысячи файлов, и уходить в сеть на полчаса,
         // блокируя очередной проход координатора, незачем: остаток догонит
         // следующий заход.
         private const int MaxEntriesPerRun = 200;
+
+        /// <summary>
+        /// Подпапка, в которой живёт история версий.
+        ///
+        /// Отдельно от проектов: точка состоит из десятков объектов, и за
+        /// неделю работы корень хранилища превращается в тысячу файлов с
+        /// неразличимыми именами — отличить среди них книгу от куска истории
+        /// нельзя даже владельцу.
+        /// </summary>
+        private const string HistoryFolder = "history";
 
         private readonly IRemoteStorage _storage;
         private readonly ProjectCrypto _crypto;
@@ -72,6 +85,8 @@ namespace Writersword.Core.Services.Sync
         {
             if (!Directory.Exists(storePath))
                 return 0;
+
+            await _storage.EnsureFolderAsync(HistoryFolder, ct).ConfigureAwait(false);
 
             var indexKey = BuildKey(projectName, "index");
             var index = await ReadIndexAsync(indexKey, ct).ConfigureAwait(false);
@@ -122,6 +137,11 @@ namespace Writersword.Core.Services.Sync
                 sent++;
             }
 
+            // Удаление идёт после отправки: если связь оборвётся между ними,
+            // на сервере окажется лишнее, а не недостающее.
+            if (await RemoveTombstonedAsync(storePath, projectName, index, ct).ConfigureAwait(false))
+                indexChanged = true;
+
             // Описание склада перезаписывается всегда: оно единственное здесь
             // изменяемое, и без него собрать историю обратно не из чего.
             var metaPath = Path.Combine(storePath, StoreMetaFile);
@@ -157,6 +177,199 @@ namespace Writersword.Core.Services.Sync
 
             return (index.Objects.Count(h => !localObjects.Contains(h)),
                     index.Snapshots.Count(s => !localSnapshots.Contains(s)));
+        }
+
+        /// <summary>
+        /// Снять с сервера то, что здесь прорядили.
+        ///
+        /// Удаляется строго по надгробиям, а не по отсутствию записи локально.
+        /// Отсутствие двояко: запись либо прорядили здесь, либо потеряли вместе
+        /// с диском, и во втором случае серверная копия — единственная. Поэтому
+        /// сносится только то, о чём прореживание сообщило само.
+        ///
+        /// Записи, до сервера так и не доехавшей, в указателе нет: её надгробие
+        /// закрывается сразу, без обращения в сеть.
+        /// </summary>
+        private async Task<bool> RemoveTombstonedAsync(
+            string storePath, string projectName, StoreIndex index, CancellationToken ct)
+        {
+            var stones = BackupTombstones.Read(storePath);
+            if (stones.IsEmpty)
+                return false;
+
+            var knownObjects = new HashSet<string>(index.Objects, StringComparer.OrdinalIgnoreCase);
+            var knownSnapshots = new HashSet<string>(index.Snapshots, StringComparer.OrdinalIgnoreCase);
+
+            var doneSnapshots = new List<string>();
+            var doneObjects = new List<string>();
+            var calls = 0;
+
+            // Манифесты уходят раньше объектов — порядок обратный отправке.
+            // Точка, лишившаяся объектов раньше самой себя, до следующего захода
+            // выглядела бы на сервере существующей, но нечитаемой.
+            foreach (var id in stones.Snapshots)
+            {
+                if (calls >= MaxEntriesPerRun) break;
+                ct.ThrowIfCancellationRequested();
+
+                if (!knownSnapshots.Contains(id))
+                {
+                    doneSnapshots.Add(id);
+                    continue;
+                }
+
+                if (!await DeleteRemoteAsync(BuildKey(projectName, "s-" + id), ct).ConfigureAwait(false))
+                    continue;
+
+                doneSnapshots.Add(id);
+                calls++;
+            }
+
+            foreach (var hash in stones.Objects)
+            {
+                if (calls >= MaxEntriesPerRun) break;
+                ct.ThrowIfCancellationRequested();
+
+                if (!knownObjects.Contains(hash))
+                {
+                    doneObjects.Add(hash);
+                    continue;
+                }
+
+                if (!await DeleteRemoteAsync(BuildKey(projectName, "o-" + hash), ct).ConfigureAwait(false))
+                    continue;
+
+                doneObjects.Add(hash);
+                calls++;
+            }
+
+            if (doneSnapshots.Count == 0 && doneObjects.Count == 0)
+                return false;
+
+            var goneSnapshots = new HashSet<string>(doneSnapshots, StringComparer.OrdinalIgnoreCase);
+            var goneObjects = new HashSet<string>(doneObjects, StringComparer.OrdinalIgnoreCase);
+
+            index.Snapshots.RemoveAll(goneSnapshots.Contains);
+            index.Objects.RemoveAll(goneObjects.Contains);
+
+            // Надгробие живёт до подтверждения: пока запись не снята, следующий
+            // заход попробует снова. Снятое вычёркивается, и список не растёт.
+            BackupTombstones.Confirm(storePath, doneSnapshots, doneObjects);
+
+            _log.Information("Backup store cleaned: {Snapshots} points, {Objects} objects removed for {Project}",
+                doneSnapshots.Count, doneObjects.Count, projectName);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Восстановить со склада на сервере то, чего здесь нет и что здесь не
+        /// удаляли.
+        ///
+        /// Возвращает число восстановленных записей. Идёт молча: случай, ради
+        /// которого это сделано, — умерший диск, и требовать в нём нажатия
+        /// кнопки бессмысленно.
+        /// </summary>
+        public async Task<int> PullAsync(string storePath, string projectName, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(storePath))
+                return 0;
+
+            var index = await ReadIndexAsync(BuildKey(projectName, "index"), ct).ConfigureAwait(false);
+            if (index.Objects.Count == 0 && index.Snapshots.Count == 0)
+                return 0;
+
+            var stones = BackupTombstones.Read(storePath);
+            var deletedObjects = new HashSet<string>(stones.Objects, StringComparer.OrdinalIgnoreCase);
+            var deletedSnapshots = new HashSet<string>(stones.Snapshots, StringComparer.OrdinalIgnoreCase);
+
+            var localObjects = new HashSet<string>(
+                EnumerateObjects(storePath).Select(x => x.Hash), StringComparer.OrdinalIgnoreCase);
+            var localSnapshots = new HashSet<string>(
+                EnumerateSnapshots(storePath).Select(x => x.Id), StringComparer.OrdinalIgnoreCase);
+
+            var restored = 0;
+
+            // Объекты раньше манифестов — тот же довод, что и при отправке:
+            // точка, вернувшаяся раньше своего содержимого, нечитаема.
+            foreach (var hash in index.Objects)
+            {
+                if (restored >= MaxEntriesPerRun) break;
+                ct.ThrowIfCancellationRequested();
+
+                if (localObjects.Contains(hash) || deletedObjects.Contains(hash))
+                    continue;
+
+                if (await PullFileAsync(
+                        BuildKey(projectName, "o-" + hash),
+                        BackupStoreLayout.ObjectPath(storePath, hash), ct).ConfigureAwait(false))
+                {
+                    restored++;
+                }
+            }
+
+            foreach (var id in index.Snapshots)
+            {
+                if (restored >= MaxEntriesPerRun) break;
+                ct.ThrowIfCancellationRequested();
+
+                if (localSnapshots.Contains(id) || deletedSnapshots.Contains(id))
+                    continue;
+
+                if (await PullFileAsync(
+                        BuildKey(projectName, "s-" + id),
+                        BackupStoreLayout.SnapshotPath(storePath, id), ct).ConfigureAwait(false))
+                {
+                    restored++;
+                }
+            }
+
+            if (restored > 0)
+                _log.Information("Backup store restored: {Count} entries for {Project}", restored, projectName);
+
+            return restored;
+        }
+
+        private async Task<bool> DeleteRemoteAsync(string key, CancellationToken ct)
+        {
+            try
+            {
+                await _storage.DeleteAsync(key, ct).ConfigureAwait(false);
+                return true;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _log.Debug(ex, "Failed to delete backup entry {Key}", key);
+                return false;
+            }
+        }
+
+        private async Task<bool> PullFileAsync(string key, string path, CancellationToken ct)
+        {
+            try
+            {
+                var content = await _storage.DownloadAsync(key, ct: ct).ConfigureAwait(false);
+                if (content is null)
+                    return false;
+
+                var plain = _crypto.Decrypt(content.Data);
+
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+                // Запись появляется в складе целиком: манифест, дописанный
+                // наполовину, читался бы как испорченная точка, а испорченная
+                // точка отменяет уборку всего склада.
+                var temp = path + ".tmp";
+                await File.WriteAllBytesAsync(temp, plain, ct).ConfigureAwait(false);
+                File.Move(temp, path, overwrite: true);
+
+                return true;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _log.Debug(ex, "Failed to restore backup entry {Key}", key);
+                return false;
+            }
         }
 
         private async Task<bool> PushFileAsync(string key, string path, CancellationToken ct)
@@ -220,12 +433,12 @@ namespace Writersword.Core.Services.Sync
         }
 
         /// <summary>
-        /// Ключ записи на сервере. Плоский, без вложенных папок: WebDAV-клиент
-        /// экранирует разделители пути в имени, и вложенность превратилась бы
-        /// в один файл с косыми чертами в названии.
+        /// Ключ записи на сервере: подпапка истории плюс имя, выведенное
+        /// через HMAC. По имени не восстановить ни хеш содержимого, ни номер
+        /// точки — видно только, что это история.
         /// </summary>
         private string BuildKey(string projectName, string part)
-            => _crypto.BuildRemoteKey("backup/" + projectName + "/" + part);
+            => HistoryFolder + "/" + _crypto.BuildRemoteKey("backup/" + projectName + "/" + part);
 
         private static IEnumerable<(string Hash, string Path)> EnumerateObjects(string storePath)
         {
@@ -233,7 +446,8 @@ namespace Writersword.Core.Services.Sync
             if (!Directory.Exists(dir))
                 yield break;
 
-            foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+            foreach (var file in Directory.EnumerateFiles(
+                         dir, "*" + BackupStoreLayout.ObjectExtension, SearchOption.AllDirectories))
                 yield return (Path.GetFileNameWithoutExtension(file), file);
         }
 

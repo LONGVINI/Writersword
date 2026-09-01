@@ -9,6 +9,7 @@ using System.Security.Cryptography;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Writersword.Core.Services.Storage;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Cache;
 using Writersword.Core.Models.Project;
@@ -643,32 +644,43 @@ namespace Writersword.Infrastructure.Services.Storage
 
         public Dictionary<string, object?>? ReadProjectDataWithoutLock(string projectPath)
         {
-            // "WithoutLock" относится к внутреннему _fileLock КЕША — файл ПРОЕКТА
-            // всё равно читаем под глобальным шлюзом, чтобы не поймать архив
-            // посреди перезаписи (ZipFileStorageService / SaveToZipAsync).
-            using var fileGate = ProjectFileLock.Acquire(projectPath);
+            // «WithoutLock» относится к внутреннему замку КЕША. Замок файла
+            // проекта здесь больше не нужен: база сама разводит читателей и
+            // писателя, и застать её посреди записи невозможно.
             try
             {
-                using (var stream = new FileStream(projectPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
-                {
-                    var entry = archive.GetEntry("project.json");
-                    if (entry == null)
-                    {
-                        _logger.LogWarning("project.json not found in: {ProjectPath}", projectPath);
-                        return null;
-                    }
+                using var storage = new SqliteFileStorageService(projectPath, Serilog.Log.Logger);
 
-                    using (var entryStream = entry.Open())
-                    using (var reader = new StreamReader(entryStream))
-                    {
-                        var json = reader.ReadToEnd();
-                        var project = JsonConvert.DeserializeObject<ProjectFile>(json);
-                        _logger.LogDebug("Read project data without lock: {ModulesCount} modules",
-                            project?.ModulesData.Count ?? 0);
-                        return project?.ModulesData;
-                    }
+                if (storage.ReadFile("project.json") is null)
+                {
+                    _logger.LogWarning("project.json not found in: {ProjectPath}", projectPath);
+                    return null;
                 }
+
+                // Данные модулей лежат отдельными записями, а не внутри
+                // project.json, как было в архиве. Прочитать один project.json
+                // и взять оттуда ModulesData теперь недостаточно — он их не
+                // содержит.
+                var result = new Dictionary<string, object?>();
+
+                foreach (var entry in storage.EnumerateEntries())
+                {
+                    var path = entry.Path;
+
+                    if (!path.StartsWith("modules/", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!path.EndsWith("/CustomData.json", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    var parts = path.Split('/');
+                    if (parts.Length < 3) continue;
+
+                    var data = storage.ReadFile(path);
+                    if (data is null) continue;
+
+                    result[parts[1]] = System.Text.Encoding.UTF8.GetString(data);
+                }
+
+                _logger.LogDebug("Read project data without lock: {ModulesCount} modules", result.Count);
+                return result;
             }
             catch (Exception ex)
             {

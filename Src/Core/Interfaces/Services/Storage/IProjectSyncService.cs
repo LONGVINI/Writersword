@@ -86,6 +86,19 @@ namespace Writersword.Core.Interfaces.Services.Storage
             string storePath, string projectName, CancellationToken ct = default);
 
         /// <summary>
+        /// Восстановить историю версий из хранилища.
+        ///
+        /// Забираются записи, которых здесь нет и которые здесь не удаляли:
+        /// прореженное отмечено надгробиями и обратно не тянется, а всё
+        /// остальное считается потерей. За один заход берётся ограниченное
+        /// число записей, остаток догонит следующий.
+        ///
+        /// Возвращает число восстановленных записей.
+        /// </summary>
+        Task<int> PullBackupStoreAsync(
+            string storePath, string projectName, CancellationToken ct = default);
+
+        /// <summary>
         /// Состояние синхронизации изменилось по итогам фоновой проверки.
         /// Подписчик в интерфейсе решает, спрашивать ли пользователя.
         /// </summary>

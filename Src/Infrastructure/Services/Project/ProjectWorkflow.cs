@@ -16,6 +16,7 @@ using Writersword.Core.Interfaces.Services.Storage;
 using Writersword.Core.Interfaces.Services.UI;
 using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Infrastructure.Services.Storage;
+using Writersword.Core.Services.Storage;
 using Writersword.ViewModels;
 using Writersword.Views;
 
@@ -40,7 +41,7 @@ namespace Writersword.Infrastructure.Services.Project
         public event Action<IDocumentTab>? ProjectSaved;
         public event Action<IDocumentTab>? ProjectClosed;
 
-        private readonly Dictionary<string, ZipFileStorageService> _openStorages = new();
+        private readonly Dictionary<string, SqliteFileStorageService> _openStorages = new();
         private readonly Dictionary<string, IWorkspaceAutoSaveService> _autoSaveServices = new();
 
         // Сессионные данные модулей (каретка, скролл, зум) для каждой стороны
@@ -202,13 +203,13 @@ namespace Writersword.Infrastructure.Services.Project
                     return tabVM;
                 }
 
-                var storage = new ZipFileStorageService(filePath);
+                var storage = new SqliteFileStorageService(filePath, Serilog.Log.Logger);
                 if (_openStorages.TryGetValue(filePath, out var oldStorage))
                     oldStorage.Dispose();
                 _openStorages[filePath] = storage;
                 tabVM.Context.FileStorage = storage;
-                tabVM.Context.StorageFactory = path => new ZipFileStorageService(path);
-                _logger.LogDebug("ZipFileStorage created for: {FilePath}", filePath);
+                tabVM.Context.StorageFactory = path => new SqliteFileStorageService(path, Serilog.Log.Logger);
+                _logger.LogDebug("Project storage opened for: {FilePath}", filePath);
 
                 var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
                 var workModes = workModeConfigService.LoadConfiguration(project.Type, storage);
@@ -382,11 +383,11 @@ namespace Writersword.Infrastructure.Services.Project
 
                 tab.UpdateProject(project);
 
-                var storage = new ZipFileStorageService(filePath);
+                var storage = new SqliteFileStorageService(filePath, Serilog.Log.Logger);
                 _openStorages[filePath] = storage;
                 tab.Context.FileStorage = storage;
-                tab.Context.StorageFactory = path => new ZipFileStorageService(path);
-                _logger.LogDebug("ZipFileStorage created for: {FilePath}", filePath);
+                tab.Context.StorageFactory = path => new SqliteFileStorageService(path, Serilog.Log.Logger);
+                _logger.LogDebug("Project storage opened for: {FilePath}", filePath);
 
                 var workModeConfigService = App.Services.GetRequiredService<IWorkModeConfigurationService>();
                 var workModes = workModeConfigService.LoadConfiguration(project.Type, storage);
@@ -629,7 +630,7 @@ namespace Writersword.Infrastructure.Services.Project
 
                 _cacheService.DeleteCache(filePath);
 
-                tab.Context.CloseZipStorage();
+                tab.Context.CloseStorage();
 
                 ProjectFile? reloaded;
                 try
@@ -638,7 +639,7 @@ namespace Writersword.Infrastructure.Services.Project
                 }
                 finally
                 {
-                    tab.Context.ReopenZipStorage();
+                    tab.Context.ReopenStorage();
                 }
 
                 if (reloaded == null)
@@ -694,9 +695,34 @@ namespace Writersword.Infrastructure.Services.Project
         {
             try
             {
-                // Собственные данные берутся из живого проекта: сравнивать нужно
-                // с тем, что сейчас на экране, включая несохранённые правки.
+                // Собственные данные снимаются с живых модулей, а не берутся из
+                // проекта.
+                //
+                // ModulesData обновляется только при сохранении, и всё, что автор
+                // успел изменить с последнего раза, там отсутствует. Сравнение
+                // тогда шло сохранённого с сохранённым и объявляло версии
+                // одинаковыми, а выход из режима применял этот же устаревший
+                // набор поверх живых модулей — то есть стирал несохранённую
+                // работу ровно тем действием, которое должно было её показать.
+                //
+                // Данные проекта берутся основой: в них лежат модули, которые
+                // сейчас не открыты и снять с них нечего.
                 var ownData = new Dictionary<string, object?>(tab.GetProject().ModulesData);
+
+                var liveModules = tab.Workspace?.GetActiveModules()
+                    ?? tab.ModuleContext.GetAllModules();
+
+                if (liveModules.Count > 0)
+                {
+                    var collector = App.Services.GetRequiredService<IModuleStateCollectorService>();
+                    var collected = collector.CollectAllData(liveModules);
+
+                    foreach (var pair in collected.CustomData)
+                        ownData[pair.Key] = pair.Value;
+
+                    _logger.LogDebug("Compare mode: collected live data from {Count} modules",
+                        collected.CustomData.Count);
+                }
 
                 _logger.LogDebug("Compare mode: own {OwnCount} modules, other {OtherCount} modules",
                     ownData.Count, otherData.Count);
@@ -815,7 +841,7 @@ namespace Writersword.Infrastructure.Services.Project
                 {
                     if (capturedTab.RecoveryBanner?.IsViewingCache == true)
                     {
-                        capturedTab.Context.CloseZipStorage();
+                        capturedTab.Context.CloseStorage();
 
                         ProjectFile? discardProject = null;
                         try
@@ -826,7 +852,7 @@ namespace Writersword.Infrastructure.Services.Project
                         }
                         finally
                         {
-                            capturedTab.Context.ReopenZipStorage();
+                            capturedTab.Context.ReopenStorage();
                         }
 
                         // Перезагрузка модулей ПОСЛЕ переоткрытия хранилища: внутри
@@ -864,7 +890,7 @@ namespace Writersword.Infrastructure.Services.Project
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error discarding cache");
-                try { tab.Context.ReopenZipStorage(); } catch { }
+                try { tab.Context.ReopenStorage(); } catch { }
             }
         }
 
@@ -953,7 +979,7 @@ namespace Writersword.Infrastructure.Services.Project
                 }
                 _compareSessionCache[currentSessionKey] = currentSessions;
 
-                capturedTab.Context.CloseZipStorage();
+                capturedTab.Context.CloseStorage();
 
                 try
                 {
@@ -973,7 +999,7 @@ namespace Writersword.Infrastructure.Services.Project
                 }
                 finally
                 {
-                    capturedTab.Context.ReopenZipStorage();
+                    capturedTab.Context.ReopenStorage();
                 }
 
                 // Перезагрузка модулей ПОСЛЕ переоткрытия хранилища: внутри применяются
@@ -1011,7 +1037,7 @@ namespace Writersword.Infrastructure.Services.Project
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error switching version");
-                try { tab.Context.ReopenZipStorage(); } catch { }
+                try { tab.Context.ReopenStorage(); } catch { }
             }
         }
 
@@ -1173,9 +1199,9 @@ namespace Writersword.Infrastructure.Services.Project
                     // но не попал в allData (GetCustomData вернул null или бросил исключение,
                     // а кеш пуст) — берём старое значение из ZIP.
                     // Это предотвращает затирание данных при временном сбое сбора.
-                    tab.Context.CloseZipStorage();
+                    tab.Context.CloseStorage();
                     var savedProject = await _projectService.LoadAsync(filePath);
-                    tab.Context.ReopenZipStorage();
+                    tab.Context.ReopenStorage();
 
                     if (savedProject != null)
                     {
@@ -1198,9 +1224,9 @@ namespace Writersword.Infrastructure.Services.Project
 
                     await CreateBackupPointAsync(filePath, isAutoSave);
 
-                    tab.Context.CloseZipStorage();
+                    tab.Context.CloseStorage();
                     bool success = await _projectService.SaveAsync(project, filePath);
-                    tab.Context.ReopenZipStorage();
+                    tab.Context.ReopenStorage();
 
                     if (success)
                     {
@@ -1231,9 +1257,9 @@ namespace Writersword.Infrastructure.Services.Project
 
                     // Защита от потери данных: если модуль был в ZIP но не попал в кеш —
                     // берём старое значение из ZIP.
-                    tab.Context.CloseZipStorage();
+                    tab.Context.CloseStorage();
                     var savedProject = await _projectService.LoadAsync(filePath);
-                    tab.Context.ReopenZipStorage();
+                    tab.Context.ReopenStorage();
 
                     if (savedProject != null)
                     {
@@ -1256,9 +1282,9 @@ namespace Writersword.Infrastructure.Services.Project
 
                     await CreateBackupPointAsync(filePath, isAutoSave);
 
-                    tab.Context.CloseZipStorage();
+                    tab.Context.CloseStorage();
                     bool success = await _projectService.SaveAsync(project, filePath);
-                    tab.Context.ReopenZipStorage();
+                    tab.Context.ReopenStorage();
 
                     if (success)
                     {
@@ -1275,7 +1301,7 @@ namespace Writersword.Infrastructure.Services.Project
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error saving project");
-                try { tab.Context.ReopenZipStorage(); } catch { }
+                try { tab.Context.ReopenStorage(); } catch { }
                 return false;
             }
         }
@@ -1383,17 +1409,27 @@ namespace Writersword.Infrastructure.Services.Project
                 {
                     if (_autoSaveServices.TryGetValue(filePath, out var autoSaveService))
                     {
+                        // Фоновое сохранение держит ссылку на хранилище, взятую
+                        // до начала записи. Закрытие хранилища, пока запись идёт,
+                        // роняло её на обращении к закрытому соединению — сначала
+                        // таймер останавливается, потом дожидается начатая запись.
+                        autoSaveService.Stop();
+                        await autoSaveService.WaitForPendingSaveAsync(TimeSpan.FromSeconds(15));
                         autoSaveService.Dispose();
                         _autoSaveServices.Remove(filePath);
-                        if (_openStorages.TryGetValue(filePath, out var closingStorage))
-                        {
-                            closingStorage.Dispose();
-                            _openStorages.Remove(filePath);
-                        }
                         _logger.LogDebug("WorkspaceAutoSave stopped for: {FilePath}", filePath);
                     }
 
-                    tab.Context.CloseZipStorage();
+                    // Хранилище закрывается независимо от того, было ли для
+                    // проекта автосохранение: иначе соединение оставалось
+                    // открытым и файл проекта — занятым до выхода из программы.
+                    if (_openStorages.TryGetValue(filePath, out var closingStorage))
+                    {
+                        closingStorage.Dispose();
+                        _openStorages.Remove(filePath);
+                    }
+
+                    tab.Context.CloseStorage();
 
                     var project = _projectService.GetProjectByPath(filePath);
                     if (project != null)
@@ -1512,9 +1548,9 @@ namespace Writersword.Infrastructure.Services.Project
                     }
                 }
 
-                tab.Context.CloseZipStorage();
+                tab.Context.CloseStorage();
                 var savedProject = await _projectService.LoadAsync(filePath);
-                tab.Context.ReopenZipStorage();
+                tab.Context.ReopenStorage();
 
                 if (savedProject == null)
                 {
@@ -1540,7 +1576,7 @@ namespace Writersword.Infrastructure.Services.Project
             }
             catch (Exception ex)
             {
-                try { tab.Context.ReopenZipStorage(); } catch { }
+                try { tab.Context.ReopenStorage(); } catch { }
                 _logger.LogError(ex, "Error checking unsaved changes");
                 return false;
             }
@@ -1583,10 +1619,10 @@ namespace Writersword.Infrastructure.Services.Project
         public void RegisterStorage(string filePath, IDocumentTab documentTab)
         {
             var tab = (DocumentTabViewModel)documentTab;
-            var storage = new ZipFileStorageService(filePath);
+            var storage = new SqliteFileStorageService(filePath, Serilog.Log.Logger);
             _openStorages[filePath] = storage;
             tab.Context.FileStorage = storage;
-            tab.Context.StorageFactory = path => new ZipFileStorageService(path);
+            tab.Context.StorageFactory = path => new SqliteFileStorageService(path, Serilog.Log.Logger);
 
             var project = tab.GetProject();
 
@@ -1600,7 +1636,7 @@ namespace Writersword.Infrastructure.Services.Project
             tab.InitializeWorkspace(workModes, storage);
 
             var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
-            workspaceConfigService.SaveToZip(storage, new WorkspaceLocalConfig { WorkModes = workModes });
+            workspaceConfigService.SaveToStorage(storage, new WorkspaceLocalConfig { WorkModes = workModes });
 
             _logger.LogDebug("Storage registered for: {FilePath}", filePath);
         }
@@ -1609,7 +1645,7 @@ namespace Writersword.Infrastructure.Services.Project
         {
             if (_openStorages.ContainsKey(filePath))
             {
-                _openStorages[filePath] = (ZipFileStorageService)newStorage;
+                _openStorages[filePath] = (SqliteFileStorageService)newStorage;
                 _logger.LogDebug("Storage updated for: {FilePath}", filePath);
             }
         }

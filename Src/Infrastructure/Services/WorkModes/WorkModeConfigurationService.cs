@@ -117,7 +117,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
             try
             {
                 var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
-                var config = workspaceConfigService.LoadFromZip(fileStorage);
+                var config = workspaceConfigService.LoadFromStorage(fileStorage);
 
                 if (config == null)
                 {

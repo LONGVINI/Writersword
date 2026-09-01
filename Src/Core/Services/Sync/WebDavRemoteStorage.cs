@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Globalization;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -129,9 +130,40 @@ namespace Writersword.Core.Services.Sync
             if (string.IsNullOrWhiteSpace(key))
                 throw new ArgumentException("Storage key must not be empty.", nameof(key));
 
-            // Ключ приходит из HMAC и состоит из hex-символов, но экранирование
-            // всё равно уместно: хранилище может получить ключ и из другого места.
-            return new Uri(_rootUri, Uri.EscapeDataString(key));
+            // Экранируется каждый сегмент отдельно, а разделители остаются
+            // разделителями. Иначе «history/abc.dat» превратилось бы в один
+            // файл с косой чертой в имени, и подпапок не было бы вовсе.
+            var escaped = string.Join('/', key
+                .Split('/', StringSplitOptions.RemoveEmptyEntries)
+                .Select(Uri.EscapeDataString));
+
+            return new Uri(_rootUri, escaped);
+        }
+
+        public async Task EnsureFolderAsync(string relativeFolder, CancellationToken ct = default)
+        {
+            ThrowIfDisposed();
+
+            if (string.IsNullOrWhiteSpace(relativeFolder))
+                return;
+
+            var uri = new Uri(_rootUri, string.Join('/', relativeFolder
+                .Split('/', StringSplitOptions.RemoveEmptyEntries)
+                .Select(Uri.EscapeDataString)) + "/");
+
+            using var request = new HttpRequestMessage(MkCol, uri);
+            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+
+            // 405 означает, что папка уже есть — для наших целей это успех.
+            if (response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.MethodNotAllowed)
+                return;
+
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+                throw new RemoteAuthenticationException("Server rejected the credentials.");
+
+            throw new RemoteStorageException(
+                $"Failed to create folder {relativeFolder}, status {(int)response.StatusCode}.",
+                (int)response.StatusCode);
         }
 
         public async Task<bool> EnsureAvailableAsync(CancellationToken ct = default)

@@ -15,5 +15,33 @@
 	<style name="WriterswordTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
 		<item name="windowActionBar">false</item>
 		<item name="windowNoTitle">true</item>
+
+		<!--
+		     Фон окна тёмный и задан явно. DayNight обещает следовать настройке
+		     телефона, но полосу у выреза камеры красит не он, а именно фон окна,
+		     и на светлой системной теме она оставалась белой даже при тёмном
+		     интерфейсе программы.
+		-->
+		<item name="android:windowBackground">@color/window_background</item>
+
+		<!--
+		     Строка состояния и полоса навигации прозрачные: интерфейс рисуется
+		     под ними, и своей заливки им не нужно.
+		-->
+		<item name="android:statusBarColor">@android:color/transparent</item>
+		<item name="android:navigationBarColor">@android:color/transparent</item>
+
+		<!--
+		     Рисовать в области выреза камеры.
+
+		     Без этого система отводит под вырез полосу во всю сторону экрана и
+		     заливает её фоном окна. На вертикальном телефоне полоса уходит под
+		     строку состояния и незаметна, а на боковом отъедает край экрана.
+		     shortEdges разрешает рисовать туда по короткой стороне — то есть по
+		     той, где вырез и находится.
+
+		     Атрибут появился в Android 8.1; более старые его просто не заметят.
+		-->
+		<item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
 	</style>
 </resources>

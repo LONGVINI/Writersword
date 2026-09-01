@@ -43,7 +43,10 @@ namespace Writersword.Infrastructure.Services.Storage
 
         public string? Read(string key)
         {
-            if (!IsAvailable || string.IsNullOrWhiteSpace(key))
+            // Проверка написана вызовом OperatingSystem.IsWindows, а не через
+            // IsAvailable: анализатор платформ не умеет выводить условие из
+            // собственного свойства и ругается на вызов windows-only метода.
+            if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(key))
                 return null;
 
             return ReadCore(TargetPrefix + key);
@@ -51,7 +54,7 @@ namespace Writersword.Infrastructure.Services.Storage
 
         public bool Write(string key, string value)
         {
-            if (!IsAvailable || string.IsNullOrWhiteSpace(key))
+            if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(key))
                 return false;
 
             return WriteCore(TargetPrefix + key, value ?? string.Empty);
@@ -59,7 +62,7 @@ namespace Writersword.Infrastructure.Services.Storage
 
         public void Delete(string key)
         {
-            if (!IsAvailable || string.IsNullOrWhiteSpace(key))
+            if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(key))
                 return;
 
             DeleteCore(TargetPrefix + key);

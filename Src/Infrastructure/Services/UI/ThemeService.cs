@@ -25,9 +25,9 @@ namespace Writersword.Infrastructure.Services.UI
 
         private static readonly Dictionary<string, string> ThemePaths = new()
         {
-            { "Dark",  "avares://Writersword/Styles/Themes/DarkTheme.axaml"  },
-            { "Light", "avares://Writersword/Styles/Themes/LightTheme.axaml" },
-            { "Sepia", "avares://Writersword/Styles/Themes/SepiaTheme.axaml" }
+            { "Dark",  "avares://Writersword.UI.Shared/Styles/Themes/DarkTheme.axaml"  },
+            { "Light", "avares://Writersword.UI.Shared/Styles/Themes/LightTheme.axaml" },
+            { "Sepia", "avares://Writersword.UI.Shared/Styles/Themes/SepiaTheme.axaml" }
         };
 
         /// <summary>

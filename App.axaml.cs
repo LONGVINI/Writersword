@@ -162,7 +162,7 @@ namespace Writersword
             services.AddSingleton<IProjectService, ProjectService>();
             services.AddSingleton<IBackupService, BackupService>();
             services.AddSingleton<IBackupTimerService, BackupTimerService>();
-            services.AddSingleton<ZipProjectService>();
+            services.AddSingleton<SqliteProjectService>();
             services.AddSingleton<ILocalizationService, LocalizationService>();
             services.AddSingleton<IThemeService, ThemeService>();
             services.AddSingleton<IHotKeyService, HotKeyService>();

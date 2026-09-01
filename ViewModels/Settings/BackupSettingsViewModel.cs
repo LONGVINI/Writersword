@@ -563,7 +563,7 @@ namespace Writersword.ViewModels.Settings
 
                 // Открытый ZIP держит файл: замена через File.Move иначе упрётся
                 // в «file is being used by another process».
-                tab?.Context?.CloseZipStorage();
+                tab?.Context?.CloseStorage();
 
                 bool ok;
                 try
@@ -572,7 +572,7 @@ namespace Writersword.ViewModels.Settings
                 }
                 finally
                 {
-                    tab?.Context?.ReopenZipStorage();
+                    tab?.Context?.ReopenStorage();
                 }
 
                 // Файл на диске уже другой, а живые модули держат прежнее

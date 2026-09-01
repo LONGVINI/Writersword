@@ -1,7 +1,21 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:infra="using:Writersword.Infrastructure.Controls"
-        xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia">
+        xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
+        xmlns:dockSettings="clr-namespace:Dock.Settings;assembly=Dock.Settings">
+
+	<!-- Document body is not a drag handle.
+	     Dock marks PART_TabBody with IsDragArea, so a press inside a document may
+	     start dragging the whole document. A press inside a popup - the font list
+	     of the ribbon - has no visual root, GetPosition returns the origin, and
+	     Dock hit-tests the top-left corner of DockControl, finds PART_TabBody
+	     there and begins a drag: global dock targets flash over the layout on
+	     every pick from the list, and stay on screen while the button is held.
+	     Documents are still dragged by their tab - the tab strip item lies
+	     outside PART_TabBody and keeps IsDragArea. -->
+	<Style Selector="Border#PART_TabBody">
+		<Setter Property="dockSettings:DockProperties.IsDragEnabled" Value="False"/>
+	</Style>
 
 	<!-- Стиль для DockControl -->
 	<Style Selector="dock|DockControl">

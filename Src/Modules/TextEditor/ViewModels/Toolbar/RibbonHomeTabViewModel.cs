@@ -193,9 +193,9 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         }
 
         /// <summary>
-        /// Текст отображаемый в AutoCompleteBox шрифта.
-        /// Изменяется при перемещении курсора (UpdateFromCursorContext) и при выборе из списка.
-        /// Не вызывает SetFontFamily — это делает CurrentFontFamily через SelectedItem.
+        /// Имя гарнитуры, показанное в поле ленты.
+        /// Меняется при перемещении курсора (UpdateFromCursorContext) и при выборе из списка.
+        /// Само по себе SetFontFamily не вызывает — рукопись меняет CurrentFontFamily.
         /// </summary>
         public string? CurrentFontFamilyText
         {
@@ -360,15 +360,13 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
         // --- Доступные значения ---
 
         /// <summary>
-        /// Гарнитуры для выпадающего списка: системные, уложенные в проект и та,
+        /// Гарнитуры для списка выбора: системные, уложенные в проект и та,
         /// что стоит под курсором.
         ///
-        /// Последнее обязательно. AutoCompleteBox не удерживает SelectedItem,
-        /// которого нет среди Items, и отдаёт наружу null. От записи этого null
-        /// в рукопись сейчас спасает единственная проверка в сеттере
-        /// CurrentFontFamily — страховка на одну строку. Держать гарнитуру
-        /// документа в списке надёжнее: комбобоксу есть за что зацепиться, и
-        /// человек видит настоящее имя шрифта, а не подмену, которой его рисуют.
+        /// Последнее обязательно. Список выделяет пункт, совпадающий с гарнитурой
+        /// под курсором, и если её среди пунктов нет — выделение уходит на первый
+        /// попавшийся. Человек видел бы не своё имя шрифта, а чужое, и стрелки
+        /// вели бы не оттуда, откуда он начал.
         /// </summary>
         public IReadOnlyList<string> AvailableFonts
         {
@@ -854,18 +852,48 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
             VisibleStyles = AvailableStyles.Take(clamped).ToList();
         }
 
+        /// <summary>
+        /// Начать сеанс предпросмотра гарнитуры.
+        ///
+        /// Повторный вызов при уже начатом сеансе игнорируется. События открытия
+        /// и закрытия выпадающего списка приходят не по одному разу: отпускание
+        /// указателя над полем догоняет уже закрывшийся список и открывает его
+        /// снова. Каждый лишний Begin запоминал исходной гарнитурой ту, что
+        /// сейчас показана предпросмотром, а следующий End её же и применял —
+        /// документ перекрашивался туда-обратно, и лента с полосой состояния
+        /// мигали на каждый такой оборот.
+        /// </summary>
         public void BeginFontPreview()
         {
+            if (_fontPreviewActive)
+                return;
+
             _fontPreviewActive = true;
             _previewOriginalFont = _fontFamily;
             _target.BeginFontPreview();
         }
 
-        public void PreviewFontFamily(string f) => _target.PreviewFontFamily(f);
+        public void PreviewFontFamily(string f)
+        {
+            // Предпросмотр вне сеанса — тот же лишний оборот: гарнитура
+            // применяется к документу, а откатывать её потом нечему.
+            if (!_fontPreviewActive)
+                return;
 
+            _target.PreviewFontFamily(f);
+        }
+
+        /// <summary>
+        /// Завершить сеанс. Вне начатого сеанса не делает ничего — иначе
+        /// запоздавшее закрытие списка откатывало бы уже применённый выбор.
+        /// </summary>
         public void EndFontPreview(bool commit)
         {
+            if (!_fontPreviewActive)
+                return;
+
             _fontPreviewActive = false;
+
             if (commit && _fontFamily is not null)
             {
                 _target.SetFontFamily(_fontFamily);
@@ -877,6 +905,7 @@ namespace Writersword.Modules.TextEditor.ViewModels.Toolbar
                 this.RaisePropertyChanged(nameof(CurrentFontFamily));
                 this.RaisePropertyChanged(nameof(CurrentFontFamilyText));
             }
+
             _target.EndFontPreview(commit);
             _previewOriginalFont = null;
         }

@@ -42,6 +42,15 @@ namespace Writersword.Core.Interfaces.Services.Storage
         Task DeleteAsync(string key, CancellationToken ct = default);
 
         /// <summary>
+        /// Создать подпапку внутри хранилища, если её ещё нет.
+        ///
+        /// Нужна, чтобы история версий не сваливалась в одну кучу с проектами:
+        /// точка состоит из десятков объектов, и за неделю работы корень
+        /// превращается в тысячу неразличимых файлов.
+        /// </summary>
+        Task EnsureFolderAsync(string relativeFolder, CancellationToken ct = default);
+
+        /// <summary>
         /// Проверить доступность хранилища и создать корневую папку, если её нет.
         /// Вызывается при подключении и при первом обращении после разрыва связи.
         /// </summary>

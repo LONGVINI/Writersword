@@ -26,7 +26,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
         /// Загрузить локальную конфигурацию из workspace.json в ZIP
         /// Возвращает null если файл не найден или ошибка чтения
         /// </summary>
-        public WorkspaceLocalConfig? LoadFromZip(IProjectFileStorage fileStorage)
+        public WorkspaceLocalConfig? LoadFromStorage(IProjectFileStorage fileStorage)
         {
             try
             {
@@ -65,7 +65,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
         /// <summary>
         /// Сохранить локальную конфигурацию в workspace.json в ZIP
         /// </summary>
-        public bool SaveToZip(IProjectFileStorage fileStorage, WorkspaceLocalConfig config)
+        public bool SaveToStorage(IProjectFileStorage fileStorage, WorkspaceLocalConfig config)
         {
             try
             {

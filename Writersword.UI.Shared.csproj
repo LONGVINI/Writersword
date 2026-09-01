@@ -15,6 +15,29 @@
 		<AvaloniaXaml Remove="**\*.axaml" />
 	</ItemGroup>
 
+	<!-- ОФОРМЛЕНИЕ
+	     Цвета, темы и стили контролов живут здесь, а не в десктопной голове.
+	     Телефонная голова её сборки не видит вовсе, а рисовать хочется одним и
+	     тем же: иначе на телефоне получается стандартная Fluent, не имеющая с
+	     программой ничего общего. -->
+	<ItemGroup>
+		<AvaloniaResource Include="Styles\Base\Colors.axaml" />
+		<AvaloniaResource Include="Styles\Base\Typography.axaml" />
+		<AvaloniaResource Include="Styles\Base\Spacing.axaml" />
+		<AvaloniaResource Include="Styles\Themes\DarkTheme.axaml" />
+		<AvaloniaResource Include="Styles\Themes\LightTheme.axaml" />
+		<AvaloniaResource Include="Styles\Themes\SepiaTheme.axaml" />
+		<AvaloniaXaml Include="Styles\Controls\*.axaml" />
+	</ItemGroup>
+
+	<!-- Поведения, на которые ссылаются стили контролов. Переехали сюда вместе
+	     с ними: без них стили не собираются. -->
+	<ItemGroup>
+		<Compile Include="Src\Infrastructure\Behaviours\FocusReleaseBehavior.cs" />
+		<Compile Include="Src\Infrastructure\Behaviours\NoWheelBehavior.cs" />
+		<Compile Include="Src\Infrastructure\Behaviours\SelectAllBehavior.cs" />
+	</ItemGroup>
+
 	<!-- Infrastructure/Behaviours и Controls -->
 	<ItemGroup>
 		<Compile Include="Src\Infrastructure\Behaviours\ClickOutsideBehavior.cs" />

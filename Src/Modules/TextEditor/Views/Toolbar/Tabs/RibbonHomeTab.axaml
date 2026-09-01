@@ -223,18 +223,6 @@
         </Style>
 
         <!-- TextBox для поля размера шрифта -->
-        <!-- Дропдаун: фиксированная ширина, без горизонтального скролла -->
-        <Style Selector="AutoCompleteBox#FontAutoComplete /template/ Popup > Border">
-            <Setter Property="MinWidth"  Value="260"/>
-            <Setter Property="MaxHeight" Value="320"/>
-        </Style>
-        <Style Selector="AutoCompleteBox#FontAutoComplete /template/ ListBox">
-            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
-        </Style>
-        <Style Selector="AutoCompleteBox#FontAutoComplete /template/ ListBoxItem">
-            <Setter Property="Padding"   Value="8,3"/>
-            <Setter Property="MinHeight" Value="0"/>
-        </Style>
         <Style Selector="TextBox.FontSizeInput">
             <Setter Property="Background"               Value="Transparent"/>
             <Setter Property="Foreground"               Value="{DynamicResource TextPrimaryBrush}"/>
@@ -484,29 +472,24 @@
 
                             <!-- Строка 1: Шрифт + Размер + A↑ A↓ + Aa -->
                             <StackPanel Orientation="Horizontal" Spacing="2">
-                                <AutoCompleteBox x:Name="FontAutoComplete"
-                                                ItemsSource="{Binding AvailableFonts}"
-                                                Text="{Binding CurrentFontFamilyText}"
-                                                SelectedItem="{Binding CurrentFontFamily}"
-                                                FilterMode="Contains"
-                                                MinimumPrefixLength="0"
-                                                MinimumPopulateDelay="0"
-                                                Width="120"
-                                                Height="24"
-                                                FontSize="11"
-                                                behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Format_FontFamily}"
-                                                behaviours:TooltipBehavior.ShowDelay="700">
-                                    <AutoCompleteBox.ItemTemplate>
-                                        <DataTemplate x:DataType="x:String">
-                                            <TextBlock Text="{Binding}"
-                                                       FontFamily="{Binding}"
-                                                       FontSize="13"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       HorizontalAlignment="Left"
-                                                       VerticalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </AutoCompleteBox.ItemTemplate>
-                                </AutoCompleteBox>
+                                <!-- Поле гарнитуры. Список открывается оверлеем модуля,
+                                     а не всплывающим окном: см. FontPickerOverlay. -->
+                                <Button x:Name="FontBox" Classes="RibbonBtn"
+                                        Width="120" Height="24" Padding="6 0"
+                                        HorizontalContentAlignment="Stretch"
+                                        Click="OnFontBoxClick"
+                                        behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Format_FontFamily}"
+                                        behaviours:TooltipBehavior.ShowDelay="700">
+                                    <Grid ColumnDefinitions="* Auto">
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding CurrentFontFamilyText}"
+                                                   FontSize="11"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+                                        <PathIcon Grid.Column="1" Data="M7 10l5 5 5-5z" Width="8" Height="8"
+                                                  Foreground="{DynamicResource TextMutedBrush}"/>
+                                    </Grid>
+                                </Button>
                                 <!-- Размер шрифта: TextBox + стрелка внутри одной кнопки -->
                                 <Button Classes="RibbonBtn" Padding="2 0" Height="24"
                                         behaviours:TooltipBehavior.Tip="{x:Static loc:TextEditorStrings.Format_FontSize}"

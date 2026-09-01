@@ -1,0 +1,208 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Writersword.Mobile.Views.ReaderHud"
+             Background="{x:Null}">
+
+	<!-- Фон именно пустой, а не прозрачный. Прозрачный участвует в проверке
+	     попадания и перехватывал бы касания по книге: худ накрывает её целиком,
+	     и листать пальцем стало бы нечем. -->
+
+	<UserControl.Styles>
+		<Style Selector="Button.Hud">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="6"/>
+			<Setter Property="Padding"         Value="14,10"/>
+			<Setter Property="FontSize"        Value="14"/>
+			<Setter Property="MinWidth"        Value="0"/>
+			<Setter Property="MinHeight"       Value="0"/>
+		</Style>
+		<Style Selector="ToggleButton.Hud">
+			<Setter Property="Background"      Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="BorderBrush"     Value="{DynamicResource BorderSubtleBrush}"/>
+			<Setter Property="BorderThickness" Value="1"/>
+			<Setter Property="CornerRadius"    Value="6"/>
+			<Setter Property="Padding"         Value="14,10"/>
+			<Setter Property="FontSize"        Value="14"/>
+			<Setter Property="MinWidth"        Value="0"/>
+			<Setter Property="MinHeight"       Value="0"/>
+		</Style>
+		<Style Selector="ToggleButton.Hud:checked /template/ ContentPresenter">
+			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="TextBlock.Caption">
+			<Setter Property="Foreground"        Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="FontSize"          Value="12"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="MinWidth"          Value="72"/>
+		</Style>
+		<Style Selector="TextBlock.Value">
+			<Setter Property="Foreground"        Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="FontSize"          Value="13"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="TextAlignment"     Value="Center"/>
+			<Setter Property="MinWidth"          Value="56"/>
+		</Style>
+		<Style Selector="TabItem.Hud">
+			<Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="FontSize"   Value="13"/>
+			<Setter Property="Padding"    Value="12,8"/>
+			<Setter Property="MinHeight"  Value="0"/>
+		</Style>
+		<Style Selector="TabItem.Hud:selected">
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+	</UserControl.Styles>
+
+	<!-- Худ висит поверх книги и ничего у неё не отнимает.
+	     Панель внизу вместо наложения означала бы другой размер вьюпорта, а по
+	     нему считается масштаб, которым лист вписывается в экран. Развернул
+	     панель — буквы поехали и место в тексте потерялось. -->
+	<Grid>
+
+		<!-- Язычок: единственное, что видно при свёрнутом худе. -->
+		<ToggleButton x:Name="ToggleButton"
+		              Classes="Hud"
+		              Content="☰"
+		              FontSize="18"
+		              Padding="12,6"
+		              HorizontalAlignment="Right"
+		              VerticalAlignment="Bottom"
+		              Margin="0,0,12,12"
+		              Opacity="0.85"/>
+
+		<Border x:Name="Panel"
+		        VerticalAlignment="Bottom"
+		        IsVisible="False"
+		        Background="{DynamicResource BgPanelBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="0,1,0,0">
+
+			<TabControl x:Name="Tabs" Padding="10" Background="Transparent">
+
+				<!-- ═══ КНИГА ═══════════════════════════════════════════ -->
+				<TabItem Header="Книга" Classes="Hud">
+					<Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+						<ComboBox x:Name="BookBox"
+						          Grid.Column="0"
+						          HorizontalAlignment="Stretch"
+						          PlaceholderText="Книга на телефоне"/>
+						<Button x:Name="OpenButton"
+						        Grid.Column="1"
+						        Classes="Hud"
+						        Content="Открыть"
+						        Margin="8,0,0,0"/>
+					</Grid>
+				</TabItem>
+
+				<!-- ═══ ПОДАЧА ══════════════════════════════════════════ -->
+				<TabItem Header="Подача" Classes="Hud">
+					<StackPanel Spacing="10" Margin="0,8,0,0">
+
+						<!-- Разворота нет: две страницы на телефонный экран дают
+						     кегль, при котором строка не разбирается. -->
+						<StackPanel Orientation="Horizontal" Spacing="8">
+							<ToggleButton x:Name="ColumnButton" Classes="Hud" Content="Лента"/>
+							<ToggleButton x:Name="SingleButton" Classes="Hud" Content="Лист"/>
+						</StackPanel>
+
+						<StackPanel x:Name="PagerRow" Orientation="Horizontal" Spacing="8">
+							<Button    x:Name="FirstButton" Classes="Hud" Content="⏮"/>
+							<Button    x:Name="PrevButton"  Classes="Hud" Content="◀"/>
+							<TextBlock x:Name="PageBlock"   Classes="Value" MinWidth="86"/>
+							<Button    x:Name="NextButton"  Classes="Hud" Content="▶"/>
+							<Button    x:Name="LastButton"  Classes="Hud" Content="⏭"/>
+						</StackPanel>
+
+						<StackPanel x:Name="FormatRow" Orientation="Horizontal" Spacing="8">
+							<TextBlock Classes="Caption" Text="Лист"/>
+							<ComboBox x:Name="FormatBox" MinWidth="180"/>
+						</StackPanel>
+
+					</StackPanel>
+				</TabItem>
+
+				<!-- ═══ ВИД ═════════════════════════════════════════════ -->
+				<TabItem Header="Вид" Classes="Hud">
+					<StackPanel Spacing="10" Margin="0,8,0,0">
+
+						<StackPanel Orientation="Horizontal" Spacing="8">
+							<TextBlock Classes="Caption" Text="Вид чтения"/>
+							<ComboBox x:Name="ThemeBox" MinWidth="180"/>
+						</StackPanel>
+
+						<StackPanel x:Name="ZoomRow" Orientation="Horizontal" Spacing="8">
+							<TextBlock Classes="Caption" Text="Масштаб"/>
+							<Button    x:Name="ZoomOutButton" Classes="Hud" Content="−"/>
+							<TextBlock x:Name="ZoomBlock"     Classes="Value"/>
+							<Button    x:Name="ZoomInButton"  Classes="Hud" Content="+"/>
+						</StackPanel>
+
+						<StackPanel Orientation="Horizontal" Spacing="8">
+							<CheckBox x:Name="NumbersCheck" Content="Номера страниц"/>
+							<CheckBox x:Name="ScaleCheck"   Content="Ужимать"/>
+						</StackPanel>
+
+					</StackPanel>
+				</TabItem>
+
+				<!-- ═══ ТЕКСТ ═══════════════════════════════════════════ -->
+				<TabItem Header="Текст" Classes="Hud">
+					<StackPanel Spacing="10" Margin="0,8,0,0">
+
+						<StackPanel Orientation="Horizontal" Spacing="8">
+							<TextBlock Classes="Caption" Text="Кегль"/>
+							<Button    x:Name="SmallerButton" Classes="Hud" Content="A−"/>
+							<TextBlock x:Name="FontStepBlock" Classes="Value"/>
+							<Button    x:Name="BiggerButton"  Classes="Hud" Content="A+"/>
+						</StackPanel>
+
+						<StackPanel Orientation="Horizontal" Spacing="8">
+							<TextBlock Classes="Caption" Text="Шрифт"/>
+							<ComboBox x:Name="FontBox" MinWidth="200"/>
+						</StackPanel>
+
+					</StackPanel>
+				</TabItem>
+
+				<!-- ═══ СВЕТ ════════════════════════════════════════════
+				     Пределы ползунков повторяют то, чем лента ограничивает сама
+				     себя: яркость 35–100, контраст 60–160, тёплота 0–100. Величины
+				     эти в процентах — так их отдаёт и принимает ReadingRibbonViewModel,
+				     и переводить их здесь во что-то другое значило бы завести вторую
+				     единицу измерения на ту же настройку. -->
+				<TabItem Header="Свет" Classes="Hud">
+					<StackPanel Spacing="6" Margin="0,8,0,0">
+
+						<Grid ColumnDefinitions="Auto,*,Auto">
+							<TextBlock Grid.Column="0" Classes="Caption" Text="Яркость"/>
+							<Slider    Grid.Column="1" x:Name="BrightnessSlider" Minimum="35" Maximum="100"/>
+							<TextBlock Grid.Column="2" x:Name="BrightnessBlock" Classes="Value"/>
+						</Grid>
+
+						<Grid ColumnDefinitions="Auto,*,Auto">
+							<TextBlock Grid.Column="0" Classes="Caption" Text="Контраст"/>
+							<Slider    Grid.Column="1" x:Name="ContrastSlider" Minimum="60" Maximum="160"/>
+							<TextBlock Grid.Column="2" x:Name="ContrastBlock" Classes="Value"/>
+						</Grid>
+
+						<Grid ColumnDefinitions="Auto,*,Auto">
+							<TextBlock Grid.Column="0" Classes="Caption" Text="Тёплота"/>
+							<Slider    Grid.Column="1" x:Name="WarmthSlider" Minimum="0" Maximum="100"/>
+							<TextBlock Grid.Column="2" x:Name="WarmthBlock" Classes="Value"/>
+						</Grid>
+
+						<Button x:Name="ResetLightButton" Classes="Hud" Content="Сброс"
+						        HorizontalAlignment="Left" Margin="0,4,0,0"/>
+
+					</StackPanel>
+				</TabItem>
+
+			</TabControl>
+		</Border>
+
+	</Grid>
+</UserControl>

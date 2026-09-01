@@ -781,10 +781,12 @@ namespace Writersword.Modules.TextEditor.Document
                 float pgH = GetPageHeightPt();
                 float docSpanPt = Math.Max(pgH * 2.0f,
                     Math.Max(1, _pages.Count) * (pgH + PageGapPt));
+                double minOffsetYPt = Math.Max(-docSpanPt, MinFloatingImageOffsetYPt(_selectedImage));
+
                 _selectedImage.OffsetXPt = Math.Clamp(
                     _imgDragStartOffX + (xPt - _imgDragStartXPt), -pgW, pgW * 2.0);
                 _selectedImage.OffsetYPt = Math.Clamp(
-                    _imgDragStartOffY + (yPt - _imgDragStartYPt), -docSpanPt, docSpanPt);
+                    _imgDragStartOffY + (yPt - _imgDragStartYPt), minOffsetYPt, docSpanPt);
 
                 // У края вьюпорта документ должен подъезжать сам — иначе картинку
                 // нельзя утащить за пределы видимой области, не отпуская кнопку.
@@ -1134,8 +1136,11 @@ namespace Writersword.Modules.TextEditor.Document
                 float docSpanPt = Math.Max(pgH * 2.0f,
                     Math.Max(1, _pages.Count) * (pgH + PageGapPt));
 
+                double minAutoScrollOffsetYPt = Math.Max(
+                    -docSpanPt, MinFloatingImageOffsetYPt(_selectedImage!));
+
                 _selectedImage!.OffsetYPt = Math.Clamp(
-                    _selectedImage.OffsetYPt + deltaPt, -docSpanPt, docSpanPt);
+                    _selectedImage.OffsetYPt + deltaPt, minAutoScrollOffsetYPt, docSpanPt);
 
                 RebuildLayouts();
                 InvalidateFull();
@@ -3202,15 +3207,28 @@ namespace Writersword.Modules.TextEditor.Document
         public void ExecuteUndo()
         {
             if (IsEditingBlocked) return;
+
             // Откатываем строго в хронологическом порядке: какой стек трогать, решает _undoOrder.
-            if (_undoOrder.Last is not null)
+            //
+            // Записи порядка и сами стеки расходятся: оба стека ограничены сотней шагов
+            // и выбрасывают самые старые команды, а порядок про это ничего не знает.
+            // Запись, которой в стеке уже ничего не соответствует, пропускается и
+            // берётся следующая — иначе нажатие Ctrl+Z проходило вхолостую, и человек
+            // жал его несколько раз подряд, прежде чем документ откатывался на шаг.
+            // В redo уходит только тот источник, чей откат действительно состоялся.
+            while (_undoOrder.Last is not null)
             {
                 var src = _undoOrder.Last.Value;
                 _undoOrder.RemoveLast();
-                _redoOrder.Push(src);
-                if (src == UndoSource.Text) UndoTextStep();
-                else UndoSnapshotStep();
-                return;
+
+                bool undone = src == UndoSource.Text ? UndoTextStep() : UndoSnapshotStep();
+                if (undone)
+                {
+                    _redoOrder.Push(src);
+                    return;
+                }
+
+                _logger.Debug("[UNDO] ExecuteUndo: order entry {S} has no command left, skipping", src);
             }
 
             // Фолбэк, если порядок пуст (команда попала в стек мимо учёта).
@@ -3222,13 +3240,21 @@ namespace Writersword.Modules.TextEditor.Document
         public void ExecuteRedo()
         {
             if (IsEditingBlocked) return;
-            if (_redoOrder.Count > 0)
+
+            // Симметрично откату: запись порядка, оставшаяся без команды, пропускается,
+            // а в порядок отмены возвращается только состоявшийся повтор.
+            while (_redoOrder.Count > 0)
             {
                 var src = _redoOrder.Pop();
-                _undoOrder.AddLast(src);
-                if (src == UndoSource.Text) RedoTextStep();
-                else RedoSnapshotStep();
-                return;
+
+                bool redone = src == UndoSource.Text ? RedoTextStep() : RedoSnapshotStep();
+                if (redone)
+                {
+                    _undoOrder.AddLast(src);
+                    return;
+                }
+
+                _logger.Debug("[UNDO] ExecuteRedo: order entry {S} has no command left, skipping", src);
             }
 
             if (TextUndoStack is not null && TextUndoStack.CanRedo && DocVm is not null) { RedoTextStep(); return; }
@@ -3237,9 +3263,11 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         // Откат одной операционной (текстовой) команды.
-        private void UndoTextStep()
+        // Возвращает false, если откатывать нечего: вызывающий по этому признаку
+        // отличает пустую запись порядка от состоявшегося шага.
+        private bool UndoTextStep()
         {
-            if (TextUndoStack is null || DocVm is null || !TextUndoStack.CanUndo) return;
+            if (TextUndoStack is null || DocVm is null || !TextUndoStack.CanUndo) return false;
             _logger.Debug("[UNDO] ExecuteUndo (text): '{D}'", TextUndoStack.UndoDescription);
 
             // Тип команды выясняется до отката: лёгкий стек рассчитан на правки текста
@@ -3249,6 +3277,7 @@ namespace Writersword.Modules.TextEditor.Document
             bool tableChanged = TextUndoStack.PeekUndo is Commands.TableSnapshotCommand;
             TextUndoStack.Undo(DocVm.Document);
             if (tableChanged) RefreshAfterTableCommand();
+            return true;
         }
 
         // Пересборка вида после отката или повтора снимка таблицы.
@@ -3283,45 +3312,99 @@ namespace Writersword.Modules.TextEditor.Document
         }
 
         // Откат одного снапшота документа (цвет, картинки, таблицы, вставка и т.п.).
-        private void UndoSnapshotStep()
+        // Возвращает false, если откатывать нечего.
+        private bool UndoSnapshotStep()
         {
-            if (UndoStack is null || !UndoStack.CanUndo) return;
+            if (UndoStack is null || !UndoStack.CanUndo) return false;
             _logger.Debug("[UNDO] ExecuteUndo (snapshot): '{D}'", UndoStack.UndoDescription);
-            InvalidateCellLayoutCaches();
-            _cellVmCache.Clear();
             UndoStack.Undo();
-            RebuildLayouts();
-            _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
-            _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
-            SyncSel(); ResetCaret(); InvalidateFull();
+            RefreshAfterSnapshotCommand();
+            return true;
+        }
+
+        // Обновление вида после отката или повтора снимка документа.
+        // Снимок возвращает состав блоков раздела целиком: вернувшаяся таблица меняет
+        // высоту документа и число страниц. Раскладка это учитывает, но высота холста
+        // попадает на экран только через measure-проход, а он выполняется по запросу
+        // и сверяется с отпечатком состояния. Отпечаток же построен на вью-модели,
+        // коллекции абзацев, их числе, ширине и режиме — таблицы в нём нет, и после
+        // отката measure считал состояние прежним. Холст оставался прежней высоты:
+        // таблица возвращалась в документ, а страница, на которой она продолжается,
+        // не появлялась до следующего действия. Отсюда сброс отпечатка и явный
+        // запрос измерения — тот же порядок, что и после отката снимка таблицы.
+        private void RefreshAfterSnapshotCommand()
+        {
+            RefreshAfterTableCommand();
             // Снапшот мог вернуть поля страницы/настройки — уведомляем VM, чтобы линейка синхронилась.
             DocVm?.RaiseDocumentRestored();
         }
 
         // Повтор одной операционной (текстовой) команды.
-        private void RedoTextStep()
+        // Возвращает false, если повторять нечего.
+        private bool RedoTextStep()
         {
-            if (TextUndoStack is null || DocVm is null || !TextUndoStack.CanRedo) return;
+            if (TextUndoStack is null || DocVm is null || !TextUndoStack.CanRedo) return false;
             _logger.Debug("[UNDO] ExecuteRedo (text): '{D}'", TextUndoStack.RedoDescription);
 
             bool tableChanged = TextUndoStack.PeekRedo is Commands.TableSnapshotCommand;
             TextUndoStack.Redo(DocVm.Document);
             if (tableChanged) RefreshAfterTableCommand();
+            return true;
         }
 
         // Повтор одного снапшота документа.
-        private void RedoSnapshotStep()
+        // Возвращает false, если повторять нечего.
+        private bool RedoSnapshotStep()
         {
-            if (UndoStack is null || !UndoStack.CanRedo) return;
+            if (UndoStack is null || !UndoStack.CanRedo) return false;
             _logger.Debug("[UNDO] ExecuteRedo (snapshot): '{D}'", UndoStack.RedoDescription);
-            InvalidateCellLayoutCaches();
-            _cellVmCache.Clear();
             UndoStack.Redo();
-            RebuildLayouts();
-            _caretPara = Clamp(_caretPara, 0, Math.Max(0, _layouts.Count - 1));
-            _caretChar = Clamp(_caretChar, 0, GetVmAt(_caretPara)?.PlainText?.Length ?? 0);
-            SyncSel(); ResetCaret(); InvalidateFull();
-            DocVm?.RaiseDocumentRestored();
+            RefreshAfterSnapshotCommand();
+            return true;
+        }
+
+        /// <summary>
+        /// Насколько высоко разрешено поднимать плавающую картинку: смещение, при
+        /// котором верх её повёрнутого габарита встаёт на верхнюю границу текстовой
+        /// области первого листа.
+        ///
+        /// Выше листов ничего нет. Картинка, утащенная туда, висела на пустом холсте,
+        /// и место под ней выглядело как поле над документом — в него же можно было
+        /// затащить следующую. Страница ей при этом назначалась «по близости», то есть
+        /// наугад.
+        ///
+        /// Возвращает минус бесконечность, когда считать не от чего: страниц ещё нет
+        /// или картинки нет в раскладке. Вызывающий берёт максимум с прежним пределом.
+        /// </summary>
+        private double MinFloatingImageOffsetYPt(ImageBlock image)
+        {
+            List<ImageEntry> images;
+            List<PageRect> pages;
+            lock (_renderLock) { images = _images; pages = _pages; }
+
+            if (pages.Count == 0) return double.NegativeInfinity;
+
+            ImageEntry? entry = null;
+            foreach (var ie in images)
+            {
+                if (!ReferenceEquals(ie.Block, image)) continue;
+                entry = ie;
+                break;
+            }
+
+            if (entry is null) return double.NegativeInfinity;
+
+            double rad = image.RotationDeg * Math.PI / 180.0;
+            float boxHPt = entry.WidthPt * (float)Math.Abs(Math.Sin(rad))
+                         + entry.HeightPt * (float)Math.Abs(Math.Cos(rad));
+
+            // Точка отсчёта: где стоял бы верх картинки при нулевом смещении. Сама
+            // запись построена для текущего смещения, поэтому его и вычитаем.
+            double baseYPt = entry.Ypt - image.OffsetYPt;
+
+            float limitTopPt = pages[0].Ypt + pages[0].PadTopPt;
+
+            return limitTopPt - baseYPt - entry.HeightPt / 2.0 + boxHPt / 2.0;
         }
 
         /// <summary>

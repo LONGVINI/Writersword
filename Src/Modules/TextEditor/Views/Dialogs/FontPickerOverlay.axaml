@@ -1,0 +1,175 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:Writersword.Modules.TextEditor.Views.Dialogs"
+             x:Class="Writersword.Modules.TextEditor.Views.Dialogs.FontPickerOverlay">
+
+	<UserControl.Styles>
+		<Style Selector="TextBox.FontSearch">
+			<Setter Property="Background"               Value="{DynamicResource BgSurfaceBrush}"/>
+			<Setter Property="Foreground"               Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="BorderBrush"              Value="{DynamicResource BorderDefaultBrush}"/>
+			<Setter Property="BorderThickness"          Value="1"/>
+			<Setter Property="CornerRadius"             Value="5"/>
+			<Setter Property="MinHeight"                Value="28"/>
+			<Setter Property="Padding"                  Value="8 0"/>
+			<Setter Property="FontSize"                 Value="12"/>
+			<Setter Property="VerticalContentAlignment" Value="Center"/>
+			<Setter Property="CaretBrush"               Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="SelectionBrush"           Value="{DynamicResource AccentDefaultBrush}"/>
+			<Setter Property="SelectionForegroundBrush" Value="White"/>
+		</Style>
+		<Style Selector="TextBox.FontSearch:focus /template/ Border#PART_BorderElement">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+
+		<Style Selector="ListBox.FontList">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding"         Value="0"/>
+			<Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+		</Style>
+
+		<!-- Подсветка живёт на Border.Row, а не на самом ListBoxItem: заголовок
+		     раздела лежит внутри первого пункта, и подсветка пункта затягивала бы
+		     заголовок вместе с ним. -->
+		<Style Selector="ListBox.FontList ListBoxItem">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Padding"    Value="0"/>
+			<Setter Property="MinHeight"  Value="0"/>
+		</Style>
+		<Style Selector="ListBox.FontList ListBoxItem /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+			<Setter Property="Padding"    Value="0"/>
+		</Style>
+
+		<Style Selector="Border.Row">
+			<Setter Property="Background"   Value="Transparent"/>
+			<Setter Property="CornerRadius" Value="4"/>
+			<Setter Property="Padding"      Value="8 4"/>
+		</Style>
+		<Style Selector="ListBoxItem:pointerover Border.Row">
+			<Setter Property="Background" Value="{DynamicResource BgHoverBrush}"/>
+		</Style>
+		<Style Selector="ListBoxItem:selected Border.Row">
+			<Setter Property="Background" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ListBoxItem:selected Border.Row TextBlock.FontName">
+			<Setter Property="Foreground" Value="White"/>
+		</Style>
+
+		<Style Selector="TextBlock.FontName">
+			<Setter Property="Foreground"        Value="{DynamicResource TextPrimaryBrush}"/>
+			<Setter Property="FontSize"          Value="14"/>
+			<Setter Property="TextTrimming"      Value="CharacterEllipsis"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+		</Style>
+
+		<Style Selector="TextBlock.SectionTitle">
+			<Setter Property="Foreground"  Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="FontSize"    Value="10"/>
+			<Setter Property="FontWeight"  Value="SemiBold"/>
+			<Setter Property="Margin"      Value="8 8 8 3"/>
+		</Style>
+
+		<!-- Звёздочка проступает при наведении на строку и остаётся зажжённой у
+		     закреплённых. Плавность здесь не украшение: полсотни звёзд, вспыхивающих
+		     разом на пробеге мыши по списку, читаются как рябь. -->
+		<Style Selector="Button.Star">
+			<Setter Property="Background"      Value="Transparent"/>
+			<Setter Property="BorderThickness" Value="0"/>
+			<Setter Property="Padding"         Value="4 0"/>
+			<Setter Property="MinWidth"        Value="0"/>
+			<Setter Property="MinHeight"       Value="0"/>
+			<Setter Property="Cursor"          Value="Hand"/>
+			<Setter Property="Opacity"         Value="0"/>
+			<Setter Property="Foreground"      Value="{DynamicResource TextMutedBrush}"/>
+			<Setter Property="Transitions">
+				<Transitions>
+					<DoubleTransition Property="Opacity" Duration="0:0:0.15"/>
+				</Transitions>
+			</Setter>
+		</Style>
+		<Style Selector="Button.Star /template/ ContentPresenter">
+			<Setter Property="Background" Value="Transparent"/>
+		</Style>
+		<Style Selector="ListBoxItem:pointerover Button.Star">
+			<Setter Property="Opacity" Value="1"/>
+		</Style>
+		<Style Selector="Button.Star.Pinned">
+			<Setter Property="Opacity"    Value="1"/>
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="Button.Star:pointerover">
+			<Setter Property="Foreground" Value="{DynamicResource AccentDefaultBrush}"/>
+		</Style>
+		<Style Selector="ListBoxItem:selected Button.Star">
+			<Setter Property="Foreground" Value="White"/>
+		</Style>
+	</UserControl.Styles>
+
+	<Grid>
+		<!-- Перехватчик нажатий мимо панели. Прозрачный, но не Null: кисть нужна,
+		     иначе граница не участвует в проверке попадания и закрыть список
+		     щелчком по документу было бы нечем. -->
+		<Border x:Name="Scrim" Background="Transparent"/>
+
+		<!-- Отступ панели считает PositionUnder: она встаёт под полем ленты.
+		     Выравнивание по левому верхнему углу обязательно — Margin работает
+		     как координата только при нём. -->
+		<Border x:Name="Panel"
+		        HorizontalAlignment="Left" VerticalAlignment="Top"
+		        Width="288"
+		        Background="{DynamicResource BgBaseBrush}"
+		        BorderBrush="{DynamicResource BorderDefaultBrush}"
+		        BorderThickness="1" CornerRadius="8" Padding="6">
+			<Border.Effect>
+				<DropShadowEffect BlurRadius="24" OffsetX="0" OffsetY="8" Opacity="0.45" Color="#000000"/>
+			</Border.Effect>
+
+			<DockPanel LastChildFill="True">
+				<TextBox x:Name="SearchBox" DockPanel.Dock="Top"
+				         Classes="FontSearch" Margin="0 0 0 6"
+				         PlaceholderText="Поиск шрифта"/>
+
+				<TextBlock x:Name="EmptyLabel" DockPanel.Dock="Top"
+				           Margin="8 6" FontSize="12" IsVisible="False"
+				           Foreground="{DynamicResource TextMutedBrush}"
+				           Text="Ничего не найдено"/>
+
+				<ListBox x:Name="FontList" Classes="FontList" MaxHeight="360">
+					<ListBox.ItemTemplate>
+						<DataTemplate x:DataType="local:FontEntry">
+							<StackPanel>
+								<TextBlock Classes="SectionTitle"
+								           Text="{Binding SectionTitle}"
+								           IsVisible="{Binding HasSection}"/>
+
+								<Border Classes="Row">
+									<Grid ColumnDefinitions="* Auto">
+										<TextBlock Grid.Column="0" Classes="FontName"
+										           Text="{Binding Name}"
+										           FontFamily="{Binding Name}"/>
+
+										<Button Grid.Column="1" Classes="Star"
+										        Classes.Pinned="{Binding IsPinned}"
+										        Click="OnPinClick">
+											<Panel>
+												<PathIcon Width="13" Height="13"
+												          IsVisible="{Binding !IsPinned}"
+												          Data="M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z"/>
+												<PathIcon Width="13" Height="13"
+												          IsVisible="{Binding IsPinned}"
+												          Data="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+											</Panel>
+										</Button>
+									</Grid>
+								</Border>
+							</StackPanel>
+						</DataTemplate>
+					</ListBox.ItemTemplate>
+				</ListBox>
+			</DockPanel>
+		</Border>
+	</Grid>
+
+</UserControl>

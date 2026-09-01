@@ -15,7 +15,7 @@ namespace Writersword.Infrastructure.Services.Storage
     /// <summary>
     /// Реализация сервиса работы с проектами.
     /// Каждая вкладка = отдельный проект.
-    /// Работает с ZIP архивами через ZipProjectService.
+    /// Работает с файлами проектов через SqliteProjectService.
     ///
     /// Исправлено: словарь _projectPaths теперь индексируется по project.Id,
     /// а не по project.Title — иначе два проекта с одинаковым названием
@@ -32,12 +32,12 @@ namespace Writersword.Infrastructure.Services.Storage
         // Ключ — project.Id (GUID), не project.Title
         private readonly Dictionary<string, string> _projectPaths = new Dictionary<string, string>();
 
-        private readonly ZipProjectService _zipService;
+        private readonly SqliteProjectService _storageService;
 
         public ProjectService()
         {
             _logger = App.Services.GetService<ILogger<ProjectService>>()!;
-            _zipService = new ZipProjectService();
+            _storageService = new SqliteProjectService();
         }
 
         /// <summary>Получить все открытые проекты</summary>
@@ -95,13 +95,13 @@ namespace Writersword.Infrastructure.Services.Storage
                     _projectPaths.Remove(existing.Id);
                 }
 
-                // Загружаем через ZipProjectService.
-                // Task.Run обязателен: LoadFromZipAsync читает ZIP и десериализует
+                // Загружаем через SqliteProjectService.
+                // Task.Run обязателен: чтение файла и десериализация идут
                 // JSON всего проекта синхронно на вызывающем контексте — без ухода
                 // в пул потоков вся распаковка и парсинг выполнялись на UI-потоке
                 // и замораживали интерфейс на секунды при активации непрогруженной
                 // вкладки (LoadAsync вызывается из UI-контекста активации).
-                var project = await Task.Run(() => _zipService.LoadFromZipAsync(filePath));
+                var project = await Task.Run(() => _storageService.LoadAsync(filePath));
 
                 if (project != null)
                 {
@@ -135,8 +135,8 @@ namespace Writersword.Infrastructure.Services.Storage
                 // Обновляем дату модификации
                 project.LastModified = DateTime.Now;
 
-                // Сохраняем через ZipProjectService
-                bool success = await _zipService.SaveToZipAsync(project, filePath);
+                // Сохраняем через SqliteProjectService
+                bool success = await _storageService.SaveAsync(project, filePath);
 
                 if (!success)
                 {

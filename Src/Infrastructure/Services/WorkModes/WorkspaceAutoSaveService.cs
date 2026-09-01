@@ -21,7 +21,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
 {
     /// <summary>
     /// Сервис автоматического сохранения локальной конфигурации workspace.
-    /// Сохраняет изменения в workspace.json внутри ZIP спустя 5 секунд после последнего изменения.
+    /// Сохраняет изменения в workspace.json внутри файла проекта спустя 5 секунд после последнего изменения.
     /// SemaphoreSlim предотвращает конкурентные записи при частом переключении WorkMode.
     /// CancellationToken прерывает устаревшую операцию если пришло новое изменение.
     /// </summary>
@@ -91,11 +91,19 @@ namespace Writersword.Infrastructure.Services.WorkModes
         {
             Task.Run(async () =>
             {
-                if (token.IsCancellationRequested) return;
+                if (token.IsCancellationRequested || _isDisposed) return;
 
-                if (!await _saveSemaphore.WaitAsync(TimeSpan.Zero))
+                try
                 {
-                    _logger.LogDebug("Save skipped: previous operation still running");
+                    if (!await _saveSemaphore.WaitAsync(TimeSpan.Zero))
+                    {
+                        _logger.LogDebug("Save skipped: previous operation still running");
+                        return;
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Сервис закрылся между проверкой и захватом семафора.
                     return;
                 }
 
@@ -145,7 +153,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
 
                 // Семафор сериализует принудительное сохранение с дебаунс-сохранениями
                 // (ScheduleSave) и с параллельными вызовами SaveNowAsync: раньше вызов
-                // не синхронизировался и две записи могли конкурировать за ZIP-файл.
+                // не синхронизировался и две записи могли конкурировать за файл проекта.
                 if (!await _saveSemaphore.WaitAsync(TimeSpan.FromSeconds(15)).ConfigureAwait(false))
                 {
                     _logger.LogWarning("SaveNowAsync skipped: another save operation is still running");
@@ -155,8 +163,8 @@ namespace Writersword.Infrastructure.Services.WorkModes
                 try
                 {
                     // ConfigureAwait(false): продолжения не возвращаются на UI-поток.
-                    // Раньше await захватывал UI-контекст, и перезапись ZIP-архива
-                    // проекта (SaveToZip) выполнялась на UI-потоке — при переключении
+                    // Раньше await захватывал UI-контекст, и запись в файл
+                    // проекта (SaveToStorage) выполнялась на UI-потоке — при переключении
                     // вкладок это блокировало интерфейс на время записи файла.
                     var currentConfig = await CollectCurrentConfigurationAsync(projectPath, project, CancellationToken.None).ConfigureAwait(false);
 
@@ -175,7 +183,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
                     // Явный уход в пул потоков: WaitAsync и Collect могли завершиться
                     // синхронно, оставив выполнение на UI-потоке несмотря на ConfigureAwait.
                     var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
-                    await Task.Run(() => workspaceConfigService.SaveToZip(fileStorage, currentConfig)).ConfigureAwait(false);
+                    await Task.Run(() => workspaceConfigService.SaveToStorage(fileStorage, currentConfig)).ConfigureAwait(false);
                     _logger.LogDebug("Force save successful");
                 }
                 finally
@@ -229,7 +237,7 @@ namespace Writersword.Infrastructure.Services.WorkModes
                 }
 
                 var workspaceConfigService = App.Services.GetRequiredService<IWorkspaceConfigService>();
-                var success = workspaceConfigService.SaveToZip(fileStorage, currentConfig);
+                var success = workspaceConfigService.SaveToStorage(fileStorage, currentConfig);
 
                 if (success)
                     _logger.LogDebug("workspace.json saved successfully");
@@ -458,6 +466,30 @@ namespace Writersword.Infrastructure.Services.WorkModes
             }
         }
 
+        /// <summary>
+        /// Дождаться окончания записи, начатой в фоне.
+        /// Ожидание идёт через тот же семафор, которым сериализуются записи:
+        /// свободный семафор означает, что писать сейчас некому.
+        /// </summary>
+        public async Task WaitForPendingSaveAsync(TimeSpan timeout)
+        {
+            if (_isDisposed)
+                return;
+
+            try
+            {
+                if (await _saveSemaphore.WaitAsync(timeout).ConfigureAwait(false))
+                    _saveSemaphore.Release();
+                else
+                    _logger.LogWarning("Pending save did not finish within {Seconds} s",
+                        timeout.TotalSeconds);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Сервис закрыли параллельно с ожиданием: ждать больше нечего.
+            }
+        }
+
         public void Dispose()
         {
             if (_isDisposed)
@@ -465,7 +497,20 @@ namespace Writersword.Infrastructure.Services.WorkModes
 
             _isDisposed = true;
             Stop();
-            _saveSemaphore.Dispose();
+
+            // Семафор закрывается только когда текущая запись завершилась.
+            // Закрытие занятого семафора приводило к ObjectDisposedException
+            // в блоке finally сохранения — там вызывается Release.
+            if (_saveSemaphore.Wait(TimeSpan.Zero))
+            {
+                _saveSemaphore.Release();
+                _saveSemaphore.Dispose();
+            }
+            else
+            {
+                _logger.LogWarning("Semaphore left open: save operation is still running");
+            }
+
             _logger.LogDebug("Disposed");
         }
     }

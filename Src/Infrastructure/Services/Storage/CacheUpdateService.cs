@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reactive.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Writersword.Core.Services.Storage;
 using Writersword.Core.Interfaces.Modules;
 using Writersword.Core.Interfaces.Services;
 using Writersword.Core.Models.Project;
@@ -257,25 +258,16 @@ namespace Writersword.Infrastructure.Services.Storage
                 ProjectFile? project = null;
                 try
                 {
-                    // Глобальный шлюз файла проекта: чтение не пересекается с записью
-                    // конфигов и заменой файла при сохранении из других потоков.
-                    using var fileGate = ProjectFileLock.Acquire(projectPath);
-                    using (var stream = new System.IO.FileStream(
-                        projectPath, System.IO.FileMode.Open,
-                        System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite))
-                    using (var archive = new System.IO.Compression.ZipArchive(
-                        stream, System.IO.Compression.ZipArchiveMode.Read))
+                    // Файл проекта — база, открывается на чтение своим слоем
+                    // хранения. Глобальный шлюз здесь больше не нужен: база
+                    // сама разводит читателей и писателя.
+                    using var storage = new SqliteFileStorageService(projectPath, Serilog.Log.Logger);
+
+                    var projectBytes = storage.ReadFile("project.json");
+                    if (projectBytes != null)
                     {
-                        var entry = archive.GetEntry("project.json");
-                        if (entry != null)
-                        {
-                            using (var entryStream = entry.Open())
-                            using (var reader = new System.IO.StreamReader(entryStream))
-                            {
-                                var json = reader.ReadToEnd();
-                                project = Newtonsoft.Json.JsonConvert.DeserializeObject<ProjectFile>(json);
-                            }
-                        }
+                        var json = System.Text.Encoding.UTF8.GetString(projectBytes);
+                        project = Newtonsoft.Json.JsonConvert.DeserializeObject<ProjectFile>(json);
                     }
                 }
                 catch (Exception ex)

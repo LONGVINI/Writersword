@@ -3261,6 +3261,11 @@ namespace Writersword.Modules.TextEditor.Document
         // Отступ текста от габарита обтекаемого объекта, в пунктах.
         private const float WrapZoneMarginPt = 6f;
 
+        // Насколько ниже верха абзаца ищутся обтекаемые объекты, когда вызывающий не
+        // знает высоту абзаца. Значение великовато намеренно: оно применяется только
+        // на путях без раскладки под рукой, а те, что её имеют, передают своё окно.
+        private const float DefaultWrapLookAheadPt = 3000f;
+
         /// <summary>
         /// Зоны обтекания для параграфа с верхом paraTopPt: габариты плавающих
         /// картинок в режимах Square/Tight (AABB с учётом поворота, с полями),
@@ -3269,7 +3274,8 @@ namespace Writersword.Modules.TextEditor.Document
         /// </summary>
         private List<SKWrapZone>? ComputeWrapZones(
             List<ImageEntry> images, float paraTopPt, float textXPt, float textWidthPt,
-            List<PageRect>? pages = null, int? pageIndex = null)
+            List<PageRect>? pages = null, int? pageIndex = null,
+            float lookAheadPt = DefaultWrapLookAheadPt, int? maxPageIndex = null)
         {
             List<SKWrapZone>? zones = null;
 
@@ -3281,7 +3287,16 @@ namespace Writersword.Modules.TextEditor.Document
                 // Картинка обтекается только СВОЕЙ страницей. Чужая в расчёт не идёт
                 // вообще — ни габаритом, ни отступами: свесившаяся за нижний край
                 // картинка не должна двигать текст там, где её не видно.
-                if (pageIndex is int paraPage && ie.PageIndex != paraPage) continue;
+                //
+                // Диапазон, а не одна страница: абзац может начаться на своём листе и
+                // продолжиться на следующем, и его хвост обязан обтекать картинки того
+                // листа. Без верхней границы (maxPageIndex не задан) правило прежнее —
+                // ровно своя страница.
+                if (pageIndex is int paraPage)
+                {
+                    int lastPage = maxPageIndex ?? paraPage;
+                    if (ie.PageIndex < paraPage || ie.PageIndex > lastPage) continue;
+                }
 
                 double rad = ie.Block.RotationDeg * Math.PI / 180.0;
                 float absCos = (float)Math.Abs(Math.Cos(rad));
@@ -3340,14 +3355,25 @@ namespace Writersword.Modules.TextEditor.Document
                     if (bottom <= top) continue;
                 }
 
-                // Зона целиком выше параграфа или слишком далеко ниже — не влияет.
+                // Зона целиком выше параграфа или ниже полосы, которую он может занять,
+                // — не влияет.
+                //
+                // Окно считается по самому абзацу: его высота плюс запас на перенос
+                // хвоста. Прежний потолок в 3000 pt — почти четыре листа A4 — раздавал
+                // зону всем абзацам подряд, включая те, что стоят страницей выше неё.
+                // Само по себе это ничего не рисовало, но строка, перешедшая через
+                // границу листа, получает в раскладке сдвиг на страницу и по нему
+                // попадала в зону чужого листа: в тексте открывался коридор вокруг
+                // картинки, которой на этом листе нет.
                 if (bottom <= paraTopPt) continue;
-                if (top >= paraTopPt + 3000f) continue;
+                if (top >= paraTopPt + lookAheadPt) continue;
                 // Зона вне текстовой колонки по горизонтали — не влияет.
                 if (right <= 0f || left >= textWidthPt) continue;
 
                 left = Math.Max(left, 0f);
                 right = Math.Min(right, textWidthPt);
+
+                LogWrapZone(ie, pages is not null, top, bottom, left, right);
 
                 zones ??= new List<SKWrapZone>();
                 zones.Add(new SKWrapZone(
@@ -3362,6 +3388,32 @@ namespace Writersword.Modules.TextEditor.Document
             }
 
             return zones;
+        }
+
+        // Последняя записанная в журнал зона обтекания: страница картинки и её границы
+        // в координатах документа, огрублённые до пункта. Зона считается для каждого
+        // абзаца заново, поэтому без подавления повторов одна картинка писала бы
+        // столько строк, сколько абзацев рядом с ней.
+        private readonly Dictionary<ImageBlock, (int Page, int Top, int Bottom, bool Clipped)>
+            _wrapZoneLogState = new();
+
+        private void LogWrapZone(
+            ImageEntry entry, bool pagesKnown,
+            float topPt, float bottomPt, float leftPt, float rightPt)
+        {
+            var state = (entry.PageIndex, (int)topPt, (int)bottomPt, pagesKnown);
+
+            if (_wrapZoneLogState.TryGetValue(entry.Block, out var prev) && prev == state)
+                return;
+
+            if (_wrapZoneLogState.Count > 64) _wrapZoneLogState.Clear();
+            _wrapZoneLogState[entry.Block] = state;
+
+            _logger.Debug(
+                "[WRAP] Zone from image on page {Page}: y=[{Top}..{Bottom}] x=[{Left}..{Right}] "
+                + "clippedByPage={Clipped} side={Side}",
+                entry.PageIndex, topPt, bottomPt, leftPt, rightPt,
+                pagesKnown, entry.Block.WrapSide);
         }
 
         /// <summary>
@@ -3765,15 +3817,31 @@ namespace Writersword.Modules.TextEditor.Document
             if (block is null)
                 return _renderer.BuildLayout(new ParagraphBlock(), widthPt, _styleResolver!);
 
-            bool preferPushDown =
-                _wrapPushState.TryGetValue(block, out var prev) && prev;
+            // Гистерезис нужен ровно на время жеста над картинкой: он гасит дребезг
+            // абзаца, который на границе порога прыгает сбоку от объекта под него и
+            // обратно, пока картинку тянут, растягивают или крутят.
+            //
+            // Вне жеста он вреден. Состояние хранилось столько же, сколько документ, и
+            // переписывалось на каждой пересборке — включая промежуточные проходы
+            // сходимости и проходы во время жеста, где обтекание считается одним
+            // проходом и заведомо не сошлось. Абзац, вытесненный хотя бы раз, получал
+            // порог на пятую часть выше навсегда: обтекание не возвращалось, даже когда
+            // места сбоку снова хватало, и вылечить это можно было только переоткрыв
+            // документ.
+            bool gestureActive = _imageDragging || _imageResizing || _imageRotating;
+
+            bool preferPushDown = gestureActive
+                && _wrapPushState.TryGetValue(block, out var prev) && prev;
 
             var layout = _renderer.BuildLayout(
                 block, widthPt, _styleResolver!, isCell: false,
                 wrapZones: zones, wrapPreferPushDown: preferPushDown,
                 wrapPages: pages);
 
-            _wrapPushState[block] = layout.WrapPushedDown;
+            if (gestureActive)
+                _wrapPushState[block] = layout.WrapPushedDown;
+            else
+                _wrapPushState.Remove(block);
 
             return layout;
         }

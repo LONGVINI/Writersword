@@ -11,6 +11,7 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Writersword.Core.Interfaces.Services.Storage;
+using Writersword.Core.Services.Storage;
 using Writersword.Core.Interfaces.WorkFlows;
 using Writersword.Core.Models.Backup;
 using Writersword.Core.Models.Settings;
@@ -36,10 +37,12 @@ namespace Writersword.Infrastructure.Services.Storage
         /// <summary>Ключ настроек истории версий в ISettingsService.</summary>
         private const string SettingsKey = "backups";
 
-        private const string ObjectsDir = "objects";
-        private const string SnapshotsDir = "snapshots";
-        private const string SnapshotExtension = ".json";
-        private const string ObjectExtension = ".gz";
+        // Имена файлов и папок склада общие со стороной, которая его
+        // отправляет: см. BackupStoreLayout.
+        private const string ObjectsDir = BackupStoreLayout.ObjectsDir;
+        private const string SnapshotsDir = BackupStoreLayout.SnapshotsDir;
+        private const string SnapshotExtension = BackupStoreLayout.SnapshotExtension;
+        private const string ObjectExtension = BackupStoreLayout.ObjectExtension;
 
         /// <summary>
         /// Одновременный доступ к одному хранилищу: снятие точки идёт из потока
@@ -213,38 +216,22 @@ namespace Writersword.Infrastructure.Services.Storage
         }
 
         /// <summary>
-        /// Открыть архив проекта на чтение, не мешая уже открытому дескриптору.
+        /// Открыть проект на чтение.
         ///
-        /// ZipFile.OpenRead запрашивает FileShare.Read. В RELEASE-режиме
-        /// ZipFileStorageService держит тот же файл открытым на ReadWrite всю
-        /// сессию, и Windows отвечает нарушением совместного доступа: режим
-        /// шаринга нового запроса не покрывает право записи живого дескриптора.
-        /// Явный FileStream с FileShare.ReadWrite это право разрешает и
-        /// открывается поверх. FileShare.Delete добавлен ради сохранения через
-        /// временный файл с последующей заменой.
-        ///
-        /// Читать под открытым на запись дескриптором безопасно, потому что все
-        /// вызывающие места удерживают ProjectFileLock на время работы с
-        /// архивом: параллельной записи в этот момент нет.
+        /// Прежде здесь была возня с режимами совместного доступа: ZIP держался
+        /// открытым на запись всю сессию, и второй читатель получал отказ.
+        /// База разводит читателей и писателя сама, поэтому от всего этого
+        /// остался один вызов.
         /// </summary>
-        private static ZipArchive OpenProjectForRead(string projectPath)
-        {
-            var stream = new FileStream(
-                projectPath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete);
-
-            return new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
-        }
+        private static SqliteFileStorageService OpenProjectForRead(string projectPath)
+            => new(projectPath, Serilog.Log.Logger);
 
         /// <summary>
         /// Сбросить на диск записи открытого хранилища проекта.
         ///
-        /// Нужен всем, кто читает .writersword как файл: пока проект открыт,
-        /// ZipArchive в режиме Update копит изменения в памяти и пишет их только
-        /// при закрытии. Если проект не открыт — сбрасывать нечего, и это не
-        /// ошибка.
+        /// Нужен всем, кто читает .writersword как файл: записанное уходит в
+        /// журнал базы, и до контрольной точки основной файл его не содержит.
+        /// Если проект не открыт — сбрасывать нечего, и это не ошибка.
         ///
         /// Метод синхронный и сам берёт ProjectFileLock, поэтому вызывать его
         /// можно только вне уже взятого шлюза.
@@ -270,16 +257,12 @@ namespace Writersword.Infrastructure.Services.Storage
             {
                 if (!File.Exists(projectPath)) return null;
 
-                using var fileGate = ProjectFileLock.Acquire(projectPath);
-                using var archive = OpenProjectForRead(projectPath);
+                using var storage = OpenProjectForRead(projectPath);
 
-                var entry = archive.GetEntry(ProjectOverrideEntry);
-                if (entry == null) return null;
+                var bytes = storage.ReadFile(ProjectOverrideEntry);
+                if (bytes == null) return null;
 
-                using var stream = entry.Open();
-                using var reader = new StreamReader(stream);
-
-                var json = reader.ReadToEnd();
+                var json = System.Text.Encoding.UTF8.GetString(bytes);
                 var settings = JsonConvert.DeserializeObject<BackupSettings>(json);
 
                 return settings?.StoragePath;
@@ -355,24 +338,20 @@ namespace Writersword.Infrastructure.Services.Storage
         }
 
         /// <summary>
-        /// Запись переопределения прямо в архив — путь для закрытого проекта.
+        /// Запись переопределения прямо в файл проекта — путь для закрытого проекта.
         /// </summary>
         private void WriteOverrideDirectly(string projectPath, string value, string json)
         {
-            using var fileGate = ProjectFileLock.Acquire(projectPath);
-            using var archive = ZipFile.Open(projectPath, ZipArchiveMode.Update);
-
-            var existing = archive.GetEntry(ProjectOverrideEntry);
-            existing?.Delete();
+            using var storage = new SqliteFileStorageService(projectPath, Serilog.Log.Logger);
 
             if (string.IsNullOrEmpty(value))
+            {
+                storage.DeleteFile(ProjectOverrideEntry);
                 return;
+            }
 
-            var entry = archive.CreateEntry(ProjectOverrideEntry, CompressionLevel.Optimal);
-
-            using var stream = entry.Open();
-            using var writer = new StreamWriter(stream);
-            writer.Write(json);
+            storage.WriteFile(ProjectOverrideEntry, System.Text.Encoding.UTF8.GetBytes(json));
+            storage.Flush();
         }
 
         /// <summary>Короткий отпечаток пути для имени папки хранилища.</summary>
@@ -434,7 +413,7 @@ namespace Writersword.Infrastructure.Services.Storage
                     ProjectTitle = Path.GetFileNameWithoutExtension(projectPath)
                 };
 
-                // Точка снимается с файла на диске, а ZipArchive в режиме Update
+                // Точка снимается с файла на диске, а запись уходит в журнал
                 // держит записи в памяти до закрытия. Всё, что писалось через
                 // IProjectFileStorage без последующего сброса — свежий аватар,
                 // локальный пак — на диск ещё не попало, и без сброса точка
@@ -448,66 +427,90 @@ namespace Writersword.Infrastructure.Services.Storage
 
                 // Файл проекта читается под общим шлюзом: параллельно его может
                 // перезаписывать сохранение или хешировать кеш-сервис.
-                using (var fileGate = await ProjectFileLock.AcquireAsync(projectPath).ConfigureAwait(false))
-                using (var archive = OpenProjectForRead(projectPath))
+                using (var storage = OpenProjectForRead(projectPath))
                 {
-                    foreach (var entry in archive.Entries)
+                    // Первый проход только описывает точку. Содержимое с диска не
+                    // поднимается: хеш посчитан при записи и лежит рядом с путём.
+                    //
+                    // Порядок здесь принципиален, и раньше он был обратным. Объекты
+                    // писались в склад до проверок, а те отменяют точку почти
+                    // всегда: автосохранение идёт раз в две минуты, а минимальный
+                    // промежуток между точками — час. Записанное перед отменой
+                    // оставалось в складе навсегда: ничейные объекты, на которые не
+                    // ссылается ни один манифест. Они же уезжали на сервер и
+                    // копились там сотнями.
+                    var missing = new List<(string Path, string Hash)>();
+
+                    foreach (var entry in storage.EnumerateEntries())
                     {
-                        // Папки внутри ZIP приходят как записи нулевой длины с
-                        // пустым Name — восстанавливать их отдельно не нужно.
-                        if (string.IsNullOrEmpty(entry.Name))
-                            continue;
-
-                        byte[] content;
-                        using (var entryStream = entry.Open())
-                        using (var buffer = new MemoryStream())
-                        {
-                            await entryStream.CopyToAsync(buffer).ConfigureAwait(false);
-                            content = buffer.ToArray();
-                        }
-
-                        var hash = ComputeHash(content);
-                        WriteObjectIfMissing(storePath, hash, content);
-
                         snapshot.Entries.Add(new BackupEntry
                         {
-                            Path = entry.FullName,
-                            Hash = hash,
-                            Length = content.LongLength,
-                            LastWriteTime = entry.LastWriteTime
+                            Path = entry.Path,
+                            Hash = entry.Hash,
+                            Length = entry.Size,
+                            LastWriteTime = entry.Modified
                         });
+
+                        if (!ObjectExists(storePath, entry.Hash))
+                            missing.Add((entry.Path, entry.Hash));
+                    }
+
+                    if (snapshot.Entries.Count == 0)
+                    {
+                        _logger.LogWarning("Snapshot skipped: project has no entries: {Path}", projectPath);
+                        return false;
+                    }
+
+                    var previous = ReadSnapshots(storePath).OrderByDescending(s => s.CreatedAt).FirstOrDefault();
+
+                    // Точка не создаётся, если предыдущая описывает ровно тот же
+                    // набор хешей. Служебные записи при сравнении игнорируются:
+                    // раскладка окон в workspace.json меняется от переключения
+                    // вкладок и делала «другой» точку с теми же данными.
+                    if (previous != null && SameContent(previous, snapshot))
+                    {
+                        _logger.LogDebug("Snapshot skipped: content identical to previous point");
+                        PruneThrottled(storePath, settings);
+                        return false;
+                    }
+
+                    // Ограничение частоты. Ручная точка, точка при закрытии и точка
+                    // перед откатом проходят всегда: они привязаны к событию, а не
+                    // к фоновому ритму, и пропускать их нельзя.
+                    if (previous != null
+                        && settings.MinIntervalMinutes > 0
+                        && trigger is BackupTrigger.ManualSave or BackupTrigger.AutoSave
+                        && (snapshot.CreatedAt - previous.CreatedAt).TotalMinutes < settings.MinIntervalMinutes)
+                    {
+                        _logger.LogDebug(
+                            "Snapshot skipped: last point was {Minutes:0} minutes ago, minimum is {Min}",
+                            (snapshot.CreatedAt - previous.CreatedAt).TotalMinutes, settings.MinIntervalMinutes);
+                        PruneThrottled(storePath, settings);
+                        return false;
+                    }
+
+                    // Точка состоится — теперь и только теперь склад пополняется.
+                    foreach (var (entryPath, entryHash) in missing)
+                    {
+                        var content = storage.ReadFile(entryPath);
+
+                        if (content is null)
+                        {
+                            // Манифест не имеет права ссылаться на объект, которого
+                            // в складе нет: восстановление по такой точке вернуло бы
+                            // проект с дырой вместо записи.
+                            _logger.LogWarning("Snapshot entry unreadable, dropped: {Entry}", entryPath);
+                            snapshot.Entries.RemoveAll(e => e.Path == entryPath);
+                            continue;
+                        }
+
+                        WriteObjectIfMissing(storePath, entryHash, content);
                     }
                 }
 
                 if (snapshot.Entries.Count == 0)
                 {
-                    _logger.LogWarning("Snapshot skipped: project archive has no entries: {Path}", projectPath);
-                    return false;
-                }
-
-                var previous = ReadSnapshots(storePath).OrderByDescending(s => s.CreatedAt).FirstOrDefault();
-
-                // Точка не создаётся, если предыдущая описывает ровно тот же
-                // набор хешей. Служебные записи при сравнении игнорируются:
-                // раскладка окон в workspace.json меняется от переключения
-                // вкладок и делала «другой» точку с теми же данными.
-                if (previous != null && SameContent(previous, snapshot))
-                {
-                    _logger.LogDebug("Snapshot skipped: content identical to previous point");
-                    return false;
-                }
-
-                // Ограничение частоты. Ручная точка, точка при закрытии и точка
-                // перед откатом проходят всегда: они привязаны к событию, а не
-                // к фоновому ритму, и пропускать их нельзя.
-                if (previous != null
-                    && settings.MinIntervalMinutes > 0
-                    && trigger is BackupTrigger.ManualSave or BackupTrigger.AutoSave
-                    && (snapshot.CreatedAt - previous.CreatedAt).TotalMinutes < settings.MinIntervalMinutes)
-                {
-                    _logger.LogDebug(
-                        "Snapshot skipped: last point was {Minutes:0} minutes ago, minimum is {Min}",
-                        (snapshot.CreatedAt - previous.CreatedAt).TotalMinutes, settings.MinIntervalMinutes);
+                    _logger.LogWarning("Snapshot skipped: no entry could be read: {Path}", projectPath);
                     return false;
                 }
 
@@ -768,12 +771,13 @@ namespace Writersword.Infrastructure.Services.Storage
                 {
                     if (!File.Exists(projectPath)) return result;
 
-                    using var fileGate = ProjectFileLock.Acquire(projectPath);
-                    using var archive = OpenProjectForRead(projectPath);
+                    using var storage = OpenProjectForRead(projectPath);
 
-                    foreach (var entry in archive.Entries)
+                    // Размеры берутся из таблицы: содержимое для этого читать
+                    // не нужно, а на проекте с картинками разница ощутима.
+                    foreach (var entry in storage.EnumerateEntries())
                     {
-                        var path = entry.FullName.Replace('\\', '/');
+                        var path = entry.Path;
 
                         if (!path.StartsWith("modules/", StringComparison.OrdinalIgnoreCase)) continue;
                         if (!path.EndsWith("/CustomData.json", StringComparison.OrdinalIgnoreCase)) continue;
@@ -781,7 +785,7 @@ namespace Writersword.Infrastructure.Services.Storage
                         var parts = path.Split('/');
                         if (parts.Length < 3) continue;
 
-                        result[parts[1]] = entry.Length;
+                        result[parts[1]] = entry.Size;
                     }
                 }
                 catch (Exception ex)
@@ -848,8 +852,13 @@ namespace Writersword.Infrastructure.Services.Storage
 
                 using (var fileGate = await ProjectFileLock.AcquireAsync(targetPath).ConfigureAwait(false))
                 {
-                    using (var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.ReadWrite))
-                    using (var archive = new ZipArchive(fileStream, ZipArchiveMode.Create))
+                    // Прежний файл сборки удаляется: база открывается на
+                    // дозапись, и остаток от прерванного восстановления
+                    // смешался бы с новой точкой.
+                    if (File.Exists(tempPath))
+                        File.Delete(tempPath);
+
+                    using (var storage = new SqliteFileStorageService(tempPath, Serilog.Log.Logger))
                     {
                         foreach (var entry in snapshot.Entries)
                         {
@@ -863,12 +872,10 @@ namespace Writersword.Infrastructure.Services.Storage
                                 return false;
                             }
 
-                            var zipEntry = archive.CreateEntry(entry.Path, CompressionLevel.Optimal);
-                            zipEntry.LastWriteTime = entry.LastWriteTime;
-
-                            using var target = zipEntry.Open();
-                            await target.WriteAsync(content, 0, content.Length).ConfigureAwait(false);
+                            storage.WriteFile(entry.Path, content);
                         }
+
+                        storage.Flush();
                     }
 
                     File.Move(tempPath, targetPath, overwrite: true);
@@ -999,6 +1006,10 @@ namespace Writersword.Infrastructure.Services.Storage
         /// </summary>
         private static string GetObjectPath(string storePath, string hash)
             => Path.Combine(storePath, ObjectsDir, hash.Substring(0, 2), hash + ObjectExtension);
+
+        /// <summary>Лежит ли объект с таким содержимым в складе.</summary>
+        private static bool ObjectExists(string storePath, string hash)
+            => File.Exists(GetObjectPath(storePath, hash));
 
         private void WriteObjectIfMissing(string storePath, string hash, byte[] content)
         {
@@ -1189,6 +1200,39 @@ namespace Writersword.Infrastructure.Services.Storage
         // ── Очистка ───────────────────────────────────────────────────────
 
         /// <summary>
+        /// Прореживание по следам отменённой точки.
+        ///
+        /// Отменяется точка почти на каждом автосохранении, то есть раз в две
+        /// минуты, а прореживание перечитывает все манифесты и обходит склад
+        /// целиком — гонять его в таком ритме незачем и вредно: оно идёт под тем
+        /// же шлюзом, что и восстановление из интерфейса.
+        ///
+        /// Нужен же этот вызов ради складов, набравших мусор по старому порядку
+        /// записи: сами по себе ничейные объекты в них больше не появляются, но и
+        /// уйти им иначе неоткуда — точка, за которой пойдёт обычное прореживание,
+        /// случается раз в час.
+        /// </summary>
+        private void PruneThrottled(string storePath, BackupSettings settings)
+        {
+            var now = DateTimeOffset.UtcNow;
+
+            if (_lastPrune.TryGetValue(storePath, out var previous)
+                && now - previous < PruneThrottle)
+            {
+                return;
+            }
+
+            _lastPrune[storePath] = now;
+            Prune(storePath, settings);
+        }
+
+        /// <summary>Минимальный промежуток между прореживаниями по отменённой точке.</summary>
+        private static readonly TimeSpan PruneThrottle = TimeSpan.FromMinutes(15);
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset> _lastPrune =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
         /// Убирает лишние точки и объекты, на которые больше никто не ссылается.
         ///
         /// Сначала прореживание по времени: за сегодня хранятся все точки, за
@@ -1243,20 +1287,28 @@ namespace Writersword.Infrastructure.Services.Storage
                     }
                 }
 
-                if (doomed.Count == 0)
-                    return;
+                // Уборка идёт и тогда, когда прореживать нечего. Раньше на этом
+                // месте стоял ранний выход, и до сборщика мусора очередь не
+                // доходила вовсе, пока список точек не перерастал свои пределы.
+                var pruned = new List<string>();
 
                 foreach (var stale in doomed)
                 {
-                    var path = Path.Combine(storePath, SnapshotsDir, stale.Id + SnapshotExtension);
-                    if (File.Exists(path))
-                    {
-                        File.Delete(path);
-                        _logger.LogDebug("Snapshot pruned: {Id} ({Trigger})", stale.Id, stale.Trigger);
-                    }
+                    var path = BackupStoreLayout.SnapshotPath(storePath, stale.Id);
+                    if (!File.Exists(path))
+                        continue;
+
+                    File.Delete(path);
+                    pruned.Add(stale.Id);
+                    _logger.LogDebug("Snapshot pruned: {Id} ({Trigger})", stale.Id, stale.Trigger);
                 }
 
-                CollectGarbage(storePath);
+                var collected = CollectGarbage(storePath);
+
+                // Снятое записывается в надгробия. По ним отправка отличит
+                // «здесь это прорядили, на сервере оно лишнее» от «здесь это
+                // потеряли, на сервере лежит единственная копия».
+                BackupTombstones.Add(storePath, pruned, collected);
             }
             catch (Exception ex)
             {
@@ -1341,13 +1393,19 @@ namespace Writersword.Infrastructure.Services.Storage
         /// <summary>
         /// Удаляет объекты, не упомянутые ни в одном оставшемся манифесте.
         /// </summary>
-        private void CollectGarbage(string storePath)
+        /// <summary>
+        /// Убрать объекты, на которые не ссылается ни один манифест.
+        /// Возвращает снятые хеши — их записывают в надгробия.
+        /// </summary>
+        private List<string> CollectGarbage(string storePath)
         {
+            var removed = new List<string>();
+
             try
             {
                 var objectsRoot = Path.Combine(storePath, ObjectsDir);
                 if (!Directory.Exists(objectsRoot))
-                    return;
+                    return removed;
 
                 var snapshots = ReadSnapshots(storePath, out bool allReadable);
 
@@ -1359,7 +1417,7 @@ namespace Writersword.Infrastructure.Services.Storage
                 {
                     _logger.LogWarning(
                         "Garbage collection skipped: some manifests are unreadable in {Store}", storePath);
-                    return;
+                    return removed;
                 }
 
                 var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1367,8 +1425,6 @@ namespace Writersword.Infrastructure.Services.Storage
                 foreach (var snapshot in snapshots)
                     foreach (var entry in snapshot.Entries)
                         referenced.Add(entry.Hash);
-
-                int removed = 0;
 
                 foreach (var file in Directory.EnumerateFiles(objectsRoot, "*" + ObjectExtension, SearchOption.AllDirectories))
                 {
@@ -1378,16 +1434,18 @@ namespace Writersword.Infrastructure.Services.Storage
                         continue;
 
                     File.Delete(file);
-                    removed++;
+                    removed.Add(hash);
                 }
 
-                if (removed > 0)
-                    _logger.LogDebug("Garbage collected: {Count} unreferenced objects", removed);
+                if (removed.Count > 0)
+                    _logger.LogDebug("Garbage collected: {Count} unreferenced objects", removed.Count);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Garbage collection failed for store {Store}", storePath);
             }
+
+            return removed;
         }
     }
 }
